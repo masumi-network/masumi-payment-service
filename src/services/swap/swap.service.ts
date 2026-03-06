@@ -1,4 +1,4 @@
-import { Lucid, Blockfrost } from 'lucid-cardano';
+import { Lucid, Blockfrost, C } from 'lucid-cardano';
 import { TxBuilderLucidV3 } from '@sundaeswap/core/lucid';
 import { QueryProviderSundaeSwap } from '@sundaeswap/core';
 import { AssetAmount } from '@sundaeswap/asset';
@@ -50,6 +50,8 @@ export interface SwapParams {
 	toToken: Token;
 	poolId: string;
 	slippage?: number;
+	/** Test-only: inflate minReceivable by this factor so the scooper never fills the order */
+	outputMultiplier?: number;
 }
 
 async function initializeLucid(blockfrostApiKey: string): Promise<Lucid> {
@@ -178,11 +180,27 @@ export async function swapTokens(params: SwapParams, blockfrostApiKey: string): 
 
 		const slippage = params.slippage ?? 0.03;
 
+		// Calculate swap type: LIMIT with inflated minReceivable for test, or MARKET normally
+		const swapType = params.outputMultiplier
+			? (() => {
+					const multiplier = params.outputMultiplier ?? 1;
+					const aReserve = matchesAssetA ? poolData.liquidity.aReserve : poolData.liquidity.bReserve;
+					const bReserve = matchesAssetA ? poolData.liquidity.bReserve : poolData.liquidity.aReserve;
+					const inputRaw = BigInt(Math.round(params.fromAmount * scale));
+					const rawOutput = (bReserve * inputRaw) / (aReserve + inputRaw);
+					const inflatedOutput = rawOutput * BigInt(Math.round(multiplier));
+					return {
+						type: ESwapType.LIMIT as const,
+						minReceivable: new AssetAmount(inflatedOutput, expectedOutputAsset),
+					};
+				})()
+			: {
+					type: ESwapType.MARKET as const,
+					slippage,
+				};
+
 		const args = {
-			swapType: {
-				type: ESwapType.MARKET as const,
-				slippage,
-			},
+			swapType,
 			pool: poolData,
 			orderAddresses: {
 				DestinationAddress: {
@@ -198,6 +216,7 @@ export async function swapTokens(params: SwapParams, blockfrostApiKey: string): 
 		logger.info('Building swap transaction', {
 			component: 'swap-service',
 			slippage,
+			outputMultiplier: params.outputMultiplier,
 		});
 
 		const { build } = await txBuilder.swap(args);
@@ -248,15 +267,99 @@ export async function cancelSwapOrder(params: CancelSwapParams, blockfrostApiKey
 		});
 
 		const wallet = await getWalletFromMnemonic(params.mnemonic, blockfrostApiKey);
-		const txBuilder = new TxBuilderLucidV3(wallet.lucid, 'mainnet');
+		const txBuilder = new TxBuilderLucidV3(wallet.lucid, 'mainnet', new QueryProviderSundaeSwap('mainnet'));
 
-		const { build } = await txBuilder.cancel({
+		const cancelResult = await txBuilder.cancel({
 			utxo: { hash: params.orderTxHash, index: params.orderOutputIndex },
 			ownerAddress: wallet.address,
 		});
-		const builtTx = await build();
-		const { submit } = await builtTx.sign();
-		const txHash = await submit();
+		const builtTx = await cancelResult.build();
+
+		// The native WASM UPLC evaluator consistently underestimates script execution
+		// fees for SundaeSwap cancel transactions. Always bump the fee by 50% and
+		// reconstruct the transaction body before signing.
+		const origTx = builtTx.builtTx.txComplete;
+		const origBody = origTx.body();
+		const origOutputs = origBody.outputs();
+		const originalFee = BigInt(origBody.fee().to_str());
+		const bumpedFee = originalFee + originalFee / 2n;
+		const feeDiff = bumpedFee - originalFee;
+
+		logger.info('Bumping cancel tx fee', {
+			component: 'swap-service',
+			originalFee: String(originalFee),
+			bumpedFee: String(bumpedFee),
+		});
+
+		// Rebuild outputs, reducing the change (last) output to compensate for the higher fee.
+		const newOutputs = C.TransactionOutputs.new();
+		for (let i = 0; i < origOutputs.len(); i++) {
+			const output = origOutputs.get(i);
+			if (i === origOutputs.len() - 1) {
+				const val = output.amount();
+				const newCoin = BigInt(val.coin().to_str()) - feeDiff;
+				if (newCoin <= 0n) throw new Error('Fee bump exceeds change output');
+				const newVal = C.Value.new(C.BigNum.from_str(String(newCoin)));
+				const multiasset = val.multiasset();
+				if (multiasset) newVal.set_multiasset(multiasset);
+				const newOutput = C.TransactionOutput.new(output.address(), newVal);
+				const datum = output.datum();
+				if (datum) newOutput.set_datum(datum);
+				const scriptRef = output.script_ref();
+				if (scriptRef) newOutput.set_script_ref(scriptRef);
+				newOutputs.add(newOutput);
+			} else {
+				newOutputs.add(output);
+			}
+		}
+
+		const newBody = C.TransactionBody.new(
+			origBody.inputs(),
+			newOutputs,
+			C.BigNum.from_str(String(bumpedFee)),
+			origBody.ttl(),
+		);
+		const certs = origBody.certs();
+		if (certs) newBody.set_certs(certs);
+		const collateral = origBody.collateral();
+		if (collateral) newBody.set_collateral(collateral);
+		const requiredSigners = origBody.required_signers();
+		if (requiredSigners) newBody.set_required_signers(requiredSigners);
+		const scriptDataHash = origBody.script_data_hash();
+		if (scriptDataHash) newBody.set_script_data_hash(scriptDataHash);
+		// Collateral must be ≥ 150% of the fee. Bump total_collateral proportionally
+		// and reduce collateral_return to compensate.
+		const totalCollateral = origBody.total_collateral();
+		const collateralReturn = origBody.collateral_return();
+		if (totalCollateral && collateralReturn) {
+			const oldCollateral = BigInt(totalCollateral.to_str());
+			const newCollateral = (bumpedFee * 3n) / 2n + bumpedFee / 10n; // 160% of fee
+			const collateralDiff = newCollateral - oldCollateral;
+			newBody.set_total_collateral(C.BigNum.from_str(String(newCollateral)));
+			const retVal = collateralReturn.amount();
+			const retCoin = BigInt(retVal.coin().to_str()) - collateralDiff;
+			if (retCoin <= 0n) throw new Error('Collateral bump exceeds collateral return output');
+			const newRetVal = C.Value.new(C.BigNum.from_str(String(retCoin)));
+			const retMultiasset = retVal.multiasset();
+			if (retMultiasset) newRetVal.set_multiasset(retMultiasset);
+			const newCollateralReturn = C.TransactionOutput.new(collateralReturn.address(), newRetVal);
+			newBody.set_collateral_return(newCollateralReturn);
+		} else {
+			if (totalCollateral) newBody.set_total_collateral(totalCollateral);
+			if (collateralReturn) newBody.set_collateral_return(collateralReturn);
+		}
+		const referenceInputs = origBody.reference_inputs();
+		if (referenceInputs) newBody.set_reference_inputs(referenceInputs);
+
+		// Use Lucid's fromTx → sign → complete flow. Lucid's TxComplete.complete()
+		// uses TransactionWitnessSetBuilder.build_unchecked() which preserves all
+		// script witnesses (redeemers, datums, plutus scripts). Calling wallet.signTx()
+		// directly uses build() which drops them.
+		const unsignedTx = C.Transaction.new(newBody, origTx.witness_set(), origTx.auxiliary_data());
+		const txHex = Buffer.from(unsignedTx.to_bytes()).toString('hex');
+		const txComplete = wallet.lucid.fromTx(txHex);
+		const signed = await txComplete.sign().complete();
+		const txHash = await signed.submit();
 
 		logger.info('Cancel transaction submitted', {
 			component: 'swap-service',

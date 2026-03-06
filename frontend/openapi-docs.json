@@ -3968,6 +3968,12 @@
                                         "minimum": 0,
                                         "maximum": 1,
                                         "description": "Slippage tolerance (0-1, default: 0.03 for 3%)"
+                                    },
+                                    "outputMultiplier": {
+                                        "type": "number",
+                                        "minimum": 1,
+                                        "maximum": 100,
+                                        "description": "Test-only: multiply the expected output by this factor to create an unfillable order"
                                     }
                                 },
                                 "required": [

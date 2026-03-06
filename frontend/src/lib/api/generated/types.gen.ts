@@ -2063,6 +2063,10 @@ export type PostSwapData = {
          * Slippage tolerance (0-1, default: 0.03 for 3%)
          */
         slippage?: number;
+        /**
+         * Test-only: multiply the expected output by this factor to create an unfillable order
+         */
+        outputMultiplier?: number;
     };
     path?: never;
     query?: never;

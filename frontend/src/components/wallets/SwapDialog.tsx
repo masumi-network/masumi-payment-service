@@ -158,6 +158,7 @@ export function SwapDialog({
   >('idle');
 
   const [swapTransactionId, setSwapTransactionId] = useState<string | null>(null);
+  const [testForceFail, setTestForceFail] = useState(false);
 
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollCancelledRef = useRef(false);
@@ -529,10 +530,22 @@ export function SwapDialog({
           }
         },
         onError: (err: any) => {
-          const msg = err?.message || 'Cancel failed — order may have been executed already.';
-          setError(msg);
+          const msg = err?.message || err?.error?.message || '';
           setIsSwapping(false);
-          setSwapStatus('orderConfirmed');
+          if (msg.includes('already executed') || msg.includes('swap completed')) {
+            onSwapComplete?.();
+            fetchBalance();
+            setSwapStatus('confirmed');
+            toast.success('Order was already executed by the DEX — swap completed!', {
+              theme: 'dark',
+            });
+            pollTimeoutRef.current = setTimeout(() => {
+              if (!pollCancelledRef.current) setSwapStatus('idle');
+            }, 3000);
+          } else {
+            setError(msg || 'Cancel failed.');
+            setSwapStatus('orderConfirmed');
+          }
         },
         errorMessage: 'Cancel failed',
       },
@@ -646,6 +659,7 @@ export function SwapDialog({
               toToken,
               poolId,
               slippage: 0.03,
+              ...(testForceFail ? { outputMultiplier: 10 } : {}),
             },
           }),
         {
@@ -873,7 +887,7 @@ export function SwapDialog({
                       {selectedToToken.symbol}
                     </span>
                     <span className="text-border">|</span>
-                    <span>3% slippage</span>
+                    <span>{testForceFail ? '10x output ⚠️' : '3% slippage'}</span>
                   </div>
                 )}
               </div>
@@ -897,19 +911,37 @@ export function SwapDialog({
                 )}
               </Button>
 
-              {/* Order confirmed — cancel button */}
+              {/* TEST: Force-fail toggle (sends 1000x amount so tx build fails) */}
+              {!isSwapping && swapStatus === 'idle' && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={`w-full mt-2 h-8 text-xs rounded-xl ${testForceFail ? 'border-red-500/60 text-red-400' : 'border-border/40 text-muted-foreground'}`}
+                  onClick={() => setTestForceFail((v) => !v)}
+                >
+                  {testForceFail
+                    ? '🧪 Force-fail ON (10x min output — unfillable)'
+                    : '🧪 Force-fail OFF (normal)'}
+                </Button>
+              )}
+
+              {/* Order confirmed — awaiting execution */}
               {swapStatus === 'orderConfirmed' && !isSwapping && (
-                <div className="mt-3 space-y-2">
-                  <div className="h-1 w-full bg-secondary rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-yellow-500 transition-all duration-1000 ease-out"
-                      style={{ width: '66%' }}
-                    />
+                <div className="mt-4 rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-4 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-yellow-500/15">
+                      <Check className="h-3 w-3 text-yellow-500" />
+                    </div>
+                    <div className="space-y-0.5">
+                      <p className="text-sm font-medium text-yellow-400">Order placed on-chain</p>
+                      <p className="text-xs text-muted-foreground">
+                        Waiting for a scooper to execute. You can cancel if it takes too long.
+                      </p>
+                    </div>
                   </div>
-                  <p className="text-xs text-center font-medium text-yellow-400">{statusLabel}</p>
                   <Button
                     variant="outline"
-                    className="w-full h-9 text-sm rounded-xl border-destructive/50 text-destructive hover:bg-destructive/10"
+                    className="w-full h-9 text-sm rounded-xl border-destructive/40 text-destructive hover:bg-destructive/10"
                     onClick={handleCancelSwap}
                     disabled={!swapTransactionId}
                   >
@@ -919,23 +951,23 @@ export function SwapDialog({
                 </div>
               )}
 
-              {/* Timeout — acknowledge button */}
+              {/* Timeout — acknowledge & recover */}
               {swapStatus === 'timeout' && !isSwapping && (
-                <div className="mt-3 space-y-2">
-                  <div className="h-1 w-full bg-secondary rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-red-500 transition-all duration-1000 ease-out"
-                      style={{ width: '100%' }}
-                    />
+                <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/5 p-4 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-red-500/15">
+                      <XCircle className="h-3 w-3 text-red-500" />
+                    </div>
+                    <div className="space-y-0.5">
+                      <p className="text-sm font-medium text-red-400">Transaction timed out</p>
+                      <p className="text-xs text-muted-foreground">
+                        Not confirmed in time. Check on-chain state to recover your funds.
+                      </p>
+                    </div>
                   </div>
-                  <p className="text-xs text-center font-medium text-red-400">{statusLabel}</p>
-                  <p className="text-xs text-center text-muted-foreground">
-                    The transaction was not confirmed in time. Acknowledge to check on-chain state
-                    and recover.
-                  </p>
                   <Button
                     variant="outline"
-                    className="w-full h-9 text-sm rounded-xl border-red-500/50 text-red-400 hover:bg-red-500/10"
+                    className="w-full h-9 text-sm rounded-xl border-red-500/40 text-red-400 hover:bg-red-500/10"
                     onClick={handleAcknowledgeTimeout}
                     disabled={!swapTransactionId}
                   >
@@ -1067,6 +1099,12 @@ export function SwapDialog({
                   <span className="text-muted-foreground">Slippage</span>
                   <span>3%</span>
                 </div>
+                {testForceFail && (
+                  <div className="flex justify-between text-xs">
+                    <span className="text-red-400">Test override</span>
+                    <span className="text-red-400">10x min output ⚠️</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-xs">
                   <span className="text-muted-foreground">DEX</span>
                   <span>SundaeSwap</span>

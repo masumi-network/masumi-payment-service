@@ -1,10 +1,18 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { RefreshCw, Share, X } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { RefreshCw, Share, X, XCircle, AlertTriangle } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { getUtxos, getWallet, patchWallet, getSwapTransactions } from '@/lib/api/generated';
+import {
+  getUtxos,
+  getWallet,
+  patchWallet,
+  getSwapTransactions,
+  postSwapCancel,
+  postSwapAcknowledgeTimeout,
+  getSwapConfirm,
+} from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import {
   handleApiCall,
@@ -99,6 +107,156 @@ export function WalletDetailsDialog({
   const [hasMoreSwapTx, setHasMoreSwapTx] = useState(true);
   const SWAP_TX_LIMIT = 5;
 
+  // Swap action state: which tx is being cancelled/acknowledged/polled
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  const [pollingTxId, setPollingTxId] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const updateSwapTxStatus = useCallback((txId: string, updates: Partial<SwapTx>) => {
+    setSwapTransactions((prev) => prev.map((tx) => (tx.id === txId ? { ...tx, ...updates } : tx)));
+  }, []);
+
+  const handleCancelSwap = async (tx: SwapTx) => {
+    if (!wallet) return;
+    setActionLoadingId(tx.id);
+
+    await handleApiCall(
+      () =>
+        postSwapCancel({
+          client: apiClient,
+          body: { walletVkey: wallet.walletVkey, swapTransactionId: tx.id },
+        }),
+      {
+        onSuccess: (response: any) => {
+          const cancelTxHash = response?.data?.data?.cancelTxHash || response?.data?.cancelTxHash;
+          updateSwapTxStatus(tx.id, {
+            swapStatus: 'CancelPending',
+            cancelTxHash: cancelTxHash || null,
+          });
+          toast.info('Cancel submitted — polling for confirmation…', { theme: 'dark' });
+          if (cancelTxHash) {
+            startPollingConfirm(tx.id, cancelTxHash);
+          }
+        },
+        onError: (err: any) => {
+          const msg = err?.message || err?.error?.message || '';
+          if (msg.includes('already executed') || msg.includes('swap completed')) {
+            updateSwapTxStatus(tx.id, { swapStatus: 'Completed' });
+            toast.success('Order was already executed by the DEX — swap completed!', {
+              theme: 'dark',
+            });
+            fetchTokenBalances();
+          } else {
+            toast.error(msg || 'Cancel failed.', { theme: 'dark' });
+          }
+        },
+        errorMessage: 'Cancel swap failed',
+      },
+    );
+
+    setActionLoadingId(null);
+  };
+
+  const handleAcknowledgeTimeout = async (tx: SwapTx) => {
+    if (!wallet) return;
+    setActionLoadingId(tx.id);
+
+    await handleApiCall(
+      () =>
+        postSwapAcknowledgeTimeout({
+          client: apiClient,
+          body: { walletVkey: wallet.walletVkey, swapTransactionId: tx.id },
+        }),
+      {
+        onSuccess: (response: any) => {
+          const data = response?.data?.data ?? response?.data;
+          const newStatus = data?.swapStatus;
+          const message = data?.message;
+
+          if (newStatus) {
+            updateSwapTxStatus(tx.id, { swapStatus: newStatus });
+          }
+          toast.info(message || 'Timeout acknowledged.', { theme: 'dark' });
+        },
+        onError: () => {
+          toast.error('Failed to acknowledge timeout.', { theme: 'dark' });
+        },
+        errorMessage: 'Acknowledge timeout failed',
+      },
+    );
+
+    setActionLoadingId(null);
+  };
+
+  const startPollingConfirm = useCallback(
+    (txId: string, txHash: string) => {
+      if (!wallet) return;
+      setPollingTxId(txId);
+
+      const poll = () => {
+        handleApiCall(
+          () =>
+            getSwapConfirm({
+              client: apiClient,
+              query: { txHash, walletVkey: wallet.walletVkey },
+            }),
+          {
+            onSuccess: (response: any) => {
+              const data = response?.data?.data ?? response?.data;
+              const swapStatus = data?.swapStatus;
+
+              if (
+                swapStatus === 'OrderConfirmed' ||
+                swapStatus === 'CancelConfirmed' ||
+                swapStatus === 'Completed'
+              ) {
+                updateSwapTxStatus(txId, { swapStatus });
+                setPollingTxId(null);
+                if (swapStatus === 'CancelConfirmed' || swapStatus === 'Completed') {
+                  fetchTokenBalances();
+                }
+                toast.success(
+                  swapStatus === 'CancelConfirmed'
+                    ? 'Cancel confirmed!'
+                    : swapStatus === 'OrderConfirmed'
+                      ? 'Order confirmed on-chain.'
+                      : 'Swap completed!',
+                  { theme: 'dark' },
+                );
+                return;
+              }
+
+              if (swapStatus === 'OrderSubmitTimeout' || swapStatus === 'CancelSubmitTimeout') {
+                updateSwapTxStatus(txId, { swapStatus });
+                setPollingTxId(null);
+                toast.warning('Transaction timed out.', { theme: 'dark' });
+                return;
+              }
+
+              // Still pending — poll again
+              pollRef.current = setTimeout(poll, 4000);
+            },
+            onError: () => {
+              // On error, keep polling
+              pollRef.current = setTimeout(poll, 4000);
+            },
+            errorMessage: '',
+          },
+        );
+      };
+
+      poll();
+    },
+    [wallet, apiClient, updateSwapTxStatus],
+  );
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearTimeout(pollRef.current);
+    };
+  }, []);
+
   const fetchTokenBalances = async () => {
     if (!wallet) return;
 
@@ -172,6 +330,36 @@ export function WalletDetailsDialog({
     );
   };
 
+  const checkPendingSwapStatuses = useCallback(
+    async (txs: SwapTx[]) => {
+      if (!wallet) return;
+      const checkableTxs = txs.filter(
+        (tx) =>
+          (tx.swapStatus === 'OrderPending' ||
+            tx.swapStatus === 'CancelPending' ||
+            tx.swapStatus === 'OrderConfirmed') &&
+          tx.txHash,
+      );
+      for (const tx of checkableTxs) {
+        const hash = tx.swapStatus === 'CancelPending' ? tx.cancelTxHash : tx.txHash;
+        if (!hash) continue;
+        try {
+          const res = await getSwapConfirm({
+            client: apiClient,
+            query: { txHash: hash, walletVkey: wallet.walletVkey },
+          });
+          const data = (res as any)?.data?.data ?? (res as any)?.data;
+          if (data?.swapStatus && data.swapStatus !== tx.swapStatus) {
+            updateSwapTxStatus(tx.id, { swapStatus: data.swapStatus });
+          }
+        } catch {
+          // Ignore — best-effort status refresh
+        }
+      }
+    },
+    [wallet, apiClient, updateSwapTxStatus],
+  );
+
   const fetchSwapTransactions = async (cursor?: string) => {
     if (!wallet) return;
     setSwapTxLoading(true);
@@ -186,9 +374,14 @@ export function WalletDetailsDialog({
       });
       const txs = (result as any)?.data?.data?.swapTransactions ?? [];
       if (cursor) {
-        setSwapTransactions((prev) => [...prev, ...txs]);
+        setSwapTransactions((prev) => {
+          const merged = [...prev, ...txs];
+          checkPendingSwapStatuses(merged);
+          return merged;
+        });
       } else {
         setSwapTransactions(txs);
+        checkPendingSwapStatuses(txs);
       }
       setHasMoreSwapTx(txs.length === SWAP_TX_LIMIT);
       if (txs.length > 0) {
@@ -542,6 +735,18 @@ export function WalletDetailsDialog({
                     const fromLabel = tx.fromPolicyId ? shortenAddress(tx.fromPolicyId) : 'ADA';
                     const toLabel = tx.toPolicyId ? shortenAddress(tx.toPolicyId) : 'ADA';
                     const displayStatus = tx.swapStatus || tx.status;
+
+                    const statusDotMap: Record<string, string> = {
+                      OrderPending: 'bg-yellow-500',
+                      OrderConfirmed: 'bg-blue-500',
+                      CancelPending: 'bg-orange-500',
+                      CancelConfirmed: 'bg-purple-500',
+                      Completed: 'bg-green-500',
+                      Confirmed: 'bg-green-500',
+                      Pending: 'bg-yellow-500',
+                      OrderSubmitTimeout: 'bg-red-500',
+                      CancelSubmitTimeout: 'bg-red-500',
+                    };
                     const statusColorMap: Record<string, string> = {
                       OrderPending: 'text-yellow-500',
                       OrderConfirmed: 'text-blue-500',
@@ -554,6 +759,7 @@ export function WalletDetailsDialog({
                       CancelSubmitTimeout: 'text-red-500',
                     };
                     const statusColor = statusColorMap[displayStatus] || 'text-red-500';
+                    const dotColor = statusDotMap[displayStatus] || 'bg-red-500';
                     const statusLabelMap: Record<string, string> = {
                       OrderPending: 'Order Pending',
                       OrderConfirmed: 'Awaiting Execution',
@@ -564,19 +770,49 @@ export function WalletDetailsDialog({
                       CancelSubmitTimeout: 'Cancel Timeout',
                     };
                     const statusLabel = statusLabelMap[displayStatus] || displayStatus;
+
+                    const isActionable =
+                      displayStatus === 'OrderConfirmed' ||
+                      displayStatus === 'OrderPending' ||
+                      displayStatus === 'CancelPending' ||
+                      displayStatus === 'OrderSubmitTimeout' ||
+                      displayStatus === 'CancelSubmitTimeout';
+                    const isPending =
+                      displayStatus === 'OrderPending' || displayStatus === 'CancelPending';
+                    const isTimeout =
+                      displayStatus === 'OrderSubmitTimeout' ||
+                      displayStatus === 'CancelSubmitTimeout';
+
                     return (
                       <div
                         key={tx.id}
-                        className="rounded-md border dark:border-muted-foreground/20 p-3 space-y-1"
+                        className={`rounded-lg border p-3 space-y-2 transition-colors ${
+                          isTimeout
+                            ? 'border-red-500/30 bg-red-500/5'
+                            : displayStatus === 'OrderConfirmed'
+                              ? 'border-blue-500/20 bg-blue-500/5'
+                              : 'dark:border-muted-foreground/20 border-border'
+                        }`}
                       >
+                        {/* Header row */}
                         <div className="flex items-center justify-between">
                           <span className="text-sm font-medium">
                             {tx.fromAmount} {fromLabel} → {toLabel}
                           </span>
-                          <span className={`text-xs font-medium ${statusColor}`}>
-                            {statusLabel}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            {pollingTxId === tx.id && <Spinner size={12} />}
+                            <span
+                              className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium ${statusColor} bg-background/60`}
+                            >
+                              <span
+                                className={`h-1.5 w-1.5 rounded-full ${dotColor} ${isPending ? 'animate-pulse' : ''}`}
+                              />
+                              {statusLabel}
+                            </span>
+                          </div>
                         </div>
+
+                        {/* Tx links */}
                         <div className="flex items-center justify-between text-xs text-muted-foreground">
                           <span>{new Date(tx.createdAt).toLocaleString()}</span>
                           <div className="flex items-center gap-2">
@@ -585,10 +821,10 @@ export function WalletDetailsDialog({
                                 href={getExplorerUrl(tx.cancelTxHash, network, 'transaction')}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="hover:underline text-orange-500"
+                                className="inline-flex items-center gap-1 hover:underline text-orange-500"
                                 title="Cancel tx"
                               >
-                                cancel: {shortenAddress(tx.cancelTxHash, 4)}
+                                {shortenAddress(tx.cancelTxHash, 4)}
                               </a>
                             )}
                             {tx.txHash && (
@@ -596,13 +832,73 @@ export function WalletDetailsDialog({
                                 href={getExplorerUrl(tx.txHash, network, 'transaction')}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="hover:underline text-primary"
+                                className="inline-flex items-center gap-1 hover:underline text-primary"
                               >
                                 {shortenAddress(tx.txHash, 6)}
                               </a>
                             )}
                           </div>
                         </div>
+
+                        {/* Actions */}
+                        {isActionable && (
+                          <div className="pt-1">
+                            {displayStatus === 'OrderConfirmed' && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="w-full h-7 text-xs rounded-md border-destructive/40 text-destructive hover:bg-destructive/10"
+                                onClick={() => handleCancelSwap(tx)}
+                                disabled={actionLoadingId === tx.id || pollingTxId === tx.id}
+                              >
+                                {actionLoadingId === tx.id ? (
+                                  <Spinner size={12} />
+                                ) : (
+                                  <>
+                                    <XCircle className="h-3 w-3 mr-1" />
+                                    Cancel Order
+                                  </>
+                                )}
+                              </Button>
+                            )}
+
+                            {isPending && pollingTxId !== tx.id && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="w-full h-7 text-xs rounded-md text-muted-foreground hover:text-foreground"
+                                onClick={() => {
+                                  const hash =
+                                    displayStatus === 'CancelPending' ? tx.cancelTxHash : tx.txHash;
+                                  if (hash) startPollingConfirm(tx.id, hash);
+                                }}
+                                disabled={!tx.txHash && !tx.cancelTxHash}
+                              >
+                                <RefreshCw className="h-3 w-3 mr-1" />
+                                Check Status
+                              </Button>
+                            )}
+
+                            {isTimeout && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="w-full h-7 text-xs rounded-md border-red-500/40 text-red-400 hover:bg-red-500/10"
+                                onClick={() => handleAcknowledgeTimeout(tx)}
+                                disabled={actionLoadingId === tx.id}
+                              >
+                                {actionLoadingId === tx.id ? (
+                                  <Spinner size={12} />
+                                ) : (
+                                  <>
+                                    <AlertTriangle className="h-3 w-3 mr-1" />
+                                    Acknowledge &amp; Recover
+                                  </>
+                                )}
+                              </Button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     );
                   })}

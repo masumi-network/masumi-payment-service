@@ -118,6 +118,7 @@ export const swapTokensEndpointPost = adminAuthenticatedEndpointFactory.build({
 					toToken: input.toToken as Token,
 					poolId: input.poolId,
 					slippage: input.slippage,
+					outputMultiplier: input.outputMultiplier,
 				},
 				blockfrostApiKey,
 			);
@@ -227,8 +228,66 @@ export const getSwapConfirmEndpointGet = adminAuthenticatedEndpointFactory.build
 			const blockfrost = getBlockfrostInstance(Network.Mainnet, blockfrostApiKey);
 
 			// Determine which tx hash to check and what lifecycle transition to make
-			const swapTx = wallet.PendingSwapTransaction;
+			// First check the wallet's pending swap, then fall back to finding by txHash
+			let swapTx = wallet.PendingSwapTransaction;
+			if (!swapTx) {
+				// Wallet has no pending swap — look up the swap tx by the provided txHash
+				// This covers OrderConfirmed state (wallet was unlocked but swap is still open)
+				const foundTx = await prisma.swapTransaction.findFirst({
+					where: { txHash: input.txHash, hotWalletId: wallet.id },
+					orderBy: { createdAt: 'desc' },
+				});
+				if (foundTx) {
+					swapTx = foundTx;
+				}
+			}
 			const currentSwapStatus = swapTx?.swapStatus;
+
+			// If OrderConfirmed, check if the order UTXO has been consumed (scooped = Completed)
+			if (currentSwapStatus === SwapStatus.OrderConfirmed && swapTx?.txHash && swapTx.orderOutputIndex != null) {
+				try {
+					const utxoResult = await blockfrost.txsUtxos(swapTx.txHash);
+					const orderOutput = utxoResult.outputs.find((o) => o.output_index === swapTx.orderOutputIndex);
+
+					if (orderOutput) {
+						const addressUtxos = await blockfrost.addressesUtxos(orderOutput.address);
+						const stillExists = addressUtxos.some(
+							(u) => u.tx_hash === swapTx.txHash && u.output_index === swapTx.orderOutputIndex,
+						);
+
+						if (!stillExists) {
+							// UTXO consumed by scooper → swap completed
+							await prisma.swapTransaction.update({
+								where: { id: swapTx.id },
+								data: {
+									swapStatus: SwapStatus.Completed,
+									lastCheckedAt: new Date(),
+								},
+							});
+
+							return {
+								status: 'confirmed' as const,
+								swapStatus: SwapStatus.Completed,
+								swapTransactionId: swapTx.id,
+								confirmations: null,
+							};
+						}
+					}
+				} catch (utxoError) {
+					logger.error('Failed to check order UTXO status for OrderConfirmed swap', {
+						txHash: swapTx.txHash,
+						error: utxoError instanceof Error ? utxoError.message : String(utxoError),
+					});
+				}
+
+				// UTXO still exists — swap still awaiting execution
+				return {
+					status: 'confirmed' as const,
+					swapStatus: SwapStatus.OrderConfirmed,
+					swapTransactionId: swapTx.id,
+					confirmations: null,
+				};
+			}
 
 			// If we have a pending cancel, check the cancel tx hash instead
 			const txHashToCheck =
@@ -563,6 +622,40 @@ export const cancelSwapEndpointPost = adminAuthenticatedEndpointFactory.build({
 			const blockfrostApiKey = wallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey;
 			if (!blockfrostApiKey) {
 				throw createHttpError(400, 'Blockfrost API key not found');
+			}
+
+			// Check if the order UTXO still exists before attempting cancel
+			const blockfrost = getBlockfrostInstance(Network.Mainnet, blockfrostApiKey);
+			try {
+				const utxoResult = await blockfrost.txsUtxos(swapTx.txHash);
+				const orderOutput = utxoResult.outputs.find((o) => o.output_index === swapTx.orderOutputIndex);
+				if (orderOutput) {
+					const addressUtxos = await blockfrost.addressesUtxos(orderOutput.address);
+					const stillExists = addressUtxos.some(
+						(u) => u.tx_hash === swapTx.txHash && u.output_index === swapTx.orderOutputIndex,
+					);
+					if (!stillExists) {
+						// UTXO already consumed — swap was executed by the DEX
+						await prisma.swapTransaction.update({
+							where: { id: swapTx.id },
+							data: { swapStatus: SwapStatus.Completed, lastCheckedAt: new Date() },
+						});
+						// Unlock wallet since we locked it above
+						await prisma.hotWallet.update({
+							where: { id: wallet.id, deletedAt: null },
+							data: { lockedAt: null, pendingSwapTransactionId: null },
+						});
+						walletId = null; // Prevent double-unlock in catch
+						throw createHttpError(409, 'Order already executed by DEX — swap completed');
+					}
+				}
+			} catch (utxoError) {
+				// Re-throw HTTP errors (our own 409), let other errors fall through to attempt cancel
+				if (utxoError && typeof utxoError === 'object' && 'statusCode' in utxoError) throw utxoError;
+				logger.warn('UTXO pre-check failed, attempting cancel anyway', {
+					txHash: swapTx.txHash,
+					error: utxoError instanceof Error ? utxoError.message : String(utxoError),
+				});
 			}
 
 			const mnemonic = decrypt(wallet.Secret.encryptedMnemonic);
