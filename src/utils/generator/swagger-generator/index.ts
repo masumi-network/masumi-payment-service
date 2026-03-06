@@ -1015,8 +1015,8 @@ export function generateOpenAPI() {
 										amount: '10000000', // ADD 10 ADA (positive amount adds credits: 10 * 1,000,000 lovelace)
 									},
 									{
-										unit: 'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad0014df105553444d', // USDM token (policyId + assetName concatenated in hex)
-										amount: '-25000000', // REMOVE 25 USDM (negative amount removes credits: -25 * 1,000,000)
+										unit: '1f3aec8bfe7ea4fe14c5f121e2a92e301afe414147860d557cac7e345553444378', // USDCx token (policyId + assetName concatenated in hex)
+										amount: '-25000000', // REMOVE 25 USDCx (negative amount removes credits: -25 * 1,000,000)
 									},
 								],
 								status: ApiKeyStatus.Active,

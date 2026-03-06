@@ -25,6 +25,8 @@ import Coingecko from '@coingecko/coingecko-typescript';
 import { logger } from '@/utils/logger';
 
 // Token unit constants (policyId + assetName hex)
+const MAINNET_USDCX_UNIT = '1f3aec8bfe7ea4fe14c5f121e2a92e301afe414147860d557cac7e345553444378';
+const isUsdcxUnit = (unit: string) => unit === MAINNET_USDCX_UNIT;
 const MAINNET_USDM_UNIT = 'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad0014df105553444d';
 const PREPROD_USDM_UNIT = '16a55b2a349361ff88c03788f93e1e966e5d689605d044fef722ddde0014df10745553444d';
 const isUsdmUnit = (unit: string) => unit === MAINNET_USDM_UNIT || unit === PREPROD_USDM_UNIT;
@@ -394,6 +396,8 @@ export async function generateMonthlyInvoice(
 				});
 				let decimals: number | null = null;
 				if (lookupUnit === '') {
+					decimals = 6;
+				} else if (isUsdcxUnit(lookupUnit)) {
 					decimals = 6;
 				} else if (isUsdmUnit(lookupUnit)) {
 					decimals = 6;
