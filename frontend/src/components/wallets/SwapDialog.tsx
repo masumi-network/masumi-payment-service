@@ -403,6 +403,7 @@ export function SwapDialog({
           'Confirmation is taking longer than expected. You can check the transaction in the explorer.',
           { theme: 'dark' },
         );
+        setSwapStatus('timeout');
         setIsSwapping(false);
         return;
       }
@@ -872,7 +873,9 @@ export function SwapDialog({
                 variant="default"
                 className="w-full mt-4 h-11 text-sm font-semibold rounded-xl"
                 onClick={handleSwapClick}
-                disabled={!canSwap || isSwapping || fromAmount <= 0 || isOverMax}
+                disabled={
+                  !canSwap || isSwapping || fromAmount <= 0 || isOverMax || swapStatus !== 'idle'
+                }
               >
                 {isSwapping ? (
                   <span className="flex items-center gap-2">

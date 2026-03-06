@@ -203,6 +203,10 @@ export function WalletDetailsDialog({
   const startPollingConfirm = useCallback(
     (txId: string, txHash: string) => {
       if (!wallet) return;
+      if (pollRef.current) {
+        clearTimeout(pollRef.current);
+        pollRef.current = null;
+      }
       setPollingTxId(txId);
       const startTime = Date.now();
 
@@ -389,16 +393,17 @@ export function WalletDetailsDialog({
         },
       });
       const txs = (result as any)?.data?.data?.swapTransactions ?? [];
+      let merged: typeof txs;
       if (cursor) {
         setSwapTransactions((prev) => {
-          const merged = [...prev, ...txs];
-          checkPendingSwapStatuses(merged);
+          merged = [...prev, ...txs];
           return merged;
         });
       } else {
+        merged = txs;
         setSwapTransactions(txs);
-        checkPendingSwapStatuses(txs);
       }
+      checkPendingSwapStatuses(merged);
       setHasMoreSwapTx(txs.length === SWAP_TX_LIMIT);
       if (txs.length > 0) {
         setSwapTxCursor(txs[txs.length - 1].id);
