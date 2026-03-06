@@ -36,7 +36,7 @@ import { ChevronDown, Save, Trash2, Pencil, Check, ChevronsUpDown, X, Plus } fro
 import { CopyButton } from '@/components/ui/copy-button';
 import { cn } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { postInvoiceMonthlyAdmin } from '@/lib/api/generated';
+import { postInvoiceMonthlyInternal } from '@/lib/api/generated';
 import { shortenAddress } from '@/lib/utils';
 import {
   useSellerTemplates,
@@ -766,7 +766,7 @@ export function GenerateInvoiceDialog({
           ? Object.fromEntries(validConversions.map((e) => [e.unit.trim(), parseFloat(e.rate)]))
           : undefined;
 
-      const result = await postInvoiceMonthlyAdmin({
+      const result = await postInvoiceMonthlyInternal({
         client: apiClient,
         body: {
           buyerWalletVkey: data.buyerWalletVkey,

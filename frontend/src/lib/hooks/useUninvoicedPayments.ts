@@ -1,11 +1,11 @@
 import { useMemo, useCallback } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { getInvoiceMonthlyUninvoiced } from '@/lib/api/generated';
+import { getInvoiceMonthlyMissing } from '@/lib/api/generated';
 import { extractApiErrorMessage } from '@/lib/api-error';
 
 export type UninvoicedPayment = NonNullable<
-  Awaited<ReturnType<typeof getInvoiceMonthlyUninvoiced>>['data']
+  Awaited<ReturnType<typeof getInvoiceMonthlyMissing>>['data']
 >['data']['UninvoicedPayments'][number];
 
 export function useUninvoicedPayments(month: string, buyerWalletVkey?: string) {
@@ -15,7 +15,7 @@ export function useUninvoicedPayments(month: string, buyerWalletVkey?: string) {
     queryKey: ['uninvoiced-payments', month, buyerWalletVkey],
     queryFn: async ({ pageParam }) => {
       const limit = 50;
-      const result = await getInvoiceMonthlyUninvoiced({
+      const result = await getInvoiceMonthlyMissing({
         client: apiClient,
         query: {
           month,

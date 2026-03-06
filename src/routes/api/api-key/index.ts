@@ -37,6 +37,14 @@ export const apiKeyOutputSchema = z
 			)
 			.describe('Remaining usage credits for this API key'),
 		status: z.nativeEnum(ApiKeyStatus).describe('Current status of the API key'),
+		walletScopeEnabled: z.boolean().describe('Whether wallet scope filtering is enabled for this API key'),
+		WalletScopes: z
+			.array(
+				z.object({
+					hotWalletId: z.string().describe('ID of the hot wallet in scope'),
+				}),
+			)
+			.describe('List of hot wallets this API key is scoped to'),
 	})
 	.openapi('APIKey');
 
@@ -54,6 +62,7 @@ export const queryAPIKeyEndpointGet = adminAuthenticatedEndpointFactory.build({
 			take: input.limit,
 			include: {
 				RemainingUsageCredits: { select: { amount: true, unit: true } },
+				WalletScopes: { select: { hotWalletId: true } },
 			},
 		});
 		return {
@@ -96,6 +105,16 @@ export const addAPIKeySchemaInput = z.object({
 		.default([Network.Mainnet, Network.Preprod])
 		.describe('The networks the API key is allowed to use'),
 	permission: z.nativeEnum(Permission).default(Permission.Read).describe('The permission of the API key'),
+	walletScopeEnabled: z
+		.string()
+		.default('false')
+		.transform((s) => s.toLowerCase() == 'true')
+		.describe('Whether to enable wallet scope filtering for this API key'),
+	WalletScopeHotWalletIds: z
+		.array(z.string().max(150))
+		.max(100)
+		.default([])
+		.describe('List of hot wallet IDs to scope this API key to'),
 });
 
 export const addAPIKeySchemaOutput = apiKeyOutputSchema;
@@ -106,6 +125,12 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 	output: addAPIKeySchemaOutput,
 	handler: async ({ input }: { input: z.infer<typeof addAPIKeySchemaInput> }) => {
 		const isAdmin = input.permission == Permission.Admin;
+		if (isAdmin && input.walletScopeEnabled) {
+			throw createHttpError(400, 'Admin API keys cannot have wallet scope enabled');
+		}
+		if (isAdmin && input.usageLimited) {
+			throw createHttpError(400, 'Admin API keys cannot have usage limits');
+		}
 		const apiKey = 'masumi-payment-' + (isAdmin ? 'admin-' : '') + createId();
 		const result = await prisma.apiKey.create({
 			data: {
@@ -115,6 +140,7 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 				permission: input.permission,
 				usageLimited: isAdmin ? false : input.usageLimited,
 				networkLimit: isAdmin ? [Network.Mainnet, Network.Preprod] : input.networkLimit,
+				walletScopeEnabled: isAdmin ? false : input.walletScopeEnabled,
 				RemainingUsageCredits: {
 					createMany: {
 						data: input.UsageCredits.map((usageCredit) => {
@@ -126,9 +152,21 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 						}),
 					},
 				},
+				...(input.walletScopeEnabled && input.WalletScopeHotWalletIds.length > 0
+					? {
+							WalletScopes: {
+								createMany: {
+									data: input.WalletScopeHotWalletIds.map((hotWalletId) => ({
+										hotWalletId,
+									})),
+								},
+							},
+						}
+					: {}),
 			},
 			include: {
 				RemainingUsageCredits: { select: { amount: true, unit: true } },
+				WalletScopes: { select: { hotWalletId: true } },
 			},
 		});
 		return {
@@ -168,6 +206,12 @@ export const updateAPIKeySchemaInput = z.object({
 		.default([Network.Mainnet, Network.Preprod])
 		.optional()
 		.describe('The networks the API key is allowed to use'),
+	walletScopeEnabled: z.boolean().optional().describe('Whether to enable wallet scope filtering for this API key'),
+	WalletScopeHotWalletIds: z
+		.array(z.string().max(150))
+		.max(100)
+		.optional()
+		.describe('List of hot wallet IDs to scope this API key to. Replaces existing scopes when provided'),
 });
 
 export const updateAPIKeySchemaOutput = apiKeyOutputSchema;
@@ -225,6 +269,29 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 						}
 					}
 				}
+				const resultingWalletScopeEnabled = input.walletScopeEnabled ?? apiKey.walletScopeEnabled;
+				const resultingPermission = apiKey.permission;
+				if (resultingPermission === Permission.Admin && resultingWalletScopeEnabled) {
+					throw createHttpError(400, 'Admin API keys cannot have wallet scope enabled');
+				}
+				if (resultingPermission === Permission.Admin && input.usageLimited) {
+					throw createHttpError(400, 'Admin API keys cannot have usage limits');
+				}
+
+				if (input.WalletScopeHotWalletIds !== undefined) {
+					await prisma.apiKeyWalletScope.deleteMany({
+						where: { apiKeyId: input.id },
+					});
+					if (input.WalletScopeHotWalletIds.length > 0) {
+						await prisma.apiKeyWalletScope.createMany({
+							data: input.WalletScopeHotWalletIds.map((hotWalletId) => ({
+								apiKeyId: input.id,
+								hotWalletId,
+							})),
+						});
+					}
+				}
+
 				const result = await prisma.apiKey.update({
 					where: { id: input.id },
 					data: {
@@ -232,9 +299,11 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 						usageLimited: input.usageLimited,
 						status: input.status,
 						networkLimit: input.networkLimit,
+						walletScopeEnabled: input.walletScopeEnabled,
 					},
 					include: {
 						RemainingUsageCredits: { select: { amount: true, unit: true } },
+						WalletScopes: { select: { hotWalletId: true } },
 					},
 				});
 				return result;
@@ -268,6 +337,7 @@ export const deleteAPIKeyEndpointDelete = adminAuthenticatedEndpointFactory.buil
 			data: { deletedAt: new Date(), status: ApiKeyStatus.Revoked },
 			include: {
 				RemainingUsageCredits: { select: { amount: true, unit: true } },
+				WalletScopes: { select: { hotWalletId: true } },
 			},
 		});
 		return {

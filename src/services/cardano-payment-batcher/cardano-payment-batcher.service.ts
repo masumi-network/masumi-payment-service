@@ -33,6 +33,7 @@ type PaymentSourceWithWallets = Prisma.PaymentSourceGetPayload<{
 				SmartContractWallet: true;
 				NextAction: true;
 				CurrentTransaction: true;
+				HotWalletLimit: { select: { id: true } };
 			};
 		};
 		PaymentSourceConfig: true;
@@ -246,6 +247,7 @@ export async function batchLatestPaymentEntriesV1() {
 								SmartContractWallet: { where: { deletedAt: null } },
 								NextAction: true,
 								CurrentTransaction: true,
+								HotWalletLimit: { select: { id: true } },
 							},
 							orderBy: {
 								createdAt: 'asc',
@@ -408,6 +410,14 @@ export async function batchLatestPaymentEntriesV1() {
 								break;
 							}
 							const paymentRequest = paymentRequestsRemaining[index];
+							if (
+								paymentRequest.isLimitedToHotWallets &&
+								!paymentRequest.HotWalletLimit.some((hw) => hw.id === walletData.walletId)
+							) {
+								index++;
+								continue;
+							}
+							const originalPaidFundsArray = paymentRequest.PaidFunds.map((f) => ({ ...f }));
 							const sellerAddress = paymentRequest.SellerWallet.walletAddress;
 							const buyerAddress = potentialAddresses[0];
 							const tmpDatum = getDatumFromBlockchainIdentifier({
@@ -528,14 +538,21 @@ export async function batchLatestPaymentEntriesV1() {
 								});
 							}
 							let isFulfilled = true;
+							const needsFeeBuffer = batchedPaymentRequests.length === 0;
 							for (const paymentAmount of paymentRequest.PaidFunds) {
 								const walletAmount = amounts.find((amount) => amount.unit == paymentAmount.unit);
-								if (walletAmount == null || paymentAmount.amount > walletAmount.quantity) {
+								const isLovelace = paymentAmount.unit === '' || paymentAmount.unit.toLowerCase() === 'lovelace';
+								const requiredAmount =
+									isLovelace && needsFeeBuffer
+										? paymentAmount.amount + CONSTANTS.MIN_TX_FEE_BUFFER_LOVELACE
+										: paymentAmount.amount;
+								if (walletAmount == null || requiredAmount > walletAmount.quantity) {
 									isFulfilled = false;
 									break;
 								}
 							}
 							if (isFulfilled) {
+								const wasFirstRequest = batchedPaymentRequests.length === 0;
 								batchedPaymentRequests.push({
 									paymentRequest,
 									overpaidLovelace,
@@ -543,10 +560,17 @@ export async function batchLatestPaymentEntriesV1() {
 								//deduct amounts from wallet
 								for (const paymentAmount of paymentRequest.PaidFunds) {
 									const walletAmount = amounts.find((amount) => amount.unit == paymentAmount.unit);
-									walletAmount!.quantity -= paymentAmount.amount;
+									const isLovelace = paymentAmount.unit === '' || paymentAmount.unit.toLowerCase() === 'lovelace';
+									const deductAmount =
+										isLovelace && wasFirstRequest
+											? paymentAmount.amount + CONSTANTS.MIN_TX_FEE_BUFFER_LOVELACE
+											: paymentAmount.amount;
+									walletAmount!.quantity -= deductAmount;
 								}
 								paymentRequestsRemaining.splice(index, 1);
 							} else {
+								paymentRequest.PaidFunds.length = 0;
+								paymentRequest.PaidFunds.push(...originalPaidFundsArray);
 								index++;
 							}
 						}
@@ -576,12 +600,26 @@ export async function batchLatestPaymentEntriesV1() {
 								},
 							},
 						});
-						//only go into error state if all wallets were unlocked, otherwise we might have enough funds in other wallets
-						if (allWalletCount == potentialWallets.length) {
-							logger.warn('No wallets with funds found, going into error state for', {
-								paymentRequestsRemaining: paymentRequestsRemaining.map((x) => x.id),
-							});
-							for (const paymentRequest of paymentRequestsRemaining) {
+						//only go into error state if all eligible wallets were unlocked, otherwise we might have enough funds in other wallets
+						for (const paymentRequest of paymentRequestsRemaining) {
+							const eligibleWalletCount = paymentRequest.isLimitedToHotWallets
+								? await prisma.hotWallet.count({
+										where: {
+											deletedAt: null,
+											type: HotWalletType.Purchasing,
+											PendingTransaction: null,
+											PaymentSource: { id: paymentContract.id },
+											id: { in: paymentRequest.HotWalletLimit.map((hw) => hw.id) },
+										},
+									})
+								: allWalletCount;
+							const eligiblePotentialCount = paymentRequest.isLimitedToHotWallets
+								? potentialWallets.filter((w) => paymentRequest.HotWalletLimit.some((hw) => hw.id === w.id)).length
+								: potentialWallets.length;
+							if (eligibleWalletCount == eligiblePotentialCount) {
+								logger.warn('No wallets with funds found, going into error state for', {
+									purchaseRequestId: paymentRequest.id,
+								});
 								await prisma.purchaseRequest.update({
 									where: { id: paymentRequest.id },
 									data: {

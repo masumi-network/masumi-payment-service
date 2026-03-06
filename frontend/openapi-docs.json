@@ -83,6 +83,26 @@
                             "Revoked"
                         ],
                         "description": "Current status of the API key"
+                    },
+                    "walletScopeEnabled": {
+                        "type": "boolean",
+                        "description": "Whether wallet scope filtering is enabled for this API key"
+                    },
+                    "WalletScopes": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "hotWalletId": {
+                                    "type": "string",
+                                    "description": "ID of the hot wallet in scope"
+                                }
+                            },
+                            "required": [
+                                "hotWalletId"
+                            ]
+                        },
+                        "description": "List of hot wallets this API key is scoped to"
                     }
                 },
                 "required": [
@@ -92,7 +112,9 @@
                     "usageLimited",
                     "networkLimit",
                     "RemainingUsageCredits",
-                    "status"
+                    "status",
+                    "walletScopeEnabled",
+                    "WalletScopes"
                 ]
             },
             "Wallet": {
@@ -3003,7 +3025,9 @@
                                                     "amount": "10000000"
                                                 }
                                             ],
-                                            "status": "Active"
+                                            "status": "Active",
+                                            "walletScopeEnabled": false,
+                                            "WalletScopes": []
                                         }
                                     }
                                 }
@@ -3405,7 +3429,9 @@
                                                             "amount": "10000000"
                                                         }
                                                     ],
-                                                    "status": "Active"
+                                                    "status": "Active",
+                                                    "walletScopeEnabled": false,
+                                                    "WalletScopes": []
                                                 }
                                             ]
                                         },
@@ -3496,6 +3522,21 @@
                                         ],
                                         "default": "Read",
                                         "description": "The permission of the API key"
+                                    },
+                                    "walletScopeEnabled": {
+                                        "type": "string",
+                                        "default": "false",
+                                        "description": "Whether to enable wallet scope filtering for this API key"
+                                    },
+                                    "WalletScopeHotWalletIds": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "maxLength": 150
+                                        },
+                                        "maxItems": 100,
+                                        "default": [],
+                                        "description": "List of hot wallet IDs to scope this API key to"
                                     }
                                 },
                                 "required": [
@@ -3509,7 +3550,9 @@
                                             "amount": "10000000"
                                         }
                                     ],
-                                    "permission": "Admin"
+                                    "permission": "Admin",
+                                    "walletScopeEnabled": "false",
+                                    "WalletScopeHotWalletIds": []
                                 }
                             }
                         }
@@ -3550,7 +3593,9 @@
                                                     "amount": "10000000"
                                                 }
                                             ],
-                                            "status": "Active"
+                                            "status": "Active",
+                                            "walletScopeEnabled": false,
+                                            "WalletScopes": []
                                         }
                                     }
                                 }
@@ -3649,6 +3694,19 @@
                                             "Preprod"
                                         ],
                                         "description": "The networks the API key is allowed to use"
+                                    },
+                                    "walletScopeEnabled": {
+                                        "type": "boolean",
+                                        "description": "Whether to enable wallet scope filtering for this API key"
+                                    },
+                                    "WalletScopeHotWalletIds": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "maxLength": 150
+                                        },
+                                        "maxItems": 100,
+                                        "description": "List of hot wallet IDs to scope this API key to. Replaces existing scopes when provided"
                                     }
                                 },
                                 "required": [
@@ -3667,7 +3725,12 @@
                                             "amount": "-25000000"
                                         }
                                     ],
-                                    "status": "Active"
+                                    "status": "Active",
+                                    "walletScopeEnabled": false,
+                                    "WalletScopeHotWalletIds": [
+                                        "hot_wallet_id_1",
+                                        "hot_wallet_id_2"
+                                    ]
                                 }
                             }
                         }
@@ -3709,7 +3772,9 @@
                                                     "amount": "10000000"
                                                 }
                                             ],
-                                            "status": "Active"
+                                            "status": "Active",
+                                            "walletScopeEnabled": false,
+                                            "WalletScopes": []
                                         }
                                     }
                                 }
@@ -3796,7 +3861,9 @@
                                                     "amount": "10000000"
                                                 }
                                             ],
-                                            "status": "Revoked"
+                                            "status": "Revoked",
+                                            "walletScopeEnabled": false,
+                                            "WalletScopes": []
                                         }
                                     }
                                 }
@@ -8011,8 +8078,8 @@
         },
         "/invoice/monthly": {
             "post": {
-                "description": "Generates an invoice PDF aggregating all payment requests for a buyer wallet within a month, using the end-of-month conversion rate. (admin access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.",
-                "summary": "Generate a monthly invoice PDF by buyer wallet vkey and month. (admin access required)",
+                "description": "Generates an invoice PDF aggregating all payment requests for a buyer wallet within a month, using the end-of-month conversion rate. (+PAY access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.",
+                "summary": "Generate a monthly invoice PDF by buyer wallet vkey and month. (+PAY access required)",
                 "tags": [
                     "invoice"
                 ],
@@ -8482,8 +8549,8 @@
                 }
             },
             "get": {
-                "description": "Lists invoice summaries for a given month with pagination. Returns only the latest revision per invoice base. Pass invoiceBaseId to get all revisions for a specific invoice. (admin access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own risk.",
-                "summary": "List invoices for a month. (admin access required)",
+                "description": "Lists invoice summaries for a given month with pagination. Returns only the latest revision per invoice base. Pass invoiceBaseId to get all revisions for a specific invoice. (+PAY access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own risk.",
+                "summary": "List invoices for a month. (+PAY access required)",
                 "tags": [
                     "invoice"
                 ],
@@ -8923,10 +8990,10 @@
                 }
             }
         },
-        "/invoice/monthly/admin": {
+        "/invoice/monthly/internal": {
             "post": {
-                "description": "Generates an invoice PDF aggregating all payment requests for a buyer wallet within a month, without requiring buyer wallet signature verification. (admin access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.",
-                "summary": "Admin generate a monthly invoice PDF. (admin access required)",
+                "description": "Generates an invoice PDF aggregating all payment requests for a buyer wallet within a month, without requiring buyer wallet signature verification. (+PAY access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.",
+                "summary": "Generate a monthly invoice PDF without signature verification. (+PAY access required)",
                 "tags": [
                     "invoice"
                 ],
@@ -9360,10 +9427,10 @@
                 }
             }
         },
-        "/invoice/monthly/uninvoiced": {
+        "/invoice/monthly/missing": {
             "get": {
-                "description": "Finds billable payment requests that do not yet have an invoice for a given month. Only finalized payments are included: Withdrawn (seller completed work), ResultSubmitted past unlock time, or DisputedWithdrawn with seller funds. Payments still locked, pending refund, or in dispute are excluded. (admin access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.",
-                "summary": "List uninvoiced payments for a month. (admin access required)",
+                "description": "Finds billable payment requests that do not yet have an invoice for a given month. Only finalized payments are included: Withdrawn (seller completed work), ResultSubmitted past unlock time, or DisputedWithdrawn with seller funds. Payments still locked, pending refund, or in dispute are excluded. (+PAY access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.",
+                "summary": "List uninvoiced payments for a month. (+PAY access required)",
                 "tags": [
                     "invoice"
                 ],

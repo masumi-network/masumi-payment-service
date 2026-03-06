@@ -42,6 +42,19 @@ export type ApiKey = {
      * Current status of the API key
      */
     status: 'Active' | 'Revoked';
+    /**
+     * Whether wallet scope filtering is enabled for this API key
+     */
+    walletScopeEnabled: boolean;
+    /**
+     * List of hot wallets this API key is scoped to
+     */
+    WalletScopes: Array<{
+        /**
+         * ID of the hot wallet in scope
+         */
+        hotWalletId: string;
+    }>;
 };
 
 export type Wallet = {
@@ -1886,6 +1899,14 @@ export type PatchApiKeyData = {
          * The networks the API key is allowed to use
          */
         networkLimit?: Array<'Preprod' | 'Mainnet'>;
+        /**
+         * Whether to enable wallet scope filtering for this API key
+         */
+        walletScopeEnabled?: boolean;
+        /**
+         * List of hot wallet IDs to scope this API key to. Replaces existing scopes when provided
+         */
+        WalletScopeHotWalletIds?: Array<string>;
     };
     path?: never;
     query?: never;
@@ -1946,6 +1967,14 @@ export type PostApiKeyData = {
          * The permission of the API key
          */
         permission?: 'Read' | 'ReadAndPay' | 'Admin';
+        /**
+         * Whether to enable wallet scope filtering for this API key
+         */
+        walletScopeEnabled?: string;
+        /**
+         * List of hot wallet IDs to scope this API key to
+         */
+        WalletScopeHotWalletIds?: Array<string>;
     };
     path?: never;
     query?: never;
@@ -4261,7 +4290,7 @@ export type GetRegistryCountResponses = {
 
 export type GetRegistryCountResponse = GetRegistryCountResponses[keyof GetRegistryCountResponses];
 
-export type PostInvoiceMonthlyAdminData = {
+export type PostInvoiceMonthlyInternalData = {
     body?: {
         /**
          * The buyer wallet vkey to aggregate the month for
@@ -4446,10 +4475,10 @@ export type PostInvoiceMonthlyAdminData = {
     };
     path?: never;
     query?: never;
-    url: '/invoice/monthly/admin';
+    url: '/invoice/monthly/internal';
 };
 
-export type PostInvoiceMonthlyAdminResponses = {
+export type PostInvoiceMonthlyInternalResponses = {
     /**
      * Monthly invoice generated
      */
@@ -4462,9 +4491,9 @@ export type PostInvoiceMonthlyAdminResponses = {
     };
 };
 
-export type PostInvoiceMonthlyAdminResponse = PostInvoiceMonthlyAdminResponses[keyof PostInvoiceMonthlyAdminResponses];
+export type PostInvoiceMonthlyInternalResponse = PostInvoiceMonthlyInternalResponses[keyof PostInvoiceMonthlyInternalResponses];
 
-export type GetInvoiceMonthlyUninvoicedData = {
+export type GetInvoiceMonthlyMissingData = {
     body?: never;
     path?: never;
     query: {
@@ -4485,10 +4514,10 @@ export type GetInvoiceMonthlyUninvoicedData = {
          */
         limit?: number;
     };
-    url: '/invoice/monthly/uninvoiced';
+    url: '/invoice/monthly/missing';
 };
 
-export type GetInvoiceMonthlyUninvoicedResponses = {
+export type GetInvoiceMonthlyMissingResponses = {
     /**
      * List of uninvoiced billable payments
      */
@@ -4514,7 +4543,7 @@ export type GetInvoiceMonthlyUninvoicedResponses = {
     };
 };
 
-export type GetInvoiceMonthlyUninvoicedResponse = GetInvoiceMonthlyUninvoicedResponses[keyof GetInvoiceMonthlyUninvoicedResponses];
+export type GetInvoiceMonthlyMissingResponse = GetInvoiceMonthlyMissingResponses[keyof GetInvoiceMonthlyMissingResponses];
 
 export type GetPurchaseData = {
     body?: never;

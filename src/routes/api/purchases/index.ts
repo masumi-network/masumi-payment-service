@@ -28,6 +28,7 @@ import { transformPurchaseGetTimestamps, transformPurchaseGetAmounts } from '@/u
 import { parseAmountSearchRange, buildMatchingStates, buildTransactionSearchFilter } from '@/utils/shared/queries';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
+import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 
 export const queryPurchaseRequestSchemaInput = z.object({
 	limit: z.coerce.number().min(1).max(100).default(10).describe('The number of purchases to return'),
@@ -251,6 +252,7 @@ export const queryPurchaseRequestGet = readAuthenticatedEndpointFactory.build({
 					network: input.network,
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
 				},
+				...buildWalletScopeFilter(ctx.walletScopeIds),
 				...(input.filterOnChainState ? { onChainState: input.filterOnChainState } : {}),
 				...buildTransactionSearchFilter(searchLower, matchingStates, amountFilter, 'PaidFunds'),
 			},
@@ -398,6 +400,7 @@ export const queryPurchaseCountGet = readAuthenticatedEndpointFactory.build({
 					network: input.network,
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
 				},
+				...buildWalletScopeFilter(ctx.walletScopeIds),
 			},
 		});
 
@@ -781,6 +784,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 
 			const initialPurchaseRequest = await handlePurchaseCreditInit({
 				id: ctx.id,
+				walletScopeIds: ctx.walletScopeIds,
 				cost: Array.from(agentIdentifierAmountsMap.entries()).map(([unit, amount]) => {
 					if (unit.toLowerCase() == 'lovelace') {
 						return { amount: amount, unit: '' };

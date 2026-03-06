@@ -189,6 +189,7 @@ export default function ApiKeys() {
                   <TableHead className="p-4">Permission</TableHead>
                   <TableHead className="p-4">Network Limits</TableHead>
                   <TableHead className="p-4">Usage Limits</TableHead>
+                  <TableHead className="p-4">Wallet Scope</TableHead>
                   <TableHead className="p-4">Status</TableHead>
                   <TableHead className="w-10 p-4"></TableHead>
                 </TableRow>
@@ -198,7 +199,7 @@ export default function ApiKeys() {
                   <ApiKeyTableSkeleton rows={5} />
                 ) : filteredApiKeys.length === 0 ? (
                   <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={7}>
+                    <TableCell colSpan={8}>
                       <EmptyState
                         icon={searchQuery ? 'search' : 'inbox'}
                         title={
@@ -276,6 +277,19 @@ export default function ApiKeys() {
                           </div>
                         ) : (
                           <span className="text-muted-foreground">Unlimited</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="p-4 text-sm">
+                        {key.walletScopeEnabled ? (
+                          <Badge
+                            variant="secondary"
+                            className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 hover:bg-blue-100/80 dark:hover:bg-blue-900/40"
+                          >
+                            {key.WalletScopes.length} wallet
+                            {key.WalletScopes.length !== 1 ? 's' : ''}
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground">All</span>
                         )}
                       </TableCell>
                       <TableCell className="p-4">

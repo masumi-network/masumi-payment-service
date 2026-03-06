@@ -6,6 +6,7 @@ import { Network, Prisma, PricingType } from '@/generated/prisma/client';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import createHttpError from 'http-errors';
 import { queryRegistryRequestSchemaOutput } from '@/routes/api/registry';
+import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 
 const registryDiffLastUpdateSchema = ez.dateIn();
 
@@ -33,11 +34,13 @@ function buildRegistryDiffWhere({
 	cursorId,
 	network,
 	filterSmartContractAddress,
+	walletScopeIds,
 }: {
 	lastUpdate: Date;
 	cursorId?: string;
 	network: Prisma.PaymentSourceWhereInput['network'];
 	filterSmartContractAddress?: string | null;
+	walletScopeIds: string[] | null;
 }): Prisma.RegistryRequestWhereInput {
 	const base: Prisma.RegistryRequestWhereInput = {
 		PaymentSource: {
@@ -46,6 +49,7 @@ function buildRegistryDiffWhere({
 			smartContractAddress: filterSmartContractAddress ?? undefined,
 		},
 		SmartContractWallet: { deletedAt: null },
+		...buildWalletScopeFilter(walletScopeIds),
 	};
 
 	return cursorId != null
@@ -72,6 +76,7 @@ export const queryRegistryDiffGet = payAuthenticatedEndpointFactory.build({
 				cursorId: input.cursorId,
 				network: input.network,
 				filterSmartContractAddress: input.filterSmartContractAddress,
+				walletScopeIds: ctx.walletScopeIds,
 			}),
 			orderBy: [{ registrationStateLastChangedAt: 'asc' }, { id: 'asc' }],
 			take: input.limit,
