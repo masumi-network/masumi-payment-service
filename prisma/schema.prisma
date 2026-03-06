@@ -737,6 +737,8 @@ model HydraRelation {
 
   /// One relation per wallet pair per network
   @@unique([network, walletIdA, walletIdB])
+  /// Network index
+  @@index([network])
   /// Primary lookup: find relation between two specific wallets
   @@index([walletIdA, walletIdB])
 }
@@ -760,7 +762,7 @@ model HydraHead {
   status HydraHeadStatus @default(Idle)
 
   /// Contestation period in seconds (configured on the Hydra node)
-  contestationPeriod Int @default(86400)
+  contestationPeriod BigInt @default(86400)
 
   /// Lifecycle timestamps
   openedAt    DateTime?
@@ -774,7 +776,7 @@ model HydraHead {
   latestActivityAt DateTime?
 
   /// Latest confirmed snapshot number (monotonically increasing while head is open)
-  latestSnapshotNumber Int @default(0)
+  latestSnapshotNumber BigInt @default(0)
 
   /// L1 transaction hashes for head lifecycle events
   initTxHash   String?
@@ -795,6 +797,7 @@ model HydraHead {
 
   @@index([status])
   @@index([hydraRelationId, status])
+  @@index([hydraRelationId, status, isEnabled])
 }
 
 /// A participant in a Hydra head.
@@ -826,8 +829,8 @@ model HydraParticipant {
   commitTxHash String?
 
   /// Encrypted key material for operating this participant's Hydra node (1:1)
-  hydraSecretId String?      @unique
-  HydraSecret   HydraSecret? @relation(fields: [hydraSecretId], references: [id])
+  hydraSecretId String      @unique
+  HydraSecret   HydraSecret @relation(fields: [hydraSecretId], references: [id])
 
   /// Same wallet cannot join the same head twice
   @@unique([hydraHeadId, walletId])

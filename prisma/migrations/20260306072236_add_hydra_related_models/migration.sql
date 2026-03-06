@@ -31,13 +31,13 @@ CREATE TABLE "HydraHead" (
     "hydraRelationId" TEXT NOT NULL,
     "headId" TEXT,
     "status" "HydraHeadStatus" NOT NULL DEFAULT 'Idle',
-    "contestationPeriod" INTEGER NOT NULL DEFAULT 86400,
+    "contestationPeriod" BIGINT NOT NULL DEFAULT 86400,
     "openedAt" TIMESTAMP(3),
     "closedAt" TIMESTAMP(3),
     "finalizedAt" TIMESTAMP(3),
     "contestationDeadline" TIMESTAMP(3),
     "latestActivityAt" TIMESTAMP(3),
-    "latestSnapshotNumber" INTEGER NOT NULL DEFAULT 0,
+    "latestSnapshotNumber" BIGINT NOT NULL DEFAULT 0,
     "initTxHash" TEXT,
     "closeTxHash" TEXT,
     "fanoutTxHash" TEXT,
@@ -57,7 +57,7 @@ CREATE TABLE "HydraParticipant" (
     "nodeHttpUrl" TEXT NOT NULL,
     "hasCommitted" BOOLEAN NOT NULL DEFAULT false,
     "commitTxHash" TEXT,
-    "hydraSecretId" TEXT,
+    "hydraSecretId" TEXT NOT NULL,
 
     CONSTRAINT "HydraParticipant_pkey" PRIMARY KEY ("id")
 );
@@ -88,6 +88,9 @@ CREATE TABLE "HydraSecret" (
 );
 
 -- CreateIndex
+CREATE INDEX "HydraRelation_network_idx" ON "HydraRelation"("network");
+
+-- CreateIndex
 CREATE INDEX "HydraRelation_walletIdA_walletIdB_idx" ON "HydraRelation"("walletIdA", "walletIdB");
 
 -- CreateIndex
@@ -101,6 +104,9 @@ CREATE INDEX "HydraHead_status_idx" ON "HydraHead"("status");
 
 -- CreateIndex
 CREATE INDEX "HydraHead_hydraRelationId_status_idx" ON "HydraHead"("hydraRelationId", "status");
+
+-- CreateIndex
+CREATE INDEX "HydraHead_hydraRelationId_status_isEnabled_idx" ON "HydraHead"("hydraRelationId", "status", "isEnabled");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "HydraParticipant_hydraSecretId_key" ON "HydraParticipant"("hydraSecretId");
@@ -145,10 +151,7 @@ ALTER TABLE "HydraParticipant" ADD CONSTRAINT "HydraParticipant_hydraHeadId_fkey
 ALTER TABLE "HydraParticipant" ADD CONSTRAINT "HydraParticipant_walletId_fkey" FOREIGN KEY ("walletId") REFERENCES "HotWallet"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "HydraParticipant" ADD CONSTRAINT "HydraParticipant_hydraSecretId_fkey" FOREIGN KEY ("hydraSecretId") REFERENCES "HydraSecret"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "HydraParticipant" ADD CONSTRAINT "HydraParticipant_hydraSecretId_fkey" FOREIGN KEY ("hydraSecretId") REFERENCES "HydraSecret"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "HydraHeadError" ADD CONSTRAINT "HydraHeadError_hydraHeadId_fkey" FOREIGN KEY ("hydraHeadId") REFERENCES "HydraHead"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- CheckConstraint
-ALTER TABLE "HydraRelation" ADD CONSTRAINT "HydraRelation_wallet_order_check" CHECK ("walletIdA" < "walletIdB");
