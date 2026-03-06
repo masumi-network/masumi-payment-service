@@ -1,5 +1,5 @@
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
-import { z } from 'zod';
+import { z } from '@/utils/zod-openapi';
 import createHttpError from 'http-errors';
 import { swapTokens, getPoolEstimate, Token, cancelSwapOrder, findOrderOutputIndex } from '@/services/swap';
 import { recordBusinessEndpointError } from '@/utils/metrics';
@@ -9,6 +9,7 @@ import { prisma } from '@/utils/db';
 import { decrypt } from '@/utils/security/encryption';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { logger } from '@/utils/logger';
+import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 import {
 	swapTokensSchemaInput,
 	swapTokensSchemaOutput,
@@ -76,6 +77,8 @@ export const swapTokensEndpointPost = adminAuthenticatedEndpointFactory.build({
 					if (wallet == null) {
 						throw createHttpError(404, 'Wallet not found');
 					}
+
+					assertHotWalletInScope(ctx.walletScopeIds, wallet.id);
 
 					if (wallet.lockedAt != null) {
 						throw createHttpError(409, 'Wallet is currently locked and cannot be used for swap');
@@ -215,6 +218,8 @@ export const getSwapConfirmEndpointGet = adminAuthenticatedEndpointFactory.build
 				throw createHttpError(404, 'Wallet not found');
 			}
 
+			assertHotWalletInScope(ctx.walletScopeIds, wallet.id);
+
 			if (wallet.PaymentSource.network !== Network.Mainnet) {
 				throw createHttpError(400, 'Swap confirmation is only available for mainnet wallets');
 			}
@@ -335,6 +340,7 @@ export const getSwapConfirmEndpointGet = adminAuthenticatedEndpointFactory.build
 							walletId: wallet.id,
 							error: unlockError instanceof Error ? unlockError.message : String(unlockError),
 						});
+						throw createHttpError(500, 'State transition succeeded but wallet unlock failed. Please retry.');
 					}
 
 					return {
@@ -355,6 +361,16 @@ export const getSwapConfirmEndpointGet = adminAuthenticatedEndpointFactory.build
 							txHash: txHashToCheck,
 							error: outputError instanceof Error ? outputError.message : String(outputError),
 						});
+					}
+
+					if (orderOutputIndex == null) {
+						// Cannot transition without output index — stay in OrderPending so next poll retries
+						return {
+							status: 'confirmed' as const,
+							swapStatus: SwapStatus.OrderPending,
+							swapTransactionId: swapTx.id,
+							confirmations: block.confirmations ?? null,
+						};
 					}
 
 					try {
@@ -389,6 +405,7 @@ export const getSwapConfirmEndpointGet = adminAuthenticatedEndpointFactory.build
 							walletId: wallet.id,
 							error: unlockError instanceof Error ? unlockError.message : String(unlockError),
 						});
+						throw createHttpError(500, 'State transition succeeded but wallet unlock failed. Please retry.');
 					}
 
 					return {
@@ -434,6 +451,7 @@ export const getSwapConfirmEndpointGet = adminAuthenticatedEndpointFactory.build
 							txHash: input.txHash,
 							error: unlockError instanceof Error ? unlockError.message : String(unlockError),
 						});
+						throw createHttpError(500, 'State transition succeeded but wallet unlock failed. Please retry.');
 					}
 				}
 
@@ -487,6 +505,7 @@ export const getSwapConfirmEndpointGet = adminAuthenticatedEndpointFactory.build
 									walletId: wallet.id,
 									error: unlockError instanceof Error ? unlockError.message : String(unlockError),
 								});
+								throw createHttpError(500, 'State transition succeeded but wallet unlock failed. Please retry.');
 							}
 
 							return {
@@ -589,6 +608,8 @@ export const cancelSwapEndpointPost = adminAuthenticatedEndpointFactory.build({
 					if (wallet == null) {
 						throw createHttpError(404, 'Wallet not found');
 					}
+
+					assertHotWalletInScope(ctx.walletScopeIds, wallet.id);
 
 					if (wallet.lockedAt != null) {
 						throw createHttpError(409, 'Wallet is currently locked');
@@ -762,6 +783,8 @@ export const acknowledgeSwapTimeoutEndpointPost = adminAuthenticatedEndpointFact
 				throw createHttpError(404, 'Wallet not found');
 			}
 
+			assertHotWalletInScope(ctx.walletScopeIds, wallet.id);
+
 			const blockfrostApiKey = wallet.PaymentSource.PaymentSourceConfig?.rpcProviderApiKey;
 			if (!blockfrostApiKey) {
 				throw createHttpError(400, 'Blockfrost API key not found');
@@ -932,6 +955,8 @@ export const getSwapTransactionsEndpointGet = adminAuthenticatedEndpointFactory.
 		if (wallet == null) {
 			throw createHttpError(404, 'Wallet not found');
 		}
+
+		assertHotWalletInScope(ctx.walletScopeIds, wallet.id);
 
 		const swapTransactions = await prisma.swapTransaction.findMany({
 			where: {

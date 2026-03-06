@@ -32,7 +32,7 @@ export function TransakWidget({
         console.error('Order failed:', event.data);
         onClose();
       } else if (
-        event.data.type?.includes('TRANSAK_WIDGET_CLOSE') ??
+        event.data.type?.includes('TRANSAK_WIDGET_CLOSE') ||
         event.data.type?.includes('TRANSAK_EXIT')
       ) {
         onClose();

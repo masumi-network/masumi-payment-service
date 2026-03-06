@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from '@/utils/zod-openapi';
 
 /**
  * Schema-only module for swap API. Kept separate so OpenAPI/swagger generator
