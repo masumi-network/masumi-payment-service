@@ -1,6 +1,6 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -19,7 +19,9 @@ import {
   postSwapCancel,
   postSwapAcknowledgeTimeout,
 } from '@/lib/api/generated';
+import { useQuery } from '@tanstack/react-query';
 import { useAppContext } from '@/lib/contexts/AppContext';
+import { useRate } from '@/lib/hooks/useRate';
 import { toast } from 'react-toastify';
 import BlinkingUnderscore from '../BlinkingUnderscore';
 import { shortenAddress, handleApiCall, getExplorerUrl } from '@/lib/utils';
@@ -132,7 +134,7 @@ export function SwapDialog({
   const [error, setError] = useState<string | null>(null);
 
   const [fromAmount, setFromAmount] = useState<number>(1);
-  const [adaToUsdRate, setAdaToUsdRate] = useState<number>(0);
+  const { rate: adaToUsdRate } = useRate();
   const [isFetchingDetails, setIsFetchingDetails] = useState<boolean>(true);
   const [isSwapping, setIsSwapping] = useState<boolean>(false);
   const [showConfirmation, setShowConfirmation] = useState<boolean>(false);
@@ -144,7 +146,43 @@ export function SwapDialog({
   const [selectedFromToken, setSelectedFromToken] = useState(swappableTokens[adaIndex]);
   const [selectedToToken, setSelectedToToken] = useState(swappableTokens[usdmIndex]);
 
-  const [conversionRate, setConversionRate] = useState<number>(0);
+  const conversionRateQueryKey = useMemo(
+    () => ['swap-conversion-rate', selectedFromToken.symbol, selectedToToken.symbol] as const,
+    [selectedFromToken.symbol, selectedToToken.symbol],
+  );
+
+  const { data: conversionRate = 0 } = useQuery<number>({
+    queryKey: conversionRateQueryKey,
+    queryFn: async () => {
+      if (selectedFromToken.symbol === selectedToToken.symbol) return 0;
+
+      const nonAdaToken =
+        selectedFromToken.symbol !== 'ADA' ? selectedFromToken : selectedToToken;
+      const poolId = (nonAdaToken as { poolId?: string }).poolId;
+      if (!poolId) return 0;
+
+      const fromPolicyId =
+        selectedFromToken.policyId === 'NATIVE' ? '' : selectedFromToken.policyId || '';
+      const fromAssetName =
+        selectedFromToken.hexedAssetName === 'NATIVE'
+          ? ''
+          : (selectedFromToken as { hexedAssetName?: string }).hexedAssetName || '';
+      const toPolicyId =
+        selectedToToken.policyId === 'NATIVE' ? '' : selectedToToken.policyId || '';
+      const toAssetName =
+        selectedToToken.hexedAssetName === 'NATIVE'
+          ? ''
+          : (selectedToToken as { hexedAssetName?: string }).hexedAssetName || '';
+
+      const result = await getSwapEstimate({
+        client: apiClient,
+        query: { fromPolicyId, fromAssetName, toPolicyId, toAssetName, poolId },
+      });
+      return (result as any)?.data?.data?.rate ?? (result as any)?.data?.rate ?? 0;
+    },
+    enabled: isOpen && selectedFromToken.symbol !== selectedToToken.symbol,
+    staleTime: 30_000,
+  });
 
   const [swapStatus, setSwapStatus] = useState<
     | 'idle'
@@ -161,59 +199,6 @@ export function SwapDialog({
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollCancelledRef = useRef(false);
 
-  const fetchConversionRate = async (
-    fromToken: (typeof swappableTokens)[number],
-    toToken: (typeof swappableTokens)[number],
-  ) => {
-    if (fromToken.symbol === toToken.symbol) {
-      setConversionRate(0);
-      return;
-    }
-
-    // Determine which token is non-ADA to get the poolId
-    const nonAdaToken = fromToken.symbol !== 'ADA' ? fromToken : toToken;
-    const poolId = (nonAdaToken as { poolId?: string }).poolId;
-    if (!poolId) {
-      setConversionRate(0);
-      return;
-    }
-
-    const fromPolicyId = fromToken.policyId === 'NATIVE' ? '' : fromToken.policyId || '';
-    const fromAssetName =
-      fromToken.hexedAssetName === 'NATIVE'
-        ? ''
-        : (fromToken as { hexedAssetName?: string }).hexedAssetName || '';
-    const toPolicyId = toToken.policyId === 'NATIVE' ? '' : toToken.policyId || '';
-    const toAssetName =
-      toToken.hexedAssetName === 'NATIVE'
-        ? ''
-        : (toToken as { hexedAssetName?: string }).hexedAssetName || '';
-
-    try {
-      const result = await getSwapEstimate({
-        client: apiClient,
-        query: { fromPolicyId, fromAssetName, toPolicyId, toAssetName, poolId },
-      });
-      const rate = (result as any)?.data?.data?.rate ?? (result as any)?.data?.rate ?? 0;
-      setConversionRate(rate);
-    } catch (err) {
-      console.error('Failed to fetch conversion rate', err);
-      setConversionRate(0);
-    }
-  };
-
-  const fetchAdaUsdRate = async () => {
-    try {
-      const response = await fetch(
-        'https://api.coingecko.com/api/v3/simple/price?ids=cardano&vs_currencies=usd',
-      );
-      const data = await response.json();
-      setAdaToUsdRate(data?.cardano?.usd || 0);
-    } catch (err) {
-      console.error('Failed to fetch ADA/USD rate', err);
-    }
-  };
-
   useEffect(() => {
     if (isOpen) {
       setIsFetchingDetails(true);
@@ -224,8 +209,6 @@ export function SwapDialog({
       setIsSwapping(false);
       setShowConfirmation(false);
       fetchBalance();
-      fetchAdaUsdRate();
-      fetchConversionRate(selectedFromToken, selectedToToken);
 
       const balanceInterval = setInterval(() => {
         fetchBalance();
@@ -241,13 +224,6 @@ export function SwapDialog({
       };
     }
   }, [isOpen]);
-
-  // Re-fetch conversion rate when tokens change
-  useEffect(() => {
-    if (isOpen) {
-      fetchConversionRate(selectedFromToken, selectedToToken);
-    }
-  }, [selectedFromToken.symbol, selectedToToken.symbol]);
 
   const fetchBalance = async () => {
     try {
@@ -398,7 +374,7 @@ export function SwapDialog({
   const formattedDollarValue = fromIsStablecoin
     ? `~$${fromAmount.toFixed(2)}`
     : toIsAda
-      ? `$${(toAmount * adaToUsdRate).toFixed(2)}`
+      ? `$${(toAmount * (adaToUsdRate ?? 0)).toFixed(2)}`
       : `$${toAmount.toFixed(2)}`;
 
   const formattedFromBalance = formatBalance(
