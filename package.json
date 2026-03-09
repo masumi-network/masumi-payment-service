@@ -29,7 +29,7 @@
 		"dev": "tsx watch ./src/index.ts",
 		"build": "pnpm exec prisma generate && tsc --noEmit && pkgroll",
 		"start": "cross-env NODE_ENV=production node ./dist/index.js",
-		"swagger-json": "cross-env DATABASE_URL=postgresql://test@localhost:5432/masumi_payment_service ENCRYPTION_KEY=set-mock-enc-key-for-generation tsx ./src/utils/generator/swagger-generator/cli.ts",
+		"swagger-json": "cross-env DATABASE_URL=postgresql://test@localhost:5432/masumi_payment_service ENCRYPTION_KEY=set-mock-enc-key-for-generation node --import tsx ./src/utils/generator/swagger-generator/cli.ts",
 		"swagger-postman": "pnpm run swagger-json && openapi2postmanv2 -s ./src/utils/generator/swagger-generator/openapi-docs.json -o ./masumi-payment-service.postman_collection.json -p",
 		"knip": "knip"
 	},
