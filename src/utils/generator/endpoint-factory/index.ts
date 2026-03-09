@@ -13,7 +13,7 @@ export const logServerError = (error: HttpError, logger: any, url: string, paylo
 const customResultHandler = new ResultHandler({
 	positive: (output) => {
 		const responseSchema = z.object({
-			status: z.literal('Success'),
+			status: z.literal('success'),
 			data: output,
 		});
 
@@ -21,23 +21,23 @@ const customResultHandler = new ResultHandler({
 	},
 	negative: z
 		.object({
-			status: z.literal('Error'),
+			status: z.literal('error'),
 			error: z.object({ message: z.string() }),
 		})
 		.example({
-			status: 'Error',
+			status: 'error',
 			error: { message: 'Sample error message' },
 		})
 		.or(
 			z
 				.object({
-					status: z.literal('Error'),
+					status: z.literal('error'),
 					error: z.object({ message: z.string() }),
 					id: z.string(),
 					object: allowedObjectSchema,
 				})
 				.example({
-					status: 'Error',
+					status: 'error',
 					error: { message: 'Sample error message' },
 					id: '123',
 					object: {
@@ -50,7 +50,7 @@ const customResultHandler = new ResultHandler({
 		if (error) {
 			if (error instanceof HttpExistsError) {
 				return void response.status(409).json({
-					status: 'Error',
+					status: 'error',
 					error: { message: error.message },
 					id: error.id,
 					// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -64,11 +64,11 @@ const customResultHandler = new ResultHandler({
 				.status(httpError.statusCode)
 				.set(httpError.headers)
 				.json({
-					status: 'Error',
+					status: 'error',
 					error: { message: getPublicErrorMessage(httpError) },
 				});
 		}
-		response.status(200).json({ status: 'Success', data: output });
+		response.status(200).json({ status: 'success', data: output });
 	},
 });
 const endpointFactory = new EndpointsFactory(customResultHandler);
