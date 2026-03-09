@@ -44,7 +44,7 @@
                         "type": "boolean",
                         "description": "Whether the API key has usage limits"
                     },
-                    "networkLimit": {
+                    "NetworkLimit": {
                         "type": "array",
                         "items": {
                             "type": "string",
@@ -110,7 +110,7 @@
                     "token",
                     "permission",
                     "usageLimited",
-                    "networkLimit",
+                    "NetworkLimit",
                     "RemainingUsageCredits",
                     "status",
                     "walletScopeEnabled",
@@ -2773,14 +2773,14 @@
             "MonitoringStatus": {
                 "type": "object",
                 "properties": {
-                    "monitoringStatus": {
+                    "MonitoringStatus": {
                         "type": "object",
                         "properties": {
                             "isMonitoring": {
                                 "type": "boolean",
                                 "description": "Whether the blockchain state monitoring service is currently running"
                             },
-                            "stats": {
+                            "Stats": {
                                 "type": "object",
                                 "nullable": true,
                                 "properties": {
@@ -2788,7 +2788,7 @@
                                         "type": "number",
                                         "description": "Number of entities being tracked by the monitoring service"
                                     },
-                                    "purchaseCursor": {
+                                    "PurchaseCursor": {
                                         "type": "object",
                                         "properties": {
                                             "timestamp": {
@@ -2807,7 +2807,7 @@
                                         ],
                                         "description": "Cursor position for purchase diff tracking"
                                     },
-                                    "paymentCursor": {
+                                    "PaymentCursor": {
                                         "type": "object",
                                         "properties": {
                                             "timestamp": {
@@ -2826,7 +2826,7 @@
                                         ],
                                         "description": "Cursor position for payment diff tracking"
                                     },
-                                    "memoryUsage": {
+                                    "MemoryUsage": {
                                         "type": "object",
                                         "properties": {
                                             "heapUsed": {
@@ -2852,22 +2852,22 @@
                                 },
                                 "required": [
                                     "trackedEntities",
-                                    "purchaseCursor",
-                                    "paymentCursor",
-                                    "memoryUsage"
+                                    "PurchaseCursor",
+                                    "PaymentCursor",
+                                    "MemoryUsage"
                                 ],
                                 "description": "Monitoring statistics. Null if monitoring is not active"
                             }
                         },
                         "required": [
                             "isMonitoring",
-                            "stats"
+                            "Stats"
                         ],
                         "description": "Current status of the blockchain state monitoring service"
                     }
                 },
                 "required": [
-                    "monitoringStatus"
+                    "MonitoringStatus"
                 ]
             },
             "TriggeredMonitoringCycle": {
@@ -3013,7 +3013,7 @@
                                             "token": "masumi_payment_api_key_secret",
                                             "permission": "Admin",
                                             "usageLimited": true,
-                                            "networkLimit": [
+                                            "NetworkLimit": [
                                                 "Preprod"
                                             ],
                                             "RemainingUsageCredits": [
@@ -3488,7 +3488,7 @@
                                                     "token": "masumi_payment_api_key_secret",
                                                     "permission": "Admin",
                                                     "usageLimited": true,
-                                                    "networkLimit": [
+                                                    "NetworkLimit": [
                                                         "Preprod"
                                                     ],
                                                     "RemainingUsageCredits": [
@@ -3565,7 +3565,7 @@
                                         },
                                         "description": "The credits allowed to be used by the API key. Only relevant if usageLimited is true. "
                                     },
-                                    "networkLimit": {
+                                    "NetworkLimit": {
                                         "type": "array",
                                         "items": {
                                             "type": "string",
@@ -3652,7 +3652,7 @@
                                             "token": "masumi_payment_api_key_secret",
                                             "permission": "Admin",
                                             "usageLimited": true,
-                                            "networkLimit": [
+                                            "NetworkLimit": [
                                                 "Preprod"
                                             ],
                                             "RemainingUsageCredits": [
@@ -3747,7 +3747,7 @@
                                         "default": "Active",
                                         "description": "The status of the API key"
                                     },
-                                    "networkLimit": {
+                                    "NetworkLimit": {
                                         "type": "array",
                                         "items": {
                                             "type": "string",
@@ -3830,7 +3830,7 @@
                                             "token": "masumi_payment_api_key_secret",
                                             "permission": "Admin",
                                             "usageLimited": true,
-                                            "networkLimit": [
+                                            "NetworkLimit": [
                                                 "Preprod",
                                                 "Mainnet"
                                             ],
@@ -3920,7 +3920,7 @@
                                             "token": "masumi_payment_api_key_secret",
                                             "permission": "Admin",
                                             "usageLimited": true,
-                                            "networkLimit": [
+                                            "NetworkLimit": [
                                                 "Preprod"
                                             ],
                                             "RemainingUsageCredits": [
@@ -3981,7 +3981,7 @@
                                         "maximum": 1000000000000,
                                         "description": "Amount to swap (in ADA or token units). Capped to prevent overflow/DoS."
                                     },
-                                    "fromToken": {
+                                    "FromToken": {
                                         "type": "object",
                                         "properties": {
                                             "policyId": {
@@ -4004,7 +4004,7 @@
                                         ],
                                         "description": "Source token information"
                                     },
-                                    "toToken": {
+                                    "ToToken": {
                                         "type": "object",
                                         "properties": {
                                             "policyId": {
@@ -4041,19 +4041,19 @@
                                 "required": [
                                     "walletVkey",
                                     "amount",
-                                    "fromToken",
-                                    "toToken",
+                                    "FromToken",
+                                    "ToToken",
                                     "poolId"
                                 ],
                                 "example": {
                                     "walletVkey": "wallet_verification_key_here",
                                     "amount": 1,
-                                    "fromToken": {
+                                    "FromToken": {
                                         "policyId": "c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad",
                                         "assetName": "5553444d",
                                         "name": "USDM"
                                     },
-                                    "toToken": {
+                                    "ToToken": {
                                         "policyId": "c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad",
                                         "assetName": "5553444d",
                                         "name": "USDM"
@@ -4254,7 +4254,7 @@
                                 "schema": {
                                     "type": "object",
                                     "properties": {
-                                        "swapTransactions": {
+                                        "SwapTransactions": {
                                             "type": "array",
                                             "items": {
                                                 "type": "object",
@@ -4343,10 +4343,10 @@
                                         }
                                     },
                                     "required": [
-                                        "swapTransactions"
+                                        "SwapTransactions"
                                     ],
                                     "example": {
-                                        "swapTransactions": [
+                                        "SwapTransactions": [
                                             {
                                                 "id": "clx1abc...",
                                                 "createdAt": "2026-03-06T12:00:00.000Z",
@@ -8710,7 +8710,7 @@
                                         ],
                                         "description": "The action to perform for monthly invoices"
                                     },
-                                    "buyer": {
+                                    "Buyer": {
                                         "type": "object",
                                         "properties": {
                                             "country": {
@@ -8798,13 +8798,13 @@
                                     "buyerWalletVkey",
                                     "month",
                                     "action",
-                                    "buyer"
+                                    "Buyer"
                                 ],
                                 "example": {
                                     "action": "RetrieveMonthlyInvoices",
                                     "buyerWalletVkey": "buyer_wallet_vkey",
                                     "month": "2025-09",
-                                    "buyer": {
+                                    "Buyer": {
                                         "country": "DE",
                                         "city": "Berlin",
                                         "zipCode": "10115",
@@ -8924,7 +8924,7 @@
                                         ],
                                         "description": "The currency of the invoice"
                                     },
-                                    "currencyConversion": {
+                                    "CurrencyConversion": {
                                         "type": "object",
                                         "additionalProperties": {
                                             "type": "number",
@@ -8933,7 +8933,7 @@
                                         },
                                         "description": "Currency conversion settings by unit for this invoice"
                                     },
-                                    "invoice": {
+                                    "Invoice": {
                                         "type": "object",
                                         "properties": {
                                             "itemNamePrefix": {
@@ -9049,7 +9049,7 @@
                                         "default": false,
                                         "description": "Force cancel existing invoice and generate a new revision, even if no data changes detected"
                                     },
-                                    "seller": {
+                                    "Seller": {
                                         "type": "object",
                                         "properties": {
                                             "country": {
@@ -9132,7 +9132,7 @@
                                             "vatNumber"
                                         ]
                                     },
-                                    "buyer": {
+                                    "Buyer": {
                                         "type": "object",
                                         "properties": {
                                             "country": {
@@ -9246,8 +9246,8 @@
                                     "buyerWalletVkey",
                                     "month",
                                     "invoiceCurrency",
-                                    "seller",
-                                    "buyer",
+                                    "Seller",
+                                    "Buyer",
                                     "signature",
                                     "key",
                                     "walletAddress",
@@ -9263,11 +9263,11 @@
                                     "buyerWalletVkey": "buyer_wallet_vkey",
                                     "month": "2025-09",
                                     "invoiceCurrency": "usd",
-                                    "currencyConversion": {
+                                    "CurrencyConversion": {
                                         "": 0.45,
                                         "policyIdAssetHex": 1.23
                                     },
-                                    "invoice": {
+                                    "Invoice": {
                                         "itemNamePrefix": "Agent: ",
                                         "title": "Monthly Invoice",
                                         "language": "en-us",
@@ -9276,7 +9276,7 @@
                                     "vatRate": 0.19,
                                     "reverseCharge": false,
                                     "forceRegenerate": false,
-                                    "seller": {
+                                    "Seller": {
                                         "country": "DE",
                                         "city": "Berlin",
                                         "zipCode": "10115",
@@ -9288,7 +9288,7 @@
                                         "companyName": "Alice GmbH",
                                         "vatNumber": "DE123456789"
                                     },
-                                    "buyer": {
+                                    "Buyer": {
                                         "country": "DE",
                                         "city": "Berlin",
                                         "zipCode": "10115",
@@ -9578,7 +9578,7 @@
                                                             "grossTotal": {
                                                                 "type": "string"
                                                             },
-                                                            "coveredPaymentRequestIds": {
+                                                            "CoveredPaymentRequestIds": {
                                                                 "type": "array",
                                                                 "items": {
                                                                     "type": "string"
@@ -9647,7 +9647,7 @@
                                                             "netTotal",
                                                             "vatTotal",
                                                             "grossTotal",
-                                                            "coveredPaymentRequestIds",
+                                                            "CoveredPaymentRequestIds",
                                                             "buyerWalletVkey",
                                                             "sellerWalletVkey",
                                                             "invoicePdf",
@@ -9692,7 +9692,7 @@
                                                     "netTotal": "150.00",
                                                     "vatTotal": "28.50",
                                                     "grossTotal": "178.50",
-                                                    "coveredPaymentRequestIds": [
+                                                    "CoveredPaymentRequestIds": [
                                                         "payment_id_1",
                                                         "payment_id_2"
                                                     ],
@@ -9838,7 +9838,7 @@
                                         ],
                                         "description": "The currency of the invoice"
                                     },
-                                    "currencyConversion": {
+                                    "CurrencyConversion": {
                                         "type": "object",
                                         "additionalProperties": {
                                             "type": "number",
@@ -9847,7 +9847,7 @@
                                         },
                                         "description": "Currency conversion settings by unit for this invoice"
                                     },
-                                    "invoice": {
+                                    "Invoice": {
                                         "type": "object",
                                         "properties": {
                                             "itemNamePrefix": {
@@ -9963,7 +9963,7 @@
                                         "default": false,
                                         "description": "Force cancel existing invoice and generate a new revision, even if no data changes detected"
                                     },
-                                    "seller": {
+                                    "Seller": {
                                         "type": "object",
                                         "properties": {
                                             "country": {
@@ -10046,7 +10046,7 @@
                                             "vatNumber"
                                         ]
                                     },
-                                    "buyer": {
+                                    "Buyer": {
                                         "type": "object",
                                         "properties": {
                                             "country": {
@@ -10134,18 +10134,18 @@
                                     "buyerWalletVkey",
                                     "month",
                                     "invoiceCurrency",
-                                    "seller",
-                                    "buyer"
+                                    "Seller",
+                                    "Buyer"
                                 ],
                                 "example": {
                                     "buyerWalletVkey": "buyer_wallet_vkey",
                                     "month": "2025-09",
                                     "invoiceCurrency": "usd",
-                                    "currencyConversion": {
+                                    "CurrencyConversion": {
                                         "": 0.45,
                                         "policyIdAssetHex": 1.23
                                     },
-                                    "invoice": {
+                                    "Invoice": {
                                         "itemNamePrefix": "Agent: ",
                                         "title": "Monthly Invoice",
                                         "language": "en-us",
@@ -10154,7 +10154,7 @@
                                     "vatRate": 0.19,
                                     "reverseCharge": false,
                                     "forceRegenerate": false,
-                                    "seller": {
+                                    "Seller": {
                                         "country": "DE",
                                         "city": "Berlin",
                                         "zipCode": "10115",
@@ -10166,7 +10166,7 @@
                                         "companyName": "Alice GmbH",
                                         "vatNumber": "DE123456789"
                                     },
-                                    "buyer": {
+                                    "Buyer": {
                                         "country": "DE",
                                         "city": "Berlin",
                                         "zipCode": "10115",
@@ -16217,10 +16217,10 @@
                                                 "totalTransactions": {
                                                     "type": "number"
                                                 },
-                                                "totalSpend": {
+                                                "TotalSpend": {
                                                     "type": "object",
                                                     "properties": {
-                                                        "units": {
+                                                        "Units": {
                                                             "type": "array",
                                                             "items": {
                                                                 "type": "object",
@@ -16244,14 +16244,14 @@
                                                         }
                                                     },
                                                     "required": [
-                                                        "units",
+                                                        "Units",
                                                         "blockchainFees"
                                                     ]
                                                 },
-                                                "totalRefunded": {
+                                                "TotalRefunded": {
                                                     "type": "object",
                                                     "properties": {
-                                                        "units": {
+                                                        "Units": {
                                                             "type": "array",
                                                             "items": {
                                                                 "type": "object",
@@ -16275,14 +16275,14 @@
                                                         }
                                                     },
                                                     "required": [
-                                                        "units",
+                                                        "Units",
                                                         "blockchainFees"
                                                     ]
                                                 },
-                                                "totalPending": {
+                                                "TotalPending": {
                                                     "type": "object",
                                                     "properties": {
-                                                        "units": {
+                                                        "Units": {
                                                             "type": "array",
                                                             "items": {
                                                                 "type": "object",
@@ -16306,11 +16306,11 @@
                                                         }
                                                     },
                                                     "required": [
-                                                        "units",
+                                                        "Units",
                                                         "blockchainFees"
                                                     ]
                                                 },
-                                                "dailySpend": {
+                                                "DailySpend": {
                                                     "type": "array",
                                                     "items": {
                                                         "type": "object",
@@ -16327,7 +16327,7 @@
                                                                 "type": "number",
                                                                 "description": "The year"
                                                             },
-                                                            "units": {
+                                                            "Units": {
                                                                 "type": "array",
                                                                 "items": {
                                                                     "type": "object",
@@ -16354,12 +16354,12 @@
                                                             "day",
                                                             "month",
                                                             "year",
-                                                            "units",
+                                                            "Units",
                                                             "blockchainFees"
                                                         ]
                                                     }
                                                 },
-                                                "dailyRefunded": {
+                                                "DailyRefunded": {
                                                     "type": "array",
                                                     "items": {
                                                         "type": "object",
@@ -16376,7 +16376,7 @@
                                                                 "type": "number",
                                                                 "description": "The year"
                                                             },
-                                                            "units": {
+                                                            "Units": {
                                                                 "type": "array",
                                                                 "items": {
                                                                     "type": "object",
@@ -16403,12 +16403,12 @@
                                                             "day",
                                                             "month",
                                                             "year",
-                                                            "units",
+                                                            "Units",
                                                             "blockchainFees"
                                                         ]
                                                     }
                                                 },
-                                                "dailyPending": {
+                                                "DailyPending": {
                                                     "type": "array",
                                                     "items": {
                                                         "type": "object",
@@ -16425,7 +16425,7 @@
                                                                 "type": "number",
                                                                 "description": "The year"
                                                             },
-                                                            "units": {
+                                                            "Units": {
                                                                 "type": "array",
                                                                 "items": {
                                                                     "type": "object",
@@ -16452,12 +16452,12 @@
                                                             "day",
                                                             "month",
                                                             "year",
-                                                            "units",
+                                                            "Units",
                                                             "blockchainFees"
                                                         ]
                                                     }
                                                 },
-                                                "monthlySpend": {
+                                                "MonthlySpend": {
                                                     "type": "array",
                                                     "items": {
                                                         "type": "object",
@@ -16470,7 +16470,7 @@
                                                                 "type": "number",
                                                                 "description": "The year"
                                                             },
-                                                            "units": {
+                                                            "Units": {
                                                                 "type": "array",
                                                                 "items": {
                                                                     "type": "object",
@@ -16496,12 +16496,12 @@
                                                         "required": [
                                                             "month",
                                                             "year",
-                                                            "units",
+                                                            "Units",
                                                             "blockchainFees"
                                                         ]
                                                     }
                                                 },
-                                                "monthlyRefunded": {
+                                                "MonthlyRefunded": {
                                                     "type": "array",
                                                     "items": {
                                                         "type": "object",
@@ -16514,7 +16514,7 @@
                                                                 "type": "number",
                                                                 "description": "The year"
                                                             },
-                                                            "units": {
+                                                            "Units": {
                                                                 "type": "array",
                                                                 "items": {
                                                                     "type": "object",
@@ -16540,12 +16540,12 @@
                                                         "required": [
                                                             "month",
                                                             "year",
-                                                            "units",
+                                                            "Units",
                                                             "blockchainFees"
                                                         ]
                                                     }
                                                 },
-                                                "monthlyPending": {
+                                                "MonthlyPending": {
                                                     "type": "array",
                                                     "items": {
                                                         "type": "object",
@@ -16558,7 +16558,7 @@
                                                                 "type": "number",
                                                                 "description": "The year"
                                                             },
-                                                            "units": {
+                                                            "Units": {
                                                                 "type": "array",
                                                                 "items": {
                                                                     "type": "object",
@@ -16584,7 +16584,7 @@
                                                         "required": [
                                                             "month",
                                                             "year",
-                                                            "units",
+                                                            "Units",
                                                             "blockchainFees"
                                                         ]
                                                     }
@@ -16595,15 +16595,15 @@
                                                 "periodStart",
                                                 "periodEnd",
                                                 "totalTransactions",
-                                                "totalSpend",
-                                                "totalRefunded",
-                                                "totalPending",
-                                                "dailySpend",
-                                                "dailyRefunded",
-                                                "dailyPending",
-                                                "monthlySpend",
-                                                "monthlyRefunded",
-                                                "monthlyPending"
+                                                "TotalSpend",
+                                                "TotalRefunded",
+                                                "TotalPending",
+                                                "DailySpend",
+                                                "DailyRefunded",
+                                                "DailyPending",
+                                                "MonthlySpend",
+                                                "MonthlyRefunded",
+                                                "MonthlyPending"
                                             ]
                                         }
                                     },
@@ -16618,8 +16618,8 @@
                                             "periodStart": "2024-01-01T00:00:00.000Z",
                                             "periodEnd": "2024-01-31T23:59:59.000Z",
                                             "totalTransactions": 25,
-                                            "totalSpend": {
-                                                "units": [
+                                            "TotalSpend": {
+                                                "Units": [
                                                     {
                                                         "unit": "",
                                                         "amount": 47500000
@@ -16627,8 +16627,8 @@
                                                 ],
                                                 "blockchainFees": 2500000
                                             },
-                                            "totalRefunded": {
-                                                "units": [
+                                            "TotalRefunded": {
+                                                "Units": [
                                                     {
                                                         "unit": "",
                                                         "amount": 2500000
@@ -16636,16 +16636,16 @@
                                                 ],
                                                 "blockchainFees": 100000
                                             },
-                                            "totalPending": {
-                                                "units": [],
+                                            "TotalPending": {
+                                                "Units": [],
                                                 "blockchainFees": 0
                                             },
-                                            "dailySpend": [
+                                            "DailySpend": [
                                                 {
                                                     "day": 15,
                                                     "month": 9,
                                                     "year": 2024,
-                                                    "units": [
+                                                    "Units": [
                                                         {
                                                             "unit": "",
                                                             "amount": 2100000
@@ -16654,12 +16654,12 @@
                                                     "blockchainFees": 100000
                                                 }
                                             ],
-                                            "dailyRefunded": [
+                                            "DailyRefunded": [
                                                 {
                                                     "day": 15,
                                                     "month": 9,
                                                     "year": 2024,
-                                                    "units": [
+                                                    "Units": [
                                                         {
                                                             "unit": "",
                                                             "amount": 0
@@ -16668,12 +16668,12 @@
                                                     "blockchainFees": 0
                                                 }
                                             ],
-                                            "dailyPending": [
+                                            "DailyPending": [
                                                 {
                                                     "day": 15,
                                                     "month": 9,
                                                     "year": 2024,
-                                                    "units": [
+                                                    "Units": [
                                                         {
                                                             "unit": "",
                                                             "amount": 0
@@ -16682,11 +16682,11 @@
                                                     "blockchainFees": 0
                                                 }
                                             ],
-                                            "monthlySpend": [
+                                            "MonthlySpend": [
                                                 {
                                                     "month": 9,
                                                     "year": 2024,
-                                                    "units": [
+                                                    "Units": [
                                                         {
                                                             "unit": "",
                                                             "amount": 2100000
@@ -16695,19 +16695,19 @@
                                                     "blockchainFees": 100000
                                                 }
                                             ],
-                                            "monthlyRefunded": [
+                                            "MonthlyRefunded": [
                                                 {
                                                     "month": 9,
                                                     "year": 2024,
-                                                    "units": [],
+                                                    "Units": [],
                                                     "blockchainFees": 0
                                                 }
                                             ],
-                                            "monthlyPending": [
+                                            "MonthlyPending": [
                                                 {
                                                     "month": 9,
                                                     "year": 2024,
-                                                    "units": [],
+                                                    "Units": [],
                                                     "blockchainFees": 0
                                                 }
                                             ]
@@ -16855,10 +16855,10 @@
                                                 "totalTransactions": {
                                                     "type": "number"
                                                 },
-                                                "totalIncome": {
+                                                "TotalIncome": {
                                                     "type": "object",
                                                     "properties": {
-                                                        "units": {
+                                                        "Units": {
                                                             "type": "array",
                                                             "items": {
                                                                 "type": "object",
@@ -16882,14 +16882,14 @@
                                                         }
                                                     },
                                                     "required": [
-                                                        "units",
+                                                        "Units",
                                                         "blockchainFees"
                                                     ]
                                                 },
-                                                "totalRefunded": {
+                                                "TotalRefunded": {
                                                     "type": "object",
                                                     "properties": {
-                                                        "units": {
+                                                        "Units": {
                                                             "type": "array",
                                                             "items": {
                                                                 "type": "object",
@@ -16913,14 +16913,14 @@
                                                         }
                                                     },
                                                     "required": [
-                                                        "units",
+                                                        "Units",
                                                         "blockchainFees"
                                                     ]
                                                 },
-                                                "totalPending": {
+                                                "TotalPending": {
                                                     "type": "object",
                                                     "properties": {
-                                                        "units": {
+                                                        "Units": {
                                                             "type": "array",
                                                             "items": {
                                                                 "type": "object",
@@ -16944,11 +16944,11 @@
                                                         }
                                                     },
                                                     "required": [
-                                                        "units",
+                                                        "Units",
                                                         "blockchainFees"
                                                     ]
                                                 },
-                                                "dailyIncome": {
+                                                "DailyIncome": {
                                                     "type": "array",
                                                     "items": {
                                                         "type": "object",
@@ -16965,7 +16965,7 @@
                                                                 "type": "number",
                                                                 "description": "The year"
                                                             },
-                                                            "units": {
+                                                            "Units": {
                                                                 "type": "array",
                                                                 "items": {
                                                                     "type": "object",
@@ -16992,12 +16992,12 @@
                                                             "day",
                                                             "month",
                                                             "year",
-                                                            "units",
+                                                            "Units",
                                                             "blockchainFees"
                                                         ]
                                                     }
                                                 },
-                                                "dailyRefunded": {
+                                                "DailyRefunded": {
                                                     "type": "array",
                                                     "items": {
                                                         "type": "object",
@@ -17014,7 +17014,7 @@
                                                                 "type": "number",
                                                                 "description": "The year"
                                                             },
-                                                            "units": {
+                                                            "Units": {
                                                                 "type": "array",
                                                                 "items": {
                                                                     "type": "object",
@@ -17041,12 +17041,12 @@
                                                             "day",
                                                             "month",
                                                             "year",
-                                                            "units",
+                                                            "Units",
                                                             "blockchainFees"
                                                         ]
                                                     }
                                                 },
-                                                "dailyPending": {
+                                                "DailyPending": {
                                                     "type": "array",
                                                     "items": {
                                                         "type": "object",
@@ -17063,7 +17063,7 @@
                                                                 "type": "number",
                                                                 "description": "The year"
                                                             },
-                                                            "units": {
+                                                            "Units": {
                                                                 "type": "array",
                                                                 "items": {
                                                                     "type": "object",
@@ -17090,12 +17090,12 @@
                                                             "day",
                                                             "month",
                                                             "year",
-                                                            "units",
+                                                            "Units",
                                                             "blockchainFees"
                                                         ]
                                                     }
                                                 },
-                                                "monthlyIncome": {
+                                                "MonthlyIncome": {
                                                     "type": "array",
                                                     "items": {
                                                         "type": "object",
@@ -17108,7 +17108,7 @@
                                                                 "type": "number",
                                                                 "description": "The year"
                                                             },
-                                                            "units": {
+                                                            "Units": {
                                                                 "type": "array",
                                                                 "items": {
                                                                     "type": "object",
@@ -17134,12 +17134,12 @@
                                                         "required": [
                                                             "month",
                                                             "year",
-                                                            "units",
+                                                            "Units",
                                                             "blockchainFees"
                                                         ]
                                                     }
                                                 },
-                                                "monthlyRefunded": {
+                                                "MonthlyRefunded": {
                                                     "type": "array",
                                                     "items": {
                                                         "type": "object",
@@ -17152,7 +17152,7 @@
                                                                 "type": "number",
                                                                 "description": "The year"
                                                             },
-                                                            "units": {
+                                                            "Units": {
                                                                 "type": "array",
                                                                 "items": {
                                                                     "type": "object",
@@ -17178,12 +17178,12 @@
                                                         "required": [
                                                             "month",
                                                             "year",
-                                                            "units",
+                                                            "Units",
                                                             "blockchainFees"
                                                         ]
                                                     }
                                                 },
-                                                "monthlyPending": {
+                                                "MonthlyPending": {
                                                     "type": "array",
                                                     "items": {
                                                         "type": "object",
@@ -17196,7 +17196,7 @@
                                                                 "type": "number",
                                                                 "description": "The year"
                                                             },
-                                                            "units": {
+                                                            "Units": {
                                                                 "type": "array",
                                                                 "items": {
                                                                     "type": "object",
@@ -17222,7 +17222,7 @@
                                                         "required": [
                                                             "month",
                                                             "year",
-                                                            "units",
+                                                            "Units",
                                                             "blockchainFees"
                                                         ]
                                                     }
@@ -17233,15 +17233,15 @@
                                                 "periodStart",
                                                 "periodEnd",
                                                 "totalTransactions",
-                                                "totalIncome",
-                                                "totalRefunded",
-                                                "totalPending",
-                                                "dailyIncome",
-                                                "dailyRefunded",
-                                                "dailyPending",
-                                                "monthlyIncome",
-                                                "monthlyRefunded",
-                                                "monthlyPending"
+                                                "TotalIncome",
+                                                "TotalRefunded",
+                                                "TotalPending",
+                                                "DailyIncome",
+                                                "DailyRefunded",
+                                                "DailyPending",
+                                                "MonthlyIncome",
+                                                "MonthlyRefunded",
+                                                "MonthlyPending"
                                             ]
                                         }
                                     },
@@ -17256,8 +17256,8 @@
                                             "periodStart": "2024-01-01T00:00:00.000Z",
                                             "periodEnd": "2024-01-31T23:59:59.000Z",
                                             "totalTransactions": 25,
-                                            "totalIncome": {
-                                                "units": [
+                                            "TotalIncome": {
+                                                "Units": [
                                                     {
                                                         "unit": "",
                                                         "amount": 45000000
@@ -17265,8 +17265,8 @@
                                                 ],
                                                 "blockchainFees": 2500000
                                             },
-                                            "totalRefunded": {
-                                                "units": [
+                                            "TotalRefunded": {
+                                                "Units": [
                                                     {
                                                         "unit": "",
                                                         "amount": 5000000
@@ -17274,8 +17274,8 @@
                                                 ],
                                                 "blockchainFees": 400000
                                             },
-                                            "totalPending": {
-                                                "units": [
+                                            "TotalPending": {
+                                                "Units": [
                                                     {
                                                         "unit": "",
                                                         "amount": 2000000
@@ -17283,12 +17283,12 @@
                                                 ],
                                                 "blockchainFees": 100000
                                             },
-                                            "dailyIncome": [
+                                            "DailyIncome": [
                                                 {
                                                     "day": 10,
                                                     "month": 1,
                                                     "year": 2024,
-                                                    "units": [
+                                                    "Units": [
                                                         {
                                                             "unit": "",
                                                             "amount": 2000000
@@ -17297,12 +17297,12 @@
                                                     "blockchainFees": 100000
                                                 }
                                             ],
-                                            "dailyRefunded": [
+                                            "DailyRefunded": [
                                                 {
                                                     "day": 12,
                                                     "month": 1,
                                                     "year": 2024,
-                                                    "units": [
+                                                    "Units": [
                                                         {
                                                             "unit": "",
                                                             "amount": 500000
@@ -17311,12 +17311,12 @@
                                                     "blockchainFees": 20000
                                                 }
                                             ],
-                                            "dailyPending": [
+                                            "DailyPending": [
                                                 {
                                                     "day": 15,
                                                     "month": 1,
                                                     "year": 2024,
-                                                    "units": [
+                                                    "Units": [
                                                         {
                                                             "unit": "",
                                                             "amount": 500000
@@ -17325,11 +17325,11 @@
                                                     "blockchainFees": 0
                                                 }
                                             ],
-                                            "monthlyIncome": [
+                                            "MonthlyIncome": [
                                                 {
                                                     "month": 1,
                                                     "year": 2024,
-                                                    "units": [
+                                                    "Units": [
                                                         {
                                                             "unit": "",
                                                             "amount": 45000000
@@ -17338,11 +17338,11 @@
                                                     "blockchainFees": 2500000
                                                 }
                                             ],
-                                            "monthlyRefunded": [
+                                            "MonthlyRefunded": [
                                                 {
                                                     "month": 1,
                                                     "year": 2024,
-                                                    "units": [
+                                                    "Units": [
                                                         {
                                                             "unit": "",
                                                             "amount": 5000000
@@ -17351,11 +17351,11 @@
                                                     "blockchainFees": 400000
                                                 }
                                             ],
-                                            "monthlyPending": [
+                                            "MonthlyPending": [
                                                 {
                                                     "month": 1,
                                                     "year": 2024,
-                                                    "units": [
+                                                    "Units": [
                                                         {
                                                             "unit": "",
                                                             "amount": 2000000
@@ -17447,7 +17447,7 @@
                                         "data": {
                                             "type": "object",
                                             "properties": {
-                                                "webhooks": {
+                                                "Webhooks": {
                                                     "type": "array",
                                                     "items": {
                                                         "type": "object",
@@ -17458,7 +17458,7 @@
                                                             "url": {
                                                                 "type": "string"
                                                             },
-                                                            "events": {
+                                                            "Events": {
                                                                 "type": "array",
                                                                 "items": {
                                                                     "type": "string",
@@ -17502,7 +17502,7 @@
                                                                 "nullable": true,
                                                                 "format": "date-time"
                                                             },
-                                                            "createdBy": {
+                                                            "CreatedBy": {
                                                                 "type": "object",
                                                                 "nullable": true,
                                                                 "properties": {
@@ -17522,7 +17522,7 @@
                                                         "required": [
                                                             "id",
                                                             "url",
-                                                            "events",
+                                                            "Events",
                                                             "name",
                                                             "isActive",
                                                             "createdAt",
@@ -17531,13 +17531,13 @@
                                                             "failureCount",
                                                             "lastSuccessAt",
                                                             "disabledAt",
-                                                            "createdBy"
+                                                            "CreatedBy"
                                                         ]
                                                     }
                                                 }
                                             },
                                             "required": [
-                                                "webhooks"
+                                                "Webhooks"
                                             ]
                                         }
                                     },
@@ -17548,12 +17548,12 @@
                                     "example": {
                                         "status": "Success",
                                         "data": {
-                                            "webhooks": [
+                                            "Webhooks": [
                                                 {
                                                     "id": "webhook_endpoint_id",
                                                     "url": "https://your-server.com/webhook",
                                                     "name": "My Webhook",
-                                                    "events": [
+                                                    "Events": [
                                                         "PURCHASE_ON_CHAIN_STATUS_CHANGED",
                                                         "PAYMENT_ON_ERROR"
                                                     ],
@@ -17564,7 +17564,7 @@
                                                     "failureCount": 0,
                                                     "lastSuccessAt": "1970-01-20T20:00:36.260Z",
                                                     "disabledAt": null,
-                                                    "createdBy": {
+                                                    "CreatedBy": {
                                                         "apiKeyId": "api_key_id",
                                                         "apiKeyToken": "masked_token"
                                                     }
@@ -17614,7 +17614,7 @@
                                         "maxLength": 200,
                                         "description": "Authentication token for webhook requests"
                                     },
-                                    "events": {
+                                    "Events": {
                                         "type": "array",
                                         "items": {
                                             "type": "string",
@@ -17643,12 +17643,12 @@
                                 "required": [
                                     "url",
                                     "authToken",
-                                    "events"
+                                    "Events"
                                 ],
                                 "example": {
                                     "url": "https://your-server.com/webhook",
                                     "authToken": "your-webhook-secret-token",
-                                    "events": [
+                                    "Events": [
                                         "PURCHASE_ON_CHAIN_STATUS_CHANGED",
                                         "PAYMENT_ON_ERROR"
                                     ],
@@ -17679,7 +17679,7 @@
                                                 "url": {
                                                     "type": "string"
                                                 },
-                                                "events": {
+                                                "Events": {
                                                     "type": "array",
                                                     "items": {
                                                         "type": "string",
@@ -17710,7 +17710,7 @@
                                             "required": [
                                                 "id",
                                                 "url",
-                                                "events",
+                                                "Events",
                                                 "name",
                                                 "isActive",
                                                 "createdAt",
@@ -17728,7 +17728,7 @@
                                             "id": "webhook_endpoint_id",
                                             "url": "https://your-server.com/webhook",
                                             "name": "My Payment Webhook",
-                                            "events": [
+                                            "Events": [
                                                 "PURCHASE_ON_CHAIN_STATUS_CHANGED",
                                                 "PAYMENT_ON_ERROR"
                                             ],
@@ -17897,19 +17897,19 @@
                                     "example": {
                                         "status": "Success",
                                         "data": {
-                                            "monitoringStatus": {
+                                            "MonitoringStatus": {
                                                 "isMonitoring": true,
-                                                "stats": {
+                                                "Stats": {
                                                     "trackedEntities": 42,
-                                                    "purchaseCursor": {
+                                                    "PurchaseCursor": {
                                                         "timestamp": "2024-01-01T00:00:00.000Z",
                                                         "lastId": "cuid_v2_auto_generated"
                                                     },
-                                                    "paymentCursor": {
+                                                    "PaymentCursor": {
                                                         "timestamp": "2024-01-01T00:00:00.000Z",
                                                         "lastId": "cuid_v2_auto_generated"
                                                     },
-                                                    "memoryUsage": {
+                                                    "MemoryUsage": {
                                                         "heapUsed": "50MB",
                                                         "heapTotal": "100MB",
                                                         "external": "10MB"

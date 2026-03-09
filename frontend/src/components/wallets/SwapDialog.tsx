@@ -632,8 +632,8 @@ export function SwapDialog({
             body: {
               walletVkey,
               amount: fromAmount,
-              fromToken,
-              toToken,
+              FromToken: fromToken,
+              ToToken: toToken,
               poolId,
               slippage: 0.03,
             },

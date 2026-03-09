@@ -351,7 +351,7 @@ export async function generateMonthlyInvoice(
 	if (missingConversions.size > 0 && !CONFIG.COINGECKO_API_KEY) {
 		throw createHttpError(
 			400,
-			'Missing currency conversion mapping. Provide currencyConversion values or set COINGECKO_API_KEY.',
+			'Missing currency conversion mapping. Provide CurrencyConversion values or set COINGECKO_API_KEY.',
 		);
 	}
 
@@ -434,7 +434,7 @@ export async function generateMonthlyInvoice(
 	if (missingConversions.size > 0) {
 		throw createHttpError(
 			400,
-			`Missing conversion for units: ${Array.from(missingConversions).join(', ')}. Provide currencyConversion mapping for each unit or configure COINGECKO_API_KEY.`,
+			`Missing conversion for units: ${Array.from(missingConversions).join(', ')}. Provide CurrencyConversion mapping for each unit or configure COINGECKO_API_KEY.`,
 		);
 	}
 

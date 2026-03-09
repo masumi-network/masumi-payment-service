@@ -24,7 +24,7 @@ export const APIKeySchema = {
             type: 'boolean',
             description: 'Whether the API key has usage limits'
         },
-        networkLimit: {
+        NetworkLimit: {
             type: 'array',
             items: {
                 type: 'string',
@@ -90,7 +90,7 @@ export const APIKeySchema = {
         'token',
         'permission',
         'usageLimited',
-        'networkLimit',
+        'NetworkLimit',
         'RemainingUsageCredits',
         'status',
         'walletScopeEnabled',
@@ -2769,14 +2769,14 @@ export const RpcProviderKeySchema = {
 export const MonitoringStatusSchema = {
     type: 'object',
     properties: {
-        monitoringStatus: {
+        MonitoringStatus: {
             type: 'object',
             properties: {
                 isMonitoring: {
                     type: 'boolean',
                     description: 'Whether the blockchain state monitoring service is currently running'
                 },
-                stats: {
+                Stats: {
                     type: 'object',
                     nullable: true,
                     properties: {
@@ -2784,7 +2784,7 @@ export const MonitoringStatusSchema = {
                             type: 'number',
                             description: 'Number of entities being tracked by the monitoring service'
                         },
-                        purchaseCursor: {
+                        PurchaseCursor: {
                             type: 'object',
                             properties: {
                                 timestamp: {
@@ -2803,7 +2803,7 @@ export const MonitoringStatusSchema = {
                             ],
                             description: 'Cursor position for purchase diff tracking'
                         },
-                        paymentCursor: {
+                        PaymentCursor: {
                             type: 'object',
                             properties: {
                                 timestamp: {
@@ -2822,7 +2822,7 @@ export const MonitoringStatusSchema = {
                             ],
                             description: 'Cursor position for payment diff tracking'
                         },
-                        memoryUsage: {
+                        MemoryUsage: {
                             type: 'object',
                             properties: {
                                 heapUsed: {
@@ -2848,22 +2848,22 @@ export const MonitoringStatusSchema = {
                     },
                     required: [
                         'trackedEntities',
-                        'purchaseCursor',
-                        'paymentCursor',
-                        'memoryUsage'
+                        'PurchaseCursor',
+                        'PaymentCursor',
+                        'MemoryUsage'
                     ],
                     description: 'Monitoring statistics. Null if monitoring is not active'
                 }
             },
             required: [
                 'isMonitoring',
-                'stats'
+                'Stats'
             ],
             description: 'Current status of the blockchain state monitoring service'
         }
     },
     required: [
-        'monitoringStatus'
+        'MonitoringStatus'
     ]
 } as const;
 

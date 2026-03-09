@@ -24,7 +24,7 @@ export type ApiKey = {
     /**
      * List of Cardano networks this API key is allowed to access
      */
-    networkLimit: Array<'Preprod' | 'Mainnet'>;
+    NetworkLimit: Array<'Preprod' | 'Mainnet'>;
     /**
      * Remaining usage credits for this API key
      */
@@ -1532,7 +1532,7 @@ export type MonitoringStatus = {
     /**
      * Current status of the blockchain state monitoring service
      */
-    monitoringStatus: {
+    MonitoringStatus: {
         /**
          * Whether the blockchain state monitoring service is currently running
          */
@@ -1540,7 +1540,7 @@ export type MonitoringStatus = {
         /**
          * Monitoring statistics. Null if monitoring is not active
          */
-        stats: {
+        Stats: {
             /**
              * Number of entities being tracked by the monitoring service
              */
@@ -1548,7 +1548,7 @@ export type MonitoringStatus = {
             /**
              * Cursor position for purchase diff tracking
              */
-            purchaseCursor: {
+            PurchaseCursor: {
                 /**
                  * Last processed purchase timestamp
                  */
@@ -1561,7 +1561,7 @@ export type MonitoringStatus = {
             /**
              * Cursor position for payment diff tracking
              */
-            paymentCursor: {
+            PaymentCursor: {
                 /**
                  * Last processed payment timestamp
                  */
@@ -1574,7 +1574,7 @@ export type MonitoringStatus = {
             /**
              * Memory usage statistics for the monitoring service
              */
-            memoryUsage: {
+            MemoryUsage: {
                 /**
                  * Heap memory currently used by the monitoring service
                  */
@@ -1952,7 +1952,7 @@ export type PatchApiKeyData = {
         /**
          * The networks the API key is allowed to use
          */
-        networkLimit?: Array<'Preprod' | 'Mainnet'>;
+        NetworkLimit?: Array<'Preprod' | 'Mainnet'>;
         /**
          * Whether to enable wallet scope filtering for this API key
          */
@@ -2016,7 +2016,7 @@ export type PostApiKeyData = {
         /**
          * The networks the API key is allowed to use
          */
-        networkLimit?: Array<'Preprod' | 'Mainnet'>;
+        NetworkLimit?: Array<'Preprod' | 'Mainnet'>;
         /**
          * The permission of the API key
          */
@@ -2078,7 +2078,7 @@ export type PostSwapData = {
         /**
          * Source token information
          */
-        fromToken: {
+        FromToken: {
             /**
              * Policy ID of the source token. Use empty string "" for ADA (native token)
              */
@@ -2095,7 +2095,7 @@ export type PostSwapData = {
         /**
          * Destination token information
          */
-        toToken: {
+        ToToken: {
             /**
              * Policy ID of the destination token. Use empty string "" for ADA (native token)
              */
@@ -2252,7 +2252,7 @@ export type GetSwapTransactionsResponses = {
         /**
          * List of swap transactions
          */
-        swapTransactions: Array<{
+        SwapTransactions: Array<{
             /**
              * Swap transaction ID
              */
@@ -4333,7 +4333,7 @@ export type PostSignatureSignCreateInvoiceMonthlyData = {
          * The action to perform for monthly invoices
          */
         action: 'RetrieveMonthlyInvoices';
-        buyer: {
+        Buyer: {
             /**
              * The country of the invoice
              */
@@ -4480,7 +4480,7 @@ export type GetInvoiceMonthlyResponses = {
                 netTotal: string;
                 vatTotal: string;
                 grossTotal: string;
-                coveredPaymentRequestIds: Array<string>;
+                CoveredPaymentRequestIds: Array<string>;
                 buyerWalletVkey: string | null;
                 sellerWalletVkey: string | null;
                 /**
@@ -4519,10 +4519,10 @@ export type PostInvoiceMonthlyData = {
         /**
          * Currency conversion settings by unit for this invoice
          */
-        currencyConversion?: {
+        CurrencyConversion?: {
             [key: string]: number;
         };
-        invoice?: {
+        Invoice?: {
             /**
              * The prefix of the item name
              */
@@ -4596,7 +4596,7 @@ export type PostInvoiceMonthlyData = {
          * Force cancel existing invoice and generate a new revision, even if no data changes detected
          */
         forceRegenerate?: boolean;
-        seller: {
+        Seller: {
             /**
              * The country of the invoice
              */
@@ -4638,7 +4638,7 @@ export type PostInvoiceMonthlyData = {
              */
             vatNumber: string | null;
         };
-        buyer: {
+        Buyer: {
             /**
              * The country of the invoice
              */
@@ -4775,10 +4775,10 @@ export type PostInvoiceMonthlyInternalData = {
         /**
          * Currency conversion settings by unit for this invoice
          */
-        currencyConversion?: {
+        CurrencyConversion?: {
             [key: string]: number;
         };
-        invoice?: {
+        Invoice?: {
             /**
              * The prefix of the item name
              */
@@ -4852,7 +4852,7 @@ export type PostInvoiceMonthlyInternalData = {
          * Force cancel existing invoice and generate a new revision, even if no data changes detected
          */
         forceRegenerate?: boolean;
-        seller: {
+        Seller: {
             /**
              * The country of the invoice
              */
@@ -4894,7 +4894,7 @@ export type PostInvoiceMonthlyInternalData = {
              */
             vatNumber: string | null;
         };
-        buyer: {
+        Buyer: {
             /**
              * The country of the invoice
              */
@@ -7254,28 +7254,28 @@ export type PostPurchaseSpendingResponses = {
             periodStart: Date;
             periodEnd: Date;
             totalTransactions: number;
-            totalSpend: {
-                units: Array<{
+            TotalSpend: {
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
                 blockchainFees: number;
             };
-            totalRefunded: {
-                units: Array<{
+            TotalRefunded: {
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
                 blockchainFees: number;
             };
-            totalPending: {
-                units: Array<{
+            TotalPending: {
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
                 blockchainFees: number;
             };
-            dailySpend: Array<{
+            DailySpend: Array<{
                 /**
                  * The day of the month
                  */
@@ -7288,13 +7288,13 @@ export type PostPurchaseSpendingResponses = {
                  * The year
                  */
                 year: number;
-                units: Array<{
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
                 blockchainFees: number;
             }>;
-            dailyRefunded: Array<{
+            DailyRefunded: Array<{
                 /**
                  * The day of the month
                  */
@@ -7307,13 +7307,13 @@ export type PostPurchaseSpendingResponses = {
                  * The year
                  */
                 year: number;
-                units: Array<{
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
                 blockchainFees: number;
             }>;
-            dailyPending: Array<{
+            DailyPending: Array<{
                 /**
                  * The day of the month
                  */
@@ -7326,13 +7326,13 @@ export type PostPurchaseSpendingResponses = {
                  * The year
                  */
                 year: number;
-                units: Array<{
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
                 blockchainFees: number;
             }>;
-            monthlySpend: Array<{
+            MonthlySpend: Array<{
                 /**
                  * The month
                  */
@@ -7341,13 +7341,13 @@ export type PostPurchaseSpendingResponses = {
                  * The year
                  */
                 year: number;
-                units: Array<{
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
                 blockchainFees: number;
             }>;
-            monthlyRefunded: Array<{
+            MonthlyRefunded: Array<{
                 /**
                  * The month
                  */
@@ -7356,13 +7356,13 @@ export type PostPurchaseSpendingResponses = {
                  * The year
                  */
                 year: number;
-                units: Array<{
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
                 blockchainFees: number;
             }>;
-            monthlyPending: Array<{
+            MonthlyPending: Array<{
                 /**
                  * The month
                  */
@@ -7371,7 +7371,7 @@ export type PostPurchaseSpendingResponses = {
                  * The year
                  */
                 year: number;
-                units: Array<{
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
@@ -7441,28 +7441,28 @@ export type PostPaymentIncomeResponses = {
             periodStart: Date;
             periodEnd: Date;
             totalTransactions: number;
-            totalIncome: {
-                units: Array<{
+            TotalIncome: {
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
                 blockchainFees: number;
             };
-            totalRefunded: {
-                units: Array<{
+            TotalRefunded: {
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
                 blockchainFees: number;
             };
-            totalPending: {
-                units: Array<{
+            TotalPending: {
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
                 blockchainFees: number;
             };
-            dailyIncome: Array<{
+            DailyIncome: Array<{
                 /**
                  * The day of the month
                  */
@@ -7475,13 +7475,13 @@ export type PostPaymentIncomeResponses = {
                  * The year
                  */
                 year: number;
-                units: Array<{
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
                 blockchainFees: number;
             }>;
-            dailyRefunded: Array<{
+            DailyRefunded: Array<{
                 /**
                  * The day of the month
                  */
@@ -7494,13 +7494,13 @@ export type PostPaymentIncomeResponses = {
                  * The year
                  */
                 year: number;
-                units: Array<{
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
                 blockchainFees: number;
             }>;
-            dailyPending: Array<{
+            DailyPending: Array<{
                 /**
                  * The day of the month
                  */
@@ -7513,13 +7513,13 @@ export type PostPaymentIncomeResponses = {
                  * The year
                  */
                 year: number;
-                units: Array<{
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
                 blockchainFees: number;
             }>;
-            monthlyIncome: Array<{
+            MonthlyIncome: Array<{
                 /**
                  * The month
                  */
@@ -7528,13 +7528,13 @@ export type PostPaymentIncomeResponses = {
                  * The year
                  */
                 year: number;
-                units: Array<{
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
                 blockchainFees: number;
             }>;
-            monthlyRefunded: Array<{
+            MonthlyRefunded: Array<{
                 /**
                  * The month
                  */
@@ -7543,13 +7543,13 @@ export type PostPaymentIncomeResponses = {
                  * The year
                  */
                 year: number;
-                units: Array<{
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
                 blockchainFees: number;
             }>;
-            monthlyPending: Array<{
+            MonthlyPending: Array<{
                 /**
                  * The month
                  */
@@ -7558,7 +7558,7 @@ export type PostPaymentIncomeResponses = {
                  * The year
                  */
                 year: number;
-                units: Array<{
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
@@ -7659,10 +7659,10 @@ export type GetWebhooksResponses = {
     200: {
         status: string;
         data: {
-            webhooks: Array<{
+            Webhooks: Array<{
                 id: string;
                 url: string;
-                events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR'>;
+                Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR'>;
                 name: string | null;
                 isActive: boolean;
                 createdAt: Date;
@@ -7671,7 +7671,7 @@ export type GetWebhooksResponses = {
                 failureCount: number;
                 lastSuccessAt: Date | null;
                 disabledAt: Date | null;
-                createdBy: {
+                CreatedBy: {
                     apiKeyId: string;
                     apiKeyToken: string;
                 } | null;
@@ -7698,7 +7698,7 @@ export type PostWebhooksData = {
         /**
          * Array of event types to subscribe to
          */
-        events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR'>;
+        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR'>;
         /**
          * Human-readable name for the webhook
          */
@@ -7745,7 +7745,7 @@ export type PostWebhooksResponses = {
         data: {
             id: string;
             url: string;
-            events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR'>;
+            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR'>;
             name: string | null;
             isActive: boolean;
             createdAt: Date;

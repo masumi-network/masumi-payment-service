@@ -142,7 +142,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
           body: {
             permission: data.permission,
             usageLimited: isReadOnly ? 'true' : data.usageLimited.toString(),
-            networkLimit: data.networks,
+            NetworkLimit: data.networks,
             UsageCredits: isReadOnly
               ? defaultCredits
               : data.usageLimited

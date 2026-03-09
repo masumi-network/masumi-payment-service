@@ -289,9 +289,9 @@ export const postGenerateMonthlyInvoiceEndpoint = payAuthenticatedEndpointFactor
 					buyer: input.Buyer,
 				},
 				{
-				walletAddress: input.walletAddress,
-				metricPath: '/api/v1/invoice/monthly',
-				walletScopeIds: ctx.walletScopeIds,
+					walletAddress: input.walletAddress,
+					metricPath: '/api/v1/invoice/monthly',
+					walletScopeIds: ctx.walletScopeIds,
 				},
 			);
 

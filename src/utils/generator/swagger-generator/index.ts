@@ -182,7 +182,7 @@ const apiKeyExample = {
 	token: 'masumi_payment_api_key_secret',
 	permission: Permission.Admin,
 	usageLimited: true,
-	networkLimit: [Network.Preprod],
+	NetworkLimit: [Network.Preprod],
 	RemainingUsageCredits: [
 		{
 			unit: '', // Empty string = ADA/lovelace
@@ -654,12 +654,12 @@ export function generateOpenAPI() {
 							example: {
 								walletVkey: 'wallet_verification_key_here',
 								amount: 1,
-								fromToken: {
+								FromToken: {
 									policyId: 'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad',
 									assetName: '5553444d',
 									name: 'USDM',
 								},
-								toToken: {
+								ToToken: {
 									policyId: 'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad',
 									assetName: '5553444d',
 									name: 'USDM',
@@ -764,7 +764,7 @@ export function generateOpenAPI() {
 					'application/json': {
 						schema: getSwapTransactionsSchemaOutput.openapi({
 							example: {
-								swapTransactions: [
+								SwapTransactions: [
 									{
 										id: 'clx1abc...',
 										createdAt: '2026-03-06T12:00:00.000Z',
@@ -1042,7 +1042,7 @@ export function generateOpenAPI() {
 								status: 'Success',
 								data: {
 									...apiKeyExample,
-									networkLimit: [Network.Preprod, Network.Mainnet],
+									NetworkLimit: [Network.Preprod, Network.Mainnet],
 								},
 							},
 						}),
@@ -1743,7 +1743,7 @@ export function generateOpenAPI() {
 								action: 'RetrieveMonthlyInvoices',
 								buyerWalletVkey: 'buyer_wallet_vkey',
 								month: '2025-09',
-								buyer: {
+								Buyer: {
 									country: 'DE',
 									city: 'Berlin',
 									zipCode: '10115',
@@ -1812,11 +1812,11 @@ export function generateOpenAPI() {
 								buyerWalletVkey: 'buyer_wallet_vkey',
 								month: '2025-09',
 								invoiceCurrency: 'usd',
-								currencyConversion: {
+								CurrencyConversion: {
 									'': 0.45,
 									policyIdAssetHex: 1.23,
 								},
-								invoice: {
+								Invoice: {
 									itemNamePrefix: 'Agent: ',
 									title: 'Monthly Invoice',
 									language: 'en-us',
@@ -1825,7 +1825,7 @@ export function generateOpenAPI() {
 								vatRate: 0.19,
 								reverseCharge: false,
 								forceRegenerate: false,
-								seller: {
+								Seller: {
 									country: 'DE',
 									city: 'Berlin',
 									zipCode: '10115',
@@ -1837,7 +1837,7 @@ export function generateOpenAPI() {
 									companyName: 'Alice GmbH',
 									vatNumber: 'DE123456789',
 								},
-								buyer: {
+								Buyer: {
 									country: 'DE',
 									city: 'Berlin',
 									zipCode: '10115',
@@ -1973,7 +1973,7 @@ export function generateOpenAPI() {
 												netTotal: '150.00',
 												vatTotal: '28.50',
 												grossTotal: '178.50',
-												coveredPaymentRequestIds: ['payment_id_1', 'payment_id_2'],
+												CoveredPaymentRequestIds: ['payment_id_1', 'payment_id_2'],
 												buyerWalletVkey: 'buyer_wallet_vkey',
 												invoicePdf: 'BASE64_PDF_STRING',
 												cancellationInvoicePdf: null,
@@ -2006,11 +2006,11 @@ export function generateOpenAPI() {
 								buyerWalletVkey: 'buyer_wallet_vkey',
 								month: '2025-09',
 								invoiceCurrency: 'usd',
-								currencyConversion: {
+								CurrencyConversion: {
 									'': 0.45,
 									policyIdAssetHex: 1.23,
 								},
-								invoice: {
+								Invoice: {
 									itemNamePrefix: 'Agent: ',
 									title: 'Monthly Invoice',
 									language: 'en-us',
@@ -2019,7 +2019,7 @@ export function generateOpenAPI() {
 								vatRate: 0.19,
 								reverseCharge: false,
 								forceRegenerate: false,
-								seller: {
+								Seller: {
 									country: 'DE',
 									city: 'Berlin',
 									zipCode: '10115',
@@ -2031,7 +2031,7 @@ export function generateOpenAPI() {
 									companyName: 'Alice GmbH',
 									vatNumber: 'DE123456789',
 								},
-								buyer: {
+								Buyer: {
 									country: 'DE',
 									city: 'Berlin',
 									zipCode: '10115',
@@ -3812,8 +3812,8 @@ export function generateOpenAPI() {
 										periodStart: new Date('2024-01-01T00:00:00.000Z'),
 										periodEnd: new Date('2024-01-31T23:59:59.000Z'),
 										totalTransactions: 25,
-										totalSpend: {
-											units: [
+										TotalSpend: {
+											Units: [
 												{
 													unit: '',
 													amount: 47500000,
@@ -3821,8 +3821,8 @@ export function generateOpenAPI() {
 											],
 											blockchainFees: 2500000,
 										},
-										totalRefunded: {
-											units: [
+										TotalRefunded: {
+											Units: [
 												{
 													unit: '',
 													amount: 2500000,
@@ -3830,16 +3830,16 @@ export function generateOpenAPI() {
 											],
 											blockchainFees: 100000,
 										},
-										totalPending: {
-											units: [],
+										TotalPending: {
+											Units: [],
 											blockchainFees: 0,
 										},
-										dailySpend: [
+										DailySpend: [
 											{
 												day: 15,
 												month: 9,
 												year: 2024,
-												units: [
+												Units: [
 													{
 														unit: '',
 														amount: 2100000,
@@ -3848,12 +3848,12 @@ export function generateOpenAPI() {
 												blockchainFees: 100000,
 											},
 										],
-										dailyRefunded: [
+										DailyRefunded: [
 											{
 												day: 15,
 												month: 9,
 												year: 2024,
-												units: [
+												Units: [
 													{
 														unit: '',
 														amount: 0,
@@ -3862,12 +3862,12 @@ export function generateOpenAPI() {
 												blockchainFees: 0,
 											},
 										],
-										dailyPending: [
+										DailyPending: [
 											{
 												day: 15,
 												month: 9,
 												year: 2024,
-												units: [
+												Units: [
 													{
 														unit: '',
 														amount: 0,
@@ -3876,11 +3876,11 @@ export function generateOpenAPI() {
 												blockchainFees: 0,
 											},
 										],
-										monthlySpend: [
+										MonthlySpend: [
 											{
 												month: 9,
 												year: 2024,
-												units: [
+												Units: [
 													{
 														unit: '',
 														amount: 2100000,
@@ -3889,19 +3889,19 @@ export function generateOpenAPI() {
 												blockchainFees: 100000,
 											},
 										],
-										monthlyRefunded: [
+										MonthlyRefunded: [
 											{
 												month: 9,
 												year: 2024,
-												units: [],
+												Units: [],
 												blockchainFees: 0,
 											},
 										],
-										monthlyPending: [
+										MonthlyPending: [
 											{
 												month: 9,
 												year: 2024,
-												units: [],
+												Units: [],
 												blockchainFees: 0,
 											},
 										],
@@ -3969,66 +3969,66 @@ export function generateOpenAPI() {
 										periodStart: new Date('2024-01-01T00:00:00.000Z'),
 										periodEnd: new Date('2024-01-31T23:59:59.000Z'),
 										totalTransactions: 25,
-										totalIncome: {
-											units: [{ unit: '', amount: 45000000 }],
+										TotalIncome: {
+											Units: [{ unit: '', amount: 45000000 }],
 											blockchainFees: 2500000,
 										},
-										totalRefunded: {
-											units: [{ unit: '', amount: 5000000 }],
+										TotalRefunded: {
+											Units: [{ unit: '', amount: 5000000 }],
 											blockchainFees: 400000,
 										},
-										totalPending: {
-											units: [{ unit: '', amount: 2000000 }],
+										TotalPending: {
+											Units: [{ unit: '', amount: 2000000 }],
 											blockchainFees: 100000,
 										},
-										dailyIncome: [
+										DailyIncome: [
 											{
 												day: 10,
 												month: 1,
 												year: 2024,
-												units: [{ unit: '', amount: 2000000 }],
+												Units: [{ unit: '', amount: 2000000 }],
 												blockchainFees: 100000,
 											},
 										],
-										dailyRefunded: [
+										DailyRefunded: [
 											{
 												day: 12,
 												month: 1,
 												year: 2024,
-												units: [{ unit: '', amount: 500000 }],
+												Units: [{ unit: '', amount: 500000 }],
 												blockchainFees: 20000,
 											},
 										],
-										dailyPending: [
+										DailyPending: [
 											{
 												day: 15,
 												month: 1,
 												year: 2024,
-												units: [{ unit: '', amount: 500000 }],
+												Units: [{ unit: '', amount: 500000 }],
 												blockchainFees: 0,
 											},
 										],
-										monthlyIncome: [
+										MonthlyIncome: [
 											{
 												month: 1,
 												year: 2024,
-												units: [{ unit: '', amount: 45000000 }],
+												Units: [{ unit: '', amount: 45000000 }],
 												blockchainFees: 2500000,
 											},
 										],
-										monthlyRefunded: [
+										MonthlyRefunded: [
 											{
 												month: 1,
 												year: 2024,
-												units: [{ unit: '', amount: 5000000 }],
+												Units: [{ unit: '', amount: 5000000 }],
 												blockchainFees: 400000,
 											},
 										],
-										monthlyPending: [
+										MonthlyPending: [
 											{
 												month: 1,
 												year: 2024,
-												units: [{ unit: '', amount: 2000000 }],
+												Units: [{ unit: '', amount: 2000000 }],
 												blockchainFees: 100000,
 											},
 										],
@@ -4077,12 +4077,12 @@ export function generateOpenAPI() {
 							example: {
 								status: 'Success',
 								data: {
-									webhooks: [
+									Webhooks: [
 										{
 											id: 'webhook_endpoint_id',
 											url: 'https://your-server.com/webhook',
 											name: 'My Webhook',
-											events: ['PURCHASE_ON_CHAIN_STATUS_CHANGED', 'PAYMENT_ON_ERROR'],
+											Events: ['PURCHASE_ON_CHAIN_STATUS_CHANGED', 'PAYMENT_ON_ERROR'],
 											isActive: true,
 											createdAt: new Date(1713636260),
 											updatedAt: new Date(1713636260),
@@ -4090,7 +4090,7 @@ export function generateOpenAPI() {
 											failureCount: 0,
 											lastSuccessAt: new Date(1713636260),
 											disabledAt: null,
-											createdBy: {
+											CreatedBy: {
 												apiKeyId: 'api_key_id',
 												apiKeyToken: 'masked_token',
 											},
@@ -4127,7 +4127,7 @@ export function generateOpenAPI() {
 							example: {
 								url: 'https://your-server.com/webhook',
 								authToken: 'your-webhook-secret-token',
-								events: ['PURCHASE_ON_CHAIN_STATUS_CHANGED', 'PAYMENT_ON_ERROR'],
+								Events: ['PURCHASE_ON_CHAIN_STATUS_CHANGED', 'PAYMENT_ON_ERROR'],
 								name: 'My Payment Webhook',
 								paymentSourceId: 'payment_source_id_optional',
 							},
@@ -4148,7 +4148,7 @@ export function generateOpenAPI() {
 									id: 'webhook_endpoint_id',
 									url: 'https://your-server.com/webhook',
 									name: 'My Payment Webhook',
-									events: ['PURCHASE_ON_CHAIN_STATUS_CHANGED', 'PAYMENT_ON_ERROR'],
+									Events: ['PURCHASE_ON_CHAIN_STATUS_CHANGED', 'PAYMENT_ON_ERROR'],
 									isActive: true,
 									createdAt: new Date(1713636260),
 									paymentSourceId: null,
@@ -4242,19 +4242,19 @@ export function generateOpenAPI() {
 		security: [{ [apiKeyAuth.name]: [] }],
 		responses: {
 			200: successResponse('Monitoring service status', monitoringStatusResponseSchema, {
-				monitoringStatus: {
+				MonitoringStatus: {
 					isMonitoring: true,
-					stats: {
+					Stats: {
 						trackedEntities: 42,
-						purchaseCursor: {
+						PurchaseCursor: {
 							timestamp: '2024-01-01T00:00:00.000Z',
 							lastId: 'cuid_v2_auto_generated',
 						},
-						paymentCursor: {
+						PaymentCursor: {
 							timestamp: '2024-01-01T00:00:00.000Z',
 							lastId: 'cuid_v2_auto_generated',
 						},
-						memoryUsage: {
+						MemoryUsage: {
 							heapUsed: '50MB',
 							heapTotal: '100MB',
 							external: '10MB',

@@ -392,7 +392,7 @@ export function WalletDetailsDialog({
           cursorId: cursor,
         },
       });
-      const txs = (result as any)?.data?.data?.swapTransactions ?? [];
+      const txs = (result as any)?.data?.data?.SwapTransactions ?? [];
       let merged: typeof txs;
       if (cursor) {
         setSwapTransactions((prev) => {

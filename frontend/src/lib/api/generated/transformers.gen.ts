@@ -392,7 +392,7 @@ export const deleteWebhooksResponseTransformer = async (data: any): Promise<Dele
 };
 
 export const getWebhooksResponseTransformer = async (data: any): Promise<GetWebhooksResponse> => {
-    data.data.webhooks = data.data.webhooks.map((item: any) => {
+    data.data.Webhooks = data.data.Webhooks.map((item: any) => {
         item.createdAt = new Date(item.createdAt);
         item.updatedAt = new Date(item.updatedAt);
         if (item.lastSuccessAt) {
