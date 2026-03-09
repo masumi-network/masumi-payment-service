@@ -50,6 +50,14 @@ The Masumi Payment Service handles financial transactions and requires secure wa
    - Encrypt sensitive data at rest
    - Secure key management
    - Regular backup procedures
+   - Inject backend secrets at runtime instead of baking `.env` files into Docker images
+   - Treat all `NEXT_PUBLIC_*` values as public client-side configuration, never as secrets
+
+4. **Container and Frontend Secrets**
+   - Use `docker run --env-file .env ...` or Compose `env_file` for backend runtime secrets
+   - Keep `.env` and `frontend/.env` out of the Docker build context
+   - Pass only explicit public build arguments to the frontend image build
+   - Never place real wallet mnemonics, admin credentials, or provider secrets in `NEXT_PUBLIC_*` variables
 
 ### Maintenance
 
