@@ -11,14 +11,14 @@ export const swapTokensSchemaInput = z.object({
 		.positive()
 		.max(1e12)
 		.describe('Amount to swap (in ADA or token units). Capped to prevent overflow/DoS.'),
-	fromToken: z
+	FromToken: z
 		.object({
 			policyId: z.string().describe('Policy ID of the source token. Use empty string "" for ADA (native token)'),
 			assetName: z.string().describe('Asset name of the source token. Use empty string "" for ADA'),
 			name: z.string().describe('Name of the source token'),
 		})
 		.describe('Source token information'),
-	toToken: z
+	ToToken: z
 		.object({
 			policyId: z.string().describe('Policy ID of the destination token. Use empty string "" for ADA (native token)'),
 			assetName: z.string().describe('Asset name of the destination token. Use empty string "" for ADA'),
@@ -85,7 +85,7 @@ export const swapTransactionSchema = z.object({
 });
 
 export const getSwapTransactionsSchemaOutput = z.object({
-	swapTransactions: z.array(swapTransactionSchema).describe('List of swap transactions'),
+	SwapTransactions: z.array(swapTransactionSchema).describe('List of swap transactions'),
 });
 
 export const getSwapEstimateSchemaInput = z.object({

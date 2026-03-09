@@ -64,66 +64,66 @@ export const postPurchaseSpendingSchemaOutput = z.object({
 	periodStart: z.date(),
 	periodEnd: z.date(),
 	totalTransactions: z.number(),
-	totalSpend: z.object({
-		units: z.array(unitAmountSchema),
+	TotalSpend: z.object({
+		Units: z.array(unitAmountSchema),
 		blockchainFees: z.number(),
 	}),
-	totalRefunded: z.object({
-		units: z.array(unitAmountSchema),
+	TotalRefunded: z.object({
+		Units: z.array(unitAmountSchema),
 		blockchainFees: z.number(),
 	}),
-	totalPending: z.object({
-		units: z.array(unitAmountSchema),
+	TotalPending: z.object({
+		Units: z.array(unitAmountSchema),
 		blockchainFees: z.number(),
 	}),
-	dailySpend: z.array(
+	DailySpend: z.array(
 		z.object({
 			day: z.number().describe('The day of the month'),
 			month: z.number().describe('The month'),
 			year: z.number().describe('The year'),
-			units: z.array(unitAmountSchema),
+			Units: z.array(unitAmountSchema),
 			blockchainFees: z.number(),
 		}),
 	),
-	dailyRefunded: z.array(
+	DailyRefunded: z.array(
 		z.object({
 			day: z.number().describe('The day of the month'),
 			month: z.number().describe('The month'),
 			year: z.number().describe('The year'),
-			units: z.array(unitAmountSchema),
+			Units: z.array(unitAmountSchema),
 			blockchainFees: z.number(),
 		}),
 	),
-	dailyPending: z.array(
+	DailyPending: z.array(
 		z.object({
 			day: z.number().describe('The day of the month'),
 			month: z.number().describe('The month'),
 			year: z.number().describe('The year'),
-			units: z.array(unitAmountSchema),
+			Units: z.array(unitAmountSchema),
 			blockchainFees: z.number(),
 		}),
 	),
-	monthlySpend: z.array(
+	MonthlySpend: z.array(
 		z.object({
 			month: z.number().describe('The month'),
 			year: z.number().describe('The year'),
-			units: z.array(unitAmountSchema),
+			Units: z.array(unitAmountSchema),
 			blockchainFees: z.number(),
 		}),
 	),
-	monthlyRefunded: z.array(
+	MonthlyRefunded: z.array(
 		z.object({
 			month: z.number().describe('The month'),
 			year: z.number().describe('The year'),
-			units: z.array(unitAmountSchema),
+			Units: z.array(unitAmountSchema),
 			blockchainFees: z.number(),
 		}),
 	),
-	monthlyPending: z.array(
+	MonthlyPending: z.array(
 		z.object({
 			month: z.number().describe('The month'),
 			year: z.number().describe('The year'),
-			units: z.array(unitAmountSchema),
+			Units: z.array(unitAmountSchema),
 			blockchainFees: z.number(),
 		}),
 	),
@@ -268,15 +268,15 @@ export const postPurchaseSpending = readAuthenticatedEndpointFactory.build({
 				periodStart,
 				periodEnd,
 				totalTransactions: allPurchasesFiltered.length,
-				totalSpend: mapTotalFundsOutput(totalSpendMap),
-				totalRefunded: mapTotalFundsOutput(totalRefundedMap),
-				totalPending: mapTotalFundsOutput(totalPendingMap),
-				dailySpend: mapDailyFundsOutput(daySpendMap),
-				dailyRefunded: mapDailyFundsOutput(dayRefundedMap),
-				dailyPending: mapDailyFundsOutput(dayPendingMap),
-				monthlySpend: mapMonthlyFundsOutput(monthlySpendMap),
-				monthlyRefunded: mapMonthlyFundsOutput(monthlyRefundedMap),
-				monthlyPending: mapMonthlyFundsOutput(monthlyPendingMap),
+				TotalSpend: mapTotalFundsOutput(totalSpendMap),
+				TotalRefunded: mapTotalFundsOutput(totalRefundedMap),
+				TotalPending: mapTotalFundsOutput(totalPendingMap),
+				DailySpend: mapDailyFundsOutput(daySpendMap),
+				DailyRefunded: mapDailyFundsOutput(dayRefundedMap),
+				DailyPending: mapDailyFundsOutput(dayPendingMap),
+				MonthlySpend: mapMonthlyFundsOutput(monthlySpendMap),
+				MonthlyRefunded: mapMonthlyFundsOutput(monthlyRefundedMap),
+				MonthlyPending: mapMonthlyFundsOutput(monthlyPendingMap),
 			};
 		} catch (error: unknown) {
 			const errorInstance = error instanceof Error ? error : new Error(String(error));

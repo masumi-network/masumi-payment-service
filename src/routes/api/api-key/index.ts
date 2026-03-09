@@ -8,6 +8,23 @@ import { generateSHA256Hash } from '@/utils/crypto';
 import { CONSTANTS } from '@/utils/config';
 import { transformBigIntAmounts } from '@/utils/shared/transformers';
 
+export const mapApiKeyOutput = <
+	T extends {
+		networkLimit: Network[];
+		RemainingUsageCredits: Array<{ amount: bigint; unit: string }>;
+		WalletScopes: Array<{ hotWalletId: string }>;
+	},
+>(
+	data: T,
+) => {
+	const { networkLimit, RemainingUsageCredits, ...rest } = data;
+	return {
+		...rest,
+		NetworkLimit: networkLimit,
+		RemainingUsageCredits: transformBigIntAmounts(RemainingUsageCredits),
+	};
+};
+
 export const getAPIKeySchemaInput = z.object({
 	take: z.coerce.number().min(1).max(100).default(10).describe('The number of API keys to return'),
 	cursorToken: z.string().max(550).optional().describe('Used to paginate through the API keys'),
@@ -19,7 +36,7 @@ export const apiKeyOutputSchema = z
 		token: z.string().describe('The API key token'),
 		permission: z.nativeEnum(Permission).describe('Permission level of the API key'),
 		usageLimited: z.boolean().describe('Whether the API key has usage limits'),
-		networkLimit: z.array(z.nativeEnum(Network)).describe('List of Cardano networks this API key is allowed to access'),
+		NetworkLimit: z.array(z.nativeEnum(Network)).describe('List of Cardano networks this API key is allowed to access'),
 		RemainingUsageCredits: z
 			.array(
 				z.object({
@@ -66,10 +83,7 @@ export const queryAPIKeyEndpointGet = adminAuthenticatedEndpointFactory.build({
 			},
 		});
 		return {
-			ApiKeys: result.map((data) => ({
-				...data,
-				RemainingUsageCredits: transformBigIntAmounts(data.RemainingUsageCredits),
-			})),
+			ApiKeys: result.map((data) => mapApiKeyOutput(data)),
 		};
 	},
 });
@@ -99,7 +113,7 @@ export const addAPIKeySchemaInput = z.object({
 			}),
 		)
 		.describe('The credits allowed to be used by the API key. Only relevant if usageLimited is true. '),
-	networkLimit: z
+	NetworkLimit: z
 		.array(z.nativeEnum(Network))
 		.max(3)
 		.default([Network.Mainnet, Network.Preprod])
@@ -139,7 +153,7 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 				status: ApiKeyStatus.Active,
 				permission: input.permission,
 				usageLimited: isAdmin ? false : input.usageLimited,
-				networkLimit: isAdmin ? [Network.Mainnet, Network.Preprod] : input.networkLimit,
+				networkLimit: isAdmin ? [Network.Mainnet, Network.Preprod] : input.NetworkLimit,
 				walletScopeEnabled: isAdmin ? false : input.walletScopeEnabled,
 				RemainingUsageCredits: {
 					createMany: {
@@ -169,10 +183,7 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 				WalletScopes: { select: { hotWalletId: true } },
 			},
 		});
-		return {
-			...result,
-			RemainingUsageCredits: transformBigIntAmounts(result.RemainingUsageCredits),
-		};
+		return mapApiKeyOutput(result);
 	},
 });
 
@@ -200,7 +211,7 @@ export const updateAPIKeySchemaInput = z.object({
 		.describe('The amount of credits to add or remove from the API key. Only relevant if usageLimited is true. '),
 	usageLimited: z.boolean().default(true).optional().describe('Whether the API key is usage limited'),
 	status: z.nativeEnum(ApiKeyStatus).default(ApiKeyStatus.Active).optional().describe('The status of the API key'),
-	networkLimit: z
+	NetworkLimit: z
 		.array(z.nativeEnum(Network))
 		.max(3)
 		.default([Network.Mainnet, Network.Preprod])
@@ -299,7 +310,7 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 						tokenHash: input.token ? generateSHA256Hash(input.token) : undefined,
 						usageLimited: input.usageLimited,
 						status: input.status,
-						networkLimit: input.networkLimit,
+						networkLimit: input.NetworkLimit,
 						walletScopeEnabled: input.walletScopeEnabled,
 					},
 					include: {
@@ -315,10 +326,7 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 				isolationLevel: 'Serializable',
 			},
 		);
-		return {
-			...apiKey,
-			RemainingUsageCredits: transformBigIntAmounts(apiKey.RemainingUsageCredits),
-		};
+		return mapApiKeyOutput(apiKey);
 	},
 });
 
@@ -341,9 +349,6 @@ export const deleteAPIKeyEndpointDelete = adminAuthenticatedEndpointFactory.buil
 				WalletScopes: { select: { hotWalletId: true } },
 			},
 		});
-		return {
-			...apiKey,
-			RemainingUsageCredits: transformBigIntAmounts(apiKey.RemainingUsageCredits),
-		};
+		return mapApiKeyOutput(apiKey);
 	},
 });

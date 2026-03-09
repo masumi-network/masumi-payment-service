@@ -75,7 +75,7 @@ const invoiceSummarySchema = z.object({
 	netTotal: z.string(),
 	vatTotal: z.string(),
 	grossTotal: z.string(),
-	coveredPaymentRequestIds: z.array(z.string()),
+	CoveredPaymentRequestIds: z.array(z.string()),
 	buyerWalletVkey: z.string().nullable(),
 	sellerWalletVkey: z.string().nullable(),
 	invoicePdf: z.string().describe('Base64-encoded invoice PDF'),
@@ -185,7 +185,7 @@ export const getMonthlyInvoiceListEndpoint = readAuthenticatedEndpointFactory.bu
 					netTotal: netTotal.toFixed(2),
 					vatTotal: vatTotal.toFixed(2),
 					grossTotal: grossTotal.toFixed(2),
-					coveredPaymentRequestIds: base.coveredPaymentRequests.map((p) => p.id),
+					CoveredPaymentRequestIds: base.coveredPaymentRequests.map((p) => p.id),
 					buyerWalletVkey: base.buyerWalletVkey,
 					sellerWalletVkey: base.sellerWalletVkey,
 					invoicePdf: Buffer.from(rev.generatedPDFInvoice as unknown as Uint8Array).toString('base64'),
@@ -212,18 +212,18 @@ export const postGenerateMonthlyInvoiceSchemaInput = invoiceGenerationBaseSchema
 	})
 	.refine(
 		(data) => {
-			if (data.seller.companyName == null && data.seller.name == null) {
+			if (data.Seller.companyName == null && data.Seller.name == null) {
 				return false;
 			}
 			return true;
 		},
 		{
 			message: 'Company name or name is required',
-			path: ['seller', 'companyName'],
+			path: ['Seller', 'companyName'],
 		},
 	)
 	.refine((data) => {
-		if (data.buyer.companyName == null && data.buyer.name == null) {
+		if (data.Buyer.companyName == null && data.Buyer.name == null) {
 			return false;
 		}
 		return true;
@@ -251,7 +251,7 @@ export const postGenerateMonthlyInvoiceEndpoint = payAuthenticatedEndpointFactor
 			}
 
 			const message = stringify({
-				buyer: input.buyer,
+				Buyer: input.Buyer,
 				buyerWalletVkey: input.buyerWalletVkey,
 				month: input.month,
 			});
@@ -274,11 +274,26 @@ export const postGenerateMonthlyInvoiceEndpoint = payAuthenticatedEndpointFactor
 				throw createHttpError(400, 'Signature is not valid');
 			}
 
-			const result = await generateMonthlyInvoice(input, {
+			const result = await generateMonthlyInvoice(
+				{
+					buyerWalletVkey: input.buyerWalletVkey,
+					sellerWalletVkey: input.sellerWalletVkey,
+					month: input.month,
+					invoiceCurrency: input.invoiceCurrency,
+					currencyConversion: input.CurrencyConversion,
+					invoice: input.Invoice,
+					vatRate: input.vatRate,
+					reverseCharge: input.reverseCharge,
+					forceRegenerate: input.forceRegenerate,
+					seller: input.Seller,
+					buyer: input.Buyer,
+				},
+				{
 				walletAddress: input.walletAddress,
 				metricPath: '/api/v1/invoice/monthly',
 				walletScopeIds: ctx.walletScopeIds,
-			});
+				},
+			);
 
 			return result;
 		} catch (error) {

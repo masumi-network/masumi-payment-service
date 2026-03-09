@@ -122,11 +122,11 @@ export const invoiceGenerationBaseSchema = z.object({
 		.regex(/^\d{4}-\d{2}$/)
 		.describe('Target month in format YYYY-MM (UTC calendar)'),
 	invoiceCurrency: z.enum(supportedCurrencies).describe('The currency of the invoice'),
-	currencyConversion: z
+	CurrencyConversion: z
 		.record(z.string(), z.number().gt(0))
 		.optional()
 		.describe('Currency conversion settings by unit for this invoice'),
-	invoice: invoiceOptionsSchema,
+	Invoice: invoiceOptionsSchema,
 	vatRate: z.number().min(0).max(1).optional().describe('The VAT rate as decimal (e.g., 0.19 for 19%)'),
 	reverseCharge: z.boolean().optional().default(false).describe('Enable reverse charge (VAT = 0, notice on invoice)'),
 	forceRegenerate: z
@@ -134,25 +134,25 @@ export const invoiceGenerationBaseSchema = z.object({
 		.optional()
 		.default(false)
 		.describe('Force cancel existing invoice and generate a new revision, even if no data changes detected'),
-	seller: invoiceSellerSchema,
-	buyer: invoiceBuyerSchema,
+	Seller: invoiceSellerSchema,
+	Buyer: invoiceBuyerSchema,
 });
 
 export const invoiceGenerationSchemaInput = invoiceGenerationBaseSchema
 	.refine(
 		(data) => {
-			if (data.seller.companyName == null && data.seller.name == null) {
+			if (data.Seller.companyName == null && data.Seller.name == null) {
 				return false;
 			}
 			return true;
 		},
 		{
 			message: 'Company name or name is required',
-			path: ['seller', 'companyName'],
+			path: ['Seller', 'companyName'],
 		},
 	)
 	.refine((data) => {
-		if (data.buyer.companyName == null && data.buyer.name == null) {
+		if (data.Buyer.companyName == null && data.Buyer.name == null) {
 			return false;
 		}
 		return true;

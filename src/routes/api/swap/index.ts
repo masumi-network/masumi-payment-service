@@ -117,8 +117,8 @@ export const swapTokensEndpointPost = adminAuthenticatedEndpointFactory.build({
 				{
 					mnemonic: mnemonic,
 					fromAmount: input.amount,
-					fromToken: input.fromToken as Token,
-					toToken: input.toToken as Token,
+					fromToken: input.FromToken as Token,
+					toToken: input.ToToken as Token,
 					poolId: input.poolId,
 					slippage: input.slippage,
 				},
@@ -134,11 +134,11 @@ export const swapTokensEndpointPost = adminAuthenticatedEndpointFactory.build({
 							status: TransactionStatus.Pending,
 							swapStatus: SwapStatus.OrderPending,
 							lastCheckedAt: new Date(),
-							fromPolicyId: input.fromToken.policyId,
-							fromAssetName: input.fromToken.assetName,
+							fromPolicyId: input.FromToken.policyId,
+							fromAssetName: input.FromToken.assetName,
 							fromAmount: String(input.amount),
-							toPolicyId: input.toToken.policyId,
-							toAssetName: input.toToken.assetName,
+							toPolicyId: input.ToToken.policyId,
+							toAssetName: input.ToToken.assetName,
 							poolId: input.poolId,
 							slippage: input.slippage ?? null,
 							hotWalletId: wallet.id,
@@ -967,7 +967,7 @@ export const getSwapTransactionsEndpointGet = adminAuthenticatedEndpointFactory.
 		});
 
 		return {
-			swapTransactions: swapTransactions.map((tx) => ({
+			SwapTransactions: swapTransactions.map((tx) => ({
 				id: tx.id,
 				createdAt: tx.createdAt.toISOString(),
 				txHash: tx.txHash,

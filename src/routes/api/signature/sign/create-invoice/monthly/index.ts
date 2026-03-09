@@ -18,7 +18,7 @@ export const postMonthlySignatureSchemaInput = z
 			.regex(/^\d{4}-\d{2}$/)
 			.describe('Target month in format YYYY-MM (UTC calendar)'),
 		action: z.enum(['RetrieveMonthlyInvoices']).describe('The action to perform for monthly invoices'),
-		buyer: z.object({
+		Buyer: z.object({
 			country: z.string().min(1).max(100).describe('The country of the invoice'),
 			city: z.string().min(1).max(100).describe('The city of the invoice'),
 			zipCode: z.string().min(1).max(20).describe('The zip code of the invoice'),
@@ -32,7 +32,7 @@ export const postMonthlySignatureSchemaInput = z
 		}),
 	})
 	.refine((data) => {
-		if (data.buyer.companyName == null && data.buyer.name == null) {
+		if (data.Buyer.companyName == null && data.Buyer.name == null) {
 			return false;
 		}
 		return true;
@@ -82,7 +82,7 @@ export const postMonthlySignatureEndpoint = payAuthenticatedEndpointFactory.buil
 			);
 
 			const signedData = stringify({
-				buyer: input.buyer,
+				Buyer: input.Buyer,
 				buyerWalletVkey: input.buyerWalletVkey,
 				month: input.month,
 			});
