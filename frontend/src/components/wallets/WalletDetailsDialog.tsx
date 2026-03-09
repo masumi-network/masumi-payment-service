@@ -29,6 +29,7 @@ import {
   validateCardanoAddress,
   hexToAscii,
 } from '@/lib/utils';
+import { extractApiErrorMessage } from '@/lib/api-error';
 import { WalletLink } from '@/components/ui/wallet-link';
 import { Spinner } from '@/components/ui/spinner';
 import formatBalance from '@/lib/formatBalance';
@@ -44,6 +45,14 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { getUsdmConfig, USDCX_CONFIG } from '@/lib/constants/defaultWallets';
+import { appendInclusiveCursorPage } from '@/lib/pagination/cursor-pagination';
+import {
+  extractSwapAcknowledgePayload,
+  extractSwapCancelPayload,
+  extractSwapConfirmPayload,
+  extractSwapTransactionsPayload,
+} from './swap-api';
+import { useSwapStatusPolling } from './useSwapStatusPolling';
 
 export interface TokenBalance {
   unit: string;
@@ -118,12 +127,60 @@ export function WalletDetailsDialog({
   // Swap action state: which tx is being cancelled/acknowledged/polled
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [pollingTxId, setPollingTxId] = useState<string | null>(null);
-  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollingTxIdRef = useRef<string | null>(null);
   const fetchTokenBalancesRef = useRef<() => void>(() => {});
 
   const updateSwapTxStatus = useCallback((txId: string, updates: Partial<SwapTx>) => {
     setSwapTransactions((prev) => prev.map((tx) => (tx.id === txId ? { ...tx, ...updates } : tx)));
   }, []);
+
+  const { startPolling: startSwapPolling, stopPolling: stopSwapPolling } = useSwapStatusPolling({
+    apiClient,
+    walletVkey: wallet?.walletVkey,
+    onTimeout: () => {
+      setPollingTxId(null);
+      pollingTxIdRef.current = null;
+      toast.warning('Polling timed out — use refresh to check again.', { theme: 'dark' });
+    },
+    onUpdate: (data) => {
+      const currentTxId = pollingTxIdRef.current;
+      const swapStatus = data.swapStatus;
+
+      if (!currentTxId || !swapStatus) {
+        return false;
+      }
+
+      if (
+        swapStatus === 'OrderConfirmed' ||
+        swapStatus === 'CancelConfirmed' ||
+        swapStatus === 'Completed'
+      ) {
+        updateSwapTxStatus(currentTxId, { swapStatus });
+        setPollingTxId(null);
+        pollingTxIdRef.current = null;
+        fetchTokenBalancesRef.current();
+        toast.success(
+          swapStatus === 'CancelConfirmed'
+            ? 'Cancel confirmed!'
+            : swapStatus === 'OrderConfirmed'
+              ? 'Order confirmed on-chain.'
+              : 'Swap completed!',
+          { theme: 'dark' },
+        );
+        return true;
+      }
+
+      if (swapStatus === 'OrderSubmitTimeout' || swapStatus === 'CancelSubmitTimeout') {
+        updateSwapTxStatus(currentTxId, { swapStatus });
+        setPollingTxId(null);
+        pollingTxIdRef.current = null;
+        toast.warning('Transaction timed out.', { theme: 'dark' });
+        return true;
+      }
+
+      return false;
+    },
+  });
 
   const handleCancelSwap = async (tx: SwapTx) => {
     if (!wallet) return;
@@ -136,8 +193,8 @@ export function WalletDetailsDialog({
           body: { walletVkey: wallet.walletVkey, swapTransactionId: tx.id },
         }),
       {
-        onSuccess: (response: any) => {
-          const cancelTxHash = response?.data?.data?.cancelTxHash || response?.data?.cancelTxHash;
+        onSuccess: (response) => {
+          const cancelTxHash = extractSwapCancelPayload(response).cancelTxHash;
           updateSwapTxStatus(tx.id, {
             swapStatus: 'CancelPending',
             cancelTxHash: cancelTxHash || null,
@@ -147,14 +204,14 @@ export function WalletDetailsDialog({
             startPollingConfirm(tx.id, cancelTxHash);
           }
         },
-        onError: (err: any) => {
-          const msg = err?.message || err?.error?.message || '';
+        onError: (error: unknown) => {
+          const msg = extractApiErrorMessage(error, 'Cancel failed.');
           if (msg.includes('already executed') || msg.includes('swap completed')) {
             updateSwapTxStatus(tx.id, { swapStatus: 'Completed' });
             toast.success('Order was already executed by the DEX — swap completed!', {
               theme: 'dark',
             });
-            fetchTokenBalances();
+            void fetchTokenBalances();
           } else {
             toast.error(msg || 'Cancel failed.', { theme: 'dark' });
           }
@@ -177,15 +234,15 @@ export function WalletDetailsDialog({
           body: { walletVkey: wallet.walletVkey, swapTransactionId: tx.id },
         }),
       {
-        onSuccess: (response: any) => {
-          const data = response?.data?.data ?? response?.data;
-          const newStatus = data?.swapStatus;
-          const message = data?.message;
+        onSuccess: (response) => {
+          const data = extractSwapAcknowledgePayload(response);
+          const newStatus = data.swapStatus;
+          const message = data.message;
 
           if (newStatus) {
             updateSwapTxStatus(tx.id, { swapStatus: newStatus });
           }
-          fetchTokenBalances();
+          void fetchTokenBalances();
           toast.info(message || 'Timeout acknowledged.', { theme: 'dark' });
         },
         onError: () => {
@@ -198,83 +255,20 @@ export function WalletDetailsDialog({
     setActionLoadingId(null);
   };
 
-  const MAX_POLL_MS = 5 * 60 * 1000; // 5 minutes
-
   const startPollingConfirm = useCallback(
     (txId: string, txHash: string) => {
       if (!wallet) return;
-      if (pollRef.current) {
-        clearTimeout(pollRef.current);
-        pollRef.current = null;
-      }
       setPollingTxId(txId);
-      const startTime = Date.now();
-
-      const poll = () => {
-        if (Date.now() - startTime > MAX_POLL_MS) {
-          setPollingTxId(null);
-          toast.warning('Polling timed out — use refresh to check again.', { theme: 'dark' });
-          return;
-        }
-
-        handleApiCall(
-          () =>
-            getSwapConfirm({
-              client: apiClient,
-              query: { txHash, walletVkey: wallet.walletVkey },
-            }),
-          {
-            onSuccess: (response: any) => {
-              const data = response?.data?.data ?? response?.data;
-              const swapStatus = data?.swapStatus;
-
-              if (
-                swapStatus === 'OrderConfirmed' ||
-                swapStatus === 'CancelConfirmed' ||
-                swapStatus === 'Completed'
-              ) {
-                updateSwapTxStatus(txId, { swapStatus });
-                setPollingTxId(null);
-                fetchTokenBalancesRef.current();
-                toast.success(
-                  swapStatus === 'CancelConfirmed'
-                    ? 'Cancel confirmed!'
-                    : swapStatus === 'OrderConfirmed'
-                      ? 'Order confirmed on-chain.'
-                      : 'Swap completed!',
-                  { theme: 'dark' },
-                );
-                return;
-              }
-
-              if (swapStatus === 'OrderSubmitTimeout' || swapStatus === 'CancelSubmitTimeout') {
-                updateSwapTxStatus(txId, { swapStatus });
-                setPollingTxId(null);
-                toast.warning('Transaction timed out.', { theme: 'dark' });
-                return;
-              }
-
-              pollRef.current = setTimeout(poll, 4000);
-            },
-            onError: () => {
-              pollRef.current = setTimeout(poll, 4000);
-            },
-            errorMessage: '',
-          },
-        );
-      };
-
-      poll();
+      pollingTxIdRef.current = txId;
+      startSwapPolling(txHash);
     },
-    [wallet, apiClient, updateSwapTxStatus],
+    [startSwapPolling, wallet],
   );
 
   // Cleanup polling on unmount
   useEffect(() => {
-    return () => {
-      if (pollRef.current) clearTimeout(pollRef.current);
-    };
-  }, []);
+    return stopSwapPolling;
+  }, [stopSwapPolling]);
 
   const fetchTokenBalances = async () => {
     if (!wallet) return;
@@ -298,12 +292,13 @@ export function WalletDetailsDialog({
           },
         }),
       {
-        onSuccess: (response: any) => {
-          if (response.data?.data?.Utxos) {
+        onSuccess: (response) => {
+          const utxos = response.data?.data?.Utxos;
+          if (utxos) {
             const balanceMap = new Map<string, number>();
 
-            response.data.data.Utxos.forEach((utxo: any) => {
-              utxo.Amounts.forEach((amount: any) => {
+            utxos.forEach((utxo) => {
+              utxo.Amounts.forEach((amount) => {
                 const currentAmount = balanceMap.get(amount.unit) || 0;
                 balanceMap.set(amount.unit, currentAmount + (amount.quantity || 0));
               });
@@ -368,8 +363,8 @@ export function WalletDetailsDialog({
             client: apiClient,
             query: { txHash: hash, walletVkey: wallet.walletVkey },
           });
-          const data = (res as any)?.data?.data ?? (res as any)?.data;
-          if (data?.swapStatus && data.swapStatus !== tx.swapStatus) {
+          const data = extractSwapConfirmPayload(res);
+          if (data.swapStatus && data.swapStatus !== tx.swapStatus) {
             updateSwapTxStatus(tx.id, { swapStatus: data.swapStatus });
           }
         } catch {
@@ -392,11 +387,11 @@ export function WalletDetailsDialog({
           cursorId: cursor,
         },
       });
-      const txs = (result as any)?.data?.data?.SwapTransactions ?? [];
-      let merged: typeof txs;
+      const txs = extractSwapTransactionsPayload(result);
+      let merged: typeof txs = [];
       if (cursor) {
         setSwapTransactions((prev) => {
-          merged = [...prev, ...txs];
+          merged = appendInclusiveCursorPage(prev, txs, (tx) => tx.id);
           return merged;
         });
       } else {
@@ -488,11 +483,11 @@ export function WalletDetailsDialog({
           },
         }),
       {
-        onSuccess: (response: any) => {
+        onSuccess: (response) => {
           setExportedMnemonic(response.data?.data?.Secret?.mnemonic || '');
         },
-        onError: (error: any) => {
-          toast.error(error.message || 'Failed to export wallet');
+        onError: (error: unknown) => {
+          toast.error(extractApiErrorMessage(error, 'Failed to export wallet'));
         },
         onFinally: () => {
           setIsExporting(false);
@@ -573,8 +568,8 @@ export function WalletDetailsDialog({
           // Update the wallet object with the new collection address
           wallet.collectionAddress = newCollectionAddress.trim() || null;
         },
-        onError: (error: any) => {
-          toast.error(error.message || 'Failed to update collection address');
+        onError: (error: unknown) => {
+          toast.error(extractApiErrorMessage(error, 'Failed to update collection address'));
         },
         errorMessage: 'Failed to update collection address',
       },

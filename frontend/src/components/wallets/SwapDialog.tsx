@@ -34,6 +34,14 @@ import adaIcon from '@/assets/ada.png';
 import usdmIcon from '@/assets/usdm.png';
 import nmkrIcon from '@/assets/nmkr.png';
 import usdcxIcon from '@/assets/usdcx.png';
+import { extractApiPayload } from '@/lib/api-response';
+import { extractApiErrorMessage } from '@/lib/api-error';
+import {
+  extractSwapAcknowledgePayload,
+  extractSwapCancelPayload,
+  extractSwapSubmitPayload,
+} from './swap-api';
+import { useSwapStatusPolling } from './useSwapStatusPolling';
 
 interface SwapDialogProps {
   isOpen: boolean;
@@ -176,7 +184,7 @@ export function SwapDialog({
         client: apiClient,
         query: { fromPolicyId, fromAssetName, toPolicyId, toAssetName, poolId },
       });
-      return (result as any)?.data?.data?.rate ?? (result as any)?.data?.rate ?? 0;
+      return extractApiPayload<{ rate?: number }>(result)?.rate ?? 0;
     },
     enabled: isOpen && selectedFromToken.symbol !== selectedToToken.symbol,
     staleTime: 30_000,
@@ -196,6 +204,74 @@ export function SwapDialog({
   const [swapTransactionId, setSwapTransactionId] = useState<string | null>(null);
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollCancelledRef = useRef(false);
+
+  const { startPolling, stopPolling } = useSwapStatusPolling({
+    apiClient,
+    walletVkey,
+    onTimeout: () => {
+      if (pollCancelledRef.current) return;
+      toast.warning(
+        'Confirmation is taking longer than expected. You can check the transaction in the explorer.',
+        { theme: 'dark' },
+      );
+      setSwapStatus('timeout');
+      setIsSwapping(false);
+    },
+    onUpdate: (data) => {
+      const status = data.status;
+      const backendSwapStatus = data.swapStatus;
+      const returnedSwapTxId = data.swapTransactionId;
+
+      if (
+        backendSwapStatus === 'OrderSubmitTimeout' ||
+        backendSwapStatus === 'CancelSubmitTimeout'
+      ) {
+        if (returnedSwapTxId) setSwapTransactionId(returnedSwapTxId);
+        setSwapStatus('timeout');
+        setIsSwapping(false);
+        toast.error('Transaction timed out. You can acknowledge and check on-chain state.', {
+          theme: 'dark',
+        });
+        return true;
+      }
+
+      if (status !== 'confirmed') {
+        return false;
+      }
+
+      if (backendSwapStatus === 'OrderConfirmed') {
+        if (returnedSwapTxId) setSwapTransactionId(returnedSwapTxId);
+        setSwapStatus('orderConfirmed');
+        setIsSwapping(false);
+        toast.info('Swap order placed on-chain. Awaiting scooper execution.', {
+          theme: 'dark',
+        });
+        return true;
+      }
+
+      if (backendSwapStatus === 'CancelConfirmed') {
+        void fetchBalance();
+        onSwapComplete?.();
+        setSwapStatus('cancelConfirmed');
+        toast.success('Swap order cancelled. Funds returned.', { theme: 'dark' });
+        setIsSwapping(false);
+        pollTimeoutRef.current = setTimeout(() => {
+          if (!pollCancelledRef.current) setSwapStatus('idle');
+        }, 3000);
+        return true;
+      }
+
+      void fetchBalance();
+      onSwapComplete?.();
+      setSwapStatus('confirmed');
+      toast.success('Swap confirmed on-chain.', { theme: 'dark' });
+      setIsSwapping(false);
+      pollTimeoutRef.current = setTimeout(() => {
+        if (!pollCancelledRef.current) setSwapStatus('idle');
+      }, 2000);
+      return true;
+    },
+  });
 
   useEffect(() => {
     if (isOpen) {
@@ -219,13 +295,14 @@ export function SwapDialog({
       return () => {
         clearInterval(balanceInterval);
         pollCancelledRef.current = true;
+        stopPolling();
         if (pollTimeoutRef.current) {
           clearTimeout(pollTimeoutRef.current);
           pollTimeoutRef.current = null;
         }
       };
     }
-  }, [isOpen]);
+  }, [isOpen, stopPolling]);
 
   const fetchBalance = async () => {
     try {
@@ -385,102 +462,6 @@ export function SwapDialog({
 
   const formattedToBalance = formatBalance(getBalanceForToken(selectedToToken.symbol).toFixed(6));
 
-  const startPolling = (transactionHash: string) => {
-    const POLL_INTERVAL_MS = 4000;
-    const MAX_POLL_MS = 5 * 60 * 1000; // 5 minutes
-    const startedAt = Date.now();
-    pollCancelledRef.current = false;
-    if (pollTimeoutRef.current) {
-      clearTimeout(pollTimeoutRef.current);
-      pollTimeoutRef.current = null;
-    }
-
-    const poll = async (): Promise<void> => {
-      if (pollCancelledRef.current) return;
-      if (Date.now() - startedAt > MAX_POLL_MS) {
-        if (pollCancelledRef.current) return;
-        toast.warning(
-          'Confirmation is taking longer than expected. You can check the transaction in the explorer.',
-          { theme: 'dark' },
-        );
-        setSwapStatus('timeout');
-        setIsSwapping(false);
-        return;
-      }
-      try {
-        const confirmResult = await getSwapConfirm({
-          client: apiClient,
-          query: { txHash: transactionHash, walletVkey },
-        });
-        if (pollCancelledRef.current) return;
-        const data = (confirmResult as any)?.data?.data ?? (confirmResult as any)?.data;
-        const status = data?.status;
-        const backendSwapStatus = data?.swapStatus;
-        const returnedSwapTxId = data?.swapTransactionId;
-
-        // Check for timeout transitions (returned as not_found with timeout swapStatus)
-        if (
-          backendSwapStatus === 'OrderSubmitTimeout' ||
-          backendSwapStatus === 'CancelSubmitTimeout'
-        ) {
-          if (returnedSwapTxId) setSwapTransactionId(returnedSwapTxId);
-          setSwapStatus('timeout');
-          setIsSwapping(false);
-          toast.error('Transaction timed out. You can acknowledge and check on-chain state.', {
-            theme: 'dark',
-          });
-          return;
-        }
-
-        if (status === 'confirmed') {
-          if (pollCancelledRef.current) return;
-
-          if (backendSwapStatus === 'OrderConfirmed') {
-            // Order is on-chain at script address, wallet is unlocked — can cancel
-            if (returnedSwapTxId) setSwapTransactionId(returnedSwapTxId);
-            setSwapStatus('orderConfirmed');
-            setIsSwapping(false);
-            toast.info('Swap order placed on-chain. Awaiting scooper execution.', {
-              theme: 'dark',
-            });
-            return;
-          }
-
-          if (backendSwapStatus === 'CancelConfirmed') {
-            await fetchBalance();
-            if (pollCancelledRef.current) return;
-            onSwapComplete?.();
-            setSwapStatus('cancelConfirmed');
-            toast.success('Swap order cancelled. Funds returned.', { theme: 'dark' });
-            setIsSwapping(false);
-            pollTimeoutRef.current = setTimeout(() => {
-              if (!pollCancelledRef.current) setSwapStatus('idle');
-            }, 3000);
-            return;
-          }
-
-          // Default: completed or legacy
-          await fetchBalance();
-          if (pollCancelledRef.current) return;
-          onSwapComplete?.();
-          setSwapStatus('confirmed');
-          toast.success('Swap confirmed on-chain.', { theme: 'dark' });
-          setIsSwapping(false);
-          pollTimeoutRef.current = setTimeout(() => {
-            if (!pollCancelledRef.current) setSwapStatus('idle');
-          }, 2000);
-          return;
-        }
-        pollTimeoutRef.current = setTimeout(poll, POLL_INTERVAL_MS);
-      } catch {
-        if (!pollCancelledRef.current) {
-          pollTimeoutRef.current = setTimeout(poll, POLL_INTERVAL_MS);
-        }
-      }
-    };
-    pollTimeoutRef.current = setTimeout(poll, POLL_INTERVAL_MS);
-  };
-
   const handleCancelSwap = async () => {
     if (!swapTransactionId || !walletVkey || !txHash) return;
     setError(null);
@@ -494,9 +475,8 @@ export function SwapDialog({
           body: { walletVkey, swapTransactionId },
         }),
       {
-        onSuccess: (response: any) => {
-          const data = response?.data?.data ?? response?.data;
-          const cancelTxHash = data?.cancelTxHash;
+        onSuccess: (response) => {
+          const cancelTxHash = extractSwapCancelPayload(response).cancelTxHash;
           if (cancelTxHash) {
             toast.info('Cancel submitted. Waiting for confirmation...', { theme: 'dark' });
             startPolling(cancelTxHash);
@@ -506,12 +486,12 @@ export function SwapDialog({
             setSwapStatus('orderConfirmed');
           }
         },
-        onError: (err: any) => {
-          const msg = err?.message || err?.error?.message || '';
+        onError: (error: unknown) => {
+          const msg = extractApiErrorMessage(error, 'Cancel failed.');
           setIsSwapping(false);
           if (msg.includes('already executed') || msg.includes('swap completed')) {
             onSwapComplete?.();
-            fetchBalance();
+            void fetchBalance();
             setSwapStatus('confirmed');
             toast.success('Order was already executed by the DEX — swap completed!', {
               theme: 'dark',
@@ -541,10 +521,10 @@ export function SwapDialog({
           body: { walletVkey, swapTransactionId },
         }),
       {
-        onSuccess: (response: any) => {
-          const data = response?.data?.data ?? response?.data;
-          const newStatus = data?.swapStatus;
-          const message = data?.message;
+        onSuccess: (response) => {
+          const data = extractSwapAcknowledgePayload(response);
+          const newStatus = data.swapStatus;
+          const message = data.message;
 
           if (newStatus === 'OrderConfirmed') {
             setSwapStatus('orderConfirmed');
@@ -553,7 +533,7 @@ export function SwapDialog({
             });
           } else if (newStatus === 'CancelConfirmed' || newStatus === 'Completed') {
             onSwapComplete?.();
-            fetchBalance();
+            void fetchBalance();
             setSwapStatus('confirmed');
             toast.success(message || 'Swap resolved.', { theme: 'dark' });
             pollTimeoutRef.current = setTimeout(() => {
@@ -565,8 +545,8 @@ export function SwapDialog({
           }
           setIsSwapping(false);
         },
-        onError: (err: any) => {
-          setError(err?.message || 'Failed to acknowledge timeout');
+        onError: (error: unknown) => {
+          setError(extractApiErrorMessage(error, 'Failed to acknowledge timeout'));
           setIsSwapping(false);
         },
         errorMessage: 'Acknowledge timeout failed',
@@ -640,8 +620,7 @@ export function SwapDialog({
           }),
         {
           onSuccess: async (result) => {
-            const transactionHash =
-              (result as any)?.data?.data?.txHash || (result as any)?.data?.txHash;
+            const transactionHash = extractSwapSubmitPayload(result).txHash;
 
             if (transactionHash) {
               setTxHash(transactionHash);
@@ -666,8 +645,8 @@ export function SwapDialog({
               }, 2000);
             }
           },
-          onError: (error: any) => {
-            setError(error?.error?.message || 'Swap failed');
+          onError: (error: unknown) => {
+            setError(extractApiErrorMessage(error, 'Swap failed'));
             setIsSwapping(false);
             setSwapStatus('idle');
           },
@@ -678,8 +657,8 @@ export function SwapDialog({
       if (!response) {
         return;
       }
-    } catch (error: any) {
-      const errorMessage = error?.message || 'Swap failed';
+    } catch (error: unknown) {
+      const errorMessage = extractApiErrorMessage(error, 'Swap failed');
       toast.error(`Swap failed: ${errorMessage}`, { theme: 'dark' });
       setError(errorMessage);
       setIsSwapping(false);

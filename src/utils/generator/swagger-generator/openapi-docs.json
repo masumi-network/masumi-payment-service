@@ -2930,7 +2930,7 @@
                 "tags": [
                     "health"
                 ],
-                "summary": "Get the status of the API server",
+                "summary": "Get the status of the API server. (No authentication required)",
                 "responses": {
                     "200": {
                         "description": "Object with status ok, if the server is up and healthy",
@@ -3789,7 +3789,7 @@
                                             "amount": "10000000"
                                         },
                                         {
-                                            "unit": "1f3aec8bfe7ea4fe14c5f121e2a92e301afe414147860d557cac7e345553444378",
+                                            "unit": "c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad0014df105553444d",
                                             "amount": "-25000000"
                                         }
                                     ],

@@ -1,29 +1,26 @@
-import { WebhookDeliveryStatus, WebhookEventType } from '@/generated/prisma/client';
+import { Prisma, WebhookDeliveryStatus, WebhookEventType } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import { logger } from '@/utils/logger';
 import { webhookSenderService } from './webhook-sender.service';
+import { buildEndpointWebhookPayload, buildWebhookPayload, mergeWebhookEndpointBatch } from './webhook-queue.helpers';
 
 export class WebhookQueueService {
 	async queueWebhook(
 		eventType: WebhookEventType,
-		payload: Record<string, any>,
+		payload: Record<string, unknown>,
 		entityId?: string,
 		paymentSourceId?: string,
 	): Promise<void> {
-		const webhookPayload = {
-			event_type: eventType,
-			timestamp: new Date().toISOString(),
-			webhook_id: '',
-			data: payload,
-		};
+		const webhookPayload = buildWebhookPayload(eventType, payload);
 
 		const batchSize = 20;
 		let hasMore = true;
 		let cursorId: string | undefined = undefined;
 		let totalQueued = 0;
+		let queuedEndpoints: Array<{ id: string }> = [];
 
 		while (hasMore) {
-			const webhookEndpoints = await prisma.webhookEndpoint.findMany({
+			const webhookEndpoints: Array<{ id: string }> = await prisma.webhookEndpoint.findMany({
 				where: {
 					isActive: true,
 					disabledAt: null,
@@ -39,26 +36,33 @@ export class WebhookQueueService {
 				orderBy: { id: 'asc' },
 				take: batchSize,
 				cursor: cursorId ? { id: cursorId } : undefined,
+				select: {
+					id: true,
+				},
 			});
 
-			if (webhookEndpoints.length != 0) {
-				const lastEndpoint: { id: string } = webhookEndpoints[webhookEndpoints.length - 1];
-				cursorId = lastEndpoint.id;
-				totalQueued += webhookEndpoints.length;
-			}
+			const {
+				mergedEndpoints,
+				newEndpoints,
+				nextCursorId,
+			}: {
+				mergedEndpoints: Array<{ id: string }>;
+				newEndpoints: Array<{ id: string }>;
+				nextCursorId: string | undefined;
+			} = mergeWebhookEndpointBatch(queuedEndpoints, webhookEndpoints);
+			queuedEndpoints = mergedEndpoints;
+			cursorId = nextCursorId;
+			totalQueued += newEndpoints.length;
 
-			const deliveries = webhookEndpoints.map(async (endpoint) => {
-				const endpointPayload = {
-					...webhookPayload,
-					webhook_id: endpoint.id,
-				};
+			const deliveries = newEndpoints.map(async (endpoint) => {
+				const endpointPayload = buildEndpointWebhookPayload(webhookPayload, endpoint.id);
 
 				try {
 					await prisma.webhookDelivery.create({
 						data: {
 							webhookEndpointId: endpoint.id,
 							eventType,
-							payload: endpointPayload as Record<string, any>,
+							payload: endpointPayload as unknown as Prisma.InputJsonValue,
 							entityId,
 							status: WebhookDeliveryStatus.Pending as WebhookDeliveryStatus,
 							nextRetryAt: new Date(),
