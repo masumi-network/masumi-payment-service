@@ -189,13 +189,13 @@ export function AIAgentDetailsDialog({
           ...w,
           type: 'Selling' as const,
           balance: '0',
-          usdmBalance: '0',
+          usdcxBalance: '0',
         })),
         ...(source.PurchasingWallets || []).map((w: any) => ({
           ...w,
           type: 'Purchasing' as const,
           balance: '0',
-          usdmBalance: '0',
+          usdcxBalance: '0',
         })),
       ]);
       const found = allWallets.find((w: any) => w.walletVkey === walletVkey);
