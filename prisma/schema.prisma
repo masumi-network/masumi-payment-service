@@ -8,20 +8,35 @@ datasource db {
 }
 
 model ApiKey {
-  id                    String            @id @default(cuid())
-  createdAt             DateTime          @default(now())
-  updatedAt             DateTime          @updatedAt
-  token                 String            @unique
-  tokenHash             String            @unique
+  id                    String              @id @default(cuid())
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  token                 String              @unique
+  tokenHash             String              @unique
   status                ApiKeyStatus
   permission            Permission
   networkLimit          Network[]
-  usageLimited          Boolean           @default(false)
+  usageLimited          Boolean             @default(false)
+  walletScopeEnabled    Boolean             @default(false)
   deletedAt             DateTime?
   PaymentRequest        PaymentRequest[]
   PurchaseRequest       PurchaseRequest[]
   RemainingUsageCredits UnitValue[]
   CreatedWebhooks       WebhookEndpoint[]
+  WalletScopes          ApiKeyWalletScope[]
+}
+
+model ApiKeyWalletScope {
+  id          String    @id @default(cuid())
+  createdAt   DateTime  @default(now())
+  apiKeyId    String
+  hotWalletId String
+  ApiKey      ApiKey    @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+  HotWallet   HotWallet @relation(fields: [hotWalletId], references: [id], onDelete: Cascade)
+
+  @@unique([apiKeyId, hotWalletId])
+  @@index([apiKeyId])
+  @@index([hotWalletId])
 }
 
 model UnitValue {
@@ -49,25 +64,30 @@ model UnitValue {
 }
 
 model HotWallet {
-  id                   String            @id @default(cuid())
-  createdAt            DateTime          @default(now())
-  updatedAt            DateTime          @updatedAt
-  walletVkey           String            @unique
-  walletAddress        String
-  type                 HotWalletType
-  secretId             String
-  collectionAddress    String?
-  pendingTransactionId String?           @unique
-  paymentSourceId      String
-  lockedAt             DateTime?
-  note                 String?
-  deletedAt            DateTime?
-  PaymentSource        PaymentSource     @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
-  PendingTransaction   Transaction?      @relation(fields: [pendingTransactionId], references: [id])
-  Secret               WalletSecret      @relation(fields: [secretId], references: [id])
-  PaymentRequest       PaymentRequest[]
-  PurchaseRequest      PurchaseRequest[]
-  RegistryRequest      RegistryRequest[]
+  id                       String              @id @default(cuid())
+  createdAt                DateTime            @default(now())
+  updatedAt                DateTime            @updatedAt
+  walletVkey               String              @unique
+  walletAddress            String
+  type                     HotWalletType
+  secretId                 String
+  collectionAddress        String?
+  pendingTransactionId     String?             @unique
+  pendingSwapTransactionId String?             @unique
+  paymentSourceId          String
+  lockedAt                 DateTime?
+  note                     String?
+  deletedAt                DateTime?
+  PaymentSource            PaymentSource       @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
+  PendingTransaction       Transaction?        @relation(fields: [pendingTransactionId], references: [id])
+  PendingSwapTransaction   SwapTransaction?    @relation(fields: [pendingSwapTransactionId], references: [id])
+  SwapTransactionHistory   SwapTransaction[]   @relation("SwapTransactionHistory")
+  Secret                   WalletSecret        @relation(fields: [secretId], references: [id])
+  PaymentRequest           PaymentRequest[]
+  PurchaseRequest          PurchaseRequest[]
+  RegistryRequest          RegistryRequest[]
+  apiKeyWalletScopes       ApiKeyWalletScope[]
+  LimitedPurchaseRequests  PurchaseRequest[]   @relation("HotWalletLimit")
 }
 
 model Transaction {
@@ -97,6 +117,29 @@ model Transaction {
   RegistryRequest          RegistryRequest[]
   PaymentRequestHistory    PaymentRequest?   @relation("PaymentTransactionHistory", fields: [paymentRequestHistoryId], references: [id])
   PurchaseRequestHistory   PurchaseRequest?  @relation("PurchaseTransactionHistory", fields: [purchaseRequestHistoryId], references: [id])
+}
+
+model SwapTransaction {
+  id               String            @id @default(cuid())
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  txHash           String?
+  status           TransactionStatus
+  swapStatus       SwapStatus        @default(OrderPending)
+  confirmations    Int?
+  lastCheckedAt    DateTime?
+  fromPolicyId     String
+  fromAssetName    String
+  fromAmount       String
+  toPolicyId       String
+  toAssetName      String
+  poolId           String
+  slippage         Float?
+  cancelTxHash     String?
+  orderOutputIndex Int?
+  hotWalletId      String?
+  BlocksWallet     HotWallet?
+  HotWallet        HotWallet?        @relation("SwapTransactionHistory", fields: [hotWalletId], references: [id])
 }
 
 model WalletSecret {
@@ -290,6 +333,8 @@ model PurchaseRequest {
   requestedBy                                   ApiKey               @relation(fields: [requestedById], references: [id])
   SellerWallet                                  WalletBase           @relation(fields: [sellerWalletId], references: [id], onDelete: Cascade)
   SmartContractWallet                           HotWallet?           @relation(fields: [smartContractWalletId], references: [id])
+  isLimitedToHotWallets                         Boolean
+  HotWalletLimit                                HotWallet[]          @relation("HotWalletLimit")
   TransactionHistory                            Transaction[]        @relation("PurchaseTransactionHistory")
   WithdrawnForBuyer                             UnitValue[]          @relation("BuyerWithdrawnPurchaseRequest")
   PaidFunds                                     UnitValue[]
@@ -441,6 +486,16 @@ enum TransactionStatus {
   RolledBack
 }
 
+enum SwapStatus {
+  OrderPending
+  OrderConfirmed
+  CancelPending
+  CancelConfirmed
+  Completed
+  OrderSubmitTimeout
+  CancelSubmitTimeout
+}
+
 enum OnChainState {
   FundsLocked
   FundsOrDatumInvalid
@@ -511,10 +566,10 @@ model InvoiceRevision {
   currencyShortId String
 
   // Invoice metadata
-  invoiceTitle         String
-  invoiceDescription   String?
-  invoiceDate          DateTime
-  reverseCharge        Boolean
+  invoiceTitle       String
+  invoiceDescription String?
+  invoiceDate        DateTime
+  reverseCharge      Boolean
   invoiceGreetings   String?
   invoiceClosing     String?
   invoiceSignature   String?

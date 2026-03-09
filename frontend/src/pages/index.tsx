@@ -3,28 +3,37 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { GetStaticProps } from 'next';
 import Head from 'next/head';
 import { Button } from '@/components/ui/button';
-import { ChevronRight, Plus, Bot, DollarSign, Wallet, ArrowUpDown } from 'lucide-react';
+import {
+  ChevronRight,
+  Plus,
+  Bot,
+  DollarSign,
+  Wallet,
+  ArrowUpDown,
+  ArrowLeftRight,
+  PlusCircle,
+} from 'lucide-react';
+import { RefreshButton } from '@/components/RefreshButton';
 import { shortenAddress } from '@/lib/utils';
 import { useState, useMemo } from 'react';
 import { RegistryEntry } from '@/lib/api/generated';
 import { useAgents } from '@/lib/queries/useAgents';
 import { useWallets, WalletWithBalance } from '@/lib/queries/useWallets';
 import { useQueryClient } from '@tanstack/react-query';
+import { useTransactions } from '@/lib/hooks/useTransactions';
 import { toast } from 'react-toastify';
 import Link from 'next/link';
 import { AddWalletDialog } from '@/components/wallets/AddWalletDialog';
 import { RegisterAIAgentDialog } from '@/components/ai-agents/RegisterAIAgentDialog';
-//import { SwapDialog } from '@/components/wallets/SwapDialog';
+import { SwapDialog } from '@/components/wallets/SwapDialog';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
 import { useRate } from '@/lib/hooks/useRate';
 import { StatCardSkeleton } from '@/components/skeletons/StatCardSkeleton';
 import { AgentListSkeleton } from '@/components/skeletons/AgentListSkeleton';
 import { WalletListSkeleton } from '@/components/skeletons/WalletListSkeleton';
 import { Spinner } from '@/components/ui/spinner';
-//import { FaExchangeAlt } from 'react-icons/fa';
 import formatBalance from '@/lib/formatBalance';
 import { WalletTypeBadge } from '@/components/ui/wallet-type-badge';
-import { useTransactions } from '@/lib/hooks/useTransactions';
 import { AIAgentDetailsDialog } from '@/components/ai-agents/AIAgentDetailsDialog';
 import { WalletDetailsDialog } from '@/components/wallets/WalletDetailsDialog';
 import { CopyButton } from '@/components/ui/copy-button';
@@ -81,8 +90,9 @@ export default function Overview() {
   const [isAddWalletDialogOpen, setAddWalletDialogOpen] = useState(false);
   const [isRegisterAgentDialogOpen, setRegisterAgentDialogOpen] = useState(false);
 
-  //const [selectedWalletForSwap, setSelectedWalletForSwap] =
-  //  useState<WalletWithBalance | null>(null);
+  const [selectedWalletForSwap, setSelectedWalletForSwap] = useState<WalletWithBalance | null>(
+    null,
+  );
 
   const [selectedWalletForTopup, setSelectedWalletForTopup] = useState<WalletWithBalance | null>(
     null,
@@ -317,6 +327,10 @@ export default function Overview() {
                         Wallets
                       </Link>
                       <ChevronRight className="h-4 w-4" />
+                      <RefreshButton
+                        onRefresh={() => refetchWallets()}
+                        isRefreshing={isLoadingWallets || isLoadingBalances}
+                      />
                     </div>
                   </div>
                   <p className="text-sm text-muted-foreground mb-4">
@@ -402,6 +416,19 @@ export default function Overview() {
                                 </td>
                                 <td className="py-3 px-2 w-32">
                                   <div className="flex items-center gap-2">
+                                    {wallet.network === 'Mainnet' && (
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSelectedWalletForSwap(wallet);
+                                        }}
+                                      >
+                                        <ArrowLeftRight className="h-4 w-4" />
+                                      </Button>
+                                    )}
                                     <Button
                                       variant="muted"
                                       className="h-8 btn-hover-lift"
@@ -410,6 +437,7 @@ export default function Overview() {
                                         setSelectedWalletForTopup(wallet);
                                       }}
                                     >
+                                      <PlusCircle className="h-3.5 w-3.5" />
                                       Top Up
                                     </Button>
                                   </div>
@@ -464,15 +492,13 @@ export default function Overview() {
         }}
       />
 
-      {/*<SwapDialog
+      <SwapDialog
         isOpen={!!selectedWalletForSwap}
         onClose={() => setSelectedWalletForSwap(null)}
         walletAddress={selectedWalletForSwap?.walletAddress || ''}
-        network={state.network}
-        blockfrostApiKey={process.env.NEXT_PUBLIC_BLOCKFROST_API_KEY || ''}
-        walletType={selectedWalletForSwap?.type || ''}
-        walletId={selectedWalletForSwap?.id || ''}
-      />*/}
+        walletVkey={selectedWalletForSwap?.walletVkey || ''}
+        network={network}
+      />
 
       <TransakWidget
         isOpen={!!selectedWalletForTopup}

@@ -7,6 +7,7 @@ import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/m
 import { paymentResponseSchema } from '@/routes/api/payments';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { transformPaymentGetAmounts, transformPaymentGetTimestamps } from '@/utils/shared/transformers';
+import { assertWalletInScope } from '@/utils/shared/wallet-scope';
 
 export const authorizePaymentRefundSchemaInput = z.object({
 	blockchainIdentifier: z.string().max(8000).describe('The identifier of the purchase to be refunded'),
@@ -52,6 +53,7 @@ export const authorizePaymentRefundEndpointPost = readAuthenticatedEndpointFacto
 		if (payment == null) {
 			throw createHttpError(404, 'Payment not found or in invalid state');
 		}
+		assertWalletInScope(ctx.walletScopeIds, payment.smartContractWalletId);
 
 		if (payment.requestedById != ctx.id && ctx.permission != Permission.Admin) {
 			throw createHttpError(403, 'You are not authorized to authorize a refund for this payment');

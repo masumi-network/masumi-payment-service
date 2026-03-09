@@ -4,7 +4,8 @@ import { Button } from '@/components/ui/button';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Plus, Trash2, ExternalLink } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+
 import { useRouter } from 'next/router';
 import { RegisterAIAgentDialog } from '@/components/ai-agents/RegisterAIAgentDialog';
 import { Badge } from '@/components/ui/badge';
@@ -36,6 +37,8 @@ import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtende
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { EmptyState } from '@/components/ui/empty-state';
 import { SearchInput } from '@/components/ui/search-input';
+import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
+import { parseAmountSearchRange } from '@/lib/parseAmountSearchRange';
 type AIAgent = RegistryEntry;
 
 const parseAgentStatus = (status: AIAgent['state']): string => {
@@ -65,18 +68,64 @@ export default function AIAgentsPage() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [isRegisterDialogOpen, setIsRegisterDialogOpen] = useState(false);
+  const debouncedSearchQuery = useDebouncedValue(searchQuery);
 
-  const [filteredAgents, setFilteredAgents] = useState<AIAgent[]>([]);
+  const [activeTab, setActiveTab] = useState('All');
+
+  const filterStatus = useMemo(() => {
+    if (activeTab === 'All') return undefined;
+    return activeTab as 'Registered' | 'Deregistered' | 'Pending' | 'Failed';
+  }, [activeTab]);
 
   // Use React Query for initial load (cached)
   const {
     agents,
     isLoading,
     isFetching: isFetchingAgents,
+    isPlaceholderData,
     refetch,
     hasMore: hasMoreAgents,
     loadMore,
-  } = useAgents();
+  } = useAgents({
+    filterStatus,
+    searchQuery: debouncedSearchQuery || undefined,
+  });
+
+  // True whenever server-authoritative results haven't arrived yet:
+  // either the debounce hasn't fired, or the server fetch is still in-flight with stale data.
+  const isSearchPending =
+    searchQuery !== debouncedSearchQuery || (isFetchingAgents && isPlaceholderData);
+
+  // Client-side filter for instant feedback while server results are pending.
+  // Mirrors the backend Prisma OR filter in src/routes/api/registry/index.ts
+  // to avoid items appearing/disappearing when the server responds.
+  const displayAgents = useMemo(() => {
+    const query = searchQuery.toLowerCase().trim();
+    if (!query || (query === debouncedSearchQuery.toLowerCase().trim() && !isPlaceholderData))
+      return agents;
+
+    const amountRange = parseAmountSearchRange(query);
+
+    return agents.filter((agent) => {
+      if (agent.name?.toLowerCase().includes(query)) return true;
+      if (agent.description?.toLowerCase().includes(query)) return true;
+      // Backend uses hasSome (exact match against tag array), not partial
+      if (agent.Tags?.some((tag) => tag.toLowerCase() === query)) return true;
+      if (agent.SmartContractWallet?.walletAddress?.toLowerCase().includes(query)) return true;
+      if (agent.state?.toLowerCase().includes(query)) return true;
+      if (agent.AgentPricing?.pricingType === 'Free' && 'free'.startsWith(query)) return true;
+      if (
+        amountRange &&
+        agent.AgentPricing?.pricingType === 'Fixed' &&
+        agent.AgentPricing.Pricing?.some((p) => {
+          const amt = parseInt(p.amount);
+          return amt >= amountRange.min && amt <= amountRange.max;
+        })
+      )
+        return true;
+      return false;
+    });
+  }, [agents, searchQuery, debouncedSearchQuery, isPlaceholderData]);
 
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedAgentToDelete, setSelectedAgentToDelete] = useState<AIAgent | null>(null);
@@ -90,7 +139,6 @@ export default function AIAgentsPage() {
   useEffect(() => {
     setCurrentNetworkPaymentSources(paymentSources.filter((ps) => ps.network === network));
   }, [paymentSources, network]);
-  const [activeTab, setActiveTab] = useState('All');
   const [selectedAgentForDetails, setSelectedAgentForDetails] = useState<AIAgent | null>(null);
   const [initialDialogTab, setInitialDialogTab] = useState<'Details' | 'Earnings'>('Details');
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
@@ -103,52 +151,6 @@ export default function AIAgentsPage() {
     { name: 'Pending', count: null },
     { name: 'Failed', count: null },
   ];
-
-  const filterAgents = useCallback(() => {
-    let filtered = [...agents];
-
-    if (activeTab === 'Registered') {
-      filtered = filtered.filter((agent) => parseAgentStatus(agent.state) === 'Registered');
-    } else if (activeTab === 'Deregistered') {
-      filtered = filtered.filter((agent) => parseAgentStatus(agent.state) === 'Deregistered');
-    } else if (activeTab === 'Pending') {
-      filtered = filtered.filter((agent) => parseAgentStatus(agent.state) === 'Pending');
-    } else if (activeTab === 'Failed') {
-      filtered = filtered.filter((agent) => agent.state && agent.state.includes('Failed'));
-    }
-
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter((agent) => {
-        const matchName = agent.name?.toLowerCase().includes(query) || false;
-        const matchDescription = agent.description?.toLowerCase().includes(query) || false;
-        const matchTags = agent.Tags?.some((tag) => tag.toLowerCase().includes(query)) || false;
-        const matchWallet =
-          agent.SmartContractWallet?.walletAddress?.toLowerCase().includes(query) || false;
-        const matchState = agent.state?.toLowerCase().includes(query) || false;
-        const matchPrice =
-          agent.AgentPricing &&
-          agent.AgentPricing.pricingType == 'Fixed' &&
-          agent.AgentPricing.Pricing?.[0]?.amount
-            ? (parseInt(agent.AgentPricing.Pricing[0].amount) / 1000000).toFixed(2).includes(query)
-            : agent.AgentPricing &&
-              agent.AgentPricing.pricingType == 'Free' &&
-              'free'.includes(query);
-
-        return (
-          matchName || matchDescription || matchTags || matchWallet || matchState || matchPrice
-        );
-      });
-    }
-
-    setFilteredAgents(filtered);
-  }, [agents, searchQuery, activeTab]);
-
-  // Initial load is handled by useAgents hook - no useEffect needed
-
-  useEffect(() => {
-    filterAgents();
-  }, [filterAgents, searchQuery, activeTab]);
 
   // Handle action query parameter from search
   useEffect(() => {
@@ -336,7 +338,6 @@ export default function AIAgentsPage() {
               activeTab={activeTab}
               onTabChange={(tab) => {
                 setActiveTab(tab);
-                refetch();
               }}
             />
 
@@ -346,12 +347,18 @@ export default function AIAgentsPage() {
                   value={searchQuery}
                   onChange={setSearchQuery}
                   placeholder="Search by name, description, tags, or wallet..."
+                  isLoading={isSearchPending && !!searchQuery}
                 />
               </div>
             </div>
 
             <div className="rounded-lg border overflow-x-auto">
-              <table className="w-full">
+              <table
+                className={cn(
+                  'w-full transition-opacity duration-150',
+                  isSearchPending && 'opacity-70',
+                )}
+              >
                 <thead className="bg-muted/30 dark:bg-muted/15">
                   <tr className="border-b">
                     <th className="p-4 text-left text-sm font-medium text-muted-foreground pl-6">
@@ -379,9 +386,10 @@ export default function AIAgentsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {isLoading ? (
+                  {(isLoading && !agents.length) ||
+                  (displayAgents.length === 0 && isSearchPending) ? (
                     <AIAgentTableSkeleton rows={5} />
-                  ) : filteredAgents.length === 0 ? (
+                  ) : displayAgents.length === 0 ? (
                     <tr>
                       <td colSpan={8}>
                         <EmptyState
@@ -400,7 +408,7 @@ export default function AIAgentsPage() {
                       </td>
                     </tr>
                   ) : (
-                    filteredAgents.map((agent, index) => (
+                    displayAgents.map((agent, index) => (
                       <tr
                         key={agent.id}
                         className={cn(
@@ -530,7 +538,7 @@ export default function AIAgentsPage() {
             </div>
 
             <div className="flex flex-col gap-4 items-center">
-              {!isLoading && (
+              {!(isLoading && !agents.length) && (
                 <Pagination
                   hasMore={hasMoreAgents}
                   isLoading={isFetchingAgents}

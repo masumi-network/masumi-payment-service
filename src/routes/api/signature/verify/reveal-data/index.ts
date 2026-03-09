@@ -8,6 +8,7 @@ import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-aut
 import { checkSignature, resolvePaymentKeyHash } from '@meshsdk/core';
 import { CONSTANTS } from '@/utils/config';
 import { AuthContext } from '@/utils/middleware/auth-middleware';
+import { assertWalletInScope } from '@/utils/shared/wallet-scope';
 
 export const postVerifyDataRevealSchemaInput = z.object({
 	signature: z.string().max(7500).describe('Cryptographic signature from the admin wallet'),
@@ -61,6 +62,7 @@ export const revealDataEndpointPost = readAuthenticatedEndpointFactory.build({
 				});
 				throw createHttpError(404, 'Payment not found');
 			}
+			assertWalletInScope(ctx.walletScopeIds, payment.smartContractWalletId);
 			if (ctx.permission !== Permission.Admin && !ctx.networkLimit.includes(payment.PaymentSource.network)) {
 				recordBusinessEndpointError('/api/v1/reveal-data', 'POST', 400, 'Payment is not on the requested network');
 				throw createHttpError(403, 'Network not allowed');

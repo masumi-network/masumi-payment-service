@@ -5,9 +5,12 @@ export function metadataToString(value: string | string[] | undefined) {
 	if (typeof value === 'string') return value;
 	return value.join('');
 }
-export function stringToMetadata(s: string | undefined | null, forceArray: boolean = true) {
-	if (s == undefined || s == null) {
-		return '';
+export function stringToMetadata(
+	s: string | undefined | null,
+	forceArray: boolean = true,
+): string | string[] | undefined {
+	if (s == undefined) {
+		return undefined;
 	}
 	if (s.length <= 60 && forceArray == false) {
 		return s;
@@ -18,4 +21,23 @@ export function stringToMetadata(s: string | undefined | null, forceArray: boole
 		arr.push(s.slice(i, i + 60));
 	}
 	return arr;
+}
+
+export function cleanMetadata(obj: unknown): unknown {
+	if (obj === undefined || obj === null) {
+		return obj;
+	}
+	if (Array.isArray(obj)) {
+		return obj.filter((item) => item !== undefined).map(cleanMetadata);
+	}
+	if (typeof obj === 'object') {
+		const cleaned: Record<string, unknown> = {};
+		for (const [key, value] of Object.entries(obj)) {
+			if (value !== undefined) {
+				cleaned[key] = cleanMetadata(value);
+			}
+		}
+		return cleaned;
+	}
+	return obj;
 }

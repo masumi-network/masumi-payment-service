@@ -25,7 +25,10 @@ import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identif
 import { HttpExistsError } from '@/utils/errors/http-exists-error';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 import { transformPurchaseGetTimestamps, transformPurchaseGetAmounts } from '@/utils/shared/transformers';
+import { parseAmountSearchRange, buildMatchingStates, buildTransactionSearchFilter } from '@/utils/shared/queries';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
+import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
+import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 
 export const queryPurchaseRequestSchemaInput = z.object({
 	limit: z.coerce.number().min(1).max(100).default(10).describe('The number of purchases to return'),
@@ -39,13 +42,30 @@ export const queryPurchaseRequestSchemaInput = z.object({
 		.optional()
 		.nullable()
 		.describe('The smart contract address of the payment source'),
-
+	filterOnChainState: z.nativeEnum(OnChainState).optional().describe('Filter by on-chain state'),
+	searchQuery: z
+		.string()
+		.optional()
+		.describe('Search query to filter by ID, hash, state, network, wallet address, or amount'),
 	includeHistory: z
 		.string()
 		.default('false')
 		.optional()
 		.transform((val) => val?.toLowerCase() == 'true')
 		.describe('Whether to include the full transaction and action history of the purchases'),
+});
+
+export const queryPurchaseCountSchemaInput = z.object({
+	network: z.nativeEnum(Network).describe('The network the purchases were made on'),
+	filterSmartContractAddress: z
+		.string()
+		.optional()
+		.nullable()
+		.describe('The smart contract address of the payment source'),
+});
+
+export const queryPurchaseCountSchemaOutput = z.object({
+	total: z.number().describe('Total number of purchases'),
 });
 
 export const purchaseResponseSchema = z
@@ -214,12 +234,16 @@ export const queryPurchaseRequestSchemaOutput = z.object({
 	Purchases: z.array(purchaseResponseSchema),
 });
 
-export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
+export const queryPurchaseRequestGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: queryPurchaseRequestSchemaInput,
 	output: queryPurchaseRequestSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof queryPurchaseRequestSchemaInput>; ctx: AuthContext }) => {
 		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+
+		const searchLower = input.searchQuery?.toLowerCase();
+		const matchingStates = buildMatchingStates(searchLower);
+		const amountFilter = searchLower ? parseAmountSearchRange(searchLower) : undefined;
 
 		const result = await prisma.purchaseRequest.findMany({
 			where: {
@@ -228,6 +252,9 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
 					network: input.network,
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
 				},
+				...buildWalletScopeFilter(ctx.walletScopeIds),
+				...(input.filterOnChainState ? { onChainState: input.filterOnChainState } : {}),
+				...buildTransactionSearchFilter(searchLower, matchingStates, amountFilter, 'PaidFunds'),
 			},
 			cursor: input.cursorId ? { id: input.cursorId } : undefined,
 			take: input.limit,
@@ -274,7 +301,6 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
 					select: { id: true, amount: true, unit: true },
 				},
 				WithdrawnForBuyer: { select: { id: true, amount: true, unit: true } },
-
 				TransactionHistory:
 					input.includeHistory == true
 						? {
@@ -356,6 +382,30 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
 						: null,
 				};
 			}),
+		};
+	},
+});
+
+export const queryPurchaseCountGet = readAuthenticatedEndpointFactory.build({
+	method: 'get',
+	input: queryPurchaseCountSchemaInput,
+	output: queryPurchaseCountSchemaOutput,
+	handler: async ({ input, ctx }: { input: z.infer<typeof queryPurchaseCountSchemaInput>; ctx: AuthContext }) => {
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+
+		const total = await prisma.purchaseRequest.count({
+			where: {
+				PaymentSource: {
+					deletedAt: null,
+					network: input.network,
+					smartContractAddress: input.filterSmartContractAddress ?? undefined,
+				},
+				...buildWalletScopeFilter(ctx.walletScopeIds),
+			},
+		});
+
+		return {
+			total,
 		};
 	},
 });
@@ -734,6 +784,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 
 			const initialPurchaseRequest = await handlePurchaseCreditInit({
 				id: ctx.id,
+				walletScopeIds: ctx.walletScopeIds,
 				cost: Array.from(agentIdentifierAmountsMap.entries()).map(([unit, amount]) => {
 					if (unit.toLowerCase() == 'lovelace') {
 						return { amount: amount, unit: '' };

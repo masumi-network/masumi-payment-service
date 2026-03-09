@@ -2,7 +2,9 @@
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { cn, shortenAddress, handleApiCall, getExplorerUrl, formatFundUnit } from '@/lib/utils';
+import { cn, shortenAddress, handleApiCall, formatFundUnit } from '@/lib/utils';
+import { WalletLink } from '@/components/ui/wallet-link';
+import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/WalletDetailsDialog';
 import formatBalance from '@/lib/formatBalance';
 import { CopyButton } from '@/components/ui/copy-button';
 import { PaymentSourceExtended, postRegistryDeregister } from '@/lib/api/generated';
@@ -80,6 +82,8 @@ export function AIAgentDetailsDialog({
   const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] = useState<
     PaymentSourceExtended[]
   >([]);
+  const [selectedWalletForDetails, setSelectedWalletForDetails] =
+    useState<WalletWithBalance | null>(null);
   useEffect(() => {
     setCurrentNetworkPaymentSources(paymentSources.filter((ps) => ps.network === network));
   }, [paymentSources, network]);
@@ -178,10 +182,39 @@ export function AIAgentDetailsDialog({
     network,
   ]);
 
+  const handleWalletClick = useCallback(
+    (walletVkey: string) => {
+      const allWallets = currentNetworkPaymentSources.flatMap((source) => [
+        ...(source.SellingWallets || []).map((w: any) => ({
+          ...w,
+          type: 'Selling' as const,
+          balance: '0',
+          usdmBalance: '0',
+        })),
+        ...(source.PurchasingWallets || []).map((w: any) => ({
+          ...w,
+          type: 'Purchasing' as const,
+          balance: '0',
+          usdmBalance: '0',
+        })),
+      ]);
+      const found = allWallets.find((w: any) => w.walletVkey === walletVkey);
+      if (!found) {
+        toast.error('Wallet not found');
+        return;
+      }
+      setSelectedWalletForDetails(found as WalletWithBalance);
+    },
+    [currentNetworkPaymentSources],
+  );
+
   return (
     <>
       <Dialog open={!!agent && !isDeleteDialogOpen && !isPurchaseDialogOpen} onOpenChange={onClose}>
-        <DialogContent className="max-w-[600px] max-h-[90vh] px-0 pb-0 flex flex-col">
+        <DialogContent
+          className="max-w-[600px] max-h-[90vh] px-0 pb-0 flex flex-col"
+          isPushedBack={!!selectedWalletForDetails}
+        >
           {agent && (
             <>
               <DialogHeader className="px-6 shrink-0">
@@ -478,20 +511,15 @@ export function AIAgentDetailsDialog({
                           <span className="text-sm text-muted-foreground">
                             Linked Wallet Address
                           </span>
-                          <div className="font-mono text-sm flex items-center gap-2">
-                            <a
-                              href={getExplorerUrl(
-                                agent.SmartContractWallet.walletAddress,
-                                network,
-                              )}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="hover:underline text-primary"
-                            >
-                              {shortenAddress(agent.SmartContractWallet.walletAddress)}
-                            </a>
-                            <CopyButton value={agent.SmartContractWallet.walletAddress} />
-                          </div>
+                          <WalletLink
+                            address={agent.SmartContractWallet.walletAddress}
+                            vkey={agent.SmartContractWallet.walletVkey}
+                            network={network}
+                            shorten={4}
+                            onInternalClick={() =>
+                              handleWalletClick(agent.SmartContractWallet.walletVkey)
+                            }
+                          />
                         </div>
                       </div>
                     </div>
@@ -545,6 +573,12 @@ export function AIAgentDetailsDialog({
         }
         onConfirm={handleDelete}
         isLoading={isDeleting}
+      />
+      <WalletDetailsDialog
+        isOpen={!!selectedWalletForDetails}
+        onClose={() => setSelectedWalletForDetails(null)}
+        wallet={selectedWalletForDetails}
+        isChild
       />
     </>
   );

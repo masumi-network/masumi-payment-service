@@ -15,6 +15,8 @@ import {
 import {
 	createPaymentSchemaOutput,
 	createPaymentsSchemaInput,
+	queryPaymentCountSchemaInput,
+	queryPaymentCountSchemaOutput,
 	queryPaymentsSchemaInput,
 	queryPaymentsSchemaOutput,
 } from '@/routes/api/payments';
@@ -23,6 +25,8 @@ import { postPaymentIncomeSchemaInput, postPaymentIncomeSchemaOutput } from '@/r
 import {
 	createPurchaseInitSchemaInput,
 	createPurchaseInitSchemaOutput,
+	queryPurchaseCountSchemaInput,
+	queryPurchaseCountSchemaOutput,
 	queryPurchaseRequestSchemaInput,
 	queryPurchaseRequestSchemaOutput,
 } from '@/routes/api/purchases';
@@ -30,6 +34,8 @@ import { postPurchaseSpendingSchemaInput, postPurchaseSpendingSchemaOutput } fro
 import {
 	queryRegistryRequestSchemaInput,
 	queryRegistryRequestSchemaOutput,
+	queryRegistryCountSchemaInput,
+	queryRegistryCountSchemaOutput,
 	registerAgentSchemaInput,
 	registerAgentSchemaOutput,
 	deleteAgentRegistrationSchemaInput,
@@ -184,6 +190,8 @@ const apiKeyExample = {
 		},
 	],
 	status: ApiKeyStatus.Active,
+	walletScopeEnabled: false,
+	WalletScopes: [],
 } satisfies z.infer<typeof apiKeyOutputSchema>;
 
 const walletExample = {
@@ -322,6 +330,20 @@ import {
 } from '@/routes/api/purchases/resolve-blockchain-identifier';
 import { postRevealDataSchemaOutput, postVerifyDataRevealSchemaInput } from '@/routes/api/signature/verify/reveal-data';
 import {
+	swapTokensSchemaInput,
+	swapTokensSchemaOutput,
+	getSwapConfirmSchemaInput,
+	getSwapConfirmSchemaOutput,
+	getSwapTransactionsSchemaInput,
+	getSwapTransactionsSchemaOutput,
+	getSwapEstimateSchemaInput,
+	getSwapEstimateSchemaOutput,
+	cancelSwapSchemaInput,
+	cancelSwapSchemaOutput,
+	acknowledgeSwapTimeoutSchemaInput,
+	acknowledgeSwapTimeoutSchemaOutput,
+} from '@/routes/api/swap/schemas';
+import {
 	paymentErrorStateRecoverySchemaInput,
 	paymentErrorStateRecoverySchemaOutput,
 } from '@/routes/api/payments/error-state-recovery';
@@ -349,14 +371,14 @@ import {
 	postGenerateMonthlyInvoiceSchemaOutput,
 } from '@/routes/api/invoice/monthly';
 import {
-	postAdminGenerateMonthlyInvoiceSchemaInput,
-	postAdminGenerateMonthlyInvoiceSchemaOutput,
-} from '@/routes/api/invoice/monthly/admin';
+	postInternalGenerateMonthlyInvoiceSchemaInput,
+	postInternalGenerateMonthlyInvoiceSchemaOutput,
+} from '@/routes/api/invoice/monthly/internal';
 import { getMonthlyInvoiceListSchemaInput, getMonthlyInvoiceListSchemaOutput } from '@/routes/api/invoice/monthly';
 import {
-	getUninvoicedPaymentsSchemaInput,
-	getUninvoicedPaymentsSchemaOutput,
-} from '@/routes/api/invoice/monthly/uninvoiced';
+	getMissingInvoicePaymentsSchemaInput,
+	getMissingInvoicePaymentsSchemaOutput,
+} from '@/routes/api/invoice/monthly/missing';
 import {
 	postMonthlySignatureSchemaInput,
 	postMonthlySignatureSchemaOutput,
@@ -612,6 +634,310 @@ export function generateOpenAPI() {
 		},
 	});
 
+	/********************* SWAP *****************************/
+	registry.registerPath({
+		method: 'post',
+		path: '/swap/',
+		description:
+			'Swap ADA for CNTs (Cardano Native Tokens) or CNTs for ADA using SundaeSwap DEX. This endpoint is mainnet-only.',
+		summary: 'Execute a token swap on SundaeSwap. (admin access required, mainnet only)',
+		tags: ['swap'],
+		request: {
+			body: {
+				description: 'Swap request parameters',
+				content: {
+					'application/json': {
+						schema: swapTokensSchemaInput.openapi({
+							example: {
+								walletVkey: 'wallet_verification_key_here',
+								amount: 1,
+								fromToken: {
+									policyId: 'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad',
+									assetName: '5553444d',
+									name: 'USDM',
+								},
+								toToken: {
+									policyId: 'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad',
+									assetName: '5553444d',
+									name: 'USDM',
+								},
+								poolId: '64f35d26b237ad58e099041bc14c687ea7fdc58969d7d5b66e2540ef',
+								slippage: 0.03,
+							},
+						}),
+					},
+				},
+			},
+		},
+		security: [{ [apiKeyAuth.name]: [] }],
+		responses: {
+			200: {
+				description: 'Swap executed successfully',
+				content: {
+					'application/json': {
+						schema: swapTokensSchemaOutput.openapi({
+							example: {
+								txHash: 'abc123def456...',
+								walletAddress: 'addr1...',
+							},
+						}),
+					},
+				},
+			},
+			400: {
+				description: 'Bad Request (missing or invalid parameters)',
+			},
+			401: {
+				description: 'Unauthorized (invalid API key or insufficient permissions)',
+			},
+			500: {
+				description: 'Internal Server Error (swap failed)',
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'get',
+		path: '/swap/confirm/',
+		description:
+			'Check on-chain confirmation status of a swap transaction by transaction hash. Use after POST /swap/ to poll until status is confirmed. Mainnet only.',
+		summary: 'Get swap transaction confirmation status. (admin access required, mainnet only)',
+		tags: ['swap'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			query: getSwapConfirmSchemaInput.openapi({
+				example: {
+					txHash: 'abc123def456...',
+					walletVkey: 'wallet_verification_key_here',
+				},
+			}),
+		},
+		responses: {
+			200: {
+				description: 'Confirmation status (pending, confirmed, or not_found)',
+				content: {
+					'application/json': {
+						schema: getSwapConfirmSchemaOutput.openapi({
+							example: {
+								status: 'confirmed',
+								swapStatus: 'OrderConfirmed',
+								confirmations: 15,
+							},
+						}),
+					},
+				},
+			},
+			400: {
+				description: 'Bad Request (e.g. mainnet wallet required)',
+			},
+			401: {
+				description: 'Unauthorized',
+			},
+			404: {
+				description: 'Wallet not found',
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'get',
+		path: '/swap/transactions/',
+		description: 'List swap transactions for a wallet, ordered by most recent first. Supports cursor-based pagination.',
+		summary: 'List swap transactions. (admin access required, mainnet only)',
+		tags: ['swap'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			query: getSwapTransactionsSchemaInput.openapi({
+				example: {
+					walletVkey: 'wallet_verification_key_here',
+					limit: 10,
+				},
+			}),
+		},
+		responses: {
+			200: {
+				description: 'List of swap transactions',
+				content: {
+					'application/json': {
+						schema: getSwapTransactionsSchemaOutput.openapi({
+							example: {
+								swapTransactions: [
+									{
+										id: 'clx1abc...',
+										createdAt: '2026-03-06T12:00:00.000Z',
+										txHash: 'abc123def456...',
+										status: 'Confirmed',
+										swapStatus: 'Completed',
+										confirmations: 15,
+										fromPolicyId: '',
+										fromAssetName: '',
+										fromAmount: '10',
+										toPolicyId: 'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad',
+										toAssetName: '0014df105553444d',
+										poolId: 'pool_id_here',
+										slippage: 0.03,
+										cancelTxHash: null,
+										orderOutputIndex: null,
+									},
+								],
+							},
+						}),
+					},
+				},
+			},
+			401: {
+				description: 'Unauthorized',
+			},
+			404: {
+				description: 'Wallet not found',
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'get',
+		path: '/swap/estimate/',
+		description:
+			'Get a swap price estimate from the SundaeSwap pool. Returns the conversion rate based on current pool reserves.',
+		summary: 'Get swap price estimate. (admin access required, mainnet only)',
+		tags: ['swap'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			query: getSwapEstimateSchemaInput.openapi({
+				example: {
+					fromPolicyId: '',
+					fromAssetName: '',
+					toPolicyId: 'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad',
+					toAssetName: '0014df105553444d',
+					poolId: 'pool_id_here',
+				},
+			}),
+		},
+		responses: {
+			200: {
+				description: 'Swap estimate',
+				content: {
+					'application/json': {
+						schema: getSwapEstimateSchemaOutput.openapi({
+							example: {
+								rate: 2.45,
+								fee: 0.003,
+								fromDecimals: 6,
+								toDecimals: 6,
+							},
+						}),
+					},
+				},
+			},
+			400: {
+				description: 'Bad request (invalid pool or token)',
+			},
+			401: {
+				description: 'Unauthorized',
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'post',
+		path: '/swap/cancel/',
+		description:
+			'Cancel a pending SundaeSwap order that is sitting at the script address. Only orders in OrderConfirmed state can be cancelled.',
+		summary: 'Cancel a pending swap order. (admin access required, mainnet only)',
+		tags: ['swap'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			body: {
+				description: 'Cancel swap request parameters',
+				content: {
+					'application/json': {
+						schema: cancelSwapSchemaInput.openapi({
+							example: {
+								walletVkey: 'wallet_verification_key_here',
+								swapTransactionId: 'clx1abc...',
+							},
+						}),
+					},
+				},
+			},
+		},
+		responses: {
+			200: {
+				description: 'Cancel transaction submitted',
+				content: {
+					'application/json': {
+						schema: cancelSwapSchemaOutput.openapi({
+							example: {
+								cancelTxHash: 'abc123def456...',
+							},
+						}),
+					},
+				},
+			},
+			400: {
+				description: 'Bad Request (swap not in cancellable state)',
+			},
+			401: {
+				description: 'Unauthorized',
+			},
+			404: {
+				description: 'Swap transaction or wallet not found',
+			},
+			409: {
+				description: 'Wallet is currently locked',
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'post',
+		path: '/swap/acknowledge-timeout/',
+		description:
+			'Acknowledge a timed-out swap transaction. Checks on-chain state and recovers to the correct status: OrderConfirmed if the order UTXO still exists (allowing retry), Completed if the DEX executed the swap, or keeps the timeout state if the order tx never confirmed.',
+		summary: 'Acknowledge a swap timeout and recover state. (admin access required, mainnet only)',
+		tags: ['swap'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			body: {
+				description: 'Acknowledge timeout request parameters',
+				content: {
+					'application/json': {
+						schema: acknowledgeSwapTimeoutSchemaInput.openapi({
+							example: {
+								walletVkey: 'wallet_verification_key_here',
+								swapTransactionId: 'clx1abc...',
+							},
+						}),
+					},
+				},
+			},
+		},
+		responses: {
+			200: {
+				description: 'Timeout acknowledged, state recovered',
+				content: {
+					'application/json': {
+						schema: acknowledgeSwapTimeoutSchemaOutput.openapi({
+							example: {
+								swapStatus: 'OrderConfirmed',
+								message: 'Cancel tx failed but order UTXO still exists. You can retry cancelling.',
+							},
+						}),
+					},
+				},
+			},
+			400: {
+				description: 'Bad Request (swap not in timeout state)',
+			},
+			401: {
+				description: 'Unauthorized',
+			},
+			404: {
+				description: 'Swap transaction or wallet not found',
+			},
+		},
+	});
+
 	registry.registerPath({
 		method: 'post',
 		path: '/api-key/',
@@ -633,6 +959,8 @@ export function generateOpenAPI() {
 									},
 								],
 								permission: Permission.Admin,
+								walletScopeEnabled: 'false',
+								WalletScopeHotWalletIds: [],
 							},
 						}),
 					},
@@ -692,6 +1020,8 @@ export function generateOpenAPI() {
 									},
 								],
 								status: ApiKeyStatus.Active,
+								walletScopeEnabled: false,
+								WalletScopeHotWalletIds: ['hot_wallet_id_1', 'hot_wallet_id_2'],
 							},
 						}),
 					},
@@ -912,6 +1242,84 @@ export function generateOpenAPI() {
 			},
 			500: {
 				description: 'Internal Server Error',
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'get',
+		path: '/payment/count',
+		description: 'Gets the total count of payments.',
+		summary: 'Get the total number of payments. (READ access required)',
+		tags: ['payment'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			query: queryPaymentCountSchemaInput.openapi({
+				example: {
+					network: Network.Preprod,
+					filterSmartContractAddress: null,
+				},
+			}),
+		},
+		responses: {
+			200: {
+				description: 'Total payments count',
+				content: {
+					'application/json': {
+						schema: z
+							.object({
+								status: z.string(),
+								data: queryPaymentCountSchemaOutput,
+							})
+							.openapi({
+								example: {
+									status: 'success',
+									data: {
+										total: 150,
+									},
+								},
+							}),
+					},
+				},
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'get',
+		path: '/purchase/count',
+		description: 'Gets the total count of purchases.',
+		summary: 'Get the total number of purchases. (READ access required)',
+		tags: ['purchase'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			query: queryPurchaseCountSchemaInput.openapi({
+				example: {
+					network: Network.Preprod,
+					filterSmartContractAddress: null,
+				},
+			}),
+		},
+		responses: {
+			200: {
+				description: 'Total purchases count',
+				content: {
+					'application/json': {
+						schema: z
+							.object({
+								status: z.string(),
+								data: queryPurchaseCountSchemaOutput,
+							})
+							.openapi({
+								example: {
+									status: 'success',
+									data: {
+										total: 75,
+									},
+								},
+							}),
+					},
+				},
 			},
 		},
 	});
@@ -1369,8 +1777,8 @@ export function generateOpenAPI() {
 		method: 'post',
 		path: '/invoice/monthly',
 		description:
-			'Generates an invoice PDF aggregating all payment requests for a buyer wallet within a month, using the end-of-month conversion rate. (admin access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.',
-		summary: 'Generate a monthly invoice PDF by buyer wallet vkey and month. (admin access required)',
+			'Generates an invoice PDF aggregating all payment requests for a buyer wallet within a month, using the end-of-month conversion rate. (+PAY access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.',
+		summary: 'Generate a monthly invoice PDF by buyer wallet vkey and month. (+PAY access required)',
 		tags: ['invoice'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {
@@ -1459,10 +1867,49 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'get',
+		path: '/registry/count',
+		description: 'Gets the total count of AI agents.',
+		summary: 'Get the total number of AI agents. (READ access required)',
+		tags: ['registry'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			query: queryRegistryCountSchemaInput.openapi({
+				example: {
+					network: Network.Preprod,
+					filterSmartContractAddress: null,
+				},
+			}),
+		},
+		responses: {
+			200: {
+				description: 'Total AI agents count',
+				content: {
+					'application/json': {
+						schema: z
+							.object({
+								status: z.string(),
+								data: queryRegistryCountSchemaOutput,
+							})
+							.openapi({
+								example: {
+									status: 'success',
+									data: {
+										total: 42,
+									},
+								},
+							}),
+					},
+				},
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'get',
 		path: '/invoice/monthly',
 		description:
-			'Lists invoice summaries for a given month with pagination. Returns only the latest revision per invoice base. Pass invoiceBaseId to get all revisions for a specific invoice. (admin access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own risk.',
-		summary: 'List invoices for a month. (admin access required)',
+			'Lists invoice summaries for a given month with pagination. Returns only the latest revision per invoice base. Pass invoiceBaseId to get all revisions for a specific invoice. (+PAY access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own risk.',
+		summary: 'List invoices for a month. (+PAY access required)',
 		tags: ['invoice'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {
@@ -1528,10 +1975,10 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'post',
-		path: '/invoice/monthly/admin',
+		path: '/invoice/monthly/internal',
 		description:
-			'Generates an invoice PDF aggregating all payment requests for a buyer wallet within a month, without requiring buyer wallet signature verification. (admin access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.',
-		summary: 'Admin generate a monthly invoice PDF. (admin access required)',
+			'Generates an invoice PDF aggregating all payment requests for a buyer wallet within a month, without requiring buyer wallet signature verification. (+PAY access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.',
+		summary: 'Generate a monthly invoice PDF without signature verification. (+PAY access required)',
 		tags: ['invoice'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {
@@ -1539,7 +1986,7 @@ export function generateOpenAPI() {
 				description: '',
 				content: {
 					'application/json': {
-						schema: postAdminGenerateMonthlyInvoiceSchemaInput.openapi({
+						schema: postInternalGenerateMonthlyInvoiceSchemaInput.openapi({
 							example: {
 								buyerWalletVkey: 'buyer_wallet_vkey',
 								month: '2025-09',
@@ -1595,7 +2042,7 @@ export function generateOpenAPI() {
 						schema: z
 							.object({
 								status: z.string(),
-								data: postAdminGenerateMonthlyInvoiceSchemaOutput,
+								data: postInternalGenerateMonthlyInvoiceSchemaOutput,
 							})
 							.openapi({
 								example: {
@@ -1614,14 +2061,14 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'get',
-		path: '/invoice/monthly/uninvoiced',
+		path: '/invoice/monthly/missing',
 		description:
-			'Finds billable payment requests that do not yet have an invoice for a given month. Only finalized payments are included: Withdrawn (seller completed work), ResultSubmitted past unlock time, or DisputedWithdrawn with seller funds. Payments still locked, pending refund, or in dispute are excluded. (admin access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.',
-		summary: 'List uninvoiced payments for a month. (admin access required)',
+			'Finds billable payment requests that do not yet have an invoice for a given month. Only finalized payments are included: Withdrawn (seller completed work), ResultSubmitted past unlock time, or DisputedWithdrawn with seller funds. Payments still locked, pending refund, or in dispute are excluded. (+PAY access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.',
+		summary: 'List uninvoiced payments for a month. (+PAY access required)',
 		tags: ['invoice'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {
-			query: getUninvoicedPaymentsSchemaInput.openapi({
+			query: getMissingInvoicePaymentsSchemaInput.openapi({
 				example: {
 					month: '2025-09',
 					limit: 10,
@@ -1636,7 +2083,7 @@ export function generateOpenAPI() {
 						schema: z
 							.object({
 								status: z.string(),
-								data: getUninvoicedPaymentsSchemaOutput,
+								data: getMissingInvoicePaymentsSchemaOutput,
 							})
 							.openapi({
 								example: {

@@ -15,6 +15,7 @@ import {
 import { recordBusinessEndpointError } from '@/utils/metrics';
 import { ez } from 'express-zod-api';
 import spacetime from 'spacetime';
+import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 
 export const postPaymentIncomeSchemaInput = z.object({
 	agentIdentifier: z
@@ -160,6 +161,7 @@ export const getPaymentIncome = readAuthenticatedEndpointFactory.build({
 						network: input.network,
 						deletedAt: null,
 					},
+					...buildWalletScopeFilter(ctx.walletScopeIds),
 				},
 				orderBy: [
 					{

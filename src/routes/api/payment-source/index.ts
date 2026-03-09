@@ -4,6 +4,7 @@ import { Network } from '@/generated/prisma/client';
 import { z } from '@/utils/zod-openapi';
 import { splitWalletsByType } from '@/utils/shared/transformers';
 import { AuthContext } from '@/utils/middleware/auth-middleware';
+import { buildHotWalletScopeFilter } from '@/utils/shared/wallet-scope';
 
 export const paymentSourceSchemaInput = z.object({
 	take: z.coerce.number().min(1).max(100).default(10).describe('The number of payment sources to return'),
@@ -87,7 +88,7 @@ export const paymentSourceEndpointGet = readAuthenticatedEndpointFactory.build({
 					select: { walletAddress: true, order: true },
 				},
 				HotWallets: {
-					where: { deletedAt: null },
+					where: { deletedAt: null, ...buildHotWalletScopeFilter(ctx.walletScopeIds) },
 					select: {
 						id: true,
 						walletVkey: true,

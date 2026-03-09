@@ -83,6 +83,26 @@
                             "Revoked"
                         ],
                         "description": "Current status of the API key"
+                    },
+                    "walletScopeEnabled": {
+                        "type": "boolean",
+                        "description": "Whether wallet scope filtering is enabled for this API key"
+                    },
+                    "WalletScopes": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "hotWalletId": {
+                                    "type": "string",
+                                    "description": "ID of the hot wallet in scope"
+                                }
+                            },
+                            "required": [
+                                "hotWalletId"
+                            ]
+                        },
+                        "description": "List of hot wallets this API key is scoped to"
                     }
                 },
                 "required": [
@@ -92,7 +112,9 @@
                     "usageLimited",
                     "networkLimit",
                     "RemainingUsageCredits",
-                    "status"
+                    "status",
+                    "walletScopeEnabled",
+                    "WalletScopes"
                 ]
             },
             "Wallet": {
@@ -3003,7 +3025,9 @@
                                                     "amount": "10000000"
                                                 }
                                             ],
-                                            "status": "Active"
+                                            "status": "Active",
+                                            "walletScopeEnabled": false,
+                                            "WalletScopes": []
                                         }
                                     }
                                 }
@@ -3405,7 +3429,9 @@
                                                             "amount": "10000000"
                                                         }
                                                     ],
-                                                    "status": "Active"
+                                                    "status": "Active",
+                                                    "walletScopeEnabled": false,
+                                                    "WalletScopes": []
                                                 }
                                             ]
                                         },
@@ -3496,6 +3522,21 @@
                                         ],
                                         "default": "Read",
                                         "description": "The permission of the API key"
+                                    },
+                                    "walletScopeEnabled": {
+                                        "type": "string",
+                                        "default": "false",
+                                        "description": "Whether to enable wallet scope filtering for this API key"
+                                    },
+                                    "WalletScopeHotWalletIds": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "maxLength": 150
+                                        },
+                                        "maxItems": 100,
+                                        "default": [],
+                                        "description": "List of hot wallet IDs to scope this API key to"
                                     }
                                 },
                                 "required": [
@@ -3509,7 +3550,9 @@
                                             "amount": "10000000"
                                         }
                                     ],
-                                    "permission": "Admin"
+                                    "permission": "Admin",
+                                    "walletScopeEnabled": "false",
+                                    "WalletScopeHotWalletIds": []
                                 }
                             }
                         }
@@ -3550,7 +3593,9 @@
                                                     "amount": "10000000"
                                                 }
                                             ],
-                                            "status": "Active"
+                                            "status": "Active",
+                                            "walletScopeEnabled": false,
+                                            "WalletScopes": []
                                         }
                                     }
                                 }
@@ -3649,6 +3694,19 @@
                                             "Preprod"
                                         ],
                                         "description": "The networks the API key is allowed to use"
+                                    },
+                                    "walletScopeEnabled": {
+                                        "type": "boolean",
+                                        "description": "Whether to enable wallet scope filtering for this API key"
+                                    },
+                                    "WalletScopeHotWalletIds": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "maxLength": 150
+                                        },
+                                        "maxItems": 100,
+                                        "description": "List of hot wallet IDs to scope this API key to. Replaces existing scopes when provided"
                                     }
                                 },
                                 "required": [
@@ -3667,7 +3725,12 @@
                                             "amount": "-25000000"
                                         }
                                     ],
-                                    "status": "Active"
+                                    "status": "Active",
+                                    "walletScopeEnabled": false,
+                                    "WalletScopeHotWalletIds": [
+                                        "hot_wallet_id_1",
+                                        "hot_wallet_id_2"
+                                    ]
                                 }
                             }
                         }
@@ -3709,7 +3772,9 @@
                                                     "amount": "10000000"
                                                 }
                                             ],
-                                            "status": "Active"
+                                            "status": "Active",
+                                            "walletScopeEnabled": false,
+                                            "WalletScopes": []
                                         }
                                     }
                                 }
@@ -3796,7 +3861,9 @@
                                                     "amount": "10000000"
                                                 }
                                             ],
-                                            "status": "Revoked"
+                                            "status": "Revoked",
+                                            "walletScopeEnabled": false,
+                                            "WalletScopes": []
                                         }
                                     }
                                 }
@@ -3811,6 +3878,713 @@
                     },
                     "500": {
                         "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/swap/": {
+            "post": {
+                "description": "Swap ADA for CNTs (Cardano Native Tokens) or CNTs for ADA using SundaeSwap DEX. This endpoint is mainnet-only.",
+                "summary": "Execute a token swap on SundaeSwap. (admin access required, mainnet only)",
+                "tags": [
+                    "swap"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Swap request parameters",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "walletVkey": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "Wallet verification key (vKey) to identify the wallet"
+                                    },
+                                    "amount": {
+                                        "type": "number",
+                                        "minimum": 0,
+                                        "exclusiveMinimum": true,
+                                        "maximum": 1000000000000,
+                                        "description": "Amount to swap (in ADA or token units). Capped to prevent overflow/DoS."
+                                    },
+                                    "fromToken": {
+                                        "type": "object",
+                                        "properties": {
+                                            "policyId": {
+                                                "type": "string",
+                                                "description": "Policy ID of the source token. Use empty string \"\" for ADA (native token)"
+                                            },
+                                            "assetName": {
+                                                "type": "string",
+                                                "description": "Asset name of the source token. Use empty string \"\" for ADA"
+                                            },
+                                            "name": {
+                                                "type": "string",
+                                                "description": "Name of the source token"
+                                            }
+                                        },
+                                        "required": [
+                                            "policyId",
+                                            "assetName",
+                                            "name"
+                                        ],
+                                        "description": "Source token information"
+                                    },
+                                    "toToken": {
+                                        "type": "object",
+                                        "properties": {
+                                            "policyId": {
+                                                "type": "string",
+                                                "description": "Policy ID of the destination token. Use empty string \"\" for ADA (native token)"
+                                            },
+                                            "assetName": {
+                                                "type": "string",
+                                                "description": "Asset name of the destination token. Use empty string \"\" for ADA"
+                                            },
+                                            "name": {
+                                                "type": "string",
+                                                "description": "Name of the destination token"
+                                            }
+                                        },
+                                        "required": [
+                                            "policyId",
+                                            "assetName",
+                                            "name"
+                                        ],
+                                        "description": "Destination token information"
+                                    },
+                                    "poolId": {
+                                        "type": "string",
+                                        "description": "SundaeSwap pool identifier"
+                                    },
+                                    "slippage": {
+                                        "type": "number",
+                                        "minimum": 0,
+                                        "maximum": 1,
+                                        "description": "Slippage tolerance (0-1, default: 0.03 for 3%)"
+                                    }
+                                },
+                                "required": [
+                                    "walletVkey",
+                                    "amount",
+                                    "fromToken",
+                                    "toToken",
+                                    "poolId"
+                                ],
+                                "example": {
+                                    "walletVkey": "wallet_verification_key_here",
+                                    "amount": 1,
+                                    "fromToken": {
+                                        "policyId": "c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad",
+                                        "assetName": "5553444d",
+                                        "name": "USDM"
+                                    },
+                                    "toToken": {
+                                        "policyId": "c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad",
+                                        "assetName": "5553444d",
+                                        "name": "USDM"
+                                    },
+                                    "poolId": "64f35d26b237ad58e099041bc14c687ea7fdc58969d7d5b66e2540ef",
+                                    "slippage": 0.03
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Swap executed successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "txHash": {
+                                            "type": "string",
+                                            "description": "Transaction hash of the swap"
+                                        },
+                                        "walletAddress": {
+                                            "type": "string",
+                                            "description": "Wallet address used for the swap"
+                                        }
+                                    },
+                                    "required": [
+                                        "txHash",
+                                        "walletAddress"
+                                    ],
+                                    "example": {
+                                        "txHash": "abc123def456...",
+                                        "walletAddress": "addr1..."
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (missing or invalid parameters)"
+                    },
+                    "401": {
+                        "description": "Unauthorized (invalid API key or insufficient permissions)"
+                    },
+                    "500": {
+                        "description": "Internal Server Error (swap failed)"
+                    }
+                }
+            }
+        },
+        "/swap/confirm/": {
+            "get": {
+                "description": "Check on-chain confirmation status of a swap transaction by transaction hash. Use after POST /swap/ to poll until status is confirmed. Mainnet only.",
+                "summary": "Get swap transaction confirmation status. (admin access required, mainnet only)",
+                "tags": [
+                    "swap"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "Transaction hash to check"
+                        },
+                        "required": true,
+                        "description": "Transaction hash to check",
+                        "name": "txHash",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "Wallet verification key (vKey) that submitted the swap"
+                        },
+                        "required": true,
+                        "description": "Wallet verification key (vKey) that submitted the swap",
+                        "name": "walletVkey",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Confirmation status (pending, confirmed, or not_found)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "pending",
+                                                "confirmed",
+                                                "not_found"
+                                            ],
+                                            "description": "On-chain status: pending (not yet in a block), confirmed (in a block), not_found (tx unknown)"
+                                        },
+                                        "swapStatus": {
+                                            "type": "string",
+                                            "description": "Swap lifecycle status (OrderPending, OrderConfirmed, CancelPending, CancelConfirmed, Completed)"
+                                        },
+                                        "swapTransactionId": {
+                                            "type": "string",
+                                            "description": "SwapTransaction ID, returned when lifecycle transition occurs"
+                                        },
+                                        "confirmations": {
+                                            "type": "integer",
+                                            "nullable": true,
+                                            "minimum": 0,
+                                            "description": "Number of block confirmations. Present when status is confirmed."
+                                        }
+                                    },
+                                    "required": [
+                                        "status"
+                                    ],
+                                    "example": {
+                                        "status": "confirmed",
+                                        "swapStatus": "OrderConfirmed",
+                                        "confirmations": 15
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (e.g. mainnet wallet required)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Wallet not found"
+                    }
+                }
+            }
+        },
+        "/swap/transactions/": {
+            "get": {
+                "description": "List swap transactions for a wallet, ordered by most recent first. Supports cursor-based pagination.",
+                "summary": "List swap transactions. (admin access required, mainnet only)",
+                "tags": [
+                    "swap"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "Wallet verification key (vKey) to filter swap transactions"
+                        },
+                        "required": true,
+                        "description": "Wallet verification key (vKey) to filter swap transactions",
+                        "name": "walletVkey",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "number",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 10,
+                            "description": "Number of swap transactions to return"
+                        },
+                        "required": false,
+                        "description": "Number of swap transactions to return",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Cursor ID for pagination"
+                        },
+                        "required": false,
+                        "description": "Cursor ID for pagination",
+                        "name": "cursorId",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of swap transactions",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "swapTransactions": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "id": {
+                                                        "type": "string",
+                                                        "description": "Swap transaction ID"
+                                                    },
+                                                    "createdAt": {
+                                                        "type": "string",
+                                                        "description": "Creation timestamp"
+                                                    },
+                                                    "txHash": {
+                                                        "type": "string",
+                                                        "nullable": true,
+                                                        "description": "On-chain transaction hash"
+                                                    },
+                                                    "status": {
+                                                        "type": "string",
+                                                        "description": "Transaction status"
+                                                    },
+                                                    "swapStatus": {
+                                                        "type": "string",
+                                                        "description": "Swap lifecycle status (OrderPending, OrderConfirmed, CancelPending, CancelConfirmed, Completed)"
+                                                    },
+                                                    "confirmations": {
+                                                        "type": "number",
+                                                        "nullable": true,
+                                                        "description": "Number of block confirmations"
+                                                    },
+                                                    "fromPolicyId": {
+                                                        "type": "string",
+                                                        "description": "Source token policy ID"
+                                                    },
+                                                    "fromAssetName": {
+                                                        "type": "string",
+                                                        "description": "Source token asset name"
+                                                    },
+                                                    "fromAmount": {
+                                                        "type": "string",
+                                                        "description": "Amount swapped"
+                                                    },
+                                                    "toPolicyId": {
+                                                        "type": "string",
+                                                        "description": "Destination token policy ID"
+                                                    },
+                                                    "toAssetName": {
+                                                        "type": "string",
+                                                        "description": "Destination token asset name"
+                                                    },
+                                                    "poolId": {
+                                                        "type": "string",
+                                                        "description": "SundaeSwap pool ID"
+                                                    },
+                                                    "slippage": {
+                                                        "type": "number",
+                                                        "nullable": true,
+                                                        "description": "Slippage tolerance used"
+                                                    },
+                                                    "cancelTxHash": {
+                                                        "type": "string",
+                                                        "nullable": true,
+                                                        "description": "Transaction hash of cancel transaction"
+                                                    },
+                                                    "orderOutputIndex": {
+                                                        "type": "number",
+                                                        "nullable": true,
+                                                        "description": "Output index of the order UTXO"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "id",
+                                                    "createdAt",
+                                                    "txHash",
+                                                    "status",
+                                                    "swapStatus",
+                                                    "fromPolicyId",
+                                                    "fromAssetName",
+                                                    "fromAmount",
+                                                    "toPolicyId",
+                                                    "toAssetName",
+                                                    "poolId"
+                                                ]
+                                            },
+                                            "description": "List of swap transactions"
+                                        }
+                                    },
+                                    "required": [
+                                        "swapTransactions"
+                                    ],
+                                    "example": {
+                                        "swapTransactions": [
+                                            {
+                                                "id": "clx1abc...",
+                                                "createdAt": "2026-03-06T12:00:00.000Z",
+                                                "txHash": "abc123def456...",
+                                                "status": "Confirmed",
+                                                "swapStatus": "Completed",
+                                                "confirmations": 15,
+                                                "fromPolicyId": "",
+                                                "fromAssetName": "",
+                                                "fromAmount": "10",
+                                                "toPolicyId": "c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad",
+                                                "toAssetName": "0014df105553444d",
+                                                "poolId": "pool_id_here",
+                                                "slippage": 0.03,
+                                                "cancelTxHash": null,
+                                                "orderOutputIndex": null
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Wallet not found"
+                    }
+                }
+            }
+        },
+        "/swap/estimate/": {
+            "get": {
+                "description": "Get a swap price estimate from the SundaeSwap pool. Returns the conversion rate based on current pool reserves.",
+                "summary": "Get swap price estimate. (admin access required, mainnet only)",
+                "tags": [
+                    "swap"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Policy ID of the source token. Use empty string \"\" for ADA"
+                        },
+                        "required": true,
+                        "description": "Policy ID of the source token. Use empty string \"\" for ADA",
+                        "name": "fromPolicyId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Asset name (hex) of the source token. Use empty string \"\" for ADA"
+                        },
+                        "required": true,
+                        "description": "Asset name (hex) of the source token. Use empty string \"\" for ADA",
+                        "name": "fromAssetName",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Policy ID of the destination token. Use empty string \"\" for ADA"
+                        },
+                        "required": true,
+                        "description": "Policy ID of the destination token. Use empty string \"\" for ADA",
+                        "name": "toPolicyId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Asset name (hex) of the destination token. Use empty string \"\" for ADA"
+                        },
+                        "required": true,
+                        "description": "Asset name (hex) of the destination token. Use empty string \"\" for ADA",
+                        "name": "toAssetName",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "SundaeSwap pool identifier"
+                        },
+                        "required": true,
+                        "description": "SundaeSwap pool identifier",
+                        "name": "poolId",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Swap estimate",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "rate": {
+                                            "type": "number",
+                                            "description": "Estimated conversion rate (toToken per 1 fromToken, after pool fee)"
+                                        },
+                                        "fee": {
+                                            "type": "number",
+                                            "description": "Pool fee as a decimal (e.g. 0.003 for 0.3%)"
+                                        },
+                                        "fromDecimals": {
+                                            "type": "number",
+                                            "description": "Decimal places of the source token"
+                                        },
+                                        "toDecimals": {
+                                            "type": "number",
+                                            "description": "Decimal places of the destination token"
+                                        }
+                                    },
+                                    "required": [
+                                        "rate",
+                                        "fee",
+                                        "fromDecimals",
+                                        "toDecimals"
+                                    ],
+                                    "example": {
+                                        "rate": 2.45,
+                                        "fee": 0.003,
+                                        "fromDecimals": 6,
+                                        "toDecimals": 6
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request (invalid pool or token)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    }
+                }
+            }
+        },
+        "/swap/cancel/": {
+            "post": {
+                "description": "Cancel a pending SundaeSwap order that is sitting at the script address. Only orders in OrderConfirmed state can be cancelled.",
+                "summary": "Cancel a pending swap order. (admin access required, mainnet only)",
+                "tags": [
+                    "swap"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Cancel swap request parameters",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "walletVkey": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "Wallet verification key (vKey) of the wallet that placed the order"
+                                    },
+                                    "swapTransactionId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "ID of the SwapTransaction to cancel"
+                                    }
+                                },
+                                "required": [
+                                    "walletVkey",
+                                    "swapTransactionId"
+                                ],
+                                "example": {
+                                    "walletVkey": "wallet_verification_key_here",
+                                    "swapTransactionId": "clx1abc..."
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Cancel transaction submitted",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "cancelTxHash": {
+                                            "type": "string",
+                                            "description": "Transaction hash of the cancel transaction"
+                                        }
+                                    },
+                                    "required": [
+                                        "cancelTxHash"
+                                    ],
+                                    "example": {
+                                        "cancelTxHash": "abc123def456..."
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (swap not in cancellable state)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Swap transaction or wallet not found"
+                    },
+                    "409": {
+                        "description": "Wallet is currently locked"
+                    }
+                }
+            }
+        },
+        "/swap/acknowledge-timeout/": {
+            "post": {
+                "description": "Acknowledge a timed-out swap transaction. Checks on-chain state and recovers to the correct status: OrderConfirmed if the order UTXO still exists (allowing retry), Completed if the DEX executed the swap, or keeps the timeout state if the order tx never confirmed.",
+                "summary": "Acknowledge a swap timeout and recover state. (admin access required, mainnet only)",
+                "tags": [
+                    "swap"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Acknowledge timeout request parameters",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "walletVkey": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "Wallet verification key (vKey) of the wallet"
+                                    },
+                                    "swapTransactionId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "ID of the timed-out SwapTransaction"
+                                    }
+                                },
+                                "required": [
+                                    "walletVkey",
+                                    "swapTransactionId"
+                                ],
+                                "example": {
+                                    "walletVkey": "wallet_verification_key_here",
+                                    "swapTransactionId": "clx1abc..."
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Timeout acknowledged, state recovered",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "swapStatus": {
+                                            "type": "string",
+                                            "description": "New swap status after acknowledgement"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Human-readable explanation of what happened"
+                                        }
+                                    },
+                                    "required": [
+                                        "swapStatus",
+                                        "message"
+                                    ],
+                                    "example": {
+                                        "swapStatus": "OrderConfirmed",
+                                        "message": "Cancel tx failed but order UTXO still exists. You can retry cancelling."
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (swap not in timeout state)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Swap transaction or wallet not found"
                     }
                 }
             }
@@ -3874,6 +4648,36 @@
                         "required": false,
                         "description": "The smart contract address of the payment source",
                         "name": "filterSmartContractAddress",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "FundsLocked",
+                                "FundsOrDatumInvalid",
+                                "ResultSubmitted",
+                                "RefundRequested",
+                                "Disputed",
+                                "Withdrawn",
+                                "RefundWithdrawn",
+                                "DisputedWithdrawn"
+                            ],
+                            "description": "Filter by on-chain state"
+                        },
+                        "required": false,
+                        "description": "Filter by on-chain state",
+                        "name": "filterOnChainState",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Search query to filter by ID, hash, state, network, wallet address, or amount"
+                        },
+                        "required": false,
+                        "description": "Search query to filter by ID, hash, state, network, wallet address, or amount",
+                        "name": "searchQuery",
                         "in": "query"
                     },
                     {
@@ -5069,6 +5873,166 @@
                     },
                     "500": {
                         "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/payment/count": {
+            "get": {
+                "description": "Gets the total count of payments.",
+                "summary": "Get the total number of payments. (READ access required)",
+                "tags": [
+                    "payment"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Preprod",
+                                "Mainnet"
+                            ],
+                            "description": "The network the payments were made on"
+                        },
+                        "required": true,
+                        "description": "The network the payments were made on",
+                        "name": "network",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "The smart contract address of the payment source"
+                        },
+                        "required": false,
+                        "description": "The smart contract address of the payment source",
+                        "name": "filterSmartContractAddress",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Total payments count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "total": {
+                                                    "type": "number",
+                                                    "description": "Total number of payments"
+                                                }
+                                            },
+                                            "required": [
+                                                "total"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "total": 150
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/purchase/count": {
+            "get": {
+                "description": "Gets the total count of purchases.",
+                "summary": "Get the total number of purchases. (READ access required)",
+                "tags": [
+                    "purchase"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Preprod",
+                                "Mainnet"
+                            ],
+                            "description": "The network the purchases were made on"
+                        },
+                        "required": true,
+                        "description": "The network the purchases were made on",
+                        "name": "network",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "The smart contract address of the payment source"
+                        },
+                        "required": false,
+                        "description": "The smart contract address of the payment source",
+                        "name": "filterSmartContractAddress",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Total purchases count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "total": {
+                                                    "type": "number",
+                                                    "description": "Total number of purchases"
+                                                }
+                                            },
+                                            "required": [
+                                                "total"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "total": 75
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -7419,8 +8383,8 @@
         },
         "/invoice/monthly": {
             "post": {
-                "description": "Generates an invoice PDF aggregating all payment requests for a buyer wallet within a month, using the end-of-month conversion rate. (admin access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.",
-                "summary": "Generate a monthly invoice PDF by buyer wallet vkey and month. (admin access required)",
+                "description": "Generates an invoice PDF aggregating all payment requests for a buyer wallet within a month, using the end-of-month conversion rate. (+PAY access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.",
+                "summary": "Generate a monthly invoice PDF by buyer wallet vkey and month. (+PAY access required)",
                 "tags": [
                     "invoice"
                 ],
@@ -7890,8 +8854,8 @@
                 }
             },
             "get": {
-                "description": "Lists invoice summaries for a given month with pagination. Returns only the latest revision per invoice base. Pass invoiceBaseId to get all revisions for a specific invoice. (admin access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own risk.",
-                "summary": "List invoices for a month. (admin access required)",
+                "description": "Lists invoice summaries for a given month with pagination. Returns only the latest revision per invoice base. Pass invoiceBaseId to get all revisions for a specific invoice. (+PAY access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own risk.",
+                "summary": "List invoices for a month. (+PAY access required)",
                 "tags": [
                     "invoice"
                 ],
@@ -8251,10 +9215,90 @@
                 }
             }
         },
-        "/invoice/monthly/admin": {
+        "/registry/count": {
+            "get": {
+                "description": "Gets the total count of AI agents.",
+                "summary": "Get the total number of AI agents. (READ access required)",
+                "tags": [
+                    "registry"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Preprod",
+                                "Mainnet"
+                            ],
+                            "description": "The Cardano network used to register the agent on"
+                        },
+                        "required": true,
+                        "description": "The Cardano network used to register the agent on",
+                        "name": "network",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "The smart contract address of the payment source"
+                        },
+                        "required": false,
+                        "description": "The smart contract address of the payment source",
+                        "name": "filterSmartContractAddress",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Total AI agents count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "total": {
+                                                    "type": "number",
+                                                    "description": "Total number of AI agents"
+                                                }
+                                            },
+                                            "required": [
+                                                "total"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "total": 42
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/invoice/monthly/internal": {
             "post": {
-                "description": "Generates an invoice PDF aggregating all payment requests for a buyer wallet within a month, without requiring buyer wallet signature verification. (admin access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.",
-                "summary": "Admin generate a monthly invoice PDF. (admin access required)",
+                "description": "Generates an invoice PDF aggregating all payment requests for a buyer wallet within a month, without requiring buyer wallet signature verification. (+PAY access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.",
+                "summary": "Generate a monthly invoice PDF without signature verification. (+PAY access required)",
                 "tags": [
                     "invoice"
                 ],
@@ -8688,10 +9732,10 @@
                 }
             }
         },
-        "/invoice/monthly/uninvoiced": {
+        "/invoice/monthly/missing": {
             "get": {
-                "description": "Finds billable payment requests that do not yet have an invoice for a given month. Only finalized payments are included: Withdrawn (seller completed work), ResultSubmitted past unlock time, or DisputedWithdrawn with seller funds. Payments still locked, pending refund, or in dispute are excluded. (admin access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.",
-                "summary": "List uninvoiced payments for a month. (admin access required)",
+                "description": "Finds billable payment requests that do not yet have an invoice for a given month. Only finalized payments are included: Withdrawn (seller completed work), ResultSubmitted past unlock time, or DisputedWithdrawn with seller funds. Payments still locked, pending refund, or in dispute are excluded. (+PAY access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.",
+                "summary": "List uninvoiced payments for a month. (+PAY access required)",
                 "tags": [
                     "invoice"
                 ],
@@ -8930,6 +9974,36 @@
                         "required": false,
                         "description": "The smart contract address of the payment source",
                         "name": "filterSmartContractAddress",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "FundsLocked",
+                                "FundsOrDatumInvalid",
+                                "ResultSubmitted",
+                                "RefundRequested",
+                                "Disputed",
+                                "Withdrawn",
+                                "RefundWithdrawn",
+                                "DisputedWithdrawn"
+                            ],
+                            "description": "Filter by on-chain state"
+                        },
+                        "required": false,
+                        "description": "Filter by on-chain state",
+                        "name": "filterOnChainState",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Search query to filter by ID, hash, state, network, wallet address, or amount"
+                        },
+                        "required": false,
+                        "description": "Search query to filter by ID, hash, state, network, wallet address, or amount",
+                        "name": "searchQuery",
                         "in": "query"
                     },
                     {
@@ -12299,6 +13373,19 @@
                 "parameters": [
                     {
                         "schema": {
+                            "type": "number",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 10,
+                            "description": "The number of registry entries to return"
+                        },
+                        "required": false,
+                        "description": "The number of registry entries to return",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
                             "type": "string",
                             "description": "The cursor id to paginate through the results"
                         },
@@ -12330,6 +13417,32 @@
                         "required": false,
                         "description": "The smart contract address of the payment source",
                         "name": "filterSmartContractAddress",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Registered",
+                                "Deregistered",
+                                "Pending",
+                                "Failed"
+                            ],
+                            "description": "Filter by registration status category"
+                        },
+                        "required": false,
+                        "description": "Filter by registration status category",
+                        "name": "filterStatus",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Search query to filter by name, description, tags, wallet address, state, or price"
+                        },
+                        "required": false,
+                        "description": "Search query to filter by name, description, tags, wallet address, state, or price",
+                        "name": "searchQuery",
                         "in": "query"
                     }
                 ],

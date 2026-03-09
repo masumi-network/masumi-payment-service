@@ -1,11 +1,16 @@
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, keepPreviousData } from '@tanstack/react-query';
 import { getRegistry, RegistryEntry } from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { handleApiCall } from '@/lib/utils';
 import { usePaymentSourceExtendedAll } from '../hooks/usePaymentSourceExtendedAll';
 import { useMemo } from 'react';
 
-export function useAgents() {
+const PAGE_SIZE = 10;
+
+export function useAgents(params?: {
+  filterStatus?: 'Registered' | 'Deregistered' | 'Pending' | 'Failed';
+  searchQuery?: string;
+}) {
   const { apiClient, network, selectedPaymentSourceId, selectedPaymentSource } = useAppContext();
 
   const { paymentSources } = usePaymentSourceExtendedAll();
@@ -16,7 +21,14 @@ export function useAgents() {
   );
 
   const query = useInfiniteQuery({
-    queryKey: ['agents', network, selectedPaymentSourceId, selectedPaymentSource],
+    queryKey: [
+      'agents',
+      network,
+      selectedPaymentSourceId,
+      selectedPaymentSource,
+      params?.filterStatus,
+      params?.searchQuery,
+    ],
     queryFn: async ({ pageParam }) => {
       if (!selectedPaymentSource) {
         return {
@@ -39,6 +51,9 @@ export function useAgents() {
               network: network,
               cursorId: pageParam ?? undefined,
               filterSmartContractAddress: smartContractAddress ? smartContractAddress : undefined,
+              limit: PAGE_SIZE,
+              filterStatus: params?.filterStatus,
+              searchQuery: params?.searchQuery || undefined,
             },
           }),
         {
@@ -48,7 +63,7 @@ export function useAgents() {
 
       const agents = response?.data?.data?.Assets ?? [];
       const nextCursor =
-        agents.length === 10 && agents[agents.length - 1]?.id
+        agents.length === PAGE_SIZE && agents[agents.length - 1]?.id
           ? agents[agents.length - 1].id
           : undefined;
 
@@ -61,6 +76,7 @@ export function useAgents() {
     getNextPageParam: (lastPage: { nextCursor: string | undefined }) => lastPage.nextCursor,
     enabled: hasCurrentNetworkPaymentSources && !!selectedPaymentSourceId,
     staleTime: 15000,
+    placeholderData: keepPreviousData,
   });
 
   const agents = useMemo(() => {
@@ -86,6 +102,7 @@ export function useAgents() {
     isLoading: query.isLoading,
     isFetching: query.isFetching,
     isRefetching: query.isRefetching,
+    isPlaceholderData: query.isPlaceholderData,
     refetch: query.refetch,
     loadMore: query.fetchNextPage,
   };

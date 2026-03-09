@@ -1,4 +1,4 @@
-import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
+import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { z } from '@/utils/zod-openapi';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
@@ -9,6 +9,7 @@ import { checkSignature } from '@meshsdk/core';
 import { generateHash } from '@/utils/crypto';
 import { AuthContext } from '@/utils/middleware/auth-middleware';
 import { invoiceGenerationBaseSchema, invoiceGenerationSchemaOutput, generateMonthlyInvoice } from './shared';
+import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 
 // ── GET /api/v1/invoice/monthly — List invoices ──
 
@@ -84,17 +85,18 @@ export const getMonthlyInvoiceListSchemaOutput = z.object({
 	Invoices: z.array(invoiceSummarySchema),
 });
 
-export const getMonthlyInvoiceListEndpoint = adminAuthenticatedEndpointFactory.build({
+export const getMonthlyInvoiceListEndpoint = payAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: getMonthlyInvoiceListSchemaInput,
 	output: getMonthlyInvoiceListSchemaOutput,
-	handler: async ({ input }: { input: z.infer<typeof getMonthlyInvoiceListSchemaInput> }) => {
+	handler: async ({ input, ctx }: { input: z.infer<typeof getMonthlyInvoiceListSchemaInput>; ctx: AuthContext }) => {
 		const [yearStr, monthStr] = input.month.split('-');
 		const year = Number(yearStr);
 		const monthNum = Number(monthStr);
 
 		const isDetailQuery = !!input.invoiceBaseId;
 
+		const walletScopePaymentFilter = buildWalletScopeFilter(ctx.walletScopeIds);
 		const invoiceBases = await prisma.invoiceBase.findMany({
 			where: {
 				...(isDetailQuery
@@ -104,6 +106,7 @@ export const getMonthlyInvoiceListEndpoint = adminAuthenticatedEndpointFactory.b
 							invoiceYear: year,
 							...(input.cursorId ? { id: { lt: input.cursorId } } : {}),
 						}),
+				...(ctx.walletScopeIds !== null ? { coveredPaymentRequests: { some: walletScopePaymentFilter } } : {}),
 			},
 			include: {
 				_count: {
@@ -226,7 +229,7 @@ export const postGenerateMonthlyInvoiceSchemaInput = invoiceGenerationBaseSchema
 	});
 export const postGenerateMonthlyInvoiceSchemaOutput = invoiceGenerationSchemaOutput;
 
-export const postGenerateMonthlyInvoiceEndpoint = adminAuthenticatedEndpointFactory.build({
+export const postGenerateMonthlyInvoiceEndpoint = payAuthenticatedEndpointFactory.build({
 	method: 'post',
 	input: postGenerateMonthlyInvoiceSchemaInput,
 	output: postGenerateMonthlyInvoiceSchemaOutput,
@@ -273,6 +276,7 @@ export const postGenerateMonthlyInvoiceEndpoint = adminAuthenticatedEndpointFact
 			const result = await generateMonthlyInvoice(input, {
 				walletAddress: input.walletAddress,
 				metricPath: '/api/v1/invoice/monthly',
+				walletScopeIds: ctx.walletScopeIds,
 			});
 
 			return result;

@@ -5,6 +5,7 @@ import { Network } from '@/generated/prisma/client';
 import createHttpError from 'http-errors';
 export async function handlePurchaseCreditInit({
 	id,
+	walletScopeIds,
 	cost,
 	metadata,
 	network,
@@ -19,6 +20,7 @@ export async function handlePurchaseCreditInit({
 	inputHash,
 }: {
 	id: string;
+	walletScopeIds: string[] | null;
 	cost: Array<{ amount: bigint; unit: string }>;
 	metadata: string | null | undefined;
 	network: Network;
@@ -37,6 +39,7 @@ export async function handlePurchaseCreditInit({
 		try {
 			return await creditTokenRepository.handlePurchaseCreditInit({
 				id,
+				walletScopeIds,
 				cost,
 				metadata,
 				network,
