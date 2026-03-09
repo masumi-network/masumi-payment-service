@@ -1,6 +1,6 @@
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import { z } from '@/utils/zod-openapi';
-import { HotWalletType, PaymentAction, PaymentErrorType, PricingType } from '@/generated/prisma/client';
+import { HotWalletType, PaymentAction, PricingType } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { createId } from '@paralleldrive/cuid2';
@@ -17,9 +17,8 @@ import {
 	generateBlockchainIdentifier,
 } from '@/utils/generator/blockchain-identifier-generator';
 import { validateHexString } from '@/utils/validator/hex';
-import { transformPaymentGetTimestamps, transformPaymentGetAmounts } from '@/utils/shared/transformers';
+import { transformPaymentGetAmounts, transformPaymentGetTimestamps } from '@/utils/shared/transformers';
 import { extractPolicyId } from '@/utils/converter/agent-identifier';
-import { parseAmountSearchRange, buildMatchingStates, buildTransactionSearchFilter } from '@/utils/shared/queries';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { buildWalletScopeFilter, assertHotWalletInScope } from '@/utils/shared/wallet-scope';
@@ -32,6 +31,8 @@ import {
 	queryPaymentsSchemaInput,
 	queryPaymentsSchemaOutput,
 } from './schemas';
+import { getPaymentsForQuery } from './queries';
+import { serializePaymentsResponse } from './serializers';
 
 export {
 	createPaymentSchemaOutput,
@@ -49,161 +50,12 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
 	handler: async ({ input, ctx }: { input: z.infer<typeof queryPaymentsSchemaInput>; ctx: AuthContext }) => {
 		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
 
-		const searchLower = input.searchQuery?.toLowerCase();
-		const matchingStates = buildMatchingStates(searchLower);
-		const amountFilter = searchLower ? parseAmountSearchRange(searchLower) : undefined;
-
-		const result = await prisma.paymentRequest.findMany({
-			where: {
-				PaymentSource: {
-					network: input.network,
-					smartContractAddress: input.filterSmartContractAddress ?? undefined,
-					deletedAt: null,
-				},
-				...buildWalletScopeFilter(ctx.walletScopeIds),
-				...(input.filterOnChainState ? { onChainState: input.filterOnChainState } : {}),
-				...buildTransactionSearchFilter(searchLower, matchingStates, amountFilter, 'RequestedFunds'),
-			},
-			orderBy: { createdAt: 'desc' },
-			cursor: input.cursorId
-				? {
-						id: input.cursorId,
-					}
-				: undefined,
-			take: input.limit,
-			include: {
-				BuyerWallet: { select: { id: true, walletVkey: true } },
-				SmartContractWallet: {
-					where: { deletedAt: null },
-					select: { id: true, walletVkey: true, walletAddress: true },
-				},
-				RequestedFunds: { select: { id: true, amount: true, unit: true } },
-				NextAction: {
-					select: {
-						id: true,
-						requestedAction: true,
-						errorType: true,
-						errorNote: true,
-						resultHash: true,
-					},
-				},
-				PaymentSource: {
-					select: {
-						id: true,
-						network: true,
-						smartContractAddress: true,
-						policyId: true,
-					},
-				},
-				CurrentTransaction: {
-					select: {
-						id: true,
-						createdAt: true,
-						updatedAt: true,
-						fees: true,
-						blockHeight: true,
-						blockTime: true,
-						txHash: true,
-						status: true,
-						previousOnChainState: true,
-						newOnChainState: true,
-						confirmations: true,
-					},
-				},
-				WithdrawnForSeller: {
-					select: { id: true, amount: true, unit: true },
-				},
-				WithdrawnForBuyer: {
-					select: { id: true, amount: true, unit: true },
-				},
-				TransactionHistory:
-					input.includeHistory == true
-						? {
-								orderBy: { createdAt: 'desc' },
-								select: {
-									id: true,
-									createdAt: true,
-									updatedAt: true,
-									txHash: true,
-									status: true,
-									fees: true,
-									blockHeight: true,
-									blockTime: true,
-									previousOnChainState: true,
-									newOnChainState: true,
-									confirmations: true,
-								},
-							}
-						: undefined,
-				ActionHistory:
-					input.includeHistory == true
-						? {
-								orderBy: { createdAt: 'desc' },
-								select: {
-									id: true,
-									createdAt: true,
-									updatedAt: true,
-									submittedTxHash: true,
-									requestedAction: true,
-									errorType: true,
-									errorNote: true,
-									resultHash: true,
-								},
-							}
-						: undefined,
-			},
-		});
+		const result = await getPaymentsForQuery(input, ctx.walletScopeIds);
 		if (result == null) {
 			throw createHttpError(404, 'Payment not found');
 		}
 
-		return {
-			Payments: result.map((payment) => {
-				return {
-					...payment,
-					...transformPaymentGetTimestamps(payment),
-					...transformPaymentGetAmounts(payment),
-					totalBuyerCardanoFees: Number(payment.totalBuyerCardanoFees.toString()) / 1_000_000,
-					totalSellerCardanoFees: Number(payment.totalSellerCardanoFees.toString()) / 1_000_000,
-					agentIdentifier: decodeBlockchainIdentifier(payment.blockchainIdentifier)?.agentIdentifier ?? null,
-					CurrentTransaction: payment.CurrentTransaction
-						? {
-								...payment.CurrentTransaction,
-								fees: payment.CurrentTransaction.fees?.toString() ?? null,
-							}
-						: null,
-					TransactionHistory: payment.TransactionHistory
-						? payment.TransactionHistory.map((tx) => ({
-								...tx,
-								fees: tx.fees?.toString() ?? null,
-							}))
-						: null,
-					ActionHistory: payment.ActionHistory
-						? (
-								payment.ActionHistory as Array<{
-									id: string;
-									createdAt: Date;
-									updatedAt: Date;
-									submittedTxHash: string | null;
-									requestedAction: PaymentAction;
-									errorType: PaymentErrorType | null;
-									errorNote: string | null;
-									resultHash: string | null;
-								}>
-							).map((action) => ({
-								id: action.id,
-								createdAt: action.createdAt,
-								updatedAt: action.updatedAt,
-								submittedTxHash: action.submittedTxHash,
-								requestedAction: action.requestedAction,
-								errorType: action.errorType,
-								errorNote: action.errorNote,
-								resultHash: action.resultHash,
-							}))
-						: null,
-				};
-			}),
-		};
+		return serializePaymentsResponse(result);
 	},
 });
 

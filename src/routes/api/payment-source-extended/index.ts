@@ -23,6 +23,8 @@ import {
 	paymentSourceExtendedUpdateSchemaInput,
 	paymentSourceExtendedUpdateSchemaOutput,
 } from './schemas';
+import { getPaymentSourceExtendedForQuery } from './queries';
+import { serializePaymentSourceExtendedResponse } from './serializers';
 
 export {
 	paymentSourceExtendedCreateSchemaInput,
@@ -41,50 +43,8 @@ export const paymentSourceExtendedEndpointGet = adminAuthenticatedEndpointFactor
 	input: paymentSourceExtendedSchemaInput,
 	output: paymentSourceExtendedSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof paymentSourceExtendedSchemaInput>; ctx: AuthContext }) => {
-		const paymentSources = await prisma.paymentSource.findMany({
-			where: {
-				network: {
-					in: ctx.networkLimit,
-				},
-				deletedAt: null,
-			},
-			take: input.take,
-			orderBy: {
-				createdAt: 'desc',
-			},
-			cursor: input.cursorId ? { id: input.cursorId } : undefined,
-			include: {
-				AdminWallets: {
-					orderBy: { order: 'asc' },
-					select: { walletAddress: true, order: true },
-				},
-				HotWallets: {
-					where: { deletedAt: null },
-					select: {
-						id: true,
-						walletVkey: true,
-						walletAddress: true,
-						type: true,
-						collectionAddress: true,
-						note: true,
-					},
-				},
-				FeeReceiverNetworkWallet: {
-					select: { walletAddress: true },
-				},
-				PaymentSourceConfig: {
-					select: { rpcProviderApiKey: true, rpcProvider: true },
-				},
-			},
-		});
-		const mappedPaymentSources = paymentSources.map((paymentSource) => {
-			const { HotWallets, ...rest } = paymentSource;
-			return {
-				...rest,
-				...splitWalletsByType(HotWallets),
-			};
-		});
-		return { ExtendedPaymentSources: mappedPaymentSources };
+		const paymentSources = await getPaymentSourceExtendedForQuery(input, ctx.networkLimit);
+		return serializePaymentSourceExtendedResponse(paymentSources);
 	},
 });
 

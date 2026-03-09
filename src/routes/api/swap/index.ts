@@ -24,6 +24,8 @@ import {
 	acknowledgeSwapTimeoutSchemaInput,
 	acknowledgeSwapTimeoutSchemaOutput,
 } from './schemas';
+import { getSwapTransactionsForWallet } from './queries';
+import { serializeSwapTransactionsResponse } from './serializers';
 
 export {
 	swapTokensSchemaInput,
@@ -957,34 +959,9 @@ export const getSwapTransactionsEndpointGet = adminAuthenticatedEndpointFactory.
 
 		assertHotWalletInScope(ctx.walletScopeIds, wallet.id);
 
-		const swapTransactions = await prisma.swapTransaction.findMany({
-			where: {
-				hotWalletId: wallet.id,
-			},
-			orderBy: { createdAt: 'desc' },
-			cursor: input.cursorId ? { id: input.cursorId } : undefined,
-			take: input.limit,
-		});
+		const swapTransactions = await getSwapTransactionsForWallet(wallet.id, input);
 
-		return {
-			SwapTransactions: swapTransactions.map((tx) => ({
-				id: tx.id,
-				createdAt: tx.createdAt.toISOString(),
-				txHash: tx.txHash,
-				status: tx.status,
-				swapStatus: tx.swapStatus,
-				confirmations: tx.confirmations,
-				fromPolicyId: tx.fromPolicyId,
-				fromAssetName: tx.fromAssetName,
-				fromAmount: tx.fromAmount,
-				toPolicyId: tx.toPolicyId,
-				toAssetName: tx.toAssetName,
-				poolId: tx.poolId,
-				slippage: tx.slippage,
-				cancelTxHash: tx.cancelTxHash,
-				orderOutputIndex: tx.orderOutputIndex,
-			})),
-		};
+		return serializeSwapTransactionsResponse(swapTransactions);
 	},
 });
 

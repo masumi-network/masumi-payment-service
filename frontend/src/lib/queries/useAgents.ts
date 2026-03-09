@@ -4,6 +4,7 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { handleApiCall } from '@/lib/utils';
 import { usePaymentSourceExtendedAll } from '../hooks/usePaymentSourceExtendedAll';
 import { useMemo } from 'react';
+import { flattenInclusiveCursorPages } from '@/lib/pagination/cursor-pagination';
 
 const PAGE_SIZE = 10;
 
@@ -81,17 +82,10 @@ export function useAgents(params?: {
 
   const agents = useMemo(() => {
     const pages = query.data?.pages ?? [];
-    const combined = pages.flatMap((page) => page.agents);
-    const seen = new Set<string>();
-    const unique: RegistryEntry[] = [];
-
-    combined.forEach((tx) => {
-      if (tx.id) {
-        if (seen.has(tx.id)) return;
-        seen.add(tx.id);
-      }
-      unique.push(tx);
-    });
+    const unique = flattenInclusiveCursorPages(
+      pages.map((page) => page.agents),
+      (agent: RegistryEntry) => agent.id,
+    );
 
     return unique.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [query.data]);

@@ -3,6 +3,7 @@ import { useInfiniteQuery } from '@tanstack/react-query';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { getApiKey, ApiKey } from '@/lib/api/generated';
 import { handleApiCall } from '@/lib/utils';
+import { flattenInclusiveCursorPages } from '@/lib/pagination/cursor-pagination';
 
 const PAGE_SIZE = 20;
 
@@ -60,20 +61,10 @@ export function useApiKeys() {
 
   const apiKeys = useMemo(() => {
     const pages = data?.pages ?? [];
-    const combined = pages.flatMap((page) => page.apiKeys);
-    const seen = new Set<string>();
-    const unique: ApiKey[] = [];
-
-    combined.forEach((key) => {
-      const identifier = key.token ?? key.id;
-      if (identifier) {
-        if (seen.has(identifier)) return;
-        seen.add(identifier);
-      }
-      unique.push(key);
-    });
-
-    return unique;
+    return flattenInclusiveCursorPages(
+      pages.map((page) => page.apiKeys),
+      (key: ApiKey) => key.token ?? key.id,
+    );
   }, [data]);
 
   const isLoading = queryIsLoading || isRefetching;

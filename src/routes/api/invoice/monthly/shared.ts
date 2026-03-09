@@ -23,63 +23,21 @@ import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
 import { CONFIG } from '@/utils/config';
 import Coingecko from '@coingecko/coingecko-typescript';
 import { logger } from '@/utils/logger';
+import {
+	collectDistinctSellerWalletVkeys,
+	getBillableFunds,
+	getSellerWalletVkey,
+	isPaymentBillable,
+	type PaymentWithInvoiceContext,
+} from './billing';
+
+export { getBillableFunds, isPaymentBillable } from './billing';
 
 // Token unit constants (policyId + assetName hex)
 const MAINNET_USDM_UNIT = 'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad0014df105553444d';
 const PREPROD_USDM_UNIT = '16a55b2a349361ff88c03788f93e1e966e5d689605d044fef722ddde0014df10745553444d';
 const isUsdmUnit = (unit: string) => unit === MAINNET_USDM_UNIT || unit === PREPROD_USDM_UNIT;
 import { getServicePeriodLabel, mergePaymentsById, validateInvoiceCompliance } from '@/utils/invoice/compliance';
-
-type PaymentWithInvoiceContext = {
-	id: string;
-	onChainState: string | null;
-	unlockTime: bigint;
-	blockchainIdentifier: string;
-	invoiceBaseId: string | null;
-	RequestedFunds: Array<{ unit: string; amount: bigint }>;
-	WithdrawnForSeller: Array<{ unit: string; amount: bigint }>;
-	TransactionHistory: Array<{ txHash: string | null }>;
-	BuyerWallet: { walletVkey: string; walletAddress: string } | null;
-	SmartContractWallet: { walletVkey: string; walletAddress: string } | null;
-};
-
-/**
- * Filter payments to only include final (billable) states:
- * - Withdrawn: seller completed work and withdrew funds → use RequestedFunds
- * - ResultSubmitted where unlockTime <= now: seller can claim imminently → use RequestedFunds
- * - DisputedWithdrawn: partial resolution → use WithdrawnForSeller (skip if empty)
- * Everything else is excluded (RefundWithdrawn, FundsLocked, RefundRequested, Disputed, FundsOrDatumInvalid, null)
- */
-export function isPaymentBillable(payment: {
-	onChainState: string | null;
-	unlockTime: bigint;
-	WithdrawnForSeller: Array<{ amount: bigint }>;
-	TransactionHistory: Array<{ txHash: string | null }>;
-}): boolean {
-	const state = payment.onChainState;
-	// Require at least one confirmed on-chain transaction to prevent mock data from being invoiced
-	const hasOnChainTx = payment.TransactionHistory.some((tx) => tx.txHash != null);
-	if (!hasOnChainTx) return false;
-
-	if (state === 'Withdrawn') return true;
-	if (state === 'ResultSubmitted' && payment.unlockTime <= BigInt(Date.now())) return true;
-	if (state === 'DisputedWithdrawn' && payment.WithdrawnForSeller.length > 0) return true;
-	return false;
-}
-
-/** Normalize asset unit: "lovelace" → "" (empty string = ADA in MeshSDK convention) */
-function normalizeUnit(unit: string): string {
-	return unit === 'lovelace' ? '' : unit;
-}
-
-export function getBillableFunds(payment: {
-	onChainState: string | null;
-	RequestedFunds: Array<{ unit: string; amount: bigint }>;
-	WithdrawnForSeller: Array<{ unit: string; amount: bigint }>;
-}): Array<{ unit: string; amount: bigint }> {
-	const funds = payment.onChainState === 'DisputedWithdrawn' ? payment.WithdrawnForSeller : payment.RequestedFunds;
-	return funds.map((f) => ({ unit: normalizeUnit(f.unit), amount: f.amount }));
-}
 
 function toPrismaBytes(base64: string): Uint8Array<ArrayBuffer> {
 	return Uint8Array.from(Buffer.from(base64, 'base64'));
@@ -90,23 +48,6 @@ function storedPdfToBase64(storedPdf: unknown): string | null {
 		return null;
 	}
 	return Buffer.from(storedPdf).toString('base64');
-}
-
-function getSellerWalletVkey(payment: Pick<PaymentWithInvoiceContext, 'id' | 'SmartContractWallet'>): string {
-	const sellerWalletVkey = payment.SmartContractWallet?.walletVkey?.trim();
-	if (!sellerWalletVkey) {
-		throw createHttpError(
-			409,
-			`Payment ${payment.id} has no seller wallet vkey and cannot be scoped to an invoice base`,
-		);
-	}
-	return sellerWalletVkey;
-}
-
-function collectDistinctSellerWalletVkeys(
-	payments: ReadonlyArray<Pick<PaymentWithInvoiceContext, 'id' | 'SmartContractWallet'>>,
-): string[] {
-	return Array.from(new Set(payments.map((payment) => getSellerWalletVkey(payment))));
 }
 
 export const invoiceGenerationBaseSchema = z.object({
@@ -238,7 +179,9 @@ export async function generateMonthlyInvoice(
 		include: paymentIncludes,
 	});
 
-	const preUninvoicedBillableAll = preUninvoicedPayments.filter(isPaymentBillable) as PaymentWithInvoiceContext[];
+	const preUninvoicedBillableAll = preUninvoicedPayments.filter((payment) =>
+		isPaymentBillable(payment),
+	) as PaymentWithInvoiceContext[];
 	const preUninvoicedSellerWalletVkeys = collectDistinctSellerWalletVkeys(preUninvoicedBillableAll);
 	if (preUninvoicedSellerWalletVkeys.length > 1) {
 		throw createHttpError(
@@ -265,7 +208,9 @@ export async function generateMonthlyInvoice(
 			},
 		},
 	});
-	const preExistingBasesBySeller = new Map(preExistingBases.map((base) => [base.sellerWalletVkey, base]));
+	const preExistingBasesBySeller = new Map<string, (typeof preExistingBases)[number]>(
+		preExistingBases.map((base) => [base.sellerWalletVkey, base]),
+	);
 	if (preExistingBasesBySeller.size !== preExistingBases.length) {
 		throw createHttpError(409, 'Multiple invoice bases exist for the same buyer/seller/month/year scope');
 	}
@@ -593,7 +538,9 @@ export async function generateMonthlyInvoice(
 				},
 				include: paymentIncludes,
 			});
-			const txUninvoicedBillableAll = txUninvoicedPayments.filter(isPaymentBillable) as PaymentWithInvoiceContext[];
+			const txUninvoicedBillableAll = txUninvoicedPayments.filter((payment) =>
+				isPaymentBillable(payment),
+			) as PaymentWithInvoiceContext[];
 			const txUninvoicedSellerWalletVkeys = collectDistinctSellerWalletVkeys(txUninvoicedBillableAll);
 			if (txUninvoicedSellerWalletVkeys.length > 1) {
 				throw createHttpError(
@@ -626,7 +573,9 @@ export async function generateMonthlyInvoice(
 					},
 				},
 			});
-			const txExistingBasesBySeller = new Map(txExistingBases.map((base) => [base.sellerWalletVkey, base]));
+			const txExistingBasesBySeller = new Map<string, (typeof txExistingBases)[number]>(
+				txExistingBases.map((base) => [base.sellerWalletVkey, base]),
+			);
 			if (txExistingBasesBySeller.size !== txExistingBases.length) {
 				throw createHttpError(409, 'Multiple invoice bases exist for the same buyer/seller/month/year scope');
 			}
@@ -648,8 +597,8 @@ export async function generateMonthlyInvoice(
 					? { ...txExistingBase.InvoiceRevisions[0], InvoiceBase: txExistingBase }
 					: null;
 
-			const txExistingBillable = (txExistingBase?.coveredPaymentRequests ?? []).filter(
-				isPaymentBillable,
+			const txExistingBillable = (txExistingBase?.coveredPaymentRequests ?? []).filter((payment) =>
+				isPaymentBillable(payment),
 			) as PaymentWithInvoiceContext[];
 			const txUninvoicedBillable = txTargetSellerWalletVkey
 				? txUninvoicedBillableAll.filter((payment) => getSellerWalletVkey(payment) === txTargetSellerWalletVkey)

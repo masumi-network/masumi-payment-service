@@ -1,5 +1,5 @@
 import { z } from '@/utils/zod-openapi';
-import { HotWalletType, PurchasingAction, PurchaseErrorType, PricingType } from '@/generated/prisma/client';
+import { HotWalletType, PricingType } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
@@ -16,8 +16,7 @@ import { validateHexString } from '@/utils/validator/hex';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { HttpExistsError } from '@/utils/errors/http-exists-error';
 import { recordBusinessEndpointError } from '@/utils/metrics';
-import { transformPurchaseGetTimestamps, transformPurchaseGetAmounts } from '@/utils/shared/transformers';
-import { parseAmountSearchRange, buildMatchingStates, buildTransactionSearchFilter } from '@/utils/shared/queries';
+import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
@@ -30,6 +29,8 @@ import {
 	queryPurchaseRequestSchemaInput,
 	queryPurchaseRequestSchemaOutput,
 } from './schemas';
+import { getPurchasesForQuery } from './queries';
+import { serializePurchasesResponse } from './serializers';
 
 export {
 	createPurchaseInitSchemaInput,
@@ -47,148 +48,11 @@ export const queryPurchaseRequestGet = readAuthenticatedEndpointFactory.build({
 	handler: async ({ input, ctx }: { input: z.infer<typeof queryPurchaseRequestSchemaInput>; ctx: AuthContext }) => {
 		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
 
-		const searchLower = input.searchQuery?.toLowerCase();
-		const matchingStates = buildMatchingStates(searchLower);
-		const amountFilter = searchLower ? parseAmountSearchRange(searchLower) : undefined;
-
-		const result = await prisma.purchaseRequest.findMany({
-			where: {
-				PaymentSource: {
-					deletedAt: null,
-					network: input.network,
-					smartContractAddress: input.filterSmartContractAddress ?? undefined,
-				},
-				...buildWalletScopeFilter(ctx.walletScopeIds),
-				...(input.filterOnChainState ? { onChainState: input.filterOnChainState } : {}),
-				...buildTransactionSearchFilter(searchLower, matchingStates, amountFilter, 'PaidFunds'),
-			},
-			cursor: input.cursorId ? { id: input.cursorId } : undefined,
-			take: input.limit,
-			orderBy: { createdAt: 'desc' },
-			include: {
-				NextAction: {
-					select: {
-						id: true,
-						requestedAction: true,
-						errorType: true,
-						errorNote: true,
-					},
-				},
-				CurrentTransaction: {
-					select: {
-						id: true,
-						createdAt: true,
-						updatedAt: true,
-						txHash: true,
-						status: true,
-						fees: true,
-						blockHeight: true,
-						blockTime: true,
-						previousOnChainState: true,
-						newOnChainState: true,
-						confirmations: true,
-					},
-				},
-				PaidFunds: { select: { id: true, amount: true, unit: true } },
-				PaymentSource: {
-					select: {
-						id: true,
-						network: true,
-						policyId: true,
-						smartContractAddress: true,
-					},
-				},
-				SellerWallet: { select: { id: true, walletVkey: true } },
-				SmartContractWallet: {
-					where: { deletedAt: null },
-					select: { id: true, walletVkey: true, walletAddress: true },
-				},
-				WithdrawnForSeller: {
-					select: { id: true, amount: true, unit: true },
-				},
-				WithdrawnForBuyer: { select: { id: true, amount: true, unit: true } },
-				TransactionHistory:
-					input.includeHistory == true
-						? {
-								orderBy: { createdAt: 'desc' },
-								select: {
-									id: true,
-									createdAt: true,
-									updatedAt: true,
-									txHash: true,
-									status: true,
-									fees: true,
-									blockHeight: true,
-									blockTime: true,
-									previousOnChainState: true,
-									newOnChainState: true,
-									confirmations: true,
-								},
-							}
-						: undefined,
-				ActionHistory:
-					input.includeHistory == true
-						? {
-								orderBy: { createdAt: 'desc' },
-								select: {
-									id: true,
-									createdAt: true,
-									updatedAt: true,
-									requestedAction: true,
-									errorType: true,
-									errorNote: true,
-								},
-							}
-						: undefined,
-			},
-		});
+		const result = await getPurchasesForQuery(input, ctx.walletScopeIds);
 		if (result == null) {
 			throw createHttpError(404, 'Purchase not found');
 		}
-		return {
-			Purchases: result.map((purchase) => {
-				return {
-					...purchase,
-					...transformPurchaseGetTimestamps(purchase),
-					...transformPurchaseGetAmounts(purchase),
-					totalBuyerCardanoFees: Number(purchase.totalBuyerCardanoFees.toString()) / 1_000_000,
-					totalSellerCardanoFees: Number(purchase.totalSellerCardanoFees.toString()) / 1_000_000,
-					agentIdentifier: decodeBlockchainIdentifier(purchase.blockchainIdentifier)?.agentIdentifier ?? null,
-					CurrentTransaction: purchase.CurrentTransaction
-						? {
-								...purchase.CurrentTransaction,
-								fees: purchase.CurrentTransaction.fees?.toString() ?? null,
-							}
-						: null,
-					TransactionHistory:
-						purchase.TransactionHistory != null
-							? purchase.TransactionHistory.map((tx) => ({
-									...tx,
-									fees: tx.fees?.toString() ?? null,
-								}))
-							: null,
-					ActionHistory: purchase.ActionHistory
-						? (
-								purchase.ActionHistory as Array<{
-									id: string;
-									createdAt: Date;
-									updatedAt: Date;
-									requestedAction: PurchasingAction;
-									errorType: PurchaseErrorType | null;
-									errorNote: string | null;
-								}>
-							).map((action) => ({
-								id: action.id,
-								createdAt: action.createdAt,
-								updatedAt: action.updatedAt,
-								requestedAction: action.requestedAction,
-								errorType: action.errorType,
-								errorNote: action.errorNote,
-							}))
-						: null,
-				};
-			}),
-		};
+		return serializePurchasesResponse(result);
 	},
 });
 

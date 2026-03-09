@@ -89,7 +89,7 @@ export const getMissingInvoicePaymentsEndpoint = readAuthenticatedEndpointFactor
 			take: input.limit,
 		});
 
-		const billable = payments.filter(isPaymentBillable);
+		const billable = payments.filter((payment) => isPaymentBillable(payment));
 
 		const result = billable.map((payment) => {
 			return {
