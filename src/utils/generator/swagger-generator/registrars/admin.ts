@@ -57,7 +57,7 @@ export function registerAdminPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 		method: 'get',
 		path: '/health',
 		tags: ['health'],
-		summary: 'Get the status of the API server',
+		summary: 'Get the status of the API server. (No authentication required)',
 		request: {},
 		responses: {
 			200: successResponse('Object with status ok, if the server is up and healthy', healthResponseSchema, {
