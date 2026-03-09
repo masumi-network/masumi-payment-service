@@ -8,7 +8,7 @@ export type PaymentSourceWalletDetails = {
   note: string | null;
   type: 'Purchasing' | 'Selling';
   balance: string;
-  usdmBalance: string;
+  usdcxBalance: string;
 };
 
 export function listPaymentSourceWallets(
@@ -19,13 +19,13 @@ export function listPaymentSourceWallets(
       ...wallet,
       type: 'Selling' as const,
       balance: '0',
-      usdmBalance: '0',
+      usdcxBalance: '0',
     })),
     ...(source.PurchasingWallets ?? []).map((wallet) => ({
       ...wallet,
       type: 'Purchasing' as const,
       balance: '0',
-      usdmBalance: '0',
+      usdcxBalance: '0',
     })),
   ]);
 }

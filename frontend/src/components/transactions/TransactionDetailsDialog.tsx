@@ -23,6 +23,7 @@ import {
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/WalletDetailsDialog';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
+import { findPaymentSourceWalletByVkey } from '@/lib/wallet-lookup';
 
 type Transaction =
   | (Payment & { type: 'payment' })
@@ -140,23 +141,9 @@ export default function TransactionDetailsDialog({
 
   const handleWalletClick = useCallback(
     (walletVkey: string) => {
-      const allWallets = currentNetworkPaymentSources.flatMap((source) => [
-        ...(source.SellingWallets || []).map((w: any) => ({
-          ...w,
-          type: 'Selling' as const,
-          balance: '0',
-          usdcxBalance: '0',
-        })),
-        ...(source.PurchasingWallets || []).map((w: any) => ({
-          ...w,
-          type: 'Purchasing' as const,
-          balance: '0',
-          usdcxBalance: '0',
-        })),
-      ]);
-      const found = allWallets.find((w: any) => w.walletVkey === walletVkey);
+      const found = findPaymentSourceWalletByVkey(currentNetworkPaymentSources, walletVkey);
       if (!found) return;
-      setSelectedWalletForDetails(found as WalletWithBalance);
+      setSelectedWalletForDetails(found);
     },
     [currentNetworkPaymentSources],
   );
