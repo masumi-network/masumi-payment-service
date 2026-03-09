@@ -131,17 +131,17 @@ export const purchaseResponseSchema = z
 				errorNote: z.string().nullable().describe('Additional details about the error, if any'),
 			})
 			.describe('Next action required for this purchase'),
-			ActionHistory: z
-				.array(
-					z
-						.object({
-							id: z.string().describe('Unique identifier for the action'),
-							createdAt: z.date().describe('Timestamp when the action was created'),
-							updatedAt: z.date().describe('Timestamp when the action was last updated'),
-							requestedAction: z.nativeEnum(PurchasingAction).describe('Next action required for this purchase'),
-							errorType: z.nativeEnum(PurchaseErrorType).nullable().describe('Type of error that occurred, if any'),
-							errorNote: z.string().nullable().describe('Additional details about the error, if any'),
-						})
+		ActionHistory: z
+			.array(
+				z
+					.object({
+						id: z.string().describe('Unique identifier for the action'),
+						createdAt: z.date().describe('Timestamp when the action was created'),
+						updatedAt: z.date().describe('Timestamp when the action was last updated'),
+						requestedAction: z.nativeEnum(PurchasingAction).describe('Next action required for this purchase'),
+						errorType: z.nativeEnum(PurchaseErrorType).nullable().describe('Type of error that occurred, if any'),
+						errorNote: z.string().nullable().describe('Additional details about the error, if any'),
+					})
 					.describe('Next action required for this purchase'),
 			)
 			.nullable()
@@ -441,12 +441,8 @@ export const createPurchaseInitSchemaInput = z.object({
 	submitResultTime: z.string().describe('The time by which the result has to be submitted. In unix time (number)'),
 	payByTime: z.string().describe('The time after which the purchase has to be submitted to the smart contract'),
 	metadata: z.string().optional().describe('Metadata to be stored with the purchase request'),
-		identifierFromPurchaser: z
-			.string()
-			.min(14)
-			.max(26)
-			.describe('The nonce of the purchaser. It must be in hex format'),
-	});
+	identifierFromPurchaser: z.string().min(14).max(26).describe('The nonce of the purchaser. It must be in hex format'),
+});
 
 export const createPurchaseInitSchemaOutput = purchaseResponseSchema.omit({
 	TransactionHistory: true,

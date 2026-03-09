@@ -275,10 +275,10 @@ export const queryAgentFromWalletGet = readAuthenticatedEndpointFactory.build({
 			throw createHttpError(404, 'Network and Address combination not supported');
 		}
 
-			const blockfrost = getBlockfrostInstance(input.network, paymentSource.PaymentSourceConfig.rpcProviderApiKey);
-			const wallet = paymentSource.HotWallets.find(
-				(wallet) => wallet.walletVkey == input.walletVkey && wallet.type == HotWalletType.Selling,
-			);
+		const blockfrost = getBlockfrostInstance(input.network, paymentSource.PaymentSourceConfig.rpcProviderApiKey);
+		const wallet = paymentSource.HotWallets.find(
+			(wallet) => wallet.walletVkey == input.walletVkey && wallet.type == HotWalletType.Selling,
+		);
 		if (wallet == null) {
 			throw createHttpError(404, 'Wallet not found');
 		}
