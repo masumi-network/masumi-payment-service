@@ -1,10 +1,10 @@
-import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { z } from '@/utils/zod-openapi';
 import { prisma } from '@/utils/db';
 import { transformBigIntAmounts } from '@/utils/shared/transformers';
 import { isPaymentBillable } from '../shared';
 import { AuthContext } from '@/utils/middleware/auth-middleware';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
+import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 
 export const getMissingInvoicePaymentsSchemaInput = z.object({
 	month: z
@@ -38,7 +38,7 @@ export const getMissingInvoicePaymentsSchemaOutput = z.object({
 	),
 });
 
-export const getMissingInvoicePaymentsEndpoint = payAuthenticatedEndpointFactory.build({
+export const getMissingInvoicePaymentsEndpoint = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: getMissingInvoicePaymentsSchemaInput,
 	output: getMissingInvoicePaymentsSchemaOutput,

@@ -486,12 +486,12 @@ export const createPaymentsSchemaInput = z.object({
 		.optional()
 		.describe('The time after which the payment will be unlocked for external dispute'),
 	metadata: z.string().optional().describe('Metadata to be stored with the payment request'),
-		identifierFromPurchaser: z
-			.string()
-			.min(14)
-			.max(26)
-			.describe('A unique nonce from the purchaser. It must be in hex format'),
-	});
+	identifierFromPurchaser: z
+		.string()
+		.min(14)
+		.max(26)
+		.describe('A unique nonce from the purchaser. It must be in hex format'),
+});
 
 export const createPaymentSchemaOutput = paymentResponseSchema.omit({
 	TransactionHistory: true,

@@ -296,6 +296,7 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 					where: { id: input.id },
 					data: {
 						token: input.token,
+						tokenHash: input.token ? generateSHA256Hash(input.token) : undefined,
 						usageLimited: input.usageLimited,
 						status: input.status,
 						networkLimit: input.networkLimit,

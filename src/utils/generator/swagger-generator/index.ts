@@ -1924,7 +1924,7 @@ export function generateOpenAPI() {
 		path: '/invoice/monthly',
 		description:
 			'Lists invoice summaries for a given month with pagination. Returns only the latest revision per invoice base. Pass invoiceBaseId to get all revisions for a specific invoice. (+PAY access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own risk.',
-		summary: 'List invoices for a month. (+PAY access required)',
+		summary: 'List invoices for a month. (+Read access required)',
 		tags: ['invoice'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {
@@ -2079,7 +2079,7 @@ export function generateOpenAPI() {
 		path: '/invoice/monthly/missing',
 		description:
 			'Finds billable payment requests that do not yet have an invoice for a given month. Only finalized payments are included: Withdrawn (seller completed work), ResultSubmitted past unlock time, or DisputedWithdrawn with seller funds. Payments still locked, pending refund, or in dispute are excluded. (+PAY access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.',
-		summary: 'List uninvoiced payments for a month. (+PAY access required)',
+		summary: 'List uninvoiced payments for a month. (+Read access required)',
 		tags: ['invoice'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {

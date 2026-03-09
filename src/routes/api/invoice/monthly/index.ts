@@ -10,6 +10,7 @@ import { generateHash } from '@/utils/crypto';
 import { AuthContext } from '@/utils/middleware/auth-middleware';
 import { invoiceGenerationBaseSchema, invoiceGenerationSchemaOutput, generateMonthlyInvoice } from './shared';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
+import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 
 // ── GET /api/v1/invoice/monthly — List invoices ──
 
@@ -85,7 +86,7 @@ export const getMonthlyInvoiceListSchemaOutput = z.object({
 	Invoices: z.array(invoiceSummarySchema),
 });
 
-export const getMonthlyInvoiceListEndpoint = payAuthenticatedEndpointFactory.build({
+export const getMonthlyInvoiceListEndpoint = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: getMonthlyInvoiceListSchemaInput,
 	output: getMonthlyInvoiceListSchemaOutput,
@@ -242,12 +243,12 @@ export const postGenerateMonthlyInvoiceEndpoint = payAuthenticatedEndpointFactor
 	}) => {
 		const startTime = Date.now();
 		try {
-				if (Date.now() > input.validUntil) {
-					throw createHttpError(400, 'Signature is expired');
-				}
-				if (Date.now() + 1000 * 60 * 60 * 2 < input.validUntil) {
-					throw createHttpError(400, 'Signature is too far in the future');
-				}
+			if (Date.now() > input.validUntil) {
+				throw createHttpError(400, 'Signature is expired');
+			}
+			if (Date.now() + 1000 * 60 * 60 * 2 < input.validUntil) {
+				throw createHttpError(400, 'Signature is too far in the future');
+			}
 
 			const message = stringify({
 				buyer: input.buyer,

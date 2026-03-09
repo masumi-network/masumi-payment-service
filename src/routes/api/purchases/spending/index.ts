@@ -26,27 +26,27 @@ export const postPurchaseSpendingSchemaInput = z.object({
 			'The unique identifier of the agent to get purchase spending for, if not provided, will return spending for all agents',
 		)
 		.nullable(),
-		startDate: ez
-			.dateIn()
-			.optional()
-			.nullable()
-			.describe(
-				'Start date for spending calculation (date format: 2024-01-01). If null, uses earliest available data. If provided, will be converted to the local time zone of the user',
-			),
-		endDate: ez
-			.dateIn()
-			.optional()
-			.nullable()
-			.describe(
-				'End date for spending calculation (date format: 2024-01-31). If null, uses current date. If provided, will be converted to the local time zone of the user',
-			),
-		timeZone: z
-			.string()
-			.optional()
-			.default('Etc/UTC')
-			.describe(
-				'The time zone to use for the spending calculation. If not provided, will use the UTC time zone. Must be a valid IANA time zone name, see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones',
-			),
+	startDate: ez
+		.dateIn()
+		.optional()
+		.nullable()
+		.describe(
+			'Start date for spending calculation (date format: 2024-01-01). If null, uses earliest available data. If provided, will be converted to the local time zone of the user',
+		),
+	endDate: ez
+		.dateIn()
+		.optional()
+		.nullable()
+		.describe(
+			'End date for spending calculation (date format: 2024-01-31). If null, uses current date. If provided, will be converted to the local time zone of the user',
+		),
+	timeZone: z
+		.string()
+		.optional()
+		.default('Etc/UTC')
+		.describe(
+			'The time zone to use for the spending calculation. If not provided, will use the UTC time zone. Must be a valid IANA time zone name, see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones',
+		),
 	network: z.nativeEnum(Network).describe('The Cardano network to query spending from'),
 });
 
