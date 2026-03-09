@@ -105,8 +105,8 @@ export const getSwapEstimateSchemaOutput = z.object({
 
 export const getSwapConfirmSchemaOutput = z.object({
 	status: z
-		.enum(['pending', 'confirmed', 'notFound'])
-		.describe('On-chain status: pending (not yet in a block), confirmed (in a block), notFound (tx unknown)'),
+		.enum(['Pending', 'Confirmed', 'NotFound'])
+		.describe('On-chain status: Pending (not yet in a block), Confirmed (in a block), NotFound (tx unknown)'),
 	swapStatus: z
 		.string()
 		.optional()

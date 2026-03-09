@@ -2942,7 +2942,7 @@
                                         "status": {
                                             "type": "string",
                                             "enum": [
-                                                "success"
+                                                "Success"
                                             ]
                                         },
                                         "data": {
@@ -2963,7 +2963,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "status": "ok"
                                         }
@@ -3007,7 +3007,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "api_key_id",
                                             "token": "masumi_payment_api_key_secret",
@@ -3105,7 +3105,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "walletVkey": "wallet_vkey",
                                             "note": "note",
@@ -3168,7 +3168,7 @@
                                         "status": {
                                             "type": "string",
                                             "enum": [
-                                                "success"
+                                                "Success"
                                             ]
                                         },
                                         "data": {
@@ -3180,7 +3180,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "walletMnemonic": "wallet_mnemonic",
                                             "walletAddress": "wallet_address",
@@ -3247,7 +3247,7 @@
                                         "status": {
                                             "type": "string",
                                             "enum": [
-                                                "success"
+                                                "Success"
                                             ]
                                         },
                                         "data": {
@@ -3259,7 +3259,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "walletVkey": "wallet_vkey",
                                             "note": "note",
@@ -3327,7 +3327,7 @@
                                     "action": {
                                         "type": "string",
                                         "enum": [
-                                            "revealData"
+                                            "RevealData"
                                         ],
                                         "description": "The action to perform"
                                     }
@@ -3341,7 +3341,7 @@
                                     "action"
                                 ],
                                 "example": {
-                                    "action": "revealData",
+                                    "action": "RevealData",
                                     "blockchainIdentifier": "blockchain_identifier",
                                     "signature": "signature",
                                     "key": "key",
@@ -3363,7 +3363,7 @@
                                         "status": {
                                             "type": "string",
                                             "enum": [
-                                                "success"
+                                                "Success"
                                             ]
                                         },
                                         "data": {
@@ -3384,7 +3384,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "isValid": true
                                         }
@@ -3503,7 +3503,7 @@
                                                 }
                                             ]
                                         },
-                                        "status": "success"
+                                        "status": "Success"
                                     }
                                 }
                             }
@@ -3646,7 +3646,7 @@
                                         "status"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "api_key_id",
                                             "token": "masumi_payment_api_key_secret",
@@ -3824,7 +3824,7 @@
                                         "status"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "api_key_id",
                                             "token": "masumi_payment_api_key_secret",
@@ -3914,7 +3914,7 @@
                                         "status"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "api_key_id",
                                             "token": "masumi_payment_api_key_secret",
@@ -4144,7 +4144,7 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "Confirmation status (pending, confirmed, or notFound)",
+                        "description": "Confirmation status (Pending, Confirmed, or NotFound)",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -4153,11 +4153,11 @@
                                         "status": {
                                             "type": "string",
                                             "enum": [
-                                                "pending",
-                                                "confirmed",
-                                                "notFound"
+                                                "Pending",
+                                                "Confirmed",
+                                                "NotFound"
                                             ],
-                                            "description": "On-chain status: pending (not yet in a block), confirmed (in a block), notFound (tx unknown)"
+                                            "description": "On-chain status: Pending (not yet in a block), Confirmed (in a block), NotFound (tx unknown)"
                                         },
                                         "swapStatus": {
                                             "type": "string",
@@ -4178,7 +4178,7 @@
                                         "status"
                                     ],
                                     "example": {
-                                        "status": "confirmed",
+                                        "status": "Confirmed",
                                         "swapStatus": "OrderConfirmed",
                                         "confirmations": 15
                                     }
@@ -4791,7 +4791,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "Payments": [
                                                 {
@@ -5481,7 +5481,7 @@
                                         "status"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
@@ -5675,7 +5675,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "Payments": [
                                                 {
@@ -5874,7 +5874,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "Payments": [
                                                 {
@@ -6013,7 +6013,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "total": 150
                                         }
@@ -6093,7 +6093,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "total": 75
                                         }
@@ -6233,7 +6233,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "Payments": [
                                                 {
@@ -6815,7 +6815,7 @@
                                         "status"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
@@ -7391,7 +7391,7 @@
                                         "status"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
@@ -7986,7 +7986,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "cmf40vg7h0016ucj1u1ro6651"
                                         }
@@ -8023,7 +8023,7 @@
                                     ]
                                 },
                                 "example": {
-                                    "status": "error",
+                                    "status": "Error",
                                     "error": {
                                         "message": "Payment request is not in WaitingForManualAction state. Current state: WaitingForExternalAction"
                                     }
@@ -8062,7 +8062,7 @@
                                     ]
                                 },
                                 "example": {
-                                    "status": "error",
+                                    "status": "Error",
                                     "error": {
                                         "message": "Payment request not found"
                                     }
@@ -8583,7 +8583,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "cmf40vg7h0016ucj1u1ro6651"
                                         }
@@ -8620,7 +8620,7 @@
                                     ]
                                 },
                                 "example": {
-                                    "status": "error",
+                                    "status": "Error",
                                     "error": {
                                         "message": "Purchase request is not in WaitingForManualAction state. Current state: WaitingForExternalAction"
                                     }
@@ -8659,7 +8659,7 @@
                                     ]
                                 },
                                 "example": {
-                                    "status": "error",
+                                    "status": "Error",
                                     "error": {
                                         "message": "Purchase request not found"
                                     }
@@ -8706,7 +8706,7 @@
                                     "action": {
                                         "type": "string",
                                         "enum": [
-                                            "retrieveMonthlyInvoices"
+                                            "RetrieveMonthlyInvoices"
                                         ],
                                         "description": "The action to perform for monthly invoices"
                                     },
@@ -8801,7 +8801,7 @@
                                     "buyer"
                                 ],
                                 "example": {
-                                    "action": "retrieveMonthlyInvoices",
+                                    "action": "RetrieveMonthlyInvoices",
                                     "buyerWalletVkey": "buyer_wallet_vkey",
                                     "month": "2025-09",
                                     "buyer": {
@@ -8861,12 +8861,12 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "signature": "ed25519_signature",
                                             "key": "ed25519_key",
                                             "walletAddress": "addr1...",
-                                            "signatureData": "{\"action\":\"retrieveMonthlyInvoices\",\"validUntil\":1736352000000,\"hash\":\"...\"}"
+                                            "signatureData": "{\"action\":\"RetrieveMonthlyInvoices\",\"validUntil\":1736352000000,\"hash\":\"...\"}"
                                         }
                                     }
                                 }
@@ -9237,7 +9237,7 @@
                                     "action": {
                                         "type": "string",
                                         "enum": [
-                                            "retrieveMonthlyInvoices"
+                                            "RetrieveMonthlyInvoices"
                                         ],
                                         "description": "The action to perform for monthly invoices"
                                     }
@@ -9259,7 +9259,7 @@
                                     "key": "ed25519_key",
                                     "walletAddress": "addr1xk2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3n0d3vllmyqwsx5wktcd8cc3sq835lu7drv2xwl2wywfgse35a3x",
                                     "validUntil": 1736352000000,
-                                    "action": "retrieveMonthlyInvoices",
+                                    "action": "RetrieveMonthlyInvoices",
                                     "buyerWalletVkey": "buyer_wallet_vkey",
                                     "month": "2025-09",
                                     "invoiceCurrency": "usd",
@@ -9336,7 +9336,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "invoice": "BASE64_PDF_STRING",
                                             "cancellationInvoice": "BASE64_CANCELLATION_PDF_STRING_OR_UNDEFINED"
@@ -9666,7 +9666,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "Invoices": [
                                                 {
@@ -9778,7 +9778,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "total": 42
                                         }
@@ -10214,7 +10214,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "invoice": "BASE64_PDF_STRING",
                                             "cancellationInvoice": "BASE64_CANCELLATION_PDF_STRING_OR_UNDEFINED"
@@ -10383,7 +10383,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "UninvoicedPayments": [
                                                 {
@@ -10544,7 +10544,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "Purchases": [
                                                 {
@@ -11177,7 +11177,7 @@
                                         "status"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
@@ -11695,7 +11695,7 @@
                                     ]
                                 },
                                 "example": {
-                                    "status": "error",
+                                    "status": "Error",
                                     "error": {
                                         "message": "Purchase request already exists"
                                     },
@@ -11872,7 +11872,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "Purchases": [
                                                 {
@@ -12685,7 +12685,7 @@
                                         "status"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
@@ -13244,7 +13244,7 @@
                                         "status"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
@@ -13390,7 +13390,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "cuid_v2_auto_generated",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
@@ -13535,7 +13535,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "cuid_v2_auto_generated",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
@@ -13686,7 +13686,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "Assets": [
                                                 {
@@ -13800,7 +13800,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "policyId": "policy_id",
                                             "assetName": "asset_name",
@@ -13984,7 +13984,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "Assets": [
                                                 {
@@ -14338,7 +14338,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "error": null,
                                             "id": "registry_id",
@@ -14452,7 +14452,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "error": null,
                                             "id": "registry_id",
@@ -14538,7 +14538,7 @@
                                     ]
                                 },
                                 "example": {
-                                    "status": "error",
+                                    "status": "Error",
                                     "error": {
                                         "message": "Agent registration cannot be deleted in its current state: RegistrationRequested"
                                     }
@@ -14577,7 +14577,7 @@
                                     ]
                                 },
                                 "example": {
-                                    "status": "error",
+                                    "status": "Error",
                                     "error": {
                                         "message": "Agent Registration not found"
                                     }
@@ -14794,7 +14794,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "error": null,
                                             "id": "registry_id",
@@ -14925,7 +14925,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "PaymentSources": [
                                                 {
@@ -15068,7 +15068,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "ExtendedPaymentSources": [
                                                 {
@@ -15372,7 +15372,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "cuid_v2_auto_generated",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
@@ -15653,7 +15653,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "cuid_v2_auto_generated",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
@@ -15779,7 +15779,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "cuid_v2_auto_generated",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
@@ -15921,10 +15921,10 @@
                         "schema": {
                             "type": "string",
                             "enum": [
-                                "asc",
-                                "desc"
+                                "Asc",
+                                "Desc"
                             ],
-                            "default": "desc",
+                            "default": "Desc",
                             "description": "The order to get the UTXOs in"
                         },
                         "required": false,
@@ -15965,7 +15965,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "Utxos": [
                                                 {
@@ -16043,7 +16043,7 @@
                                         "status": {
                                             "type": "string",
                                             "enum": [
-                                                "success"
+                                                "Success"
                                             ]
                                         },
                                         "data": {
@@ -16067,7 +16067,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "RpcProviderKeys": [
                                                 {
@@ -16612,7 +16612,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "agentIdentifier": "example_agent_identifier_asset_id",
                                             "periodStart": "2024-01-01T00:00:00.000Z",
@@ -17250,7 +17250,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "agentIdentifier": "example_agent_identifier_asset_id",
                                             "periodStart": "2024-01-01T00:00:00.000Z",
@@ -17546,7 +17546,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "webhooks": [
                                                 {
@@ -17723,7 +17723,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "webhook_endpoint_id",
                                             "url": "https://your-server.com/webhook",
@@ -17833,7 +17833,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "webhook_endpoint_id",
                                             "url": "https://your-server.com/webhook",
@@ -17883,7 +17883,7 @@
                                         "status": {
                                             "type": "string",
                                             "enum": [
-                                                "success"
+                                                "Success"
                                             ]
                                         },
                                         "data": {
@@ -17895,7 +17895,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "monitoringStatus": {
                                                 "isMonitoring": true,
@@ -17954,7 +17954,7 @@
                                         "status": {
                                             "type": "string",
                                             "enum": [
-                                                "success"
+                                                "Success"
                                             ]
                                         },
                                         "data": {
@@ -17966,7 +17966,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "message": "Manual monitoring cycle completed successfully",
                                             "triggered": true
@@ -18030,7 +18030,7 @@
                                         "status": {
                                             "type": "string",
                                             "enum": [
-                                                "success"
+                                                "Success"
                                             ]
                                         },
                                         "data": {
@@ -18042,7 +18042,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "message": "Monitoring service started with 30000ms interval",
                                             "started": true
@@ -18087,7 +18087,7 @@
                                         "status": {
                                             "type": "string",
                                             "enum": [
-                                                "success"
+                                                "Success"
                                             ]
                                         },
                                         "data": {
@@ -18099,7 +18099,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "message": "Monitoring service stopped successfully",
                                             "stopped": true

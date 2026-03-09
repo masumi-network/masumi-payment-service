@@ -17,7 +17,7 @@ export const postMonthlySignatureSchemaInput = z
 			.string()
 			.regex(/^\d{4}-\d{2}$/)
 			.describe('Target month in format YYYY-MM (UTC calendar)'),
-		action: z.enum(['retrieveMonthlyInvoices']).describe('The action to perform for monthly invoices'),
+		action: z.enum(['RetrieveMonthlyInvoices']).describe('The action to perform for monthly invoices'),
 		buyer: z.object({
 			country: z.string().min(1).max(100).describe('The country of the invoice'),
 			city: z.string().min(1).max(100).describe('The city of the invoice'),

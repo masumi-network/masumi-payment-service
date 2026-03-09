@@ -388,9 +388,9 @@ extendZodWithOpenApi(z);
 
 const registry = new OpenAPIRegistry();
 const successEnvelopeSchema = (dataSchema: z.ZodTypeAny, dataExample: unknown) =>
-	z.object({ status: z.literal('success'), data: dataSchema }).openapi({
+	z.object({ status: z.literal('Success'), data: dataSchema }).openapi({
 		example: {
-			status: 'success',
+			status: 'Success',
 			data: dataExample,
 		},
 	});
@@ -441,7 +441,7 @@ export function generateOpenAPI() {
 					'application/json': {
 						schema: z.object({ status: z.string(), data: getAPIKeyStatusSchemaOutput }).openapi({
 							example: {
-								status: 'success',
+								status: 'Success',
 								data: apiKeyExample,
 							},
 						}),
@@ -475,7 +475,7 @@ export function generateOpenAPI() {
 					'application/json': {
 						schema: z.object({ status: z.string(), data: getWalletSchemaOutput }).openapi({
 							example: {
-								status: 'success',
+								status: 'Success',
 								data: walletExample,
 							},
 						}),
@@ -558,8 +558,8 @@ export function generateOpenAPI() {
 				content: {
 					'application/json': {
 						schema: postVerifyDataRevealSchemaInput.openapi({
-								example: {
-									action: 'revealData',
+							example: {
+								action: 'RevealData',
 								blockchainIdentifier: 'blockchain_identifier',
 								signature: 'signature',
 								key: 'key',
@@ -619,7 +619,7 @@ export function generateOpenAPI() {
 								data: {
 									ApiKeys: [apiKeyExample],
 								},
-								status: 'success',
+								status: 'Success',
 							},
 						}),
 					},
@@ -717,12 +717,12 @@ export function generateOpenAPI() {
 		},
 		responses: {
 			200: {
-				description: 'Confirmation status (pending, confirmed, or notFound)',
+				description: 'Confirmation status (Pending, Confirmed, or NotFound)',
 				content: {
 					'application/json': {
 						schema: getSwapConfirmSchemaOutput.openapi({
 							example: {
-								status: 'confirmed',
+								status: 'Confirmed',
 								swapStatus: 'OrderConfirmed',
 								confirmations: 15,
 							},
@@ -978,7 +978,7 @@ export function generateOpenAPI() {
 					'application/json': {
 						schema: z.object({ data: addAPIKeySchemaOutput, status: z.string() }).openapi({
 							example: {
-								status: 'success',
+								status: 'Success',
 								data: apiKeyExample,
 							},
 						}),
@@ -1039,7 +1039,7 @@ export function generateOpenAPI() {
 					'application/json': {
 						schema: z.object({ data: updateAPIKeySchemaOutput, status: z.string() }).openapi({
 							example: {
-								status: 'success',
+								status: 'Success',
 								data: {
 									...apiKeyExample,
 									networkLimit: [Network.Preprod, Network.Mainnet],
@@ -1089,7 +1089,7 @@ export function generateOpenAPI() {
 					'application/json': {
 						schema: z.object({ data: deleteAPIKeySchemaOutput, status: z.string() }).openapi({
 							example: {
-								status: 'success',
+								status: 'Success',
 								data: {
 									...apiKeyExample,
 									status: ApiKeyStatus.Revoked,
@@ -1135,7 +1135,7 @@ export function generateOpenAPI() {
 					'application/json': {
 						schema: z.object({ status: z.string(), data: queryPaymentsSchemaOutput }).openapi({
 							example: {
-								status: 'success',
+								status: 'Success',
 								data: {
 									Payments: [{ ...paymentSchemaOutputExample, TransactionHistory: [] }],
 								},
@@ -1182,7 +1182,7 @@ export function generateOpenAPI() {
 					'application/json': {
 						schema: z.object({ status: z.string(), data: queryPaymentsSchemaOutput }).openapi({
 							example: {
-								status: 'success',
+								status: 'Success',
 								data: {
 									Payments: [{ ...paymentSchemaOutputExample, TransactionHistory: [] }],
 								},
@@ -1228,7 +1228,7 @@ export function generateOpenAPI() {
 					'application/json': {
 						schema: z.object({ status: z.string(), data: queryPaymentsSchemaOutput }).openapi({
 							example: {
-								status: 'success',
+								status: 'Success',
 								data: {
 									Payments: [{ ...paymentSchemaOutputExample, TransactionHistory: [] }],
 								},
@@ -1276,7 +1276,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										total: 150,
 									},
@@ -1315,7 +1315,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										total: 75,
 									},
@@ -1352,7 +1352,7 @@ export function generateOpenAPI() {
 					'application/json': {
 						schema: z.object({ status: z.string(), data: queryPaymentsSchemaOutput }).openapi({
 							example: {
-								status: 'success',
+								status: 'Success',
 								data: {
 									Payments: [{ ...paymentSchemaOutputExample, TransactionHistory: [] }],
 								},
@@ -1407,7 +1407,7 @@ export function generateOpenAPI() {
 					'application/json': {
 						schema: z.object({ data: createPaymentSchemaOutput, status: z.string() }).openapi({
 							example: {
-								status: 'success',
+								status: 'Success',
 								data: paymentSchemaOutputExample,
 							},
 						}),
@@ -1463,7 +1463,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: paymentSchemaOutputExample,
 								},
 							}),
@@ -1523,7 +1523,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: paymentSchemaOutputExample,
 								},
 							}),
@@ -1585,7 +1585,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										id: 'cmf40vg7h0016ucj1u1ro6651',
 									},
@@ -1603,7 +1603,7 @@ export function generateOpenAPI() {
 							error: z.object({ message: z.string() }),
 						}),
 						example: {
-							status: 'error',
+							status: 'Error',
 							error: {
 								message:
 									'Payment request is not in WaitingForManualAction state. Current state: WaitingForExternalAction',
@@ -1624,7 +1624,7 @@ export function generateOpenAPI() {
 							error: z.object({ message: z.string() }),
 						}),
 						example: {
-							status: 'error',
+							status: 'Error',
 							error: { message: 'Payment request not found' },
 						},
 					},
@@ -1673,7 +1673,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										id: 'cmf40vg7h0016ucj1u1ro6651',
 									},
@@ -1691,7 +1691,7 @@ export function generateOpenAPI() {
 							error: z.object({ message: z.string() }),
 						}),
 						example: {
-							status: 'error',
+							status: 'Error',
 							error: {
 								message:
 									'Purchase request is not in WaitingForManualAction state. Current state: WaitingForExternalAction',
@@ -1712,7 +1712,7 @@ export function generateOpenAPI() {
 							error: z.object({ message: z.string() }),
 						}),
 						example: {
-							status: 'error',
+							status: 'Error',
 							error: { message: 'Purchase request not found' },
 						},
 					},
@@ -1739,8 +1739,8 @@ export function generateOpenAPI() {
 				content: {
 					'application/json': {
 						schema: postMonthlySignatureSchemaInput.openapi({
-								example: {
-									action: 'retrieveMonthlyInvoices',
+							example: {
+								action: 'RetrieveMonthlyInvoices',
 								buyerWalletVkey: 'buyer_wallet_vkey',
 								month: '2025-09',
 								buyer: {
@@ -1773,12 +1773,12 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										signature: 'ed25519_signature',
 										key: 'ed25519_key',
 										walletAddress: 'addr1...',
-											signatureData: '{"action":"retrieveMonthlyInvoices","validUntil":1736352000000,"hash":"..."}',
+										signatureData: '{"action":"RetrieveMonthlyInvoices","validUntil":1736352000000,"hash":"..."}',
 									},
 								},
 							}),
@@ -1802,13 +1802,13 @@ export function generateOpenAPI() {
 				content: {
 					'application/json': {
 						schema: postGenerateMonthlyInvoiceSchemaInput.openapi({
-								example: {
-									signature: 'ed25519_signature',
-									key: 'ed25519_key',
-									walletAddress:
-										'addr1xk2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3n0d3vllmyqwsx5wktcd8cc3sq835lu7drv2xwl2wywfgse35a3x',
-									validUntil: 1736352000000,
-									action: 'retrieveMonthlyInvoices',
+							example: {
+								signature: 'ed25519_signature',
+								key: 'ed25519_key',
+								walletAddress:
+									'addr1xk2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3n0d3vllmyqwsx5wktcd8cc3sq835lu7drv2xwl2wywfgse35a3x',
+								validUntil: 1736352000000,
+								action: 'RetrieveMonthlyInvoices',
 								buyerWalletVkey: 'buyer_wallet_vkey',
 								month: '2025-09',
 								invoiceCurrency: 'usd',
@@ -1867,7 +1867,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										invoice: 'BASE64_PDF_STRING',
 										cancellationInvoice: 'BASE64_CANCELLATION_PDF_STRING_OR_UNDEFINED',
@@ -1907,7 +1907,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										total: 42,
 									},
@@ -1947,7 +1947,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										Invoices: [
 											{
@@ -2061,7 +2061,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										invoice: 'BASE64_PDF_STRING',
 										cancellationInvoice: 'BASE64_CANCELLATION_PDF_STRING_OR_UNDEFINED',
@@ -2102,7 +2102,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										UninvoicedPayments: [
 											{
@@ -2180,7 +2180,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										Purchases: [
 											{
@@ -2276,7 +2276,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										Purchases: [
 											{
@@ -2467,7 +2467,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: purchaseResponseSchemaExample,
 								},
 							}),
@@ -2491,7 +2491,7 @@ export function generateOpenAPI() {
 							object: createPurchaseInitSchemaOutput,
 						}),
 						example: {
-							status: 'error',
+							status: 'Error',
 							error: { message: 'Purchase request already exists' },
 							id: 'cuid_v2_auto_generated',
 							object: purchaseResponseSchemaExample,
@@ -2540,7 +2540,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: purchaseResponseSchemaExample,
 								},
 							}),
@@ -2599,7 +2599,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: purchaseResponseSchemaExample,
 								},
 							}),
@@ -2659,7 +2659,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										id: 'cuid_v2_auto_generated',
 										createdAt: new Date(1713636260),
@@ -2764,7 +2764,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										id: 'cuid_v2_auto_generated',
 										createdAt: new Date(1713636260),
@@ -2863,7 +2863,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										Assets: [
 											{
@@ -2941,7 +2941,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										policyId: 'policy_id',
 										assetName: 'asset_name',
@@ -3030,7 +3030,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										Assets: [
 											{
@@ -3188,7 +3188,7 @@ export function generateOpenAPI() {
 					'application/json': {
 						schema: z.object({ status: z.string(), data: registerAgentSchemaOutput }).openapi({
 							example: {
-								status: 'success',
+								status: 'Success',
 								data: registryEntryExample,
 							},
 						}),
@@ -3228,7 +3228,7 @@ export function generateOpenAPI() {
 					'application/json': {
 						schema: z.object({ status: z.string(), data: unregisterAgentSchemaOutput }).openapi({
 							example: {
-								status: 'success',
+								status: 'Success',
 								data: registryEntryExample,
 							},
 						}),
@@ -3272,7 +3272,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: registryEntryExample,
 								},
 							}),
@@ -3288,7 +3288,7 @@ export function generateOpenAPI() {
 							error: z.object({ message: z.string() }),
 						}),
 						example: {
-							status: 'error',
+							status: 'Error',
 							error: {
 								message: 'Agent registration cannot be deleted in its current state: RegistrationRequested',
 							},
@@ -3308,7 +3308,7 @@ export function generateOpenAPI() {
 							error: z.object({ message: z.string() }),
 						}),
 						example: {
-							status: 'error',
+							status: 'Error',
 							error: { message: 'Agent Registration not found' },
 						},
 					},
@@ -3342,7 +3342,7 @@ export function generateOpenAPI() {
 					'application/json': {
 						schema: z.object({ status: z.string(), data: paymentSourceSchemaOutput }).openapi({
 							example: {
-								status: 'success',
+								status: 'Success',
 								data: {
 									PaymentSources: [
 										{
@@ -3435,7 +3435,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										ExtendedPaymentSources: [
 											{
@@ -3562,7 +3562,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: paymentSourceExtendedExample,
 								},
 							}),
@@ -3626,7 +3626,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: paymentSourceExtendedExample,
 								},
 							}),
@@ -3667,7 +3667,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: paymentSourceExtendedExample,
 								},
 							}),
@@ -3692,7 +3692,7 @@ export function generateOpenAPI() {
 					address: 'addr1qx2ej34k567890',
 					count: 10,
 					page: 1,
-					order: 'desc',
+					order: 'Desc',
 				},
 			}),
 		},
@@ -3703,7 +3703,7 @@ export function generateOpenAPI() {
 					'application/json': {
 						schema: z.object({ status: z.string(), data: getUTXOSchemaOutput }).openapi({
 							example: {
-								status: 'success',
+								status: 'Success',
 								data: {
 									Utxos: [
 										{
@@ -3806,7 +3806,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										agentIdentifier: 'example_agent_identifier_asset_id',
 										periodStart: new Date('2024-01-01T00:00:00.000Z'),
@@ -3963,7 +3963,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										agentIdentifier: 'example_agent_identifier_asset_id',
 										periodStart: new Date('2024-01-01T00:00:00.000Z'),
@@ -4075,7 +4075,7 @@ export function generateOpenAPI() {
 					'application/json': {
 						schema: z.object({ status: z.string(), data: listWebhooksSchemaOutput }).openapi({
 							example: {
-								status: 'success',
+								status: 'Success',
 								data: {
 									webhooks: [
 										{
@@ -4143,7 +4143,7 @@ export function generateOpenAPI() {
 					'application/json': {
 						schema: z.object({ status: z.string(), data: registerWebhookSchemaOutput }).openapi({
 							example: {
-								status: 'success',
+								status: 'Success',
 								data: {
 									id: 'webhook_endpoint_id',
 									url: 'https://your-server.com/webhook',
@@ -4205,7 +4205,7 @@ export function generateOpenAPI() {
 					'application/json': {
 						schema: z.object({ status: z.string(), data: deleteWebhookSchemaOutput }).openapi({
 							example: {
-								status: 'success',
+								status: 'Success',
 								data: {
 									id: 'webhook_endpoint_id',
 									url: 'https://your-server.com/webhook',

@@ -1637,7 +1637,7 @@ export type GetHealthResponses = {
      * Object with status ok, if the server is up and healthy
      */
     200: {
-        status: 'success';
+        status: 'Success';
         data: {
             /**
              * Health status of the service. Returns "ok" when the service is running
@@ -1728,7 +1728,7 @@ export type PatchWalletResponses = {
      * Wallet updated
      */
     200: {
-        status: 'success';
+        status: 'Success';
         data: Wallet;
     };
 };
@@ -1752,7 +1752,7 @@ export type PostWalletResponses = {
      * Wallet created
      */
     200: {
-        status: 'success';
+        status: 'Success';
         data: GeneratedWalletSecret;
     };
 };
@@ -1784,7 +1784,7 @@ export type PostSignatureVerifyRevealDataData = {
         /**
          * The action to perform
          */
-        action: 'revealData';
+        action: 'RevealData';
     };
     path?: never;
     query?: never;
@@ -1819,7 +1819,7 @@ export type PostSignatureVerifyRevealDataResponses = {
      * Revealed data
      */
     200: {
-        status: 'success';
+        status: 'Success';
         data: {
             /**
              * Whether the signature is valid and the data can be revealed
@@ -2189,13 +2189,13 @@ export type GetSwapConfirmErrors = {
 
 export type GetSwapConfirmResponses = {
     /**
-     * Confirmation status (pending, confirmed, or notFound)
+     * Confirmation status (Pending, Confirmed, or NotFound)
      */
     200: {
         /**
-         * On-chain status: pending (not yet in a block), confirmed (in a block), notFound (tx unknown)
+         * On-chain status: Pending (not yet in a block), Confirmed (in a block), NotFound (tx unknown)
          */
-        status: 'pending' | 'confirmed' | 'notFound';
+        status: 'Pending' | 'Confirmed' | 'NotFound';
         /**
          * Swap lifecycle status (OrderPending, OrderConfirmed, CancelPending, CancelConfirmed, Completed)
          */
@@ -4332,7 +4332,7 @@ export type PostSignatureSignCreateInvoiceMonthlyData = {
         /**
          * The action to perform for monthly invoices
          */
-        action: 'retrieveMonthlyInvoices';
+        action: 'RetrieveMonthlyInvoices';
         buyer: {
             /**
              * The country of the invoice
@@ -4699,7 +4699,7 @@ export type PostInvoiceMonthlyData = {
         /**
          * The action to perform for monthly invoices
          */
-        action: 'retrieveMonthlyInvoices';
+        action: 'RetrieveMonthlyInvoices';
     };
     path?: never;
     query?: never;
@@ -7130,7 +7130,7 @@ export type GetUtxosData = {
         /**
          * The order to get the UTXOs in
          */
-        order?: 'asc' | 'desc';
+        order?: 'Asc' | 'Desc';
     };
     url: '/utxos';
 };
@@ -7184,7 +7184,7 @@ export type GetRpcApiKeysResponses = {
      * Blockfrost keys
      */
     200: {
-        status: 'success';
+        status: 'Success';
         data: {
             /**
              * List of RPC provider keys
@@ -7779,7 +7779,7 @@ export type GetMonitoringResponses = {
      * Monitoring service status
      */
     200: {
-        status: 'success';
+        status: 'Success';
         data: MonitoringStatus;
     };
 };
@@ -7809,7 +7809,7 @@ export type PostMonitoringTriggerCycleResponses = {
      * Monitoring cycle trigger result
      */
     200: {
-        status: 'success';
+        status: 'Success';
         data: TriggeredMonitoringCycle;
     };
 };
@@ -7851,7 +7851,7 @@ export type PostMonitoringStartResponses = {
      * Monitoring service start result
      */
     200: {
-        status: 'success';
+        status: 'Success';
         data: StartedMonitoring;
     };
 };
@@ -7885,7 +7885,7 @@ export type PostMonitoringStopResponses = {
      * Monitoring service stop result
      */
     200: {
-        status: 'success';
+        status: 'Success';
         data: StoppedMonitoring;
     };
 };
