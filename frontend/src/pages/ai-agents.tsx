@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Plus, Trash2, ExternalLink } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 
 import { useRouter } from 'next/router';
 import { RegisterAIAgentDialog } from '@/components/ai-agents/RegisterAIAgentDialog';
@@ -150,13 +150,9 @@ export default function AIAgentsPage() {
     { name: 'Failed', count: null },
   ];
 
-  useEffect(() => {
-    if (router.query.action === 'register_agent') {
-      setIsRegisterDialogOpen(true);
-    }
-  }, [router.query.action]);
+  const [dismissedQueryAction, setDismissedQueryAction] = useState(false);
 
-  const shouldOpenRegisterDialog = isRegisterDialogOpen;
+  const shouldOpenRegisterDialog = isRegisterDialogOpen || (router.query.action === 'register_agent' && !dismissedQueryAction);
 
   const formatDate = (date: Date | string) => {
     const dateObj = typeof date === 'string' ? new Date(date) : date;
@@ -532,6 +528,7 @@ export default function AIAgentsPage() {
             onClose={() => {
               setIsRegisterDialogOpen(false);
               if (router.query.action === 'register_agent') {
+                setDismissedQueryAction(true);
                 void router.replace('/ai-agents', undefined, { shallow: true });
               }
             }}
