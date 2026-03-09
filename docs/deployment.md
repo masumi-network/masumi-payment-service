@@ -29,22 +29,17 @@ provided at container runtime, and frontend `NEXT_PUBLIC_*` values must be passe
    ```
 
    Optional public frontend build arguments supported by the image:
-
    - `NEXT_PUBLIC_PAYMENT_API_BASE_URL`
-   - `NEXT_PUBLIC_BLOCKFROST_API_KEY`
-   - `NEXT_PUBLIC_MAESTRO_API_KEY`
-   - `NEXT_PUBLIC_TRANSAK_API_KEY`
-   - `NEXT_PUBLIC_DEV`
-   - `NEXT_PUBLIC_DEV_WALLET_ADDRESS`
-   - `NEXT_PUBLIC_DEV_WALLET_MNEMONIC`
 
    Do not pass backend secrets such as `DATABASE_URL`, `ENCRYPTION_KEY`, `ADMIN_KEY`, or Blockfrost server keys as
    build arguments.
 
 3. Run the container with runtime env injection:
+
    ```
    docker run --env-file .env -d -p 3001:3001 masumi-payment-service
    ```
+
    Replacing `masumi-payment-service` with the image name, and `3001:3001` with the `host:container` ports to
    publish.
 
@@ -60,7 +55,7 @@ provided at container runtime, and frontend `NEXT_PUBLIC_*` values must be passe
        env_file:
          - .env
        ports:
-         - "3001:3001"
+         - '3001:3001'
    ```
 
 5. Verify `.env` and `frontend/.env` are excluded from the image build context via `.dockerignore`. Only

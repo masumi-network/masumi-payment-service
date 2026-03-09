@@ -26,7 +26,7 @@ If you run the service with Docker:
 - **PORT**: The port to run the server on (default is 3001)
 - **ENCRYPTION_KEY**: The key for encrypting the wallets in the database (Please see the [Security](#security)
   section for more details and security considerations)
-- **DATABASE_CA_CERT** *(optional)*: PEM-encoded CA certificate for database SSL connections (e.g. when using
+- **DATABASE_CA_CERT** _(optional)_: PEM-encoded CA certificate for database SSL connections (e.g. when using
   self-signed certificates). Use literal `\n` for newlines in the env var value. When set, the service
   automatically writes the certificate to `certs/ca-certificate.crt` at startup and appends
   `sslrootcert=<path>` to the database connection string.
@@ -73,10 +73,3 @@ The Docker image supports these explicit frontend build arguments. If you do not
 `NEXT_PUBLIC_PAYMENT_API_BASE_URL`, it defaults to `/api/v1`.
 
 - **NEXT_PUBLIC_PAYMENT_API_BASE_URL**: Public base URL used by the admin UI to call the backend API
-- **NEXT_PUBLIC_BLOCKFROST_API_KEY**: Optional public key used by wallet UI helpers
-- **NEXT_PUBLIC_MAESTRO_API_KEY**: Optional public key used by wallet UI helpers
-- **NEXT_PUBLIC_TRANSAK_API_KEY**: Optional public key for the top-up widget
-- **NEXT_PUBLIC_DEV**: Optional frontend-only development toggle
-- **NEXT_PUBLIC_DEV_WALLET_ADDRESS**: Optional frontend-only development wallet address
-- **NEXT_PUBLIC_DEV_WALLET_MNEMONIC**: Optional frontend-only development mnemonic. Because this is public by design,
-  it must never be a real secret wallet.
