@@ -23,6 +23,12 @@ export function useSwapStatusPolling({
 }: UseSwapStatusPollingOptions) {
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelledRef = useRef(false);
+  const onUpdateRef = useRef(onUpdate);
+  const onTimeoutRef = useRef(onTimeout);
+  const onErrorRef = useRef(onError);
+  onUpdateRef.current = onUpdate;
+  onTimeoutRef.current = onTimeout;
+  onErrorRef.current = onError;
 
   const stopPolling = useCallback(() => {
     cancelledRef.current = true;
@@ -53,7 +59,7 @@ export function useSwapStatusPolling({
 
         if (Date.now() - startedAt > maxPollMs) {
           stopPolling();
-          onTimeout();
+          onTimeoutRef.current();
           return;
         }
 
@@ -67,7 +73,7 @@ export function useSwapStatusPolling({
             return;
           }
 
-          const shouldStop = onUpdate(extractSwapConfirmPayload(confirmResult));
+          const shouldStop = onUpdateRef.current(extractSwapConfirmPayload(confirmResult));
           if (shouldStop) {
             stopPolling();
             return;
@@ -77,7 +83,7 @@ export function useSwapStatusPolling({
             return;
           }
 
-          onError?.();
+          onErrorRef.current?.();
         }
 
         timeoutRef.current = setTimeout(poll, pollIntervalMs);
@@ -85,7 +91,7 @@ export function useSwapStatusPolling({
 
       timeoutRef.current = setTimeout(poll, pollIntervalMs);
     },
-    [apiClient, maxPollMs, onError, onTimeout, onUpdate, pollIntervalMs, stopPolling, walletVkey],
+    [apiClient, maxPollMs, pollIntervalMs, stopPolling, walletVkey],
   );
 
   useEffect(() => stopPolling, [stopPolling]);

@@ -530,7 +530,9 @@ export default function AIAgentsPage() {
               setIsRegisterDialogOpen(false);
               if (router.query.action === 'register_agent') {
                 setDismissedQueryAction(true);
-                void router.replace('/ai-agents', undefined, { shallow: true });
+                void router.replace('/ai-agents', undefined, { shallow: true }).then(() => {
+                  setDismissedQueryAction(false);
+                });
               }
             }}
             onSuccess={() => {

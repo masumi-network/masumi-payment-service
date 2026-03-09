@@ -11,7 +11,7 @@ export type PaymentSourceWalletDetails = {
   usdcxBalance: string;
 };
 
-export function listPaymentSourceWallets(
+function listPaymentSourceWallets(
   paymentSources: readonly PaymentSourceExtended[],
 ): PaymentSourceWalletDetails[] {
   return paymentSources.flatMap((source) => [
