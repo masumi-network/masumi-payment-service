@@ -242,12 +242,12 @@ export const postGenerateMonthlyInvoiceEndpoint = payAuthenticatedEndpointFactor
 	}) => {
 		const startTime = Date.now();
 		try {
-			if (Date.now() > input.validUntil) {
-				throw createHttpError(400, 'Signature is expired');
-			}
-			if (Date.now() + 1000 * 60 * 60 * 2 < input.validUntil) {
-				throw createHttpError(400, 'Signature is to far in the future');
-			}
+				if (Date.now() > input.validUntil) {
+					throw createHttpError(400, 'Signature is expired');
+				}
+				if (Date.now() + 1000 * 60 * 60 * 2 < input.validUntil) {
+					throw createHttpError(400, 'Signature is too far in the future');
+				}
 
 			const message = stringify({
 				buyer: input.buyer,

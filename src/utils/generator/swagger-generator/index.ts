@@ -408,7 +408,7 @@ export function generateOpenAPI() {
 	/********************* HEALTH *****************************/
 	registry.registerPath({
 		method: 'get',
-		path: '/health/',
+		path: '/health',
 		tags: ['health'],
 		summary: 'Get the status of the API server',
 		request: {},
@@ -429,7 +429,7 @@ export function generateOpenAPI() {
 	/********************* KEY STATUS *****************************/
 	registry.registerPath({
 		method: 'get',
-		path: '/api-key-status/',
+		path: '/api-key-status',
 		description: 'Gets api key status',
 		summary: 'Get information about your current API key.',
 		tags: ['api-key'],
@@ -454,7 +454,7 @@ export function generateOpenAPI() {
 	/********************* WALLET *****************************/
 	registry.registerPath({
 		method: 'get',
-		path: '/wallet/',
+		path: '/wallet',
 		description: 'Gets wallet status',
 		summary: 'Get information about a wallet. (admin access required)',
 		tags: ['wallet'],
@@ -487,7 +487,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'post',
-		path: '/wallet/',
+		path: '/wallet',
 		description: 'Creates a wallet, it will not be saved in the database, please ensure to remember the mnemonic',
 		summary: 'Create a new wallet. (admin access required)',
 		tags: ['wallet'],
@@ -517,7 +517,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'patch',
-		path: '/wallet/',
+		path: '/wallet',
 		description: 'Updates a wallet',
 		summary: 'Update a wallet. (admin access required)',
 		tags: ['wallet'],
@@ -548,7 +548,7 @@ export function generateOpenAPI() {
 	/********************* REVEAL DATA *****************************/
 	registry.registerPath({
 		method: 'post',
-		path: '/signature/verify/reveal-data/',
+		path: '/signature/verify/reveal-data',
 		description: 'Verifies the reveal data signature is valid.',
 		summary: 'Verifies the reveal data signature is valid. (read access required)',
 		tags: ['signature'],
@@ -596,14 +596,14 @@ export function generateOpenAPI() {
 	/********************* API KEYS *****************************/
 	registry.registerPath({
 		method: 'get',
-		path: '/api-key/',
+		path: '/api-key',
 		description: 'Gets api key status',
 		summary: 'Get information about all API keys. (admin access required)',
 		tags: ['api-key'],
 		request: {
 			query: getAPIKeySchemaInput.openapi({
 				example: {
-					limit: 10,
+					take: 10,
 					cursorToken: 'identifier',
 				},
 			}),
@@ -640,7 +640,7 @@ export function generateOpenAPI() {
 	/********************* SWAP *****************************/
 	registry.registerPath({
 		method: 'post',
-		path: '/swap/',
+		path: '/swap',
 		description:
 			'Swap ADA for CNTs (Cardano Native Tokens) or CNTs for ADA using SundaeSwap DEX. This endpoint is mainnet-only.',
 		summary: 'Execute a token swap on SundaeSwap. (admin access required, mainnet only)',
@@ -701,7 +701,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'get',
-		path: '/swap/confirm/',
+		path: '/swap/confirm',
 		description:
 			'Check on-chain confirmation status of a swap transaction by transaction hash. Use after POST /swap/ to poll until status is confirmed. Mainnet only.',
 		summary: 'Get swap transaction confirmation status. (admin access required, mainnet only)',
@@ -744,7 +744,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'get',
-		path: '/swap/transactions/',
+		path: '/swap/transactions',
 		description: 'List swap transactions for a wallet, ordered by most recent first. Supports cursor-based pagination.',
 		summary: 'List swap transactions. (admin access required, mainnet only)',
 		tags: ['swap'],
@@ -799,7 +799,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'get',
-		path: '/swap/estimate/',
+		path: '/swap/estimate',
 		description:
 			'Get a swap price estimate from the SundaeSwap pool. Returns the conversion rate based on current pool reserves.',
 		summary: 'Get swap price estimate. (admin access required, mainnet only)',
@@ -843,7 +843,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'post',
-		path: '/swap/cancel/',
+		path: '/swap/cancel',
 		description:
 			'Cancel a pending SundaeSwap order that is sitting at the script address. Only orders in OrderConfirmed state can be cancelled.',
 		summary: 'Cancel a pending swap order. (admin access required, mainnet only)',
@@ -894,7 +894,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'post',
-		path: '/swap/acknowledge-timeout/',
+		path: '/swap/acknowledge-timeout',
 		description:
 			'Acknowledge a timed-out swap transaction. Checks on-chain state and recovers to the correct status: OrderConfirmed if the order UTXO still exists (allowing retry), Completed if the DEX executed the swap, or keeps the timeout state if the order tx never confirmed.',
 		summary: 'Acknowledge a swap timeout and recover state. (admin access required, mainnet only)',
@@ -943,7 +943,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'post',
-		path: '/api-key/',
+		path: '/api-key',
 		description: 'Creates a API key',
 		summary: 'Create a new API key. (admin access required)',
 		tags: ['api-key'],
@@ -999,7 +999,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'patch',
-		path: '/api-key/',
+		path: '/api-key',
 		description: 'Creates a API key',
 		summary: 'Update an existing API key. (admin access required)',
 		tags: ['api-key'],
@@ -1063,7 +1063,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'delete',
-		path: '/api-key/',
+		path: '/api-key',
 		description: 'Removes a API key',
 		summary: 'Delete an existing API key. (admin access required)',
 		tags: ['api-key'],
@@ -1114,7 +1114,7 @@ export function generateOpenAPI() {
 	/********************* PAYMENT *****************************/
 	registry.registerPath({
 		method: 'get',
-		path: '/payment/',
+		path: '/payment',
 		description: 'Gets the payment status. It needs to be created first with a POST request.',
 		summary: 'Get information about a payment request. (READ access required)',
 		tags: ['payment'],
@@ -1375,7 +1375,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'post',
-		path: '/payment/',
+		path: '/payment',
 		description: 'Creates a payment request and identifier. This will check incoming payments in the background.',
 		summary: 'Create a new payment request. (+PAY access required)',
 		tags: ['payment'],
@@ -1551,7 +1551,7 @@ export function generateOpenAPI() {
 	/********************* PAYMENT ERROR RECOVERY *****************************/
 	registry.registerPath({
 		method: 'post',
-		path: '/payment/error-state-recovery/',
+		path: '/payment/error-state-recovery',
 		description:
 			'Clears error states for payment requests in WaitingForManualAction state and resets them up for retry or other actions. This endpoint provides manual intervention capability to recover from error states by clearing error fields.',
 		summary: 'Clear error state for payment request (PAY access required)',
@@ -1639,7 +1639,7 @@ export function generateOpenAPI() {
 	/********************* PURCHASE ERROR RECOVERY *****************************/
 	registry.registerPath({
 		method: 'post',
-		path: '/purchase/error-state-recovery/',
+		path: '/purchase/error-state-recovery',
 		description:
 			'Clears error states for purchase requests in WaitingForManualAction state and resets them up for retry or other actions. This endpoint provides manual intervention capability to recover from error states by clearing error fields.',
 		summary: 'Clear error state for purchase request (PAY access required)',
@@ -2154,7 +2154,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'get',
-		path: '/purchase/',
+		path: '/purchase',
 		description: 'Gets the purchase status. It needs to be created first with a POST request.',
 		summary: 'Get information about an existing purchase request. (READ access required)',
 		tags: ['purchase'],
@@ -2427,7 +2427,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'post',
-		path: '/purchase/',
+		path: '/purchase',
 		description: 'Creates a purchase and pays the seller. This requires funds to be available.',
 		summary: 'Create a new purchase request and pay. (access required +PAY)',
 		tags: ['purchase'],
@@ -2846,7 +2846,7 @@ export function generateOpenAPI() {
 		request: {
 			query: queryAgentFromWalletSchemaInput.openapi('test', {
 				example: {
-					walletVKey: 'wallet_vkey',
+					walletVkey: 'wallet_vkey',
 					network: Network.Preprod,
 				},
 			}),
@@ -3005,7 +3005,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'get',
-		path: '/registry/',
+		path: '/registry',
 		description: 'Gets the agent metadata.',
 		summary: 'List every agent that is recorded in the Masumi Registry. (READ access required)',
 		tags: ['registry'],
@@ -3128,7 +3128,7 @@ export function generateOpenAPI() {
 	});
 	registry.registerPath({
 		method: 'post',
-		path: '/registry/',
+		path: '/registry',
 		description:
 			'Registers an agent to the registry (Please note that while it it is put on-chain, the transaction is not yet finalized by the blockchain, as designed finality is only eventually reached. If you need certainty, please check status via the registry(GET) or if you require custom logic, the transaction directly using the txHash)',
 		summary: 'Registers an agent to the registry (+PAY access required)',
@@ -3240,7 +3240,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'delete',
-		path: '/registry/',
+		path: '/registry',
 		description:
 			'Permanently deletes an agent registration record from the database. This action is irreversible and should only be used for registrations in specific failed or completed states.',
 		summary: 'Delete an agent registration record. (admin access required)',
@@ -3322,7 +3322,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'get',
-		path: '/payment-source/',
+		path: '/payment-source',
 		description: 'Gets the payment source.',
 		summary: 'List payment sources with their public details. (READ access required)',
 		tags: ['payment-source'],
@@ -3409,7 +3409,7 @@ export function generateOpenAPI() {
 	/********************* PAYMENT SOURCE *****************************/
 	registry.registerPath({
 		method: 'get',
-		path: '/payment-source-extended/',
+		path: '/payment-source-extended',
 		description: 'Gets the payment contracts including the status.',
 		summary:
 			'List payment sources with their public details augmented with internal configuration and sync status information. (admin access required)',
@@ -3506,7 +3506,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'post',
-		path: '/payment-source-extended/',
+		path: '/payment-source-extended',
 		description: 'Creates a payment source.',
 		summary: 'Create a new payment source. (+ADMIN access required)',
 		tags: ['payment-source'],
@@ -3574,7 +3574,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'patch',
-		path: '/payment-source-extended/',
+		path: '/payment-source-extended',
 		description: 'Updates a payment source.',
 		summary: 'Update an existing payment source. (+ADMIN access required)',
 		tags: ['payment-source'],
@@ -3638,7 +3638,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'delete',
-		path: '/payment-source-extended/',
+		path: '/payment-source-extended',
 		description: 'Deletes a payment source. WARNING will also delete all associated wallets and transactions.',
 		summary: 'Delete an existing payment source. (+ADMIN access required)',
 		tags: ['payment-source'],
@@ -3679,7 +3679,7 @@ export function generateOpenAPI() {
 	/********************* UTXOS *****************************/
 	registry.registerPath({
 		method: 'get',
-		path: '/utxos/',
+		path: '/utxos',
 		description: 'Gets UTXOs (internal)',
 		summary:
 			'Helper endpoint that lets you ask the payment service for the current UTXOs sitting at a particular Cardano address. (READ access required)',
@@ -3733,7 +3733,7 @@ export function generateOpenAPI() {
 	/********************* RPC API KEYS *****************************/
 	registry.registerPath({
 		method: 'get',
-		path: '/rpc-api-keys/',
+		path: '/rpc-api-keys',
 		description: 'Gets rpc api keys, currently only blockfrost is supported (internal)',
 		summary: 'List Blockfrost API keys. (admin access required)',
 		tags: ['rpc-api-keys'],
@@ -4056,7 +4056,7 @@ export function generateOpenAPI() {
 	/********************* WEBHOOKS *****************************/
 	registry.registerPath({
 		method: 'get',
-		path: '/webhooks/',
+		path: '/webhooks',
 		description: 'List webhook endpoints',
 		summary: 'List all webhook endpoints registered by your API key. (pay-authenticated access required)',
 		tags: ['webhooks'],
@@ -4113,7 +4113,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'post',
-		path: '/webhooks/',
+		path: '/webhooks',
 		description: 'Register a new webhook endpoint',
 		summary: 'Register a new webhook endpoint to receive event notifications. (pay-authenticated access required)',
 		tags: ['webhooks'],
@@ -4178,7 +4178,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'delete',
-		path: '/webhooks/',
+		path: '/webhooks',
 		description: 'Delete a webhook endpoint',
 		summary:
 			'Delete an existing webhook endpoint. Only the creator or admin can delete a webhook. (pay-authenticated access required)',
@@ -4235,7 +4235,7 @@ export function generateOpenAPI() {
 	/********************* MONITORING *****************************/
 	registry.registerPath({
 		method: 'get',
-		path: '/monitoring/',
+		path: '/monitoring',
 		description: 'Gets the current status of the blockchain state monitoring service',
 		summary: 'Get monitoring service status. (admin access required)',
 		tags: ['monitoring'],
@@ -4273,7 +4273,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'post',
-		path: '/monitoring/trigger-cycle/',
+		path: '/monitoring/trigger-cycle',
 		description: 'Manually triggers a monitoring cycle to check blockchain state',
 		summary: 'Trigger a manual monitoring cycle. (admin access required)',
 		tags: ['monitoring'],
@@ -4294,7 +4294,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'post',
-		path: '/monitoring/start/',
+		path: '/monitoring/start',
 		description: 'Starts the blockchain state monitoring service with a specified interval',
 		summary: 'Start the monitoring service. (admin access required)',
 		tags: ['monitoring'],
@@ -4332,7 +4332,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'post',
-		path: '/monitoring/stop/',
+		path: '/monitoring/stop',
 		description: 'Stops the blockchain state monitoring service',
 		summary: 'Stop the monitoring service. (admin access required)',
 		tags: ['monitoring'],

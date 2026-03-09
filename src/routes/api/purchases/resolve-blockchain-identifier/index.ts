@@ -139,20 +139,23 @@ export const resolvePurchaseRequestPost = readAuthenticatedEndpointFactory.build
 						fees: purchase.CurrentTransaction.fees?.toString() ?? null,
 					}
 				: null,
-			TransactionHistory:
-				input.includeHistory == true
-					? purchase.TransactionHistory.map((tx) => ({
-							...tx,
-							fees: tx.fees?.toString() ?? null,
+				TransactionHistory:
+					input.includeHistory == true
+						? purchase.TransactionHistory.map((tx) => ({
+								...tx,
+								fees: tx.fees?.toString() ?? null,
+							}))
+						: null,
+				ActionHistory: purchase.ActionHistory
+					? purchase.ActionHistory.map((action) => ({
+							id: action.id,
+							createdAt: action.createdAt,
+							updatedAt: action.updatedAt,
+							requestedAction: action.requestedAction,
+							errorType: action.errorType,
+							errorNote: action.errorNote,
 						}))
 					: null,
-			ActionHistory: purchase.ActionHistory
-				? purchase.ActionHistory.map((action) => ({
-						...action,
-						createdAt: action.createdAt.toISOString(),
-						updatedAt: action.updatedAt.toISOString(),
-					}))
-				: null,
-		};
-	},
-});
+			};
+		},
+	});

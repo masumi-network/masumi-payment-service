@@ -9,6 +9,7 @@ import { ez } from 'express-zod-api';
 import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { assertWalletInScope } from '@/utils/shared/wallet-scope';
+import { purchaseResponseSchema } from '..';
 
 export const purchaseErrorStateRecoverySchemaInput = z.object({
 	blockchainIdentifier: z.string().min(1).describe('The blockchain identifier of the purchase request'),
@@ -16,8 +17,9 @@ export const purchaseErrorStateRecoverySchemaInput = z.object({
 	updatedAt: ez.dateIn().describe('The time of the last update, to ensure you clear the correct error state'),
 });
 
-export const purchaseErrorStateRecoverySchemaOutput = z.object({
-	id: z.string(),
+export const purchaseErrorStateRecoverySchemaOutput = purchaseResponseSchema.omit({
+	TransactionHistory: true,
+	ActionHistory: true,
 });
 
 export const purchaseErrorStateRecoveryPost = payAuthenticatedEndpointFactory.build({

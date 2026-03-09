@@ -9,7 +9,7 @@ import { CONSTANTS } from '@/utils/config';
 import { transformBigIntAmounts } from '@/utils/shared/transformers';
 
 export const getAPIKeySchemaInput = z.object({
-	limit: z.coerce.number().min(1).max(100).default(10).describe('The number of API keys to return'),
+	take: z.coerce.number().min(1).max(100).default(10).describe('The number of API keys to return'),
 	cursorToken: z.string().max(550).optional().describe('Used to paginate through the API keys'),
 });
 
@@ -59,7 +59,7 @@ export const queryAPIKeyEndpointGet = adminAuthenticatedEndpointFactory.build({
 	handler: async ({ input }: { input: z.infer<typeof getAPIKeySchemaInput> }) => {
 		const result = await prisma.apiKey.findMany({
 			cursor: input.cursorToken ? { token: input.cursorToken } : undefined,
-			take: input.limit,
+			take: input.take,
 			include: {
 				RemainingUsageCredits: { select: { amount: true, unit: true } },
 				WalletScopes: { select: { hotWalletId: true } },
