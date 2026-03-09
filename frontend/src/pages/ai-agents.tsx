@@ -30,7 +30,7 @@ import { Pagination } from '@/components/ui/pagination';
 import { AIAgentDetailsDialog } from '@/components/ai-agents/AIAgentDetailsDialog';
 import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/WalletDetailsDialog';
 import { CopyButton } from '@/components/ui/copy-button';
-import { TESTUSDM_CONFIG, getUsdmConfig } from '@/lib/constants/defaultWallets';
+import { TESTUSDM_CONFIG, getUsdmConfig, getUsdcxConfig } from '@/lib/constants/defaultWallets';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -262,7 +262,7 @@ export default function AIAgentsPage() {
         return;
       }
 
-      setSelectedWalletForDetails(foundWallet as WalletWithBalance);
+      setSelectedWalletForDetails(foundWallet);
     },
     [currentNetworkPaymentSources, selectedPaymentSourceId],
   );

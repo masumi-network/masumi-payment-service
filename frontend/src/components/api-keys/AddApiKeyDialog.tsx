@@ -20,6 +20,10 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Badge } from '@/components/ui/badge';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { shortenAddress } from '@/lib/utils';
+import {
+  getActiveStablecoinConfig,
+  getActiveStablecoinSymbol,
+} from '@/lib/constants/defaultWallets';
 
 interface AddApiKeyDialogProps {
   open: boolean;
@@ -34,7 +38,7 @@ const apiKeySchema = z
     usageLimited: z.boolean(),
     credits: z.object({
       lovelace: z.string().optional(),
-      usdm: z.string().optional(),
+      usdcx: z.string().optional(),
     }),
     walletScopeEnabled: z.boolean(),
     walletScopeIds: z.array(z.string()),
@@ -44,7 +48,7 @@ const apiKeySchema = z
       val.permission === 'ReadAndPay' &&
       val.usageLimited &&
       !val.credits.lovelace &&
-      !val.credits.usdm
+      !val.credits.usdcx
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -58,7 +62,7 @@ type ApiKeyFormValues = z.infer<typeof apiKeySchema>;
 
 export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
-  const { apiClient } = useAppContext();
+  const { apiClient, network } = useAppContext();
   const { paymentSources } = usePaymentSourceExtendedAll();
 
   const allWallets = useMemo(() => {
@@ -105,7 +109,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
       permission: 'Read',
       usageLimited: true,
       networks: ['Preprod', 'Mainnet'],
-      credits: { lovelace: '', usdm: '' },
+      credits: { lovelace: '', usdcx: '' },
       walletScopeEnabled: false,
       walletScopeIds: [],
     },
@@ -155,11 +159,11 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                           },
                         ]
                       : []),
-                    ...(data.credits.usdm
+                    ...(data.credits.usdcx
                       ? [
                           {
-                            unit: 'usdm',
-                            amount: data.credits.usdm,
+                            unit: getActiveStablecoinConfig(network).fullAssetId,
+                            amount: (parseFloat(data.credits.usdcx) * 1000000).toString(),
                           },
                         ]
                       : []),
@@ -301,11 +305,13 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium">USDM Limit</label>
-                <Input type="number" placeholder="0.00" {...register('credits.usdm')} />
-                {errors.credits && 'usdm' in errors.credits && errors.credits.usdm && (
+                <label className="text-sm font-medium">
+                  {getActiveStablecoinSymbol(network)} Limit
+                </label>
+                <Input type="number" placeholder="0.00" {...register('credits.usdcx')} />
+                {errors.credits && 'usdcx' in errors.credits && errors.credits.usdcx && (
                   <p className="text-xs text-destructive mt-1">
-                    {(errors.credits.usdm as any).message}
+                    {(errors.credits.usdcx as any).message}
                   </p>
                 )}
               </div>

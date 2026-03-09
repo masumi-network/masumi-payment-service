@@ -91,3 +91,19 @@ export const NMKR_CONFIG = {
 export const getUsdmConfig = (network: string) => {
   return network?.toLowerCase() === 'preprod' ? PREPROD_USDM_CONFIG : USDM_CONFIG;
 };
+
+// USDCx (Circle xReserve) token configuration — mainnet
+export const USDCX_CONFIG = {
+  policyId: '1f3aec8bfe7ea4fe14c5f121e2a92e301afe414147860d557cac7e34',
+  assetName: '5553444378',
+  assetFingerprint: 'asset1e7eewpjw8ua3f2gpfx7y34ww9vjl63hayn80kl',
+  fullAssetId: '1f3aec8bfe7ea4fe14c5f121e2a92e301afe414147860d557cac7e345553444378',
+};
+
+export const getUsdcxConfig = (_network?: string) => USDCX_CONFIG;
+
+export const getActiveStablecoinConfig = (network?: string) =>
+  network?.toLowerCase() === 'mainnet' ? USDCX_CONFIG : PREPROD_USDM_CONFIG;
+
+export const getActiveStablecoinSymbol = (network?: string): string =>
+  network?.toLowerCase() === 'mainnet' ? 'USDCx' : 'tUSDM';

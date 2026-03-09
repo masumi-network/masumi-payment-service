@@ -195,7 +195,7 @@ export function AIAgentDetailsDialog({
         toast.error('Wallet not found');
         return;
       }
-      setSelectedWalletForDetails(found as WalletWithBalance);
+      setSelectedWalletForDetails(found);
     },
     [currentNetworkPaymentSources],
   );

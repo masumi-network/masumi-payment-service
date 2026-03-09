@@ -52,7 +52,10 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
-import { getUsdmConfig } from '@/lib/constants/defaultWallets';
+import {
+  getActiveStablecoinConfig,
+  getActiveStablecoinSymbol,
+} from '@/lib/constants/defaultWallets';
 import {
   Select,
   SelectContent,
@@ -1060,8 +1063,9 @@ function AddAiAgentScreen({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>('');
 
+  const stablecoinUnit = getActiveStablecoinSymbol(network);
   const priceSchema = z.object({
-    unit: z.enum(['lovelace', 'USDM'] as const, {
+    unit: z.enum(['lovelace', stablecoinUnit] as const, {
       error: () => 'Token is required',
     }),
     amount: z.string().refine((val) => {
@@ -1237,7 +1241,10 @@ function AddAiAgentScreen({
             : {
                 pricingType: 'Fixed',
                 Pricing: data.prices.map((price) => ({
-                  unit: price.unit === 'lovelace' ? 'lovelace' : getUsdmConfig(network).fullAssetId,
+                  unit:
+                    price.unit === 'lovelace'
+                      ? 'lovelace'
+                      : getActiveStablecoinConfig(network).fullAssetId,
                   amount: (parseFloat(price.amount) * 1000000).toString(),
                 })),
               },
@@ -1449,7 +1456,7 @@ function AddAiAgentScreen({
                     <Select
                       value={watch(`prices.${index}.unit`)}
                       onValueChange={(value) =>
-                        setValue(`prices.${index}.unit`, value as 'lovelace' | 'USDM')
+                        setValue(`prices.${index}.unit`, value as 'lovelace' | 'USDCx' | 'tUSDM')
                       }
                     >
                       <SelectTrigger className="w-28">
@@ -1457,7 +1464,7 @@ function AddAiAgentScreen({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="lovelace">ADA</SelectItem>
-                        <SelectItem value="USDM">USDM</SelectItem>
+                        <SelectItem value={stablecoinUnit}>{stablecoinUnit}</SelectItem>
                       </SelectContent>
                     </Select>
                     {priceFields.length > 1 && (

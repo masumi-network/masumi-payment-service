@@ -44,7 +44,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
-import { getUsdmConfig } from '@/lib/constants/defaultWallets';
+import { getUsdmConfig, USDCX_CONFIG } from '@/lib/constants/defaultWallets';
 import { appendInclusiveCursorPage } from '@/lib/pagination/cursor-pagination';
 import {
   extractSwapAcknowledgePayload,
@@ -69,7 +69,7 @@ export interface WalletWithBalance {
   note: string | null;
   type: 'Purchasing' | 'Selling' | 'Collection';
   balance: string;
-  usdmBalance: string;
+  usdcxBalance: string;
 }
 
 interface WalletDetailsDialogProps {
@@ -429,6 +429,10 @@ export function WalletDetailsDialog({
 
   const usdmConfig = getUsdmConfig(network);
 
+  const isUSDCx = (token: TokenBalance) =>
+    token.policyId === USDCX_CONFIG.policyId &&
+    token.assetName === hexToAscii(USDCX_CONFIG.assetName);
+
   const isUSDM = (token: TokenBalance) =>
     token.policyId === usdmConfig.policyId && token.assetName === hexToAscii(usdmConfig.assetName);
 
@@ -438,6 +442,14 @@ export function WalletDetailsDialog({
       return {
         amount: ada === 0 ? 'zero' : formatBalance(ada.toFixed(6)),
         usdValue: rate ? `≈ $${(ada * rate).toFixed(2)}` : undefined,
+      };
+    }
+
+    if (isUSDCx(token)) {
+      const usdcx = token.quantity / 1_000_000;
+      return {
+        amount: usdcx === 0 ? 'zero' : formatBalance(usdcx.toFixed(6)),
+        usdValue: `≈ $${usdcx.toFixed(2)}`,
       };
     }
 
@@ -653,26 +665,30 @@ export function WalletDetailsDialog({
                   {tokenBalances.length === 0 && (
                     <div className="text-xs text-muted-foreground">No tokens found</div>
                   )}
-                  {/* Sort tokens: ADA first, then USDM, then others */}
+                  {/* Sort tokens: ADA first, then USDCx, then USDM (legacy), then others */}
                   {(() => {
                     const adaToken = tokenBalances.find((t) => t.unit === 'lovelace');
+                    const usdcxToken = tokenBalances.find((t) => isUSDCx(t));
                     const usdmToken = tokenBalances.find((t) => isUSDM(t));
                     const otherTokens = tokenBalances.filter(
-                      (t) => t.unit !== 'lovelace' && !isUSDM(t),
+                      (t) => t.unit !== 'lovelace' && !isUSDCx(t) && !isUSDM(t),
                     );
-                    const sortedTokens = [adaToken, usdmToken, ...otherTokens].filter(
+                    const sortedTokens = [adaToken, usdcxToken, usdmToken, ...otherTokens].filter(
                       (t): t is TokenBalance => Boolean(t),
                     );
 
                     return sortedTokens.map((token) => {
                       const { amount, usdValue } = formatTokenBalance(token);
                       const isADA = token.unit === 'lovelace';
+                      const isUsdcx = isUSDCx(token);
                       const isUsdm = isUSDM(token);
                       const assetHex = !isADA ? token.unit.slice(56) : '';
 
                       let displayName: string;
                       if (isADA) {
                         displayName = 'ADA';
+                      } else if (isUsdcx) {
+                        displayName = `USDCx (${shortenAddress(token.policyId)})`;
                       } else if (isUsdm) {
                         displayName = `USDM (${shortenAddress(token.policyId)})`;
                       } else if (assetHex.length > 12) {
@@ -684,7 +700,7 @@ export function WalletDetailsDialog({
                       }
 
                       const tokenUrl =
-                        !isADA && !isUsdm
+                        !isADA && !isUsdcx && !isUsdm
                           ? getExplorerUrl(token.unit, network, 'token')
                           : undefined;
 
@@ -692,7 +708,7 @@ export function WalletDetailsDialog({
                         <>
                           <div>
                             <div className="font-medium font-mono">{displayName}</div>
-                            {!isUsdm && token.policyId && (
+                            {!isUsdcx && !isUsdm && token.policyId && (
                               <div className="text-xs text-muted-foreground">
                                 Policy ID: {shortenAddress(token.policyId)}
                               </div>

@@ -141,13 +141,13 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
           ...w,
           type: 'Selling' as const,
           balance: '0',
-          usdmBalance: '0',
+          usdcxBalance: '0',
         })),
         ...(source.PurchasingWallets || []).map((w) => ({
           ...w,
           type: 'Purchasing' as const,
           balance: '0',
-          usdmBalance: '0',
+          usdcxBalance: '0',
         })),
       ]);
       const found = allWallets.find((w) => w.walletVkey === walletVkey);

@@ -37,7 +37,7 @@ import { WalletTypeBadge } from '@/components/ui/wallet-type-badge';
 import { AIAgentDetailsDialog } from '@/components/ai-agents/AIAgentDetailsDialog';
 import { WalletDetailsDialog } from '@/components/wallets/WalletDetailsDialog';
 import { CopyButton } from '@/components/ui/copy-button';
-import { TESTUSDM_CONFIG, getUsdmConfig } from '@/lib/constants/defaultWallets';
+import { TESTUSDM_CONFIG, getUsdmConfig, getUsdcxConfig } from '@/lib/constants/defaultWallets';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { StatCard } from '@/components/ui/stat-card';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -71,12 +71,12 @@ export default function Overview() {
   const {
     wallets: walletsList,
     totalBalance: totalBalanceValue,
-    totalUsdmBalance: totalUsdmBalanceValue,
+    totalUsdcxBalance: totalUsdcxBalanceValue,
     isLoading: isLoadingWallets,
   } = useWallets();
 
   const totalBalance = useMemo(() => totalBalanceValue || '0', [totalBalanceValue]);
-  const totalUsdmBalance = useMemo(() => totalUsdmBalanceValue || '0', [totalUsdmBalanceValue]);
+  const totalUsdcxBalance = useMemo(() => totalUsdcxBalanceValue || '0', [totalUsdcxBalanceValue]);
   const isLoadingBalances = isLoadingWallets;
 
   // Refetch functions for after mutations
@@ -163,16 +163,14 @@ export default function Overview() {
                   <StatCardSkeleton />
                 ) : (
                   <StatCard
-                    label="Total USDM"
+                    label={network === 'Mainnet' ? 'Total USDCx' : 'Total tUSDM'}
                     index={1}
                     icon={<DollarSign className="h-4 w-4 text-green-500" />}
                     accentColor="rgb(34, 197, 94)"
                   >
                     <div className="text-2xl font-semibold flex items-center gap-1">
                       <span className="text-xs font-normal text-muted-foreground">$</span>
-                      {formatBalance(
-                        (parseInt(totalUsdmBalance) / 1000000).toFixed(2)?.toString(),
-                      ) ?? ''}
+                      {formatBalance((parseInt(totalUsdcxBalance) / 1000000).toFixed(2)) ?? ''}
                     </div>
                   </StatCard>
                 )}
@@ -192,7 +190,7 @@ export default function Overview() {
                         <span className="text-xs font-normal text-muted-foreground">ADA</span>
                       </div>
                       <div className="text-sm text-muted-foreground">
-                        {isLoadingRate && !totalUsdmBalance
+                        {isLoadingRate && !totalUsdcxBalance
                           ? '...'
                           : `~ $${formatBalance(formatUsdValue(totalBalance))}`}
                       </div>
@@ -273,6 +271,8 @@ export default function Overview() {
                                       2,
                                     );
                                     if (unit === 'lovelace' || !unit) return `${formatted} ADA`;
+                                    if (unit === getUsdcxConfig(network).fullAssetId)
+                                      return `${formatted} USDCx`;
                                     if (unit === getUsdmConfig(network).fullAssetId)
                                       return `${formatted} USDM`;
                                     if (unit === TESTUSDM_CONFIG.unit) return `${formatted} tUSDM`;
@@ -405,11 +405,13 @@ export default function Overview() {
                                     {!wallet.isLoadingBalance && (
                                       <>
                                         {formatBalance(
-                                          (parseInt(wallet.usdmBalance || '0') / 1000000)
+                                          (parseInt(wallet.usdcxBalance || '0') / 1000000)
                                             .toFixed(2)
                                             ?.toString(),
                                         )}{' '}
-                                        <span className="text-xs text-muted-foreground">USDM</span>
+                                        <span className="text-xs text-muted-foreground">
+                                          {network === 'Mainnet' ? 'USDCx' : 'tUSDM'}
+                                        </span>
                                       </>
                                     )}
                                   </div>
