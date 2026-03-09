@@ -36,7 +36,7 @@ interface WalletWithBalance extends BaseWalletWithBalance {
   network: 'Preprod' | 'Mainnet';
   collectionBalance?: {
     ada: string;
-    usdm: string;
+    usdcx: string;
   } | null;
   isLoadingBalance?: boolean;
   isLoadingCollectionBalance?: boolean;
@@ -59,7 +59,7 @@ export default function WalletsPage() {
 
   // Collection balance overrides fetched asynchronously
   const [collectionBalanceMap, setCollectionBalanceMap] = useState<
-    Record<string, { ada: string; usdm: string }>
+    Record<string, { ada: string; usdcx: string }>
   >({});
 
   // State-based previous value tracking for router query initialization
@@ -129,7 +129,7 @@ export default function WalletsPage() {
         );
         setCollectionBalanceMap((prev) => ({
           ...prev,
-          [wallet.id]: { ada: collectionBalance.ada, usdm: collectionBalance.usdm },
+          [wallet.id]: { ada: collectionBalance.ada, usdcx: collectionBalance.usdcx },
         }));
       } catch (error) {
         console.error(`Failed to fetch collection balance for wallet ${wallet.id}:`, error);
@@ -183,9 +183,9 @@ export default function WalletsPage() {
         const matchBalance = wallet.balance
           ? (parseInt(wallet.balance) / 1000000 || 0).toFixed(2).includes(query)
           : false;
-        const matchUsdmBalance = wallet.usdmBalance?.includes(query) || false;
+        const matchUsdcxBalance = wallet.usdcxBalance?.includes(query) || false;
 
-        return matchAddress || matchNote || matchType || matchBalance || matchUsdmBalance;
+        return matchAddress || matchNote || matchType || matchBalance || matchUsdcxBalance;
       });
     }
 
@@ -260,7 +260,7 @@ export default function WalletsPage() {
                     Balance, ADA
                   </th>
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">
-                    Balance, USDM
+                    Balance, {network === 'Mainnet' ? 'USDCx' : 'tUSDM'}
                   </th>
                   <th className="w-20 p-4 pr-8"></th>
                 </tr>
@@ -353,8 +353,8 @@ export default function WalletsPage() {
                               <Spinner size={16} />
                             ) : (
                               <span>
-                                {wallet.usdmBalance
-                                  ? `$${formatBalance((parseInt(wallet.usdmBalance) / 1000000).toFixed(2))}`
+                                {wallet.usdcxBalance
+                                  ? `$${formatBalance((parseInt(wallet.usdcxBalance) / 1000000).toFixed(2))}`
                                   : '$0'}
                               </span>
                             )}

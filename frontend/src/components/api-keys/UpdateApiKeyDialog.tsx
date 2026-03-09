@@ -31,6 +31,10 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Checkbox } from '@/components/ui/checkbox';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { shortenAddress } from '@/lib/utils';
+import {
+  getActiveStablecoinConfig,
+  getActiveStablecoinSymbol,
+} from '@/lib/constants/defaultWallets';
 
 interface UpdateApiKeyDialogProps {
   open: boolean;
@@ -58,7 +62,7 @@ const updateApiKeySchema = z
     status: z.enum(['Active', 'Revoked']),
     credits: z.object({
       lovelace: z.string().optional(),
-      usdm: z.string().optional(),
+      usdcx: z.string().optional(),
     }),
     walletScopeEnabled: z.boolean(),
     walletScopeIds: z.array(z.string()),
@@ -71,11 +75,11 @@ const updateApiKeySchema = z
         path: ['credits', 'lovelace'],
       });
     }
-    if (val.credits?.usdm && isNaN(parseFloat(val.credits.usdm))) {
+    if (val.credits?.usdcx && isNaN(parseFloat(val.credits.usdcx))) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Invalid USDM amount',
-        path: ['credits', 'usdm'],
+        message: 'Invalid USDCx amount',
+        path: ['credits', 'usdcx'],
       });
     }
   });
@@ -86,7 +90,7 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
   const [isLoading, setIsLoading] = useState(false);
   const [showToken, setShowToken] = useState(false);
   const tokenInputRef = useRef<HTMLInputElement | null>(null);
-  const { apiClient } = useAppContext();
+  const { apiClient, network } = useAppContext();
   const { paymentSources } = usePaymentSourceExtendedAll();
 
   const allWallets = useMemo(() => {
@@ -132,7 +136,7 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
     defaultValues: {
       newToken: '',
       status: apiKey.status,
-      credits: { lovelace: '', usdm: '' },
+      credits: { lovelace: '', usdcx: '' },
       walletScopeEnabled: apiKey.walletScopeEnabled,
       walletScopeIds: apiKey.WalletScopes.map((ws) => ws.hotWalletId),
     },
@@ -158,10 +162,10 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
         amount: (parseFloat(data.credits.lovelace) * 1000000).toString(),
       });
     }
-    if (data.credits.usdm) {
+    if (data.credits.usdcx) {
       usageCredits.push({
-        unit: 'usdm',
-        amount: data.credits.usdm,
+        unit: getActiveStablecoinConfig(network).fullAssetId,
+        amount: (parseFloat(data.credits.usdcx) * 1000000).toString(),
       });
     }
 
@@ -352,18 +356,18 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
                     )}
                   </div>
                   <div className="space-y-1.5">
-                    <Label htmlFor="credits-usdm" className="text-xs text-muted-foreground">
-                      USDM
+                    <Label htmlFor="credits-usdcx" className="text-xs text-muted-foreground">
+                      {getActiveStablecoinSymbol(network)}
                     </Label>
                     <Input
-                      id="credits-usdm"
+                      id="credits-usdcx"
                       type="number"
                       placeholder="0.00"
-                      {...register('credits.usdm')}
+                      {...register('credits.usdcx')}
                     />
-                    {errors.credits && 'usdm' in errors.credits && errors.credits.usdm && (
+                    {errors.credits && 'usdcx' in errors.credits && errors.credits.usdcx && (
                       <p className="text-xs text-destructive">
-                        {(errors.credits.usdm as any).message}
+                        {(errors.credits.usdcx as any).message}
                       </p>
                     )}
                   </div>
@@ -398,18 +402,18 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
                     )}
                   </div>
                   <div className="space-y-1.5">
-                    <Label htmlFor="credits-usdm" className="text-xs text-muted-foreground">
-                      USDM
+                    <Label htmlFor="credits-usdcx" className="text-xs text-muted-foreground">
+                      {getActiveStablecoinSymbol(network)}
                     </Label>
                     <Input
-                      id="credits-usdm"
+                      id="credits-usdcx"
                       type="number"
                       placeholder="0.00"
-                      {...register('credits.usdm')}
+                      {...register('credits.usdcx')}
                     />
-                    {errors.credits && 'usdm' in errors.credits && errors.credits.usdm && (
+                    {errors.credits && 'usdcx' in errors.credits && errors.credits.usdcx && (
                       <p className="text-xs text-destructive">
-                        {(errors.credits.usdm as any).message}
+                        {(errors.credits.usdcx as any).message}
                       </p>
                     )}
                   </div>
