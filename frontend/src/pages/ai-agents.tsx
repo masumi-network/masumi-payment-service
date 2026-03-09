@@ -32,7 +32,7 @@ import { Pagination } from '@/components/ui/pagination';
 import { AIAgentDetailsDialog } from '@/components/ai-agents/AIAgentDetailsDialog';
 import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/WalletDetailsDialog';
 import { CopyButton } from '@/components/ui/copy-button';
-import { TESTUSDM_CONFIG, getUsdmConfig } from '@/lib/constants/defaultWallets';
+import { TESTUSDM_CONFIG, getUsdmConfig, getUsdcxConfig } from '@/lib/constants/defaultWallets';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -272,13 +272,13 @@ export default function AIAgentsPage() {
           ...wallet,
           type: 'Selling' as const,
           balance: '0',
-          usdmBalance: '0',
+          usdcxBalance: '0',
         })),
         ...(source.PurchasingWallets || []).map((wallet: any) => ({
           ...wallet,
           type: 'Purchasing' as const,
           balance: '0',
-          usdmBalance: '0',
+          usdcxBalance: '0',
         })),
       ]);
 
@@ -466,7 +466,7 @@ export default function AIAgentsPage() {
                               <div key={index} className="whitespace-nowrap">
                                 {price.unit === 'lovelace' || !price.unit
                                   ? `${useFormatPrice(price.amount)} ADA`
-                                  : `${useFormatPrice(price.amount)} ${price.unit === getUsdmConfig(network).fullAssetId ? (network === 'Mainnet' ? 'USDM' : 'tUSDM') : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
+                                  : `${useFormatPrice(price.amount)} ${price.unit === getUsdcxConfig(network).fullAssetId ? 'USDCx' : price.unit === getUsdmConfig(network).fullAssetId ? (network === 'Mainnet' ? 'USDM' : 'tUSDM') : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
                               </div>
                             ))}
                         </td>
