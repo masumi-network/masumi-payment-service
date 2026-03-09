@@ -3,7 +3,6 @@ RUN apt-get update -y && apt-get install -y openssl
 RUN npm install -g pnpm
 # Build backend step
 WORKDIR /usr/src/app
-COPY .env* ./
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY smart-contracts ./smart-contracts
@@ -28,11 +27,24 @@ WORKDIR /usr/src/app
 COPY package.json pnpm-workspace.yaml ./
 COPY --from=backend-builder /usr/src/app/pnpm-lock.yaml ./
 WORKDIR /usr/src/app/frontend
+ARG NEXT_PUBLIC_PAYMENT_API_BASE_URL=/api/v1
+ARG NEXT_PUBLIC_BLOCKFROST_API_KEY=
+ARG NEXT_PUBLIC_MAESTRO_API_KEY=
+ARG NEXT_PUBLIC_TRANSAK_API_KEY=
+ARG NEXT_PUBLIC_DEV=
+ARG NEXT_PUBLIC_DEV_WALLET_ADDRESS=
+ARG NEXT_PUBLIC_DEV_WALLET_MNEMONIC=
+ENV NEXT_PUBLIC_PAYMENT_API_BASE_URL=${NEXT_PUBLIC_PAYMENT_API_BASE_URL}
+ENV NEXT_PUBLIC_BLOCKFROST_API_KEY=${NEXT_PUBLIC_BLOCKFROST_API_KEY}
+ENV NEXT_PUBLIC_MAESTRO_API_KEY=${NEXT_PUBLIC_MAESTRO_API_KEY}
+ENV NEXT_PUBLIC_TRANSAK_API_KEY=${NEXT_PUBLIC_TRANSAK_API_KEY}
+ENV NEXT_PUBLIC_DEV=${NEXT_PUBLIC_DEV}
+ENV NEXT_PUBLIC_DEV_WALLET_ADDRESS=${NEXT_PUBLIC_DEV_WALLET_ADDRESS}
+ENV NEXT_PUBLIC_DEV_WALLET_MNEMONIC=${NEXT_PUBLIC_DEV_WALLET_MNEMONIC}
 COPY frontend/package.json ./
 COPY frontend/openapi-ts.config.ts ./openapi-ts.config.ts
 COPY frontend/src ./src
 COPY frontend/public ./public
-COPY frontend/.env* ./
 COPY frontend/next.config.ts ./
 COPY frontend/postcss.config.mjs ./
 COPY frontend/tsconfig.json ./
@@ -63,10 +75,6 @@ COPY --from=backend-builder /usr/src/app/eslint.config.mjs ./eslint.config.mjs
 
 # Copy frontend files
 COPY --from=frontend-builder /usr/src/app/frontend/dist ./frontend/dist
-
-#optional copy env file
-COPY .env* ./
-
 
 EXPOSE 3001
 ENV NODE_ENV=production
