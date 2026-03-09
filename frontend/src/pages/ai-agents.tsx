@@ -150,7 +150,13 @@ export default function AIAgentsPage() {
     { name: 'Failed', count: null },
   ];
 
-  const shouldOpenRegisterDialog = isRegisterDialogOpen || router.query.action === 'register_agent';
+  useEffect(() => {
+    if (router.query.action === 'register_agent') {
+      setIsRegisterDialogOpen(true);
+    }
+  }, [router.query.action]);
+
+  const shouldOpenRegisterDialog = isRegisterDialogOpen;
 
   const formatDate = (date: Date | string) => {
     const dateObj = typeof date === 'string' ? new Date(date) : date;
@@ -439,7 +445,7 @@ export default function AIAgentsPage() {
                               <div key={index} className="whitespace-nowrap">
                                 {price.unit === 'lovelace' || !price.unit
                                   ? `${formatPrice(price.amount)} ADA`
-                                  : `${formatPrice(price.amount)} ${price.unit === getUsdmConfig(network).fullAssetId ? (network === 'Mainnet' ? 'USDM' : 'tUSDM') : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
+                                  : `${formatPrice(price.amount)} ${price.unit === getUsdcxConfig(network).fullAssetId ? 'USDCx' : price.unit === getUsdmConfig(network).fullAssetId ? (network === 'Mainnet' ? 'USDM' : 'tUSDM') : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
                               </div>
                             ))}
                         </td>
