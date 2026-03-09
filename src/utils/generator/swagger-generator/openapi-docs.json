@@ -2942,7 +2942,7 @@
                                         "status": {
                                             "type": "string",
                                             "enum": [
-                                                "Success"
+                                                "success"
                                             ]
                                         },
                                         "data": {
@@ -2963,7 +2963,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "Success",
+                                        "status": "success",
                                         "data": {
                                             "status": "ok"
                                         }
@@ -3168,7 +3168,7 @@
                                         "status": {
                                             "type": "string",
                                             "enum": [
-                                                "Success"
+                                                "success"
                                             ]
                                         },
                                         "data": {
@@ -3180,7 +3180,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "Success",
+                                        "status": "success",
                                         "data": {
                                             "walletMnemonic": "wallet_mnemonic",
                                             "walletAddress": "wallet_address",
@@ -3247,7 +3247,7 @@
                                         "status": {
                                             "type": "string",
                                             "enum": [
-                                                "Success"
+                                                "success"
                                             ]
                                         },
                                         "data": {
@@ -3259,7 +3259,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "Success",
+                                        "status": "success",
                                         "data": {
                                             "walletVkey": "wallet_vkey",
                                             "note": "note",
@@ -3363,7 +3363,7 @@
                                         "status": {
                                             "type": "string",
                                             "enum": [
-                                                "Success"
+                                                "success"
                                             ]
                                         },
                                         "data": {
@@ -3384,7 +3384,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "Success",
+                                        "status": "success",
                                         "data": {
                                             "isValid": true
                                         }
@@ -8023,7 +8023,7 @@
                                     ]
                                 },
                                 "example": {
-                                    "status": "Error",
+                                    "status": "error",
                                     "error": {
                                         "message": "Payment request is not in WaitingForManualAction state. Current state: WaitingForExternalAction"
                                     }
@@ -8062,7 +8062,7 @@
                                     ]
                                 },
                                 "example": {
-                                    "status": "Error",
+                                    "status": "error",
                                     "error": {
                                         "message": "Payment request not found"
                                     }
@@ -8620,7 +8620,7 @@
                                     ]
                                 },
                                 "example": {
-                                    "status": "Error",
+                                    "status": "error",
                                     "error": {
                                         "message": "Purchase request is not in WaitingForManualAction state. Current state: WaitingForExternalAction"
                                     }
@@ -8659,7 +8659,7 @@
                                     ]
                                 },
                                 "example": {
-                                    "status": "Error",
+                                    "status": "error",
                                     "error": {
                                         "message": "Purchase request not found"
                                     }
@@ -11695,7 +11695,7 @@
                                     ]
                                 },
                                 "example": {
-                                    "status": "Error",
+                                    "status": "error",
                                     "error": {
                                         "message": "Purchase request already exists"
                                     },
@@ -14538,7 +14538,7 @@
                                     ]
                                 },
                                 "example": {
-                                    "status": "Error",
+                                    "status": "error",
                                     "error": {
                                         "message": "Agent registration cannot be deleted in its current state: RegistrationRequested"
                                     }
@@ -14577,7 +14577,7 @@
                                     ]
                                 },
                                 "example": {
-                                    "status": "Error",
+                                    "status": "error",
                                     "error": {
                                         "message": "Agent Registration not found"
                                     }
@@ -16043,7 +16043,7 @@
                                         "status": {
                                             "type": "string",
                                             "enum": [
-                                                "Success"
+                                                "success"
                                             ]
                                         },
                                         "data": {
@@ -16067,7 +16067,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "Success",
+                                        "status": "success",
                                         "data": {
                                             "RpcProviderKeys": [
                                                 {
@@ -17883,7 +17883,7 @@
                                         "status": {
                                             "type": "string",
                                             "enum": [
-                                                "Success"
+                                                "success"
                                             ]
                                         },
                                         "data": {
@@ -17895,7 +17895,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "Success",
+                                        "status": "success",
                                         "data": {
                                             "MonitoringStatus": {
                                                 "isMonitoring": true,
@@ -17954,7 +17954,7 @@
                                         "status": {
                                             "type": "string",
                                             "enum": [
-                                                "Success"
+                                                "success"
                                             ]
                                         },
                                         "data": {
@@ -17966,7 +17966,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "Success",
+                                        "status": "success",
                                         "data": {
                                             "message": "Manual monitoring cycle completed successfully",
                                             "triggered": true
@@ -18030,7 +18030,7 @@
                                         "status": {
                                             "type": "string",
                                             "enum": [
-                                                "Success"
+                                                "success"
                                             ]
                                         },
                                         "data": {
@@ -18042,7 +18042,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "Success",
+                                        "status": "success",
                                         "data": {
                                             "message": "Monitoring service started with 30000ms interval",
                                             "started": true
@@ -18087,7 +18087,7 @@
                                         "status": {
                                             "type": "string",
                                             "enum": [
-                                                "Success"
+                                                "success"
                                             ]
                                         },
                                         "data": {
@@ -18099,7 +18099,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "Success",
+                                        "status": "success",
                                         "data": {
                                             "message": "Monitoring service stopped successfully",
                                             "stopped": true

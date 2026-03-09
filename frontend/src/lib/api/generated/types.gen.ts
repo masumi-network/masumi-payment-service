@@ -1637,7 +1637,7 @@ export type GetHealthResponses = {
      * Object with status ok, if the server is up and healthy
      */
     200: {
-        status: 'Success';
+        status: 'success';
         data: {
             /**
              * Health status of the service. Returns "ok" when the service is running
@@ -1728,7 +1728,7 @@ export type PatchWalletResponses = {
      * Wallet updated
      */
     200: {
-        status: 'Success';
+        status: 'success';
         data: Wallet;
     };
 };
@@ -1752,7 +1752,7 @@ export type PostWalletResponses = {
      * Wallet created
      */
     200: {
-        status: 'Success';
+        status: 'success';
         data: GeneratedWalletSecret;
     };
 };
@@ -1819,7 +1819,7 @@ export type PostSignatureVerifyRevealDataResponses = {
      * Revealed data
      */
     200: {
-        status: 'Success';
+        status: 'success';
         data: {
             /**
              * Whether the signature is valid and the data can be revealed
@@ -7184,7 +7184,7 @@ export type GetRpcApiKeysResponses = {
      * Blockfrost keys
      */
     200: {
-        status: 'Success';
+        status: 'success';
         data: {
             /**
              * List of RPC provider keys
@@ -7779,7 +7779,7 @@ export type GetMonitoringResponses = {
      * Monitoring service status
      */
     200: {
-        status: 'Success';
+        status: 'success';
         data: MonitoringStatus;
     };
 };
@@ -7809,7 +7809,7 @@ export type PostMonitoringTriggerCycleResponses = {
      * Monitoring cycle trigger result
      */
     200: {
-        status: 'Success';
+        status: 'success';
         data: TriggeredMonitoringCycle;
     };
 };
@@ -7851,7 +7851,7 @@ export type PostMonitoringStartResponses = {
      * Monitoring service start result
      */
     200: {
-        status: 'Success';
+        status: 'success';
         data: StartedMonitoring;
     };
 };
@@ -7885,7 +7885,7 @@ export type PostMonitoringStopResponses = {
      * Monitoring service stop result
      */
     200: {
-        status: 'Success';
+        status: 'success';
         data: StoppedMonitoring;
     };
 };
