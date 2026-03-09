@@ -12,7 +12,7 @@ export const getUTXOSchemaInput = z.object({
 	network: z.nativeEnum(Network).describe('The Cardano network'),
 	count: z.coerce.number().int().min(1).max(100).default(10).optional().describe('The number of UTXOs to get'),
 	page: z.coerce.number().int().min(1).max(100).default(1).optional().describe('The page number to get'),
-	order: z.enum(['asc', 'desc']).default('desc').optional().describe('The order to get the UTXOs in'),
+	order: z.enum(['Asc', 'Desc']).default('Desc').optional().describe('The order to get the UTXOs in'),
 });
 
 // Standalone UTXO amount schema
@@ -76,7 +76,7 @@ export const queryUTXOEndpointGet = readAuthenticatedEndpointFactory.build({
 			const utxos = await blockfrost.addressesUtxos(input.address, {
 				count: input.count,
 				page: input.page,
-				order: input.order,
+				order: input.order?.toLowerCase() as 'asc' | 'desc' | undefined,
 			});
 			return {
 				Utxos: utxos.map((utxo) => ({

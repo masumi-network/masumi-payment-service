@@ -3,9 +3,9 @@ RUN apt-get update -y && apt-get install -y openssl
 RUN npm install -g pnpm
 # Build backend step
 WORKDIR /usr/src/app
-COPY .env* ./
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY patches ./patches
 COPY smart-contracts ./smart-contracts
 COPY ./src ./src
 COPY ./prisma ./prisma
@@ -15,7 +15,6 @@ COPY eslint.config.mjs .
 COPY frontend/package.json ./frontend/
 
 RUN pnpm install --frozen-lockfile
-RUN pnpm exec prisma generate
 RUN pnpm run build
 RUN pnpm run swagger-json
 
@@ -26,13 +25,15 @@ FROM node:20-slim AS frontend-builder
 RUN npm install -g pnpm
 WORKDIR /usr/src/app
 COPY package.json pnpm-workspace.yaml ./
+COPY patches ./patches
 COPY --from=backend-builder /usr/src/app/pnpm-lock.yaml ./
 WORKDIR /usr/src/app/frontend
+ARG NEXT_PUBLIC_PAYMENT_API_BASE_URL=/api/v1
+ENV NEXT_PUBLIC_PAYMENT_API_BASE_URL=${NEXT_PUBLIC_PAYMENT_API_BASE_URL}
 COPY frontend/package.json ./
 COPY frontend/openapi-ts.config.ts ./openapi-ts.config.ts
 COPY frontend/src ./src
 COPY frontend/public ./public
-COPY frontend/.env* ./
 COPY frontend/next.config.ts ./
 COPY frontend/postcss.config.mjs ./
 COPY frontend/tsconfig.json ./
@@ -63,10 +64,6 @@ COPY --from=backend-builder /usr/src/app/eslint.config.mjs ./eslint.config.mjs
 
 # Copy frontend files
 COPY --from=frontend-builder /usr/src/app/frontend/dist ./frontend/dist
-
-#optional copy env file
-COPY .env* ./
-
 
 EXPOSE 3001
 ENV NODE_ENV=production

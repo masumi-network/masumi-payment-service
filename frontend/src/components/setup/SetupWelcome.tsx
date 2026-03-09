@@ -42,6 +42,7 @@ import {
   getPaymentSourceExtended,
 } from '@/lib/api/generated';
 import { handleApiCall, shortenAddress, getExplorerUrl } from '@/lib/utils';
+import { WalletLink } from '@/components/ui/wallet-link';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { DEFAULT_ADMIN_WALLETS, DEFAULT_FEE_CONFIG } from '@/lib/constants/defaultWallets';
 import { useForm, useFieldArray } from 'react-hook-form';
@@ -51,7 +52,10 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
-import { getUsdmConfig } from '@/lib/constants/defaultWallets';
+import {
+  getActiveStablecoinConfig,
+  getActiveStablecoinSymbol,
+} from '@/lib/constants/defaultWallets';
 import {
   Select,
   SelectContent,
@@ -1059,8 +1063,9 @@ function AddAiAgentScreen({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>('');
 
+  const stablecoinUnit = getActiveStablecoinSymbol(network);
   const priceSchema = z.object({
-    unit: z.enum(['lovelace', 'USDM'] as const, {
+    unit: z.enum(['lovelace', stablecoinUnit] as const, {
       error: () => 'Token is required',
     }),
     amount: z.string().refine((val) => {
@@ -1236,7 +1241,10 @@ function AddAiAgentScreen({
             : {
                 pricingType: 'Fixed',
                 Pricing: data.prices.map((price) => ({
-                  unit: price.unit === 'lovelace' ? 'lovelace' : getUsdmConfig(network).fullAssetId,
+                  unit:
+                    price.unit === 'lovelace'
+                      ? 'lovelace'
+                      : getActiveStablecoinConfig(network).fullAssetId,
                   amount: (parseFloat(price.amount) * 1000000).toString(),
                 })),
               },
@@ -1400,33 +1408,11 @@ function AddAiAgentScreen({
                   <Wallet className="h-3 w-3" /> Selling
                 </Badge>
                 {sellingWallet?.address ? (
-                  <a
-                    href={getExplorerUrl(sellingWallet.address, network)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-mono text-sm truncate hover:underline text-primary flex items-center gap-1 group"
-                  >
-                    {shortenAddress(sellingWallet.address, 10)}
-                    <ExternalLink className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
-                  </a>
+                  <WalletLink address={sellingWallet.address} network={network} shorten={10} />
                 ) : (
                   <span className="text-sm text-muted-foreground">No wallet</span>
                 )}
               </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 shrink-0 icon-bounce"
-                onClick={() => {
-                  if (sellingWallet?.address) {
-                    navigator.clipboard.writeText(sellingWallet.address);
-                    toast.success('Copied to clipboard');
-                  }
-                }}
-              >
-                <Copy className="h-4 w-4" />
-              </Button>
             </div>
           </CardContent>
         </Card>
@@ -1470,7 +1456,7 @@ function AddAiAgentScreen({
                     <Select
                       value={watch(`prices.${index}.unit`)}
                       onValueChange={(value) =>
-                        setValue(`prices.${index}.unit`, value as 'lovelace' | 'USDM')
+                        setValue(`prices.${index}.unit`, value as 'lovelace' | 'USDCx' | 'tUSDM')
                       }
                     >
                       <SelectTrigger className="w-28">
@@ -1478,7 +1464,7 @@ function AddAiAgentScreen({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="lovelace">ADA</SelectItem>
-                        <SelectItem value="USDM">USDM</SelectItem>
+                        <SelectItem value={stablecoinUnit}>{stablecoinUnit}</SelectItem>
                       </SelectContent>
                     </Select>
                     {priceFields.length > 1 && (

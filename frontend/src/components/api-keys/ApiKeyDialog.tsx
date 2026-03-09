@@ -27,8 +27,6 @@ export function ApiKeyDialog() {
   const handleApiKeySubmit = async (key: string) => {
     setError('');
     setIsLoading(true);
-    console.log('key', key);
-    console.log('apiClient', apiClient);
 
     try {
       apiClient.setConfig({ headers: { token: key } });
@@ -57,7 +55,7 @@ export function ApiKeyDialog() {
       const sources = sourcesResponse.data?.data?.PaymentSources ?? [];
 
       if (sources.length === 0) {
-        const networkLimit = statusResponse.data?.data.networkLimit ?? [];
+        const networkLimit = statusResponse.data?.data.NetworkLimit ?? [];
         const setupType = networkLimit.includes('Mainnet') ? 'mainnet' : 'preprod';
         router.push(`/setup?type=${setupType}`);
       } else {

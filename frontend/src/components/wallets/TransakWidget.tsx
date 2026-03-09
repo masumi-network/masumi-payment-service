@@ -4,15 +4,23 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { CopyButton } from '../ui/copy-button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../ui/dialog';
 import { shortenAddress } from '@/lib/utils';
+import { ExternalLink } from 'lucide-react';
 
 interface TransakWidgetProps {
   isOpen: boolean;
   onClose: () => void;
   walletAddress: string;
   onSuccess?: () => void;
+  isChild?: boolean;
 }
 
-export function TransakWidget({ isOpen, onClose, walletAddress, onSuccess }: TransakWidgetProps) {
+export function TransakWidget({
+  isOpen,
+  onClose,
+  walletAddress,
+  onSuccess,
+  isChild,
+}: TransakWidgetProps) {
   const { network } = useAppContext();
 
   useEffect(() => {
@@ -24,7 +32,7 @@ export function TransakWidget({ isOpen, onClose, walletAddress, onSuccess }: Tra
         console.error('Order failed:', event.data);
         onClose();
       } else if (
-        event.data.type?.includes('TRANSAK_WIDGET_CLOSE') ??
+        event.data.type?.includes('TRANSAK_WIDGET_CLOSE') ||
         event.data.type?.includes('TRANSAK_EXIT')
       ) {
         onClose();
@@ -44,7 +52,11 @@ export function TransakWidget({ isOpen, onClose, walletAddress, onSuccess }: Tra
 
     return (
       <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent>
+        <DialogContent
+          variant={isChild ? 'slide-from-right' : 'default'}
+          hideOverlay={isChild}
+          onBack={isChild ? onClose : undefined}
+        >
           <DialogHeader>
             <DialogTitle>Preprod Testnet Faucet</DialogTitle>
             <DialogDescription>
@@ -65,27 +77,50 @@ export function TransakWidget({ isOpen, onClose, walletAddress, onSuccess }: Tra
     );
   }
 
-  const transakUrl = new URL('https://global.transak.com');
-  transakUrl.searchParams.set(
-    'apiKey',
-    process.env.NEXT_PUBLIC_TRANSAK_API_KEY || '558f0caf-41d4-40fb-a2a9-808283540e40',
-  );
-  transakUrl.searchParams.set('environment', 'PRODUCTION');
-  transakUrl.searchParams.set('cryptoCurrencyList', 'ADA');
-  transakUrl.searchParams.set('defaultCryptoCurrency', 'ADA');
-  transakUrl.searchParams.set('walletAddress', walletAddress);
-  transakUrl.searchParams.set('themeColor', '#000000');
-  transakUrl.searchParams.set('hideMenu', 'true');
-  transakUrl.searchParams.set('exchangeScreenTitle', 'Top up your Masumi Wallet with ADA');
+  const exchanges = [
+    { name: 'Coinbase', url: 'https://www.coinbase.com/price/cardano' },
+    { name: 'Kraken', url: 'https://www.kraken.com/prices/ada-cardano-price-chart' },
+    { name: 'Binance', url: 'https://www.binance.com/en/price/cardano' },
+    { name: 'Crypto.com', url: 'https://crypto.com/price/cardano' },
+  ];
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="p-0 h-full max-h-[600px]">
-        <iframe
-          src={transakUrl.toString()}
-          className="w-full h-full rounded-lg"
-          allow="camera;microphone;fullscreen;payment"
-        />
+      <DialogContent
+        variant={isChild ? 'slide-from-right' : 'default'}
+        hideOverlay={isChild}
+        onBack={isChild ? onClose : undefined}
+      >
+        <DialogHeader>
+          <DialogTitle>Top Up Wallet</DialogTitle>
+          <DialogDescription>
+            Send ADA to your wallet address to fund it. You can purchase ADA from any major
+            cryptocurrency exchange and withdraw it to the address below.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 mt-2">
+          <div className="bg-muted p-3 rounded-lg break-all flex items-center justify-between">
+            <p className="text-sm font-mono text-foreground">{shortenAddress(walletAddress)}</p>
+            <CopyButton value={walletAddress} />
+          </div>
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-foreground">Buy ADA on an exchange</p>
+            <div className="grid grid-cols-2 gap-2">
+              {exchanges.map((exchange) => (
+                <Button
+                  key={exchange.name}
+                  variant="outline"
+                  size="sm"
+                  className="justify-between"
+                  onClick={() => window.open(exchange.url, '_blank')}
+                >
+                  {exchange.name}
+                  <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
+                </Button>
+              ))}
+            </div>
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   );

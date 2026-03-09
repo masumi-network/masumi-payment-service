@@ -8,6 +8,11 @@ overrides:
   libsodium-wrappers-sumo: 0.7.15
   libsodium-sumo: 0.7.15
 
+patchedDependencies:
+  '@sundaeswap/core':
+    hash: 026cf12da9e53a1c16faf4e98d8359e0d5d34c3532b1cc212f263d7c191e446f
+    path: patches/@sundaeswap__core.patch
+
 importers:
 
   .:
@@ -90,6 +95,12 @@ importers:
       '@prisma/instrumentation':
         specifier: ^7.2.0
         version: 7.2.0(@opentelemetry/api@1.9.0)
+      '@sundaeswap/asset':
+        specifier: 1.0.11
+        version: 1.0.11
+      '@sundaeswap/core':
+        specifier: 1.3.47
+        version: 1.3.47(patch_hash=026cf12da9e53a1c16faf4e98d8359e0d5d34c3532b1cc212f263d7c191e446f)(@blaze-cardano/sdk@0.2.48(rxjs@7.8.2))(@sundaeswap/asset@1.0.11)(@sundaeswap/bigint-math@0.6.3)(@sundaeswap/cpp@1.0.13(@sundaeswap/asset@1.0.11)(@sundaeswap/bigint-math@0.6.3)(@sundaeswap/fraction@1.0.8))(@sundaeswap/fraction@1.0.8)(lucid-cardano@0.10.7)
       '@types/express':
         specifier: ^5.0.0
         version: 5.0.6
@@ -138,6 +149,9 @@ importers:
       jspdf-autotable:
         specifier: ^5.0.7
         version: 5.0.7(jspdf@4.2.0)
+      lucid-cardano:
+        specifier: 0.10.7
+        version: 0.10.7
       lz-string:
         specifier: ^1.5.0
         version: 1.5.0
@@ -604,6 +618,36 @@ packages:
     resolution: {integrity: sha512-R0XPZ/IQhU2TtetSFI9vI+7kJOJYNiCncn5ixEBW+/LNaZCo2HK37Mq3pRNzrM4FryuAkyeqY7Ujmj3I3e3t9g==}
     engines: {node: '>=16.0.0', npm: '>=7.0.0'}
 
+  '@blaze-cardano/core@0.8.0':
+    resolution: {integrity: sha512-l7boNfxrl4epfRPzXbD8rIb4Lfq/f2sz1sI9DEX7Y2JPNj6SZUAflEWyPy4BhFDRba8QbLXS1dQ2PV4wEV18WQ==}
+
+  '@blaze-cardano/data@0.6.6':
+    resolution: {integrity: sha512-wmk1LZRlSSkOHlASkTC4YMXhPU3WXdFo0lDl9maono9tJnD7PjhH1NI15j8NoZRgZHBFf2vJosLvp3L9lpME/w==}
+
+  '@blaze-cardano/jest-config@0.0.1':
+    resolution: {integrity: sha512-q/0BzXoN+PP4kcwmqthJEYrQ1ee3pZ1Y2dV7X7levyccX8yVMxgMUvJjXhZKl0Bb9g8JidoxanVaBW0d0Y0mSw==}
+
+  '@blaze-cardano/ogmios@0.0.7':
+    resolution: {integrity: sha512-6T5Iz9Qpenp8tj3eogfvjGIxScm01oSrXrnT8oUFxOT4xYGz7PmX69Y80e+1AFAGIzZpHvYZdIQpGBr0Qlyswg==}
+
+  '@blaze-cardano/query@0.5.6':
+    resolution: {integrity: sha512-OrdJW2MjUJ7gT0YJlxGnDGuLvImXMdQln8OH+nIDEBbaxBP7/hrqLVeEtGpLqlQzXf+zqXlPkImIPvU6Gh+ezg==}
+
+  '@blaze-cardano/sdk@0.2.48':
+    resolution: {integrity: sha512-2gmqilbwEiIOuOpUFTLsBoGFKIYgQ4O0NA8RWlH82XEOKbOhnaU9LDkZAF2/+5U4HpggUsrn1HnBlB+oiwdvbw==}
+
+  '@blaze-cardano/tx@0.14.1':
+    resolution: {integrity: sha512-8FiiWxbYsEj3Kq6/xw9NMxXG2FFZ5nLcs+vYQfxGFY2AA0duNI2onwAw9ZoY30n6mMoDQ7bHFXSP4GuQo86/BQ==}
+
+  '@blaze-cardano/uplc@0.4.3':
+    resolution: {integrity: sha512-S3eJq6hpU7YaUk72EUVph7er8faFOG35WkzFeLbdo9KnFndjYV65q0OJY2Zzk+mHZCvyx3AJvJO6TloN4q1nfQ==}
+
+  '@blaze-cardano/vm@0.2.3':
+    resolution: {integrity: sha512-TFOx6ARCLIqt+IbjvvWyrwLG8uh/voNYWhfpdQ8cHxxZox+lUHjJvxqzA/2HaSbmfW17Ljcca8T98TG1A6OFEw==}
+
+  '@blaze-cardano/wallet@0.5.3':
+    resolution: {integrity: sha512-6UxqbGi56m5qu5gwi+04OFm+2FOgNid5HgsIoDZuXSiUdjP7R98WqaPe6lwCvLvLVcAZP+9Ht+99JvZzdHibUQ==}
+
   '@blockfrost/blockfrost-js@6.1.0':
     resolution: {integrity: sha512-UQHJZ6Booc1krTzs169hzeAE9Ybk5AfWkNnGgJgzQnNqMxfqrfHe3vl7ai08YfBsRaXE3If6daBTzAq9Uiy+jQ==}
     engines: {node: '>=16'}
@@ -875,6 +919,9 @@ packages:
 
   '@emnapi/wasi-threads@1.1.0':
     resolution: {integrity: sha512-WI0DdZ8xFSbgMjR1sFsKABJ/C5OnRrjT06JXbZKexJGrDuPTzZdDYfFlsgcCXCyf+suG5QU2e/y1Wo2V/OapLQ==}
+
+  '@emurgo/cardano-message-signing-browser@1.1.0':
+    resolution: {integrity: sha512-LyeiGIqCyZu9DZnKsi4wlBjZA1MN+uy3Cqpb5J6RZWvFXDJnCoxrYB/EixUiGRD/la4WsldBgtPsrIHyGsVkpg==}
 
   '@emurgo/cardano-message-signing-nodejs@1.1.0':
     resolution: {integrity: sha512-PQRc8K8wZshEdmQenNUzVtiI8oJNF/1uAnBhidee5C4o1l2mDLOW+ur46HWHIFKQ6x8mSJTllcjMscHgzju0gQ==}
@@ -1808,6 +1855,9 @@ packages:
     resolution: {integrity: sha512-7YDlXiNMdO1YZeH6t/kvopHHbIZzlxrCV9WLqCY6QhcXOoXiNCMDqJIglZ9Yjx5+w7Dz30TITFrlTjnRg7sKEg==}
     engines: {node: ^14.21.3 || >=16}
 
+  '@noble/ed25519@2.3.0':
+    resolution: {integrity: sha512-M7dvXL2B92/M7dw9+gzuydL8qn/jiqNHaoR3Q+cb1q1GHV7uwE17WCyFMG+Y+TZb5izcaXk5TdJRrDUxHXL78A==}
+
   '@noble/hashes@1.8.0':
     resolution: {integrity: sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A==}
     engines: {node: ^14.21.3 || >=16}
@@ -2505,6 +2555,17 @@ packages:
   '@parcel/watcher@2.5.4':
     resolution: {integrity: sha512-WYa2tUVV5HiArWPB3ydlOc4R2ivq0IDrlqhMi3l7mVsFEXNcTfxYFPIHXHXIh/ca/y/V5N4E1zecyxdIBjYnkQ==}
     engines: {node: '>= 10.0.0'}
+
+  '@peculiar/asn1-schema@2.6.0':
+    resolution: {integrity: sha512-xNLYLBFTBKkCzEZIw842BxytQQATQv+lDTCEMZ8C196iJcJJMBUZxrhSTxLaohMyKK8QlzRNTRkUmanucnDSqg==}
+
+  '@peculiar/json-schema@1.1.12':
+    resolution: {integrity: sha512-coUfuoMeIB7B8/NMekxaDzLhaYmp0HZNPEjYRm9goRou8UZIC3z21s0sL9AWoCw4EG876QyO3kYrc61WNF9B/w==}
+    engines: {node: '>=8.0.0'}
+
+  '@peculiar/webcrypto@1.5.0':
+    resolution: {integrity: sha512-BRs5XUAwiyCDQMsVA9IDvDa7UBR9gAvPHgugOeGng3YN6vJ9JYonyDc0lNczErgtCWtucjR5N7VtaonboD/ezg==}
+    engines: {node: '>=10.12.0'}
 
   '@pkgjs/parseargs@0.11.0':
     resolution: {integrity: sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg==}
@@ -3278,6 +3339,32 @@ packages:
   '@standard-schema/utils@0.3.0':
     resolution: {integrity: sha512-e7Mew686owMaPJVNNLs55PUvgz371nKgwsc4vxE49zsODpJEnxgxRo2y/OKrqueavXgZNMDVj3DdHFlaSAeU8g==}
 
+  '@sundaeswap/asset@1.0.11':
+    resolution: {integrity: sha512-xbubSh7cm/0yb/8sHCw6ad03fS6L8/1tMiT9q7LeM9y8mn+xQ64ylJkCWWob1tVQDf6BaaWsKquhXlKhsn+70Q==}
+
+  '@sundaeswap/bigint-math@0.6.3':
+    resolution: {integrity: sha512-FTXBd8F9LAvZsTZII7SBbZTEnjJc4JOSHp0XM+byAMsIDXglrYKotZT8z4QnYBxq1EcuhONsKdutibTfst4sgg==}
+
+  '@sundaeswap/core@1.3.47':
+    resolution: {integrity: sha512-HoDkN9FuahQcj6fDpELxy7OgylN6Sh+eIuHCemSB3zVuh+yS6viuKIT27Y9lnDHXRekxPcL9mA6g1luT+C8HsA==}
+    peerDependencies:
+      '@blaze-cardano/sdk': ^0.2.20
+      '@sundaeswap/asset': ^1.0.3
+      '@sundaeswap/bigint-math': ^0.6.3
+      '@sundaeswap/cpp': ^1.0.7
+      '@sundaeswap/fraction': ^1.0.5
+      lucid-cardano: 0.10.7
+
+  '@sundaeswap/cpp@1.0.13':
+    resolution: {integrity: sha512-YxDra67Bqlb0Hjwja7SPq8I+I1rduWXwJXggOQu7n9+ogbAfz8DEIiCXep+K8h2nFa1miLPGVFYbrYC83cEvRw==}
+    peerDependencies:
+      '@sundaeswap/asset': ^1.0.11
+      '@sundaeswap/bigint-math': ^0.6.0
+      '@sundaeswap/fraction': ^1.0.0
+
+  '@sundaeswap/fraction@1.0.8':
+    resolution: {integrity: sha512-vTDao3tzT/cbWt+uTy5dPWUwe7FVkNoPWG6x+pXP4go7kSCy2tzLaNaFP79pOfJENPMYoLd7OXiClQ98pCeY6Q==}
+
   '@swc/helpers@0.5.15':
     resolution: {integrity: sha512-JQ5TuMi45Owi4/BIMAJBoSQoOJu12oOk/gADqlcUL9JEdHB8vyjUSsxqeNXnmXHjYKMi2WcYtezGEEhqUI/E2g==}
 
@@ -3880,6 +3967,10 @@ packages:
     resolution: {integrity: sha512-BNoCY6SXXPQ7gF2opIP4GBE+Xw7U+pHMYKuzjgCN3GwiaIR09UUeKfheyIry77QtrCBlC0KK0q5/TER/tYh3PQ==}
     engines: {node: '>= 0.4'}
 
+  asn1js@3.0.7:
+    resolution: {integrity: sha512-uLvq6KJu04qoQM6gvBfKFjlh6Gl0vOKQuR5cJMDHQkmwfMOQeN3F3SHCv9SNYSL+CRoHvOGFfllDlVz03GQjvQ==}
+    engines: {node: '>=12.0.0'}
+
   ast-types-flow@0.0.8:
     resolution: {integrity: sha512-OH/2E5Fg20h2aPrbe+QL8JZQFko0YZaF+j4mnQ7BGhfavO7OpSLa8a0y9sBwomHdSbkhTS8TQNayBfnW5DwbvQ==}
 
@@ -4341,6 +4432,10 @@ packages:
   dargs@8.1.0:
     resolution: {integrity: sha512-wAV9QHOsNbwnWdNW2FYvE1P56wtgSbM+3SZcdGiWQILwVjACCXDCI3Ai8QlCjMDB8YK5zySiXZYBiwGmNY3lnw==}
     engines: {node: '>=12'}
+
+  data-uri-to-buffer@4.0.1:
+    resolution: {integrity: sha512-0R9ikRb668HB7QDxT1vkpuUBtqc53YyAwMwGeUFKRojY/NWKvdZ+9UYtRfGmhqNbRkTSVpMbmyhXipFFv2cb/A==}
+    engines: {node: '>= 12'}
 
   data-view-buffer@1.0.2:
     resolution: {integrity: sha512-EmKO5V3OLXh1rtK2wgXRansaK1/mtVdTUEiEI0W8RkvgT05kfxaH29PliLnpLP73yYO6142Q72QNa8Wx/A5CqQ==}
@@ -4859,6 +4954,10 @@ packages:
   fecha@4.2.3:
     resolution: {integrity: sha512-OP2IUU6HeYKJi3i0z4A19kHMQoLVs4Hc+DPqqxI2h/DPZHTm/vjsfC6P0b4jCMy14XizLBqvndQ+UilD7707Jw==}
 
+  fetch-blob@3.2.0:
+    resolution: {integrity: sha512-7yAQpD2UMJzLi1Dqv7qFYnPbaPx7ZfFK6PiIxQ4PfkGPyNyl2Ugx+a/umUonmKqjhM4DnfbMvdX6otXq83soQQ==}
+    engines: {node: ^12.20 || >= 14.13}
+
   fflate@0.8.2:
     resolution: {integrity: sha512-cPJU47OaAoCbg0pBvzsgpTPhmhqI5eJjh/JIu8tPj5q+T7iLvW/JAYUqmE7KOB4R1ZyEhzBaIQpQpardBF5z8A==}
 
@@ -4931,6 +5030,10 @@ packages:
     resolution: {integrity: sha512-9XNj/o4wrRFyhSMJOvsuyMwy8aUfBaZ1VrqHVfohyXf0Sw0e+yfKG+xZaY3arGCOMdwFsqObtzVOc1gU9KiT9w==}
     engines: {node: '>=18.3.0'}
     hasBin: true
+
+  formdata-polyfill@4.0.10:
+    resolution: {integrity: sha512-buewHzMvYL29jdeQTVILecSaZKnt/RJWjoZCF5OW60Z67/GmSLBkOFM7qh1PI3zFNtJbaZL5eQu1vLfazOwj4g==}
+    engines: {node: '>=12.20.0'}
 
   forwarded-parse@2.1.2:
     resolution: {integrity: sha512-alTFZZQDKMporBH77856pXgzhEzaUVmLCDk+egLgIgHst3Tpndzz8MnKe+GzRJRfvVdn69HhpW7cmXzvtLvJAw==}
@@ -5147,6 +5250,9 @@ packages:
 
   hermes-parser@0.25.1:
     resolution: {integrity: sha512-6pEjquH3rqaI6cYAXYPcz9MS4rY6R4ngRgrgfDshRptUZIc3lw0MCIJIGDj9++mfySOuPTHB4nrSW99BCvOPIA==}
+
+  hex-encoding@2.0.3:
+    resolution: {integrity: sha512-sSmMo4ij2Vejht+5UkzuzNGiYgIWTSUw0GQqxHIQXsuuXB1ozYnjCZJZ/nwWNYRoU8+92Dp736wqxmiAN6/fcw==}
 
   hono@4.10.6:
     resolution: {integrity: sha512-BIdolzGpDO9MQ4nu3AUuDwHZZ+KViNm+EZ75Ae55eMXMqLVhDFqEMXxtUe9Qh8hjL+pIna/frs2j6Y2yD5Ua/g==}
@@ -5441,6 +5547,11 @@ packages:
 
   isomorphic-ws@4.0.1:
     resolution: {integrity: sha512-BhBvN2MBpWTaSHdWRb/bwdZJ1WaehQ2L1KngkCkfLUGF0mAWAT1sQUQacEmQ0jXkFw/czDXPNQSL5u2/Krsz1w==}
+    peerDependencies:
+      ws: '*'
+
+  isomorphic-ws@5.0.0:
+    resolution: {integrity: sha512-muId7Zzn9ywDsyXgTIafTry2sV3nySZeUDe6YedVd1Hvuuep5AsIlqK+XefWpYTyJG5e503F2xIuT2lcU6rCSw==}
     peerDependencies:
       ws: '*'
 
@@ -5888,6 +5999,11 @@ packages:
     resolution: {integrity: sha512-Lkk/vx6ak3rYkRR0Nhu4lFUT2VDnQSxBe8Hbl7f36358p6ow8Bnvr8lrLt98H8J1aGxfhbX4Fs5tYg2+FTwr5Q==}
     engines: {bun: '>=1.0.0', deno: '>=1.30.0', node: '>=8.0.0'}
 
+  lucid-cardano@0.10.7:
+    resolution: {integrity: sha512-hxJRMWj8VH+SGFqsVMG6T3LSRuxzwFbWOQ5DTGQQUyR/20FL7bjiVL+2ivMJF52tAbFKcwqpRD4fddR7LbqcAw==}
+    engines: {node: '>=14'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+
   lucide-react@0.562.0:
     resolution: {integrity: sha512-82hOAu7y0dbVuFfmO4bYF1XEwYk/mEbM5E+b1jgci/udUBEE/R7LF5Ip0CCEmXe8AybRM8L+04eP+LGZeDvkiw==}
     peerDependencies:
@@ -6126,6 +6242,14 @@ packages:
   node-addon-api@7.1.1:
     resolution: {integrity: sha512-5m3bsyrjFWE1xf7nz7YXdN4udnVtXK6/Yfgn5qnahL6bCkf2yKt4k3nuTKAtT4r3IG8JNR2ncsIMdZuAzJjHQQ==}
 
+  node-buffer-encoding@1.0.3:
+    resolution: {integrity: sha512-9hJZNChhQoCN1rCFScJiEwtzvWEJw2wSnu2nhDLD/YOYl1Ce8GbtnorsnjwwjpSk4sWE7zSp2etX6j7+bO7fVA==}
+
+  node-domexception@1.0.0:
+    resolution: {integrity: sha512-/jKZoMpw0F8GRwl4/eLROPA3cfcXtLApP0QzLmUT/HuPCZWyB7IY9ZrMeKw2O/nFIqPQB3PVM9aYm0F312AXDQ==}
+    engines: {node: '>=10.5.0'}
+    deprecated: Use your platform's native DOMException instead
+
   node-fetch-h2@2.3.0:
     resolution: {integrity: sha512-ofRW94Ab0T4AOh5Fk8t0h8OBWrmjb0SSB20xh1H8YnPV9EJ+f5AMoYSUQ2zgJ4Iq2HAK0I2l5/Nequ8YzFS3Hg==}
     engines: {node: 4.x || >=6.0.0}
@@ -6141,6 +6265,10 @@ packages:
     peerDependenciesMeta:
       encoding:
         optional: true
+
+  node-fetch@3.3.2:
+    resolution: {integrity: sha512-dRB78srN/l6gqWulah9SrxeYnxeddIG30+GOqK/9OlLVyLg3HPnr6SqOWTWOXKRwC2eGYCkZ59NNuSgvSrpgOA==}
+    engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
 
   node-int64@0.4.0:
     resolution: {integrity: sha512-O5lz91xSOeoXP6DulyHfllpq+Eg00MWitZIbtPfoSEvqIHdl5gfcY6hYzDWnj0qD5tz52PI08u9qUvSVeUBeHw==}
@@ -6675,6 +6803,13 @@ packages:
 
   pure-rand@7.0.1:
     resolution: {integrity: sha512-oTUZM/NAZS8p7ANR3SHh30kXB+zK2r2BPcEn/awJIbOvq82WoMN4p62AWWp3Hhw50G0xMsw1mhIBLqHw64EcNQ==}
+
+  pvtsutils@1.3.6:
+    resolution: {integrity: sha512-PLgQXQ6H2FWCaeRak8vvk1GW462lMxB5s3Jm673N82zI4vqtVUPuZdffdZbPDFRoU8kAhItWFtPCWiPpp4/EDg==}
+
+  pvutils@1.1.5:
+    resolution: {integrity: sha512-KTqnxsgGiQ6ZAzZCVlJH5eOjSnvlyEgx1m8bkRJfOhmGRqfo5KLvmAlACQkrjEtOQ4B7wF9TdSLIs9O90MX9xA==}
+    engines: {node: '>=16.0.0'}
 
   qs@6.14.1:
     resolution: {integrity: sha512-4EK3+xJl8Ts67nLYNwqw/dsFVnCf+qR7RgXSK9jEEm9unao3njwMDdmsdvoKBKHzxd7tCYz5e5M+SnMjdtXGQQ==}
@@ -7417,6 +7552,9 @@ packages:
     engines: {node: '>=0.8.0'}
     hasBin: true
 
+  uint8-encoding@2.0.1:
+    resolution: {integrity: sha512-xZAjZ+3OvrDtjFLLgojrLmG6T0YwZEo0OTyqCBxFjlFimIKnLtFqyYk6z/jDOUlJFJE52Srtrv4W4x7t4Cn/dA==}
+
   uint8-varint@2.0.4:
     resolution: {integrity: sha512-FwpTa7ZGA/f/EssWAb5/YV6pHgVF1fViKdW8cWaEarjB8t7NyofSWBdOTyFPaGuUG4gx3v1O3PQ8etsiOs3lcw==}
 
@@ -7554,6 +7692,13 @@ packages:
   web-encoding@1.1.5:
     resolution: {integrity: sha512-HYLeVCdJ0+lBYV2FvNZmv3HJ2Nt0QYXqZojk3d9FJOLkwnuhzM9tmamh8d7HPM8QqjKH8DeHkFTx+CFlWpZZDA==}
 
+  web-streams-polyfill@3.3.3:
+    resolution: {integrity: sha512-d2JWLCivmZYTSIoge9MsgFCZrt571BikcWGYkjC1khllbTeDlGqZ2D8vD8E/lJa8WGWbb7Plm8/XJYV7IJHZZw==}
+    engines: {node: '>= 8'}
+
+  webcrypto-core@1.8.1:
+    resolution: {integrity: sha512-P+x1MvlNCXlKbLSOY4cYrdreqPG5hbzkmawbcXLKN/mf6DZW0SdNNkZ+sjwsqVkI4A4Ko2sPZmkZtCKY58w83A==}
+
   webextension-polyfill@0.8.0:
     resolution: {integrity: sha512-a19+DzlT6Kp9/UI+mF9XQopeZ+n2ussjhxHJ4/pmIGge9ijCDz7Gn93mNnjpZAk95T4Tae8iHZ6sSf869txqiQ==}
 
@@ -7620,6 +7765,18 @@ packages:
     peerDependencies:
       bufferutil: ^4.0.1
       utf-8-validate: ^5.0.2
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
+
+  ws@8.19.0:
+    resolution: {integrity: sha512-blAT2mjOEIi0ZzruJfIhb3nps74PRWTCz1IjglWEEpQl5XS/UNama6u2/rjFkDDouqr4L67ry+1aGIALViWjDg==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
     peerDependenciesMeta:
       bufferutil:
         optional: true
@@ -7913,6 +8070,145 @@ snapshots:
       iso-url: 1.2.1
       multiformats: 13.4.2
       uint8arrays: 5.1.0
+
+  '@blaze-cardano/core@0.8.0(rxjs@7.8.2)':
+    dependencies:
+      '@cardano-sdk/core': 0.46.11(rxjs@7.8.2)
+      '@cardano-sdk/crypto': 0.4.4
+      '@cardano-sdk/util': 0.17.1
+      '@noble/curves': 1.9.0
+      '@noble/ed25519': 2.3.0
+      '@noble/hashes': 1.8.0
+      '@scure/bip39': 1.6.0
+      blakejs: 1.2.1
+    transitivePeerDependencies:
+      - '@dcspark/cardano-multiplatform-lib-asmjs'
+      - '@dcspark/cardano-multiplatform-lib-browser'
+      - '@dcspark/cardano-multiplatform-lib-nodejs'
+      - bufferutil
+      - encoding
+      - react-native-b4a
+      - rxjs
+      - utf-8-validate
+
+  '@blaze-cardano/data@0.6.6(rxjs@7.8.2)':
+    dependencies:
+      '@blaze-cardano/core': 0.8.0(rxjs@7.8.2)
+      '@sinclair/typebox': 0.34.47
+    transitivePeerDependencies:
+      - '@dcspark/cardano-multiplatform-lib-asmjs'
+      - '@dcspark/cardano-multiplatform-lib-browser'
+      - '@dcspark/cardano-multiplatform-lib-nodejs'
+      - bufferutil
+      - encoding
+      - react-native-b4a
+      - rxjs
+      - utf-8-validate
+
+  '@blaze-cardano/jest-config@0.0.1': {}
+
+  '@blaze-cardano/ogmios@0.0.7(ws@8.19.0)':
+    dependencies:
+      '@cardano-ogmios/schema': 6.9.0
+      isomorphic-ws: 5.0.0(ws@8.19.0)
+    transitivePeerDependencies:
+      - ws
+
+  '@blaze-cardano/query@0.5.6(rxjs@7.8.2)':
+    dependencies:
+      '@blaze-cardano/core': 0.8.0(rxjs@7.8.2)
+      '@blaze-cardano/jest-config': 0.0.1
+      '@blaze-cardano/ogmios': 0.0.7(ws@8.19.0)
+      '@cardano-ogmios/schema': 6.9.0
+      '@cardanosolutions/json-bigint': 1.1.0
+      ws: 8.19.0
+    transitivePeerDependencies:
+      - '@dcspark/cardano-multiplatform-lib-asmjs'
+      - '@dcspark/cardano-multiplatform-lib-browser'
+      - '@dcspark/cardano-multiplatform-lib-nodejs'
+      - bufferutil
+      - encoding
+      - react-native-b4a
+      - rxjs
+      - utf-8-validate
+
+  '@blaze-cardano/sdk@0.2.48(rxjs@7.8.2)':
+    dependencies:
+      '@blaze-cardano/core': 0.8.0(rxjs@7.8.2)
+      '@blaze-cardano/query': 0.5.6(rxjs@7.8.2)
+      '@blaze-cardano/tx': 0.14.1(rxjs@7.8.2)
+      '@blaze-cardano/uplc': 0.4.3(rxjs@7.8.2)
+      '@blaze-cardano/wallet': 0.5.3(rxjs@7.8.2)
+    transitivePeerDependencies:
+      - '@dcspark/cardano-multiplatform-lib-asmjs'
+      - '@dcspark/cardano-multiplatform-lib-browser'
+      - '@dcspark/cardano-multiplatform-lib-nodejs'
+      - bufferutil
+      - encoding
+      - react-native-b4a
+      - rxjs
+      - utf-8-validate
+
+  '@blaze-cardano/tx@0.14.1(rxjs@7.8.2)':
+    dependencies:
+      '@blaze-cardano/core': 0.8.0(rxjs@7.8.2)
+      '@blaze-cardano/vm': 0.2.3(rxjs@7.8.2)
+    transitivePeerDependencies:
+      - '@dcspark/cardano-multiplatform-lib-asmjs'
+      - '@dcspark/cardano-multiplatform-lib-browser'
+      - '@dcspark/cardano-multiplatform-lib-nodejs'
+      - bufferutil
+      - encoding
+      - react-native-b4a
+      - rxjs
+      - utf-8-validate
+
+  '@blaze-cardano/uplc@0.4.3(rxjs@7.8.2)':
+    dependencies:
+      '@blaze-cardano/core': 0.8.0(rxjs@7.8.2)
+      '@blaze-cardano/data': 0.6.6(rxjs@7.8.2)
+      hex-encoding: 2.0.3
+    transitivePeerDependencies:
+      - '@dcspark/cardano-multiplatform-lib-asmjs'
+      - '@dcspark/cardano-multiplatform-lib-browser'
+      - '@dcspark/cardano-multiplatform-lib-nodejs'
+      - bufferutil
+      - encoding
+      - react-native-b4a
+      - rxjs
+      - utf-8-validate
+
+  '@blaze-cardano/vm@0.2.3(rxjs@7.8.2)':
+    dependencies:
+      '@blaze-cardano/core': 0.8.0(rxjs@7.8.2)
+      '@blaze-cardano/uplc': 0.4.3(rxjs@7.8.2)
+    transitivePeerDependencies:
+      - '@dcspark/cardano-multiplatform-lib-asmjs'
+      - '@dcspark/cardano-multiplatform-lib-browser'
+      - '@dcspark/cardano-multiplatform-lib-nodejs'
+      - bufferutil
+      - encoding
+      - react-native-b4a
+      - rxjs
+      - utf-8-validate
+
+  '@blaze-cardano/wallet@0.5.3(rxjs@7.8.2)':
+    dependencies:
+      '@blaze-cardano/core': 0.8.0(rxjs@7.8.2)
+      '@blaze-cardano/jest-config': 0.0.1
+      '@blaze-cardano/query': 0.5.6(rxjs@7.8.2)
+      '@blaze-cardano/tx': 0.14.1(rxjs@7.8.2)
+      '@emurgo/cardano-message-signing-browser': 1.1.0
+      '@emurgo/cardano-message-signing-nodejs': 1.1.0
+    transitivePeerDependencies:
+      - '@dcspark/cardano-multiplatform-lib-asmjs'
+      - '@dcspark/cardano-multiplatform-lib-browser'
+      - '@dcspark/cardano-multiplatform-lib-nodejs'
+      - bufferutil
+      - encoding
+      - react-native-b4a
+      - rxjs
+      - utf-8-validate
 
   '@blockfrost/blockfrost-js@6.1.0':
     dependencies:
@@ -8391,6 +8687,8 @@ snapshots:
     dependencies:
       tslib: 2.8.1
     optional: true
+
+  '@emurgo/cardano-message-signing-browser@1.1.0': {}
 
   '@emurgo/cardano-message-signing-nodejs@1.1.0': {}
 
@@ -9361,6 +9659,8 @@ snapshots:
     dependencies:
       '@noble/hashes': 1.8.0
 
+  '@noble/ed25519@2.3.0': {}
+
   '@noble/hashes@1.8.0': {}
 
   '@noble/hashes@2.0.1': {}
@@ -10207,6 +10507,24 @@ snapshots:
       '@parcel/watcher-win32-x64': 2.5.4
     optional: true
 
+  '@peculiar/asn1-schema@2.6.0':
+    dependencies:
+      asn1js: 3.0.7
+      pvtsutils: 1.3.6
+      tslib: 2.8.1
+
+  '@peculiar/json-schema@1.1.12':
+    dependencies:
+      tslib: 2.8.1
+
+  '@peculiar/webcrypto@1.5.0':
+    dependencies:
+      '@peculiar/asn1-schema': 2.6.0
+      '@peculiar/json-schema': 1.1.12
+      pvtsutils: 1.3.6
+      tslib: 2.8.1
+      webcrypto-core: 1.8.1
+
   '@pkgjs/parseargs@0.11.0':
     optional: true
 
@@ -10934,6 +11252,29 @@ snapshots:
 
   '@standard-schema/utils@0.3.0': {}
 
+  '@sundaeswap/asset@1.0.11':
+    dependencies:
+      '@sundaeswap/fraction': 1.0.8
+
+  '@sundaeswap/bigint-math@0.6.3': {}
+
+  '@sundaeswap/core@1.3.47(patch_hash=026cf12da9e53a1c16faf4e98d8359e0d5d34c3532b1cc212f263d7c191e446f)(@blaze-cardano/sdk@0.2.48(rxjs@7.8.2))(@sundaeswap/asset@1.0.11)(@sundaeswap/bigint-math@0.6.3)(@sundaeswap/cpp@1.0.13(@sundaeswap/asset@1.0.11)(@sundaeswap/bigint-math@0.6.3)(@sundaeswap/fraction@1.0.8))(@sundaeswap/fraction@1.0.8)(lucid-cardano@0.10.7)':
+    dependencies:
+      '@blaze-cardano/sdk': 0.2.48(rxjs@7.8.2)
+      '@sundaeswap/asset': 1.0.11
+      '@sundaeswap/bigint-math': 0.6.3
+      '@sundaeswap/cpp': 1.0.13(@sundaeswap/asset@1.0.11)(@sundaeswap/bigint-math@0.6.3)(@sundaeswap/fraction@1.0.8)
+      '@sundaeswap/fraction': 1.0.8
+      lucid-cardano: 0.10.7
+
+  '@sundaeswap/cpp@1.0.13(@sundaeswap/asset@1.0.11)(@sundaeswap/bigint-math@0.6.3)(@sundaeswap/fraction@1.0.8)':
+    dependencies:
+      '@sundaeswap/asset': 1.0.11
+      '@sundaeswap/bigint-math': 0.6.3
+      '@sundaeswap/fraction': 1.0.8
+
+  '@sundaeswap/fraction@1.0.8': {}
+
   '@swc/helpers@0.5.15':
     dependencies:
       tslib: 2.8.1
@@ -11552,6 +11893,12 @@ snapshots:
       get-intrinsic: 1.3.0
       is-array-buffer: 3.0.5
 
+  asn1js@3.0.7:
+    dependencies:
+      pvtsutils: 1.3.6
+      pvutils: 1.1.5
+      tslib: 2.8.1
+
   ast-types-flow@0.0.8: {}
 
   astring@1.9.0: {}
@@ -12082,6 +12429,8 @@ snapshots:
 
   dargs@8.1.0: {}
 
+  data-uri-to-buffer@4.0.1: {}
+
   data-view-buffer@1.0.2:
     dependencies:
       call-bound: 1.0.4
@@ -12408,8 +12757,8 @@ snapshots:
       '@next/eslint-plugin-next': 16.1.4
       eslint: 9.39.2(jiti@2.6.1)
       eslint-import-resolver-node: 0.3.9
-      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0)(eslint@9.39.2(jiti@2.6.1))
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.2(jiti@2.6.1))
+      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.2(jiti@2.6.1)))(eslint@9.39.2(jiti@2.6.1))
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.2(jiti@2.6.1)))(eslint@9.39.2(jiti@2.6.1)))(eslint@9.39.2(jiti@2.6.1))
       eslint-plugin-jsx-a11y: 6.10.2(eslint@9.39.2(jiti@2.6.1))
       eslint-plugin-react: 7.37.5(eslint@9.39.2(jiti@2.6.1))
       eslint-plugin-react-hooks: 7.0.1(eslint@9.39.2(jiti@2.6.1))
@@ -12435,7 +12784,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0)(eslint@9.39.2(jiti@2.6.1)):
+  eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.2(jiti@2.6.1)))(eslint@9.39.2(jiti@2.6.1)):
     dependencies:
       '@nolyfill/is-core-module': 1.0.39
       debug: 4.4.3
@@ -12446,22 +12795,22 @@ snapshots:
       tinyglobby: 0.2.15
       unrs-resolver: 1.11.1
     optionalDependencies:
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.2(jiti@2.6.1))
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.2(jiti@2.6.1)))(eslint@9.39.2(jiti@2.6.1)))(eslint@9.39.2(jiti@2.6.1))
     transitivePeerDependencies:
       - supports-color
 
-  eslint-module-utils@2.12.1(@typescript-eslint/parser@8.53.1(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.2(jiti@2.6.1)):
+  eslint-module-utils@2.12.1(@typescript-eslint/parser@8.53.1(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.2(jiti@2.6.1)))(eslint@9.39.2(jiti@2.6.1)))(eslint@9.39.2(jiti@2.6.1)):
     dependencies:
       debug: 3.2.7
     optionalDependencies:
       '@typescript-eslint/parser': 8.53.1(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3)
       eslint: 9.39.2(jiti@2.6.1)
       eslint-import-resolver-node: 0.3.9
-      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0)(eslint@9.39.2(jiti@2.6.1))
+      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.2(jiti@2.6.1)))(eslint@9.39.2(jiti@2.6.1))
     transitivePeerDependencies:
       - supports-color
 
-  eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.2(jiti@2.6.1)):
+  eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.2(jiti@2.6.1)))(eslint@9.39.2(jiti@2.6.1)))(eslint@9.39.2(jiti@2.6.1)):
     dependencies:
       '@rtsao/scc': 1.1.0
       array-includes: 3.1.9
@@ -12472,7 +12821,7 @@ snapshots:
       doctrine: 2.1.0
       eslint: 9.39.2(jiti@2.6.1)
       eslint-import-resolver-node: 0.3.9
-      eslint-module-utils: 2.12.1(@typescript-eslint/parser@8.53.1(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.2(jiti@2.6.1))
+      eslint-module-utils: 2.12.1(@typescript-eslint/parser@8.53.1(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.2(jiti@2.6.1)))(eslint@9.39.2(jiti@2.6.1)))(eslint@9.39.2(jiti@2.6.1))
       hasown: 2.0.2
       is-core-module: 2.16.1
       is-glob: 4.0.3
@@ -12770,6 +13119,11 @@ snapshots:
 
   fecha@4.2.3: {}
 
+  fetch-blob@3.2.0:
+    dependencies:
+      node-domexception: 1.0.0
+      web-streams-polyfill: 3.3.3
+
   fflate@0.8.2: {}
 
   file-entry-cache@8.0.0:
@@ -12845,6 +13199,10 @@ snapshots:
   formatly@0.3.0:
     dependencies:
       fd-package-json: 2.0.0
+
+  formdata-polyfill@4.0.10:
+    dependencies:
+      fetch-blob: 3.2.0
 
   forwarded-parse@2.1.2: {}
 
@@ -13089,6 +13447,11 @@ snapshots:
   hermes-parser@0.25.1:
     dependencies:
       hermes-estree: 0.25.1
+
+  hex-encoding@2.0.3:
+    dependencies:
+      node-buffer-encoding: 1.0.3
+      uint8-encoding: 2.0.1
 
   hono@4.10.6: {}
 
@@ -13361,6 +13724,10 @@ snapshots:
   isomorphic-ws@4.0.1(ws@7.5.10):
     dependencies:
       ws: 7.5.10
+
+  isomorphic-ws@5.0.0(ws@8.19.0):
+    dependencies:
+      ws: 8.19.0
 
   istanbul-lib-coverage@3.2.2: {}
 
@@ -13977,6 +14344,15 @@ snapshots:
 
   lru.min@1.1.3: {}
 
+  lucid-cardano@0.10.7:
+    dependencies:
+      '@peculiar/webcrypto': 1.5.0
+      node-fetch: 3.3.2
+      ws: 8.19.0
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+
   lucide-react@0.562.0(react@19.2.3):
     dependencies:
       react: 19.2.3
@@ -14184,6 +14560,10 @@ snapshots:
   node-addon-api@7.1.1:
     optional: true
 
+  node-buffer-encoding@1.0.3: {}
+
+  node-domexception@1.0.0: {}
+
   node-fetch-h2@2.3.0:
     dependencies:
       http2-client: 1.3.5
@@ -14193,6 +14573,12 @@ snapshots:
   node-fetch@2.7.0:
     dependencies:
       whatwg-url: 5.0.0
+
+  node-fetch@3.3.2:
+    dependencies:
+      data-uri-to-buffer: 4.0.1
+      fetch-blob: 3.2.0
+      formdata-polyfill: 4.0.10
 
   node-int64@0.4.0: {}
 
@@ -14743,6 +15129,12 @@ snapshots:
   pure-rand@6.1.0: {}
 
   pure-rand@7.0.1: {}
+
+  pvtsutils@1.3.6:
+    dependencies:
+      tslib: 2.8.1
+
+  pvutils@1.1.5: {}
 
   qs@6.14.1:
     dependencies:
@@ -15586,6 +15978,8 @@ snapshots:
   uglify-js@3.19.3:
     optional: true
 
+  uint8-encoding@2.0.1: {}
+
   uint8-varint@2.0.4:
     dependencies:
       uint8arraylist: 2.4.8
@@ -15743,6 +16137,16 @@ snapshots:
     optionalDependencies:
       '@zxing/text-encoding': 0.9.0
 
+  web-streams-polyfill@3.3.3: {}
+
+  webcrypto-core@1.8.1:
+    dependencies:
+      '@peculiar/asn1-schema': 2.6.0
+      '@peculiar/json-schema': 1.1.12
+      asn1js: 3.0.7
+      pvtsutils: 1.3.6
+      tslib: 2.8.1
+
   webextension-polyfill@0.8.0: {}
 
   webidl-conversions@3.0.1: {}
@@ -15841,6 +16245,8 @@ snapshots:
       signal-exit: 4.1.0
 
   ws@7.5.10: {}
+
+  ws@8.19.0: {}
 
   wsl-utils@0.3.1:
     dependencies:

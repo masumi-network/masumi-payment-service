@@ -2,7 +2,7 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { toast } from 'react-toastify';
 import { deserializeAddress } from '@meshsdk/core';
-import { TESTUSDM_CONFIG, getUsdmConfig } from '@/lib/constants/defaultWallets';
+import { TESTUSDM_CONFIG, USDCX_CONFIG, getUsdmConfig } from '@/lib/constants/defaultWallets';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -278,6 +278,13 @@ export function formatFundUnit(unit: string | undefined, network: string | undef
 
   if (!unit) {
     return 'ADA';
+  }
+
+  const isUsdcx =
+    unit === USDCX_CONFIG.fullAssetId || unit === USDCX_CONFIG.policyId || unit === 'USDCx';
+
+  if (isUsdcx) {
+    return 'USDCx';
   }
 
   const usdmConfig = getUsdmConfig(network);

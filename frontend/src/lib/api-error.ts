@@ -67,7 +67,7 @@ export function extractApiErrorMessage(error: unknown, fallback: string): string
 
 export function mapInvoiceApiErrorMessage(rawMessage: string): string {
   if (rawMessage.includes('Missing currency conversion mapping')) {
-    return 'Missing currency conversion. Add currencyConversion values or configure COINGECKO_API_KEY on the server.';
+    return 'Missing currency conversion. Add CurrencyConversion values or configure COINGECKO_API_KEY on the server.';
   }
   if (rawMessage.includes('Missing conversion for units:')) {
     if (rawMessage.includes('COINGECKO_API_KEY')) {

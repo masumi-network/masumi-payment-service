@@ -55,7 +55,7 @@ export default function ApiKeys() {
   const filteredApiKeys = useMemo(() => {
     let filtered = [...allApiKeys];
     filtered = filtered.filter(
-      (key) => key.networkLimit.includes(network) || key.permission === 'Admin',
+      (key) => key.NetworkLimit.includes(network) || key.permission === 'Admin',
     );
     if (activeTab === 'Read') {
       filtered = filtered.filter((key) => key.permission === 'Read');
@@ -72,7 +72,7 @@ export default function ApiKeys() {
         const permissionMatch = key.permission?.toLowerCase().includes(query) || false;
         const statusMatch = key.status?.toLowerCase().includes(query) || false;
         const networkMatch =
-          key.networkLimit?.some((n) => n.toLowerCase().includes(query)) || false;
+          key.NetworkLimit?.some((n) => n.toLowerCase().includes(query)) || false;
         return nameMatch || tokenMatch || permissionMatch || statusMatch || networkMatch;
       });
     }
@@ -189,6 +189,7 @@ export default function ApiKeys() {
                   <TableHead className="p-4">Permission</TableHead>
                   <TableHead className="p-4">Network Limits</TableHead>
                   <TableHead className="p-4">Usage Limits</TableHead>
+                  <TableHead className="p-4">Wallet Scope</TableHead>
                   <TableHead className="p-4">Status</TableHead>
                   <TableHead className="w-10 p-4"></TableHead>
                 </TableRow>
@@ -198,7 +199,7 @@ export default function ApiKeys() {
                   <ApiKeyTableSkeleton rows={5} />
                 ) : filteredApiKeys.length === 0 ? (
                   <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={7}>
+                    <TableCell colSpan={8}>
                       <EmptyState
                         icon={searchQuery ? 'search' : 'inbox'}
                         title={
@@ -251,9 +252,9 @@ export default function ApiKeys() {
                         </Badge>
                       </TableCell>
                       <TableCell className="p-4">
-                        {key.networkLimit.length > 0 ? (
+                        {key.NetworkLimit.length > 0 ? (
                           <div className="flex gap-1">
-                            {key.networkLimit.map((net) => (
+                            {key.NetworkLimit.map((net) => (
                               <Badge key={net} variant="outline" className="font-normal">
                                 {net}
                               </Badge>
@@ -276,6 +277,19 @@ export default function ApiKeys() {
                           </div>
                         ) : (
                           <span className="text-muted-foreground">Unlimited</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="p-4 text-sm">
+                        {key.walletScopeEnabled ? (
+                          <Badge
+                            variant="secondary"
+                            className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 hover:bg-blue-100/80 dark:hover:bg-blue-900/40"
+                          >
+                            {key.WalletScopes.length} wallet
+                            {key.WalletScopes.length !== 1 ? 's' : ''}
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground">All</span>
                         )}
                       </TableCell>
                       <TableCell className="p-4">

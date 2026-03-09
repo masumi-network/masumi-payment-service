@@ -1,4 +1,4 @@
-import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
+import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { z } from '@/utils/zod-openapi';
 import { Network, OnChainState, PaymentAction, Permission } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
@@ -7,6 +7,7 @@ import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/m
 import { paymentResponseSchema } from '@/routes/api/payments';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { transformPaymentGetAmounts, transformPaymentGetTimestamps } from '@/utils/shared/transformers';
+import { assertWalletInScope } from '@/utils/shared/wallet-scope';
 
 export const submitPaymentResultSchemaInput = z.object({
 	network: z.nativeEnum(Network).describe('The network the payment was received on'),
@@ -24,7 +25,7 @@ export const submitPaymentResultSchemaOutput = paymentResponseSchema.omit({
 	ActionHistory: true,
 });
 
-export const submitPaymentResultEndpointPost = readAuthenticatedEndpointFactory.build({
+export const submitPaymentResultEndpointPost = payAuthenticatedEndpointFactory.build({
 	method: 'post',
 	input: submitPaymentResultSchemaInput,
 	output: submitPaymentResultSchemaOutput,
@@ -57,6 +58,7 @@ export const submitPaymentResultEndpointPost = readAuthenticatedEndpointFactory.
 		if (payment == null) {
 			throw createHttpError(404, 'Payment not found or in invalid state');
 		}
+		assertWalletInScope(ctx.walletScopeIds, payment.smartContractWalletId);
 
 		if (payment.requestedById != ctx.id && ctx.permission != Permission.Admin) {
 			throw createHttpError(403, 'You are not authorized to submit results for this payment');

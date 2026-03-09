@@ -3,32 +3,41 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { GetStaticProps } from 'next';
 import Head from 'next/head';
 import { Button } from '@/components/ui/button';
-import { ChevronRight, Plus, Bot, DollarSign, Wallet, ArrowUpDown } from 'lucide-react';
+import {
+  ChevronRight,
+  Plus,
+  Bot,
+  DollarSign,
+  Wallet,
+  ArrowUpDown,
+  ArrowLeftRight,
+  PlusCircle,
+} from 'lucide-react';
+import { RefreshButton } from '@/components/RefreshButton';
 import { shortenAddress } from '@/lib/utils';
 import { useState, useMemo } from 'react';
 import { RegistryEntry } from '@/lib/api/generated';
 import { useAgents } from '@/lib/queries/useAgents';
 import { useWallets, WalletWithBalance } from '@/lib/queries/useWallets';
 import { useQueryClient } from '@tanstack/react-query';
+import { useTransactions } from '@/lib/hooks/useTransactions';
 import { toast } from 'react-toastify';
 import Link from 'next/link';
 import { AddWalletDialog } from '@/components/wallets/AddWalletDialog';
 import { RegisterAIAgentDialog } from '@/components/ai-agents/RegisterAIAgentDialog';
-//import { SwapDialog } from '@/components/wallets/SwapDialog';
+import { SwapDialog } from '@/components/wallets/SwapDialog';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
 import { useRate } from '@/lib/hooks/useRate';
 import { StatCardSkeleton } from '@/components/skeletons/StatCardSkeleton';
 import { AgentListSkeleton } from '@/components/skeletons/AgentListSkeleton';
 import { WalletListSkeleton } from '@/components/skeletons/WalletListSkeleton';
 import { Spinner } from '@/components/ui/spinner';
-//import { FaExchangeAlt } from 'react-icons/fa';
 import formatBalance from '@/lib/formatBalance';
 import { WalletTypeBadge } from '@/components/ui/wallet-type-badge';
-import { useTransactions } from '@/lib/hooks/useTransactions';
 import { AIAgentDetailsDialog } from '@/components/ai-agents/AIAgentDetailsDialog';
 import { WalletDetailsDialog } from '@/components/wallets/WalletDetailsDialog';
 import { CopyButton } from '@/components/ui/copy-button';
-import { TESTUSDM_CONFIG, getUsdmConfig } from '@/lib/constants/defaultWallets';
+import { TESTUSDM_CONFIG, getUsdmConfig, getUsdcxConfig } from '@/lib/constants/defaultWallets';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { StatCard } from '@/components/ui/stat-card';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -62,12 +71,12 @@ export default function Overview() {
   const {
     wallets: walletsList,
     totalBalance: totalBalanceValue,
-    totalUsdmBalance: totalUsdmBalanceValue,
+    totalUsdcxBalance: totalUsdcxBalanceValue,
     isLoading: isLoadingWallets,
   } = useWallets();
 
   const totalBalance = useMemo(() => totalBalanceValue || '0', [totalBalanceValue]);
-  const totalUsdmBalance = useMemo(() => totalUsdmBalanceValue || '0', [totalUsdmBalanceValue]);
+  const totalUsdcxBalance = useMemo(() => totalUsdcxBalanceValue || '0', [totalUsdcxBalanceValue]);
   const isLoadingBalances = isLoadingWallets;
 
   // Refetch functions for after mutations
@@ -81,8 +90,9 @@ export default function Overview() {
   const [isAddWalletDialogOpen, setAddWalletDialogOpen] = useState(false);
   const [isRegisterAgentDialogOpen, setRegisterAgentDialogOpen] = useState(false);
 
-  //const [selectedWalletForSwap, setSelectedWalletForSwap] =
-  //  useState<WalletWithBalance | null>(null);
+  const [selectedWalletForSwap, setSelectedWalletForSwap] = useState<WalletWithBalance | null>(
+    null,
+  );
 
   const [selectedWalletForTopup, setSelectedWalletForTopup] = useState<WalletWithBalance | null>(
     null,
@@ -153,16 +163,14 @@ export default function Overview() {
                   <StatCardSkeleton />
                 ) : (
                   <StatCard
-                    label="Total USDM"
+                    label={network === 'Mainnet' ? 'Total USDCx' : 'Total tUSDM'}
                     index={1}
                     icon={<DollarSign className="h-4 w-4 text-green-500" />}
                     accentColor="rgb(34, 197, 94)"
                   >
                     <div className="text-2xl font-semibold flex items-center gap-1">
                       <span className="text-xs font-normal text-muted-foreground">$</span>
-                      {formatBalance(
-                        (parseInt(totalUsdmBalance) / 1000000).toFixed(2)?.toString(),
-                      ) ?? ''}
+                      {formatBalance((parseInt(totalUsdcxBalance) / 1000000).toFixed(2)) ?? ''}
                     </div>
                   </StatCard>
                 )}
@@ -182,7 +190,7 @@ export default function Overview() {
                         <span className="text-xs font-normal text-muted-foreground">ADA</span>
                       </div>
                       <div className="text-sm text-muted-foreground">
-                        {isLoadingRate && !totalUsdmBalance
+                        {isLoadingRate && !totalUsdcxBalance
                           ? '...'
                           : `~ $${formatBalance(formatUsdValue(totalBalance))}`}
                       </div>
@@ -263,6 +271,8 @@ export default function Overview() {
                                       2,
                                     );
                                     if (unit === 'lovelace' || !unit) return `${formatted} ADA`;
+                                    if (unit === getUsdcxConfig(network).fullAssetId)
+                                      return `${formatted} USDCx`;
                                     if (unit === getUsdmConfig(network).fullAssetId)
                                       return `${formatted} USDM`;
                                     if (unit === TESTUSDM_CONFIG.unit) return `${formatted} tUSDM`;
@@ -317,6 +327,10 @@ export default function Overview() {
                         Wallets
                       </Link>
                       <ChevronRight className="h-4 w-4" />
+                      <RefreshButton
+                        onRefresh={() => refetchWallets()}
+                        isRefreshing={isLoadingWallets || isLoadingBalances}
+                      />
                     </div>
                   </div>
                   <p className="text-sm text-muted-foreground mb-4">
@@ -391,17 +405,32 @@ export default function Overview() {
                                     {!wallet.isLoadingBalance && (
                                       <>
                                         {formatBalance(
-                                          (parseInt(wallet.usdmBalance || '0') / 1000000)
+                                          (parseInt(wallet.usdcxBalance || '0') / 1000000)
                                             .toFixed(2)
                                             ?.toString(),
                                         )}{' '}
-                                        <span className="text-xs text-muted-foreground">USDM</span>
+                                        <span className="text-xs text-muted-foreground">
+                                          {network === 'Mainnet' ? 'USDCx' : 'tUSDM'}
+                                        </span>
                                       </>
                                     )}
                                   </div>
                                 </td>
                                 <td className="py-3 px-2 w-32">
                                   <div className="flex items-center gap-2">
+                                    {wallet.network === 'Mainnet' && (
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSelectedWalletForSwap(wallet);
+                                        }}
+                                      >
+                                        <ArrowLeftRight className="h-4 w-4" />
+                                      </Button>
+                                    )}
                                     <Button
                                       variant="muted"
                                       className="h-8 btn-hover-lift"
@@ -410,6 +439,7 @@ export default function Overview() {
                                         setSelectedWalletForTopup(wallet);
                                       }}
                                     >
+                                      <PlusCircle className="h-3.5 w-3.5" />
                                       Top Up
                                     </Button>
                                   </div>
@@ -464,15 +494,13 @@ export default function Overview() {
         }}
       />
 
-      {/*<SwapDialog
+      <SwapDialog
         isOpen={!!selectedWalletForSwap}
         onClose={() => setSelectedWalletForSwap(null)}
         walletAddress={selectedWalletForSwap?.walletAddress || ''}
-        network={state.network}
-        blockfrostApiKey={process.env.NEXT_PUBLIC_BLOCKFROST_API_KEY || ''}
-        walletType={selectedWalletForSwap?.type || ''}
-        walletId={selectedWalletForSwap?.id || ''}
-      />*/}
+        walletVkey={selectedWalletForSwap?.walletVkey || ''}
+        network={network}
+      />
 
       <TransakWidget
         isOpen={!!selectedWalletForTopup}

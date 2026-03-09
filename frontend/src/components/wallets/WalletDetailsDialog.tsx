@@ -1,10 +1,26 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { RefreshCw, Share, X } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import {
+  RefreshCw,
+  Share,
+  X,
+  XCircle,
+  AlertTriangle,
+  ArrowLeftRight,
+  PlusCircle,
+} from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { getUtxos, getWallet, patchWallet } from '@/lib/api/generated';
+import {
+  getUtxos,
+  getWallet,
+  patchWallet,
+  getSwapTransactions,
+  postSwapCancel,
+  postSwapAcknowledgeTimeout,
+  getSwapConfirm,
+} from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import {
   handleApiCall,
@@ -13,10 +29,12 @@ import {
   validateCardanoAddress,
   hexToAscii,
 } from '@/lib/utils';
+import { extractApiErrorMessage } from '@/lib/api-error';
+import { WalletLink } from '@/components/ui/wallet-link';
 import { Spinner } from '@/components/ui/spinner';
 import formatBalance from '@/lib/formatBalance';
 import { useRate } from '@/lib/hooks/useRate';
-//import { SwapDialog } from '@/components/wallets/SwapDialog';
+import { SwapDialog } from '@/components/wallets/SwapDialog';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
 import { CopyButton } from '@/components/ui/copy-button';
 import {
@@ -26,7 +44,15 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
-import { getUsdmConfig } from '@/lib/constants/defaultWallets';
+import { getUsdmConfig, USDCX_CONFIG } from '@/lib/constants/defaultWallets';
+import { appendInclusiveCursorPage } from '@/lib/pagination/cursor-pagination';
+import {
+  extractSwapAcknowledgePayload,
+  extractSwapCancelPayload,
+  extractSwapConfirmPayload,
+  extractSwapTransactionsPayload,
+} from './swap-api';
+import { useSwapStatusPolling } from './useSwapStatusPolling';
 
 export interface TokenBalance {
   unit: string;
@@ -43,23 +69,30 @@ export interface WalletWithBalance {
   note: string | null;
   type: 'Purchasing' | 'Selling' | 'Collection';
   balance: string;
-  usdmBalance: string;
+  usdcxBalance: string;
 }
 
 interface WalletDetailsDialogProps {
   isOpen: boolean;
   onClose: () => void;
   wallet: WalletWithBalance | null;
+  isChild?: boolean;
 }
 
-export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDialogProps) {
+export function WalletDetailsDialog({
+  isOpen,
+  onClose,
+  wallet,
+  isChild,
+}: WalletDetailsDialogProps) {
   const { apiClient, network } = useAppContext();
   const [isLoading, setIsLoading] = useState(true);
   const [tokenBalances, setTokenBalances] = useState<TokenBalance[]>([]);
   const [error, setError] = useState<string | null>(null);
   const { rate } = useRate();
-  //const [selectedWalletForSwap, setSelectedWalletForSwap] =
-  //  useState<WalletWithBalance | null>(null);
+  const [selectedWalletForSwap, setSelectedWalletForSwap] = useState<WalletWithBalance | null>(
+    null,
+  );
   const [selectedWalletForTopup, setSelectedWalletForTopup] = useState<WalletWithBalance | null>(
     null,
   );
@@ -67,6 +100,175 @@ export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDi
   const [isExporting, setIsExporting] = useState(false);
   const [isEditingCollectionAddress, setIsEditingCollectionAddress] = useState(false);
   const [newCollectionAddress, setNewCollectionAddress] = useState('');
+
+  interface SwapTx {
+    id: string;
+    createdAt: string;
+    txHash: string | null;
+    status: string;
+    swapStatus?: string;
+    confirmations?: number | null;
+    fromPolicyId: string;
+    fromAssetName: string;
+    fromAmount: string;
+    toPolicyId: string;
+    toAssetName: string;
+    poolId: string;
+    slippage?: number | null;
+    cancelTxHash?: string | null;
+    orderOutputIndex?: number | null;
+  }
+  const [swapTransactions, setSwapTransactions] = useState<SwapTx[]>([]);
+  const [swapTxLoading, setSwapTxLoading] = useState(false);
+  const [swapTxCursor, setSwapTxCursor] = useState<string | undefined>(undefined);
+  const [hasMoreSwapTx, setHasMoreSwapTx] = useState(true);
+  const SWAP_TX_LIMIT = 5;
+
+  // Swap action state: which tx is being cancelled/acknowledged/polled
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  const [pollingTxId, setPollingTxId] = useState<string | null>(null);
+  const pollingTxIdRef = useRef<string | null>(null);
+  const fetchTokenBalancesRef = useRef<() => void>(() => {});
+
+  const updateSwapTxStatus = useCallback((txId: string, updates: Partial<SwapTx>) => {
+    setSwapTransactions((prev) => prev.map((tx) => (tx.id === txId ? { ...tx, ...updates } : tx)));
+  }, []);
+
+  const { startPolling: startSwapPolling, stopPolling: stopSwapPolling } = useSwapStatusPolling({
+    apiClient,
+    walletVkey: wallet?.walletVkey,
+    onTimeout: () => {
+      setPollingTxId(null);
+      pollingTxIdRef.current = null;
+      toast.warning('Polling timed out — use refresh to check again.', { theme: 'dark' });
+    },
+    onUpdate: (data) => {
+      const currentTxId = pollingTxIdRef.current;
+      const swapStatus = data.swapStatus;
+
+      if (!currentTxId || !swapStatus) {
+        return false;
+      }
+
+      if (
+        swapStatus === 'OrderConfirmed' ||
+        swapStatus === 'CancelConfirmed' ||
+        swapStatus === 'Completed'
+      ) {
+        updateSwapTxStatus(currentTxId, { swapStatus });
+        setPollingTxId(null);
+        pollingTxIdRef.current = null;
+        fetchTokenBalancesRef.current();
+        toast.success(
+          swapStatus === 'CancelConfirmed'
+            ? 'Cancel confirmed!'
+            : swapStatus === 'OrderConfirmed'
+              ? 'Order confirmed on-chain.'
+              : 'Swap completed!',
+          { theme: 'dark' },
+        );
+        return true;
+      }
+
+      if (swapStatus === 'OrderSubmitTimeout' || swapStatus === 'CancelSubmitTimeout') {
+        updateSwapTxStatus(currentTxId, { swapStatus });
+        setPollingTxId(null);
+        pollingTxIdRef.current = null;
+        toast.warning('Transaction timed out.', { theme: 'dark' });
+        return true;
+      }
+
+      return false;
+    },
+  });
+
+  const handleCancelSwap = async (tx: SwapTx) => {
+    if (!wallet) return;
+    setActionLoadingId(tx.id);
+
+    await handleApiCall(
+      () =>
+        postSwapCancel({
+          client: apiClient,
+          body: { walletVkey: wallet.walletVkey, swapTransactionId: tx.id },
+        }),
+      {
+        onSuccess: (response) => {
+          const cancelTxHash = extractSwapCancelPayload(response).cancelTxHash;
+          updateSwapTxStatus(tx.id, {
+            swapStatus: 'CancelPending',
+            cancelTxHash: cancelTxHash || null,
+          });
+          toast.info('Cancel submitted — polling for confirmation…', { theme: 'dark' });
+          if (cancelTxHash) {
+            startPollingConfirm(tx.id, cancelTxHash);
+          }
+        },
+        onError: (error: unknown) => {
+          const msg = extractApiErrorMessage(error, 'Cancel failed.');
+          if (msg.includes('already executed') || msg.includes('swap completed')) {
+            updateSwapTxStatus(tx.id, { swapStatus: 'Completed' });
+            toast.success('Order was already executed by the DEX — swap completed!', {
+              theme: 'dark',
+            });
+            void fetchTokenBalances();
+          } else {
+            toast.error(msg || 'Cancel failed.', { theme: 'dark' });
+          }
+        },
+        errorMessage: 'Cancel swap failed',
+      },
+    );
+
+    setActionLoadingId(null);
+  };
+
+  const handleAcknowledgeTimeout = async (tx: SwapTx) => {
+    if (!wallet) return;
+    setActionLoadingId(tx.id);
+
+    await handleApiCall(
+      () =>
+        postSwapAcknowledgeTimeout({
+          client: apiClient,
+          body: { walletVkey: wallet.walletVkey, swapTransactionId: tx.id },
+        }),
+      {
+        onSuccess: (response) => {
+          const data = extractSwapAcknowledgePayload(response);
+          const newStatus = data.swapStatus;
+          const message = data.message;
+
+          if (newStatus) {
+            updateSwapTxStatus(tx.id, { swapStatus: newStatus });
+          }
+          void fetchTokenBalances();
+          toast.info(message || 'Timeout acknowledged.', { theme: 'dark' });
+        },
+        onError: () => {
+          toast.error('Failed to acknowledge timeout.', { theme: 'dark' });
+        },
+        errorMessage: 'Acknowledge timeout failed',
+      },
+    );
+
+    setActionLoadingId(null);
+  };
+
+  const startPollingConfirm = useCallback(
+    (txId: string, txHash: string) => {
+      if (!wallet) return;
+      setPollingTxId(txId);
+      pollingTxIdRef.current = txId;
+      startSwapPolling(txHash);
+    },
+    [startSwapPolling, wallet],
+  );
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return stopSwapPolling;
+  }, [stopSwapPolling]);
 
   const fetchTokenBalances = async () => {
     if (!wallet) return;
@@ -90,12 +292,13 @@ export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDi
           },
         }),
       {
-        onSuccess: (response: any) => {
-          if (response.data?.data?.Utxos) {
+        onSuccess: (response) => {
+          const utxos = response.data?.data?.Utxos;
+          if (utxos) {
             const balanceMap = new Map<string, number>();
 
-            response.data.data.Utxos.forEach((utxo: any) => {
-              utxo.Amounts.forEach((amount: any) => {
+            utxos.forEach((utxo) => {
+              utxo.Amounts.forEach((amount) => {
                 const currentAmount = balanceMap.get(amount.unit) || 0;
                 balanceMap.set(amount.unit, currentAmount + (amount.quantity || 0));
               });
@@ -140,6 +343,72 @@ export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDi
       },
     );
   };
+  fetchTokenBalancesRef.current = fetchTokenBalances;
+
+  const checkPendingSwapStatuses = useCallback(
+    async (txs: SwapTx[]) => {
+      if (!wallet) return;
+      const checkableTxs = txs.filter(
+        (tx) =>
+          (tx.swapStatus === 'OrderPending' ||
+            tx.swapStatus === 'CancelPending' ||
+            tx.swapStatus === 'OrderConfirmed') &&
+          tx.txHash,
+      );
+      for (const tx of checkableTxs) {
+        const hash = tx.swapStatus === 'CancelPending' ? tx.cancelTxHash : tx.txHash;
+        if (!hash) continue;
+        try {
+          const res = await getSwapConfirm({
+            client: apiClient,
+            query: { txHash: hash, walletVkey: wallet.walletVkey },
+          });
+          const data = extractSwapConfirmPayload(res);
+          if (data.swapStatus && data.swapStatus !== tx.swapStatus) {
+            updateSwapTxStatus(tx.id, { swapStatus: data.swapStatus });
+          }
+        } catch {
+          // Ignore — best-effort status refresh
+        }
+      }
+    },
+    [wallet, apiClient, updateSwapTxStatus],
+  );
+
+  const fetchSwapTransactions = async (cursor?: string) => {
+    if (!wallet) return;
+    setSwapTxLoading(true);
+    try {
+      const result = await getSwapTransactions({
+        client: apiClient,
+        query: {
+          walletVkey: wallet.walletVkey,
+          limit: SWAP_TX_LIMIT,
+          cursorId: cursor,
+        },
+      });
+      const txs = extractSwapTransactionsPayload(result);
+      let merged: typeof txs = [];
+      if (cursor) {
+        setSwapTransactions((prev) => {
+          merged = appendInclusiveCursorPage(prev, txs, (tx) => tx.id);
+          return merged;
+        });
+      } else {
+        merged = txs;
+        setSwapTransactions(txs);
+      }
+      checkPendingSwapStatuses(merged);
+      setHasMoreSwapTx(txs.length === SWAP_TX_LIMIT);
+      if (txs.length > 0) {
+        setSwapTxCursor(txs[txs.length - 1].id);
+      }
+    } catch {
+      // Silently fail — swap transactions are supplementary info
+    } finally {
+      setSwapTxLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (isOpen && wallet) {
@@ -148,11 +417,21 @@ export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDi
       setError(null);
       setIsLoading(true);
       setExportedMnemonic(null);
+      setSwapTransactions([]);
+      setSwapTxCursor(undefined);
+      setHasMoreSwapTx(true);
       fetchTokenBalances();
+      if (network === 'Mainnet') {
+        fetchSwapTransactions();
+      }
     }
   }, [isOpen, wallet?.walletAddress]);
 
   const usdmConfig = getUsdmConfig(network);
+
+  const isUSDCx = (token: TokenBalance) =>
+    token.policyId === USDCX_CONFIG.policyId &&
+    token.assetName === hexToAscii(USDCX_CONFIG.assetName);
 
   const isUSDM = (token: TokenBalance) =>
     token.policyId === usdmConfig.policyId && token.assetName === hexToAscii(usdmConfig.assetName);
@@ -163,6 +442,14 @@ export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDi
       return {
         amount: ada === 0 ? 'zero' : formatBalance(ada.toFixed(6)),
         usdValue: rate ? `≈ $${(ada * rate).toFixed(2)}` : undefined,
+      };
+    }
+
+    if (isUSDCx(token)) {
+      const usdcx = token.quantity / 1_000_000;
+      return {
+        amount: usdcx === 0 ? 'zero' : formatBalance(usdcx.toFixed(6)),
+        usdValue: `≈ $${usdcx.toFixed(2)}`,
       };
     }
 
@@ -196,11 +483,11 @@ export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDi
           },
         }),
       {
-        onSuccess: (response: any) => {
+        onSuccess: (response) => {
           setExportedMnemonic(response.data?.data?.Secret?.mnemonic || '');
         },
-        onError: (error: any) => {
-          toast.error(error.message || 'Failed to export wallet');
+        onError: (error: unknown) => {
+          toast.error(extractApiErrorMessage(error, 'Failed to export wallet'));
         },
         onFinally: () => {
           setIsExporting(false);
@@ -281,8 +568,8 @@ export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDi
           // Update the wallet object with the new collection address
           wallet.collectionAddress = newCollectionAddress.trim() || null;
         },
-        onError: (error: any) => {
-          toast.error(error.message || 'Failed to update collection address');
+        onError: (error: unknown) => {
+          toast.error(extractApiErrorMessage(error, 'Failed to update collection address'));
         },
         errorMessage: 'Failed to update collection address',
       },
@@ -299,35 +586,52 @@ export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDi
   return (
     <>
       <Dialog
-        open={isOpen && !selectedWalletForTopup}
+        open={isOpen}
         onOpenChange={(open) => {
           if (!open) {
-            //setSelectedWalletForSwap(null);
+            setSelectedWalletForSwap(null);
             setSelectedWalletForTopup(null);
             onClose();
           }
         }}
       >
-        <DialogContent className="sm:max-w-[600px]">
+        <DialogContent
+          className="sm:max-w-[600px]"
+          variant={isChild ? 'slide-from-right' : 'default'}
+          isPushedBack={!!selectedWalletForTopup || !!selectedWalletForSwap}
+          hideOverlay={isChild}
+          onBack={isChild ? onClose : undefined}
+        >
           <DialogHeader>
-            <DialogTitle>Wallet Details</DialogTitle>
-            <DialogDescription>{wallet.type} Wallet</DialogDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <DialogTitle>Wallet Details</DialogTitle>
+                <DialogDescription>{wallet.type} Wallet</DialogDescription>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => {
+                  fetchTokenBalances();
+                  if (network === 'Mainnet') {
+                    setSwapTxCursor(undefined);
+                    fetchSwapTransactions();
+                  }
+                }}
+                disabled={isLoading}
+              >
+                <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+              </Button>
+            </div>
           </DialogHeader>
 
           <div className="space-y-4 mt-4">
             {/* Wallet Address Section */}
             <div className="bg-muted rounded-lg p-4">
               <div className="text-sm font-medium">Wallet Address</div>
-              <div className="flex items-center gap-2 mt-1">
-                <a
-                  href={getExplorerUrl(wallet.walletAddress, network)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-mono text-sm break-all hover:underline text-primary"
-                >
-                  {wallet.walletAddress}
-                </a>
-                <CopyButton value={wallet.walletAddress} />
+              <div className="mt-1">
+                <WalletLink address={wallet.walletAddress} network={network} />
               </div>
             </div>
 
@@ -349,18 +653,7 @@ export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDi
             </div>
 
             <div className="bg-muted rounded-lg p-4 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="text-sm font-medium">Token Balances</div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={fetchTokenBalances}
-                  disabled={isLoading}
-                >
-                  <RefreshCw className="h-4 w-4" />
-                </Button>
-              </div>
+              <div className="text-sm font-medium">Token Balances</div>
               {isLoading ? (
                 <div className="flex justify-center py-4">
                   <Spinner size={20} />
@@ -372,26 +665,30 @@ export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDi
                   {tokenBalances.length === 0 && (
                     <div className="text-xs text-muted-foreground">No tokens found</div>
                   )}
-                  {/* Sort tokens: ADA first, then USDM, then others */}
+                  {/* Sort tokens: ADA first, then USDCx, then USDM (legacy), then others */}
                   {(() => {
                     const adaToken = tokenBalances.find((t) => t.unit === 'lovelace');
+                    const usdcxToken = tokenBalances.find((t) => isUSDCx(t));
                     const usdmToken = tokenBalances.find((t) => isUSDM(t));
                     const otherTokens = tokenBalances.filter(
-                      (t) => t.unit !== 'lovelace' && !isUSDM(t),
+                      (t) => t.unit !== 'lovelace' && !isUSDCx(t) && !isUSDM(t),
                     );
-                    const sortedTokens = [adaToken, usdmToken, ...otherTokens].filter(
+                    const sortedTokens = [adaToken, usdcxToken, usdmToken, ...otherTokens].filter(
                       (t): t is TokenBalance => Boolean(t),
                     );
 
                     return sortedTokens.map((token) => {
                       const { amount, usdValue } = formatTokenBalance(token);
                       const isADA = token.unit === 'lovelace';
+                      const isUsdcx = isUSDCx(token);
                       const isUsdm = isUSDM(token);
                       const assetHex = !isADA ? token.unit.slice(56) : '';
 
                       let displayName: string;
                       if (isADA) {
                         displayName = 'ADA';
+                      } else if (isUsdcx) {
+                        displayName = `USDCx (${shortenAddress(token.policyId)})`;
                       } else if (isUsdm) {
                         displayName = `USDM (${shortenAddress(token.policyId)})`;
                       } else if (assetHex.length > 12) {
@@ -403,7 +700,7 @@ export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDi
                       }
 
                       const tokenUrl =
-                        !isADA && !isUsdm
+                        !isADA && !isUsdcx && !isUsdm
                           ? getExplorerUrl(token.unit, network, 'token')
                           : undefined;
 
@@ -411,7 +708,7 @@ export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDi
                         <>
                           <div>
                             <div className="font-medium font-mono">{displayName}</div>
-                            {!isUsdm && token.policyId && (
+                            {!isUsdcx && !isUsdm && token.policyId && (
                               <div className="text-xs text-muted-foreground">
                                 Policy ID: {shortenAddress(token.policyId)}
                               </div>
@@ -456,6 +753,210 @@ export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDi
               )}
             </div>
 
+            {network === 'Mainnet' && swapTransactions.length > 0 && (
+              <div className="bg-muted rounded-lg p-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-medium">Swap Transactions</div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => {
+                      setSwapTxCursor(undefined);
+                      fetchSwapTransactions();
+                    }}
+                    disabled={swapTxLoading}
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${swapTxLoading ? 'animate-spin' : ''}`} />
+                  </Button>
+                </div>
+                <div className="space-y-2">
+                  {swapTransactions.map((tx) => {
+                    const fromLabel = tx.fromPolicyId ? shortenAddress(tx.fromPolicyId) : 'ADA';
+                    const toLabel = tx.toPolicyId ? shortenAddress(tx.toPolicyId) : 'ADA';
+                    const displayStatus = tx.swapStatus || tx.status;
+
+                    const statusDotMap: Record<string, string> = {
+                      OrderPending: 'bg-yellow-500',
+                      OrderConfirmed: 'bg-blue-500',
+                      CancelPending: 'bg-orange-500',
+                      CancelConfirmed: 'bg-purple-500',
+                      Completed: 'bg-green-500',
+                      Confirmed: 'bg-green-500',
+                      Pending: 'bg-yellow-500',
+                      OrderSubmitTimeout: 'bg-red-500',
+                      CancelSubmitTimeout: 'bg-red-500',
+                    };
+                    const statusColorMap: Record<string, string> = {
+                      OrderPending: 'text-yellow-500',
+                      OrderConfirmed: 'text-blue-500',
+                      CancelPending: 'text-orange-500',
+                      CancelConfirmed: 'text-purple-500',
+                      Completed: 'text-green-500',
+                      Confirmed: 'text-green-500',
+                      Pending: 'text-yellow-500',
+                      OrderSubmitTimeout: 'text-red-500',
+                      CancelSubmitTimeout: 'text-red-500',
+                    };
+                    const statusColor = statusColorMap[displayStatus] || 'text-red-500';
+                    const dotColor = statusDotMap[displayStatus] || 'bg-red-500';
+                    const statusLabelMap: Record<string, string> = {
+                      OrderPending: 'Order Pending',
+                      OrderConfirmed: 'Awaiting Execution',
+                      CancelPending: 'Cancel Pending',
+                      CancelConfirmed: 'Cancelled',
+                      Completed: 'Completed',
+                      OrderSubmitTimeout: 'Order Timeout',
+                      CancelSubmitTimeout: 'Cancel Timeout',
+                    };
+                    const statusLabel = statusLabelMap[displayStatus] || displayStatus;
+
+                    const isActionable =
+                      displayStatus === 'OrderConfirmed' ||
+                      displayStatus === 'OrderPending' ||
+                      displayStatus === 'CancelPending' ||
+                      displayStatus === 'OrderSubmitTimeout' ||
+                      displayStatus === 'CancelSubmitTimeout';
+                    const isPending =
+                      displayStatus === 'OrderPending' || displayStatus === 'CancelPending';
+                    const isTimeout =
+                      displayStatus === 'OrderSubmitTimeout' ||
+                      displayStatus === 'CancelSubmitTimeout';
+
+                    return (
+                      <div
+                        key={tx.id}
+                        className={`rounded-lg border p-3 space-y-2 transition-colors ${
+                          isTimeout
+                            ? 'border-red-500/30 bg-red-500/5'
+                            : displayStatus === 'OrderConfirmed'
+                              ? 'border-blue-500/20 bg-blue-500/5'
+                              : 'dark:border-muted-foreground/20 border-border'
+                        }`}
+                      >
+                        {/* Header row */}
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">
+                            {tx.fromAmount} {fromLabel} → {toLabel}
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            {pollingTxId === tx.id && <Spinner size={12} />}
+                            <span
+                              className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium ${statusColor} bg-background/60`}
+                            >
+                              <span
+                                className={`h-1.5 w-1.5 rounded-full ${dotColor} ${isPending ? 'animate-pulse' : ''}`}
+                              />
+                              {statusLabel}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Tx links */}
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span>{new Date(tx.createdAt).toLocaleString()}</span>
+                          <div className="flex items-center gap-2">
+                            {tx.cancelTxHash && (
+                              <a
+                                href={getExplorerUrl(tx.cancelTxHash, network, 'transaction')}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 hover:underline text-orange-500"
+                                title="Cancel tx"
+                              >
+                                {shortenAddress(tx.cancelTxHash, 4)}
+                              </a>
+                            )}
+                            {tx.txHash && (
+                              <a
+                                href={getExplorerUrl(tx.txHash, network, 'transaction')}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 hover:underline text-primary"
+                              >
+                                {shortenAddress(tx.txHash, 6)}
+                              </a>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Actions */}
+                        {isActionable && (
+                          <div className="pt-1">
+                            {displayStatus === 'OrderConfirmed' && (
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                className="w-full h-7 text-xs rounded-md"
+                                onClick={() => handleCancelSwap(tx)}
+                                disabled={actionLoadingId === tx.id || pollingTxId === tx.id}
+                              >
+                                {actionLoadingId === tx.id ? (
+                                  <Spinner size={12} />
+                                ) : (
+                                  <>
+                                    <XCircle className="h-3 w-3 mr-1" />
+                                    Cancel Order
+                                  </>
+                                )}
+                              </Button>
+                            )}
+
+                            {isPending && pollingTxId !== tx.id && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="w-full h-7 text-xs rounded-md text-muted-foreground hover:text-foreground"
+                                onClick={() => {
+                                  const hash =
+                                    displayStatus === 'CancelPending' ? tx.cancelTxHash : tx.txHash;
+                                  if (hash) startPollingConfirm(tx.id, hash);
+                                }}
+                                disabled={!tx.txHash && !tx.cancelTxHash}
+                              >
+                                <RefreshCw className="h-3 w-3 mr-1" />
+                                Check Status
+                              </Button>
+                            )}
+
+                            {isTimeout && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="w-full h-7 text-xs rounded-md border-red-500/40 text-red-400 hover:bg-red-500/10"
+                                onClick={() => handleAcknowledgeTimeout(tx)}
+                                disabled={actionLoadingId === tx.id}
+                              >
+                                {actionLoadingId === tx.id ? (
+                                  <Spinner size={12} />
+                                ) : (
+                                  <>
+                                    <AlertTriangle className="h-3 w-3 mr-1" />
+                                    Acknowledge &amp; Recover
+                                  </>
+                                )}
+                              </Button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                {hasMoreSwapTx && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => fetchSwapTransactions(swapTxCursor)}
+                    disabled={swapTxLoading}
+                  >
+                    {swapTxLoading ? <Spinner size={16} /> : 'Load more'}
+                  </Button>
+                )}
+              </div>
+            )}
+
             {wallet.type !== 'Collection' && (
               <div className="flex items-center gap-2">
                 <Button
@@ -464,23 +965,27 @@ export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDi
                   disabled={isExporting}
                   title="Export Wallet"
                 >
-                  <span>Export Wallet</span>
                   <Share className="h-4 w-4" />
+                  <span>Export Wallet</span>
                 </Button>
                 <Button
                   variant="outline"
                   onClick={() => setSelectedWalletForTopup(wallet)}
                   title="Top Up"
                 >
+                  <PlusCircle className="h-4 w-4" />
                   <span>Top Up</span>
                 </Button>
-                {/*<Button
-                  variant="outline"
-                  onClick={() => setSelectedWalletForSwap(wallet)}
-                  title="Swap Assets"
-                >
-                  <span>Swap Assets</span>
-                </Button>*/}
+                {network === 'Mainnet' && (
+                  <Button
+                    variant="outline"
+                    onClick={() => setSelectedWalletForSwap(wallet)}
+                    title="Swap Assets"
+                  >
+                    <ArrowLeftRight className="h-4 w-4" />
+                    <span>Swap Assets</span>
+                  </Button>
+                )}
               </div>
             )}
             {exportedMnemonic && (
@@ -543,15 +1048,11 @@ export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDi
                   <div className="flex items-center gap-2">
                     {wallet.collectionAddress ? (
                       <>
-                        <a
-                          href={getExplorerUrl(wallet.collectionAddress, network)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="font-mono text-sm hover:underline text-primary"
-                        >
-                          {shortenAddress(wallet.collectionAddress, 15)}
-                        </a>
-                        <CopyButton value={wallet.collectionAddress} />
+                        <WalletLink
+                          address={wallet.collectionAddress}
+                          network={network}
+                          shorten={15}
+                        />
                         <Button
                           variant="outline"
                           size="sm"
@@ -582,15 +1083,17 @@ export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDi
         </DialogContent>
       </Dialog>
 
-      {/*<SwapDialog
+      <SwapDialog
         isOpen={!!selectedWalletForSwap}
         onClose={() => setSelectedWalletForSwap(null)}
         walletAddress={selectedWalletForSwap?.walletAddress || ''}
-        network={state.network}
-        blockfrostApiKey={process.env.NEXT_PUBLIC_BLOCKFROST_API_KEY || ''}
-        walletType={selectedWalletForSwap?.type || ''}
-        walletId={selectedWalletForSwap?.id || ''}
-      />*/}
+        walletVkey={selectedWalletForSwap?.walletVkey || ''}
+        network={network}
+        onSwapComplete={() => {
+          fetchTokenBalances();
+          fetchSwapTransactions();
+        }}
+      />
 
       <TransakWidget
         isOpen={!!selectedWalletForTopup}
@@ -600,6 +1103,7 @@ export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDi
           toast.success('Top up successful');
           fetchTokenBalances();
         }}
+        isChild
       />
     </>
   );

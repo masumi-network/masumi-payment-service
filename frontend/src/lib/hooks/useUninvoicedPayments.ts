@@ -1,11 +1,12 @@
 import { useMemo, useCallback } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { getInvoiceMonthlyUninvoiced } from '@/lib/api/generated';
+import { getInvoiceMonthlyMissing } from '@/lib/api/generated';
 import { extractApiErrorMessage } from '@/lib/api-error';
+import { buildExclusiveCursorPage } from '@/lib/pagination/cursor-pagination';
 
 export type UninvoicedPayment = NonNullable<
-  Awaited<ReturnType<typeof getInvoiceMonthlyUninvoiced>>['data']
+  Awaited<ReturnType<typeof getInvoiceMonthlyMissing>>['data']
 >['data']['UninvoicedPayments'][number];
 
 export function useUninvoicedPayments(month: string, buyerWalletVkey?: string) {
@@ -15,7 +16,7 @@ export function useUninvoicedPayments(month: string, buyerWalletVkey?: string) {
     queryKey: ['uninvoiced-payments', month, buyerWalletVkey],
     queryFn: async ({ pageParam }) => {
       const limit = 50;
-      const result = await getInvoiceMonthlyUninvoiced({
+      const result = await getInvoiceMonthlyMissing({
         client: apiClient,
         query: {
           month,
@@ -32,11 +33,13 @@ export function useUninvoicedPayments(month: string, buyerWalletVkey?: string) {
       }
 
       const allPayments = result.data?.data?.UninvoicedPayments ?? [];
-      const hasMore = allPayments.length > limit;
-      const payments = hasMore ? allPayments.slice(0, limit) : allPayments;
-      const nextCursor = hasMore ? payments[payments.length - 1]?.id : undefined;
+      const page = buildExclusiveCursorPage(allPayments, limit, (payment) => payment.id);
 
-      return { payments, nextCursor, hasMore };
+      return {
+        payments: page.items,
+        nextCursor: page.nextCursor,
+        hasMore: page.hasMore,
+      };
     },
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) =>

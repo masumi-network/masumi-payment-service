@@ -5,7 +5,14 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { useState, useCallback } from 'react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
   postPurchase,
@@ -19,7 +26,12 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Spinner } from '@/components/ui/spinner';
 import { CurlResponseViewer } from './CurlResponseViewer';
 import { generatePurchaseCurl, decodeBlockchainIdentifier, extractErrorMessage } from './utils';
-import { Search, ClipboardPaste } from 'lucide-react';
+import { Search, ClipboardPaste, Wallet } from 'lucide-react';
+import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/WalletDetailsDialog';
+import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
+import { shortenAddress } from '@/lib/utils';
+import { CopyButton } from '@/components/ui/copy-button';
+import { findPaymentSourceWalletByVkey } from '@/lib/wallet-lookup';
 
 interface MockPurchaseDialogProps {
   open: boolean;
@@ -74,7 +86,8 @@ function tryExtractPaymentFields(json: string): Partial<MockPurchaseFormValues> 
 }
 
 export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
-  const { apiClient, network, apiKey } = useAppContext();
+  const { apiClient, network, apiKey, selectedPaymentSource } = useAppContext();
+  const { paymentSources } = usePaymentSourceExtendedAll();
   const [isLoading, setIsLoading] = useState(false);
   const [isLookingUp, setIsLookingUp] = useState(false);
   const [pasteValue, setPasteValue] = useState('');
@@ -82,6 +95,57 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
   const [curlCommand, setCurlCommand] = useState<string>('');
   const [response, setResponse] = useState<PostPurchaseResponse['data'] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [selectedBuyerWalletId, setSelectedBuyerWalletId] = useState<string>('');
+  const [selectedWalletForDetails, setSelectedWalletForDetails] =
+    useState<WalletWithBalance | null>(null);
+
+  const currentNetworkPaymentSources = useMemo(
+    () => paymentSources.filter((ps) => ps.network === network),
+    [paymentSources, network],
+  );
+
+  const selectedSource = useMemo(() => {
+    return currentNetworkPaymentSources.find((ps) => ps.id === selectedPaymentSource?.id) ?? null;
+  }, [currentNetworkPaymentSources, selectedPaymentSource]);
+
+  const availableBuyerWallets = useMemo(
+    () => selectedSource?.PurchasingWallets ?? [],
+    [selectedSource],
+  );
+
+  const selectedBuyerWallet = useMemo(
+    () => availableBuyerWallets.find((wallet) => wallet.id === selectedBuyerWalletId) ?? null,
+    [availableBuyerWallets, selectedBuyerWalletId],
+  );
+
+  useEffect(() => {
+    if (!open) return;
+
+    if (availableBuyerWallets.length === 0) {
+      if (selectedBuyerWalletId) {
+        setSelectedBuyerWalletId('');
+      }
+      return;
+    }
+
+    if (availableBuyerWallets.some((wallet) => wallet.id === selectedBuyerWalletId)) {
+      return;
+    }
+
+    setSelectedBuyerWalletId(availableBuyerWallets[0].id);
+  }, [open, availableBuyerWallets, selectedBuyerWalletId]);
+
+  const handleWalletClick = useCallback(
+    (walletVkey: string) => {
+      const found = findPaymentSourceWalletByVkey(currentNetworkPaymentSources, walletVkey);
+      if (!found) {
+        toast.error('Wallet not found in current payment sources');
+        return;
+      }
+      setSelectedWalletForDetails(found);
+    },
+    [currentNetworkPaymentSources],
+  );
 
   const {
     register,
@@ -250,6 +314,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
 
   const handleClose = () => {
     reset();
+    setSelectedBuyerWalletId('');
     setPasteValue('');
     setPasteError(null);
     setResponse(null);
@@ -259,222 +324,292 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
   };
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[700px] h-[85vh] flex flex-col overflow-hidden">
-        <DialogHeader className="shrink-0">
-          <DialogTitle>Create Test Purchase</DialogTitle>
-          <p className="text-sm text-muted-foreground mt-2">
-            Create a test purchase from a payment response or blockchain identifier.
-          </p>
-        </DialogHeader>
+    <>
+      <Dialog open={open} onOpenChange={handleClose}>
+        <DialogContent
+          className="sm:max-w-[700px] h-[85vh] flex flex-col overflow-hidden"
+          isPushedBack={!!selectedWalletForDetails}
+        >
+          <DialogHeader className="shrink-0">
+            <DialogTitle>Create Test Purchase</DialogTitle>
+            <p className="text-sm text-muted-foreground mt-2">
+              Create a test purchase from a payment response or blockchain identifier.
+            </p>
+          </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto min-h-0">
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-            {/* Paste Payment Response */}
-            <div className="space-y-2 animate-fade-in-up opacity-0 animate-stagger-1">
-              <Label className="flex items-center gap-1.5">
-                <ClipboardPaste className="h-3.5 w-3.5" />
-                Paste Payment Response
-              </Label>
-              <Textarea
-                value={pasteValue}
-                onChange={(e) => handlePasteResponse(e.target.value)}
-                placeholder="Paste the JSON response from Create Payment to auto-fill all fields..."
-                rows={4}
-                className={`font-mono text-xs transition-colors duration-200 ${pasteError ? 'border-red-500' : ''}`}
-              />
-              {pasteError && <p className="text-sm text-red-500 animate-fade-in">{pasteError}</p>}
-              <p className="text-xs text-muted-foreground">Or fill in the fields manually below.</p>
-            </div>
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+              {/* Buyer Wallet */}
+              <Card className="animate-fade-in-up opacity-0 animate-stagger-1 transition-shadow duration-200 hover:shadow-md">
+                <CardContent className="p-4 space-y-3">
+                  <div className="space-y-1">
+                    <Label className="text-sm font-medium">Buyer Wallet</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Choose the purchasing wallet used as buyer context for this test flow.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Select
+                      value={selectedBuyerWalletId}
+                      onValueChange={setSelectedBuyerWalletId}
+                      disabled={availableBuyerWallets.length === 0}
+                    >
+                      <SelectTrigger className="flex-1">
+                        <SelectValue
+                          placeholder={
+                            availableBuyerWallets.length === 0
+                              ? 'No purchasing wallets on selected payment source'
+                              : 'Select buyer wallet'
+                          }
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableBuyerWallets.map((wallet) => (
+                          <SelectItem key={wallet.id} value={wallet.id}>
+                            {shortenAddress(wallet.walletAddress, 8)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      disabled={!selectedBuyerWallet}
+                      onClick={() =>
+                        selectedBuyerWallet && handleWalletClick(selectedBuyerWallet.walletVkey)
+                      }
+                      aria-label="Open buyer wallet details"
+                    >
+                      <Wallet className="h-4 w-4" />
+                    </Button>
+                    {selectedBuyerWallet && (
+                      <CopyButton value={selectedBuyerWallet.walletAddress} />
+                    )}
+                  </div>
+                  {availableBuyerWallets.length === 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      Add a purchasing wallet to the selected payment source to enable buyer wallet
+                      selection.
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
 
-            {/* Blockchain Identifier + Lookup */}
-            <div className="space-y-2 animate-fade-in-up opacity-0 animate-stagger-2">
-              <Label>
-                Blockchain Identifier <span className="text-red-500">*</span>
-              </Label>
-              <div className="flex gap-2">
-                <Input
-                  {...register('blockchainIdentifier')}
-                  placeholder="Blockchain identifier"
-                  className={`font-mono text-xs flex-1 transition-colors duration-200 ${errors.blockchainIdentifier ? 'border-red-500' : ''}`}
+              {/* Paste Payment Response */}
+              <div className="space-y-2 animate-fade-in-up opacity-0 animate-stagger-2">
+                <Label className="flex items-center gap-1.5">
+                  <ClipboardPaste className="h-3.5 w-3.5" />
+                  Paste Payment Response
+                </Label>
+                <Textarea
+                  value={pasteValue}
+                  onChange={(e) => handlePasteResponse(e.target.value)}
+                  placeholder="Paste the JSON response from Create Payment to auto-fill all fields..."
+                  rows={4}
+                  className={`font-mono text-xs transition-colors duration-200 ${pasteError ? 'border-red-500' : ''}`}
                 />
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleLookupPayment}
-                  disabled={isLookingUp || !blockchainIdentifier}
-                  className="shrink-0 transition-opacity duration-150"
-                >
-                  {isLookingUp ? <Spinner className="h-4 w-4" /> : <Search className="h-4 w-4" />}
-                  Lookup
+                {pasteError && <p className="text-sm text-red-500 animate-fade-in">{pasteError}</p>}
+                <p className="text-xs text-muted-foreground">
+                  Or fill in the fields manually below.
+                </p>
+              </div>
+
+              {/* Blockchain Identifier + Lookup */}
+              <div className="space-y-2 animate-fade-in-up opacity-0 animate-stagger-3">
+                <Label>
+                  Blockchain Identifier <span className="text-red-500">*</span>
+                </Label>
+                <div className="flex gap-2">
+                  <Input
+                    {...register('blockchainIdentifier')}
+                    placeholder="Blockchain identifier"
+                    className={`font-mono text-xs flex-1 transition-colors duration-200 ${errors.blockchainIdentifier ? 'border-red-500' : ''}`}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleLookupPayment}
+                    disabled={isLookingUp || !blockchainIdentifier}
+                    className="shrink-0 transition-opacity duration-150"
+                  >
+                    {isLookingUp ? <Spinner className="h-4 w-4" /> : <Search className="h-4 w-4" />}
+                    Lookup
+                  </Button>
+                </div>
+                {errors.blockchainIdentifier && (
+                  <p className="text-sm text-red-500 animate-fade-in">
+                    {errors.blockchainIdentifier.message}
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Optionally click Lookup to resolve fields from the API. Only payments created
+                  through this service will be found.
+                </p>
+              </div>
+
+              {/* Payment Data Fields */}
+              <Card className="animate-fade-in-up opacity-0 animate-stagger-4 transition-shadow duration-200 hover:shadow-md">
+                <CardContent className="p-4 space-y-4">
+                  <p className="text-xs font-medium text-muted-foreground">Payment Data</p>
+
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+                    <div className="space-y-1.5 col-span-2">
+                      <Label className="text-xs text-muted-foreground font-normal">
+                        Agent Identifier <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        {...register('agentIdentifier')}
+                        className={`font-mono text-xs transition-colors duration-200 ${errors.agentIdentifier ? 'border-red-500' : ''}`}
+                        placeholder="Agent identifier"
+                      />
+                      {errors.agentIdentifier && (
+                        <p className="text-xs text-red-500 animate-fade-in">
+                          {errors.agentIdentifier.message}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="space-y-1.5 col-span-2">
+                      <Label className="text-xs text-muted-foreground font-normal">
+                        Purchaser Identifier <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        {...register('identifierFromPurchaser')}
+                        className={`font-mono text-xs transition-colors duration-200 ${errors.identifierFromPurchaser ? 'border-red-500' : ''}`}
+                        placeholder="Purchaser identifier"
+                      />
+                      {errors.identifierFromPurchaser && (
+                        <p className="text-xs text-red-500 animate-fade-in">
+                          {errors.identifierFromPurchaser.message}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground font-normal">
+                        Seller VKey <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        {...register('sellerVkey')}
+                        className={`font-mono text-xs transition-colors duration-200 ${errors.sellerVkey ? 'border-red-500' : ''}`}
+                        placeholder="Seller verification key"
+                      />
+                      {errors.sellerVkey && (
+                        <p className="text-xs text-red-500 animate-fade-in">
+                          {errors.sellerVkey.message}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground font-normal">
+                        Input Hash <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        {...register('inputHash')}
+                        className={`font-mono text-xs transition-colors duration-200 ${errors.inputHash ? 'border-red-500' : ''}`}
+                        placeholder="Input hash"
+                      />
+                      {errors.inputHash && (
+                        <p className="text-xs text-red-500 animate-fade-in">
+                          {errors.inputHash.message}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Timing */}
+                  <Separator />
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground font-normal">
+                        Pay By <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        {...register('payByTime')}
+                        className={`font-mono text-xs transition-colors duration-200 ${errors.payByTime ? 'border-red-500' : ''}`}
+                        placeholder="ISO date"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground font-normal">
+                        Submit Result <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        {...register('submitResultTime')}
+                        className={`font-mono text-xs transition-colors duration-200 ${errors.submitResultTime ? 'border-red-500' : ''}`}
+                        placeholder="ISO date"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground font-normal">
+                        Unlock <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        {...register('unlockTime')}
+                        className={`font-mono text-xs transition-colors duration-200 ${errors.unlockTime ? 'border-red-500' : ''}`}
+                        placeholder="ISO date"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground font-normal">
+                        External Dispute Unlock <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        {...register('externalDisputeUnlockTime')}
+                        className={`font-mono text-xs transition-colors duration-200 ${errors.externalDisputeUnlockTime ? 'border-red-500' : ''}`}
+                        placeholder="ISO date"
+                      />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Metadata */}
+              <div className="space-y-2 animate-fade-in-up opacity-0 animate-stagger-5">
+                <Label>Metadata (Optional)</Label>
+                <Textarea
+                  {...register('metadata')}
+                  placeholder="Optional metadata for the purchase"
+                  rows={2}
+                  className="resize-none"
+                />
+              </div>
+
+              <Separator />
+              <div className="flex justify-end items-center gap-2">
+                <Button variant="outline" onClick={handleClose} type="button">
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={isLoading}>
+                  {isLoading ? (
+                    <>
+                      <Spinner className="h-4 w-4 mr-2" />
+                      Creating...
+                    </>
+                  ) : (
+                    'Create Purchase'
+                  )}
                 </Button>
               </div>
-              {errors.blockchainIdentifier && (
-                <p className="text-sm text-red-500 animate-fade-in">
-                  {errors.blockchainIdentifier.message}
-                </p>
-              )}
-              <p className="text-xs text-muted-foreground">
-                Optionally click Lookup to resolve fields from the API. Only payments created
-                through this service will be found.
-              </p>
-            </div>
+            </form>
+          </div>
 
-            {/* Payment Data Fields */}
-            <Card className="animate-fade-in-up opacity-0 animate-stagger-3 transition-shadow duration-200 hover:shadow-md">
-              <CardContent className="p-4 space-y-4">
-                <p className="text-xs font-medium text-muted-foreground">Payment Data</p>
-
-                <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-                  <div className="space-y-1.5 col-span-2">
-                    <Label className="text-xs text-muted-foreground font-normal">
-                      Agent Identifier <span className="text-red-500">*</span>
-                    </Label>
-                    <Input
-                      {...register('agentIdentifier')}
-                      className={`font-mono text-xs transition-colors duration-200 ${errors.agentIdentifier ? 'border-red-500' : ''}`}
-                      placeholder="Agent identifier"
-                    />
-                    {errors.agentIdentifier && (
-                      <p className="text-xs text-red-500 animate-fade-in">
-                        {errors.agentIdentifier.message}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="space-y-1.5 col-span-2">
-                    <Label className="text-xs text-muted-foreground font-normal">
-                      Purchaser Identifier <span className="text-red-500">*</span>
-                    </Label>
-                    <Input
-                      {...register('identifierFromPurchaser')}
-                      className={`font-mono text-xs transition-colors duration-200 ${errors.identifierFromPurchaser ? 'border-red-500' : ''}`}
-                      placeholder="Purchaser identifier"
-                    />
-                    {errors.identifierFromPurchaser && (
-                      <p className="text-xs text-red-500 animate-fade-in">
-                        {errors.identifierFromPurchaser.message}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground font-normal">
-                      Seller VKey <span className="text-red-500">*</span>
-                    </Label>
-                    <Input
-                      {...register('sellerVkey')}
-                      className={`font-mono text-xs transition-colors duration-200 ${errors.sellerVkey ? 'border-red-500' : ''}`}
-                      placeholder="Seller verification key"
-                    />
-                    {errors.sellerVkey && (
-                      <p className="text-xs text-red-500 animate-fade-in">
-                        {errors.sellerVkey.message}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground font-normal">
-                      Input Hash <span className="text-red-500">*</span>
-                    </Label>
-                    <Input
-                      {...register('inputHash')}
-                      className={`font-mono text-xs transition-colors duration-200 ${errors.inputHash ? 'border-red-500' : ''}`}
-                      placeholder="Input hash"
-                    />
-                    {errors.inputHash && (
-                      <p className="text-xs text-red-500 animate-fade-in">
-                        {errors.inputHash.message}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Timing */}
-                <Separator />
-                <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground font-normal">
-                      Pay By <span className="text-red-500">*</span>
-                    </Label>
-                    <Input
-                      {...register('payByTime')}
-                      className={`font-mono text-xs transition-colors duration-200 ${errors.payByTime ? 'border-red-500' : ''}`}
-                      placeholder="ISO date"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground font-normal">
-                      Submit Result <span className="text-red-500">*</span>
-                    </Label>
-                    <Input
-                      {...register('submitResultTime')}
-                      className={`font-mono text-xs transition-colors duration-200 ${errors.submitResultTime ? 'border-red-500' : ''}`}
-                      placeholder="ISO date"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground font-normal">
-                      Unlock <span className="text-red-500">*</span>
-                    </Label>
-                    <Input
-                      {...register('unlockTime')}
-                      className={`font-mono text-xs transition-colors duration-200 ${errors.unlockTime ? 'border-red-500' : ''}`}
-                      placeholder="ISO date"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground font-normal">
-                      External Dispute Unlock <span className="text-red-500">*</span>
-                    </Label>
-                    <Input
-                      {...register('externalDisputeUnlockTime')}
-                      className={`font-mono text-xs transition-colors duration-200 ${errors.externalDisputeUnlockTime ? 'border-red-500' : ''}`}
-                      placeholder="ISO date"
-                    />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Metadata */}
-            <div className="space-y-2 animate-fade-in-up opacity-0 animate-stagger-4">
-              <Label>Metadata (Optional)</Label>
-              <Textarea
-                {...register('metadata')}
-                placeholder="Optional metadata for the purchase"
-                rows={2}
-                className="resize-none"
-              />
-            </div>
-
-            <Separator />
-            <div className="flex justify-end items-center gap-2">
-              <Button variant="outline" onClick={handleClose} type="button">
-                Cancel
-              </Button>
-              <Button type="submit" disabled={isLoading}>
-                {isLoading ? (
-                  <>
-                    <Spinner className="h-4 w-4 mr-2" />
-                    Creating...
-                  </>
-                ) : (
-                  'Create Purchase'
-                )}
-              </Button>
-            </div>
-          </form>
-        </div>
-
-        <div className="shrink-0">
-          <CurlResponseViewer curlCommand={curlCommand} response={response} error={error} />
-        </div>
-      </DialogContent>
-    </Dialog>
+          <div className="shrink-0">
+            <CurlResponseViewer curlCommand={curlCommand} response={response} error={error} />
+          </div>
+        </DialogContent>
+      </Dialog>
+      <WalletDetailsDialog
+        isOpen={!!selectedWalletForDetails}
+        onClose={() => setSelectedWalletForDetails(null)}
+        wallet={selectedWalletForDetails}
+        isChild
+      />
+    </>
   );
 }

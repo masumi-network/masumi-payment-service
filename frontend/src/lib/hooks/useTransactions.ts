@@ -1,38 +1,91 @@
-/* eslint-disable react-hooks/exhaustive-deps */
-
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/router';
+import { getPayment, getPurchase, type Payment, type Purchase } from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { getPayment, getPurchase, Payment, Purchase } from '@/lib/api/generated';
 import { handleApiCall } from '@/lib/utils';
-
-type PaymentTx = Payment & {
-  type: 'payment';
-  RequestedFunds?: { amount: string; unit: string }[];
-  Amounts?: { amount: string; unit: string }[];
-  unlockTime?: string | null;
-  PaymentSource: Payment['PaymentSource'] & {
-    id?: string;
-  };
-};
-
-type PurchaseTx = Purchase & {
-  type: 'purchase';
-  PaidFunds?: { amount: string; unit: string }[];
-  Amounts?: { amount: string; unit: string }[];
-  unlockTime?: string | null;
-  PaymentSource: Purchase['PaymentSource'] & {
-    id?: string;
-  };
-};
-
-type Transaction = PaymentTx | PurchaseTx;
+import {
+  buildTransactionsPage,
+  dedupeTransactions,
+  type Transaction,
+  type TransactionsPage,
+  type TransactionsPageParam,
+} from './useTransactions.helpers';
 
 const LAST_VISIT_KEY = 'masumi_last_transactions_visit';
 const NEW_TRANSACTIONS_COUNT_KEY = 'masumi_new_transactions_count';
+const TRANSACTION_PAGE_SIZE = 10;
 
-export function useTransactions() {
+export const ON_CHAIN_STATES = [
+  'FundsLocked',
+  'FundsOrDatumInvalid',
+  'ResultSubmitted',
+  'RefundRequested',
+  'Disputed',
+  'Withdrawn',
+  'RefundWithdrawn',
+  'DisputedWithdrawn',
+] as const;
+
+export type OnChainStateFilter = (typeof ON_CHAIN_STATES)[number];
+
+type TransactionQueryParams = {
+  filterOnChainState?: OnChainStateFilter;
+  searchQuery?: string;
+  transactionType?: 'payment' | 'purchase';
+};
+
+type PaymentApiResponse = Awaited<ReturnType<typeof getPayment>>;
+type PurchaseApiResponse = Awaited<ReturnType<typeof getPurchase>>;
+
+const getLastVisitTimestamp = (): string | null => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  return localStorage.getItem(LAST_VISIT_KEY);
+};
+
+const setLastVisitTimestamp = (timestamp: string) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  localStorage.setItem(LAST_VISIT_KEY, timestamp);
+};
+
+const getStoredNewTransactionsCount = (): number => {
+  if (typeof window === 'undefined') {
+    return 0;
+  }
+
+  const count = localStorage.getItem(NEW_TRANSACTIONS_COUNT_KEY);
+  return count ? Number.parseInt(count, 10) : 0;
+};
+
+const setStoredNewTransactionsCount = (count: number) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  localStorage.setItem(NEW_TRANSACTIONS_COUNT_KEY, count.toString());
+};
+
+const logFetchFailure = (kind: 'payments' | 'purchases', error: unknown) => {
+  console.error(`Failed to fetch ${kind}:`, error);
+};
+
+const getPaymentsFromResponse = (response: PaymentApiResponse | null): Payment[] =>
+  response?.data?.data?.Payments ?? [];
+
+const getPurchasesFromResponse = (response: PurchaseApiResponse | null): Purchase[] =>
+  response?.data?.data?.Purchases ?? [];
+
+export function useTransactions(
+  params?: TransactionQueryParams,
+  options?: { trackVisit?: boolean },
+) {
+  const trackVisit = options?.trackVisit !== false;
   const { apiClient, network } = useAppContext();
   const router = useRouter();
   const [newTransactionsCount, setNewTransactionsCount] = useState(0);
@@ -41,166 +94,132 @@ export function useTransactions() {
   const hasInitializedRef = useRef(false);
   const previousNetworkRef = useRef(network);
 
-  // Get last visit timestamp from localStorage
-  const getLastVisitTimestamp = (): string | null => {
-    if (typeof window === 'undefined') return null;
-    return localStorage.getItem(LAST_VISIT_KEY);
-  };
-
-  // Set last visit timestamp in localStorage
-  const setLastVisitTimestamp = (timestamp: string) => {
-    if (typeof window === 'undefined') return;
-    localStorage.setItem(LAST_VISIT_KEY, timestamp);
-  };
-
-  // Get new transactions count from localStorage
-  const getNewTransactionsCount = (): number => {
-    if (typeof window === 'undefined') return 0;
-    const count = localStorage.getItem(NEW_TRANSACTIONS_COUNT_KEY);
-    return count ? parseInt(count, 10) : 0;
-  };
-
-  // Set new transactions count in localStorage
-  const setNewTransactionsCountInStorage = (count: number) => {
-    if (typeof window === 'undefined') return;
-    localStorage.setItem(NEW_TRANSACTIONS_COUNT_KEY, count.toString());
-  };
-
   const query = useInfiniteQuery({
-    queryKey: ['transactions', network],
+    queryKey: [
+      'transactions',
+      network,
+      params?.filterOnChainState,
+      params?.searchQuery,
+      params?.transactionType,
+    ],
     queryFn: async ({ pageParam }) => {
-      const combined: Transaction[] = [];
-      const cursor = pageParam ?? undefined;
+      const cursorState = pageParam as TransactionsPageParam | undefined;
+      const skipPurchases = params?.transactionType === 'payment';
+      const skipPayments = params?.transactionType === 'purchase';
+      const shouldFetchPurchases = !skipPurchases && cursorState?.hasMorePurchases !== false;
+      const shouldFetchPayments = !skipPayments && cursorState?.hasMorePayments !== false;
 
-      const purchases = await handleApiCall(
-        () =>
-          getPurchase({
-            client: apiClient,
-            query: {
-              network,
-              cursorId: cursor,
-              includeHistory: 'true',
-              limit: 10,
+      const purchases = shouldFetchPurchases
+        ? await handleApiCall(
+            () =>
+              getPurchase({
+                client: apiClient,
+                query: {
+                  network,
+                  cursorId: cursorState?.purchaseCursorId,
+                  includeHistory: 'true',
+                  limit: TRANSACTION_PAGE_SIZE,
+                  filterOnChainState: params?.filterOnChainState,
+                  searchQuery: params?.searchQuery || undefined,
+                },
+              }),
+            {
+              onError: (error: unknown) => {
+                logFetchFailure('purchases', error);
+              },
+              errorMessage: 'Failed to fetch purchases',
             },
-          }),
-        {
-          onError: (error: any) => {
-            console.error('Failed to fetch purchases:', error);
-          },
-          errorMessage: 'Failed to fetch purchases',
-        },
-      );
+          )
+        : null;
 
-      if (purchases?.data?.data?.Purchases) {
-        purchases.data.data.Purchases.forEach((purchase: any) => {
-          combined.push({
-            ...purchase,
-            type: 'purchase',
-          });
-        });
-      }
-
-      const payments = await handleApiCall(
-        () =>
-          getPayment({
-            client: apiClient,
-            query: {
-              network,
-              cursorId: cursor,
-              includeHistory: 'true',
-              limit: 10,
+      const payments = shouldFetchPayments
+        ? await handleApiCall(
+            () =>
+              getPayment({
+                client: apiClient,
+                query: {
+                  network,
+                  cursorId: cursorState?.paymentCursorId,
+                  includeHistory: 'true',
+                  limit: TRANSACTION_PAGE_SIZE,
+                  filterOnChainState: params?.filterOnChainState,
+                  searchQuery: params?.searchQuery || undefined,
+                },
+              }),
+            {
+              onError: (error: unknown) => {
+                logFetchFailure('payments', error);
+              },
+              errorMessage: 'Failed to fetch payments',
             },
-          }),
-        {
-          onError: (error: any) => {
-            console.error('Failed to fetch payments:', error);
-          },
-          errorMessage: 'Failed to fetch payments',
-        },
-      );
+          )
+        : null;
 
-      if (payments?.data?.data?.Payments) {
-        payments.data.data.Payments.forEach((payment: any) => {
-          combined.push({
-            ...payment,
-            type: 'payment',
-          });
-        });
-      }
-
-      const sortedTransactions = combined.sort(
-        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-      );
-
-      const purchasesCount = purchases?.data?.data?.Purchases?.length ?? 0;
-      const paymentsCount = payments?.data?.data?.Payments?.length ?? 0;
-      const hasMore = purchasesCount === 10 || paymentsCount === 10;
-      const nextCursor = hasMore
-        ? (sortedTransactions[sortedTransactions.length - 1]?.id ?? undefined)
-        : undefined;
-
-      return {
-        transactions: sortedTransactions,
-        nextCursor,
-        hasMore,
-      };
+      return buildTransactionsPage({
+        payments: getPaymentsFromResponse(payments),
+        purchases: getPurchasesFromResponse(purchases),
+        pageSize: TRANSACTION_PAGE_SIZE,
+        skipPayments,
+        skipPurchases,
+      });
     },
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (lastPage) =>
-      lastPage.hasMore && lastPage.nextCursor ? lastPage.nextCursor : undefined,
+    initialPageParam: undefined as TransactionsPageParam | undefined,
+    getNextPageParam: (lastPage: TransactionsPage) => lastPage.nextPageParam,
     refetchInterval: 25000,
     enabled: !!apiClient,
     staleTime: 15000,
+    placeholderData: keepPreviousData,
   });
 
   const transactions = useMemo(() => {
     const pages = query.data?.pages ?? [];
-    const combined = pages.flatMap((page) => page.transactions);
-    const seen = new Set<string>();
-    const unique: Transaction[] = [];
-
-    combined.forEach((tx) => {
-      if (tx.id) {
-        if (seen.has(tx.id)) return;
-        seen.add(tx.id);
-      }
-      unique.push(tx);
-    });
-
-    return unique.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return dedupeTransactions(pages.flatMap((page) => page.transactions));
   }, [query.data]);
 
-  const isLoading = query.isLoading || query.isRefetching;
+  const isLoading = query.isLoading;
+  const isPlaceholderData = query.isPlaceholderData;
   const hasMore = Boolean(query.hasNextPage);
   const isFetchingNextPage = query.isFetchingNextPage;
   const isRefetching = query.isRefetching;
   const refetch = query.refetch;
 
   useEffect(() => {
+    if (!trackVisit) {
+      return;
+    }
+
     if (previousNetworkRef.current !== network) {
       hasInitializedRef.current = false;
       seenTransactionIdsRef.current = new Set();
       lastFetchWasNextPageRef.current = false;
 
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Reset unread state immediately when the active network changes.
       setNewTransactionsCount(0);
-      setNewTransactionsCountInStorage(0);
-
+      setStoredNewTransactionsCount(0);
       setLastVisitTimestamp(new Date().toISOString());
 
       previousNetworkRef.current = network;
     }
-  }, [network]);
+  }, [network, trackVisit]);
 
   useEffect(() => {
-    const storedCount = getNewTransactionsCount();
-    setNewTransactionsCount(storedCount);
-  }, []);
+    if (!trackVisit) {
+      return;
+    }
+
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Hydrating the unread counter from localStorage keeps this hook as the single source of truth.
+    setNewTransactionsCount(getStoredNewTransactionsCount());
+  }, [trackVisit]);
 
   useEffect(() => {
-    if (!query.data) return;
+    if (!trackVisit || !query.data) {
+      return;
+    }
 
     if (!hasInitializedRef.current) {
-      seenTransactionIdsRef.current = new Set(transactions.map((tx) => tx.id ?? ''));
+      seenTransactionIdsRef.current = new Set(
+        transactions.map((transaction) => transaction.id ?? ''),
+      );
       hasInitializedRef.current = true;
       return;
     }
@@ -208,7 +227,7 @@ export function useTransactions() {
     if (lastFetchWasNextPageRef.current) {
       seenTransactionIdsRef.current = new Set([
         ...seenTransactionIdsRef.current,
-        ...transactions.map((tx) => tx.id ?? ''),
+        ...transactions.map((transaction) => transaction.id ?? ''),
       ]);
       lastFetchWasNextPageRef.current = false;
       return;
@@ -216,49 +235,65 @@ export function useTransactions() {
 
     const lastVisitTimestamp = getLastVisitTimestamp();
     if (!lastVisitTimestamp) {
-      seenTransactionIdsRef.current = new Set(transactions.map((tx) => tx.id ?? ''));
+      seenTransactionIdsRef.current = new Set(
+        transactions.map((transaction) => transaction.id ?? ''),
+      );
       return;
     }
 
-    const currentCount = getNewTransactionsCount();
+    const currentCount = getStoredNewTransactionsCount();
     const existingIds = seenTransactionIdsRef.current;
-    const newOnes = transactions.filter(
-      (tx) =>
-        !existingIds.has(tx.id ?? '') && new Date(tx.createdAt) > new Date(lastVisitTimestamp),
+    const newTransactions = transactions.filter(
+      (transaction) =>
+        !existingIds.has(transaction.id ?? '') &&
+        new Date(transaction.createdAt) > new Date(lastVisitTimestamp),
     );
 
-    if (newOnes.length > 0) {
-      const newCount = currentCount + newOnes.length;
-      setNewTransactionsCount(newCount);
-      setNewTransactionsCountInStorage(newCount);
+    if (newTransactions.length > 0) {
+      const updatedCount = currentCount + newTransactions.length;
+      setNewTransactionsCount(updatedCount);
+      setStoredNewTransactionsCount(updatedCount);
     }
 
     seenTransactionIdsRef.current = new Set([
       ...existingIds,
-      ...transactions.map((tx) => tx.id ?? ''),
+      ...transactions.map((transaction) => transaction.id ?? ''),
     ]);
-  }, [query.dataUpdatedAt, transactions]);
+  }, [query.data, query.dataUpdatedAt, trackVisit, transactions]);
 
   useEffect(() => {
-    if (router.pathname === '/transactions' && newTransactionsCount > 0) {
-      setNewTransactionsCount(0);
-      setNewTransactionsCountInStorage(0);
-      setLastVisitTimestamp(new Date().toISOString());
-      seenTransactionIdsRef.current = new Set(transactions.map((tx) => tx.id ?? ''));
+    if (!trackVisit) {
+      return;
     }
-  }, [router.pathname, newTransactionsCount, transactions]);
+
+    if (router.pathname === '/transactions' && newTransactionsCount > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Opening the transactions page should clear the badge immediately.
+      setNewTransactionsCount(0);
+      setStoredNewTransactionsCount(0);
+      setLastVisitTimestamp(new Date().toISOString());
+      seenTransactionIdsRef.current = new Set(
+        transactions.map((transaction) => transaction.id ?? ''),
+      );
+    }
+  }, [newTransactionsCount, router.pathname, trackVisit, transactions]);
 
   const markAllAsRead = useCallback(() => {
+    if (!trackVisit) {
+      return;
+    }
+
     setNewTransactionsCount(0);
-    setNewTransactionsCountInStorage(0);
+    setStoredNewTransactionsCount(0);
     setLastVisitTimestamp(new Date().toISOString());
-    seenTransactionIdsRef.current = new Set(transactions.map((tx) => tx.id ?? ''));
-  }, [transactions]);
+    seenTransactionIdsRef.current = new Set(
+      transactions.map((transaction) => transaction.id ?? ''),
+    );
+  }, [trackVisit, transactions]);
 
   const loadMore = useCallback(() => {
     if (query.hasNextPage && !query.isFetchingNextPage) {
       lastFetchWasNextPageRef.current = true;
-      query.fetchNextPage();
+      void query.fetchNextPage();
     }
   }, [query]);
 
@@ -270,7 +305,9 @@ export function useTransactions() {
     newTransactionsCount,
     markAllAsRead,
     isFetchingNextPage,
+    isFetching: query.isFetching,
     refetch,
     isRefetching,
+    isPlaceholderData,
   };
 }

@@ -104,11 +104,11 @@ export function addToAllFundsMaps(
 }
 
 export function mapTotalFundsOutput(funds: Fund): {
-	units: Array<{ unit: string; amount: number }>;
+	Units: Array<{ unit: string; amount: number }>;
 	blockchainFees: number;
 } {
 	return {
-		units: Array.from(funds.units.entries()).map(([unit, amount]) => ({
+		Units: Array.from(funds.units.entries()).map(([unit, amount]) => ({
 			unit,
 			amount,
 		})),
@@ -127,12 +127,12 @@ export function mapDailyFundsOutput(fundsByDay: Map<string, Fund>): Array<{
 	day: number;
 	month: number;
 	year: number;
-	units: Array<{ unit: string; amount: number }>;
+	Units: Array<{ unit: string; amount: number }>;
 	blockchainFees: number;
 }> {
 	return Array.from(fundsByDay.entries()).map(([date, fund]) => ({
 		...getDayMonthAndYearFromDate(date),
-		units: Array.from(fund.units.entries()).map(([unit, amount]) => ({
+		Units: Array.from(fund.units.entries()).map(([unit, amount]) => ({
 			unit,
 			amount,
 		})),
@@ -151,12 +151,12 @@ function getMonthAndYearFromDate(date: string): {
 export function mapMonthlyFundsOutput(fundsByMonth: Map<string, Fund>): Array<{
 	month: number;
 	year: number;
-	units: Array<{ unit: string; amount: number }>;
+	Units: Array<{ unit: string; amount: number }>;
 	blockchainFees: number;
 }> {
 	return Array.from(fundsByMonth.entries()).map(([date, fund]) => ({
 		...getMonthAndYearFromDate(date),
-		units: Array.from(fund.units.entries()).map(([unit, amount]) => ({
+		Units: Array.from(fund.units.entries()).map(([unit, amount]) => ({
 			unit,
 			amount,
 		})),

@@ -1,2 +1,23 @@
 packages:
-  - 'frontend'
+  - frontend
+
+ignoredBuiltDependencies:
+  - '@parcel/watcher'
+  - '@scarf/scarf'
+  - chacha-native
+  - core-js
+  - esbuild
+  - unrs-resolver
+
+onlyBuiltDependencies:
+  - '@prisma/engines'
+  - prisma
+  - protobufjs
+  - sharp
+
+overrides:
+  libsodium-sumo: 0.7.15
+  libsodium-wrappers-sumo: 0.7.15
+
+patchedDependencies:
+  '@sundaeswap/core': patches/@sundaeswap__core.patch

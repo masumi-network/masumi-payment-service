@@ -36,7 +36,7 @@ import { ChevronDown, Save, Trash2, Pencil, Check, ChevronsUpDown, X, Plus } fro
 import { CopyButton } from '@/components/ui/copy-button';
 import { cn } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { postInvoiceMonthlyAdmin } from '@/lib/api/generated';
+import { postInvoiceMonthlyInternal } from '@/lib/api/generated';
 import { shortenAddress } from '@/lib/utils';
 import {
   useSellerTemplates,
@@ -766,7 +766,7 @@ export function GenerateInvoiceDialog({
           ? Object.fromEntries(validConversions.map((e) => [e.unit.trim(), parseFloat(e.rate)]))
           : undefined;
 
-      const result = await postInvoiceMonthlyAdmin({
+      const result = await postInvoiceMonthlyInternal({
         client: apiClient,
         body: {
           buyerWalletVkey: data.buyerWalletVkey,
@@ -776,8 +776,8 @@ export function GenerateInvoiceDialog({
           vatRate: data.vatRate,
           reverseCharge: data.reverseCharge,
           forceRegenerate: data.forceRegenerate,
-          currencyConversion,
-          seller: {
+          CurrencyConversion: currencyConversion,
+          Seller: {
             country: data.seller.country,
             city: data.seller.city,
             zipCode: data.seller.zipCode,
@@ -789,7 +789,7 @@ export function GenerateInvoiceDialog({
             companyName: data.seller.companyName || null,
             vatNumber: data.seller.vatNumber || null,
           },
-          buyer: {
+          Buyer: {
             country: data.buyer.country,
             city: data.buyer.city,
             zipCode: data.buyer.zipCode,
@@ -801,7 +801,7 @@ export function GenerateInvoiceDialog({
             companyName: data.buyer.companyName || null,
             vatNumber: data.buyer.vatNumber || null,
           },
-          invoice: data.invoice
+          Invoice: data.invoice
             ? Object.fromEntries(
                 Object.entries(data.invoice).filter(([, v]) => v !== '' && v !== undefined),
               )

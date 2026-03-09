@@ -10,6 +10,7 @@ export type AuthContext = {
 	permission: Permission;
 	networkLimit: Network[];
 	usageLimited: boolean;
+	walletScopeIds: string[] | null;
 };
 
 const authMiddlewareInputSchema = z.object({});
@@ -32,6 +33,9 @@ export const authMiddleware = (minPermission: Permission) =>
 				const apiKey = await prisma.apiKey.findUnique({
 					where: {
 						tokenHash: generateSHA256Hash(sentKey),
+					},
+					include: {
+						WalletScopes: { select: { hotWalletId: true } },
 					},
 				});
 
@@ -72,11 +76,17 @@ export const authMiddleware = (minPermission: Permission) =>
 					usageLimited = false;
 				}
 
+				const walletScopeIds =
+					apiKey.permission === Permission.Admin || !apiKey.walletScopeEnabled
+						? null
+						: apiKey.WalletScopes.map((ws) => ws.hotWalletId);
+
 				return {
 					id: apiKey.id,
 					permission: apiKey.permission,
 					networkLimit: networkLimit,
 					usageLimited: usageLimited,
+					walletScopeIds: walletScopeIds,
 				}; // provides endpoints with options.user
 			} catch (error) {
 				//await a random amount to throttle invalid requests

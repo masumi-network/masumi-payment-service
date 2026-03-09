@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Calendar } from 'lucide-react';
 import formatBalance from '@/lib/formatBalance';
-import { getUsdmConfig } from '@/lib/constants/defaultWallets';
+import { getUsdmConfig, USDCX_CONFIG } from '@/lib/constants/defaultWallets';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 
 interface AgentEarningsData {
@@ -183,7 +183,14 @@ export function AgentEarningsOverview({ agentIdentifier, agentName }: AgentEarni
       return formattedAmount + ' ADA';
     }
 
-    // For USDM, match by policyId and assetName (hex) - network aware
+    const isUSDCx = token.unit === USDCX_CONFIG.fullAssetId;
+    if (isUSDCx) {
+      const usdcx = token.quantity / 1000000;
+      const formattedAmount = usdcx === 0 ? '0' : formatBalance(usdcx.toFixed(2));
+      return formattedAmount + ' USDCx';
+    }
+
+    // For USDM, match by fullAssetId - keep for legacy records
     const usdmConfig = getUsdmConfig(network);
     const isUSDM = token.unit === usdmConfig.fullAssetId;
     if (isUSDM) {

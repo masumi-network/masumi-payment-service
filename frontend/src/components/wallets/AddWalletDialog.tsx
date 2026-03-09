@@ -17,7 +17,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   patchPaymentSourceExtended,
   postWallet,
@@ -34,6 +34,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { handleApiCall, validateCardanoAddress } from '@/lib/utils';
 import { WalletTypeBadge } from '@/components/ui/wallet-type-badge';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
+import { extractApiErrorMessage } from '@/lib/api-error';
+import { extractApiPayload } from '@/lib/api-response';
 
 interface AddWalletDialogProps {
   open: boolean;
@@ -72,12 +74,10 @@ export function AddWalletDialog({ open, onClose, onSuccess }: AddWalletDialogPro
     },
   });
   const { paymentSources } = usePaymentSourceExtendedAll();
-  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] = useState<
-    PaymentSourceExtended[]
-  >([]);
-  useEffect(() => {
-    setCurrentNetworkPaymentSources(paymentSources.filter((ps) => ps.network === network));
-  }, [paymentSources, network]);
+  const currentNetworkPaymentSources = useMemo(
+    () => paymentSources.filter((paymentSource) => paymentSource.network === network),
+    [paymentSources, network],
+  );
 
   useEffect(() => {
     if (open) {
@@ -93,7 +93,7 @@ export function AddWalletDialog({ open, onClose, onSuccess }: AddWalletDialogPro
       setIsGenerating(true);
       setError('');
 
-      const response: any = await postWallet({
+      const response = await postWallet({
         client: apiClient,
         body: {
           network: network,
@@ -108,15 +108,17 @@ export function AddWalletDialog({ open, onClose, onSuccess }: AddWalletDialogPro
         return;
       }
 
-      if (response.data?.data?.walletMnemonic) {
-        setValue('mnemonic', response.data.data.walletMnemonic);
+      const walletMnemonic = extractApiPayload<{ walletMnemonic?: string }>(
+        response,
+      )?.walletMnemonic;
+      if (walletMnemonic) {
+        setValue('mnemonic', walletMnemonic);
       } else {
         throw new Error('Failed to generate mnemonic phrase');
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error generating mnemonic:', error);
-      const errorMessage =
-        error?.response?.data?.error || error?.message || 'Failed to generate mnemonic phrase';
+      const errorMessage = extractApiErrorMessage(error, 'Failed to generate mnemonic phrase');
       setError(errorMessage);
       toast.error(errorMessage);
     } finally {
@@ -180,8 +182,8 @@ export function AddWalletDialog({ open, onClose, onSuccess }: AddWalletDialogPro
           onSuccess?.();
           onClose();
         },
-        onError: (error: any) => {
-          setError(error.message || `Failed to add ${type} wallet`);
+        onError: (error: unknown) => {
+          setError(extractApiErrorMessage(error, `Failed to add ${type} wallet`));
         },
         onFinally: () => {
           setIsLoading(false);
