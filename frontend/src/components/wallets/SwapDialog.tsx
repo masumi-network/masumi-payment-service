@@ -250,29 +250,25 @@ export function SwapDialog({
       }
 
       if (backendSwapStatus === 'CancelConfirmed') {
-        void fetchBalance().then(() => {
-          if (pollCancelledRef.current) return;
-          onSwapComplete?.();
-          setSwapStatus('cancelConfirmed');
-          toast.success('Swap order cancelled. Funds returned.', { theme: 'dark' });
-          setIsSwapping(false);
-          pollTimeoutRef.current = setTimeout(() => {
-            if (!pollCancelledRef.current) setSwapStatus('idle');
-          }, 3000);
-        });
-        return true;
-      }
-
-      void fetchBalance().then(() => {
-        if (pollCancelledRef.current) return;
+        void fetchBalance();
         onSwapComplete?.();
-        setSwapStatus('confirmed');
-        toast.success('Swap confirmed on-chain.', { theme: 'dark' });
+        setSwapStatus('cancelConfirmed');
+        toast.success('Swap order cancelled. Funds returned.', { theme: 'dark' });
         setIsSwapping(false);
         pollTimeoutRef.current = setTimeout(() => {
           if (!pollCancelledRef.current) setSwapStatus('idle');
-        }, 2000);
-      });
+        }, 3000);
+        return true;
+      }
+
+      void fetchBalance();
+      onSwapComplete?.();
+      setSwapStatus('confirmed');
+      toast.success('Swap confirmed on-chain.', { theme: 'dark' });
+      setIsSwapping(false);
+      pollTimeoutRef.current = setTimeout(() => {
+        if (!pollCancelledRef.current) setSwapStatus('idle');
+      }, 2000);
       return true;
     },
   });
