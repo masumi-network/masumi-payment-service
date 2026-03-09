@@ -1377,7 +1377,7 @@ export function generateOpenAPI() {
 		method: 'post',
 		path: '/payment/',
 		description: 'Creates a payment request and identifier. This will check incoming payments in the background.',
-		summary: 'Create a new payment request. (READ access required)',
+		summary: 'Create a new payment request. (+PAY access required)',
 		tags: ['payment'],
 		request: {
 			body: {
@@ -1430,9 +1430,9 @@ export function generateOpenAPI() {
 		method: 'post',
 		path: '/payment/submit-result',
 		description:
-			'Submit the hash of their completed job for a payment request, which triggers the fund unlock process so the seller can collect payment after the unlock time expires. (READ access required; only the creator or an admin may submit)',
+			'Submit the hash of their completed job for a payment request, which triggers the fund unlock process so the seller can collect payment after the unlock time expires. (+PAY access required; only the creator or an admin may submit)',
 		summary:
-			'Completes a payment request. This will collect the funds after the unlock time. (READ access required; only the creator or an admin may submit)',
+			'Completes a payment request. This will collect the funds after the unlock time. (+PAY access required; only the creator or an admin may submit)',
 		tags: ['payment'],
 		request: {
 			body: {
@@ -1491,9 +1491,9 @@ export function generateOpenAPI() {
 		method: 'post',
 		path: '/payment/authorize-refund',
 		description:
-			'Authorizes a refund for a payment request. This will stop the right to receive a payment and initiate a refund for the other party.',
+			'Authorizes a refund for a payment request. This will stop the right to receive a payment and initiate a refund for the other party. (+PAY access required; only the creator or an admin may authorize)',
 		summary:
-			'Authorizes a refund for a payment request. This will stop the right to receive a payment and initiate a refund for the other party. (READ access required; only the creator or an admin may authorize)',
+			'Authorizes a refund for a payment request. This will stop the right to receive a payment and initiate a refund for the other party. (+PAY access required; only the creator or an admin may authorize)',
 		tags: ['payment'],
 		request: {
 			body: {
@@ -2156,7 +2156,7 @@ export function generateOpenAPI() {
 		method: 'get',
 		path: '/purchase/',
 		description: 'Gets the purchase status. It needs to be created first with a POST request.',
-		summary: 'Get information about an existing purchase request. (PAY access required)',
+		summary: 'Get information about an existing purchase request. (READ access required)',
 		tags: ['purchase'],
 		request: {
 			query: queryPurchaseRequestSchemaInput.openapi({
@@ -2840,7 +2840,7 @@ export function generateOpenAPI() {
 		path: '/registry/wallet',
 		description: 'Gets the agent metadata.',
 		summary:
-			'Fetch all agents (and their full metadata) that are registered to a specified wallet. (PAY access required)',
+			'Fetch all agents (and their full metadata) that are registered to a specified wallet. (READ access required)',
 		tags: ['registry'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {
@@ -3007,7 +3007,7 @@ export function generateOpenAPI() {
 		method: 'get',
 		path: '/registry/',
 		description: 'Gets the agent metadata.',
-		summary: 'List every agent that is recorded in the Masumi Registry. (PAY access required)',
+		summary: 'List every agent that is recorded in the Masumi Registry. (READ access required)',
 		tags: ['registry'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {

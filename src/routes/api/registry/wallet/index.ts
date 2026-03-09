@@ -1,4 +1,4 @@
-import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
+import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import { z } from '@/utils/zod-openapi';
 import { HotWalletType, Network, PricingType } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
@@ -239,7 +239,7 @@ export const queryAgentFromWalletSchemaOutput = z.object({
 		.describe('List of agent assets registered to this wallet'),
 });
 
-export const queryAgentFromWalletGet = payAuthenticatedEndpointFactory.build({
+export const queryAgentFromWalletGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: queryAgentFromWalletSchemaInput,
 	output: queryAgentFromWalletSchemaOutput,

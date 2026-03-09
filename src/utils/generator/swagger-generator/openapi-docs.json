@@ -4846,7 +4846,7 @@
             },
             "post": {
                 "description": "Creates a payment request and identifier. This will check incoming payments in the background.",
-                "summary": "Create a new payment request. (READ access required)",
+                "summary": "Create a new payment request. (+PAY access required)",
                 "tags": [
                     "payment"
                 ],
@@ -6289,8 +6289,8 @@
         },
         "/payment/submit-result": {
             "post": {
-                "description": "Submit the hash of their completed job for a payment request, which triggers the fund unlock process so the seller can collect payment after the unlock time expires. (READ access required; only the creator or an admin may submit)",
-                "summary": "Completes a payment request. This will collect the funds after the unlock time. (READ access required; only the creator or an admin may submit)",
+                "description": "Submit the hash of their completed job for a payment request, which triggers the fund unlock process so the seller can collect payment after the unlock time expires. (+PAY access required; only the creator or an admin may submit)",
+                "summary": "Completes a payment request. This will collect the funds after the unlock time. (+PAY access required; only the creator or an admin may submit)",
                 "tags": [
                     "payment"
                 ],
@@ -6872,8 +6872,8 @@
         },
         "/payment/authorize-refund": {
             "post": {
-                "description": "Authorizes a refund for a payment request. This will stop the right to receive a payment and initiate a refund for the other party.",
-                "summary": "Authorizes a refund for a payment request. This will stop the right to receive a payment and initiate a refund for the other party. (READ access required; only the creator or an admin may authorize)",
+                "description": "Authorizes a refund for a payment request. This will stop the right to receive a payment and initiate a refund for the other party. (+PAY access required; only the creator or an admin may authorize)",
+                "summary": "Authorizes a refund for a payment request. This will stop the right to receive a payment and initiate a refund for the other party. (+PAY access required; only the creator or an admin may authorize)",
                 "tags": [
                     "payment"
                 ],
@@ -9981,7 +9981,7 @@
         "/purchase/": {
             "get": {
                 "description": "Gets the purchase status. It needs to be created first with a POST request.",
-                "summary": "Get information about an existing purchase request. (PAY access required)",
+                "summary": "Get information about an existing purchase request. (READ access required)",
                 "tags": [
                     "purchase"
                 ],
@@ -13175,7 +13175,7 @@
         "/registry/wallet": {
             "get": {
                 "description": "Gets the agent metadata.",
-                "summary": "Fetch all agents (and their full metadata) that are registered to a specified wallet. (PAY access required)",
+                "summary": "Fetch all agents (and their full metadata) that are registered to a specified wallet. (READ access required)",
                 "tags": [
                     "registry"
                 ],
@@ -13436,7 +13436,7 @@
         "/registry/": {
             "get": {
                 "description": "Gets the agent metadata.",
-                "summary": "List every agent that is recorded in the Masumi Registry. (PAY access required)",
+                "summary": "List every agent that is recorded in the Masumi Registry. (READ access required)",
                 "tags": [
                     "registry"
                 ],
