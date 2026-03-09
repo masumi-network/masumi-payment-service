@@ -1784,7 +1784,7 @@ export type PostSignatureVerifyRevealDataData = {
         /**
          * The action to perform
          */
-        action: 'reveal_data';
+        action: 'revealData';
     };
     path?: never;
     query?: never;
@@ -2189,13 +2189,13 @@ export type GetSwapConfirmErrors = {
 
 export type GetSwapConfirmResponses = {
     /**
-     * Confirmation status (pending, confirmed, or not_found)
+     * Confirmation status (pending, confirmed, or notFound)
      */
     200: {
         /**
-         * On-chain status: pending (not yet in a block), confirmed (in a block), not_found (tx unknown)
+         * On-chain status: pending (not yet in a block), confirmed (in a block), notFound (tx unknown)
          */
-        status: 'pending' | 'confirmed' | 'not_found';
+        status: 'pending' | 'confirmed' | 'notFound';
         /**
          * Swap lifecycle status (OrderPending, OrderConfirmed, CancelPending, CancelConfirmed, Completed)
          */
@@ -4332,7 +4332,7 @@ export type PostSignatureSignCreateInvoiceMonthlyData = {
         /**
          * The action to perform for monthly invoices
          */
-        action: 'retrieve_monthly_invoices';
+        action: 'retrieveMonthlyInvoices';
         buyer: {
             /**
              * The country of the invoice
@@ -4699,7 +4699,7 @@ export type PostInvoiceMonthlyData = {
         /**
          * The action to perform for monthly invoices
          */
-        action: 'retrieve_monthly_invoices';
+        action: 'retrieveMonthlyInvoices';
     };
     path?: never;
     query?: never;

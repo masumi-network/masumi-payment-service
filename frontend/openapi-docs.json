@@ -3327,7 +3327,7 @@
                                     "action": {
                                         "type": "string",
                                         "enum": [
-                                            "reveal_data"
+                                            "revealData"
                                         ],
                                         "description": "The action to perform"
                                     }
@@ -3341,7 +3341,7 @@
                                     "action"
                                 ],
                                 "example": {
-                                    "action": "reveal_data",
+                                    "action": "revealData",
                                     "blockchainIdentifier": "blockchain_identifier",
                                     "signature": "signature",
                                     "key": "key",
@@ -4144,7 +4144,7 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "Confirmation status (pending, confirmed, or not_found)",
+                        "description": "Confirmation status (pending, confirmed, or notFound)",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -4155,9 +4155,9 @@
                                             "enum": [
                                                 "pending",
                                                 "confirmed",
-                                                "not_found"
+                                                "notFound"
                                             ],
-                                            "description": "On-chain status: pending (not yet in a block), confirmed (in a block), not_found (tx unknown)"
+                                            "description": "On-chain status: pending (not yet in a block), confirmed (in a block), notFound (tx unknown)"
                                         },
                                         "swapStatus": {
                                             "type": "string",
@@ -8706,7 +8706,7 @@
                                     "action": {
                                         "type": "string",
                                         "enum": [
-                                            "retrieve_monthly_invoices"
+                                            "retrieveMonthlyInvoices"
                                         ],
                                         "description": "The action to perform for monthly invoices"
                                     },
@@ -8801,7 +8801,7 @@
                                     "buyer"
                                 ],
                                 "example": {
-                                    "action": "retrieve_monthly_invoices",
+                                    "action": "retrieveMonthlyInvoices",
                                     "buyerWalletVkey": "buyer_wallet_vkey",
                                     "month": "2025-09",
                                     "buyer": {
@@ -8866,7 +8866,7 @@
                                             "signature": "ed25519_signature",
                                             "key": "ed25519_key",
                                             "walletAddress": "addr1...",
-                                            "signatureData": "{\"action\":\"retrieve_monthly_invoices\",\"validUntil\":1736352000000,\"hash\":\"...\"}"
+                                            "signatureData": "{\"action\":\"retrieveMonthlyInvoices\",\"validUntil\":1736352000000,\"hash\":\"...\"}"
                                         }
                                     }
                                 }
@@ -9237,7 +9237,7 @@
                                     "action": {
                                         "type": "string",
                                         "enum": [
-                                            "retrieve_monthly_invoices"
+                                            "retrieveMonthlyInvoices"
                                         ],
                                         "description": "The action to perform for monthly invoices"
                                     }
@@ -9259,7 +9259,7 @@
                                     "key": "ed25519_key",
                                     "walletAddress": "addr1xk2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3n0d3vllmyqwsx5wktcd8cc3sq835lu7drv2xwl2wywfgse35a3x",
                                     "validUntil": 1736352000000,
-                                    "action": "retrieve_monthly_invoices",
+                                    "action": "retrieveMonthlyInvoices",
                                     "buyerWalletVkey": "buyer_wallet_vkey",
                                     "month": "2025-09",
                                     "invoiceCurrency": "usd",
@@ -9350,7 +9350,7 @@
             },
             "get": {
                 "description": "Lists invoice summaries for a given month with pagination. Returns only the latest revision per invoice base. Pass invoiceBaseId to get all revisions for a specific invoice. (+PAY access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own risk.",
-                "summary": "List invoices for a month. (+PAY access required)",
+                "summary": "List invoices for a month. (+Read access required)",
                 "tags": [
                     "invoice"
                 ],
@@ -10230,7 +10230,7 @@
         "/invoice/monthly/missing": {
             "get": {
                 "description": "Finds billable payment requests that do not yet have an invoice for a given month. Only finalized payments are included: Withdrawn (seller completed work), ResultSubmitted past unlock time, or DisputedWithdrawn with seller funds. Payments still locked, pending refund, or in dispute are excluded. (+PAY access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.",
-                "summary": "List uninvoiced payments for a month. (+PAY access required)",
+                "summary": "List uninvoiced payments for a month. (+Read access required)",
                 "tags": [
                     "invoice"
                 ],

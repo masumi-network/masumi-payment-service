@@ -424,7 +424,7 @@ export const postSignatureSignCreateInvoiceMonthly = <ThrowOnError extends boole
 });
 
 /**
- * List invoices for a month. (+PAY access required)
+ * List invoices for a month. (+Read access required)
  *
  * Lists invoice summaries for a given month with pagination. Returns only the latest revision per invoice base. Pass invoiceBaseId to get all revisions for a specific invoice. (+PAY access required)
  *
@@ -487,7 +487,7 @@ export const postInvoiceMonthlyInternal = <ThrowOnError extends boolean = false>
 });
 
 /**
- * List uninvoiced payments for a month. (+PAY access required)
+ * List uninvoiced payments for a month. (+Read access required)
  *
  * Finds billable payment requests that do not yet have an invoice for a given month. Only finalized payments are included: Withdrawn (seller completed work), ResultSubmitted past unlock time, or DisputedWithdrawn with seller funds. Payments still locked, pending refund, or in dispute are excluded. (+PAY access required)
  *

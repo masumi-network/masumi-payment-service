@@ -207,8 +207,8 @@ export const postGenerateMonthlyInvoiceSchemaInput = invoiceGenerationBaseSchema
 		signature: z.string().max(2000).describe('The signature to verify'),
 		key: z.string().max(2000).describe('The key to verify the signature'),
 		walletAddress: z.string().max(500).describe('The wallet address that signed the message'),
-		validUntil: z.number().describe('The valid until timestamp'),
-		action: z.enum(['retrieve_monthly_invoices']).describe('The action to perform for monthly invoices'),
+			validUntil: z.number().describe('The valid until timestamp'),
+		action: z.enum(['retrieveMonthlyInvoices']).describe('The action to perform for monthly invoices'),
 	})
 	.refine(
 		(data) => {

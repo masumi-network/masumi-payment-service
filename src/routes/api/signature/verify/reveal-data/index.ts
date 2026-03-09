@@ -24,7 +24,7 @@ export const postVerifyDataRevealSchemaInput = z.object({
 		.min(1)
 		.max(2500)
 		.describe('The blockchain identifier, for which the data should be revealed'),
-	action: z.literal('reveal_data').describe('The action to perform'),
+	action: z.literal('revealData').describe('The action to perform'),
 });
 
 export const postRevealDataSchemaOutput = z.object({
@@ -111,8 +111,8 @@ export const revealDataEndpointPost = readAuthenticatedEndpointFactory.build({
 					throw createHttpError(400, 'Signature is too far in the future');
 				}
 
-			const message = stringify({
-				action: 'reveal_data',
+				const message = stringify({
+					action: 'revealData',
 				validUntil: input.validUntil,
 				blockchainIdentifier: input.blockchainIdentifier,
 			});

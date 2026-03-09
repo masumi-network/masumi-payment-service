@@ -507,19 +507,11 @@ export const getSwapConfirmEndpointGet = adminAuthenticatedEndpointFactory.build
 								});
 								throw createHttpError(500, 'State transition succeeded but wallet unlock failed. Please retry.');
 							}
-
-							return {
-								status: 'not_found' as const,
-								swapStatus: timeoutStatus,
-								swapTransactionId: swapTx.id,
-							};
+							throw createHttpError(404, 'Transaction not found');
 						}
 					}
 
-					return {
-						status: 'not_found' as const,
-						swapStatus: currentSwapStatus ?? undefined,
-					};
+					throw createHttpError(404, 'Transaction not found');
 				}
 				recordBusinessEndpointError(
 					'/api/v1/swap/confirm',

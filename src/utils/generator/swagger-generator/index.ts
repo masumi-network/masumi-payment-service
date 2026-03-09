@@ -558,8 +558,8 @@ export function generateOpenAPI() {
 				content: {
 					'application/json': {
 						schema: postVerifyDataRevealSchemaInput.openapi({
-							example: {
-								action: 'reveal_data',
+								example: {
+									action: 'revealData',
 								blockchainIdentifier: 'blockchain_identifier',
 								signature: 'signature',
 								key: 'key',
@@ -717,7 +717,7 @@ export function generateOpenAPI() {
 		},
 		responses: {
 			200: {
-				description: 'Confirmation status (pending, confirmed, or not_found)',
+				description: 'Confirmation status (pending, confirmed, or notFound)',
 				content: {
 					'application/json': {
 						schema: getSwapConfirmSchemaOutput.openapi({
@@ -1739,8 +1739,8 @@ export function generateOpenAPI() {
 				content: {
 					'application/json': {
 						schema: postMonthlySignatureSchemaInput.openapi({
-							example: {
-								action: 'retrieve_monthly_invoices',
+								example: {
+									action: 'retrieveMonthlyInvoices',
 								buyerWalletVkey: 'buyer_wallet_vkey',
 								month: '2025-09',
 								buyer: {
@@ -1778,7 +1778,7 @@ export function generateOpenAPI() {
 										signature: 'ed25519_signature',
 										key: 'ed25519_key',
 										walletAddress: 'addr1...',
-										signatureData: '{"action":"retrieve_monthly_invoices","validUntil":1736352000000,"hash":"..."}',
+											signatureData: '{"action":"retrieveMonthlyInvoices","validUntil":1736352000000,"hash":"..."}',
 									},
 								},
 							}),
@@ -1802,13 +1802,13 @@ export function generateOpenAPI() {
 				content: {
 					'application/json': {
 						schema: postGenerateMonthlyInvoiceSchemaInput.openapi({
-							example: {
-								signature: 'ed25519_signature',
-								key: 'ed25519_key',
-								walletAddress:
-									'addr1xk2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3n0d3vllmyqwsx5wktcd8cc3sq835lu7drv2xwl2wywfgse35a3x',
-								validUntil: 1736352000000,
-								action: 'retrieve_monthly_invoices',
+								example: {
+									signature: 'ed25519_signature',
+									key: 'ed25519_key',
+									walletAddress:
+										'addr1xk2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3n0d3vllmyqwsx5wktcd8cc3sq835lu7drv2xwl2wywfgse35a3x',
+									validUntil: 1736352000000,
+									action: 'retrieveMonthlyInvoices',
 								buyerWalletVkey: 'buyer_wallet_vkey',
 								month: '2025-09',
 								invoiceCurrency: 'usd',
