@@ -1,9 +1,5 @@
 import { WebhookEventType } from '@/generated/prisma/client';
-import {
-	buildEndpointWebhookPayload,
-	buildWebhookPayload,
-	mergeWebhookEndpointBatch,
-} from './webhook-queue.helpers';
+import { buildEndpointWebhookPayload, buildWebhookPayload, mergeWebhookEndpointBatch } from './webhook-queue.helpers';
 
 describe('webhook queue helpers', () => {
 	it('deduplicates inclusive cursor overlap between endpoint batches', () => {
@@ -13,10 +9,7 @@ describe('webhook queue helpers', () => {
 		const firstMerge = mergeWebhookEndpointBatch([], firstBatch);
 		const secondMerge = mergeWebhookEndpointBatch(firstMerge.mergedEndpoints, secondBatch);
 
-		expect(firstMerge.newEndpoints.map((endpoint) => endpoint.id)).toEqual([
-			'endpoint-1',
-			'endpoint-2',
-		]);
+		expect(firstMerge.newEndpoints.map((endpoint) => endpoint.id)).toEqual(['endpoint-1', 'endpoint-2']);
 		expect(secondMerge.newEndpoints.map((endpoint) => endpoint.id)).toEqual(['endpoint-3']);
 		expect(secondMerge.mergedEndpoints.map((endpoint) => endpoint.id)).toEqual([
 			'endpoint-1',
