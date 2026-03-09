@@ -226,12 +226,7 @@
                     "walletMnemonic",
                     "walletAddress",
                     "walletVkey"
-                ],
-                "example": {
-                    "walletMnemonic": "wallet_mnemonic",
-                    "walletAddress": "wallet_address",
-                    "walletVkey": "wallet_vkey"
-                }
+                ]
             },
             "Payment": {
                 "type": "object",
@@ -2856,28 +2851,7 @@
                 },
                 "required": [
                     "monitoringStatus"
-                ],
-                "example": {
-                    "monitoringStatus": {
-                        "isMonitoring": true,
-                        "stats": {
-                            "trackedEntities": 42,
-                            "purchaseCursor": {
-                                "timestamp": "2024-01-01T00:00:00.000Z",
-                                "lastId": "cuid_v2_auto_generated"
-                            },
-                            "paymentCursor": {
-                                "timestamp": "2024-01-01T00:00:00.000Z",
-                                "lastId": "cuid_v2_auto_generated"
-                            },
-                            "memoryUsage": {
-                                "heapUsed": "50MB",
-                                "heapTotal": "100MB",
-                                "external": "10MB"
-                            }
-                        }
-                    }
-                }
+                ]
             },
             "TriggeredMonitoringCycle": {
                 "type": "object",
@@ -2894,11 +2868,7 @@
                 "required": [
                     "message",
                     "triggered"
-                ],
-                "example": {
-                    "message": "Manual monitoring cycle completed successfully",
-                    "triggered": true
-                }
+                ]
             },
             "StartedMonitoring": {
                 "type": "object",
@@ -2915,11 +2885,7 @@
                 "required": [
                     "message",
                     "started"
-                ],
-                "example": {
-                    "message": "Monitoring service started with 30000ms interval",
-                    "started": true
-                }
+                ]
             },
             "StoppedMonitoring": {
                 "type": "object",
@@ -2936,11 +2902,7 @@
                 "required": [
                     "message",
                     "stopped"
-                ],
-                "example": {
-                    "message": "Monitoring service stopped successfully",
-                    "stopped": true
-                }
+                ]
             }
         },
         "parameters": {}
@@ -2962,14 +2924,32 @@
                                     "properties": {
                                         "status": {
                                             "type": "string",
-                                            "description": "Health status of the service. Returns \"ok\" when the service is running"
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "status": {
+                                                    "type": "string",
+                                                    "description": "Health status of the service. Returns \"ok\" when the service is running"
+                                                }
+                                            },
+                                            "required": [
+                                                "status"
+                                            ]
                                         }
                                     },
                                     "required": [
-                                        "status"
+                                        "status",
+                                        "data"
                                     ],
                                     "example": {
-                                        "status": "ok"
+                                        "status": "success",
+                                        "data": {
+                                            "status": "ok"
+                                        }
                                     }
                                 }
                             }
@@ -3166,7 +3146,30 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/GeneratedWalletSecret"
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/GeneratedWalletSecret"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "walletMnemonic": "wallet_mnemonic",
+                                            "walletAddress": "wallet_address",
+                                            "walletVkey": "wallet_vkey"
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -3222,23 +3225,38 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "allOf": [
-                                        {
-                                            "$ref": "#/components/schemas/Wallet"
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
                                         },
-                                        {
-                                            "example": {
-                                                "walletVkey": "wallet_vkey",
-                                                "note": "note",
-                                                "PendingTransaction": null,
-                                                "walletAddress": "wallet_address",
-                                                "collectionAddress": "collection_address"
-                                            }
+                                        "data": {
+                                            "$ref": "#/components/schemas/Wallet"
                                         }
-                                    ]
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "walletVkey": "wallet_vkey",
+                                            "note": "note",
+                                            "PendingTransaction": null,
+                                            "walletAddress": "wallet_address",
+                                            "collectionAddress": "collection_address"
+                                        }
+                                    }
                                 }
                             }
                         }
+                    },
+                    "404": {
+                        "description": "Wallet not found"
                     }
                 }
             }
@@ -3325,20 +3343,53 @@
                                 "schema": {
                                     "type": "object",
                                     "properties": {
-                                        "isValid": {
-                                            "type": "boolean",
-                                            "description": "Whether the signature is valid and the data can be revealed"
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "isValid": {
+                                                    "type": "boolean",
+                                                    "description": "Whether the signature is valid and the data can be revealed"
+                                                }
+                                            },
+                                            "required": [
+                                                "isValid"
+                                            ]
                                         }
                                     },
                                     "required": [
-                                        "isValid"
+                                        "status",
+                                        "data"
                                     ],
                                     "example": {
-                                        "isValid": true
+                                        "status": "success",
+                                        "data": {
+                                            "isValid": true
+                                        }
                                     }
                                 }
                             }
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request (invalid signature or payment is not disputable)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "403": {
+                        "description": "Forbidden (network not allowed)"
+                    },
+                    "404": {
+                        "description": "Payment not found"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
                     }
                 }
             }
@@ -3560,7 +3611,7 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "API key deleted",
+                        "description": "API key created",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -3738,7 +3789,7 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "API key deleted",
+                        "description": "API key updated",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -4592,7 +4643,7 @@
         "/payment/": {
             "get": {
                 "description": "Gets the payment status. It needs to be created first with a POST request.",
-                "summary": "Get information about a payment request. (admin access required)",
+                "summary": "Get information about a payment request. (READ access required)",
                 "tags": [
                     "payment"
                 ],
@@ -4795,7 +4846,7 @@
             },
             "post": {
                 "description": "Creates a payment request and identifier. This will check incoming payments in the background.",
-                "summary": "Create a new payment request. (admin access required +PAY)",
+                "summary": "Create a new payment request. (READ access required)",
                 "tags": [
                     "payment"
                 ],
@@ -6238,8 +6289,8 @@
         },
         "/payment/submit-result": {
             "post": {
-                "description": "Submit the hash of their completed job for a payment request, which triggers the fund unlock process so the seller can collect payment after the unlock time expires. (admin access required +PAY)",
-                "summary": "Completes a payment request. This will collect the funds after the unlock time. (admin access required +PAY)",
+                "description": "Submit the hash of their completed job for a payment request, which triggers the fund unlock process so the seller can collect payment after the unlock time expires. (READ access required; only the creator or an admin may submit)",
+                "summary": "Completes a payment request. This will collect the funds after the unlock time. (READ access required; only the creator or an admin may submit)",
                 "tags": [
                     "payment"
                 ],
@@ -6807,6 +6858,12 @@
                     "401": {
                         "description": "Unauthorized"
                     },
+                    "403": {
+                        "description": "Forbidden (only the creator or an admin can submit results)"
+                    },
+                    "404": {
+                        "description": "Payment not found or in invalid state"
+                    },
                     "500": {
                         "description": "Internal Server Error"
                     }
@@ -6816,7 +6873,7 @@
         "/payment/authorize-refund": {
             "post": {
                 "description": "Authorizes a refund for a payment request. This will stop the right to receive a payment and initiate a refund for the other party.",
-                "summary": "Authorizes a refund for a payment request. This will stop the right to receive a payment and initiate a refund for the other party. (admin access required +PAY)",
+                "summary": "Authorizes a refund for a payment request. This will stop the right to receive a payment and initiate a refund for the other party. (READ access required; only the creator or an admin may authorize)",
                 "tags": [
                     "payment"
                 ],
@@ -6860,7 +6917,7 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "API key deleted",
+                        "description": "Payment refund authorized",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -7376,6 +7433,12 @@
                     },
                     "401": {
                         "description": "Unauthorized"
+                    },
+                    "403": {
+                        "description": "Forbidden (only the creator or an admin can authorize a refund)"
+                    },
+                    "404": {
+                        "description": "Payment not found or in invalid state"
                     },
                     "500": {
                         "description": "Internal Server Error"
@@ -9918,7 +9981,7 @@
         "/purchase/": {
             "get": {
                 "description": "Gets the purchase status. It needs to be created first with a POST request.",
-                "summary": "Get information about an existing purchase request. (READ access required)",
+                "summary": "Get information about an existing purchase request. (PAY access required)",
                 "tags": [
                     "purchase"
                 ],
@@ -11749,7 +11812,7 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "API key deleted",
+                        "description": "Purchase refund requested",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -12249,6 +12312,12 @@
                     "401": {
                         "description": "Unauthorized"
                     },
+                    "403": {
+                        "description": "Forbidden (only the creator or an admin can request a refund)"
+                    },
+                    "404": {
+                        "description": "Purchase not found or not in valid state"
+                    },
                     "500": {
                         "description": "Internal Server Error"
                     }
@@ -12257,7 +12326,7 @@
         },
         "/purchase/cancel-refund-request": {
             "post": {
-                "description": "Requests a refund for a completed purchase. This will collect the refund after the refund time.",
+                "description": "Cancels a previously requested refund for a completed purchase.",
                 "summary": "Cancel a previously requested refund for a purchase, reverting the transaction back to its normal processing state. (+PAY access required)",
                 "tags": [
                     "purchase"
@@ -12302,7 +12371,7 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "API key deleted",
+                        "description": "Purchase refund request cancelled",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -12801,6 +12870,12 @@
                     },
                     "401": {
                         "description": "Unauthorized"
+                    },
+                    "403": {
+                        "description": "Forbidden (only the creator or an admin can cancel a refund request)"
+                    },
+                    "404": {
+                        "description": "Purchase not found or in invalid state"
                     },
                     "500": {
                         "description": "Internal Server Error"
@@ -13100,7 +13175,7 @@
         "/registry/wallet": {
             "get": {
                 "description": "Gets the agent metadata.",
-                "summary": "Fetch all agents (and their full metadata) that are registered to a specified wallet. (READ access required)",
+                "summary": "Fetch all agents (and their full metadata) that are registered to a specified wallet. (PAY access required)",
                 "tags": [
                     "registry"
                 ],
@@ -13361,7 +13436,7 @@
         "/registry/": {
             "get": {
                 "description": "Gets the agent metadata.",
-                "summary": "List every agent that is recorded in the Masumi Registry. (READ access required)",
+                "summary": "List every agent that is recorded in the Masumi Registry. (PAY access required)",
                 "tags": [
                     "registry"
                 ],
@@ -14219,7 +14294,7 @@
         "/registry/deregister": {
             "post": {
                 "description": "Deregisters a agent from the specified registry (Please note that while the command is put on-chain, the transaction is not yet finalized by the blockchain, as designed finality is only eventually reached. If you need certainty, please check status via the registry(GET) or if you require custom logic, the transaction directly using the txHash)",
-                "summary": "Deregisters an agent from the specified registry. (admin access required +PAY)",
+                "summary": "Deregisters an agent from the specified registry. (PAY access required)",
                 "tags": [
                     "registry"
                 ],
@@ -14269,7 +14344,7 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "Payment source deleted",
+                        "description": "Agent deregistration requested",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -15533,32 +15608,56 @@
                                 "schema": {
                                     "type": "object",
                                     "properties": {
-                                        "RpcProviderKeys": {
-                                            "type": "array",
-                                            "items": {
-                                                "$ref": "#/components/schemas/RpcProviderKey"
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "RpcProviderKeys": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/RpcProviderKey"
+                                                    },
+                                                    "description": "List of RPC provider keys"
+                                                }
                                             },
-                                            "description": "List of RPC provider keys"
+                                            "required": [
+                                                "RpcProviderKeys"
+                                            ]
                                         }
                                     },
                                     "required": [
-                                        "RpcProviderKeys"
+                                        "status",
+                                        "data"
                                     ],
                                     "example": {
-                                        "RpcProviderKeys": [
-                                            {
-                                                "network": "Preprod",
-                                                "id": "unique_cuid_v2",
-                                                "rpcProviderApiKey": "blockfrost_api_key",
-                                                "rpcProvider": "Blockfrost",
-                                                "createdAt": "1970-01-20T20:00:36.260Z",
-                                                "updatedAt": "1970-01-20T20:00:36.260Z"
-                                            }
-                                        ]
+                                        "status": "success",
+                                        "data": {
+                                            "RpcProviderKeys": [
+                                                {
+                                                    "network": "Preprod",
+                                                    "id": "unique_cuid_v2",
+                                                    "rpcProviderApiKey": "blockfrost_api_key",
+                                                    "rpcProvider": "Blockfrost",
+                                                    "createdAt": "1970-01-20T20:00:36.260Z",
+                                                    "updatedAt": "1970-01-20T20:00:36.260Z"
+                                                }
+                                            ]
+                                        }
                                     }
                                 }
                             }
                         }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
                     }
                 }
             }
@@ -17129,7 +17228,7 @@
                     }
                 },
                 "responses": {
-                    "201": {
+                    "200": {
                         "description": "Webhook endpoint registered successfully",
                         "content": {
                             "application/json": {
@@ -17215,6 +17314,12 @@
                     },
                     "401": {
                         "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Payment source not found"
+                    },
+                    "409": {
+                        "description": "Webhook URL already registered for this payment source"
                     },
                     "500": {
                         "description": "Internal Server Error"
@@ -17341,7 +17446,46 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/MonitoringStatus"
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/MonitoringStatus"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "monitoringStatus": {
+                                                "isMonitoring": true,
+                                                "stats": {
+                                                    "trackedEntities": 42,
+                                                    "purchaseCursor": {
+                                                        "timestamp": "2024-01-01T00:00:00.000Z",
+                                                        "lastId": "cuid_v2_auto_generated"
+                                                    },
+                                                    "paymentCursor": {
+                                                        "timestamp": "2024-01-01T00:00:00.000Z",
+                                                        "lastId": "cuid_v2_auto_generated"
+                                                    },
+                                                    "memoryUsage": {
+                                                        "heapUsed": "50MB",
+                                                        "heapTotal": "100MB",
+                                                        "external": "10MB"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -17349,8 +17493,8 @@
                     "401": {
                         "description": "Unauthorized"
                     },
-                    "403": {
-                        "description": "Forbidden (admin access required)"
+                    "500": {
+                        "description": "Internal Server Error"
                     }
                 }
             }
@@ -17373,7 +17517,29 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/TriggeredMonitoringCycle"
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/TriggeredMonitoringCycle"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "message": "Manual monitoring cycle completed successfully",
+                                            "triggered": true
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -17381,8 +17547,8 @@
                     "401": {
                         "description": "Unauthorized"
                     },
-                    "403": {
-                        "description": "Forbidden (admin access required)"
+                    "500": {
+                        "description": "Internal Server Error"
                     }
                 }
             }
@@ -17427,7 +17593,29 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/StartedMonitoring"
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/StartedMonitoring"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "message": "Monitoring service started with 30000ms interval",
+                                            "started": true
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -17435,8 +17623,11 @@
                     "401": {
                         "description": "Unauthorized"
                     },
-                    "403": {
-                        "description": "Forbidden (admin access required)"
+                    "409": {
+                        "description": "Conflict (monitoring service is already running)"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
                     }
                 }
             }
@@ -17459,16 +17650,41 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/StoppedMonitoring"
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/StoppedMonitoring"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "message": "Monitoring service stopped successfully",
+                                            "stopped": true
+                                        }
+                                    }
                                 }
                             }
                         }
                     },
+                    "400": {
+                        "description": "Bad Request (monitoring service is not currently running)"
+                    },
                     "401": {
                         "description": "Unauthorized"
                     },
-                    "403": {
-                        "description": "Forbidden (admin access required)"
+                    "500": {
+                        "description": "Internal Server Error"
                     }
                 }
             }

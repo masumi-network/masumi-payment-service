@@ -387,6 +387,23 @@ import {
 extendZodWithOpenApi(z);
 
 const registry = new OpenAPIRegistry();
+const successEnvelopeSchema = (dataSchema: z.ZodTypeAny, dataExample: unknown) =>
+	z.object({ status: z.literal('success'), data: dataSchema }).openapi({
+		example: {
+			status: 'success',
+			data: dataExample,
+		},
+	});
+
+const successResponse = (description: string, dataSchema: z.ZodTypeAny, dataExample: unknown) => ({
+	description,
+	content: {
+		'application/json': {
+			schema: successEnvelopeSchema(dataSchema, dataExample),
+		},
+	},
+});
+
 export function generateOpenAPI() {
 	/********************* HEALTH *****************************/
 	registry.registerPath({
@@ -396,14 +413,9 @@ export function generateOpenAPI() {
 		summary: 'Get the status of the API server',
 		request: {},
 		responses: {
-			200: {
-				description: 'Object with status ok, if the server is up and healthy',
-				content: {
-					'application/json': {
-						schema: healthResponseSchema.openapi({ example: { status: 'ok' } }),
-					},
-				},
-			},
+			200: successResponse('Object with status ok, if the server is up and healthy', healthResponseSchema, {
+				status: 'ok',
+			}),
 		},
 	});
 
@@ -495,20 +507,11 @@ export function generateOpenAPI() {
 			},
 		},
 		responses: {
-			200: {
-				description: 'Wallet created',
-				content: {
-					'application/json': {
-						schema: postWalletSchemaOutput.openapi({
-							example: {
-								walletMnemonic: 'wallet_mnemonic',
-								walletAddress: 'wallet_address',
-								walletVkey: 'wallet_vkey',
-							},
-						}),
-					},
-				},
-			},
+			200: successResponse('Wallet created', postWalletSchemaOutput, {
+				walletMnemonic: 'wallet_mnemonic',
+				walletAddress: 'wallet_address',
+				walletVkey: 'wallet_vkey',
+			}),
 		},
 	});
 
@@ -535,15 +538,9 @@ export function generateOpenAPI() {
 			},
 		},
 		responses: {
-			200: {
-				description: 'Wallet updated',
-				content: {
-					'application/json': {
-						schema: patchWalletSchemaOutput.openapi({
-							example: walletExample,
-						}),
-					},
-				},
+			200: successResponse('Wallet updated', patchWalletSchemaOutput, walletExample),
+			404: {
+				description: 'Wallet not found',
 			},
 		},
 	});
@@ -576,17 +573,23 @@ export function generateOpenAPI() {
 		},
 		security: [{ [apiKeyAuth.name]: [] }],
 		responses: {
-			200: {
-				description: 'Revealed data',
-				content: {
-					'application/json': {
-						schema: postRevealDataSchemaOutput.openapi({
-							example: {
-								isValid: true,
-							},
-						}),
-					},
-				},
+			200: successResponse('Revealed data', postRevealDataSchemaOutput, {
+				isValid: true,
+			}),
+			400: {
+				description: 'Bad Request (invalid signature or payment is not disputable)',
+			},
+			401: {
+				description: 'Unauthorized',
+			},
+			403: {
+				description: 'Forbidden (network not allowed)',
+			},
+			404: {
+				description: 'Payment not found',
+			},
+			500: {
+				description: 'Internal Server Error',
 			},
 		},
 	});
@@ -970,7 +973,7 @@ export function generateOpenAPI() {
 		security: [{ [apiKeyAuth.name]: [] }],
 		responses: {
 			200: {
-				description: 'API key deleted',
+				description: 'API key created',
 				content: {
 					'application/json': {
 						schema: z.object({ data: addAPIKeySchemaOutput, status: z.string() }).openapi({
@@ -1031,7 +1034,7 @@ export function generateOpenAPI() {
 		security: [{ [apiKeyAuth.name]: [] }],
 		responses: {
 			200: {
-				description: 'API key deleted',
+				description: 'API key updated',
 				content: {
 					'application/json': {
 						schema: z.object({ data: updateAPIKeySchemaOutput, status: z.string() }).openapi({
@@ -1113,7 +1116,7 @@ export function generateOpenAPI() {
 		method: 'get',
 		path: '/payment/',
 		description: 'Gets the payment status. It needs to be created first with a POST request.',
-		summary: 'Get information about a payment request. (admin access required)',
+		summary: 'Get information about a payment request. (READ access required)',
 		tags: ['payment'],
 		request: {
 			query: queryPaymentsSchemaInput.openapi({
@@ -1374,7 +1377,7 @@ export function generateOpenAPI() {
 		method: 'post',
 		path: '/payment/',
 		description: 'Creates a payment request and identifier. This will check incoming payments in the background.',
-		summary: 'Create a new payment request. (admin access required +PAY)',
+		summary: 'Create a new payment request. (READ access required)',
 		tags: ['payment'],
 		request: {
 			body: {
@@ -1427,9 +1430,9 @@ export function generateOpenAPI() {
 		method: 'post',
 		path: '/payment/submit-result',
 		description:
-			'Submit the hash of their completed job for a payment request, which triggers the fund unlock process so the seller can collect payment after the unlock time expires. (admin access required +PAY)',
+			'Submit the hash of their completed job for a payment request, which triggers the fund unlock process so the seller can collect payment after the unlock time expires. (READ access required; only the creator or an admin may submit)',
 		summary:
-			'Completes a payment request. This will collect the funds after the unlock time. (admin access required +PAY)',
+			'Completes a payment request. This will collect the funds after the unlock time. (READ access required; only the creator or an admin may submit)',
 		tags: ['payment'],
 		request: {
 			body: {
@@ -1473,6 +1476,12 @@ export function generateOpenAPI() {
 			401: {
 				description: 'Unauthorized',
 			},
+			403: {
+				description: 'Forbidden (only the creator or an admin can submit results)',
+			},
+			404: {
+				description: 'Payment not found or in invalid state',
+			},
 			500: {
 				description: 'Internal Server Error',
 			},
@@ -1484,7 +1493,7 @@ export function generateOpenAPI() {
 		description:
 			'Authorizes a refund for a payment request. This will stop the right to receive a payment and initiate a refund for the other party.',
 		summary:
-			'Authorizes a refund for a payment request. This will stop the right to receive a payment and initiate a refund for the other party. (admin access required +PAY)',
+			'Authorizes a refund for a payment request. This will stop the right to receive a payment and initiate a refund for the other party. (READ access required; only the creator or an admin may authorize)',
 		tags: ['payment'],
 		request: {
 			body: {
@@ -1504,7 +1513,7 @@ export function generateOpenAPI() {
 		security: [{ [apiKeyAuth.name]: [] }],
 		responses: {
 			200: {
-				description: 'API key deleted',
+				description: 'Payment refund authorized',
 				content: {
 					'application/json': {
 						schema: z
@@ -1526,6 +1535,12 @@ export function generateOpenAPI() {
 			},
 			401: {
 				description: 'Unauthorized',
+			},
+			403: {
+				description: 'Forbidden (only the creator or an admin can authorize a refund)',
+			},
+			404: {
+				description: 'Payment not found or in invalid state',
 			},
 			500: {
 				description: 'Internal Server Error',
@@ -2141,7 +2156,7 @@ export function generateOpenAPI() {
 		method: 'get',
 		path: '/purchase/',
 		description: 'Gets the purchase status. It needs to be created first with a POST request.',
-		summary: 'Get information about an existing purchase request. (READ access required)',
+		summary: 'Get information about an existing purchase request. (PAY access required)',
 		tags: ['purchase'],
 		request: {
 			query: queryPurchaseRequestSchemaInput.openapi({
@@ -2515,7 +2530,7 @@ export function generateOpenAPI() {
 		security: [{ [apiKeyAuth.name]: [] }],
 		responses: {
 			200: {
-				description: 'API key deleted',
+				description: 'Purchase refund requested',
 				content: {
 					'application/json': {
 						schema: z
@@ -2538,6 +2553,12 @@ export function generateOpenAPI() {
 			401: {
 				description: 'Unauthorized',
 			},
+			403: {
+				description: 'Forbidden (only the creator or an admin can request a refund)',
+			},
+			404: {
+				description: 'Purchase not found or not in valid state',
+			},
 			500: {
 				description: 'Internal Server Error',
 			},
@@ -2546,7 +2567,7 @@ export function generateOpenAPI() {
 	registry.registerPath({
 		method: 'post',
 		path: '/purchase/cancel-refund-request',
-		description: 'Requests a refund for a completed purchase. This will collect the refund after the refund time.',
+		description: 'Cancels a previously requested refund for a completed purchase.',
 		summary:
 			'Cancel a previously requested refund for a purchase, reverting the transaction back to its normal processing state. (+PAY access required)',
 		tags: ['purchase'],
@@ -2568,7 +2589,7 @@ export function generateOpenAPI() {
 		security: [{ [apiKeyAuth.name]: [] }],
 		responses: {
 			200: {
-				description: 'API key deleted',
+				description: 'Purchase refund request cancelled',
 				content: {
 					'application/json': {
 						schema: z
@@ -2590,6 +2611,12 @@ export function generateOpenAPI() {
 			},
 			401: {
 				description: 'Unauthorized',
+			},
+			403: {
+				description: 'Forbidden (only the creator or an admin can cancel a refund request)',
+			},
+			404: {
+				description: 'Purchase not found or in invalid state',
 			},
 			500: {
 				description: 'Internal Server Error',
@@ -2813,7 +2840,7 @@ export function generateOpenAPI() {
 		path: '/registry/wallet',
 		description: 'Gets the agent metadata.',
 		summary:
-			'Fetch all agents (and their full metadata) that are registered to a specified wallet. (READ access required)',
+			'Fetch all agents (and their full metadata) that are registered to a specified wallet. (PAY access required)',
 		tags: ['registry'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {
@@ -2980,7 +3007,7 @@ export function generateOpenAPI() {
 		method: 'get',
 		path: '/registry/',
 		description: 'Gets the agent metadata.',
-		summary: 'List every agent that is recorded in the Masumi Registry. (READ access required)',
+		summary: 'List every agent that is recorded in the Masumi Registry. (PAY access required)',
 		tags: ['registry'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {
@@ -3176,7 +3203,7 @@ export function generateOpenAPI() {
 		path: '/registry/deregister',
 		description:
 			'Deregisters a agent from the specified registry (Please note that while the command is put on-chain, the transaction is not yet finalized by the blockchain, as designed finality is only eventually reached. If you need certainty, please check status via the registry(GET) or if you require custom logic, the transaction directly using the txHash)',
-		summary: 'Deregisters an agent from the specified registry. (admin access required +PAY)',
+		summary: 'Deregisters an agent from the specified registry. (PAY access required)',
 		tags: ['registry'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {
@@ -3196,7 +3223,7 @@ export function generateOpenAPI() {
 		},
 		responses: {
 			200: {
-				description: 'Payment source deleted',
+				description: 'Agent deregistration requested',
 				content: {
 					'application/json': {
 						schema: z.object({ status: z.string(), data: unregisterAgentSchemaOutput }).openapi({
@@ -3720,26 +3747,23 @@ export function generateOpenAPI() {
 			}),
 		},
 		responses: {
-			200: {
-				description: 'Blockfrost keys',
-				content: {
-					'application/json': {
-						schema: getRpcProviderKeysSchemaOutput.openapi({
-							example: {
-								RpcProviderKeys: [
-									{
-										network: Network.Preprod,
-										id: 'unique_cuid_v2',
-										rpcProviderApiKey: 'blockfrost_api_key',
-										rpcProvider: RPCProvider.Blockfrost,
-										createdAt: new Date(1713636260),
-										updatedAt: new Date(1713636260),
-									},
-								],
-							},
-						}),
+			200: successResponse('Blockfrost keys', getRpcProviderKeysSchemaOutput, {
+				RpcProviderKeys: [
+					{
+						network: Network.Preprod,
+						id: 'unique_cuid_v2',
+						rpcProviderApiKey: 'blockfrost_api_key',
+						rpcProvider: RPCProvider.Blockfrost,
+						createdAt: new Date(1713636260),
+						updatedAt: new Date(1713636260),
 					},
-				},
+				],
+			}),
+			401: {
+				description: 'Unauthorized',
+			},
+			500: {
+				description: 'Internal Server Error',
 			},
 		},
 	});
@@ -4113,7 +4137,7 @@ export function generateOpenAPI() {
 			},
 		},
 		responses: {
-			201: {
+			200: {
 				description: 'Webhook endpoint registered successfully',
 				content: {
 					'application/json': {
@@ -4139,6 +4163,12 @@ export function generateOpenAPI() {
 			},
 			401: {
 				description: 'Unauthorized',
+			},
+			404: {
+				description: 'Payment source not found',
+			},
+			409: {
+				description: 'Webhook URL already registered for this payment source',
 			},
 			500: {
 				description: 'Internal Server Error',
@@ -4211,41 +4241,32 @@ export function generateOpenAPI() {
 		tags: ['monitoring'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		responses: {
-			200: {
-				description: 'Monitoring service status',
-				content: {
-					'application/json': {
-						schema: monitoringStatusResponseSchema.openapi({
-							example: {
-								monitoringStatus: {
-									isMonitoring: true,
-									stats: {
-										trackedEntities: 42,
-										purchaseCursor: {
-											timestamp: '2024-01-01T00:00:00.000Z',
-											lastId: 'cuid_v2_auto_generated',
-										},
-										paymentCursor: {
-											timestamp: '2024-01-01T00:00:00.000Z',
-											lastId: 'cuid_v2_auto_generated',
-										},
-										memoryUsage: {
-											heapUsed: '50MB',
-											heapTotal: '100MB',
-											external: '10MB',
-										},
-									},
-								},
-							},
-						}),
+			200: successResponse('Monitoring service status', monitoringStatusResponseSchema, {
+				monitoringStatus: {
+					isMonitoring: true,
+					stats: {
+						trackedEntities: 42,
+						purchaseCursor: {
+							timestamp: '2024-01-01T00:00:00.000Z',
+							lastId: 'cuid_v2_auto_generated',
+						},
+						paymentCursor: {
+							timestamp: '2024-01-01T00:00:00.000Z',
+							lastId: 'cuid_v2_auto_generated',
+						},
+						memoryUsage: {
+							heapUsed: '50MB',
+							heapTotal: '100MB',
+							external: '10MB',
+						},
 					},
 				},
-			},
+			}),
 			401: {
 				description: 'Unauthorized',
 			},
-			403: {
-				description: 'Forbidden (admin access required)',
+			500: {
+				description: 'Internal Server Error',
 			},
 		},
 	});
@@ -4258,24 +4279,15 @@ export function generateOpenAPI() {
 		tags: ['monitoring'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		responses: {
-			200: {
-				description: 'Monitoring cycle trigger result',
-				content: {
-					'application/json': {
-						schema: triggerMonitoringCycleResponseSchema.openapi({
-							example: {
-								message: 'Manual monitoring cycle completed successfully',
-								triggered: true,
-							},
-						}),
-					},
-				},
-			},
+			200: successResponse('Monitoring cycle trigger result', triggerMonitoringCycleResponseSchema, {
+				message: 'Manual monitoring cycle completed successfully',
+				triggered: true,
+			}),
 			401: {
 				description: 'Unauthorized',
 			},
-			403: {
-				description: 'Forbidden (admin access required)',
+			500: {
+				description: 'Internal Server Error',
 			},
 		},
 	});
@@ -4302,24 +4314,18 @@ export function generateOpenAPI() {
 			},
 		},
 		responses: {
-			200: {
-				description: 'Monitoring service start result',
-				content: {
-					'application/json': {
-						schema: startMonitoringResponseSchema.openapi({
-							example: {
-								message: 'Monitoring service started with 30000ms interval',
-								started: true,
-							},
-						}),
-					},
-				},
-			},
+			200: successResponse('Monitoring service start result', startMonitoringResponseSchema, {
+				message: 'Monitoring service started with 30000ms interval',
+				started: true,
+			}),
 			401: {
 				description: 'Unauthorized',
 			},
-			403: {
-				description: 'Forbidden (admin access required)',
+			409: {
+				description: 'Conflict (monitoring service is already running)',
+			},
+			500: {
+				description: 'Internal Server Error',
 			},
 		},
 	});
@@ -4332,24 +4338,18 @@ export function generateOpenAPI() {
 		tags: ['monitoring'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		responses: {
-			200: {
-				description: 'Monitoring service stop result',
-				content: {
-					'application/json': {
-						schema: stopMonitoringResponseSchema.openapi({
-							example: {
-								message: 'Monitoring service stopped successfully',
-								stopped: true,
-							},
-						}),
-					},
-				},
-			},
+			200: successResponse('Monitoring service stop result', stopMonitoringResponseSchema, {
+				message: 'Monitoring service stopped successfully',
+				stopped: true,
+			}),
 			401: {
 				description: 'Unauthorized',
 			},
-			403: {
-				description: 'Forbidden (admin access required)',
+			400: {
+				description: 'Bad Request (monitoring service is not currently running)',
+			},
+			500: {
+				description: 'Internal Server Error',
 			},
 		},
 	});
