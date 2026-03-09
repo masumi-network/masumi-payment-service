@@ -103,7 +103,7 @@ export const USDCX_CONFIG = {
 export const getUsdcxConfig = (_network?: string) => USDCX_CONFIG;
 
 export const getActiveStablecoinConfig = (network?: string) =>
-  network?.toLowerCase() === 'mainnet' ? USDCX_CONFIG : getUsdmConfig('preprod');
+  network?.toLowerCase() === 'mainnet' ? USDCX_CONFIG : PREPROD_USDM_CONFIG;
 
 export const getActiveStablecoinSymbol = (network?: string): string =>
   network?.toLowerCase() === 'mainnet' ? 'USDCx' : 'tUSDM';
