@@ -152,7 +152,8 @@ export default function AIAgentsPage() {
 
   const [dismissedQueryAction, setDismissedQueryAction] = useState(false);
 
-  const shouldOpenRegisterDialog = isRegisterDialogOpen || (router.query.action === 'register_agent' && !dismissedQueryAction);
+  const shouldOpenRegisterDialog =
+    isRegisterDialogOpen || (router.query.action === 'register_agent' && !dismissedQueryAction);
 
   const formatDate = (date: Date | string) => {
     const dateObj = typeof date === 'string' ? new Date(date) : date;
