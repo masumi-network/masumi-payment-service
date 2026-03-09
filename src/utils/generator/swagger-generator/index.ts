@@ -388,9 +388,9 @@ extendZodWithOpenApi(z);
 
 const registry = new OpenAPIRegistry();
 const successEnvelopeSchema = (dataSchema: z.ZodTypeAny, dataExample: unknown) =>
-	z.object({ status: z.literal('Success'), data: dataSchema }).openapi({
+	z.object({ status: z.literal('success'), data: dataSchema }).openapi({
 		example: {
-			status: 'Success',
+			status: 'success',
 			data: dataExample,
 		},
 	});
@@ -1603,7 +1603,7 @@ export function generateOpenAPI() {
 							error: z.object({ message: z.string() }),
 						}),
 						example: {
-							status: 'Error',
+							status: 'error',
 							error: {
 								message:
 									'Payment request is not in WaitingForManualAction state. Current state: WaitingForExternalAction',
@@ -1624,7 +1624,7 @@ export function generateOpenAPI() {
 							error: z.object({ message: z.string() }),
 						}),
 						example: {
-							status: 'Error',
+							status: 'error',
 							error: { message: 'Payment request not found' },
 						},
 					},
@@ -1691,7 +1691,7 @@ export function generateOpenAPI() {
 							error: z.object({ message: z.string() }),
 						}),
 						example: {
-							status: 'Error',
+							status: 'error',
 							error: {
 								message:
 									'Purchase request is not in WaitingForManualAction state. Current state: WaitingForExternalAction',
@@ -1712,7 +1712,7 @@ export function generateOpenAPI() {
 							error: z.object({ message: z.string() }),
 						}),
 						example: {
-							status: 'Error',
+							status: 'error',
 							error: { message: 'Purchase request not found' },
 						},
 					},
@@ -2491,7 +2491,7 @@ export function generateOpenAPI() {
 							object: createPurchaseInitSchemaOutput,
 						}),
 						example: {
-							status: 'Error',
+							status: 'error',
 							error: { message: 'Purchase request already exists' },
 							id: 'cuid_v2_auto_generated',
 							object: purchaseResponseSchemaExample,
@@ -3288,7 +3288,7 @@ export function generateOpenAPI() {
 							error: z.object({ message: z.string() }),
 						}),
 						example: {
-							status: 'Error',
+							status: 'error',
 							error: {
 								message: 'Agent registration cannot be deleted in its current state: RegistrationRequested',
 							},
@@ -3308,7 +3308,7 @@ export function generateOpenAPI() {
 							error: z.object({ message: z.string() }),
 						}),
 						example: {
-							status: 'Error',
+							status: 'error',
 							error: { message: 'Agent Registration not found' },
 						},
 					},
