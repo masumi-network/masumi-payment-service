@@ -24,7 +24,7 @@ export const APIKeySchema = {
             type: 'boolean',
             description: 'Whether the API key has usage limits'
         },
-        networkLimit: {
+        NetworkLimit: {
             type: 'array',
             items: {
                 type: 'string',
@@ -90,7 +90,7 @@ export const APIKeySchema = {
         'token',
         'permission',
         'usageLimited',
-        'networkLimit',
+        'NetworkLimit',
         'RemainingUsageCredits',
         'status',
         'walletScopeEnabled',
@@ -208,12 +208,7 @@ export const GeneratedWalletSecretSchema = {
         'walletMnemonic',
         'walletAddress',
         'walletVkey'
-    ],
-    example: {
-        walletMnemonic: 'wallet_mnemonic',
-        walletAddress: 'wallet_address',
-        walletVkey: 'wallet_vkey'
-    }
+    ]
 } as const;
 
 export const PaymentSchema = {
@@ -1007,6 +1002,20 @@ export const PurchaseSchema = {
             items: {
                 type: 'object',
                 properties: {
+                    id: {
+                        type: 'string',
+                        description: 'Unique identifier for the action'
+                    },
+                    createdAt: {
+                        type: 'string',
+                        format: 'date-time',
+                        description: 'Timestamp when the action was created'
+                    },
+                    updatedAt: {
+                        type: 'string',
+                        format: 'date-time',
+                        description: 'Timestamp when the action was last updated'
+                    },
                     requestedAction: {
                         type: 'string',
                         enum: [
@@ -1043,6 +1052,9 @@ export const PurchaseSchema = {
                     }
                 },
                 required: [
+                    'id',
+                    'createdAt',
+                    'updatedAt',
                     'requestedAction',
                     'errorType',
                     'errorNote'
@@ -2757,14 +2769,14 @@ export const RpcProviderKeySchema = {
 export const MonitoringStatusSchema = {
     type: 'object',
     properties: {
-        monitoringStatus: {
+        MonitoringStatus: {
             type: 'object',
             properties: {
                 isMonitoring: {
                     type: 'boolean',
                     description: 'Whether the blockchain state monitoring service is currently running'
                 },
-                stats: {
+                Stats: {
                     type: 'object',
                     nullable: true,
                     properties: {
@@ -2772,7 +2784,7 @@ export const MonitoringStatusSchema = {
                             type: 'number',
                             description: 'Number of entities being tracked by the monitoring service'
                         },
-                        purchaseCursor: {
+                        PurchaseCursor: {
                             type: 'object',
                             properties: {
                                 timestamp: {
@@ -2791,7 +2803,7 @@ export const MonitoringStatusSchema = {
                             ],
                             description: 'Cursor position for purchase diff tracking'
                         },
-                        paymentCursor: {
+                        PaymentCursor: {
                             type: 'object',
                             properties: {
                                 timestamp: {
@@ -2810,7 +2822,7 @@ export const MonitoringStatusSchema = {
                             ],
                             description: 'Cursor position for payment diff tracking'
                         },
-                        memoryUsage: {
+                        MemoryUsage: {
                             type: 'object',
                             properties: {
                                 heapUsed: {
@@ -2836,44 +2848,23 @@ export const MonitoringStatusSchema = {
                     },
                     required: [
                         'trackedEntities',
-                        'purchaseCursor',
-                        'paymentCursor',
-                        'memoryUsage'
+                        'PurchaseCursor',
+                        'PaymentCursor',
+                        'MemoryUsage'
                     ],
                     description: 'Monitoring statistics. Null if monitoring is not active'
                 }
             },
             required: [
                 'isMonitoring',
-                'stats'
+                'Stats'
             ],
             description: 'Current status of the blockchain state monitoring service'
         }
     },
     required: [
-        'monitoringStatus'
-    ],
-    example: {
-        monitoringStatus: {
-            isMonitoring: true,
-            stats: {
-                trackedEntities: 42,
-                purchaseCursor: {
-                    timestamp: '2024-01-01T00:00:00.000Z',
-                    lastId: 'cuid_v2_auto_generated'
-                },
-                paymentCursor: {
-                    timestamp: '2024-01-01T00:00:00.000Z',
-                    lastId: 'cuid_v2_auto_generated'
-                },
-                memoryUsage: {
-                    heapUsed: '50MB',
-                    heapTotal: '100MB',
-                    external: '10MB'
-                }
-            }
-        }
-    }
+        'MonitoringStatus'
+    ]
 } as const;
 
 export const TriggeredMonitoringCycleSchema = {
@@ -2891,11 +2882,7 @@ export const TriggeredMonitoringCycleSchema = {
     required: [
         'message',
         'triggered'
-    ],
-    example: {
-        message: 'Manual monitoring cycle completed successfully',
-        triggered: true
-    }
+    ]
 } as const;
 
 export const StartedMonitoringSchema = {
@@ -2913,11 +2900,7 @@ export const StartedMonitoringSchema = {
     required: [
         'message',
         'started'
-    ],
-    example: {
-        message: 'Monitoring service started with 30000ms interval',
-        started: true
-    }
+    ]
 } as const;
 
 export const StoppedMonitoringSchema = {
@@ -2935,9 +2918,5 @@ export const StoppedMonitoringSchema = {
     required: [
         'message',
         'stopped'
-    ],
-    example: {
-        message: 'Monitoring service stopped successfully',
-        stopped: true
-    }
+    ]
 } as const;

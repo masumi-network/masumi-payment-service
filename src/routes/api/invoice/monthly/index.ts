@@ -10,6 +10,7 @@ import { generateHash } from '@/utils/crypto';
 import { AuthContext } from '@/utils/middleware/auth-middleware';
 import { invoiceGenerationBaseSchema, invoiceGenerationSchemaOutput, generateMonthlyInvoice } from './shared';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
+import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 
 // ── GET /api/v1/invoice/monthly — List invoices ──
 
@@ -74,7 +75,7 @@ const invoiceSummarySchema = z.object({
 	netTotal: z.string(),
 	vatTotal: z.string(),
 	grossTotal: z.string(),
-	coveredPaymentRequestIds: z.array(z.string()),
+	CoveredPaymentRequestIds: z.array(z.string()),
 	buyerWalletVkey: z.string().nullable(),
 	sellerWalletVkey: z.string().nullable(),
 	invoicePdf: z.string().describe('Base64-encoded invoice PDF'),
@@ -85,7 +86,7 @@ export const getMonthlyInvoiceListSchemaOutput = z.object({
 	Invoices: z.array(invoiceSummarySchema),
 });
 
-export const getMonthlyInvoiceListEndpoint = payAuthenticatedEndpointFactory.build({
+export const getMonthlyInvoiceListEndpoint = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: getMonthlyInvoiceListSchemaInput,
 	output: getMonthlyInvoiceListSchemaOutput,
@@ -184,7 +185,7 @@ export const getMonthlyInvoiceListEndpoint = payAuthenticatedEndpointFactory.bui
 					netTotal: netTotal.toFixed(2),
 					vatTotal: vatTotal.toFixed(2),
 					grossTotal: grossTotal.toFixed(2),
-					coveredPaymentRequestIds: base.coveredPaymentRequests.map((p) => p.id),
+					CoveredPaymentRequestIds: base.coveredPaymentRequests.map((p) => p.id),
 					buyerWalletVkey: base.buyerWalletVkey,
 					sellerWalletVkey: base.sellerWalletVkey,
 					invoicePdf: Buffer.from(rev.generatedPDFInvoice as unknown as Uint8Array).toString('base64'),
@@ -207,22 +208,22 @@ export const postGenerateMonthlyInvoiceSchemaInput = invoiceGenerationBaseSchema
 		key: z.string().max(2000).describe('The key to verify the signature'),
 		walletAddress: z.string().max(500).describe('The wallet address that signed the message'),
 		validUntil: z.number().describe('The valid until timestamp'),
-		action: z.enum(['retrieve_monthly_invoices']).describe('The action to perform for monthly invoices'),
+		action: z.enum(['RetrieveMonthlyInvoices']).describe('The action to perform for monthly invoices'),
 	})
 	.refine(
 		(data) => {
-			if (data.seller.companyName == null && data.seller.name == null) {
+			if (data.Seller.companyName == null && data.Seller.name == null) {
 				return false;
 			}
 			return true;
 		},
 		{
 			message: 'Company name or name is required',
-			path: ['seller', 'companyName'],
+			path: ['Seller', 'companyName'],
 		},
 	)
 	.refine((data) => {
-		if (data.buyer.companyName == null && data.buyer.name == null) {
+		if (data.Buyer.companyName == null && data.Buyer.name == null) {
 			return false;
 		}
 		return true;
@@ -246,11 +247,11 @@ export const postGenerateMonthlyInvoiceEndpoint = payAuthenticatedEndpointFactor
 				throw createHttpError(400, 'Signature is expired');
 			}
 			if (Date.now() + 1000 * 60 * 60 * 2 < input.validUntil) {
-				throw createHttpError(400, 'Signature is to far in the future');
+				throw createHttpError(400, 'Signature is too far in the future');
 			}
 
 			const message = stringify({
-				buyer: input.buyer,
+				Buyer: input.Buyer,
 				buyerWalletVkey: input.buyerWalletVkey,
 				month: input.month,
 			});
@@ -273,11 +274,26 @@ export const postGenerateMonthlyInvoiceEndpoint = payAuthenticatedEndpointFactor
 				throw createHttpError(400, 'Signature is not valid');
 			}
 
-			const result = await generateMonthlyInvoice(input, {
-				walletAddress: input.walletAddress,
-				metricPath: '/api/v1/invoice/monthly',
-				walletScopeIds: ctx.walletScopeIds,
-			});
+			const result = await generateMonthlyInvoice(
+				{
+					buyerWalletVkey: input.buyerWalletVkey,
+					sellerWalletVkey: input.sellerWalletVkey,
+					month: input.month,
+					invoiceCurrency: input.invoiceCurrency,
+					currencyConversion: input.CurrencyConversion,
+					invoice: input.Invoice,
+					vatRate: input.vatRate,
+					reverseCharge: input.reverseCharge,
+					forceRegenerate: input.forceRegenerate,
+					seller: input.Seller,
+					buyer: input.Buyer,
+				},
+				{
+					walletAddress: input.walletAddress,
+					metricPath: '/api/v1/invoice/monthly',
+					walletScopeIds: ctx.walletScopeIds,
+				},
+			);
 
 			return result;
 		} catch (error) {

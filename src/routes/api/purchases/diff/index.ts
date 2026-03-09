@@ -1,6 +1,5 @@
 import { z } from '@/utils/zod-openapi';
 import { prisma } from '@/utils/db';
-import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { Network, Prisma, PurchaseErrorType, PurchasingAction } from '@/generated/prisma/client';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import createHttpError from 'http-errors';
@@ -8,6 +7,7 @@ import { queryPurchaseRequestSchemaOutput } from '@/routes/api/purchases';
 import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
+import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 
 type PurchaseDiffMode =
 	| 'nextActionLastChangedAt'
@@ -281,7 +281,7 @@ async function queryPurchaseDiffByMode({
 	};
 }
 
-export const queryPurchaseDiffCombinedGet = payAuthenticatedEndpointFactory.build({
+export const queryPurchaseDiffCombinedGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: queryPurchaseDiffSchemaInput,
 	output: queryPurchaseRequestSchemaOutput,
@@ -293,7 +293,7 @@ export const queryPurchaseDiffCombinedGet = payAuthenticatedEndpointFactory.buil
 		}),
 });
 
-export const queryPurchaseDiffNextActionGet = payAuthenticatedEndpointFactory.build({
+export const queryPurchaseDiffNextActionGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: queryPurchaseDiffSchemaInput,
 	output: queryPurchaseRequestSchemaOutput,
@@ -305,7 +305,7 @@ export const queryPurchaseDiffNextActionGet = payAuthenticatedEndpointFactory.bu
 		}),
 });
 
-export const queryPurchaseDiffOnChainStateOrResultGet = payAuthenticatedEndpointFactory.build({
+export const queryPurchaseDiffOnChainStateOrResultGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: queryPurchaseDiffSchemaInput,
 	output: queryPurchaseRequestSchemaOutput,

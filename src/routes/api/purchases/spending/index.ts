@@ -31,21 +31,21 @@ export const postPurchaseSpendingSchemaInput = z.object({
 		.optional()
 		.nullable()
 		.describe(
-			'Start date for spendings calculation (date format: 2024-01-01). If null, uses earliest available data. If provided, will be converted to the local time zone of the user',
+			'Start date for spending calculation (date format: 2024-01-01). If null, uses earliest available data. If provided, will be converted to the local time zone of the user',
 		),
 	endDate: ez
 		.dateIn()
 		.optional()
 		.nullable()
 		.describe(
-			'End date for spendings calculation (date format: 2024-01-31). If null, uses current date. If provided, will be converted to the local time zone of the user',
+			'End date for spending calculation (date format: 2024-01-31). If null, uses current date. If provided, will be converted to the local time zone of the user',
 		),
 	timeZone: z
 		.string()
 		.optional()
 		.default('Etc/UTC')
 		.describe(
-			'The time zone to use for the spendings calculation. If not provided, will use the UTC time zone. Must be a valid IANA time zone name, see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones',
+			'The time zone to use for the spending calculation. If not provided, will use the UTC time zone. Must be a valid IANA time zone name, see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones',
 		),
 	network: z.nativeEnum(Network).describe('The Cardano network to query spending from'),
 });
@@ -64,66 +64,66 @@ export const postPurchaseSpendingSchemaOutput = z.object({
 	periodStart: z.date(),
 	periodEnd: z.date(),
 	totalTransactions: z.number(),
-	totalSpend: z.object({
-		units: z.array(unitAmountSchema),
+	TotalSpend: z.object({
+		Units: z.array(unitAmountSchema),
 		blockchainFees: z.number(),
 	}),
-	totalRefunded: z.object({
-		units: z.array(unitAmountSchema),
+	TotalRefunded: z.object({
+		Units: z.array(unitAmountSchema),
 		blockchainFees: z.number(),
 	}),
-	totalPending: z.object({
-		units: z.array(unitAmountSchema),
+	TotalPending: z.object({
+		Units: z.array(unitAmountSchema),
 		blockchainFees: z.number(),
 	}),
-	dailySpend: z.array(
+	DailySpend: z.array(
 		z.object({
 			day: z.number().describe('The day of the month'),
 			month: z.number().describe('The month'),
 			year: z.number().describe('The year'),
-			units: z.array(unitAmountSchema),
+			Units: z.array(unitAmountSchema),
 			blockchainFees: z.number(),
 		}),
 	),
-	dailyRefunded: z.array(
+	DailyRefunded: z.array(
 		z.object({
 			day: z.number().describe('The day of the month'),
 			month: z.number().describe('The month'),
 			year: z.number().describe('The year'),
-			units: z.array(unitAmountSchema),
+			Units: z.array(unitAmountSchema),
 			blockchainFees: z.number(),
 		}),
 	),
-	dailyPending: z.array(
+	DailyPending: z.array(
 		z.object({
 			day: z.number().describe('The day of the month'),
 			month: z.number().describe('The month'),
 			year: z.number().describe('The year'),
-			units: z.array(unitAmountSchema),
+			Units: z.array(unitAmountSchema),
 			blockchainFees: z.number(),
 		}),
 	),
-	monthlySpend: z.array(
+	MonthlySpend: z.array(
 		z.object({
 			month: z.number().describe('The month'),
 			year: z.number().describe('The year'),
-			units: z.array(unitAmountSchema),
+			Units: z.array(unitAmountSchema),
 			blockchainFees: z.number(),
 		}),
 	),
-	monthlyRefunded: z.array(
+	MonthlyRefunded: z.array(
 		z.object({
 			month: z.number().describe('The month'),
 			year: z.number().describe('The year'),
-			units: z.array(unitAmountSchema),
+			Units: z.array(unitAmountSchema),
 			blockchainFees: z.number(),
 		}),
 	),
-	monthlyPending: z.array(
+	MonthlyPending: z.array(
 		z.object({
 			month: z.number().describe('The month'),
 			year: z.number().describe('The year'),
-			units: z.array(unitAmountSchema),
+			Units: z.array(unitAmountSchema),
 			blockchainFees: z.number(),
 		}),
 	),
@@ -268,15 +268,15 @@ export const postPurchaseSpending = readAuthenticatedEndpointFactory.build({
 				periodStart,
 				periodEnd,
 				totalTransactions: allPurchasesFiltered.length,
-				totalSpend: mapTotalFundsOutput(totalSpendMap),
-				totalRefunded: mapTotalFundsOutput(totalRefundedMap),
-				totalPending: mapTotalFundsOutput(totalPendingMap),
-				dailySpend: mapDailyFundsOutput(daySpendMap),
-				dailyRefunded: mapDailyFundsOutput(dayRefundedMap),
-				dailyPending: mapDailyFundsOutput(dayPendingMap),
-				monthlySpend: mapMonthlyFundsOutput(monthlySpendMap),
-				monthlyRefunded: mapMonthlyFundsOutput(monthlyRefundedMap),
-				monthlyPending: mapMonthlyFundsOutput(monthlyPendingMap),
+				TotalSpend: mapTotalFundsOutput(totalSpendMap),
+				TotalRefunded: mapTotalFundsOutput(totalRefundedMap),
+				TotalPending: mapTotalFundsOutput(totalPendingMap),
+				DailySpend: mapDailyFundsOutput(daySpendMap),
+				DailyRefunded: mapDailyFundsOutput(dayRefundedMap),
+				DailyPending: mapDailyFundsOutput(dayPendingMap),
+				MonthlySpend: mapMonthlyFundsOutput(monthlySpendMap),
+				MonthlyRefunded: mapMonthlyFundsOutput(monthlyRefundedMap),
+				MonthlyPending: mapMonthlyFundsOutput(monthlyPendingMap),
 			};
 		} catch (error: unknown) {
 			const errorInstance = error instanceof Error ? error : new Error(String(error));

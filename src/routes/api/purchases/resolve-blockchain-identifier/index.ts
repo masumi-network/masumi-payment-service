@@ -148,9 +148,12 @@ export const resolvePurchaseRequestPost = readAuthenticatedEndpointFactory.build
 					: null,
 			ActionHistory: purchase.ActionHistory
 				? purchase.ActionHistory.map((action) => ({
-						...action,
-						createdAt: action.createdAt.toISOString(),
-						updatedAt: action.updatedAt.toISOString(),
+						id: action.id,
+						createdAt: action.createdAt,
+						updatedAt: action.updatedAt,
+						requestedAction: action.requestedAction,
+						errorType: action.errorType,
+						errorNote: action.errorNote,
 					}))
 				: null,
 		};

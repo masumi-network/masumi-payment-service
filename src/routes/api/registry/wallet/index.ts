@@ -1,4 +1,4 @@
-import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
+import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import { z } from '@/utils/zod-openapi';
 import { HotWalletType, Network, PricingType } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
@@ -90,7 +90,7 @@ export const metadataSchema = z.object({
 });
 
 export const queryAgentFromWalletSchemaInput = z.object({
-	walletVKey: z.string().max(250).describe('The payment key of the wallet to be queried'),
+	walletVkey: z.string().max(250).describe('The payment key of the wallet to be queried'),
 	network: z.nativeEnum(Network).describe('The Cardano network used to register the agent on'),
 	smartContractAddress: z
 		.string()
@@ -239,7 +239,7 @@ export const queryAgentFromWalletSchemaOutput = z.object({
 		.describe('List of agent assets registered to this wallet'),
 });
 
-export const queryAgentFromWalletGet = payAuthenticatedEndpointFactory.build({
+export const queryAgentFromWalletGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: queryAgentFromWalletSchemaInput,
 	output: queryAgentFromWalletSchemaOutput,
@@ -277,7 +277,7 @@ export const queryAgentFromWalletGet = payAuthenticatedEndpointFactory.build({
 
 		const blockfrost = getBlockfrostInstance(input.network, paymentSource.PaymentSourceConfig.rpcProviderApiKey);
 		const wallet = paymentSource.HotWallets.find(
-			(wallet) => wallet.walletVkey == input.walletVKey && wallet.type == HotWalletType.Selling,
+			(wallet) => wallet.walletVkey == input.walletVkey && wallet.type == HotWalletType.Selling,
 		);
 		if (wallet == null) {
 			throw createHttpError(404, 'Wallet not found');

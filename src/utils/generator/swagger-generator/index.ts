@@ -182,7 +182,7 @@ const apiKeyExample = {
 	token: 'masumi_payment_api_key_secret',
 	permission: Permission.Admin,
 	usageLimited: true,
-	networkLimit: [Network.Preprod],
+	NetworkLimit: [Network.Preprod],
 	RemainingUsageCredits: [
 		{
 			unit: '', // Empty string = ADA/lovelace
@@ -387,23 +387,35 @@ import {
 extendZodWithOpenApi(z);
 
 const registry = new OpenAPIRegistry();
+const successEnvelopeSchema = (dataSchema: z.ZodTypeAny, dataExample: unknown) =>
+	z.object({ status: z.literal('success'), data: dataSchema }).openapi({
+		example: {
+			status: 'success',
+			data: dataExample,
+		},
+	});
+
+const successResponse = (description: string, dataSchema: z.ZodTypeAny, dataExample: unknown) => ({
+	description,
+	content: {
+		'application/json': {
+			schema: successEnvelopeSchema(dataSchema, dataExample),
+		},
+	},
+});
+
 export function generateOpenAPI() {
 	/********************* HEALTH *****************************/
 	registry.registerPath({
 		method: 'get',
-		path: '/health/',
+		path: '/health',
 		tags: ['health'],
 		summary: 'Get the status of the API server',
 		request: {},
 		responses: {
-			200: {
-				description: 'Object with status ok, if the server is up and healthy',
-				content: {
-					'application/json': {
-						schema: healthResponseSchema.openapi({ example: { status: 'ok' } }),
-					},
-				},
-			},
+			200: successResponse('Object with status ok, if the server is up and healthy', healthResponseSchema, {
+				status: 'ok',
+			}),
 		},
 	});
 
@@ -417,7 +429,7 @@ export function generateOpenAPI() {
 	/********************* KEY STATUS *****************************/
 	registry.registerPath({
 		method: 'get',
-		path: '/api-key-status/',
+		path: '/api-key-status',
 		description: 'Gets api key status',
 		summary: 'Get information about your current API key.',
 		tags: ['api-key'],
@@ -429,7 +441,7 @@ export function generateOpenAPI() {
 					'application/json': {
 						schema: z.object({ status: z.string(), data: getAPIKeyStatusSchemaOutput }).openapi({
 							example: {
-								status: 'success',
+								status: 'Success',
 								data: apiKeyExample,
 							},
 						}),
@@ -442,7 +454,7 @@ export function generateOpenAPI() {
 	/********************* WALLET *****************************/
 	registry.registerPath({
 		method: 'get',
-		path: '/wallet/',
+		path: '/wallet',
 		description: 'Gets wallet status',
 		summary: 'Get information about a wallet. (admin access required)',
 		tags: ['wallet'],
@@ -463,7 +475,7 @@ export function generateOpenAPI() {
 					'application/json': {
 						schema: z.object({ status: z.string(), data: getWalletSchemaOutput }).openapi({
 							example: {
-								status: 'success',
+								status: 'Success',
 								data: walletExample,
 							},
 						}),
@@ -475,7 +487,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'post',
-		path: '/wallet/',
+		path: '/wallet',
 		description: 'Creates a wallet, it will not be saved in the database, please ensure to remember the mnemonic',
 		summary: 'Create a new wallet. (admin access required)',
 		tags: ['wallet'],
@@ -495,26 +507,17 @@ export function generateOpenAPI() {
 			},
 		},
 		responses: {
-			200: {
-				description: 'Wallet created',
-				content: {
-					'application/json': {
-						schema: postWalletSchemaOutput.openapi({
-							example: {
-								walletMnemonic: 'wallet_mnemonic',
-								walletAddress: 'wallet_address',
-								walletVkey: 'wallet_vkey',
-							},
-						}),
-					},
-				},
-			},
+			200: successResponse('Wallet created', postWalletSchemaOutput, {
+				walletMnemonic: 'wallet_mnemonic',
+				walletAddress: 'wallet_address',
+				walletVkey: 'wallet_vkey',
+			}),
 		},
 	});
 
 	registry.registerPath({
 		method: 'patch',
-		path: '/wallet/',
+		path: '/wallet',
 		description: 'Updates a wallet',
 		summary: 'Update a wallet. (admin access required)',
 		tags: ['wallet'],
@@ -535,15 +538,9 @@ export function generateOpenAPI() {
 			},
 		},
 		responses: {
-			200: {
-				description: 'Wallet updated',
-				content: {
-					'application/json': {
-						schema: patchWalletSchemaOutput.openapi({
-							example: walletExample,
-						}),
-					},
-				},
+			200: successResponse('Wallet updated', patchWalletSchemaOutput, walletExample),
+			404: {
+				description: 'Wallet not found',
 			},
 		},
 	});
@@ -551,7 +548,7 @@ export function generateOpenAPI() {
 	/********************* REVEAL DATA *****************************/
 	registry.registerPath({
 		method: 'post',
-		path: '/signature/verify/reveal-data/',
+		path: '/signature/verify/reveal-data',
 		description: 'Verifies the reveal data signature is valid.',
 		summary: 'Verifies the reveal data signature is valid. (read access required)',
 		tags: ['signature'],
@@ -562,7 +559,7 @@ export function generateOpenAPI() {
 					'application/json': {
 						schema: postVerifyDataRevealSchemaInput.openapi({
 							example: {
-								action: 'reveal_data',
+								action: 'RevealData',
 								blockchainIdentifier: 'blockchain_identifier',
 								signature: 'signature',
 								key: 'key',
@@ -576,31 +573,37 @@ export function generateOpenAPI() {
 		},
 		security: [{ [apiKeyAuth.name]: [] }],
 		responses: {
-			200: {
-				description: 'Revealed data',
-				content: {
-					'application/json': {
-						schema: postRevealDataSchemaOutput.openapi({
-							example: {
-								isValid: true,
-							},
-						}),
-					},
-				},
+			200: successResponse('Revealed data', postRevealDataSchemaOutput, {
+				isValid: true,
+			}),
+			400: {
+				description: 'Bad Request (invalid signature or payment is not disputable)',
+			},
+			401: {
+				description: 'Unauthorized',
+			},
+			403: {
+				description: 'Forbidden (network not allowed)',
+			},
+			404: {
+				description: 'Payment not found',
+			},
+			500: {
+				description: 'Internal Server Error',
 			},
 		},
 	});
 	/********************* API KEYS *****************************/
 	registry.registerPath({
 		method: 'get',
-		path: '/api-key/',
+		path: '/api-key',
 		description: 'Gets api key status',
 		summary: 'Get information about all API keys. (admin access required)',
 		tags: ['api-key'],
 		request: {
 			query: getAPIKeySchemaInput.openapi({
 				example: {
-					limit: 10,
+					take: 10,
 					cursorToken: 'identifier',
 				},
 			}),
@@ -616,7 +619,7 @@ export function generateOpenAPI() {
 								data: {
 									ApiKeys: [apiKeyExample],
 								},
-								status: 'success',
+								status: 'Success',
 							},
 						}),
 					},
@@ -637,7 +640,7 @@ export function generateOpenAPI() {
 	/********************* SWAP *****************************/
 	registry.registerPath({
 		method: 'post',
-		path: '/swap/',
+		path: '/swap',
 		description:
 			'Swap ADA for CNTs (Cardano Native Tokens) or CNTs for ADA using SundaeSwap DEX. This endpoint is mainnet-only.',
 		summary: 'Execute a token swap on SundaeSwap. (admin access required, mainnet only)',
@@ -651,12 +654,12 @@ export function generateOpenAPI() {
 							example: {
 								walletVkey: 'wallet_verification_key_here',
 								amount: 1,
-								fromToken: {
+								FromToken: {
 									policyId: 'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad',
 									assetName: '5553444d',
 									name: 'USDM',
 								},
-								toToken: {
+								ToToken: {
 									policyId: 'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad',
 									assetName: '5553444d',
 									name: 'USDM',
@@ -698,7 +701,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'get',
-		path: '/swap/confirm/',
+		path: '/swap/confirm',
 		description:
 			'Check on-chain confirmation status of a swap transaction by transaction hash. Use after POST /swap/ to poll until status is confirmed. Mainnet only.',
 		summary: 'Get swap transaction confirmation status. (admin access required, mainnet only)',
@@ -714,12 +717,12 @@ export function generateOpenAPI() {
 		},
 		responses: {
 			200: {
-				description: 'Confirmation status (pending, confirmed, or not_found)',
+				description: 'Confirmation status (Pending, Confirmed, or NotFound)',
 				content: {
 					'application/json': {
 						schema: getSwapConfirmSchemaOutput.openapi({
 							example: {
-								status: 'confirmed',
+								status: 'Confirmed',
 								swapStatus: 'OrderConfirmed',
 								confirmations: 15,
 							},
@@ -741,7 +744,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'get',
-		path: '/swap/transactions/',
+		path: '/swap/transactions',
 		description: 'List swap transactions for a wallet, ordered by most recent first. Supports cursor-based pagination.',
 		summary: 'List swap transactions. (admin access required, mainnet only)',
 		tags: ['swap'],
@@ -761,7 +764,7 @@ export function generateOpenAPI() {
 					'application/json': {
 						schema: getSwapTransactionsSchemaOutput.openapi({
 							example: {
-								swapTransactions: [
+								SwapTransactions: [
 									{
 										id: 'clx1abc...',
 										createdAt: '2026-03-06T12:00:00.000Z',
@@ -796,7 +799,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'get',
-		path: '/swap/estimate/',
+		path: '/swap/estimate',
 		description:
 			'Get a swap price estimate from the SundaeSwap pool. Returns the conversion rate based on current pool reserves.',
 		summary: 'Get swap price estimate. (admin access required, mainnet only)',
@@ -840,7 +843,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'post',
-		path: '/swap/cancel/',
+		path: '/swap/cancel',
 		description:
 			'Cancel a pending SundaeSwap order that is sitting at the script address. Only orders in OrderConfirmed state can be cancelled.',
 		summary: 'Cancel a pending swap order. (admin access required, mainnet only)',
@@ -891,7 +894,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'post',
-		path: '/swap/acknowledge-timeout/',
+		path: '/swap/acknowledge-timeout',
 		description:
 			'Acknowledge a timed-out swap transaction. Checks on-chain state and recovers to the correct status: OrderConfirmed if the order UTXO still exists (allowing retry), Completed if the DEX executed the swap, or keeps the timeout state if the order tx never confirmed.',
 		summary: 'Acknowledge a swap timeout and recover state. (admin access required, mainnet only)',
@@ -940,7 +943,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'post',
-		path: '/api-key/',
+		path: '/api-key',
 		description: 'Creates a API key',
 		summary: 'Create a new API key. (admin access required)',
 		tags: ['api-key'],
@@ -970,12 +973,12 @@ export function generateOpenAPI() {
 		security: [{ [apiKeyAuth.name]: [] }],
 		responses: {
 			200: {
-				description: 'API key deleted',
+				description: 'API key created',
 				content: {
 					'application/json': {
 						schema: z.object({ data: addAPIKeySchemaOutput, status: z.string() }).openapi({
 							example: {
-								status: 'success',
+								status: 'Success',
 								data: apiKeyExample,
 							},
 						}),
@@ -996,7 +999,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'patch',
-		path: '/api-key/',
+		path: '/api-key',
 		description: 'Creates a API key',
 		summary: 'Update an existing API key. (admin access required)',
 		tags: ['api-key'],
@@ -1031,15 +1034,15 @@ export function generateOpenAPI() {
 		security: [{ [apiKeyAuth.name]: [] }],
 		responses: {
 			200: {
-				description: 'API key deleted',
+				description: 'API key updated',
 				content: {
 					'application/json': {
 						schema: z.object({ data: updateAPIKeySchemaOutput, status: z.string() }).openapi({
 							example: {
-								status: 'success',
+								status: 'Success',
 								data: {
 									...apiKeyExample,
-									networkLimit: [Network.Preprod, Network.Mainnet],
+									NetworkLimit: [Network.Preprod, Network.Mainnet],
 								},
 							},
 						}),
@@ -1060,7 +1063,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'delete',
-		path: '/api-key/',
+		path: '/api-key',
 		description: 'Removes a API key',
 		summary: 'Delete an existing API key. (admin access required)',
 		tags: ['api-key'],
@@ -1086,7 +1089,7 @@ export function generateOpenAPI() {
 					'application/json': {
 						schema: z.object({ data: deleteAPIKeySchemaOutput, status: z.string() }).openapi({
 							example: {
-								status: 'success',
+								status: 'Success',
 								data: {
 									...apiKeyExample,
 									status: ApiKeyStatus.Revoked,
@@ -1111,9 +1114,9 @@ export function generateOpenAPI() {
 	/********************* PAYMENT *****************************/
 	registry.registerPath({
 		method: 'get',
-		path: '/payment/',
+		path: '/payment',
 		description: 'Gets the payment status. It needs to be created first with a POST request.',
-		summary: 'Get information about a payment request. (admin access required)',
+		summary: 'Get information about a payment request. (READ access required)',
 		tags: ['payment'],
 		request: {
 			query: queryPaymentsSchemaInput.openapi({
@@ -1132,7 +1135,7 @@ export function generateOpenAPI() {
 					'application/json': {
 						schema: z.object({ status: z.string(), data: queryPaymentsSchemaOutput }).openapi({
 							example: {
-								status: 'success',
+								status: 'Success',
 								data: {
 									Payments: [{ ...paymentSchemaOutputExample, TransactionHistory: [] }],
 								},
@@ -1179,7 +1182,7 @@ export function generateOpenAPI() {
 					'application/json': {
 						schema: z.object({ status: z.string(), data: queryPaymentsSchemaOutput }).openapi({
 							example: {
-								status: 'success',
+								status: 'Success',
 								data: {
 									Payments: [{ ...paymentSchemaOutputExample, TransactionHistory: [] }],
 								},
@@ -1225,7 +1228,7 @@ export function generateOpenAPI() {
 					'application/json': {
 						schema: z.object({ status: z.string(), data: queryPaymentsSchemaOutput }).openapi({
 							example: {
-								status: 'success',
+								status: 'Success',
 								data: {
 									Payments: [{ ...paymentSchemaOutputExample, TransactionHistory: [] }],
 								},
@@ -1273,7 +1276,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										total: 150,
 									},
@@ -1312,7 +1315,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										total: 75,
 									},
@@ -1349,7 +1352,7 @@ export function generateOpenAPI() {
 					'application/json': {
 						schema: z.object({ status: z.string(), data: queryPaymentsSchemaOutput }).openapi({
 							example: {
-								status: 'success',
+								status: 'Success',
 								data: {
 									Payments: [{ ...paymentSchemaOutputExample, TransactionHistory: [] }],
 								},
@@ -1372,9 +1375,9 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'post',
-		path: '/payment/',
+		path: '/payment',
 		description: 'Creates a payment request and identifier. This will check incoming payments in the background.',
-		summary: 'Create a new payment request. (admin access required +PAY)',
+		summary: 'Create a new payment request. (+PAY access required)',
 		tags: ['payment'],
 		request: {
 			body: {
@@ -1404,7 +1407,7 @@ export function generateOpenAPI() {
 					'application/json': {
 						schema: z.object({ data: createPaymentSchemaOutput, status: z.string() }).openapi({
 							example: {
-								status: 'success',
+								status: 'Success',
 								data: paymentSchemaOutputExample,
 							},
 						}),
@@ -1427,9 +1430,9 @@ export function generateOpenAPI() {
 		method: 'post',
 		path: '/payment/submit-result',
 		description:
-			'Submit the hash of their completed job for a payment request, which triggers the fund unlock process so the seller can collect payment after the unlock time expires. (admin access required +PAY)',
+			'Submit the hash of their completed job for a payment request, which triggers the fund unlock process so the seller can collect payment after the unlock time expires. (+PAY access required; only the creator or an admin may submit)',
 		summary:
-			'Completes a payment request. This will collect the funds after the unlock time. (admin access required +PAY)',
+			'Completes a payment request. This will collect the funds after the unlock time. (+PAY access required; only the creator or an admin may submit)',
 		tags: ['payment'],
 		request: {
 			body: {
@@ -1460,7 +1463,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: paymentSchemaOutputExample,
 								},
 							}),
@@ -1473,6 +1476,12 @@ export function generateOpenAPI() {
 			401: {
 				description: 'Unauthorized',
 			},
+			403: {
+				description: 'Forbidden (only the creator or an admin can submit results)',
+			},
+			404: {
+				description: 'Payment not found or in invalid state',
+			},
 			500: {
 				description: 'Internal Server Error',
 			},
@@ -1482,9 +1491,9 @@ export function generateOpenAPI() {
 		method: 'post',
 		path: '/payment/authorize-refund',
 		description:
-			'Authorizes a refund for a payment request. This will stop the right to receive a payment and initiate a refund for the other party.',
+			'Authorizes a refund for a payment request. This will stop the right to receive a payment and initiate a refund for the other party. (+PAY access required; only the creator or an admin may authorize)',
 		summary:
-			'Authorizes a refund for a payment request. This will stop the right to receive a payment and initiate a refund for the other party. (admin access required +PAY)',
+			'Authorizes a refund for a payment request. This will stop the right to receive a payment and initiate a refund for the other party. (+PAY access required; only the creator or an admin may authorize)',
 		tags: ['payment'],
 		request: {
 			body: {
@@ -1504,7 +1513,7 @@ export function generateOpenAPI() {
 		security: [{ [apiKeyAuth.name]: [] }],
 		responses: {
 			200: {
-				description: 'API key deleted',
+				description: 'Payment refund authorized',
 				content: {
 					'application/json': {
 						schema: z
@@ -1514,7 +1523,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: paymentSchemaOutputExample,
 								},
 							}),
@@ -1527,6 +1536,12 @@ export function generateOpenAPI() {
 			401: {
 				description: 'Unauthorized',
 			},
+			403: {
+				description: 'Forbidden (only the creator or an admin can authorize a refund)',
+			},
+			404: {
+				description: 'Payment not found or in invalid state',
+			},
 			500: {
 				description: 'Internal Server Error',
 			},
@@ -1536,7 +1551,7 @@ export function generateOpenAPI() {
 	/********************* PAYMENT ERROR RECOVERY *****************************/
 	registry.registerPath({
 		method: 'post',
-		path: '/payment/error-state-recovery/',
+		path: '/payment/error-state-recovery',
 		description:
 			'Clears error states for payment requests in WaitingForManualAction state and resets them up for retry or other actions. This endpoint provides manual intervention capability to recover from error states by clearing error fields.',
 		summary: 'Clear error state for payment request (PAY access required)',
@@ -1570,7 +1585,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										id: 'cmf40vg7h0016ucj1u1ro6651',
 									},
@@ -1624,7 +1639,7 @@ export function generateOpenAPI() {
 	/********************* PURCHASE ERROR RECOVERY *****************************/
 	registry.registerPath({
 		method: 'post',
-		path: '/purchase/error-state-recovery/',
+		path: '/purchase/error-state-recovery',
 		description:
 			'Clears error states for purchase requests in WaitingForManualAction state and resets them up for retry or other actions. This endpoint provides manual intervention capability to recover from error states by clearing error fields.',
 		summary: 'Clear error state for purchase request (PAY access required)',
@@ -1658,7 +1673,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										id: 'cmf40vg7h0016ucj1u1ro6651',
 									},
@@ -1725,10 +1740,10 @@ export function generateOpenAPI() {
 					'application/json': {
 						schema: postMonthlySignatureSchemaInput.openapi({
 							example: {
-								action: 'retrieve_monthly_invoices',
+								action: 'RetrieveMonthlyInvoices',
 								buyerWalletVkey: 'buyer_wallet_vkey',
 								month: '2025-09',
-								buyer: {
+								Buyer: {
 									country: 'DE',
 									city: 'Berlin',
 									zipCode: '10115',
@@ -1758,12 +1773,12 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										signature: 'ed25519_signature',
 										key: 'ed25519_key',
 										walletAddress: 'addr1...',
-										signatureData: '{"action":"retrieve_monthly_invoices","validUntil":1736352000000,"hash":"..."}',
+										signatureData: '{"action":"RetrieveMonthlyInvoices","validUntil":1736352000000,"hash":"..."}',
 									},
 								},
 							}),
@@ -1793,15 +1808,15 @@ export function generateOpenAPI() {
 								walletAddress:
 									'addr1xk2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3n0d3vllmyqwsx5wktcd8cc3sq835lu7drv2xwl2wywfgse35a3x',
 								validUntil: 1736352000000,
-								action: 'retrieve_monthly_invoices',
+								action: 'RetrieveMonthlyInvoices',
 								buyerWalletVkey: 'buyer_wallet_vkey',
 								month: '2025-09',
 								invoiceCurrency: 'usd',
-								currencyConversion: {
+								CurrencyConversion: {
 									'': 0.45,
 									policyIdAssetHex: 1.23,
 								},
-								invoice: {
+								Invoice: {
 									itemNamePrefix: 'Agent: ',
 									title: 'Monthly Invoice',
 									language: 'en-us',
@@ -1810,7 +1825,7 @@ export function generateOpenAPI() {
 								vatRate: 0.19,
 								reverseCharge: false,
 								forceRegenerate: false,
-								seller: {
+								Seller: {
 									country: 'DE',
 									city: 'Berlin',
 									zipCode: '10115',
@@ -1822,7 +1837,7 @@ export function generateOpenAPI() {
 									companyName: 'Alice GmbH',
 									vatNumber: 'DE123456789',
 								},
-								buyer: {
+								Buyer: {
 									country: 'DE',
 									city: 'Berlin',
 									zipCode: '10115',
@@ -1852,7 +1867,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										invoice: 'BASE64_PDF_STRING',
 										cancellationInvoice: 'BASE64_CANCELLATION_PDF_STRING_OR_UNDEFINED',
@@ -1892,7 +1907,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										total: 42,
 									},
@@ -1909,7 +1924,7 @@ export function generateOpenAPI() {
 		path: '/invoice/monthly',
 		description:
 			'Lists invoice summaries for a given month with pagination. Returns only the latest revision per invoice base. Pass invoiceBaseId to get all revisions for a specific invoice. (+PAY access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own risk.',
-		summary: 'List invoices for a month. (+PAY access required)',
+		summary: 'List invoices for a month. (+Read access required)',
 		tags: ['invoice'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {
@@ -1932,7 +1947,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										Invoices: [
 											{
@@ -1958,7 +1973,7 @@ export function generateOpenAPI() {
 												netTotal: '150.00',
 												vatTotal: '28.50',
 												grossTotal: '178.50',
-												coveredPaymentRequestIds: ['payment_id_1', 'payment_id_2'],
+												CoveredPaymentRequestIds: ['payment_id_1', 'payment_id_2'],
 												buyerWalletVkey: 'buyer_wallet_vkey',
 												invoicePdf: 'BASE64_PDF_STRING',
 												cancellationInvoicePdf: null,
@@ -1991,11 +2006,11 @@ export function generateOpenAPI() {
 								buyerWalletVkey: 'buyer_wallet_vkey',
 								month: '2025-09',
 								invoiceCurrency: 'usd',
-								currencyConversion: {
+								CurrencyConversion: {
 									'': 0.45,
 									policyIdAssetHex: 1.23,
 								},
-								invoice: {
+								Invoice: {
 									itemNamePrefix: 'Agent: ',
 									title: 'Monthly Invoice',
 									language: 'en-us',
@@ -2004,7 +2019,7 @@ export function generateOpenAPI() {
 								vatRate: 0.19,
 								reverseCharge: false,
 								forceRegenerate: false,
-								seller: {
+								Seller: {
 									country: 'DE',
 									city: 'Berlin',
 									zipCode: '10115',
@@ -2016,7 +2031,7 @@ export function generateOpenAPI() {
 									companyName: 'Alice GmbH',
 									vatNumber: 'DE123456789',
 								},
-								buyer: {
+								Buyer: {
 									country: 'DE',
 									city: 'Berlin',
 									zipCode: '10115',
@@ -2046,7 +2061,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										invoice: 'BASE64_PDF_STRING',
 										cancellationInvoice: 'BASE64_CANCELLATION_PDF_STRING_OR_UNDEFINED',
@@ -2064,7 +2079,7 @@ export function generateOpenAPI() {
 		path: '/invoice/monthly/missing',
 		description:
 			'Finds billable payment requests that do not yet have an invoice for a given month. Only finalized payments are included: Withdrawn (seller completed work), ResultSubmitted past unlock time, or DisputedWithdrawn with seller funds. Payments still locked, pending refund, or in dispute are excluded. (+PAY access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.',
-		summary: 'List uninvoiced payments for a month. (+PAY access required)',
+		summary: 'List uninvoiced payments for a month. (+Read access required)',
 		tags: ['invoice'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {
@@ -2087,7 +2102,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										UninvoicedPayments: [
 											{
@@ -2139,7 +2154,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'get',
-		path: '/purchase/',
+		path: '/purchase',
 		description: 'Gets the purchase status. It needs to be created first with a POST request.',
 		summary: 'Get information about an existing purchase request. (READ access required)',
 		tags: ['purchase'],
@@ -2165,7 +2180,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										Purchases: [
 											{
@@ -2261,7 +2276,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										Purchases: [
 											{
@@ -2412,7 +2427,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'post',
-		path: '/purchase/',
+		path: '/purchase',
 		description: 'Creates a purchase and pays the seller. This requires funds to be available.',
 		summary: 'Create a new purchase request and pay. (access required +PAY)',
 		tags: ['purchase'],
@@ -2452,7 +2467,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: purchaseResponseSchemaExample,
 								},
 							}),
@@ -2515,7 +2530,7 @@ export function generateOpenAPI() {
 		security: [{ [apiKeyAuth.name]: [] }],
 		responses: {
 			200: {
-				description: 'API key deleted',
+				description: 'Purchase refund requested',
 				content: {
 					'application/json': {
 						schema: z
@@ -2525,7 +2540,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: purchaseResponseSchemaExample,
 								},
 							}),
@@ -2538,6 +2553,12 @@ export function generateOpenAPI() {
 			401: {
 				description: 'Unauthorized',
 			},
+			403: {
+				description: 'Forbidden (only the creator or an admin can request a refund)',
+			},
+			404: {
+				description: 'Purchase not found or not in valid state',
+			},
 			500: {
 				description: 'Internal Server Error',
 			},
@@ -2546,7 +2567,7 @@ export function generateOpenAPI() {
 	registry.registerPath({
 		method: 'post',
 		path: '/purchase/cancel-refund-request',
-		description: 'Requests a refund for a completed purchase. This will collect the refund after the refund time.',
+		description: 'Cancels a previously requested refund for a completed purchase.',
 		summary:
 			'Cancel a previously requested refund for a purchase, reverting the transaction back to its normal processing state. (+PAY access required)',
 		tags: ['purchase'],
@@ -2568,7 +2589,7 @@ export function generateOpenAPI() {
 		security: [{ [apiKeyAuth.name]: [] }],
 		responses: {
 			200: {
-				description: 'API key deleted',
+				description: 'Purchase refund request cancelled',
 				content: {
 					'application/json': {
 						schema: z
@@ -2578,7 +2599,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: purchaseResponseSchemaExample,
 								},
 							}),
@@ -2590,6 +2611,12 @@ export function generateOpenAPI() {
 			},
 			401: {
 				description: 'Unauthorized',
+			},
+			403: {
+				description: 'Forbidden (only the creator or an admin can cancel a refund request)',
+			},
+			404: {
+				description: 'Purchase not found or in invalid state',
 			},
 			500: {
 				description: 'Internal Server Error',
@@ -2632,7 +2659,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										id: 'cuid_v2_auto_generated',
 										createdAt: new Date(1713636260),
@@ -2737,7 +2764,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										id: 'cuid_v2_auto_generated',
 										createdAt: new Date(1713636260),
@@ -2819,7 +2846,7 @@ export function generateOpenAPI() {
 		request: {
 			query: queryAgentFromWalletSchemaInput.openapi('test', {
 				example: {
-					walletVKey: 'wallet_vkey',
+					walletVkey: 'wallet_vkey',
 					network: Network.Preprod,
 				},
 			}),
@@ -2836,7 +2863,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										Assets: [
 											{
@@ -2914,7 +2941,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										policyId: 'policy_id',
 										assetName: 'asset_name',
@@ -2978,7 +3005,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'get',
-		path: '/registry/',
+		path: '/registry',
 		description: 'Gets the agent metadata.',
 		summary: 'List every agent that is recorded in the Masumi Registry. (READ access required)',
 		tags: ['registry'],
@@ -3003,7 +3030,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										Assets: [
 											{
@@ -3101,7 +3128,7 @@ export function generateOpenAPI() {
 	});
 	registry.registerPath({
 		method: 'post',
-		path: '/registry/',
+		path: '/registry',
 		description:
 			'Registers an agent to the registry (Please note that while it it is put on-chain, the transaction is not yet finalized by the blockchain, as designed finality is only eventually reached. If you need certainty, please check status via the registry(GET) or if you require custom logic, the transaction directly using the txHash)',
 		summary: 'Registers an agent to the registry (+PAY access required)',
@@ -3161,7 +3188,7 @@ export function generateOpenAPI() {
 					'application/json': {
 						schema: z.object({ status: z.string(), data: registerAgentSchemaOutput }).openapi({
 							example: {
-								status: 'success',
+								status: 'Success',
 								data: registryEntryExample,
 							},
 						}),
@@ -3176,7 +3203,7 @@ export function generateOpenAPI() {
 		path: '/registry/deregister',
 		description:
 			'Deregisters a agent from the specified registry (Please note that while the command is put on-chain, the transaction is not yet finalized by the blockchain, as designed finality is only eventually reached. If you need certainty, please check status via the registry(GET) or if you require custom logic, the transaction directly using the txHash)',
-		summary: 'Deregisters an agent from the specified registry. (admin access required +PAY)',
+		summary: 'Deregisters an agent from the specified registry. (PAY access required)',
 		tags: ['registry'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {
@@ -3196,12 +3223,12 @@ export function generateOpenAPI() {
 		},
 		responses: {
 			200: {
-				description: 'Payment source deleted',
+				description: 'Agent deregistration requested',
 				content: {
 					'application/json': {
 						schema: z.object({ status: z.string(), data: unregisterAgentSchemaOutput }).openapi({
 							example: {
-								status: 'success',
+								status: 'Success',
 								data: registryEntryExample,
 							},
 						}),
@@ -3213,7 +3240,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'delete',
-		path: '/registry/',
+		path: '/registry',
 		description:
 			'Permanently deletes an agent registration record from the database. This action is irreversible and should only be used for registrations in specific failed or completed states.',
 		summary: 'Delete an agent registration record. (admin access required)',
@@ -3245,7 +3272,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: registryEntryExample,
 								},
 							}),
@@ -3295,7 +3322,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'get',
-		path: '/payment-source/',
+		path: '/payment-source',
 		description: 'Gets the payment source.',
 		summary: 'List payment sources with their public details. (READ access required)',
 		tags: ['payment-source'],
@@ -3315,7 +3342,7 @@ export function generateOpenAPI() {
 					'application/json': {
 						schema: z.object({ status: z.string(), data: paymentSourceSchemaOutput }).openapi({
 							example: {
-								status: 'success',
+								status: 'Success',
 								data: {
 									PaymentSources: [
 										{
@@ -3382,7 +3409,7 @@ export function generateOpenAPI() {
 	/********************* PAYMENT SOURCE *****************************/
 	registry.registerPath({
 		method: 'get',
-		path: '/payment-source-extended/',
+		path: '/payment-source-extended',
 		description: 'Gets the payment contracts including the status.',
 		summary:
 			'List payment sources with their public details augmented with internal configuration and sync status information. (admin access required)',
@@ -3408,7 +3435,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										ExtendedPaymentSources: [
 											{
@@ -3479,7 +3506,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'post',
-		path: '/payment-source-extended/',
+		path: '/payment-source-extended',
 		description: 'Creates a payment source.',
 		summary: 'Create a new payment source. (+ADMIN access required)',
 		tags: ['payment-source'],
@@ -3535,7 +3562,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: paymentSourceExtendedExample,
 								},
 							}),
@@ -3547,7 +3574,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'patch',
-		path: '/payment-source-extended/',
+		path: '/payment-source-extended',
 		description: 'Updates a payment source.',
 		summary: 'Update an existing payment source. (+ADMIN access required)',
 		tags: ['payment-source'],
@@ -3599,7 +3626,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: paymentSourceExtendedExample,
 								},
 							}),
@@ -3611,7 +3638,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'delete',
-		path: '/payment-source-extended/',
+		path: '/payment-source-extended',
 		description: 'Deletes a payment source. WARNING will also delete all associated wallets and transactions.',
 		summary: 'Delete an existing payment source. (+ADMIN access required)',
 		tags: ['payment-source'],
@@ -3640,7 +3667,7 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: paymentSourceExtendedExample,
 								},
 							}),
@@ -3652,7 +3679,7 @@ export function generateOpenAPI() {
 	/********************* UTXOS *****************************/
 	registry.registerPath({
 		method: 'get',
-		path: '/utxos/',
+		path: '/utxos',
 		description: 'Gets UTXOs (internal)',
 		summary:
 			'Helper endpoint that lets you ask the payment service for the current UTXOs sitting at a particular Cardano address. (READ access required)',
@@ -3665,7 +3692,7 @@ export function generateOpenAPI() {
 					address: 'addr1qx2ej34k567890',
 					count: 10,
 					page: 1,
-					order: 'desc',
+					order: 'Desc',
 				},
 			}),
 		},
@@ -3676,7 +3703,7 @@ export function generateOpenAPI() {
 					'application/json': {
 						schema: z.object({ status: z.string(), data: getUTXOSchemaOutput }).openapi({
 							example: {
-								status: 'success',
+								status: 'Success',
 								data: {
 									Utxos: [
 										{
@@ -3706,7 +3733,7 @@ export function generateOpenAPI() {
 	/********************* RPC API KEYS *****************************/
 	registry.registerPath({
 		method: 'get',
-		path: '/rpc-api-keys/',
+		path: '/rpc-api-keys',
 		description: 'Gets rpc api keys, currently only blockfrost is supported (internal)',
 		summary: 'List Blockfrost API keys. (admin access required)',
 		tags: ['rpc-api-keys'],
@@ -3720,26 +3747,23 @@ export function generateOpenAPI() {
 			}),
 		},
 		responses: {
-			200: {
-				description: 'Blockfrost keys',
-				content: {
-					'application/json': {
-						schema: getRpcProviderKeysSchemaOutput.openapi({
-							example: {
-								RpcProviderKeys: [
-									{
-										network: Network.Preprod,
-										id: 'unique_cuid_v2',
-										rpcProviderApiKey: 'blockfrost_api_key',
-										rpcProvider: RPCProvider.Blockfrost,
-										createdAt: new Date(1713636260),
-										updatedAt: new Date(1713636260),
-									},
-								],
-							},
-						}),
+			200: successResponse('Blockfrost keys', getRpcProviderKeysSchemaOutput, {
+				RpcProviderKeys: [
+					{
+						network: Network.Preprod,
+						id: 'unique_cuid_v2',
+						rpcProviderApiKey: 'blockfrost_api_key',
+						rpcProvider: RPCProvider.Blockfrost,
+						createdAt: new Date(1713636260),
+						updatedAt: new Date(1713636260),
 					},
-				},
+				],
+			}),
+			401: {
+				description: 'Unauthorized',
+			},
+			500: {
+				description: 'Internal Server Error',
 			},
 		},
 	});
@@ -3782,14 +3806,14 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										agentIdentifier: 'example_agent_identifier_asset_id',
 										periodStart: new Date('2024-01-01T00:00:00.000Z'),
 										periodEnd: new Date('2024-01-31T23:59:59.000Z'),
 										totalTransactions: 25,
-										totalSpend: {
-											units: [
+										TotalSpend: {
+											Units: [
 												{
 													unit: '',
 													amount: 47500000,
@@ -3797,8 +3821,8 @@ export function generateOpenAPI() {
 											],
 											blockchainFees: 2500000,
 										},
-										totalRefunded: {
-											units: [
+										TotalRefunded: {
+											Units: [
 												{
 													unit: '',
 													amount: 2500000,
@@ -3806,16 +3830,16 @@ export function generateOpenAPI() {
 											],
 											blockchainFees: 100000,
 										},
-										totalPending: {
-											units: [],
+										TotalPending: {
+											Units: [],
 											blockchainFees: 0,
 										},
-										dailySpend: [
+										DailySpend: [
 											{
 												day: 15,
 												month: 9,
 												year: 2024,
-												units: [
+												Units: [
 													{
 														unit: '',
 														amount: 2100000,
@@ -3824,12 +3848,12 @@ export function generateOpenAPI() {
 												blockchainFees: 100000,
 											},
 										],
-										dailyRefunded: [
+										DailyRefunded: [
 											{
 												day: 15,
 												month: 9,
 												year: 2024,
-												units: [
+												Units: [
 													{
 														unit: '',
 														amount: 0,
@@ -3838,12 +3862,12 @@ export function generateOpenAPI() {
 												blockchainFees: 0,
 											},
 										],
-										dailyPending: [
+										DailyPending: [
 											{
 												day: 15,
 												month: 9,
 												year: 2024,
-												units: [
+												Units: [
 													{
 														unit: '',
 														amount: 0,
@@ -3852,11 +3876,11 @@ export function generateOpenAPI() {
 												blockchainFees: 0,
 											},
 										],
-										monthlySpend: [
+										MonthlySpend: [
 											{
 												month: 9,
 												year: 2024,
-												units: [
+												Units: [
 													{
 														unit: '',
 														amount: 2100000,
@@ -3865,19 +3889,19 @@ export function generateOpenAPI() {
 												blockchainFees: 100000,
 											},
 										],
-										monthlyRefunded: [
+										MonthlyRefunded: [
 											{
 												month: 9,
 												year: 2024,
-												units: [],
+												Units: [],
 												blockchainFees: 0,
 											},
 										],
-										monthlyPending: [
+										MonthlyPending: [
 											{
 												month: 9,
 												year: 2024,
-												units: [],
+												Units: [],
 												blockchainFees: 0,
 											},
 										],
@@ -3939,72 +3963,72 @@ export function generateOpenAPI() {
 							})
 							.openapi({
 								example: {
-									status: 'success',
+									status: 'Success',
 									data: {
 										agentIdentifier: 'example_agent_identifier_asset_id',
 										periodStart: new Date('2024-01-01T00:00:00.000Z'),
 										periodEnd: new Date('2024-01-31T23:59:59.000Z'),
 										totalTransactions: 25,
-										totalIncome: {
-											units: [{ unit: '', amount: 45000000 }],
+										TotalIncome: {
+											Units: [{ unit: '', amount: 45000000 }],
 											blockchainFees: 2500000,
 										},
-										totalRefunded: {
-											units: [{ unit: '', amount: 5000000 }],
+										TotalRefunded: {
+											Units: [{ unit: '', amount: 5000000 }],
 											blockchainFees: 400000,
 										},
-										totalPending: {
-											units: [{ unit: '', amount: 2000000 }],
+										TotalPending: {
+											Units: [{ unit: '', amount: 2000000 }],
 											blockchainFees: 100000,
 										},
-										dailyIncome: [
+										DailyIncome: [
 											{
 												day: 10,
 												month: 1,
 												year: 2024,
-												units: [{ unit: '', amount: 2000000 }],
+												Units: [{ unit: '', amount: 2000000 }],
 												blockchainFees: 100000,
 											},
 										],
-										dailyRefunded: [
+										DailyRefunded: [
 											{
 												day: 12,
 												month: 1,
 												year: 2024,
-												units: [{ unit: '', amount: 500000 }],
+												Units: [{ unit: '', amount: 500000 }],
 												blockchainFees: 20000,
 											},
 										],
-										dailyPending: [
+										DailyPending: [
 											{
 												day: 15,
 												month: 1,
 												year: 2024,
-												units: [{ unit: '', amount: 500000 }],
+												Units: [{ unit: '', amount: 500000 }],
 												blockchainFees: 0,
 											},
 										],
-										monthlyIncome: [
+										MonthlyIncome: [
 											{
 												month: 1,
 												year: 2024,
-												units: [{ unit: '', amount: 45000000 }],
+												Units: [{ unit: '', amount: 45000000 }],
 												blockchainFees: 2500000,
 											},
 										],
-										monthlyRefunded: [
+										MonthlyRefunded: [
 											{
 												month: 1,
 												year: 2024,
-												units: [{ unit: '', amount: 5000000 }],
+												Units: [{ unit: '', amount: 5000000 }],
 												blockchainFees: 400000,
 											},
 										],
-										monthlyPending: [
+										MonthlyPending: [
 											{
 												month: 1,
 												year: 2024,
-												units: [{ unit: '', amount: 2000000 }],
+												Units: [{ unit: '', amount: 2000000 }],
 												blockchainFees: 100000,
 											},
 										],
@@ -4032,7 +4056,7 @@ export function generateOpenAPI() {
 	/********************* WEBHOOKS *****************************/
 	registry.registerPath({
 		method: 'get',
-		path: '/webhooks/',
+		path: '/webhooks',
 		description: 'List webhook endpoints',
 		summary: 'List all webhook endpoints registered by your API key. (pay-authenticated access required)',
 		tags: ['webhooks'],
@@ -4051,14 +4075,14 @@ export function generateOpenAPI() {
 					'application/json': {
 						schema: z.object({ status: z.string(), data: listWebhooksSchemaOutput }).openapi({
 							example: {
-								status: 'success',
+								status: 'Success',
 								data: {
-									webhooks: [
+									Webhooks: [
 										{
 											id: 'webhook_endpoint_id',
 											url: 'https://your-server.com/webhook',
 											name: 'My Webhook',
-											events: ['PURCHASE_ON_CHAIN_STATUS_CHANGED', 'PAYMENT_ON_ERROR'],
+											Events: ['PURCHASE_ON_CHAIN_STATUS_CHANGED', 'PAYMENT_ON_ERROR'],
 											isActive: true,
 											createdAt: new Date(1713636260),
 											updatedAt: new Date(1713636260),
@@ -4066,7 +4090,7 @@ export function generateOpenAPI() {
 											failureCount: 0,
 											lastSuccessAt: new Date(1713636260),
 											disabledAt: null,
-											createdBy: {
+											CreatedBy: {
 												apiKeyId: 'api_key_id',
 												apiKeyToken: 'masked_token',
 											},
@@ -4089,7 +4113,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'post',
-		path: '/webhooks/',
+		path: '/webhooks',
 		description: 'Register a new webhook endpoint',
 		summary: 'Register a new webhook endpoint to receive event notifications. (pay-authenticated access required)',
 		tags: ['webhooks'],
@@ -4103,7 +4127,7 @@ export function generateOpenAPI() {
 							example: {
 								url: 'https://your-server.com/webhook',
 								authToken: 'your-webhook-secret-token',
-								events: ['PURCHASE_ON_CHAIN_STATUS_CHANGED', 'PAYMENT_ON_ERROR'],
+								Events: ['PURCHASE_ON_CHAIN_STATUS_CHANGED', 'PAYMENT_ON_ERROR'],
 								name: 'My Payment Webhook',
 								paymentSourceId: 'payment_source_id_optional',
 							},
@@ -4113,18 +4137,18 @@ export function generateOpenAPI() {
 			},
 		},
 		responses: {
-			201: {
+			200: {
 				description: 'Webhook endpoint registered successfully',
 				content: {
 					'application/json': {
 						schema: z.object({ status: z.string(), data: registerWebhookSchemaOutput }).openapi({
 							example: {
-								status: 'success',
+								status: 'Success',
 								data: {
 									id: 'webhook_endpoint_id',
 									url: 'https://your-server.com/webhook',
 									name: 'My Payment Webhook',
-									events: ['PURCHASE_ON_CHAIN_STATUS_CHANGED', 'PAYMENT_ON_ERROR'],
+									Events: ['PURCHASE_ON_CHAIN_STATUS_CHANGED', 'PAYMENT_ON_ERROR'],
 									isActive: true,
 									createdAt: new Date(1713636260),
 									paymentSourceId: null,
@@ -4140,6 +4164,12 @@ export function generateOpenAPI() {
 			401: {
 				description: 'Unauthorized',
 			},
+			404: {
+				description: 'Payment source not found',
+			},
+			409: {
+				description: 'Webhook URL already registered for this payment source',
+			},
 			500: {
 				description: 'Internal Server Error',
 			},
@@ -4148,7 +4178,7 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'delete',
-		path: '/webhooks/',
+		path: '/webhooks',
 		description: 'Delete a webhook endpoint',
 		summary:
 			'Delete an existing webhook endpoint. Only the creator or admin can delete a webhook. (pay-authenticated access required)',
@@ -4175,7 +4205,7 @@ export function generateOpenAPI() {
 					'application/json': {
 						schema: z.object({ status: z.string(), data: deleteWebhookSchemaOutput }).openapi({
 							example: {
-								status: 'success',
+								status: 'Success',
 								data: {
 									id: 'webhook_endpoint_id',
 									url: 'https://your-server.com/webhook',
@@ -4205,84 +4235,66 @@ export function generateOpenAPI() {
 	/********************* MONITORING *****************************/
 	registry.registerPath({
 		method: 'get',
-		path: '/monitoring/',
+		path: '/monitoring',
 		description: 'Gets the current status of the blockchain state monitoring service',
 		summary: 'Get monitoring service status. (admin access required)',
 		tags: ['monitoring'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		responses: {
-			200: {
-				description: 'Monitoring service status',
-				content: {
-					'application/json': {
-						schema: monitoringStatusResponseSchema.openapi({
-							example: {
-								monitoringStatus: {
-									isMonitoring: true,
-									stats: {
-										trackedEntities: 42,
-										purchaseCursor: {
-											timestamp: '2024-01-01T00:00:00.000Z',
-											lastId: 'cuid_v2_auto_generated',
-										},
-										paymentCursor: {
-											timestamp: '2024-01-01T00:00:00.000Z',
-											lastId: 'cuid_v2_auto_generated',
-										},
-										memoryUsage: {
-											heapUsed: '50MB',
-											heapTotal: '100MB',
-											external: '10MB',
-										},
-									},
-								},
-							},
-						}),
+			200: successResponse('Monitoring service status', monitoringStatusResponseSchema, {
+				MonitoringStatus: {
+					isMonitoring: true,
+					Stats: {
+						trackedEntities: 42,
+						PurchaseCursor: {
+							timestamp: '2024-01-01T00:00:00.000Z',
+							lastId: 'cuid_v2_auto_generated',
+						},
+						PaymentCursor: {
+							timestamp: '2024-01-01T00:00:00.000Z',
+							lastId: 'cuid_v2_auto_generated',
+						},
+						MemoryUsage: {
+							heapUsed: '50MB',
+							heapTotal: '100MB',
+							external: '10MB',
+						},
 					},
 				},
-			},
+			}),
 			401: {
 				description: 'Unauthorized',
 			},
-			403: {
-				description: 'Forbidden (admin access required)',
+			500: {
+				description: 'Internal Server Error',
 			},
 		},
 	});
 
 	registry.registerPath({
 		method: 'post',
-		path: '/monitoring/trigger-cycle/',
+		path: '/monitoring/trigger-cycle',
 		description: 'Manually triggers a monitoring cycle to check blockchain state',
 		summary: 'Trigger a manual monitoring cycle. (admin access required)',
 		tags: ['monitoring'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		responses: {
-			200: {
-				description: 'Monitoring cycle trigger result',
-				content: {
-					'application/json': {
-						schema: triggerMonitoringCycleResponseSchema.openapi({
-							example: {
-								message: 'Manual monitoring cycle completed successfully',
-								triggered: true,
-							},
-						}),
-					},
-				},
-			},
+			200: successResponse('Monitoring cycle trigger result', triggerMonitoringCycleResponseSchema, {
+				message: 'Manual monitoring cycle completed successfully',
+				triggered: true,
+			}),
 			401: {
 				description: 'Unauthorized',
 			},
-			403: {
-				description: 'Forbidden (admin access required)',
+			500: {
+				description: 'Internal Server Error',
 			},
 		},
 	});
 
 	registry.registerPath({
 		method: 'post',
-		path: '/monitoring/start/',
+		path: '/monitoring/start',
 		description: 'Starts the blockchain state monitoring service with a specified interval',
 		summary: 'Start the monitoring service. (admin access required)',
 		tags: ['monitoring'],
@@ -4302,54 +4314,42 @@ export function generateOpenAPI() {
 			},
 		},
 		responses: {
-			200: {
-				description: 'Monitoring service start result',
-				content: {
-					'application/json': {
-						schema: startMonitoringResponseSchema.openapi({
-							example: {
-								message: 'Monitoring service started with 30000ms interval',
-								started: true,
-							},
-						}),
-					},
-				},
-			},
+			200: successResponse('Monitoring service start result', startMonitoringResponseSchema, {
+				message: 'Monitoring service started with 30000ms interval',
+				started: true,
+			}),
 			401: {
 				description: 'Unauthorized',
 			},
-			403: {
-				description: 'Forbidden (admin access required)',
+			409: {
+				description: 'Conflict (monitoring service is already running)',
+			},
+			500: {
+				description: 'Internal Server Error',
 			},
 		},
 	});
 
 	registry.registerPath({
 		method: 'post',
-		path: '/monitoring/stop/',
+		path: '/monitoring/stop',
 		description: 'Stops the blockchain state monitoring service',
 		summary: 'Stop the monitoring service. (admin access required)',
 		tags: ['monitoring'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		responses: {
-			200: {
-				description: 'Monitoring service stop result',
-				content: {
-					'application/json': {
-						schema: stopMonitoringResponseSchema.openapi({
-							example: {
-								message: 'Monitoring service stopped successfully',
-								stopped: true,
-							},
-						}),
-					},
-				},
-			},
+			200: successResponse('Monitoring service stop result', stopMonitoringResponseSchema, {
+				message: 'Monitoring service stopped successfully',
+				stopped: true,
+			}),
 			401: {
 				description: 'Unauthorized',
 			},
-			403: {
-				description: 'Forbidden (admin access required)',
+			400: {
+				description: 'Bad Request (monitoring service is not currently running)',
+			},
+			500: {
+				description: 'Internal Server Error',
 			},
 		},
 	});

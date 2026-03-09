@@ -20,7 +20,7 @@ export function useApiKeys() {
             client: apiClient,
             query: {
               cursorToken,
-              limit: PAGE_SIZE,
+              take: PAGE_SIZE,
             },
           }),
         {

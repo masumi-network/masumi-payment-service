@@ -20,10 +20,25 @@ export const postInternalGenerateMonthlyInvoiceEndpoint = payAuthenticatedEndpoi
 	}) => {
 		const startTime = Date.now();
 		try {
-			const result = await generateMonthlyInvoice(input, {
-				metricPath: '/api/v1/invoice/monthly/internal',
-				walletScopeIds: ctx.walletScopeIds,
-			});
+			const result = await generateMonthlyInvoice(
+				{
+					buyerWalletVkey: input.buyerWalletVkey,
+					sellerWalletVkey: input.sellerWalletVkey,
+					month: input.month,
+					invoiceCurrency: input.invoiceCurrency,
+					currencyConversion: input.CurrencyConversion,
+					invoice: input.Invoice,
+					vatRate: input.vatRate,
+					reverseCharge: input.reverseCharge,
+					forceRegenerate: input.forceRegenerate,
+					seller: input.Seller,
+					buyer: input.Buyer,
+				},
+				{
+					metricPath: '/api/v1/invoice/monthly/internal',
+					walletScopeIds: ctx.walletScopeIds,
+				},
+			);
 
 			return result;
 		} catch (error) {

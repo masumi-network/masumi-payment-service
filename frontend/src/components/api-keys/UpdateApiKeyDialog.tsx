@@ -40,7 +40,7 @@ interface UpdateApiKeyDialogProps {
     id: string;
     token: string;
     permission: 'Read' | 'ReadAndPay' | 'Admin';
-    networkLimit: Array<'Preprod' | 'Mainnet'>;
+    NetworkLimit: Array<'Preprod' | 'Mainnet'>;
     usageLimited: boolean;
     status: 'Active' | 'Revoked';
     walletScopeEnabled: boolean;
@@ -238,7 +238,7 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
           <Separator orientation="vertical" className="mx-1 h-4" />
           <span className="text-muted-foreground">Networks:</span>
           <div className="flex gap-1">
-            {apiKey.networkLimit.map((net) => (
+            {apiKey.NetworkLimit.map((net) => (
               <Badge key={net} variant="outline" className="font-normal">
                 {net}
               </Badge>

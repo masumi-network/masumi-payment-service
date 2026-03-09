@@ -5,6 +5,7 @@ RUN npm install -g pnpm
 WORKDIR /usr/src/app
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY patches ./patches
 COPY smart-contracts ./smart-contracts
 COPY ./src ./src
 COPY ./prisma ./prisma
@@ -24,6 +25,7 @@ FROM node:20-slim AS frontend-builder
 RUN npm install -g pnpm
 WORKDIR /usr/src/app
 COPY package.json pnpm-workspace.yaml ./
+COPY patches ./patches
 COPY --from=backend-builder /usr/src/app/pnpm-lock.yaml ./
 WORKDIR /usr/src/app/frontend
 ARG NEXT_PUBLIC_PAYMENT_API_BASE_URL=/api/v1

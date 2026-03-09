@@ -117,8 +117,8 @@ export const swapTokensEndpointPost = adminAuthenticatedEndpointFactory.build({
 				{
 					mnemonic: mnemonic,
 					fromAmount: input.amount,
-					fromToken: input.fromToken as Token,
-					toToken: input.toToken as Token,
+					fromToken: input.FromToken as Token,
+					toToken: input.ToToken as Token,
 					poolId: input.poolId,
 					slippage: input.slippage,
 				},
@@ -134,11 +134,11 @@ export const swapTokensEndpointPost = adminAuthenticatedEndpointFactory.build({
 							status: TransactionStatus.Pending,
 							swapStatus: SwapStatus.OrderPending,
 							lastCheckedAt: new Date(),
-							fromPolicyId: input.fromToken.policyId,
-							fromAssetName: input.fromToken.assetName,
+							fromPolicyId: input.FromToken.policyId,
+							fromAssetName: input.FromToken.assetName,
 							fromAmount: String(input.amount),
-							toPolicyId: input.toToken.policyId,
-							toAssetName: input.toToken.assetName,
+							toPolicyId: input.ToToken.policyId,
+							toAssetName: input.ToToken.assetName,
 							poolId: input.poolId,
 							slippage: input.slippage ?? null,
 							hotWalletId: wallet.id,
@@ -270,7 +270,7 @@ export const getSwapConfirmEndpointGet = adminAuthenticatedEndpointFactory.build
 							});
 
 							return {
-								status: 'confirmed' as const,
+								status: 'Confirmed' as const,
 								swapStatus: SwapStatus.Completed,
 								swapTransactionId: swapTx.id,
 								confirmations: null,
@@ -286,7 +286,7 @@ export const getSwapConfirmEndpointGet = adminAuthenticatedEndpointFactory.build
 
 				// UTXO still exists — swap still awaiting execution
 				return {
-					status: 'confirmed' as const,
+					status: 'Confirmed' as const,
 					swapStatus: SwapStatus.OrderConfirmed,
 					swapTransactionId: swapTx.id,
 					confirmations: null,
@@ -301,7 +301,7 @@ export const getSwapConfirmEndpointGet = adminAuthenticatedEndpointFactory.build
 				const tx = await blockfrost.txs(txHashToCheck);
 				if (!tx.block) {
 					return {
-						status: 'pending' as const,
+						status: 'Pending' as const,
 						swapStatus: currentSwapStatus ?? undefined,
 					};
 				}
@@ -344,7 +344,7 @@ export const getSwapConfirmEndpointGet = adminAuthenticatedEndpointFactory.build
 					}
 
 					return {
-						status: 'confirmed' as const,
+						status: 'Confirmed' as const,
 						swapStatus: SwapStatus.CancelConfirmed,
 						swapTransactionId: swapTx.id,
 						confirmations: block.confirmations ?? null,
@@ -366,7 +366,7 @@ export const getSwapConfirmEndpointGet = adminAuthenticatedEndpointFactory.build
 					if (orderOutputIndex == null) {
 						// Cannot transition without output index — stay in OrderPending so next poll retries
 						return {
-							status: 'confirmed' as const,
+							status: 'Confirmed' as const,
 							swapStatus: SwapStatus.OrderPending,
 							swapTransactionId: swapTx.id,
 							confirmations: block.confirmations ?? null,
@@ -409,7 +409,7 @@ export const getSwapConfirmEndpointGet = adminAuthenticatedEndpointFactory.build
 					}
 
 					return {
-						status: 'confirmed' as const,
+						status: 'Confirmed' as const,
 						swapStatus: SwapStatus.OrderConfirmed,
 						swapTransactionId: swapTx.id,
 						confirmations: block.confirmations ?? null,
@@ -456,7 +456,7 @@ export const getSwapConfirmEndpointGet = adminAuthenticatedEndpointFactory.build
 				}
 
 				return {
-					status: 'confirmed' as const,
+					status: 'Confirmed' as const,
 					swapStatus: currentSwapStatus ?? undefined,
 					confirmations: block.confirmations ?? null,
 				};
@@ -507,9 +507,8 @@ export const getSwapConfirmEndpointGet = adminAuthenticatedEndpointFactory.build
 								});
 								throw createHttpError(500, 'State transition succeeded but wallet unlock failed. Please retry.');
 							}
-
 							return {
-								status: 'not_found' as const,
+								status: 'NotFound' as const,
 								swapStatus: timeoutStatus,
 								swapTransactionId: swapTx.id,
 							};
@@ -517,7 +516,7 @@ export const getSwapConfirmEndpointGet = adminAuthenticatedEndpointFactory.build
 					}
 
 					return {
-						status: 'not_found' as const,
+						status: 'NotFound' as const,
 						swapStatus: currentSwapStatus ?? undefined,
 					};
 				}
@@ -968,7 +967,7 @@ export const getSwapTransactionsEndpointGet = adminAuthenticatedEndpointFactory.
 		});
 
 		return {
-			swapTransactions: swapTransactions.map((tx) => ({
+			SwapTransactions: swapTransactions.map((tx) => ({
 				id: tx.id,
 				createdAt: tx.createdAt.toISOString(),
 				txHash: tx.txHash,

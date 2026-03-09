@@ -1,4 +1,5 @@
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
+import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import { z } from '@/utils/zod-openapi';
 import {
 	HotWalletType,
@@ -157,7 +158,7 @@ export const queryRegistryCountSchemaOutput = z.object({
 	total: z.number().describe('Total number of AI agents'),
 });
 
-export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
+export const queryRegistryRequestGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: queryRegistryRequestSchemaInput,
 	output: queryRegistryRequestSchemaOutput,
@@ -323,7 +324,7 @@ export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
 	},
 });
 
-export const queryRegistryCountGet = payAuthenticatedEndpointFactory.build({
+export const queryRegistryCountGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: queryRegistryCountSchemaInput,
 	output: queryRegistryCountSchemaOutput,

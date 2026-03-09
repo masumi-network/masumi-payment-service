@@ -776,8 +776,8 @@ export function GenerateInvoiceDialog({
           vatRate: data.vatRate,
           reverseCharge: data.reverseCharge,
           forceRegenerate: data.forceRegenerate,
-          currencyConversion,
-          seller: {
+          CurrencyConversion: currencyConversion,
+          Seller: {
             country: data.seller.country,
             city: data.seller.city,
             zipCode: data.seller.zipCode,
@@ -789,7 +789,7 @@ export function GenerateInvoiceDialog({
             companyName: data.seller.companyName || null,
             vatNumber: data.seller.vatNumber || null,
           },
-          buyer: {
+          Buyer: {
             country: data.buyer.country,
             city: data.buyer.city,
             zipCode: data.buyer.zipCode,
@@ -801,7 +801,7 @@ export function GenerateInvoiceDialog({
             companyName: data.buyer.companyName || null,
             vatNumber: data.buyer.vatNumber || null,
           },
-          invoice: data.invoice
+          Invoice: data.invoice
             ? Object.fromEntries(
                 Object.entries(data.invoice).filter(([, v]) => v !== '' && v !== undefined),
               )

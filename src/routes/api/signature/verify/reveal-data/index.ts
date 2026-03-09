@@ -24,7 +24,7 @@ export const postVerifyDataRevealSchemaInput = z.object({
 		.min(1)
 		.max(2500)
 		.describe('The blockchain identifier, for which the data should be revealed'),
-	action: z.literal('reveal_data').describe('The action to perform'),
+	action: z.literal('RevealData').describe('The action to perform'),
 });
 
 export const postRevealDataSchemaOutput = z.object({
@@ -104,15 +104,15 @@ export const revealDataEndpointPost = readAuthenticatedEndpointFactory.build({
 				throw createHttpError(400, 'Signature is expired');
 			}
 			if (Date.now() + CONSTANTS.REVEAL_DATA_VALIDITY_TIME < input.validUntil) {
-				recordBusinessEndpointError('/api/v1/reveal-data', 'POST', 400, 'Signature is to far in the future', {
+				recordBusinessEndpointError('/api/v1/reveal-data', 'POST', 400, 'Signature is too far in the future', {
 					wallet_address: input.walletAddress,
 					operation: 'reveal_data',
 				});
-				throw createHttpError(400, 'Signature is to far in the future');
+				throw createHttpError(400, 'Signature is too far in the future');
 			}
 
 			const message = stringify({
-				action: 'reveal_data',
+				action: 'RevealData',
 				validUntil: input.validUntil,
 				blockchainIdentifier: input.blockchainIdentifier,
 			});

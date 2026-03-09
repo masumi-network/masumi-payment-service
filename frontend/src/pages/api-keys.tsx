@@ -55,7 +55,7 @@ export default function ApiKeys() {
   const filteredApiKeys = useMemo(() => {
     let filtered = [...allApiKeys];
     filtered = filtered.filter(
-      (key) => key.networkLimit.includes(network) || key.permission === 'Admin',
+      (key) => key.NetworkLimit.includes(network) || key.permission === 'Admin',
     );
     if (activeTab === 'Read') {
       filtered = filtered.filter((key) => key.permission === 'Read');
@@ -72,7 +72,7 @@ export default function ApiKeys() {
         const permissionMatch = key.permission?.toLowerCase().includes(query) || false;
         const statusMatch = key.status?.toLowerCase().includes(query) || false;
         const networkMatch =
-          key.networkLimit?.some((n) => n.toLowerCase().includes(query)) || false;
+          key.NetworkLimit?.some((n) => n.toLowerCase().includes(query)) || false;
         return nameMatch || tokenMatch || permissionMatch || statusMatch || networkMatch;
       });
     }
@@ -252,9 +252,9 @@ export default function ApiKeys() {
                         </Badge>
                       </TableCell>
                       <TableCell className="p-4">
-                        {key.networkLimit.length > 0 ? (
+                        {key.NetworkLimit.length > 0 ? (
                           <div className="flex gap-1">
-                            {key.networkLimit.map((net) => (
+                            {key.NetworkLimit.map((net) => (
                               <Badge key={net} variant="outline" className="font-normal">
                                 {net}
                               </Badge>

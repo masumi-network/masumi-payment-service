@@ -1,4 +1,4 @@
-import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
+import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { z } from '@/utils/zod-openapi';
 import { Network, OnChainState, PaymentAction, Permission } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
@@ -25,7 +25,7 @@ export const submitPaymentResultSchemaOutput = paymentResponseSchema.omit({
 	ActionHistory: true,
 });
 
-export const submitPaymentResultEndpointPost = readAuthenticatedEndpointFactory.build({
+export const submitPaymentResultEndpointPost = payAuthenticatedEndpointFactory.build({
 	method: 'post',
 	input: submitPaymentResultSchemaInput,
 	output: submitPaymentResultSchemaOutput,

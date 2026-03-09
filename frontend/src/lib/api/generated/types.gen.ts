@@ -24,7 +24,7 @@ export type ApiKey = {
     /**
      * List of Cardano networks this API key is allowed to access
      */
-    networkLimit: Array<'Preprod' | 'Mainnet'>;
+    NetworkLimit: Array<'Preprod' | 'Mainnet'>;
     /**
      * Remaining usage credits for this API key
      */
@@ -574,6 +574,18 @@ export type Purchase = {
      * Historical list of all actions for this purchase. Null if includeHistory is false
      */
     ActionHistory: Array<{
+        /**
+         * Unique identifier for the action
+         */
+        id: string;
+        /**
+         * Timestamp when the action was created
+         */
+        createdAt: Date;
+        /**
+         * Timestamp when the action was last updated
+         */
+        updatedAt: Date;
         /**
          * Next action required for this purchase
          */
@@ -1520,7 +1532,7 @@ export type MonitoringStatus = {
     /**
      * Current status of the blockchain state monitoring service
      */
-    monitoringStatus: {
+    MonitoringStatus: {
         /**
          * Whether the blockchain state monitoring service is currently running
          */
@@ -1528,7 +1540,7 @@ export type MonitoringStatus = {
         /**
          * Monitoring statistics. Null if monitoring is not active
          */
-        stats: {
+        Stats: {
             /**
              * Number of entities being tracked by the monitoring service
              */
@@ -1536,7 +1548,7 @@ export type MonitoringStatus = {
             /**
              * Cursor position for purchase diff tracking
              */
-            purchaseCursor: {
+            PurchaseCursor: {
                 /**
                  * Last processed purchase timestamp
                  */
@@ -1549,7 +1561,7 @@ export type MonitoringStatus = {
             /**
              * Cursor position for payment diff tracking
              */
-            paymentCursor: {
+            PaymentCursor: {
                 /**
                  * Last processed payment timestamp
                  */
@@ -1562,7 +1574,7 @@ export type MonitoringStatus = {
             /**
              * Memory usage statistics for the monitoring service
              */
-            memoryUsage: {
+            MemoryUsage: {
                 /**
                  * Heap memory currently used by the monitoring service
                  */
@@ -1617,7 +1629,7 @@ export type GetHealthData = {
     body?: never;
     path?: never;
     query?: never;
-    url: '/health/';
+    url: '/health';
 };
 
 export type GetHealthResponses = {
@@ -1625,10 +1637,13 @@ export type GetHealthResponses = {
      * Object with status ok, if the server is up and healthy
      */
     200: {
-        /**
-         * Health status of the service. Returns "ok" when the service is running
-         */
-        status: string;
+        status: 'success';
+        data: {
+            /**
+             * Health status of the service. Returns "ok" when the service is running
+             */
+            status: string;
+        };
     };
 };
 
@@ -1638,7 +1653,7 @@ export type GetApiKeyStatusData = {
     body?: never;
     path?: never;
     query?: never;
-    url: '/api-key-status/';
+    url: '/api-key-status';
 };
 
 export type GetApiKeyStatusResponses = {
@@ -1670,7 +1685,7 @@ export type GetWalletData = {
          */
         includeSecret?: string;
     };
-    url: '/wallet/';
+    url: '/wallet';
 };
 
 export type GetWalletResponses = {
@@ -1698,14 +1713,24 @@ export type PatchWalletData = {
     };
     path?: never;
     query?: never;
-    url: '/wallet/';
+    url: '/wallet';
+};
+
+export type PatchWalletErrors = {
+    /**
+     * Wallet not found
+     */
+    404: unknown;
 };
 
 export type PatchWalletResponses = {
     /**
      * Wallet updated
      */
-    200: Wallet & unknown;
+    200: {
+        status: 'success';
+        data: Wallet;
+    };
 };
 
 export type PatchWalletResponse = PatchWalletResponses[keyof PatchWalletResponses];
@@ -1719,14 +1744,17 @@ export type PostWalletData = {
     };
     path?: never;
     query?: never;
-    url: '/wallet/';
+    url: '/wallet';
 };
 
 export type PostWalletResponses = {
     /**
      * Wallet created
      */
-    200: GeneratedWalletSecret;
+    200: {
+        status: 'success';
+        data: GeneratedWalletSecret;
+    };
 };
 
 export type PostWalletResponse = PostWalletResponses[keyof PostWalletResponses];
@@ -1756,11 +1784,34 @@ export type PostSignatureVerifyRevealDataData = {
         /**
          * The action to perform
          */
-        action: 'reveal_data';
+        action: 'RevealData';
     };
     path?: never;
     query?: never;
-    url: '/signature/verify/reveal-data/';
+    url: '/signature/verify/reveal-data';
+};
+
+export type PostSignatureVerifyRevealDataErrors = {
+    /**
+     * Bad Request (invalid signature or payment is not disputable)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden (network not allowed)
+     */
+    403: unknown;
+    /**
+     * Payment not found
+     */
+    404: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
 };
 
 export type PostSignatureVerifyRevealDataResponses = {
@@ -1768,10 +1819,13 @@ export type PostSignatureVerifyRevealDataResponses = {
      * Revealed data
      */
     200: {
-        /**
-         * Whether the signature is valid and the data can be revealed
-         */
-        isValid: boolean;
+        status: 'success';
+        data: {
+            /**
+             * Whether the signature is valid and the data can be revealed
+             */
+            isValid: boolean;
+        };
     };
 };
 
@@ -1786,7 +1840,7 @@ export type DeleteApiKeyData = {
     };
     path?: never;
     query?: never;
-    url: '/api-key/';
+    url: '/api-key';
 };
 
 export type DeleteApiKeyErrors = {
@@ -1823,13 +1877,13 @@ export type GetApiKeyData = {
         /**
          * The number of API keys to return
          */
-        limit?: number;
+        take?: number;
         /**
          * Used to paginate through the API keys
          */
         cursorToken?: string;
     };
-    url: '/api-key/';
+    url: '/api-key';
 };
 
 export type GetApiKeyErrors = {
@@ -1898,7 +1952,7 @@ export type PatchApiKeyData = {
         /**
          * The networks the API key is allowed to use
          */
-        networkLimit?: Array<'Preprod' | 'Mainnet'>;
+        NetworkLimit?: Array<'Preprod' | 'Mainnet'>;
         /**
          * Whether to enable wallet scope filtering for this API key
          */
@@ -1910,7 +1964,7 @@ export type PatchApiKeyData = {
     };
     path?: never;
     query?: never;
-    url: '/api-key/';
+    url: '/api-key';
 };
 
 export type PatchApiKeyErrors = {
@@ -1930,7 +1984,7 @@ export type PatchApiKeyErrors = {
 
 export type PatchApiKeyResponses = {
     /**
-     * API key deleted
+     * API key updated
      */
     200: {
         data: ApiKey;
@@ -1962,7 +2016,7 @@ export type PostApiKeyData = {
         /**
          * The networks the API key is allowed to use
          */
-        networkLimit?: Array<'Preprod' | 'Mainnet'>;
+        NetworkLimit?: Array<'Preprod' | 'Mainnet'>;
         /**
          * The permission of the API key
          */
@@ -1978,7 +2032,7 @@ export type PostApiKeyData = {
     };
     path?: never;
     query?: never;
-    url: '/api-key/';
+    url: '/api-key';
 };
 
 export type PostApiKeyErrors = {
@@ -1998,7 +2052,7 @@ export type PostApiKeyErrors = {
 
 export type PostApiKeyResponses = {
     /**
-     * API key deleted
+     * API key created
      */
     200: {
         data: ApiKey;
@@ -2024,7 +2078,7 @@ export type PostSwapData = {
         /**
          * Source token information
          */
-        fromToken: {
+        FromToken: {
             /**
              * Policy ID of the source token. Use empty string "" for ADA (native token)
              */
@@ -2041,7 +2095,7 @@ export type PostSwapData = {
         /**
          * Destination token information
          */
-        toToken: {
+        ToToken: {
             /**
              * Policy ID of the destination token. Use empty string "" for ADA (native token)
              */
@@ -2066,7 +2120,7 @@ export type PostSwapData = {
     };
     path?: never;
     query?: never;
-    url: '/swap/';
+    url: '/swap';
 };
 
 export type PostSwapErrors = {
@@ -2115,7 +2169,7 @@ export type GetSwapConfirmData = {
          */
         walletVkey: string;
     };
-    url: '/swap/confirm/';
+    url: '/swap/confirm';
 };
 
 export type GetSwapConfirmErrors = {
@@ -2135,13 +2189,13 @@ export type GetSwapConfirmErrors = {
 
 export type GetSwapConfirmResponses = {
     /**
-     * Confirmation status (pending, confirmed, or not_found)
+     * Confirmation status (Pending, Confirmed, or NotFound)
      */
     200: {
         /**
-         * On-chain status: pending (not yet in a block), confirmed (in a block), not_found (tx unknown)
+         * On-chain status: Pending (not yet in a block), Confirmed (in a block), NotFound (tx unknown)
          */
-        status: 'pending' | 'confirmed' | 'not_found';
+        status: 'Pending' | 'Confirmed' | 'NotFound';
         /**
          * Swap lifecycle status (OrderPending, OrderConfirmed, CancelPending, CancelConfirmed, Completed)
          */
@@ -2176,7 +2230,7 @@ export type GetSwapTransactionsData = {
          */
         cursorId?: string;
     };
-    url: '/swap/transactions/';
+    url: '/swap/transactions';
 };
 
 export type GetSwapTransactionsErrors = {
@@ -2198,7 +2252,7 @@ export type GetSwapTransactionsResponses = {
         /**
          * List of swap transactions
          */
-        swapTransactions: Array<{
+        SwapTransactions: Array<{
             /**
              * Swap transaction ID
              */
@@ -2290,7 +2344,7 @@ export type GetSwapEstimateData = {
          */
         poolId: string;
     };
-    url: '/swap/estimate/';
+    url: '/swap/estimate';
 };
 
 export type GetSwapEstimateErrors = {
@@ -2346,7 +2400,7 @@ export type PostSwapCancelData = {
     };
     path?: never;
     query?: never;
-    url: '/swap/cancel/';
+    url: '/swap/cancel';
 };
 
 export type PostSwapCancelErrors = {
@@ -2398,7 +2452,7 @@ export type PostSwapAcknowledgeTimeoutData = {
     };
     path?: never;
     query?: never;
-    url: '/swap/acknowledge-timeout/';
+    url: '/swap/acknowledge-timeout';
 };
 
 export type PostSwapAcknowledgeTimeoutErrors = {
@@ -2467,7 +2521,7 @@ export type GetPaymentData = {
          */
         includeHistory?: string;
     };
-    url: '/payment/';
+    url: '/payment';
 };
 
 export type GetPaymentErrors = {
@@ -2547,13 +2601,13 @@ export type PostPaymentData = {
          */
         metadata?: string;
         /**
-         * The a unique nonce from the purchaser. Required to be in hex format
+         * A unique nonce from the purchaser. It must be in hex format
          */
         identifierFromPurchaser: string;
     };
     path?: never;
     query?: never;
-    url: '/payment/';
+    url: '/payment';
 };
 
 export type PostPaymentErrors = {
@@ -3109,6 +3163,14 @@ export type PostPaymentSubmitResultErrors = {
      */
     401: unknown;
     /**
+     * Forbidden (only the creator or an admin can submit results)
+     */
+    403: unknown;
+    /**
+     * Payment not found or in invalid state
+     */
+    404: unknown;
+    /**
      * Internal Server Error
      */
     500: unknown;
@@ -3399,6 +3461,14 @@ export type PostPaymentAuthorizeRefundErrors = {
      */
     401: unknown;
     /**
+     * Forbidden (only the creator or an admin can authorize a refund)
+     */
+    403: unknown;
+    /**
+     * Payment not found or in invalid state
+     */
+    404: unknown;
+    /**
      * Internal Server Error
      */
     500: unknown;
@@ -3406,7 +3476,7 @@ export type PostPaymentAuthorizeRefundErrors = {
 
 export type PostPaymentAuthorizeRefundResponses = {
     /**
-     * API key deleted
+     * Payment refund authorized
      */
     200: {
         data: {
@@ -3683,7 +3753,7 @@ export type PostPaymentErrorStateRecoveryData = {
     };
     path?: never;
     query?: never;
-    url: '/payment/error-state-recovery/';
+    url: '/payment/error-state-recovery';
 };
 
 export type PostPaymentErrorStateRecoveryErrors = {
@@ -3996,7 +4066,7 @@ export type PostPurchaseErrorStateRecoveryData = {
     };
     path?: never;
     query?: never;
-    url: '/purchase/error-state-recovery/';
+    url: '/purchase/error-state-recovery';
 };
 
 export type PostPurchaseErrorStateRecoveryErrors = {
@@ -4037,7 +4107,212 @@ export type PostPurchaseErrorStateRecoveryResponses = {
     200: {
         status: string;
         data: {
+            /**
+             * Unique identifier for the purchase
+             */
             id: string;
+            /**
+             * Timestamp when the purchase was created
+             */
+            createdAt: Date;
+            /**
+             * Timestamp when the purchase was last updated
+             */
+            updatedAt: Date;
+            /**
+             * Unique blockchain identifier for the purchase
+             */
+            blockchainIdentifier: string;
+            /**
+             * Identifier of the agent that is being purchased
+             */
+            agentIdentifier: string | null;
+            /**
+             * Timestamp when the purchase was last checked on-chain. Null if never checked
+             */
+            lastCheckedAt: Date | null;
+            /**
+             * Unix timestamp (in milliseconds) by which the buyer must submit the payment transaction. Null if not set
+             */
+            payByTime: string | null;
+            /**
+             * Unix timestamp (in milliseconds) by which the seller must submit the result
+             */
+            submitResultTime: string;
+            /**
+             * Unix timestamp (in milliseconds) after which funds can be unlocked if no disputes
+             */
+            unlockTime: string;
+            /**
+             * Unix timestamp (in milliseconds) after which external dispute resolution can occur
+             */
+            externalDisputeUnlockTime: string;
+            /**
+             * Total Cardano transaction fees paid by the buyer in ADA (sum of all confirmed transactions initiated by buyer)
+             */
+            totalBuyerCardanoFees: number;
+            /**
+             * Total Cardano transaction fees paid by the seller in ADA (sum of all confirmed transactions initiated by seller)
+             */
+            totalSellerCardanoFees: number;
+            /**
+             * Timestamp when the next action or on-chain state or result was last changed
+             */
+            nextActionOrOnChainStateOrResultLastChangedAt: Date;
+            /**
+             * Timestamp when the next action was last changed
+             */
+            nextActionLastChangedAt: Date;
+            /**
+             * Timestamp when the on-chain state or result was last changed
+             */
+            onChainStateOrResultLastChangedAt: Date;
+            /**
+             * ID of the API key that created this purchase
+             */
+            requestedById: string;
+            /**
+             * Current state of the purchase on the blockchain. Null if not yet on-chain
+             */
+            onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+            /**
+             * Amount of collateral to return in lovelace. Null if no collateral
+             */
+            collateralReturnLovelace: string | null;
+            /**
+             * Cooldown period in milliseconds for the buyer to dispute
+             */
+            cooldownTime: number;
+            /**
+             * Cooldown period in milliseconds for the seller to dispute
+             */
+            cooldownTimeOtherParty: number;
+            /**
+             * SHA256 hash of the input data for the purchase (hex string)
+             */
+            inputHash: string;
+            /**
+             * SHA256 hash of the result submitted by the seller (hex string)
+             */
+            resultHash: string | null;
+            /**
+             * Next action required for this purchase
+             */
+            NextAction: {
+                /**
+                 * Next action required for this purchase
+                 */
+                requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'FundsLockingRequested' | 'FundsLockingInitiated' | 'SetRefundRequestedRequested' | 'SetRefundRequestedInitiated' | 'UnSetRefundRequestedRequested' | 'UnSetRefundRequestedInitiated' | 'WithdrawRefundRequested' | 'WithdrawRefundInitiated';
+                /**
+                 * Type of error that occurred, if any
+                 */
+                errorType: 'NetworkError' | 'InsufficientFunds' | 'Unknown' | null;
+                /**
+                 * Additional details about the error, if any
+                 */
+                errorNote: string | null;
+            };
+            /**
+             * Current active transaction for this purchase. Null if no transaction in progress
+             */
+            CurrentTransaction: {
+                /**
+                 * Unique identifier for the transaction
+                 */
+                id: string;
+                /**
+                 * Timestamp when the transaction was created
+                 */
+                createdAt: Date;
+                /**
+                 * Timestamp when the transaction was last updated
+                 */
+                updatedAt: Date;
+                /**
+                 * Cardano transaction hash
+                 */
+                txHash: string | null;
+                /**
+                 * Current status of the transaction
+                 */
+                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
+                /**
+                 * Fees of the transaction
+                 */
+                fees: string | null;
+                /**
+                 * Block height of the transaction
+                 */
+                blockHeight: number | null;
+                /**
+                 * Block time of the transaction
+                 */
+                blockTime: number | null;
+                /**
+                 * Previous on-chain state before this transaction
+                 */
+                previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+                /**
+                 * New on-chain state of this transaction
+                 */
+                newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+                /**
+                 * Number of block confirmations for this transaction
+                 */
+                confirmations: number | null;
+            } | null;
+            PaidFunds: Array<{
+                amount: string;
+                unit: string;
+            }>;
+            WithdrawnForSeller: Array<{
+                amount: string;
+                unit: string;
+            }>;
+            WithdrawnForBuyer: Array<{
+                amount: string;
+                unit: string;
+            }>;
+            PaymentSource: {
+                id: string;
+                network: 'Preprod' | 'Mainnet';
+                smartContractAddress: string;
+                policyId: string | null;
+            };
+            /**
+             * Seller wallet information. Null if not set
+             */
+            SellerWallet: {
+                /**
+                 * Unique identifier for the seller wallet
+                 */
+                id: string;
+                /**
+                 * Payment key hash of the seller wallet
+                 */
+                walletVkey: string;
+            } | null;
+            /**
+             * Smart contract wallet (seller wallet) managing this purchase. Null if not set
+             */
+            SmartContractWallet: {
+                /**
+                 * Unique identifier for the smart contract wallet
+                 */
+                id: string;
+                /**
+                 * Payment key hash of the smart contract wallet
+                 */
+                walletVkey: string;
+                /**
+                 * Cardano address of the smart contract wallet
+                 */
+                walletAddress: string;
+            } | null;
+            /**
+             * Optional metadata stored with the purchase for additional context. Null if not provided
+             */
+            metadata: string | null;
         };
     };
 };
@@ -4057,8 +4332,8 @@ export type PostSignatureSignCreateInvoiceMonthlyData = {
         /**
          * The action to perform for monthly invoices
          */
-        action: 'retrieve_monthly_invoices';
-        buyer: {
+        action: 'RetrieveMonthlyInvoices';
+        Buyer: {
             /**
              * The country of the invoice
              */
@@ -4205,7 +4480,7 @@ export type GetInvoiceMonthlyResponses = {
                 netTotal: string;
                 vatTotal: string;
                 grossTotal: string;
-                coveredPaymentRequestIds: Array<string>;
+                CoveredPaymentRequestIds: Array<string>;
                 buyerWalletVkey: string | null;
                 sellerWalletVkey: string | null;
                 /**
@@ -4244,10 +4519,10 @@ export type PostInvoiceMonthlyData = {
         /**
          * Currency conversion settings by unit for this invoice
          */
-        currencyConversion?: {
+        CurrencyConversion?: {
             [key: string]: number;
         };
-        invoice?: {
+        Invoice?: {
             /**
              * The prefix of the item name
              */
@@ -4321,7 +4596,7 @@ export type PostInvoiceMonthlyData = {
          * Force cancel existing invoice and generate a new revision, even if no data changes detected
          */
         forceRegenerate?: boolean;
-        seller: {
+        Seller: {
             /**
              * The country of the invoice
              */
@@ -4363,7 +4638,7 @@ export type PostInvoiceMonthlyData = {
              */
             vatNumber: string | null;
         };
-        buyer: {
+        Buyer: {
             /**
              * The country of the invoice
              */
@@ -4424,7 +4699,7 @@ export type PostInvoiceMonthlyData = {
         /**
          * The action to perform for monthly invoices
          */
-        action: 'retrieve_monthly_invoices';
+        action: 'RetrieveMonthlyInvoices';
     };
     path?: never;
     query?: never;
@@ -4500,10 +4775,10 @@ export type PostInvoiceMonthlyInternalData = {
         /**
          * Currency conversion settings by unit for this invoice
          */
-        currencyConversion?: {
+        CurrencyConversion?: {
             [key: string]: number;
         };
-        invoice?: {
+        Invoice?: {
             /**
              * The prefix of the item name
              */
@@ -4577,7 +4852,7 @@ export type PostInvoiceMonthlyInternalData = {
          * Force cancel existing invoice and generate a new revision, even if no data changes detected
          */
         forceRegenerate?: boolean;
-        seller: {
+        Seller: {
             /**
              * The country of the invoice
              */
@@ -4619,7 +4894,7 @@ export type PostInvoiceMonthlyInternalData = {
              */
             vatNumber: string | null;
         };
-        buyer: {
+        Buyer: {
             /**
              * The country of the invoice
              */
@@ -4767,7 +5042,7 @@ export type GetPurchaseData = {
          */
         includeHistory?: string;
     };
-    url: '/purchase/';
+    url: '/purchase';
 };
 
 export type GetPurchaseErrors = {
@@ -4855,13 +5130,13 @@ export type PostPurchaseData = {
          */
         metadata?: string;
         /**
-         * The nonce of the purchaser of the purchase, needs to be in hex format
+         * The nonce of the purchaser. It must be in hex format
          */
         identifierFromPurchaser: string;
     };
     path?: never;
     query?: never;
-    url: '/purchase/';
+    url: '/purchase';
 };
 
 export type PostPurchaseErrors = {
@@ -5527,6 +5802,14 @@ export type PostPurchaseRequestRefundErrors = {
      */
     401: unknown;
     /**
+     * Forbidden (only the creator or an admin can request a refund)
+     */
+    403: unknown;
+    /**
+     * Purchase not found or not in valid state
+     */
+    404: unknown;
+    /**
      * Internal Server Error
      */
     500: unknown;
@@ -5534,7 +5817,7 @@ export type PostPurchaseRequestRefundErrors = {
 
 export type PostPurchaseRequestRefundResponses = {
     /**
-     * API key deleted
+     * Purchase refund requested
      */
     200: {
         data: {
@@ -5777,6 +6060,14 @@ export type PostPurchaseCancelRefundRequestErrors = {
      */
     401: unknown;
     /**
+     * Forbidden (only the creator or an admin can cancel a refund request)
+     */
+    403: unknown;
+    /**
+     * Purchase not found or in invalid state
+     */
+    404: unknown;
+    /**
      * Internal Server Error
      */
     500: unknown;
@@ -5784,7 +6075,7 @@ export type PostPurchaseCancelRefundRequestErrors = {
 
 export type PostPurchaseCancelRefundRequestResponses = {
     /**
-     * API key deleted
+     * Purchase refund request cancelled
      */
     200: {
         data: {
@@ -6118,7 +6409,7 @@ export type GetRegistryWalletData = {
         /**
          * The payment key of the wallet to be queried
          */
-        walletVKey: string;
+        walletVkey: string;
         /**
          * The Cardano network used to register the agent on
          */
@@ -6208,7 +6499,7 @@ export type DeleteRegistryData = {
     };
     path?: never;
     query?: never;
-    url: '/registry/';
+    url: '/registry';
 };
 
 export type DeleteRegistryErrors = {
@@ -6283,7 +6574,7 @@ export type GetRegistryData = {
          */
         searchQuery?: string;
     };
-    url: '/registry/';
+    url: '/registry';
 };
 
 export type GetRegistryResponses = {
@@ -6424,7 +6715,7 @@ export type PostRegistryData = {
     };
     path?: never;
     query?: never;
-    url: '/registry/';
+    url: '/registry';
 };
 
 export type PostRegistryResponses = {
@@ -6518,7 +6809,7 @@ export type PostRegistryDeregisterData = {
 
 export type PostRegistryDeregisterResponses = {
     /**
-     * Payment source deleted
+     * Agent deregistration requested
      */
     200: {
         status: string;
@@ -6541,7 +6832,7 @@ export type GetPaymentSourceData = {
          */
         cursorId?: string;
     };
-    url: '/payment-source/';
+    url: '/payment-source';
 };
 
 export type GetPaymentSourceResponses = {
@@ -6570,7 +6861,7 @@ export type DeletePaymentSourceExtendedData = {
     };
     path?: never;
     query?: never;
-    url: '/payment-source-extended/';
+    url: '/payment-source-extended';
 };
 
 export type DeletePaymentSourceExtendedResponses = {
@@ -6598,7 +6889,7 @@ export type GetPaymentSourceExtendedData = {
          */
         cursorId?: string;
     };
-    url: '/payment-source-extended/';
+    url: '/payment-source-extended';
 };
 
 export type GetPaymentSourceExtendedResponses = {
@@ -6693,7 +6984,7 @@ export type PatchPaymentSourceExtendedData = {
     };
     path?: never;
     query?: never;
-    url: '/payment-source-extended/';
+    url: '/payment-source-extended';
 };
 
 export type PatchPaymentSourceExtendedResponses = {
@@ -6801,7 +7092,7 @@ export type PostPaymentSourceExtendedData = {
     };
     path?: never;
     query?: never;
-    url: '/payment-source-extended/';
+    url: '/payment-source-extended';
 };
 
 export type PostPaymentSourceExtendedResponses = {
@@ -6839,9 +7130,9 @@ export type GetUtxosData = {
         /**
          * The order to get the UTXOs in
          */
-        order?: 'asc' | 'desc';
+        order?: 'Asc' | 'Desc';
     };
-    url: '/utxos/';
+    url: '/utxos';
 };
 
 export type GetUtxosResponses = {
@@ -6874,7 +7165,18 @@ export type GetRpcApiKeysData = {
          */
         limit?: number;
     };
-    url: '/rpc-api-keys/';
+    url: '/rpc-api-keys';
+};
+
+export type GetRpcApiKeysErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
 };
 
 export type GetRpcApiKeysResponses = {
@@ -6882,10 +7184,13 @@ export type GetRpcApiKeysResponses = {
      * Blockfrost keys
      */
     200: {
-        /**
-         * List of RPC provider keys
-         */
-        RpcProviderKeys: Array<RpcProviderKey>;
+        status: 'success';
+        data: {
+            /**
+             * List of RPC provider keys
+             */
+            RpcProviderKeys: Array<RpcProviderKey>;
+        };
     };
 };
 
@@ -6898,15 +7203,15 @@ export type PostPurchaseSpendingData = {
          */
         agentIdentifier: string | null;
         /**
-         * Start date for spendings calculation (date format: 2024-01-01). If null, uses earliest available data. If provided, will be converted to the local time zone of the user
+         * Start date for spending calculation (date format: 2024-01-01). If null, uses earliest available data. If provided, will be converted to the local time zone of the user
          */
         startDate?: Date | unknown;
         /**
-         * End date for spendings calculation (date format: 2024-01-31). If null, uses current date. If provided, will be converted to the local time zone of the user
+         * End date for spending calculation (date format: 2024-01-31). If null, uses current date. If provided, will be converted to the local time zone of the user
          */
         endDate?: Date | unknown;
         /**
-         * The time zone to use for the spendings calculation. If not provided, will use the UTC time zone. Must be a valid IANA time zone name, see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+         * The time zone to use for the spending calculation. If not provided, will use the UTC time zone. Must be a valid IANA time zone name, see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
          */
         timeZone?: string;
         /**
@@ -6949,28 +7254,28 @@ export type PostPurchaseSpendingResponses = {
             periodStart: Date;
             periodEnd: Date;
             totalTransactions: number;
-            totalSpend: {
-                units: Array<{
+            TotalSpend: {
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
                 blockchainFees: number;
             };
-            totalRefunded: {
-                units: Array<{
+            TotalRefunded: {
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
                 blockchainFees: number;
             };
-            totalPending: {
-                units: Array<{
+            TotalPending: {
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
                 blockchainFees: number;
             };
-            dailySpend: Array<{
+            DailySpend: Array<{
                 /**
                  * The day of the month
                  */
@@ -6983,13 +7288,13 @@ export type PostPurchaseSpendingResponses = {
                  * The year
                  */
                 year: number;
-                units: Array<{
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
                 blockchainFees: number;
             }>;
-            dailyRefunded: Array<{
+            DailyRefunded: Array<{
                 /**
                  * The day of the month
                  */
@@ -7002,13 +7307,13 @@ export type PostPurchaseSpendingResponses = {
                  * The year
                  */
                 year: number;
-                units: Array<{
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
                 blockchainFees: number;
             }>;
-            dailyPending: Array<{
+            DailyPending: Array<{
                 /**
                  * The day of the month
                  */
@@ -7021,13 +7326,13 @@ export type PostPurchaseSpendingResponses = {
                  * The year
                  */
                 year: number;
-                units: Array<{
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
                 blockchainFees: number;
             }>;
-            monthlySpend: Array<{
+            MonthlySpend: Array<{
                 /**
                  * The month
                  */
@@ -7036,13 +7341,13 @@ export type PostPurchaseSpendingResponses = {
                  * The year
                  */
                 year: number;
-                units: Array<{
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
                 blockchainFees: number;
             }>;
-            monthlyRefunded: Array<{
+            MonthlyRefunded: Array<{
                 /**
                  * The month
                  */
@@ -7051,13 +7356,13 @@ export type PostPurchaseSpendingResponses = {
                  * The year
                  */
                 year: number;
-                units: Array<{
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
                 blockchainFees: number;
             }>;
-            monthlyPending: Array<{
+            MonthlyPending: Array<{
                 /**
                  * The month
                  */
@@ -7066,7 +7371,7 @@ export type PostPurchaseSpendingResponses = {
                  * The year
                  */
                 year: number;
-                units: Array<{
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
@@ -7136,28 +7441,28 @@ export type PostPaymentIncomeResponses = {
             periodStart: Date;
             periodEnd: Date;
             totalTransactions: number;
-            totalIncome: {
-                units: Array<{
+            TotalIncome: {
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
                 blockchainFees: number;
             };
-            totalRefunded: {
-                units: Array<{
+            TotalRefunded: {
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
                 blockchainFees: number;
             };
-            totalPending: {
-                units: Array<{
+            TotalPending: {
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
                 blockchainFees: number;
             };
-            dailyIncome: Array<{
+            DailyIncome: Array<{
                 /**
                  * The day of the month
                  */
@@ -7170,13 +7475,13 @@ export type PostPaymentIncomeResponses = {
                  * The year
                  */
                 year: number;
-                units: Array<{
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
                 blockchainFees: number;
             }>;
-            dailyRefunded: Array<{
+            DailyRefunded: Array<{
                 /**
                  * The day of the month
                  */
@@ -7189,13 +7494,13 @@ export type PostPaymentIncomeResponses = {
                  * The year
                  */
                 year: number;
-                units: Array<{
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
                 blockchainFees: number;
             }>;
-            dailyPending: Array<{
+            DailyPending: Array<{
                 /**
                  * The day of the month
                  */
@@ -7208,13 +7513,13 @@ export type PostPaymentIncomeResponses = {
                  * The year
                  */
                 year: number;
-                units: Array<{
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
                 blockchainFees: number;
             }>;
-            monthlyIncome: Array<{
+            MonthlyIncome: Array<{
                 /**
                  * The month
                  */
@@ -7223,13 +7528,13 @@ export type PostPaymentIncomeResponses = {
                  * The year
                  */
                 year: number;
-                units: Array<{
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
                 blockchainFees: number;
             }>;
-            monthlyRefunded: Array<{
+            MonthlyRefunded: Array<{
                 /**
                  * The month
                  */
@@ -7238,13 +7543,13 @@ export type PostPaymentIncomeResponses = {
                  * The year
                  */
                 year: number;
-                units: Array<{
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
                 blockchainFees: number;
             }>;
-            monthlyPending: Array<{
+            MonthlyPending: Array<{
                 /**
                  * The month
                  */
@@ -7253,7 +7558,7 @@ export type PostPaymentIncomeResponses = {
                  * The year
                  */
                 year: number;
-                units: Array<{
+                Units: Array<{
                     unit: string;
                     amount: number;
                 }>;
@@ -7277,7 +7582,7 @@ export type DeleteWebhooksData = {
     };
     path?: never;
     query?: never;
-    url: '/webhooks/';
+    url: '/webhooks';
 };
 
 export type DeleteWebhooksErrors = {
@@ -7333,7 +7638,7 @@ export type GetWebhooksData = {
          */
         limit?: number;
     };
-    url: '/webhooks/';
+    url: '/webhooks';
 };
 
 export type GetWebhooksErrors = {
@@ -7354,10 +7659,10 @@ export type GetWebhooksResponses = {
     200: {
         status: string;
         data: {
-            webhooks: Array<{
+            Webhooks: Array<{
                 id: string;
                 url: string;
-                events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR'>;
+                Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR'>;
                 name: string | null;
                 isActive: boolean;
                 createdAt: Date;
@@ -7366,7 +7671,7 @@ export type GetWebhooksResponses = {
                 failureCount: number;
                 lastSuccessAt: Date | null;
                 disabledAt: Date | null;
-                createdBy: {
+                CreatedBy: {
                     apiKeyId: string;
                     apiKeyToken: string;
                 } | null;
@@ -7393,7 +7698,7 @@ export type PostWebhooksData = {
         /**
          * Array of event types to subscribe to
          */
-        events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR'>;
+        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR'>;
         /**
          * Human-readable name for the webhook
          */
@@ -7405,7 +7710,7 @@ export type PostWebhooksData = {
     };
     path?: never;
     query?: never;
-    url: '/webhooks/';
+    url: '/webhooks';
 };
 
 export type PostWebhooksErrors = {
@@ -7418,6 +7723,14 @@ export type PostWebhooksErrors = {
      */
     401: unknown;
     /**
+     * Payment source not found
+     */
+    404: unknown;
+    /**
+     * Webhook URL already registered for this payment source
+     */
+    409: unknown;
+    /**
      * Internal Server Error
      */
     500: unknown;
@@ -7427,12 +7740,12 @@ export type PostWebhooksResponses = {
     /**
      * Webhook endpoint registered successfully
      */
-    201: {
+    200: {
         status: string;
         data: {
             id: string;
             url: string;
-            events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR'>;
+            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR'>;
             name: string | null;
             isActive: boolean;
             createdAt: Date;
@@ -7447,7 +7760,7 @@ export type GetMonitoringData = {
     body?: never;
     path?: never;
     query?: never;
-    url: '/monitoring/';
+    url: '/monitoring';
 };
 
 export type GetMonitoringErrors = {
@@ -7456,16 +7769,19 @@ export type GetMonitoringErrors = {
      */
     401: unknown;
     /**
-     * Forbidden (admin access required)
+     * Internal Server Error
      */
-    403: unknown;
+    500: unknown;
 };
 
 export type GetMonitoringResponses = {
     /**
      * Monitoring service status
      */
-    200: MonitoringStatus;
+    200: {
+        status: 'success';
+        data: MonitoringStatus;
+    };
 };
 
 export type GetMonitoringResponse = GetMonitoringResponses[keyof GetMonitoringResponses];
@@ -7474,7 +7790,7 @@ export type PostMonitoringTriggerCycleData = {
     body?: never;
     path?: never;
     query?: never;
-    url: '/monitoring/trigger-cycle/';
+    url: '/monitoring/trigger-cycle';
 };
 
 export type PostMonitoringTriggerCycleErrors = {
@@ -7483,16 +7799,19 @@ export type PostMonitoringTriggerCycleErrors = {
      */
     401: unknown;
     /**
-     * Forbidden (admin access required)
+     * Internal Server Error
      */
-    403: unknown;
+    500: unknown;
 };
 
 export type PostMonitoringTriggerCycleResponses = {
     /**
      * Monitoring cycle trigger result
      */
-    200: TriggeredMonitoringCycle;
+    200: {
+        status: 'success';
+        data: TriggeredMonitoringCycle;
+    };
 };
 
 export type PostMonitoringTriggerCycleResponse = PostMonitoringTriggerCycleResponses[keyof PostMonitoringTriggerCycleResponses];
@@ -7509,7 +7828,7 @@ export type PostMonitoringStartData = {
     };
     path?: never;
     query?: never;
-    url: '/monitoring/start/';
+    url: '/monitoring/start';
 };
 
 export type PostMonitoringStartErrors = {
@@ -7518,16 +7837,23 @@ export type PostMonitoringStartErrors = {
      */
     401: unknown;
     /**
-     * Forbidden (admin access required)
+     * Conflict (monitoring service is already running)
      */
-    403: unknown;
+    409: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
 };
 
 export type PostMonitoringStartResponses = {
     /**
      * Monitoring service start result
      */
-    200: StartedMonitoring;
+    200: {
+        status: 'success';
+        data: StartedMonitoring;
+    };
 };
 
 export type PostMonitoringStartResponse = PostMonitoringStartResponses[keyof PostMonitoringStartResponses];
@@ -7536,25 +7862,32 @@ export type PostMonitoringStopData = {
     body?: never;
     path?: never;
     query?: never;
-    url: '/monitoring/stop/';
+    url: '/monitoring/stop';
 };
 
 export type PostMonitoringStopErrors = {
+    /**
+     * Bad Request (monitoring service is not currently running)
+     */
+    400: unknown;
     /**
      * Unauthorized
      */
     401: unknown;
     /**
-     * Forbidden (admin access required)
+     * Internal Server Error
      */
-    403: unknown;
+    500: unknown;
 };
 
 export type PostMonitoringStopResponses = {
     /**
      * Monitoring service stop result
      */
-    200: StoppedMonitoring;
+    200: {
+        status: 'success';
+        data: StoppedMonitoring;
+    };
 };
 
 export type PostMonitoringStopResponse = PostMonitoringStopResponses[keyof PostMonitoringStopResponses];

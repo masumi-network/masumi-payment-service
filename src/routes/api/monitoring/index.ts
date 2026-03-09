@@ -5,25 +5,25 @@ import createHttpError from 'http-errors';
 
 export const monitoringStatusResponseSchema = z
 	.object({
-		monitoringStatus: z
+		MonitoringStatus: z
 			.object({
 				isMonitoring: z.boolean().describe('Whether the blockchain state monitoring service is currently running'),
-				stats: z
+				Stats: z
 					.object({
 						trackedEntities: z.number().describe('Number of entities being tracked by the monitoring service'),
-						purchaseCursor: z
+						PurchaseCursor: z
 							.object({
 								timestamp: z.string().describe('Last processed purchase timestamp'),
 								lastId: z.string().nullable().describe('Last processed purchase ID'),
 							})
 							.describe('Cursor position for purchase diff tracking'),
-						paymentCursor: z
+						PaymentCursor: z
 							.object({
 								timestamp: z.string().describe('Last processed payment timestamp'),
 								lastId: z.string().nullable().describe('Last processed payment ID'),
 							})
 							.describe('Cursor position for payment diff tracking'),
-						memoryUsage: z
+						MemoryUsage: z
 							.object({
 								heapUsed: z.string().describe('Heap memory currently used by the monitoring service '),
 								heapTotal: z.string().describe('Total heap memory allocated for the monitoring service '),
@@ -47,20 +47,20 @@ export const getMonitoringStatus = adminAuthenticatedEndpointFactory.build({
 			const status = blockchainStateMonitorService.getStatus();
 
 			return {
-				monitoringStatus: {
+				MonitoringStatus: {
 					isMonitoring: status.isMonitoring,
-					stats: status.stats
+					Stats: status.stats
 						? {
 								trackedEntities: status.stats.trackedEntities,
-								purchaseCursor: {
+								PurchaseCursor: {
 									timestamp: status.stats.purchaseCursor.timestamp.toISOString(),
 									lastId: status.stats.purchaseCursor.lastId ?? null,
 								},
-								paymentCursor: {
+								PaymentCursor: {
 									timestamp: status.stats.paymentCursor.timestamp.toISOString(),
 									lastId: status.stats.paymentCursor.lastId ?? null,
 								},
-								memoryUsage: {
+								MemoryUsage: {
 									heapUsed: `${Math.round(status.stats.memoryUsage.heapUsed / 1024 / 1024)}MB`,
 									heapTotal: `${Math.round(status.stats.memoryUsage.heapTotal / 1024 / 1024)}MB`,
 									external: `${Math.round(status.stats.memoryUsage.external / 1024 / 1024)}MB`,
@@ -180,7 +180,7 @@ export const stopMonitoring = adminAuthenticatedEndpointFactory.build({
 export const getDiagnosticsResponseSchema = z
 	.object({
 		recentCount: z.number().describe('Number of recent registry requests'),
-		allStates: z
+		AllStates: z
 			.array(z.object({ state: z.string(), count: z.number() }))
 			.describe('List of all possible registry request states'),
 	})

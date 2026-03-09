@@ -722,7 +722,7 @@ export async function updateWalletTransactionHash() {
 			});
 			for (const hotWallet of errorHotWallets) {
 				logger.error(
-					`Hot wallet ${hotWallet.id} was in an invalid locked state (this is likely a bug please report it with the following transaction hash): ${hotWallet.PendingTransaction?.txHash}`,
+					`Hot wallet ${hotWallet.id} was in an invalid locked state, Pending transaction is not null, wallet is not locked (this is likely a bug please report it with the following transaction hash): ${hotWallet.PendingTransaction?.txHash} ; transaction id: ${hotWallet.PendingTransaction?.id}`,
 				);
 				await prisma.hotWallet.update({
 					where: { id: hotWallet.id, deletedAt: null },

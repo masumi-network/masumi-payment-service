@@ -1,4 +1,3 @@
-import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { z } from '@/utils/zod-openapi';
 import { ez } from 'express-zod-api';
 import { prisma } from '@/utils/db';
@@ -7,6 +6,7 @@ import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/m
 import createHttpError from 'http-errors';
 import { queryRegistryRequestSchemaOutput } from '@/routes/api/registry';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
+import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 
 const registryDiffLastUpdateSchema = ez.dateIn();
 
@@ -63,7 +63,7 @@ function buildRegistryDiffWhere({
 		: { ...base, registrationStateLastChangedAt: { gte: lastUpdate } };
 }
 
-export const queryRegistryDiffGet = payAuthenticatedEndpointFactory.build({
+export const queryRegistryDiffGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: queryRegistryDiffSchemaInput,
 	output: queryRegistryRequestSchemaOutput,

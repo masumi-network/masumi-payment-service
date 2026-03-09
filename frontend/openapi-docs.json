@@ -44,7 +44,7 @@
                         "type": "boolean",
                         "description": "Whether the API key has usage limits"
                     },
-                    "networkLimit": {
+                    "NetworkLimit": {
                         "type": "array",
                         "items": {
                             "type": "string",
@@ -110,7 +110,7 @@
                     "token",
                     "permission",
                     "usageLimited",
-                    "networkLimit",
+                    "NetworkLimit",
                     "RemainingUsageCredits",
                     "status",
                     "walletScopeEnabled",
@@ -226,12 +226,7 @@
                     "walletMnemonic",
                     "walletAddress",
                     "walletVkey"
-                ],
-                "example": {
-                    "walletMnemonic": "wallet_mnemonic",
-                    "walletAddress": "wallet_address",
-                    "walletVkey": "wallet_vkey"
-                }
+                ]
             },
             "Payment": {
                 "type": "object",
@@ -1023,6 +1018,20 @@
                         "items": {
                             "type": "object",
                             "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "description": "Unique identifier for the action"
+                                },
+                                "createdAt": {
+                                    "type": "string",
+                                    "format": "date-time",
+                                    "description": "Timestamp when the action was created"
+                                },
+                                "updatedAt": {
+                                    "type": "string",
+                                    "format": "date-time",
+                                    "description": "Timestamp when the action was last updated"
+                                },
                                 "requestedAction": {
                                     "type": "string",
                                     "enum": [
@@ -1059,6 +1068,9 @@
                                 }
                             },
                             "required": [
+                                "id",
+                                "createdAt",
+                                "updatedAt",
                                 "requestedAction",
                                 "errorType",
                                 "errorNote"
@@ -2761,14 +2773,14 @@
             "MonitoringStatus": {
                 "type": "object",
                 "properties": {
-                    "monitoringStatus": {
+                    "MonitoringStatus": {
                         "type": "object",
                         "properties": {
                             "isMonitoring": {
                                 "type": "boolean",
                                 "description": "Whether the blockchain state monitoring service is currently running"
                             },
-                            "stats": {
+                            "Stats": {
                                 "type": "object",
                                 "nullable": true,
                                 "properties": {
@@ -2776,7 +2788,7 @@
                                         "type": "number",
                                         "description": "Number of entities being tracked by the monitoring service"
                                     },
-                                    "purchaseCursor": {
+                                    "PurchaseCursor": {
                                         "type": "object",
                                         "properties": {
                                             "timestamp": {
@@ -2795,7 +2807,7 @@
                                         ],
                                         "description": "Cursor position for purchase diff tracking"
                                     },
-                                    "paymentCursor": {
+                                    "PaymentCursor": {
                                         "type": "object",
                                         "properties": {
                                             "timestamp": {
@@ -2814,7 +2826,7 @@
                                         ],
                                         "description": "Cursor position for payment diff tracking"
                                     },
-                                    "memoryUsage": {
+                                    "MemoryUsage": {
                                         "type": "object",
                                         "properties": {
                                             "heapUsed": {
@@ -2840,44 +2852,23 @@
                                 },
                                 "required": [
                                     "trackedEntities",
-                                    "purchaseCursor",
-                                    "paymentCursor",
-                                    "memoryUsage"
+                                    "PurchaseCursor",
+                                    "PaymentCursor",
+                                    "MemoryUsage"
                                 ],
                                 "description": "Monitoring statistics. Null if monitoring is not active"
                             }
                         },
                         "required": [
                             "isMonitoring",
-                            "stats"
+                            "Stats"
                         ],
                         "description": "Current status of the blockchain state monitoring service"
                     }
                 },
                 "required": [
-                    "monitoringStatus"
-                ],
-                "example": {
-                    "monitoringStatus": {
-                        "isMonitoring": true,
-                        "stats": {
-                            "trackedEntities": 42,
-                            "purchaseCursor": {
-                                "timestamp": "2024-01-01T00:00:00.000Z",
-                                "lastId": "cuid_v2_auto_generated"
-                            },
-                            "paymentCursor": {
-                                "timestamp": "2024-01-01T00:00:00.000Z",
-                                "lastId": "cuid_v2_auto_generated"
-                            },
-                            "memoryUsage": {
-                                "heapUsed": "50MB",
-                                "heapTotal": "100MB",
-                                "external": "10MB"
-                            }
-                        }
-                    }
-                }
+                    "MonitoringStatus"
+                ]
             },
             "TriggeredMonitoringCycle": {
                 "type": "object",
@@ -2894,11 +2885,7 @@
                 "required": [
                     "message",
                     "triggered"
-                ],
-                "example": {
-                    "message": "Manual monitoring cycle completed successfully",
-                    "triggered": true
-                }
+                ]
             },
             "StartedMonitoring": {
                 "type": "object",
@@ -2915,11 +2902,7 @@
                 "required": [
                     "message",
                     "started"
-                ],
-                "example": {
-                    "message": "Monitoring service started with 30000ms interval",
-                    "started": true
-                }
+                ]
             },
             "StoppedMonitoring": {
                 "type": "object",
@@ -2936,17 +2919,13 @@
                 "required": [
                     "message",
                     "stopped"
-                ],
-                "example": {
-                    "message": "Monitoring service stopped successfully",
-                    "stopped": true
-                }
+                ]
             }
         },
         "parameters": {}
     },
     "paths": {
-        "/health/": {
+        "/health": {
             "get": {
                 "tags": [
                     "health"
@@ -2962,14 +2941,32 @@
                                     "properties": {
                                         "status": {
                                             "type": "string",
-                                            "description": "Health status of the service. Returns \"ok\" when the service is running"
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "status": {
+                                                    "type": "string",
+                                                    "description": "Health status of the service. Returns \"ok\" when the service is running"
+                                                }
+                                            },
+                                            "required": [
+                                                "status"
+                                            ]
                                         }
                                     },
                                     "required": [
-                                        "status"
+                                        "status",
+                                        "data"
                                     ],
                                     "example": {
-                                        "status": "ok"
+                                        "status": "success",
+                                        "data": {
+                                            "status": "ok"
+                                        }
                                     }
                                 }
                             }
@@ -2978,7 +2975,7 @@
                 }
             }
         },
-        "/api-key-status/": {
+        "/api-key-status": {
             "get": {
                 "description": "Gets api key status",
                 "summary": "Get information about your current API key.",
@@ -3010,13 +3007,13 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "api_key_id",
                                             "token": "masumi_payment_api_key_secret",
                                             "permission": "Admin",
                                             "usageLimited": true,
-                                            "networkLimit": [
+                                            "NetworkLimit": [
                                                 "Preprod"
                                             ],
                                             "RemainingUsageCredits": [
@@ -3037,7 +3034,7 @@
                 }
             }
         },
-        "/wallet/": {
+        "/wallet": {
             "get": {
                 "description": "Gets wallet status",
                 "summary": "Get information about a wallet. (admin access required)",
@@ -3108,7 +3105,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "walletVkey": "wallet_vkey",
                                             "note": "note",
@@ -3166,7 +3163,30 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/GeneratedWalletSecret"
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/GeneratedWalletSecret"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "walletMnemonic": "wallet_mnemonic",
+                                            "walletAddress": "wallet_address",
+                                            "walletVkey": "wallet_vkey"
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -3222,28 +3242,43 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "allOf": [
-                                        {
-                                            "$ref": "#/components/schemas/Wallet"
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
                                         },
-                                        {
-                                            "example": {
-                                                "walletVkey": "wallet_vkey",
-                                                "note": "note",
-                                                "PendingTransaction": null,
-                                                "walletAddress": "wallet_address",
-                                                "collectionAddress": "collection_address"
-                                            }
+                                        "data": {
+                                            "$ref": "#/components/schemas/Wallet"
                                         }
-                                    ]
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "walletVkey": "wallet_vkey",
+                                            "note": "note",
+                                            "PendingTransaction": null,
+                                            "walletAddress": "wallet_address",
+                                            "collectionAddress": "collection_address"
+                                        }
+                                    }
                                 }
                             }
                         }
+                    },
+                    "404": {
+                        "description": "Wallet not found"
                     }
                 }
             }
         },
-        "/signature/verify/reveal-data/": {
+        "/signature/verify/reveal-data": {
             "post": {
                 "description": "Verifies the reveal data signature is valid.",
                 "summary": "Verifies the reveal data signature is valid. (read access required)",
@@ -3292,7 +3327,7 @@
                                     "action": {
                                         "type": "string",
                                         "enum": [
-                                            "reveal_data"
+                                            "RevealData"
                                         ],
                                         "description": "The action to perform"
                                     }
@@ -3306,7 +3341,7 @@
                                     "action"
                                 ],
                                 "example": {
-                                    "action": "reveal_data",
+                                    "action": "RevealData",
                                     "blockchainIdentifier": "blockchain_identifier",
                                     "signature": "signature",
                                     "key": "key",
@@ -3325,25 +3360,58 @@
                                 "schema": {
                                     "type": "object",
                                     "properties": {
-                                        "isValid": {
-                                            "type": "boolean",
-                                            "description": "Whether the signature is valid and the data can be revealed"
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "isValid": {
+                                                    "type": "boolean",
+                                                    "description": "Whether the signature is valid and the data can be revealed"
+                                                }
+                                            },
+                                            "required": [
+                                                "isValid"
+                                            ]
                                         }
                                     },
                                     "required": [
-                                        "isValid"
+                                        "status",
+                                        "data"
                                     ],
                                     "example": {
-                                        "isValid": true
+                                        "status": "success",
+                                        "data": {
+                                            "isValid": true
+                                        }
                                     }
                                 }
                             }
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request (invalid signature or payment is not disputable)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "403": {
+                        "description": "Forbidden (network not allowed)"
+                    },
+                    "404": {
+                        "description": "Payment not found"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
                     }
                 }
             }
         },
-        "/api-key/": {
+        "/api-key": {
             "get": {
                 "description": "Gets api key status",
                 "summary": "Get information about all API keys. (admin access required)",
@@ -3366,7 +3434,7 @@
                         },
                         "required": false,
                         "description": "The number of API keys to return",
-                        "name": "limit",
+                        "name": "take",
                         "in": "query"
                     },
                     {
@@ -3420,7 +3488,7 @@
                                                     "token": "masumi_payment_api_key_secret",
                                                     "permission": "Admin",
                                                     "usageLimited": true,
-                                                    "networkLimit": [
+                                                    "NetworkLimit": [
                                                         "Preprod"
                                                     ],
                                                     "RemainingUsageCredits": [
@@ -3435,7 +3503,7 @@
                                                 }
                                             ]
                                         },
-                                        "status": "success"
+                                        "status": "Success"
                                     }
                                 }
                             }
@@ -3497,7 +3565,7 @@
                                         },
                                         "description": "The credits allowed to be used by the API key. Only relevant if usageLimited is true. "
                                     },
-                                    "networkLimit": {
+                                    "NetworkLimit": {
                                         "type": "array",
                                         "items": {
                                             "type": "string",
@@ -3560,7 +3628,7 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "API key deleted",
+                        "description": "API key created",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -3578,13 +3646,13 @@
                                         "status"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "api_key_id",
                                             "token": "masumi_payment_api_key_secret",
                                             "permission": "Admin",
                                             "usageLimited": true,
-                                            "networkLimit": [
+                                            "NetworkLimit": [
                                                 "Preprod"
                                             ],
                                             "RemainingUsageCredits": [
@@ -3679,7 +3747,7 @@
                                         "default": "Active",
                                         "description": "The status of the API key"
                                     },
-                                    "networkLimit": {
+                                    "NetworkLimit": {
                                         "type": "array",
                                         "items": {
                                             "type": "string",
@@ -3738,7 +3806,7 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "API key deleted",
+                        "description": "API key updated",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -3756,13 +3824,13 @@
                                         "status"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "api_key_id",
                                             "token": "masumi_payment_api_key_secret",
                                             "permission": "Admin",
                                             "usageLimited": true,
-                                            "networkLimit": [
+                                            "NetworkLimit": [
                                                 "Preprod",
                                                 "Mainnet"
                                             ],
@@ -3846,13 +3914,13 @@
                                         "status"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "api_key_id",
                                             "token": "masumi_payment_api_key_secret",
                                             "permission": "Admin",
                                             "usageLimited": true,
-                                            "networkLimit": [
+                                            "NetworkLimit": [
                                                 "Preprod"
                                             ],
                                             "RemainingUsageCredits": [
@@ -3882,7 +3950,7 @@
                 }
             }
         },
-        "/swap/": {
+        "/swap": {
             "post": {
                 "description": "Swap ADA for CNTs (Cardano Native Tokens) or CNTs for ADA using SundaeSwap DEX. This endpoint is mainnet-only.",
                 "summary": "Execute a token swap on SundaeSwap. (admin access required, mainnet only)",
@@ -3913,7 +3981,7 @@
                                         "maximum": 1000000000000,
                                         "description": "Amount to swap (in ADA or token units). Capped to prevent overflow/DoS."
                                     },
-                                    "fromToken": {
+                                    "FromToken": {
                                         "type": "object",
                                         "properties": {
                                             "policyId": {
@@ -3936,7 +4004,7 @@
                                         ],
                                         "description": "Source token information"
                                     },
-                                    "toToken": {
+                                    "ToToken": {
                                         "type": "object",
                                         "properties": {
                                             "policyId": {
@@ -3973,19 +4041,19 @@
                                 "required": [
                                     "walletVkey",
                                     "amount",
-                                    "fromToken",
-                                    "toToken",
+                                    "FromToken",
+                                    "ToToken",
                                     "poolId"
                                 ],
                                 "example": {
                                     "walletVkey": "wallet_verification_key_here",
                                     "amount": 1,
-                                    "fromToken": {
+                                    "FromToken": {
                                         "policyId": "c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad",
                                         "assetName": "5553444d",
                                         "name": "USDM"
                                     },
-                                    "toToken": {
+                                    "ToToken": {
                                         "policyId": "c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad",
                                         "assetName": "5553444d",
                                         "name": "USDM"
@@ -4038,7 +4106,7 @@
                 }
             }
         },
-        "/swap/confirm/": {
+        "/swap/confirm": {
             "get": {
                 "description": "Check on-chain confirmation status of a swap transaction by transaction hash. Use after POST /swap/ to poll until status is confirmed. Mainnet only.",
                 "summary": "Get swap transaction confirmation status. (admin access required, mainnet only)",
@@ -4076,7 +4144,7 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "Confirmation status (pending, confirmed, or not_found)",
+                        "description": "Confirmation status (Pending, Confirmed, or NotFound)",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -4085,11 +4153,11 @@
                                         "status": {
                                             "type": "string",
                                             "enum": [
-                                                "pending",
-                                                "confirmed",
-                                                "not_found"
+                                                "Pending",
+                                                "Confirmed",
+                                                "NotFound"
                                             ],
-                                            "description": "On-chain status: pending (not yet in a block), confirmed (in a block), not_found (tx unknown)"
+                                            "description": "On-chain status: Pending (not yet in a block), Confirmed (in a block), NotFound (tx unknown)"
                                         },
                                         "swapStatus": {
                                             "type": "string",
@@ -4110,7 +4178,7 @@
                                         "status"
                                     ],
                                     "example": {
-                                        "status": "confirmed",
+                                        "status": "Confirmed",
                                         "swapStatus": "OrderConfirmed",
                                         "confirmations": 15
                                     }
@@ -4130,7 +4198,7 @@
                 }
             }
         },
-        "/swap/transactions/": {
+        "/swap/transactions": {
             "get": {
                 "description": "List swap transactions for a wallet, ordered by most recent first. Supports cursor-based pagination.",
                 "summary": "List swap transactions. (admin access required, mainnet only)",
@@ -4186,7 +4254,7 @@
                                 "schema": {
                                     "type": "object",
                                     "properties": {
-                                        "swapTransactions": {
+                                        "SwapTransactions": {
                                             "type": "array",
                                             "items": {
                                                 "type": "object",
@@ -4275,10 +4343,10 @@
                                         }
                                     },
                                     "required": [
-                                        "swapTransactions"
+                                        "SwapTransactions"
                                     ],
                                     "example": {
-                                        "swapTransactions": [
+                                        "SwapTransactions": [
                                             {
                                                 "id": "clx1abc...",
                                                 "createdAt": "2026-03-06T12:00:00.000Z",
@@ -4311,7 +4379,7 @@
                 }
             }
         },
-        "/swap/estimate/": {
+        "/swap/estimate": {
             "get": {
                 "description": "Get a swap price estimate from the SundaeSwap pool. Returns the conversion rate based on current pool reserves.",
                 "summary": "Get swap price estimate. (admin access required, mainnet only)",
@@ -4426,7 +4494,7 @@
                 }
             }
         },
-        "/swap/cancel/": {
+        "/swap/cancel": {
             "post": {
                 "description": "Cancel a pending SundaeSwap order that is sitting at the script address. Only orders in OrderConfirmed state can be cancelled.",
                 "summary": "Cancel a pending swap order. (admin access required, mainnet only)",
@@ -4506,7 +4574,7 @@
                 }
             }
         },
-        "/swap/acknowledge-timeout/": {
+        "/swap/acknowledge-timeout": {
             "post": {
                 "description": "Acknowledge a timed-out swap transaction. Checks on-chain state and recovers to the correct status: OrderConfirmed if the order UTXO still exists (allowing retry), Completed if the DEX executed the swap, or keeps the timeout state if the order tx never confirmed.",
                 "summary": "Acknowledge a swap timeout and recover state. (admin access required, mainnet only)",
@@ -4589,10 +4657,10 @@
                 }
             }
         },
-        "/payment/": {
+        "/payment": {
             "get": {
                 "description": "Gets the payment status. It needs to be created first with a POST request.",
-                "summary": "Get information about a payment request. (admin access required)",
+                "summary": "Get information about a payment request. (READ access required)",
                 "tags": [
                     "payment"
                 ],
@@ -4723,7 +4791,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "Payments": [
                                                 {
@@ -4795,7 +4863,7 @@
             },
             "post": {
                 "description": "Creates a payment request and identifier. This will check incoming payments in the background.",
-                "summary": "Create a new payment request. (admin access required +PAY)",
+                "summary": "Create a new payment request. (+PAY access required)",
                 "tags": [
                     "payment"
                 ],
@@ -4932,7 +5000,7 @@
                                         "type": "string",
                                         "minLength": 14,
                                         "maxLength": 26,
-                                        "description": "The a unique nonce from the purchaser. Required to be in hex format"
+                                        "description": "A unique nonce from the purchaser. It must be in hex format"
                                     }
                                 },
                                 "required": [
@@ -5413,7 +5481,7 @@
                                         "status"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
@@ -5607,7 +5675,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "Payments": [
                                                 {
@@ -5806,7 +5874,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "Payments": [
                                                 {
@@ -5945,7 +6013,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "total": 150
                                         }
@@ -6025,7 +6093,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "total": 75
                                         }
@@ -6165,7 +6233,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "Payments": [
                                                 {
@@ -6238,8 +6306,8 @@
         },
         "/payment/submit-result": {
             "post": {
-                "description": "Submit the hash of their completed job for a payment request, which triggers the fund unlock process so the seller can collect payment after the unlock time expires. (admin access required +PAY)",
-                "summary": "Completes a payment request. This will collect the funds after the unlock time. (admin access required +PAY)",
+                "description": "Submit the hash of their completed job for a payment request, which triggers the fund unlock process so the seller can collect payment after the unlock time expires. (+PAY access required; only the creator or an admin may submit)",
+                "summary": "Completes a payment request. This will collect the funds after the unlock time. (+PAY access required; only the creator or an admin may submit)",
                 "tags": [
                     "payment"
                 ],
@@ -6747,7 +6815,7 @@
                                         "status"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
@@ -6807,6 +6875,12 @@
                     "401": {
                         "description": "Unauthorized"
                     },
+                    "403": {
+                        "description": "Forbidden (only the creator or an admin can submit results)"
+                    },
+                    "404": {
+                        "description": "Payment not found or in invalid state"
+                    },
                     "500": {
                         "description": "Internal Server Error"
                     }
@@ -6815,8 +6889,8 @@
         },
         "/payment/authorize-refund": {
             "post": {
-                "description": "Authorizes a refund for a payment request. This will stop the right to receive a payment and initiate a refund for the other party.",
-                "summary": "Authorizes a refund for a payment request. This will stop the right to receive a payment and initiate a refund for the other party. (admin access required +PAY)",
+                "description": "Authorizes a refund for a payment request. This will stop the right to receive a payment and initiate a refund for the other party. (+PAY access required; only the creator or an admin may authorize)",
+                "summary": "Authorizes a refund for a payment request. This will stop the right to receive a payment and initiate a refund for the other party. (+PAY access required; only the creator or an admin may authorize)",
                 "tags": [
                     "payment"
                 ],
@@ -6860,7 +6934,7 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "API key deleted",
+                        "description": "Payment refund authorized",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -7317,7 +7391,7 @@
                                         "status"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
@@ -7377,13 +7451,19 @@
                     "401": {
                         "description": "Unauthorized"
                     },
+                    "403": {
+                        "description": "Forbidden (only the creator or an admin can authorize a refund)"
+                    },
+                    "404": {
+                        "description": "Payment not found or in invalid state"
+                    },
                     "500": {
                         "description": "Internal Server Error"
                     }
                 }
             }
         },
-        "/payment/error-state-recovery/": {
+        "/payment/error-state-recovery": {
             "post": {
                 "description": "Clears error states for payment requests in WaitingForManualAction state and resets them up for retry or other actions. This endpoint provides manual intervention capability to recover from error states by clearing error fields.",
                 "summary": "Clear error state for payment request (PAY access required)",
@@ -7906,7 +7986,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "cmf40vg7h0016ucj1u1ro6651"
                                         }
@@ -7996,7 +8076,7 @@
                 }
             }
         },
-        "/purchase/error-state-recovery/": {
+        "/purchase/error-state-recovery": {
             "post": {
                 "description": "Clears error states for purchase requests in WaitingForManualAction state and resets them up for retry or other actions. This endpoint provides manual intervention capability to recover from error states by clearing error fields.",
                 "summary": "Clear error state for purchase request (PAY access required)",
@@ -8075,11 +8155,426 @@
                                             "type": "object",
                                             "properties": {
                                                 "id": {
-                                                    "type": "string"
+                                                    "type": "string",
+                                                    "description": "Unique identifier for the purchase"
+                                                },
+                                                "createdAt": {
+                                                    "type": "string",
+                                                    "format": "date-time",
+                                                    "description": "Timestamp when the purchase was created"
+                                                },
+                                                "updatedAt": {
+                                                    "type": "string",
+                                                    "format": "date-time",
+                                                    "description": "Timestamp when the purchase was last updated"
+                                                },
+                                                "blockchainIdentifier": {
+                                                    "type": "string",
+                                                    "description": "Unique blockchain identifier for the purchase"
+                                                },
+                                                "agentIdentifier": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Identifier of the agent that is being purchased"
+                                                },
+                                                "lastCheckedAt": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "format": "date-time",
+                                                    "description": "Timestamp when the purchase was last checked on-chain. Null if never checked"
+                                                },
+                                                "payByTime": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Unix timestamp (in milliseconds) by which the buyer must submit the payment transaction. Null if not set"
+                                                },
+                                                "submitResultTime": {
+                                                    "type": "string",
+                                                    "description": "Unix timestamp (in milliseconds) by which the seller must submit the result"
+                                                },
+                                                "unlockTime": {
+                                                    "type": "string",
+                                                    "description": "Unix timestamp (in milliseconds) after which funds can be unlocked if no disputes"
+                                                },
+                                                "externalDisputeUnlockTime": {
+                                                    "type": "string",
+                                                    "description": "Unix timestamp (in milliseconds) after which external dispute resolution can occur"
+                                                },
+                                                "totalBuyerCardanoFees": {
+                                                    "type": "number",
+                                                    "description": "Total Cardano transaction fees paid by the buyer in ADA (sum of all confirmed transactions initiated by buyer)"
+                                                },
+                                                "totalSellerCardanoFees": {
+                                                    "type": "number",
+                                                    "description": "Total Cardano transaction fees paid by the seller in ADA (sum of all confirmed transactions initiated by seller)"
+                                                },
+                                                "nextActionOrOnChainStateOrResultLastChangedAt": {
+                                                    "type": "string",
+                                                    "format": "date-time",
+                                                    "description": "Timestamp when the next action or on-chain state or result was last changed"
+                                                },
+                                                "nextActionLastChangedAt": {
+                                                    "type": "string",
+                                                    "format": "date-time",
+                                                    "description": "Timestamp when the next action was last changed"
+                                                },
+                                                "onChainStateOrResultLastChangedAt": {
+                                                    "type": "string",
+                                                    "format": "date-time",
+                                                    "description": "Timestamp when the on-chain state or result was last changed"
+                                                },
+                                                "requestedById": {
+                                                    "type": "string",
+                                                    "description": "ID of the API key that created this purchase"
+                                                },
+                                                "onChainState": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "enum": [
+                                                        "FundsLocked",
+                                                        "FundsOrDatumInvalid",
+                                                        "ResultSubmitted",
+                                                        "RefundRequested",
+                                                        "Disputed",
+                                                        "Withdrawn",
+                                                        "RefundWithdrawn",
+                                                        "DisputedWithdrawn",
+                                                        null
+                                                    ],
+                                                    "description": "Current state of the purchase on the blockchain. Null if not yet on-chain"
+                                                },
+                                                "collateralReturnLovelace": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Amount of collateral to return in lovelace. Null if no collateral"
+                                                },
+                                                "cooldownTime": {
+                                                    "type": "number",
+                                                    "description": "Cooldown period in milliseconds for the buyer to dispute"
+                                                },
+                                                "cooldownTimeOtherParty": {
+                                                    "type": "number",
+                                                    "description": "Cooldown period in milliseconds for the seller to dispute"
+                                                },
+                                                "inputHash": {
+                                                    "type": "string",
+                                                    "description": "SHA256 hash of the input data for the purchase (hex string)"
+                                                },
+                                                "resultHash": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "SHA256 hash of the result submitted by the seller (hex string)"
+                                                },
+                                                "NextAction": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "requestedAction": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "None",
+                                                                "Ignore",
+                                                                "WaitingForManualAction",
+                                                                "WaitingForExternalAction",
+                                                                "FundsLockingRequested",
+                                                                "FundsLockingInitiated",
+                                                                "SetRefundRequestedRequested",
+                                                                "SetRefundRequestedInitiated",
+                                                                "UnSetRefundRequestedRequested",
+                                                                "UnSetRefundRequestedInitiated",
+                                                                "WithdrawRefundRequested",
+                                                                "WithdrawRefundInitiated"
+                                                            ],
+                                                            "description": "Next action required for this purchase"
+                                                        },
+                                                        "errorType": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "enum": [
+                                                                "NetworkError",
+                                                                "InsufficientFunds",
+                                                                "Unknown",
+                                                                null
+                                                            ],
+                                                            "description": "Type of error that occurred, if any"
+                                                        },
+                                                        "errorNote": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "description": "Additional details about the error, if any"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "requestedAction",
+                                                        "errorType",
+                                                        "errorNote"
+                                                    ],
+                                                    "description": "Next action required for this purchase"
+                                                },
+                                                "CurrentTransaction": {
+                                                    "type": "object",
+                                                    "nullable": true,
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "string",
+                                                            "description": "Unique identifier for the transaction"
+                                                        },
+                                                        "createdAt": {
+                                                            "type": "string",
+                                                            "format": "date-time",
+                                                            "description": "Timestamp when the transaction was created"
+                                                        },
+                                                        "updatedAt": {
+                                                            "type": "string",
+                                                            "format": "date-time",
+                                                            "description": "Timestamp when the transaction was last updated"
+                                                        },
+                                                        "txHash": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "description": "Cardano transaction hash"
+                                                        },
+                                                        "status": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Pending",
+                                                                "Confirmed",
+                                                                "FailedViaTimeout",
+                                                                "FailedViaManualReset",
+                                                                "RolledBack"
+                                                            ],
+                                                            "description": "Current status of the transaction"
+                                                        },
+                                                        "fees": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "description": "Fees of the transaction"
+                                                        },
+                                                        "blockHeight": {
+                                                            "type": "number",
+                                                            "nullable": true,
+                                                            "description": "Block height of the transaction"
+                                                        },
+                                                        "blockTime": {
+                                                            "type": "number",
+                                                            "nullable": true,
+                                                            "description": "Block time of the transaction"
+                                                        },
+                                                        "previousOnChainState": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "enum": [
+                                                                "FundsLocked",
+                                                                "FundsOrDatumInvalid",
+                                                                "ResultSubmitted",
+                                                                "RefundRequested",
+                                                                "Disputed",
+                                                                "Withdrawn",
+                                                                "RefundWithdrawn",
+                                                                "DisputedWithdrawn",
+                                                                null
+                                                            ],
+                                                            "description": "Previous on-chain state before this transaction"
+                                                        },
+                                                        "newOnChainState": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "enum": [
+                                                                "FundsLocked",
+                                                                "FundsOrDatumInvalid",
+                                                                "ResultSubmitted",
+                                                                "RefundRequested",
+                                                                "Disputed",
+                                                                "Withdrawn",
+                                                                "RefundWithdrawn",
+                                                                "DisputedWithdrawn",
+                                                                null
+                                                            ],
+                                                            "description": "New on-chain state of this transaction"
+                                                        },
+                                                        "confirmations": {
+                                                            "type": "number",
+                                                            "nullable": true,
+                                                            "description": "Number of block confirmations for this transaction"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "id",
+                                                        "createdAt",
+                                                        "updatedAt",
+                                                        "txHash",
+                                                        "status",
+                                                        "fees",
+                                                        "blockHeight",
+                                                        "blockTime",
+                                                        "previousOnChainState",
+                                                        "newOnChainState",
+                                                        "confirmations"
+                                                    ],
+                                                    "description": "Current active transaction for this purchase. Null if no transaction in progress"
+                                                },
+                                                "PaidFunds": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "amount": {
+                                                                "type": "string"
+                                                            },
+                                                            "unit": {
+                                                                "type": "string"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "amount",
+                                                            "unit"
+                                                        ]
+                                                    }
+                                                },
+                                                "WithdrawnForSeller": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "amount": {
+                                                                "type": "string"
+                                                            },
+                                                            "unit": {
+                                                                "type": "string"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "amount",
+                                                            "unit"
+                                                        ]
+                                                    }
+                                                },
+                                                "WithdrawnForBuyer": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "amount": {
+                                                                "type": "string"
+                                                            },
+                                                            "unit": {
+                                                                "type": "string"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "amount",
+                                                            "unit"
+                                                        ]
+                                                    }
+                                                },
+                                                "PaymentSource": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "string"
+                                                        },
+                                                        "network": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Preprod",
+                                                                "Mainnet"
+                                                            ]
+                                                        },
+                                                        "smartContractAddress": {
+                                                            "type": "string"
+                                                        },
+                                                        "policyId": {
+                                                            "type": "string",
+                                                            "nullable": true
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "id",
+                                                        "network",
+                                                        "smartContractAddress",
+                                                        "policyId"
+                                                    ]
+                                                },
+                                                "SellerWallet": {
+                                                    "type": "object",
+                                                    "nullable": true,
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "string",
+                                                            "description": "Unique identifier for the seller wallet"
+                                                        },
+                                                        "walletVkey": {
+                                                            "type": "string",
+                                                            "description": "Payment key hash of the seller wallet"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "id",
+                                                        "walletVkey"
+                                                    ],
+                                                    "description": "Seller wallet information. Null if not set"
+                                                },
+                                                "SmartContractWallet": {
+                                                    "type": "object",
+                                                    "nullable": true,
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "string",
+                                                            "description": "Unique identifier for the smart contract wallet"
+                                                        },
+                                                        "walletVkey": {
+                                                            "type": "string",
+                                                            "description": "Payment key hash of the smart contract wallet"
+                                                        },
+                                                        "walletAddress": {
+                                                            "type": "string",
+                                                            "description": "Cardano address of the smart contract wallet"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "id",
+                                                        "walletVkey",
+                                                        "walletAddress"
+                                                    ],
+                                                    "description": "Smart contract wallet (seller wallet) managing this purchase. Null if not set"
+                                                },
+                                                "metadata": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Optional metadata stored with the purchase for additional context. Null if not provided"
                                                 }
                                             },
                                             "required": [
-                                                "id"
+                                                "id",
+                                                "createdAt",
+                                                "updatedAt",
+                                                "blockchainIdentifier",
+                                                "agentIdentifier",
+                                                "lastCheckedAt",
+                                                "payByTime",
+                                                "submitResultTime",
+                                                "unlockTime",
+                                                "externalDisputeUnlockTime",
+                                                "totalBuyerCardanoFees",
+                                                "totalSellerCardanoFees",
+                                                "nextActionOrOnChainStateOrResultLastChangedAt",
+                                                "nextActionLastChangedAt",
+                                                "onChainStateOrResultLastChangedAt",
+                                                "requestedById",
+                                                "onChainState",
+                                                "collateralReturnLovelace",
+                                                "cooldownTime",
+                                                "cooldownTimeOtherParty",
+                                                "inputHash",
+                                                "resultHash",
+                                                "NextAction",
+                                                "CurrentTransaction",
+                                                "PaidFunds",
+                                                "WithdrawnForSeller",
+                                                "WithdrawnForBuyer",
+                                                "PaymentSource",
+                                                "SellerWallet",
+                                                "SmartContractWallet",
+                                                "metadata"
                                             ]
                                         }
                                     },
@@ -8088,7 +8583,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "cmf40vg7h0016ucj1u1ro6651"
                                         }
@@ -8211,11 +8706,11 @@
                                     "action": {
                                         "type": "string",
                                         "enum": [
-                                            "retrieve_monthly_invoices"
+                                            "RetrieveMonthlyInvoices"
                                         ],
                                         "description": "The action to perform for monthly invoices"
                                     },
-                                    "buyer": {
+                                    "Buyer": {
                                         "type": "object",
                                         "properties": {
                                             "country": {
@@ -8303,13 +8798,13 @@
                                     "buyerWalletVkey",
                                     "month",
                                     "action",
-                                    "buyer"
+                                    "Buyer"
                                 ],
                                 "example": {
-                                    "action": "retrieve_monthly_invoices",
+                                    "action": "RetrieveMonthlyInvoices",
                                     "buyerWalletVkey": "buyer_wallet_vkey",
                                     "month": "2025-09",
-                                    "buyer": {
+                                    "Buyer": {
                                         "country": "DE",
                                         "city": "Berlin",
                                         "zipCode": "10115",
@@ -8366,12 +8861,12 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "signature": "ed25519_signature",
                                             "key": "ed25519_key",
                                             "walletAddress": "addr1...",
-                                            "signatureData": "{\"action\":\"retrieve_monthly_invoices\",\"validUntil\":1736352000000,\"hash\":\"...\"}"
+                                            "signatureData": "{\"action\":\"RetrieveMonthlyInvoices\",\"validUntil\":1736352000000,\"hash\":\"...\"}"
                                         }
                                     }
                                 }
@@ -8429,7 +8924,7 @@
                                         ],
                                         "description": "The currency of the invoice"
                                     },
-                                    "currencyConversion": {
+                                    "CurrencyConversion": {
                                         "type": "object",
                                         "additionalProperties": {
                                             "type": "number",
@@ -8438,7 +8933,7 @@
                                         },
                                         "description": "Currency conversion settings by unit for this invoice"
                                     },
-                                    "invoice": {
+                                    "Invoice": {
                                         "type": "object",
                                         "properties": {
                                             "itemNamePrefix": {
@@ -8554,7 +9049,7 @@
                                         "default": false,
                                         "description": "Force cancel existing invoice and generate a new revision, even if no data changes detected"
                                     },
-                                    "seller": {
+                                    "Seller": {
                                         "type": "object",
                                         "properties": {
                                             "country": {
@@ -8637,7 +9132,7 @@
                                             "vatNumber"
                                         ]
                                     },
-                                    "buyer": {
+                                    "Buyer": {
                                         "type": "object",
                                         "properties": {
                                             "country": {
@@ -8742,7 +9237,7 @@
                                     "action": {
                                         "type": "string",
                                         "enum": [
-                                            "retrieve_monthly_invoices"
+                                            "RetrieveMonthlyInvoices"
                                         ],
                                         "description": "The action to perform for monthly invoices"
                                     }
@@ -8751,8 +9246,8 @@
                                     "buyerWalletVkey",
                                     "month",
                                     "invoiceCurrency",
-                                    "seller",
-                                    "buyer",
+                                    "Seller",
+                                    "Buyer",
                                     "signature",
                                     "key",
                                     "walletAddress",
@@ -8764,15 +9259,15 @@
                                     "key": "ed25519_key",
                                     "walletAddress": "addr1xk2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3n0d3vllmyqwsx5wktcd8cc3sq835lu7drv2xwl2wywfgse35a3x",
                                     "validUntil": 1736352000000,
-                                    "action": "retrieve_monthly_invoices",
+                                    "action": "RetrieveMonthlyInvoices",
                                     "buyerWalletVkey": "buyer_wallet_vkey",
                                     "month": "2025-09",
                                     "invoiceCurrency": "usd",
-                                    "currencyConversion": {
+                                    "CurrencyConversion": {
                                         "": 0.45,
                                         "policyIdAssetHex": 1.23
                                     },
-                                    "invoice": {
+                                    "Invoice": {
                                         "itemNamePrefix": "Agent: ",
                                         "title": "Monthly Invoice",
                                         "language": "en-us",
@@ -8781,7 +9276,7 @@
                                     "vatRate": 0.19,
                                     "reverseCharge": false,
                                     "forceRegenerate": false,
-                                    "seller": {
+                                    "Seller": {
                                         "country": "DE",
                                         "city": "Berlin",
                                         "zipCode": "10115",
@@ -8793,7 +9288,7 @@
                                         "companyName": "Alice GmbH",
                                         "vatNumber": "DE123456789"
                                     },
-                                    "buyer": {
+                                    "Buyer": {
                                         "country": "DE",
                                         "city": "Berlin",
                                         "zipCode": "10115",
@@ -8841,7 +9336,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "invoice": "BASE64_PDF_STRING",
                                             "cancellationInvoice": "BASE64_CANCELLATION_PDF_STRING_OR_UNDEFINED"
@@ -8855,7 +9350,7 @@
             },
             "get": {
                 "description": "Lists invoice summaries for a given month with pagination. Returns only the latest revision per invoice base. Pass invoiceBaseId to get all revisions for a specific invoice. (+PAY access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own risk.",
-                "summary": "List invoices for a month. (+PAY access required)",
+                "summary": "List invoices for a month. (+Read access required)",
                 "tags": [
                     "invoice"
                 ],
@@ -9083,7 +9578,7 @@
                                                             "grossTotal": {
                                                                 "type": "string"
                                                             },
-                                                            "coveredPaymentRequestIds": {
+                                                            "CoveredPaymentRequestIds": {
                                                                 "type": "array",
                                                                 "items": {
                                                                     "type": "string"
@@ -9152,7 +9647,7 @@
                                                             "netTotal",
                                                             "vatTotal",
                                                             "grossTotal",
-                                                            "coveredPaymentRequestIds",
+                                                            "CoveredPaymentRequestIds",
                                                             "buyerWalletVkey",
                                                             "sellerWalletVkey",
                                                             "invoicePdf",
@@ -9171,7 +9666,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "Invoices": [
                                                 {
@@ -9197,7 +9692,7 @@
                                                     "netTotal": "150.00",
                                                     "vatTotal": "28.50",
                                                     "grossTotal": "178.50",
-                                                    "coveredPaymentRequestIds": [
+                                                    "CoveredPaymentRequestIds": [
                                                         "payment_id_1",
                                                         "payment_id_2"
                                                     ],
@@ -9283,7 +9778,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "total": 42
                                         }
@@ -9343,7 +9838,7 @@
                                         ],
                                         "description": "The currency of the invoice"
                                     },
-                                    "currencyConversion": {
+                                    "CurrencyConversion": {
                                         "type": "object",
                                         "additionalProperties": {
                                             "type": "number",
@@ -9352,7 +9847,7 @@
                                         },
                                         "description": "Currency conversion settings by unit for this invoice"
                                     },
-                                    "invoice": {
+                                    "Invoice": {
                                         "type": "object",
                                         "properties": {
                                             "itemNamePrefix": {
@@ -9468,7 +9963,7 @@
                                         "default": false,
                                         "description": "Force cancel existing invoice and generate a new revision, even if no data changes detected"
                                     },
-                                    "seller": {
+                                    "Seller": {
                                         "type": "object",
                                         "properties": {
                                             "country": {
@@ -9551,7 +10046,7 @@
                                             "vatNumber"
                                         ]
                                     },
-                                    "buyer": {
+                                    "Buyer": {
                                         "type": "object",
                                         "properties": {
                                             "country": {
@@ -9639,18 +10134,18 @@
                                     "buyerWalletVkey",
                                     "month",
                                     "invoiceCurrency",
-                                    "seller",
-                                    "buyer"
+                                    "Seller",
+                                    "Buyer"
                                 ],
                                 "example": {
                                     "buyerWalletVkey": "buyer_wallet_vkey",
                                     "month": "2025-09",
                                     "invoiceCurrency": "usd",
-                                    "currencyConversion": {
+                                    "CurrencyConversion": {
                                         "": 0.45,
                                         "policyIdAssetHex": 1.23
                                     },
-                                    "invoice": {
+                                    "Invoice": {
                                         "itemNamePrefix": "Agent: ",
                                         "title": "Monthly Invoice",
                                         "language": "en-us",
@@ -9659,7 +10154,7 @@
                                     "vatRate": 0.19,
                                     "reverseCharge": false,
                                     "forceRegenerate": false,
-                                    "seller": {
+                                    "Seller": {
                                         "country": "DE",
                                         "city": "Berlin",
                                         "zipCode": "10115",
@@ -9671,7 +10166,7 @@
                                         "companyName": "Alice GmbH",
                                         "vatNumber": "DE123456789"
                                     },
-                                    "buyer": {
+                                    "Buyer": {
                                         "country": "DE",
                                         "city": "Berlin",
                                         "zipCode": "10115",
@@ -9719,7 +10214,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "invoice": "BASE64_PDF_STRING",
                                             "cancellationInvoice": "BASE64_CANCELLATION_PDF_STRING_OR_UNDEFINED"
@@ -9735,7 +10230,7 @@
         "/invoice/monthly/missing": {
             "get": {
                 "description": "Finds billable payment requests that do not yet have an invoice for a given month. Only finalized payments are included: Withdrawn (seller completed work), ResultSubmitted past unlock time, or DisputedWithdrawn with seller funds. Payments still locked, pending refund, or in dispute are excluded. (+PAY access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.",
-                "summary": "List uninvoiced payments for a month. (+PAY access required)",
+                "summary": "List uninvoiced payments for a month. (+Read access required)",
                 "tags": [
                     "invoice"
                 ],
@@ -9888,7 +10383,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "UninvoicedPayments": [
                                                 {
@@ -9915,7 +10410,7 @@
                 }
             }
         },
-        "/purchase/": {
+        "/purchase": {
             "get": {
                 "description": "Gets the purchase status. It needs to be created first with a POST request.",
                 "summary": "Get information about an existing purchase request. (READ access required)",
@@ -10049,7 +10544,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "Purchases": [
                                                 {
@@ -10208,7 +10703,7 @@
                                         "type": "string",
                                         "minLength": 14,
                                         "maxLength": 26,
-                                        "description": "The nonce of the purchaser of the purchase, needs to be in hex format"
+                                        "description": "The nonce of the purchaser. It must be in hex format"
                                     }
                                 },
                                 "required": [
@@ -10682,7 +11177,7 @@
                                         "status"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
@@ -11377,7 +11872,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "Purchases": [
                                                 {
@@ -11749,7 +12244,7 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "API key deleted",
+                        "description": "Purchase refund requested",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -12190,7 +12685,7 @@
                                         "status"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
@@ -12249,6 +12744,12 @@
                     "401": {
                         "description": "Unauthorized"
                     },
+                    "403": {
+                        "description": "Forbidden (only the creator or an admin can request a refund)"
+                    },
+                    "404": {
+                        "description": "Purchase not found or not in valid state"
+                    },
                     "500": {
                         "description": "Internal Server Error"
                     }
@@ -12257,7 +12758,7 @@
         },
         "/purchase/cancel-refund-request": {
             "post": {
-                "description": "Requests a refund for a completed purchase. This will collect the refund after the refund time.",
+                "description": "Cancels a previously requested refund for a completed purchase.",
                 "summary": "Cancel a previously requested refund for a purchase, reverting the transaction back to its normal processing state. (+PAY access required)",
                 "tags": [
                     "purchase"
@@ -12302,7 +12803,7 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "API key deleted",
+                        "description": "Purchase refund request cancelled",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -12743,7 +13244,7 @@
                                         "status"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
@@ -12801,6 +13302,12 @@
                     },
                     "401": {
                         "description": "Unauthorized"
+                    },
+                    "403": {
+                        "description": "Forbidden (only the creator or an admin can cancel a refund request)"
+                    },
+                    "404": {
+                        "description": "Purchase not found or in invalid state"
                     },
                     "500": {
                         "description": "Internal Server Error"
@@ -12883,7 +13390,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "cuid_v2_auto_generated",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
@@ -13028,7 +13535,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "cuid_v2_auto_generated",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
@@ -13118,7 +13625,7 @@
                         },
                         "required": true,
                         "description": "The payment key of the wallet to be queried",
-                        "name": "walletVKey",
+                        "name": "walletVkey",
                         "in": "query"
                     },
                     {
@@ -13179,7 +13686,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "Assets": [
                                                 {
@@ -13293,7 +13800,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "policyId": "policy_id",
                                             "assetName": "asset_name",
@@ -13358,7 +13865,7 @@
                 }
             }
         },
-        "/registry/": {
+        "/registry": {
             "get": {
                 "description": "Gets the agent metadata.",
                 "summary": "List every agent that is recorded in the Masumi Registry. (READ access required)",
@@ -13477,7 +13984,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "Assets": [
                                                 {
@@ -13831,7 +14338,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "error": null,
                                             "id": "registry_id",
@@ -13945,7 +14452,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "error": null,
                                             "id": "registry_id",
@@ -14219,7 +14726,7 @@
         "/registry/deregister": {
             "post": {
                 "description": "Deregisters a agent from the specified registry (Please note that while the command is put on-chain, the transaction is not yet finalized by the blockchain, as designed finality is only eventually reached. If you need certainty, please check status via the registry(GET) or if you require custom logic, the transaction directly using the txHash)",
-                "summary": "Deregisters an agent from the specified registry. (admin access required +PAY)",
+                "summary": "Deregisters an agent from the specified registry. (PAY access required)",
                 "tags": [
                     "registry"
                 ],
@@ -14269,7 +14776,7 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "Payment source deleted",
+                        "description": "Agent deregistration requested",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -14287,7 +14794,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "error": null,
                                             "id": "registry_id",
@@ -14348,7 +14855,7 @@
                 }
             }
         },
-        "/payment-source/": {
+        "/payment-source": {
             "get": {
                 "description": "Gets the payment source.",
                 "summary": "List payment sources with their public details. (READ access required)",
@@ -14418,7 +14925,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "PaymentSources": [
                                                 {
@@ -14491,7 +14998,7 @@
                 }
             }
         },
-        "/payment-source-extended/": {
+        "/payment-source-extended": {
             "get": {
                 "description": "Gets the payment contracts including the status.",
                 "summary": "List payment sources with their public details augmented with internal configuration and sync status information. (admin access required)",
@@ -14561,7 +15068,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "ExtendedPaymentSources": [
                                                 {
@@ -14865,7 +15372,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "cuid_v2_auto_generated",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
@@ -15146,7 +15653,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "cuid_v2_auto_generated",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
@@ -15272,7 +15779,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "cuid_v2_auto_generated",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
@@ -15346,7 +15853,7 @@
                 }
             }
         },
-        "/utxos/": {
+        "/utxos": {
             "get": {
                 "description": "Gets UTXOs (internal)",
                 "summary": "Helper endpoint that lets you ask the payment service for the current UTXOs sitting at a particular Cardano address. (READ access required)",
@@ -15414,10 +15921,10 @@
                         "schema": {
                             "type": "string",
                             "enum": [
-                                "asc",
-                                "desc"
+                                "Asc",
+                                "Desc"
                             ],
-                            "default": "desc",
+                            "default": "Desc",
                             "description": "The order to get the UTXOs in"
                         },
                         "required": false,
@@ -15458,7 +15965,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "Utxos": [
                                                 {
@@ -15486,7 +15993,7 @@
                 }
             }
         },
-        "/rpc-api-keys/": {
+        "/rpc-api-keys": {
             "get": {
                 "description": "Gets rpc api keys, currently only blockfrost is supported (internal)",
                 "summary": "List Blockfrost API keys. (admin access required)",
@@ -15533,32 +16040,56 @@
                                 "schema": {
                                     "type": "object",
                                     "properties": {
-                                        "RpcProviderKeys": {
-                                            "type": "array",
-                                            "items": {
-                                                "$ref": "#/components/schemas/RpcProviderKey"
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "RpcProviderKeys": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/RpcProviderKey"
+                                                    },
+                                                    "description": "List of RPC provider keys"
+                                                }
                                             },
-                                            "description": "List of RPC provider keys"
+                                            "required": [
+                                                "RpcProviderKeys"
+                                            ]
                                         }
                                     },
                                     "required": [
-                                        "RpcProviderKeys"
+                                        "status",
+                                        "data"
                                     ],
                                     "example": {
-                                        "RpcProviderKeys": [
-                                            {
-                                                "network": "Preprod",
-                                                "id": "unique_cuid_v2",
-                                                "rpcProviderApiKey": "blockfrost_api_key",
-                                                "rpcProvider": "Blockfrost",
-                                                "createdAt": "1970-01-20T20:00:36.260Z",
-                                                "updatedAt": "1970-01-20T20:00:36.260Z"
-                                            }
-                                        ]
+                                        "status": "success",
+                                        "data": {
+                                            "RpcProviderKeys": [
+                                                {
+                                                    "network": "Preprod",
+                                                    "id": "unique_cuid_v2",
+                                                    "rpcProviderApiKey": "blockfrost_api_key",
+                                                    "rpcProvider": "Blockfrost",
+                                                    "createdAt": "1970-01-20T20:00:36.260Z",
+                                                    "updatedAt": "1970-01-20T20:00:36.260Z"
+                                                }
+                                            ]
+                                        }
                                     }
                                 }
                             }
                         }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
                     }
                 }
             }
@@ -15607,7 +16138,7 @@
                                                 "nullable": true
                                             }
                                         ],
-                                        "description": "Start date for spendings calculation (date format: 2024-01-01). If null, uses earliest available data. If provided, will be converted to the local time zone of the user"
+                                        "description": "Start date for spending calculation (date format: 2024-01-01). If null, uses earliest available data. If provided, will be converted to the local time zone of the user"
                                     },
                                     "endDate": {
                                         "anyOf": [
@@ -15627,12 +16158,12 @@
                                                 "nullable": true
                                             }
                                         ],
-                                        "description": "End date for spendings calculation (date format: 2024-01-31). If null, uses current date. If provided, will be converted to the local time zone of the user"
+                                        "description": "End date for spending calculation (date format: 2024-01-31). If null, uses current date. If provided, will be converted to the local time zone of the user"
                                     },
                                     "timeZone": {
                                         "type": "string",
                                         "default": "Etc/UTC",
-                                        "description": "The time zone to use for the spendings calculation. If not provided, will use the UTC time zone. Must be a valid IANA time zone name, see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones"
+                                        "description": "The time zone to use for the spending calculation. If not provided, will use the UTC time zone. Must be a valid IANA time zone name, see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones"
                                     },
                                     "network": {
                                         "type": "string",
@@ -15686,10 +16217,10 @@
                                                 "totalTransactions": {
                                                     "type": "number"
                                                 },
-                                                "totalSpend": {
+                                                "TotalSpend": {
                                                     "type": "object",
                                                     "properties": {
-                                                        "units": {
+                                                        "Units": {
                                                             "type": "array",
                                                             "items": {
                                                                 "type": "object",
@@ -15713,14 +16244,14 @@
                                                         }
                                                     },
                                                     "required": [
-                                                        "units",
+                                                        "Units",
                                                         "blockchainFees"
                                                     ]
                                                 },
-                                                "totalRefunded": {
+                                                "TotalRefunded": {
                                                     "type": "object",
                                                     "properties": {
-                                                        "units": {
+                                                        "Units": {
                                                             "type": "array",
                                                             "items": {
                                                                 "type": "object",
@@ -15744,14 +16275,14 @@
                                                         }
                                                     },
                                                     "required": [
-                                                        "units",
+                                                        "Units",
                                                         "blockchainFees"
                                                     ]
                                                 },
-                                                "totalPending": {
+                                                "TotalPending": {
                                                     "type": "object",
                                                     "properties": {
-                                                        "units": {
+                                                        "Units": {
                                                             "type": "array",
                                                             "items": {
                                                                 "type": "object",
@@ -15775,11 +16306,11 @@
                                                         }
                                                     },
                                                     "required": [
-                                                        "units",
+                                                        "Units",
                                                         "blockchainFees"
                                                     ]
                                                 },
-                                                "dailySpend": {
+                                                "DailySpend": {
                                                     "type": "array",
                                                     "items": {
                                                         "type": "object",
@@ -15796,7 +16327,7 @@
                                                                 "type": "number",
                                                                 "description": "The year"
                                                             },
-                                                            "units": {
+                                                            "Units": {
                                                                 "type": "array",
                                                                 "items": {
                                                                     "type": "object",
@@ -15823,12 +16354,12 @@
                                                             "day",
                                                             "month",
                                                             "year",
-                                                            "units",
+                                                            "Units",
                                                             "blockchainFees"
                                                         ]
                                                     }
                                                 },
-                                                "dailyRefunded": {
+                                                "DailyRefunded": {
                                                     "type": "array",
                                                     "items": {
                                                         "type": "object",
@@ -15845,7 +16376,7 @@
                                                                 "type": "number",
                                                                 "description": "The year"
                                                             },
-                                                            "units": {
+                                                            "Units": {
                                                                 "type": "array",
                                                                 "items": {
                                                                     "type": "object",
@@ -15872,12 +16403,12 @@
                                                             "day",
                                                             "month",
                                                             "year",
-                                                            "units",
+                                                            "Units",
                                                             "blockchainFees"
                                                         ]
                                                     }
                                                 },
-                                                "dailyPending": {
+                                                "DailyPending": {
                                                     "type": "array",
                                                     "items": {
                                                         "type": "object",
@@ -15894,7 +16425,7 @@
                                                                 "type": "number",
                                                                 "description": "The year"
                                                             },
-                                                            "units": {
+                                                            "Units": {
                                                                 "type": "array",
                                                                 "items": {
                                                                     "type": "object",
@@ -15921,12 +16452,12 @@
                                                             "day",
                                                             "month",
                                                             "year",
-                                                            "units",
+                                                            "Units",
                                                             "blockchainFees"
                                                         ]
                                                     }
                                                 },
-                                                "monthlySpend": {
+                                                "MonthlySpend": {
                                                     "type": "array",
                                                     "items": {
                                                         "type": "object",
@@ -15939,7 +16470,7 @@
                                                                 "type": "number",
                                                                 "description": "The year"
                                                             },
-                                                            "units": {
+                                                            "Units": {
                                                                 "type": "array",
                                                                 "items": {
                                                                     "type": "object",
@@ -15965,12 +16496,12 @@
                                                         "required": [
                                                             "month",
                                                             "year",
-                                                            "units",
+                                                            "Units",
                                                             "blockchainFees"
                                                         ]
                                                     }
                                                 },
-                                                "monthlyRefunded": {
+                                                "MonthlyRefunded": {
                                                     "type": "array",
                                                     "items": {
                                                         "type": "object",
@@ -15983,7 +16514,7 @@
                                                                 "type": "number",
                                                                 "description": "The year"
                                                             },
-                                                            "units": {
+                                                            "Units": {
                                                                 "type": "array",
                                                                 "items": {
                                                                     "type": "object",
@@ -16009,12 +16540,12 @@
                                                         "required": [
                                                             "month",
                                                             "year",
-                                                            "units",
+                                                            "Units",
                                                             "blockchainFees"
                                                         ]
                                                     }
                                                 },
-                                                "monthlyPending": {
+                                                "MonthlyPending": {
                                                     "type": "array",
                                                     "items": {
                                                         "type": "object",
@@ -16027,7 +16558,7 @@
                                                                 "type": "number",
                                                                 "description": "The year"
                                                             },
-                                                            "units": {
+                                                            "Units": {
                                                                 "type": "array",
                                                                 "items": {
                                                                     "type": "object",
@@ -16053,7 +16584,7 @@
                                                         "required": [
                                                             "month",
                                                             "year",
-                                                            "units",
+                                                            "Units",
                                                             "blockchainFees"
                                                         ]
                                                     }
@@ -16064,15 +16595,15 @@
                                                 "periodStart",
                                                 "periodEnd",
                                                 "totalTransactions",
-                                                "totalSpend",
-                                                "totalRefunded",
-                                                "totalPending",
-                                                "dailySpend",
-                                                "dailyRefunded",
-                                                "dailyPending",
-                                                "monthlySpend",
-                                                "monthlyRefunded",
-                                                "monthlyPending"
+                                                "TotalSpend",
+                                                "TotalRefunded",
+                                                "TotalPending",
+                                                "DailySpend",
+                                                "DailyRefunded",
+                                                "DailyPending",
+                                                "MonthlySpend",
+                                                "MonthlyRefunded",
+                                                "MonthlyPending"
                                             ]
                                         }
                                     },
@@ -16081,14 +16612,14 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "agentIdentifier": "example_agent_identifier_asset_id",
                                             "periodStart": "2024-01-01T00:00:00.000Z",
                                             "periodEnd": "2024-01-31T23:59:59.000Z",
                                             "totalTransactions": 25,
-                                            "totalSpend": {
-                                                "units": [
+                                            "TotalSpend": {
+                                                "Units": [
                                                     {
                                                         "unit": "",
                                                         "amount": 47500000
@@ -16096,8 +16627,8 @@
                                                 ],
                                                 "blockchainFees": 2500000
                                             },
-                                            "totalRefunded": {
-                                                "units": [
+                                            "TotalRefunded": {
+                                                "Units": [
                                                     {
                                                         "unit": "",
                                                         "amount": 2500000
@@ -16105,16 +16636,16 @@
                                                 ],
                                                 "blockchainFees": 100000
                                             },
-                                            "totalPending": {
-                                                "units": [],
+                                            "TotalPending": {
+                                                "Units": [],
                                                 "blockchainFees": 0
                                             },
-                                            "dailySpend": [
+                                            "DailySpend": [
                                                 {
                                                     "day": 15,
                                                     "month": 9,
                                                     "year": 2024,
-                                                    "units": [
+                                                    "Units": [
                                                         {
                                                             "unit": "",
                                                             "amount": 2100000
@@ -16123,12 +16654,12 @@
                                                     "blockchainFees": 100000
                                                 }
                                             ],
-                                            "dailyRefunded": [
+                                            "DailyRefunded": [
                                                 {
                                                     "day": 15,
                                                     "month": 9,
                                                     "year": 2024,
-                                                    "units": [
+                                                    "Units": [
                                                         {
                                                             "unit": "",
                                                             "amount": 0
@@ -16137,12 +16668,12 @@
                                                     "blockchainFees": 0
                                                 }
                                             ],
-                                            "dailyPending": [
+                                            "DailyPending": [
                                                 {
                                                     "day": 15,
                                                     "month": 9,
                                                     "year": 2024,
-                                                    "units": [
+                                                    "Units": [
                                                         {
                                                             "unit": "",
                                                             "amount": 0
@@ -16151,11 +16682,11 @@
                                                     "blockchainFees": 0
                                                 }
                                             ],
-                                            "monthlySpend": [
+                                            "MonthlySpend": [
                                                 {
                                                     "month": 9,
                                                     "year": 2024,
-                                                    "units": [
+                                                    "Units": [
                                                         {
                                                             "unit": "",
                                                             "amount": 2100000
@@ -16164,19 +16695,19 @@
                                                     "blockchainFees": 100000
                                                 }
                                             ],
-                                            "monthlyRefunded": [
+                                            "MonthlyRefunded": [
                                                 {
                                                     "month": 9,
                                                     "year": 2024,
-                                                    "units": [],
+                                                    "Units": [],
                                                     "blockchainFees": 0
                                                 }
                                             ],
-                                            "monthlyPending": [
+                                            "MonthlyPending": [
                                                 {
                                                     "month": 9,
                                                     "year": 2024,
-                                                    "units": [],
+                                                    "Units": [],
                                                     "blockchainFees": 0
                                                 }
                                             ]
@@ -16324,10 +16855,10 @@
                                                 "totalTransactions": {
                                                     "type": "number"
                                                 },
-                                                "totalIncome": {
+                                                "TotalIncome": {
                                                     "type": "object",
                                                     "properties": {
-                                                        "units": {
+                                                        "Units": {
                                                             "type": "array",
                                                             "items": {
                                                                 "type": "object",
@@ -16351,14 +16882,14 @@
                                                         }
                                                     },
                                                     "required": [
-                                                        "units",
+                                                        "Units",
                                                         "blockchainFees"
                                                     ]
                                                 },
-                                                "totalRefunded": {
+                                                "TotalRefunded": {
                                                     "type": "object",
                                                     "properties": {
-                                                        "units": {
+                                                        "Units": {
                                                             "type": "array",
                                                             "items": {
                                                                 "type": "object",
@@ -16382,14 +16913,14 @@
                                                         }
                                                     },
                                                     "required": [
-                                                        "units",
+                                                        "Units",
                                                         "blockchainFees"
                                                     ]
                                                 },
-                                                "totalPending": {
+                                                "TotalPending": {
                                                     "type": "object",
                                                     "properties": {
-                                                        "units": {
+                                                        "Units": {
                                                             "type": "array",
                                                             "items": {
                                                                 "type": "object",
@@ -16413,11 +16944,11 @@
                                                         }
                                                     },
                                                     "required": [
-                                                        "units",
+                                                        "Units",
                                                         "blockchainFees"
                                                     ]
                                                 },
-                                                "dailyIncome": {
+                                                "DailyIncome": {
                                                     "type": "array",
                                                     "items": {
                                                         "type": "object",
@@ -16434,7 +16965,7 @@
                                                                 "type": "number",
                                                                 "description": "The year"
                                                             },
-                                                            "units": {
+                                                            "Units": {
                                                                 "type": "array",
                                                                 "items": {
                                                                     "type": "object",
@@ -16461,12 +16992,12 @@
                                                             "day",
                                                             "month",
                                                             "year",
-                                                            "units",
+                                                            "Units",
                                                             "blockchainFees"
                                                         ]
                                                     }
                                                 },
-                                                "dailyRefunded": {
+                                                "DailyRefunded": {
                                                     "type": "array",
                                                     "items": {
                                                         "type": "object",
@@ -16483,7 +17014,7 @@
                                                                 "type": "number",
                                                                 "description": "The year"
                                                             },
-                                                            "units": {
+                                                            "Units": {
                                                                 "type": "array",
                                                                 "items": {
                                                                     "type": "object",
@@ -16510,12 +17041,12 @@
                                                             "day",
                                                             "month",
                                                             "year",
-                                                            "units",
+                                                            "Units",
                                                             "blockchainFees"
                                                         ]
                                                     }
                                                 },
-                                                "dailyPending": {
+                                                "DailyPending": {
                                                     "type": "array",
                                                     "items": {
                                                         "type": "object",
@@ -16532,7 +17063,7 @@
                                                                 "type": "number",
                                                                 "description": "The year"
                                                             },
-                                                            "units": {
+                                                            "Units": {
                                                                 "type": "array",
                                                                 "items": {
                                                                     "type": "object",
@@ -16559,12 +17090,12 @@
                                                             "day",
                                                             "month",
                                                             "year",
-                                                            "units",
+                                                            "Units",
                                                             "blockchainFees"
                                                         ]
                                                     }
                                                 },
-                                                "monthlyIncome": {
+                                                "MonthlyIncome": {
                                                     "type": "array",
                                                     "items": {
                                                         "type": "object",
@@ -16577,7 +17108,7 @@
                                                                 "type": "number",
                                                                 "description": "The year"
                                                             },
-                                                            "units": {
+                                                            "Units": {
                                                                 "type": "array",
                                                                 "items": {
                                                                     "type": "object",
@@ -16603,12 +17134,12 @@
                                                         "required": [
                                                             "month",
                                                             "year",
-                                                            "units",
+                                                            "Units",
                                                             "blockchainFees"
                                                         ]
                                                     }
                                                 },
-                                                "monthlyRefunded": {
+                                                "MonthlyRefunded": {
                                                     "type": "array",
                                                     "items": {
                                                         "type": "object",
@@ -16621,7 +17152,7 @@
                                                                 "type": "number",
                                                                 "description": "The year"
                                                             },
-                                                            "units": {
+                                                            "Units": {
                                                                 "type": "array",
                                                                 "items": {
                                                                     "type": "object",
@@ -16647,12 +17178,12 @@
                                                         "required": [
                                                             "month",
                                                             "year",
-                                                            "units",
+                                                            "Units",
                                                             "blockchainFees"
                                                         ]
                                                     }
                                                 },
-                                                "monthlyPending": {
+                                                "MonthlyPending": {
                                                     "type": "array",
                                                     "items": {
                                                         "type": "object",
@@ -16665,7 +17196,7 @@
                                                                 "type": "number",
                                                                 "description": "The year"
                                                             },
-                                                            "units": {
+                                                            "Units": {
                                                                 "type": "array",
                                                                 "items": {
                                                                     "type": "object",
@@ -16691,7 +17222,7 @@
                                                         "required": [
                                                             "month",
                                                             "year",
-                                                            "units",
+                                                            "Units",
                                                             "blockchainFees"
                                                         ]
                                                     }
@@ -16702,15 +17233,15 @@
                                                 "periodStart",
                                                 "periodEnd",
                                                 "totalTransactions",
-                                                "totalIncome",
-                                                "totalRefunded",
-                                                "totalPending",
-                                                "dailyIncome",
-                                                "dailyRefunded",
-                                                "dailyPending",
-                                                "monthlyIncome",
-                                                "monthlyRefunded",
-                                                "monthlyPending"
+                                                "TotalIncome",
+                                                "TotalRefunded",
+                                                "TotalPending",
+                                                "DailyIncome",
+                                                "DailyRefunded",
+                                                "DailyPending",
+                                                "MonthlyIncome",
+                                                "MonthlyRefunded",
+                                                "MonthlyPending"
                                             ]
                                         }
                                     },
@@ -16719,14 +17250,14 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "agentIdentifier": "example_agent_identifier_asset_id",
                                             "periodStart": "2024-01-01T00:00:00.000Z",
                                             "periodEnd": "2024-01-31T23:59:59.000Z",
                                             "totalTransactions": 25,
-                                            "totalIncome": {
-                                                "units": [
+                                            "TotalIncome": {
+                                                "Units": [
                                                     {
                                                         "unit": "",
                                                         "amount": 45000000
@@ -16734,8 +17265,8 @@
                                                 ],
                                                 "blockchainFees": 2500000
                                             },
-                                            "totalRefunded": {
-                                                "units": [
+                                            "TotalRefunded": {
+                                                "Units": [
                                                     {
                                                         "unit": "",
                                                         "amount": 5000000
@@ -16743,8 +17274,8 @@
                                                 ],
                                                 "blockchainFees": 400000
                                             },
-                                            "totalPending": {
-                                                "units": [
+                                            "TotalPending": {
+                                                "Units": [
                                                     {
                                                         "unit": "",
                                                         "amount": 2000000
@@ -16752,12 +17283,12 @@
                                                 ],
                                                 "blockchainFees": 100000
                                             },
-                                            "dailyIncome": [
+                                            "DailyIncome": [
                                                 {
                                                     "day": 10,
                                                     "month": 1,
                                                     "year": 2024,
-                                                    "units": [
+                                                    "Units": [
                                                         {
                                                             "unit": "",
                                                             "amount": 2000000
@@ -16766,12 +17297,12 @@
                                                     "blockchainFees": 100000
                                                 }
                                             ],
-                                            "dailyRefunded": [
+                                            "DailyRefunded": [
                                                 {
                                                     "day": 12,
                                                     "month": 1,
                                                     "year": 2024,
-                                                    "units": [
+                                                    "Units": [
                                                         {
                                                             "unit": "",
                                                             "amount": 500000
@@ -16780,12 +17311,12 @@
                                                     "blockchainFees": 20000
                                                 }
                                             ],
-                                            "dailyPending": [
+                                            "DailyPending": [
                                                 {
                                                     "day": 15,
                                                     "month": 1,
                                                     "year": 2024,
-                                                    "units": [
+                                                    "Units": [
                                                         {
                                                             "unit": "",
                                                             "amount": 500000
@@ -16794,11 +17325,11 @@
                                                     "blockchainFees": 0
                                                 }
                                             ],
-                                            "monthlyIncome": [
+                                            "MonthlyIncome": [
                                                 {
                                                     "month": 1,
                                                     "year": 2024,
-                                                    "units": [
+                                                    "Units": [
                                                         {
                                                             "unit": "",
                                                             "amount": 45000000
@@ -16807,11 +17338,11 @@
                                                     "blockchainFees": 2500000
                                                 }
                                             ],
-                                            "monthlyRefunded": [
+                                            "MonthlyRefunded": [
                                                 {
                                                     "month": 1,
                                                     "year": 2024,
-                                                    "units": [
+                                                    "Units": [
                                                         {
                                                             "unit": "",
                                                             "amount": 5000000
@@ -16820,11 +17351,11 @@
                                                     "blockchainFees": 400000
                                                 }
                                             ],
-                                            "monthlyPending": [
+                                            "MonthlyPending": [
                                                 {
                                                     "month": 1,
                                                     "year": 2024,
-                                                    "units": [
+                                                    "Units": [
                                                         {
                                                             "unit": "",
                                                             "amount": 2000000
@@ -16854,7 +17385,7 @@
                 }
             }
         },
-        "/webhooks/": {
+        "/webhooks": {
             "get": {
                 "description": "List webhook endpoints",
                 "summary": "List all webhook endpoints registered by your API key. (pay-authenticated access required)",
@@ -16916,7 +17447,7 @@
                                         "data": {
                                             "type": "object",
                                             "properties": {
-                                                "webhooks": {
+                                                "Webhooks": {
                                                     "type": "array",
                                                     "items": {
                                                         "type": "object",
@@ -16927,7 +17458,7 @@
                                                             "url": {
                                                                 "type": "string"
                                                             },
-                                                            "events": {
+                                                            "Events": {
                                                                 "type": "array",
                                                                 "items": {
                                                                     "type": "string",
@@ -16971,7 +17502,7 @@
                                                                 "nullable": true,
                                                                 "format": "date-time"
                                                             },
-                                                            "createdBy": {
+                                                            "CreatedBy": {
                                                                 "type": "object",
                                                                 "nullable": true,
                                                                 "properties": {
@@ -16991,7 +17522,7 @@
                                                         "required": [
                                                             "id",
                                                             "url",
-                                                            "events",
+                                                            "Events",
                                                             "name",
                                                             "isActive",
                                                             "createdAt",
@@ -17000,13 +17531,13 @@
                                                             "failureCount",
                                                             "lastSuccessAt",
                                                             "disabledAt",
-                                                            "createdBy"
+                                                            "CreatedBy"
                                                         ]
                                                     }
                                                 }
                                             },
                                             "required": [
-                                                "webhooks"
+                                                "Webhooks"
                                             ]
                                         }
                                     },
@@ -17015,14 +17546,14 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
-                                            "webhooks": [
+                                            "Webhooks": [
                                                 {
                                                     "id": "webhook_endpoint_id",
                                                     "url": "https://your-server.com/webhook",
                                                     "name": "My Webhook",
-                                                    "events": [
+                                                    "Events": [
                                                         "PURCHASE_ON_CHAIN_STATUS_CHANGED",
                                                         "PAYMENT_ON_ERROR"
                                                     ],
@@ -17033,7 +17564,7 @@
                                                     "failureCount": 0,
                                                     "lastSuccessAt": "1970-01-20T20:00:36.260Z",
                                                     "disabledAt": null,
-                                                    "createdBy": {
+                                                    "CreatedBy": {
                                                         "apiKeyId": "api_key_id",
                                                         "apiKeyToken": "masked_token"
                                                     }
@@ -17083,7 +17614,7 @@
                                         "maxLength": 200,
                                         "description": "Authentication token for webhook requests"
                                     },
-                                    "events": {
+                                    "Events": {
                                         "type": "array",
                                         "items": {
                                             "type": "string",
@@ -17112,12 +17643,12 @@
                                 "required": [
                                     "url",
                                     "authToken",
-                                    "events"
+                                    "Events"
                                 ],
                                 "example": {
                                     "url": "https://your-server.com/webhook",
                                     "authToken": "your-webhook-secret-token",
-                                    "events": [
+                                    "Events": [
                                         "PURCHASE_ON_CHAIN_STATUS_CHANGED",
                                         "PAYMENT_ON_ERROR"
                                     ],
@@ -17129,7 +17660,7 @@
                     }
                 },
                 "responses": {
-                    "201": {
+                    "200": {
                         "description": "Webhook endpoint registered successfully",
                         "content": {
                             "application/json": {
@@ -17148,7 +17679,7 @@
                                                 "url": {
                                                     "type": "string"
                                                 },
-                                                "events": {
+                                                "Events": {
                                                     "type": "array",
                                                     "items": {
                                                         "type": "string",
@@ -17179,7 +17710,7 @@
                                             "required": [
                                                 "id",
                                                 "url",
-                                                "events",
+                                                "Events",
                                                 "name",
                                                 "isActive",
                                                 "createdAt",
@@ -17192,12 +17723,12 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "webhook_endpoint_id",
                                             "url": "https://your-server.com/webhook",
                                             "name": "My Payment Webhook",
-                                            "events": [
+                                            "Events": [
                                                 "PURCHASE_ON_CHAIN_STATUS_CHANGED",
                                                 "PAYMENT_ON_ERROR"
                                             ],
@@ -17215,6 +17746,12 @@
                     },
                     "401": {
                         "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Payment source not found"
+                    },
+                    "409": {
+                        "description": "Webhook URL already registered for this payment source"
                     },
                     "500": {
                         "description": "Internal Server Error"
@@ -17296,7 +17833,7 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success",
+                                        "status": "Success",
                                         "data": {
                                             "id": "webhook_endpoint_id",
                                             "url": "https://your-server.com/webhook",
@@ -17323,7 +17860,7 @@
                 }
             }
         },
-        "/monitoring/": {
+        "/monitoring": {
             "get": {
                 "description": "Gets the current status of the blockchain state monitoring service",
                 "summary": "Get monitoring service status. (admin access required)",
@@ -17341,7 +17878,46 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/MonitoringStatus"
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/MonitoringStatus"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "MonitoringStatus": {
+                                                "isMonitoring": true,
+                                                "Stats": {
+                                                    "trackedEntities": 42,
+                                                    "PurchaseCursor": {
+                                                        "timestamp": "2024-01-01T00:00:00.000Z",
+                                                        "lastId": "cuid_v2_auto_generated"
+                                                    },
+                                                    "PaymentCursor": {
+                                                        "timestamp": "2024-01-01T00:00:00.000Z",
+                                                        "lastId": "cuid_v2_auto_generated"
+                                                    },
+                                                    "MemoryUsage": {
+                                                        "heapUsed": "50MB",
+                                                        "heapTotal": "100MB",
+                                                        "external": "10MB"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -17349,13 +17925,13 @@
                     "401": {
                         "description": "Unauthorized"
                     },
-                    "403": {
-                        "description": "Forbidden (admin access required)"
+                    "500": {
+                        "description": "Internal Server Error"
                     }
                 }
             }
         },
-        "/monitoring/trigger-cycle/": {
+        "/monitoring/trigger-cycle": {
             "post": {
                 "description": "Manually triggers a monitoring cycle to check blockchain state",
                 "summary": "Trigger a manual monitoring cycle. (admin access required)",
@@ -17373,7 +17949,29 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/TriggeredMonitoringCycle"
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/TriggeredMonitoringCycle"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "message": "Manual monitoring cycle completed successfully",
+                                            "triggered": true
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -17381,13 +17979,13 @@
                     "401": {
                         "description": "Unauthorized"
                     },
-                    "403": {
-                        "description": "Forbidden (admin access required)"
+                    "500": {
+                        "description": "Internal Server Error"
                     }
                 }
             }
         },
-        "/monitoring/start/": {
+        "/monitoring/start": {
             "post": {
                 "description": "Starts the blockchain state monitoring service with a specified interval",
                 "summary": "Start the monitoring service. (admin access required)",
@@ -17427,7 +18025,29 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/StartedMonitoring"
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/StartedMonitoring"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "message": "Monitoring service started with 30000ms interval",
+                                            "started": true
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -17435,13 +18055,16 @@
                     "401": {
                         "description": "Unauthorized"
                     },
-                    "403": {
-                        "description": "Forbidden (admin access required)"
+                    "409": {
+                        "description": "Conflict (monitoring service is already running)"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
                     }
                 }
             }
         },
-        "/monitoring/stop/": {
+        "/monitoring/stop": {
             "post": {
                 "description": "Stops the blockchain state monitoring service",
                 "summary": "Stop the monitoring service. (admin access required)",
@@ -17459,16 +18082,41 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/StoppedMonitoring"
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/StoppedMonitoring"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "message": "Monitoring service stopped successfully",
+                                            "stopped": true
+                                        }
+                                    }
                                 }
                             }
                         }
                     },
+                    "400": {
+                        "description": "Bad Request (monitoring service is not currently running)"
+                    },
                     "401": {
                         "description": "Unauthorized"
                     },
-                    "403": {
-                        "description": "Forbidden (admin access required)"
+                    "500": {
+                        "description": "Internal Server Error"
                     }
                 }
             }

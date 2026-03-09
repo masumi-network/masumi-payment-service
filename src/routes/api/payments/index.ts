@@ -490,7 +490,7 @@ export const createPaymentsSchemaInput = z.object({
 		.string()
 		.min(14)
 		.max(26)
-		.describe('The a unique nonce from the purchaser. Required to be in hex format'),
+		.describe('A unique nonce from the purchaser. It must be in hex format'),
 });
 
 export const createPaymentSchemaOutput = paymentResponseSchema.omit({
