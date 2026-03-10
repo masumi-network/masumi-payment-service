@@ -18,7 +18,19 @@ export const APIKeySchema = {
                 'ReadAndPay',
                 'Admin'
             ],
-            description: 'Permission level of the API key'
+            description: 'Permission level of the API key (computed from flags for backward compatibility)'
+        },
+        canRead: {
+            type: 'boolean',
+            description: 'Whether this API key can access read endpoints'
+        },
+        canPay: {
+            type: 'boolean',
+            description: 'Whether this API key can access payment/purchase endpoints'
+        },
+        canAdmin: {
+            type: 'boolean',
+            description: 'Whether this API key has admin access'
         },
         usageLimited: {
             type: 'boolean',
@@ -89,6 +101,9 @@ export const APIKeySchema = {
         'id',
         'token',
         'permission',
+        'canRead',
+        'canPay',
+        'canAdmin',
         'usageLimited',
         'NetworkLimit',
         'RemainingUsageCredits',
@@ -1596,7 +1611,7 @@ export const AgentMetadataSchema = {
                                     enum: [
                                         'Fixed'
                                     ],
-                                    description: 'Pricing type for the agent (Fixed)'
+                                    description: 'Pricing type for the agent (Fixed or Free)'
                                 },
                                 Pricing: {
                                     type: 'array',
@@ -1635,7 +1650,7 @@ export const AgentMetadataSchema = {
                                     enum: [
                                         'Free'
                                     ],
-                                    description: 'Pricing type for the agent (Free)'
+                                    description: 'Pricing type for the agent (Fixed or Free)'
                                 }
                             },
                             required: [
