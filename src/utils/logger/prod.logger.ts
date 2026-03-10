@@ -11,7 +11,8 @@ interface LogInfo {
 }
 
 // Strip ANSI escape codes that Winston's colorize format may inject
-const ANSI_ESCAPE_PATTERN = new RegExp('\\u001B\\[[0-9;]*m', 'g');
+const ANSI_ESCAPE_CHARACTER = String.fromCharCode(27);
+const ANSI_ESCAPE_PATTERN = new RegExp(`${ANSI_ESCAPE_CHARACTER}\\[[0-9;]*m`, 'g');
 const stripAnsi = (str: string) => str.replace(ANSI_ESCAPE_PATTERN, '');
 
 // Custom transport that sends logs to OpenTelemetry

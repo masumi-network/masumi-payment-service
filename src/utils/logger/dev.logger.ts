@@ -6,7 +6,8 @@ const { combine, timestamp, printf, errors } = format;
 const SPLAT = Symbol.for('splat');
 const CAPTURED_SPLAT_ARGS_KEY = '__capturedSplatArgs';
 const DEV_LOGGER_RESERVED_KEYS = new Set(['level', 'message', 'timestamp', 'stack', 'error', CAPTURED_SPLAT_ARGS_KEY]);
-const ANSI_ESCAPE_PATTERN = new RegExp('\\u001B\\[[0-9;]*m', 'g');
+const ANSI_ESCAPE_CHARACTER = String.fromCharCode(27);
+const ANSI_ESCAPE_PATTERN = new RegExp(`${ANSI_ESCAPE_CHARACTER}\\[[0-9;]*m`, 'g');
 
 interface LogInfo extends TransformableInfo {
 	level: string;

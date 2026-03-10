@@ -105,7 +105,10 @@ function parseLowBalanceDefaultRules(
 			throw new Error(`${envVarName}[${index}].assetUnit must be a non-empty string`);
 		}
 
-		const thresholdString = String(thresholdAmount ?? '').trim();
+		const thresholdString =
+			typeof thresholdAmount === 'string' || typeof thresholdAmount === 'number' || typeof thresholdAmount === 'bigint'
+				? String(thresholdAmount).trim()
+				: '';
 		if (!/^\d+$/.test(thresholdString)) {
 			throw new Error(`${envVarName}[${index}].thresholdAmount must be a non-negative integer string`);
 		}
