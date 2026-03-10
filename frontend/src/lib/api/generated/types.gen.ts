@@ -6712,7 +6712,7 @@ export type DeleteRegistryResponses = {
      */
     200: {
         status: string;
-        data: RegistryEntry;
+        data: RegistryEntry | A2aRegistryEntry;
     };
 };
 

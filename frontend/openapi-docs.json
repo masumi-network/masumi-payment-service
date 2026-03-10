@@ -14752,7 +14752,14 @@
                                             "type": "string"
                                         },
                                         "data": {
-                                            "$ref": "#/components/schemas/RegistryEntry"
+                                            "anyOf": [
+                                                {
+                                                    "$ref": "#/components/schemas/RegistryEntry"
+                                                },
+                                                {
+                                                    "$ref": "#/components/schemas/A2ARegistryEntry"
+                                                }
+                                            ]
                                         }
                                     },
                                     "required": [
