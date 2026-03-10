@@ -315,7 +315,7 @@ export function WalletDetailsDialog({
   const [newRuleCustomAssetUnit, setNewRuleCustomAssetUnit] = useState('');
   const [newRuleThresholdInput, setNewRuleThresholdInput] = useState('');
   const [newRuleEnabled, setNewRuleEnabled] = useState(true);
-  const [mutatingRuleId, setMutatingRuleId] = useState<string | null>(null);
+  const [mutatingRuleIds, setMutatingRuleIds] = useState<Set<string>>(new Set());
   const [isCreatingRule, setIsCreatingRule] = useState(false);
   const [pendingDeleteRule, setPendingDeleteRule] = useState<LowBalanceRule | null>(null);
   const { rate } = useRate();
@@ -930,7 +930,7 @@ export function WalletDetailsDialog({
       return;
     }
 
-    setMutatingRuleId(rule.id);
+    setMutatingRuleIds((prev) => new Set(prev).add(rule.id));
     const response = await handleApiCall(
       () =>
         patchWalletLowBalance({
@@ -948,7 +948,11 @@ export function WalletDetailsDialog({
         errorMessage: 'Failed to update low-balance rule',
       },
     );
-    setMutatingRuleId(null);
+    setMutatingRuleIds((prev) => {
+      const next = new Set(prev);
+      next.delete(rule.id);
+      return next;
+    });
 
     if (response) {
       toast.success('Low-balance rule updated');
@@ -966,13 +970,14 @@ export function WalletDetailsDialog({
       return;
     }
 
-    setMutatingRuleId(pendingDeleteRule.id);
+    const deleteId = pendingDeleteRule.id;
+    setMutatingRuleIds((prev) => new Set(prev).add(deleteId));
     const response = await handleApiCall(
       () =>
         deleteWalletLowBalance({
           client: apiClient,
           body: {
-            ruleId: pendingDeleteRule.id,
+            ruleId: deleteId,
           },
         }),
       {
@@ -982,7 +987,11 @@ export function WalletDetailsDialog({
         errorMessage: 'Failed to delete low-balance rule',
       },
     );
-    setMutatingRuleId(null);
+    setMutatingRuleIds((prev) => {
+      const next = new Set(prev);
+      next.delete(deleteId);
+      return next;
+    });
     setPendingDeleteRule(null);
 
     if (response) {
@@ -1284,7 +1293,7 @@ export function WalletDetailsDialog({
                           const hasChanges =
                             draftRawThreshold !== rule.thresholdAmount ||
                             draft.enabled !== rule.enabled;
-                          const isMutating = mutatingRuleId === rule.id;
+                          const isMutating = mutatingRuleIds.has(rule.id);
 
                           return (
                             <div
@@ -2036,7 +2045,7 @@ export function WalletDetailsDialog({
             : 'Remove this low-balance rule?'
         }
         onConfirm={handleConfirmDeleteLowBalanceRule}
-        isLoading={mutatingRuleId === pendingDeleteRule?.id}
+        isLoading={pendingDeleteRule != null && mutatingRuleIds.has(pendingDeleteRule.id)}
       />
 
       <SwapDialog
