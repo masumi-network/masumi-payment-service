@@ -1,11 +1,14 @@
 import { setupTracing } from '@/tracing';
 
-async function bootstrap() {
+export async function bootstrap() {
 	await setupTracing();
-	await import('@/app');
+	const { startApp } = await import('@/app');
+	await startApp();
 }
 
-bootstrap().catch((error: unknown) => {
-	console.error('Failed to bootstrap application', error);
-	process.exitCode = 1;
-});
+if (process.env.NODE_ENV !== 'test') {
+	bootstrap().catch((error: unknown) => {
+		console.error('Failed to bootstrap application', error);
+		process.exitCode = 1;
+	});
+}

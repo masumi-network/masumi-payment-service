@@ -3,9 +3,8 @@ import { HotWalletType, Network } from '@/generated/prisma/client';
 import { LowBalanceStatus } from '@/generated/prisma/enums';
 import { prisma } from '@/utils/db';
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
-import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import { buildHotWalletScopeFilter } from '@/utils/shared/wallet-scope';
-import { serializeLowBalanceRecord } from '@/services/wallet-low-balance-monitor';
+import { serializeLowBalanceRecord, walletLowBalanceMonitorService } from '@/services/wallet-low-balance-monitor';
 import {
 	deleteWalletLowBalanceRuleSchemaInput,
 	deleteWalletLowBalanceRuleSchemaOutput,
@@ -60,7 +59,7 @@ function serializeRuleWithWallet(rule: {
 	};
 }
 
-export const getWalletLowBalanceRulesEndpointGet = readAuthenticatedEndpointFactory.build({
+export const getWalletLowBalanceRulesEndpointGet = adminAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: getWalletLowBalanceRulesSchemaInput,
 	output: getWalletLowBalanceRulesSchemaOutput,
@@ -149,13 +148,11 @@ export const postWalletLowBalanceRuleEndpointPost = adminAuthenticatedEndpointFa
 			throw createHttpError(409, 'Low balance rule for this wallet and asset already exists');
 		}
 
-		const createdRule = await prisma.hotWalletLowBalanceRule.create({
-			data: {
-				hotWalletId: input.walletId,
-				assetUnit: input.assetUnit,
-				thresholdAmount: BigInt(input.thresholdAmount),
-				enabled: input.enabled,
-			},
+		const createdRule = await walletLowBalanceMonitorService.createRuleForWallet({
+			hotWalletId: input.walletId,
+			assetUnit: input.assetUnit,
+			thresholdAmount: BigInt(input.thresholdAmount),
+			enabled: input.enabled,
 		});
 
 		return serializeRuleWithWallet({
@@ -208,14 +205,10 @@ export const patchWalletLowBalanceRuleEndpointPatch = adminAuthenticatedEndpoint
 			throw createHttpError(400, 'No low balance rule changes requested');
 		}
 
-		const updatedRule = await prisma.hotWalletLowBalanceRule.update({
-			where: {
-				id: input.ruleId,
-			},
-			data: {
-				thresholdAmount: input.thresholdAmount != null ? BigInt(input.thresholdAmount) : undefined,
-				enabled: input.enabled,
-			},
+		const updatedRule = await walletLowBalanceMonitorService.updateRule({
+			ruleId: input.ruleId,
+			thresholdAmount: input.thresholdAmount != null ? BigInt(input.thresholdAmount) : undefined,
+			enabled: input.enabled,
 		});
 
 		return serializeRuleWithWallet({

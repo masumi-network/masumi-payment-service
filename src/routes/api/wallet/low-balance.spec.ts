@@ -1,0 +1,160 @@
+import { jest } from '@jest/globals';
+import type { Mock } from 'jest-mock';
+import { testEndpoint } from 'express-zod-api';
+import { ApiKeyStatus, HotWalletType, Network, Permission } from '@/generated/prisma/client';
+import { LowBalanceStatus } from '@/generated/prisma/enums';
+import { generateSHA256Hash } from '@/utils/crypto';
+
+type AnyMock = Mock<(...args: any[]) => any>;
+
+const mockFindApiKey = jest.fn() as AnyMock;
+const mockFindManyRules = jest.fn() as AnyMock;
+
+jest.unstable_mockModule('@/utils/db', () => ({
+	prisma: {
+		apiKey: {
+			findUnique: mockFindApiKey,
+		},
+		hotWallet: {
+			findFirst: jest.fn(),
+			findMany: jest.fn(),
+		},
+		hotWalletLowBalanceRule: {
+			findMany: mockFindManyRules,
+			findUnique: jest.fn(),
+			create: jest.fn(),
+			update: jest.fn(),
+			delete: jest.fn(),
+			createMany: jest.fn(),
+		},
+		$transaction: jest.fn(),
+	},
+}));
+
+jest.unstable_mockModule('@/utils/config', () => ({
+	CONFIG: {
+		LOW_BALANCE_DEFAULT_RULES_MAINNET: [],
+		LOW_BALANCE_DEFAULT_RULES_PREPROD: [],
+	},
+}));
+
+jest.unstable_mockModule('@/utils/logger', () => ({
+	logger: {
+		info: jest.fn(),
+		warn: jest.fn(),
+		error: jest.fn(),
+		debug: jest.fn(),
+	},
+}));
+
+jest.unstable_mockModule('@/utils/logs', () => ({
+	logWarn: jest.fn(),
+}));
+
+jest.unstable_mockModule('@/utils/metrics', () => ({
+	recordWalletLowBalanceAlert: jest.fn(),
+}));
+
+jest.unstable_mockModule('@/utils/generator/wallet-generator', () => ({
+	generateWalletExtended: jest.fn(),
+}));
+
+jest.unstable_mockModule('@/services/webhook-handler/webhook-events.service', () => ({
+	webhookEventsService: {
+		triggerWalletLowBalance: jest.fn(),
+	},
+}));
+
+jest.unstable_mockModule('@opentelemetry/api', () => ({
+	trace: {
+		getActiveSpan: jest.fn(() => null),
+	},
+}));
+
+const { getWalletLowBalanceRulesEndpointGet } = await import('./low-balance');
+
+describe('getWalletLowBalanceRulesEndpointGet', () => {
+	const asApiKey = (permission: Permission) => ({
+		id: 'api-key-1',
+		permission,
+		status: ApiKeyStatus.Active,
+		tokenHash: generateSHA256Hash('valid'),
+		token: 'valid',
+		usageLimited: permission !== Permission.Admin,
+		networkLimit: permission === Permission.Admin ? [] : [Network.Preprod],
+		walletScopeEnabled: false,
+		WalletScopes: [],
+	});
+
+	beforeEach(() => {
+		jest.clearAllMocks();
+	});
+
+	it('rejects a read key from listing full low-balance rules', async () => {
+		mockFindApiKey.mockResolvedValue(asApiKey(Permission.Read));
+
+		const { responseMock } = await testEndpoint({
+			endpoint: getWalletLowBalanceRulesEndpointGet,
+			requestProps: {
+				method: 'GET',
+				query: {},
+				headers: { token: 'valid' },
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(401);
+		expect(mockFindManyRules).not.toHaveBeenCalled();
+	});
+
+	it('allows an admin key to list low-balance rules', async () => {
+		mockFindApiKey.mockResolvedValue(asApiKey(Permission.Admin));
+		mockFindManyRules.mockResolvedValue([
+			{
+				id: 'rule-1',
+				assetUnit: 'lovelace',
+				thresholdAmount: 5000000n,
+				enabled: true,
+				status: LowBalanceStatus.Low,
+				lastKnownAmount: 4000000n,
+				lastCheckedAt: new Date('2026-03-10T12:00:00.000Z'),
+				lastAlertedAt: new Date('2026-03-10T11:00:00.000Z'),
+				HotWallet: {
+					id: 'wallet-1',
+					walletVkey: 'wallet_vkey',
+					walletAddress: 'addr_test1...',
+					type: HotWalletType.Purchasing,
+					PaymentSource: {
+						id: 'payment-source-1',
+						network: Network.Preprod,
+					},
+				},
+			},
+		]);
+
+		const { responseMock } = await testEndpoint({
+			endpoint: getWalletLowBalanceRulesEndpointGet,
+			requestProps: {
+				method: 'GET',
+				query: {},
+				headers: { token: 'valid' },
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(200);
+		expect(mockFindManyRules).toHaveBeenCalledTimes(1);
+		expect(responseMock._getJSONData()).toEqual({
+			status: 'success',
+			data: {
+				Rules: [
+					expect.objectContaining({
+						id: 'rule-1',
+						walletId: 'wallet-1',
+						walletVkey: 'wallet_vkey',
+						walletAddress: 'addr_test1...',
+						network: Network.Preprod,
+					}),
+				],
+			},
+		});
+	});
+});

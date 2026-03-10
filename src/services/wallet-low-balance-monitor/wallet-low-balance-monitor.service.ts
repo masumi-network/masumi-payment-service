@@ -47,6 +47,14 @@ type WalletLowBalanceAlert = {
 
 type WalletBalanceCheckSource = 'interval_check' | 'submission';
 
+type EvaluateWalletContextOptions = {
+	emitAlerts?: boolean;
+};
+
+type WalletLowBalanceRuleMutationRecord = WalletLowBalanceRuleRecord & {
+	hotWalletId: string;
+};
+
 type MeshLikeUtxo = {
 	output: {
 		amount: Array<{
@@ -90,6 +98,7 @@ type ProjectedSubmissionEvaluation = {
 };
 
 const LOW_BALANCE_WARNING_EVENT = 'wallet.low_balance';
+const SCHEDULED_MONITORING_CONCURRENCY = 5;
 
 function describeCheckSource(checkSource: WalletBalanceCheckSource): string {
 	return checkSource === 'interval_check' ? 'interval check' : 'submission';
@@ -357,6 +366,76 @@ export class WalletLowBalanceMonitorService {
 		});
 	}
 
+	async createRuleForWallet(params: {
+		hotWalletId: string;
+		assetUnit: string;
+		thresholdAmount: bigint;
+		enabled: boolean;
+	}): Promise<WalletLowBalanceRuleMutationRecord> {
+		const createdRule = await prisma.hotWalletLowBalanceRule.create({
+			data: {
+				hotWalletId: params.hotWalletId,
+				assetUnit: params.assetUnit,
+				thresholdAmount: params.thresholdAmount,
+				enabled: params.enabled,
+				status: LowBalanceStatus.Unknown,
+				lastKnownAmount: null,
+				lastCheckedAt: null,
+				lastAlertedAt: null,
+			},
+			select: {
+				id: true,
+				hotWalletId: true,
+				assetUnit: true,
+				thresholdAmount: true,
+				enabled: true,
+				status: true,
+				lastKnownAmount: true,
+				lastCheckedAt: true,
+				lastAlertedAt: true,
+			},
+		});
+
+		await this.refreshRuleStateAfterMutation(createdRule.hotWalletId, createdRule.enabled);
+
+		return (await this.getRuleMutationRecordById(createdRule.id)) ?? createdRule;
+	}
+
+	async updateRule(params: {
+		ruleId: string;
+		thresholdAmount?: bigint;
+		enabled?: boolean;
+	}): Promise<WalletLowBalanceRuleMutationRecord> {
+		const updatedRule = await prisma.hotWalletLowBalanceRule.update({
+			where: {
+				id: params.ruleId,
+			},
+			data: {
+				thresholdAmount: params.thresholdAmount,
+				enabled: params.enabled,
+				status: LowBalanceStatus.Unknown,
+				lastKnownAmount: null,
+				lastCheckedAt: null,
+				lastAlertedAt: null,
+			},
+			select: {
+				id: true,
+				hotWalletId: true,
+				assetUnit: true,
+				thresholdAmount: true,
+				enabled: true,
+				status: true,
+				lastKnownAmount: true,
+				lastCheckedAt: true,
+				lastAlertedAt: true,
+			},
+		});
+
+		await this.refreshRuleStateAfterMutation(updatedRule.hotWalletId, updatedRule.enabled);
+
+		return (await this.getRuleMutationRecordById(updatedRule.id)) ?? updatedRule;
+	}
+
 	async evaluateHotWalletById(
 		hotWalletId: string,
 		balanceMap: BalanceMap,
@@ -397,11 +476,13 @@ export class WalletLowBalanceMonitorService {
 		wallet: WalletLowBalanceContext,
 		balanceMap: BalanceMap,
 		checkSource: WalletBalanceCheckSource,
+		options?: EvaluateWalletContextOptions,
 	): Promise<void> {
 		if (wallet.LowBalanceRules.length === 0) {
 			return;
 		}
 
+		const emitAlerts = options?.emitAlerts ?? true;
 		const checkedAt = new Date();
 
 		const alerts = await prisma.$transaction(async (tx) => {
@@ -425,6 +506,7 @@ export class WalletLowBalanceMonitorService {
 							data: {
 								...commonUpdate,
 								status: nextStatus,
+								lastAlertedAt: null,
 							},
 						});
 						break;
@@ -439,11 +521,11 @@ export class WalletLowBalanceMonitorService {
 								data: {
 									...commonUpdate,
 									status: LowBalanceStatus.Low,
-									lastAlertedAt: checkedAt,
+									lastAlertedAt: emitAlerts ? checkedAt : null,
 								},
 							});
 
-							if (result.count === 1) {
+							if (emitAlerts && result.count === 1) {
 								detectedAlerts.push({
 									ruleId: rule.id,
 									assetUnit: rule.assetUnit,
@@ -545,25 +627,67 @@ export class WalletLowBalanceMonitorService {
 			return;
 		}
 
-		await Promise.allSettled(
-			wallets.map(async (wallet) => {
-				if (wallet.PaymentSource.PaymentSourceConfig?.rpcProviderApiKey == null) {
-					logger.warn('Skipping low balance monitoring for wallet without provider configuration', {
+		let checkedWalletCount = 0;
+		let skippedWalletCount = 0;
+		let failedWalletCount = 0;
+		let nextWalletIndex = 0;
+
+		const runWorker = async () => {
+			while (nextWalletIndex < wallets.length) {
+				const wallet = wallets[nextWalletIndex];
+				nextWalletIndex += 1;
+
+				try {
+					if (wallet.PaymentSource.PaymentSourceConfig?.rpcProviderApiKey == null) {
+						skippedWalletCount += 1;
+						logger.warn('Skipping low balance monitoring for wallet without provider configuration', {
+							component: 'wallet_low_balance_monitor',
+							operation: 'scheduled_monitoring_skip',
+							wallet_id: wallet.id,
+							payment_source_id: wallet.PaymentSource.id,
+						});
+						continue;
+					}
+
+					const { utxos } = await generateWalletExtended(
+						wallet.PaymentSource.network,
+						wallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
+						wallet.Secret.encryptedMnemonic,
+					);
+
+					await this.evaluateWalletContext(
+						wallet,
+						toBalanceMapFromMeshUtxos(utxos as MeshLikeUtxo[]),
+						'interval_check',
+					);
+					checkedWalletCount += 1;
+				} catch (error) {
+					failedWalletCount += 1;
+					logger.error('Scheduled low balance monitoring failed for wallet', {
+						component: 'wallet_low_balance_monitor',
+						operation: 'scheduled_monitoring_error',
 						wallet_id: wallet.id,
 						payment_source_id: wallet.PaymentSource.id,
+						network: wallet.PaymentSource.network,
+						error: error instanceof Error ? error.message : String(error),
 					});
-					return;
 				}
+			}
+		};
 
-				const { utxos } = await generateWalletExtended(
-					wallet.PaymentSource.network,
-					wallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
-					wallet.Secret.encryptedMnemonic,
-				);
-
-				await this.evaluateWalletContext(wallet, toBalanceMapFromMeshUtxos(utxos as MeshLikeUtxo[]), 'interval_check');
-			}),
+		await Promise.all(
+			Array.from({ length: Math.min(SCHEDULED_MONITORING_CONCURRENCY, wallets.length) }, async () => runWorker()),
 		);
+
+		logger.info('Completed scheduled low balance monitoring cycle', {
+			component: 'wallet_low_balance_monitor',
+			operation: 'scheduled_monitoring_summary',
+			total_wallet_count: wallets.length,
+			checked_wallet_count: checkedWalletCount,
+			skipped_wallet_count: skippedWalletCount,
+			failed_wallet_count: failedWalletCount,
+			concurrency_limit: Math.min(SCHEDULED_MONITORING_CONCURRENCY, wallets.length),
+		});
 	}
 
 	private async emitLowBalanceAlert(alert: WalletLowBalanceAlert): Promise<void> {
@@ -622,6 +746,105 @@ export class WalletLowBalanceMonitorService {
 
 	getSerializedSummary(rules: WalletLowBalanceRuleRecord[]) {
 		return serializeLowBalanceSummary(rules);
+	}
+
+	private async getRuleMutationRecordById(ruleId: string): Promise<WalletLowBalanceRuleMutationRecord | null> {
+		return prisma.hotWalletLowBalanceRule.findUnique({
+			where: {
+				id: ruleId,
+			},
+			select: {
+				id: true,
+				hotWalletId: true,
+				assetUnit: true,
+				thresholdAmount: true,
+				enabled: true,
+				status: true,
+				lastKnownAmount: true,
+				lastCheckedAt: true,
+				lastAlertedAt: true,
+			},
+		});
+	}
+
+	private async refreshRuleStateAfterMutation(hotWalletId: string, enabled: boolean): Promise<void> {
+		if (!enabled) {
+			return;
+		}
+
+		const balanceMap = await this.fetchCurrentBalanceMapForWallet(hotWalletId);
+		if (balanceMap == null) {
+			return;
+		}
+
+		const wallet = await this.getWalletLowBalanceContext(hotWalletId);
+		if (wallet == null || wallet.LowBalanceRules.length === 0) {
+			return;
+		}
+
+		await this.evaluateWalletContext(wallet, balanceMap, 'interval_check', { emitAlerts: false });
+	}
+
+	private async fetchCurrentBalanceMapForWallet(hotWalletId: string): Promise<BalanceMap | null> {
+		const wallet = await prisma.hotWallet.findFirst({
+			where: {
+				id: hotWalletId,
+				deletedAt: null,
+			},
+			select: {
+				id: true,
+				Secret: {
+					select: {
+						encryptedMnemonic: true,
+					},
+				},
+				PaymentSource: {
+					select: {
+						id: true,
+						network: true,
+						PaymentSourceConfig: {
+							select: {
+								rpcProviderApiKey: true,
+							},
+						},
+					},
+				},
+			},
+		});
+
+		if (wallet == null) {
+			return null;
+		}
+
+		const rpcProviderApiKey = wallet.PaymentSource.PaymentSourceConfig?.rpcProviderApiKey;
+		if (rpcProviderApiKey == null) {
+			logger.warn('Skipping immediate low balance rule refresh without provider configuration', {
+				component: 'wallet_low_balance_monitor',
+				operation: 'rule_refresh_skip',
+				wallet_id: wallet.id,
+				payment_source_id: wallet.PaymentSource.id,
+			});
+			return null;
+		}
+
+		try {
+			const { utxos } = await generateWalletExtended(
+				wallet.PaymentSource.network,
+				rpcProviderApiKey,
+				wallet.Secret.encryptedMnemonic,
+			);
+			return toBalanceMapFromMeshUtxos(utxos as MeshLikeUtxo[]);
+		} catch (error) {
+			logger.warn('Failed to refresh low balance state after rule mutation', {
+				component: 'wallet_low_balance_monitor',
+				operation: 'rule_refresh_error',
+				wallet_id: wallet.id,
+				payment_source_id: wallet.PaymentSource.id,
+				network: wallet.PaymentSource.network,
+				error: error instanceof Error ? error.message : String(error),
+			});
+			return null;
+		}
 	}
 }
 
