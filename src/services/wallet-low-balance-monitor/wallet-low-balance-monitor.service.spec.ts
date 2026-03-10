@@ -28,18 +28,18 @@ jest.unstable_mockModule('@/utils/db', () => ({
 					updateMany: mockUpdateMany,
 				},
 			}),
-			hotWallet: {
-				findFirst: mockHotWalletFindFirst,
-				findMany: mockHotWalletFindMany,
-			},
-			hotWalletLowBalanceRule: {
-				create: mockCreateLowBalanceRule,
-				update: mockUpdateLowBalanceRule,
-				findUnique: mockFindUniqueLowBalanceRule,
-				createMany: jest.fn(),
-			},
+		hotWallet: {
+			findFirst: mockHotWalletFindFirst,
+			findMany: mockHotWalletFindMany,
 		},
-	}));
+		hotWalletLowBalanceRule: {
+			create: mockCreateLowBalanceRule,
+			update: mockUpdateLowBalanceRule,
+			findUnique: mockFindUniqueLowBalanceRule,
+			createMany: jest.fn(),
+		},
+	},
+}));
 
 jest.unstable_mockModule('@/utils/config', () => ({
 	CONFIG: {
@@ -373,17 +373,15 @@ describe('WalletLowBalanceMonitorService', () => {
 			...createRuleRecord(LowBalanceStatus.Unknown),
 			thresholdAmount: 3000000n,
 		});
-		mockHotWalletFindFirst
-			.mockResolvedValueOnce(createBalanceFetchWallet())
-			.mockResolvedValueOnce({
-				...createWallet(LowBalanceStatus.Unknown),
-				LowBalanceRules: [
-					{
-						...createWallet(LowBalanceStatus.Unknown).LowBalanceRules[0],
-						thresholdAmount: 3000000n,
-					},
-				],
-			});
+		mockHotWalletFindFirst.mockResolvedValueOnce(createBalanceFetchWallet()).mockResolvedValueOnce({
+			...createWallet(LowBalanceStatus.Unknown),
+			LowBalanceRules: [
+				{
+					...createWallet(LowBalanceStatus.Unknown).LowBalanceRules[0],
+					thresholdAmount: 3000000n,
+				},
+			],
+		});
 		mockGenerateWalletExtended.mockResolvedValue({
 			utxos: createMeshUtxos('4000000'),
 		});
