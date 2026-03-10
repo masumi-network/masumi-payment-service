@@ -162,7 +162,7 @@ function getRuleAssetMeta(assetUnit: string, network: 'Preprod' | 'Mainnet'): Ru
     return stablecoin;
   }
 
-  const assetName = hexToAscii(assetUnit.slice(56));
+  const assetName = hexToAscii(assetUnit.slice(CARDANO_POLICY_ID_HEX_LENGTH));
 
   return {
     assetUnit,
@@ -615,8 +615,8 @@ export function WalletDetailsDialog({
                 });
               } else {
                 // For other tokens, split into policy ID and asset name
-                const policyId = unit.slice(0, 56);
-                const assetNameHex = unit.slice(56);
+                const policyId = unit.slice(0, CARDANO_POLICY_ID_HEX_LENGTH);
+                const assetNameHex = unit.slice(CARDANO_POLICY_ID_HEX_LENGTH);
                 const assetName = hexToAscii(assetNameHex);
 
                 tokens.push({
@@ -1621,7 +1621,7 @@ export function WalletDetailsDialog({
                       const isADA = token.unit === 'lovelace';
                       const isUsdcx = isUSDCx(token);
                       const isUsdm = isUSDM(token);
-                      const assetHex = !isADA ? token.unit.slice(56) : '';
+                      const assetHex = !isADA ? token.unit.slice(CARDANO_POLICY_ID_HEX_LENGTH) : '';
 
                       let displayName: string;
                       if (isADA) {
