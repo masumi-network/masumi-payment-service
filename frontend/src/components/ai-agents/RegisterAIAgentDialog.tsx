@@ -401,7 +401,7 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
         setIsLoading(false);
       }
     },
-    [validateWallet, apiClient, network, onSuccess, onClose, reset],
+    [validateWallet, apiClient, network, stablecoinUnit, onSuccess, onClose, reset],
   );
 
   // ── A2A submit ─────────────────────────────────────────────────────────────
