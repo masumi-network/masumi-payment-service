@@ -1,10 +1,8 @@
-/* eslint-disable react-hooks/rules-of-hooks */
-
 import { Button } from '@/components/ui/button';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Plus, Trash2, ExternalLink } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 
 import { useRouter } from 'next/router';
 import { RegisterAIAgentDialog } from '@/components/ai-agents/RegisterAIAgentDialog';
@@ -32,13 +30,15 @@ import { Pagination } from '@/components/ui/pagination';
 import { AIAgentDetailsDialog } from '@/components/ai-agents/AIAgentDetailsDialog';
 import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/WalletDetailsDialog';
 import { CopyButton } from '@/components/ui/copy-button';
-import { TESTUSDM_CONFIG, getUsdmConfig } from '@/lib/constants/defaultWallets';
+import { TESTUSDM_CONFIG, getUsdmConfig, getUsdcxConfig } from '@/lib/constants/defaultWallets';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { EmptyState } from '@/components/ui/empty-state';
 import { SearchInput } from '@/components/ui/search-input';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { parseAmountSearchRange } from '@/lib/parseAmountSearchRange';
+import { extractApiErrorMessage } from '@/lib/api-error';
+import { findPaymentSourceWalletByVkey } from '@/lib/wallet-lookup';
 type AIAgent = RegistryEntry;
 
 const parseAgentStatus = (status: AIAgent['state']): string => {
@@ -133,12 +133,10 @@ export default function AIAgentsPage() {
   const { apiClient, network, selectedPaymentSourceId } = useAppContext();
   const { paymentSources } = usePaymentSourceExtendedAll();
 
-  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] = useState<
-    PaymentSourceExtended[]
-  >([]);
-  useEffect(() => {
-    setCurrentNetworkPaymentSources(paymentSources.filter((ps) => ps.network === network));
-  }, [paymentSources, network]);
+  const currentNetworkPaymentSources = useMemo(
+    () => paymentSources.filter((paymentSource) => paymentSource.network === network),
+    [paymentSources, network],
+  );
   const [selectedAgentForDetails, setSelectedAgentForDetails] = useState<AIAgent | null>(null);
   const [initialDialogTab, setInitialDialogTab] = useState<'Details' | 'Earnings'>('Details');
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
@@ -152,14 +150,10 @@ export default function AIAgentsPage() {
     { name: 'Failed', count: null },
   ];
 
-  // Handle action query parameter from search
-  useEffect(() => {
-    if (router.query.action === 'register_agent') {
-      setIsRegisterDialogOpen(true);
-      // Clean up the query parameter
-      router.replace('/ai-agents', undefined, { shallow: true });
-    }
-  }, [router.query.action, router]);
+  const [dismissedQueryAction, setDismissedQueryAction] = useState(false);
+
+  const shouldOpenRegisterDialog =
+    isRegisterDialogOpen || (router.query.action === 'register_agent' && !dismissedQueryAction);
 
   const formatDate = (date: Date | string) => {
     const dateObj = typeof date === 'string' ? new Date(date) : date;
@@ -175,7 +169,7 @@ export default function AIAgentsPage() {
     return 'secondary';
   };
 
-  const useFormatPrice = (amount: string | undefined) => {
+  const formatPrice = (amount: string | undefined) => {
     if (!amount) return '—';
     return formatBalance((parseInt(amount) / 1000000).toFixed(2));
   };
@@ -206,9 +200,9 @@ export default function AIAgentsPage() {
             setSelectedAgentToDelete(null);
             refetch();
           },
-          onError: (error: any) => {
+          onError: (error: unknown) => {
             console.error('Error deleting agent:', error);
-            toast.error(error.message || 'Failed to delete AI agent');
+            toast.error(extractApiErrorMessage(error, 'Failed to delete AI agent'));
           },
           onFinally: () => {
             setIsDeleting(false);
@@ -238,9 +232,9 @@ export default function AIAgentsPage() {
             setSelectedAgentToDelete(null);
             refetch();
           },
-          onError: (error: any) => {
+          onError: (error: unknown) => {
             console.error('Error deregistering agent:', error);
-            toast.error(error.message || 'Failed to deregister AI agent');
+            toast.error(extractApiErrorMessage(error, 'Failed to deregister AI agent'));
           },
           onFinally: () => {
             setIsDeleting(false);
@@ -261,35 +255,17 @@ export default function AIAgentsPage() {
 
   const handleWalletClick = useCallback(
     async (walletVkey: string) => {
-      // Find the wallet by vkey from payment sources in context
-      const filteredSources = currentNetworkPaymentSources.filter((source: any) =>
+      const filteredSources = currentNetworkPaymentSources.filter((source) =>
         selectedPaymentSourceId ? source.id === selectedPaymentSourceId : true,
       );
-
-      // Flatten all wallets from filtered sources
-      const allWallets = filteredSources.flatMap((source: any) => [
-        ...(source.SellingWallets || []).map((wallet: any) => ({
-          ...wallet,
-          type: 'Selling' as const,
-          balance: '0',
-          usdmBalance: '0',
-        })),
-        ...(source.PurchasingWallets || []).map((wallet: any) => ({
-          ...wallet,
-          type: 'Purchasing' as const,
-          balance: '0',
-          usdmBalance: '0',
-        })),
-      ]);
-
-      const foundWallet = allWallets.find((wallet: any) => wallet.walletVkey === walletVkey);
+      const foundWallet = findPaymentSourceWalletByVkey(filteredSources, walletVkey);
 
       if (!foundWallet) {
         toast.error('Wallet not found');
         return;
       }
 
-      setSelectedWalletForDetails(foundWallet as WalletWithBalance);
+      setSelectedWalletForDetails(foundWallet);
     },
     [currentNetworkPaymentSources, selectedPaymentSourceId],
   );
@@ -465,8 +441,8 @@ export default function AIAgentsPage() {
                             agent.AgentPricing.Pricing?.map((price, index) => (
                               <div key={index} className="whitespace-nowrap">
                                 {price.unit === 'lovelace' || !price.unit
-                                  ? `${useFormatPrice(price.amount)} ADA`
-                                  : `${useFormatPrice(price.amount)} ${price.unit === getUsdmConfig(network).fullAssetId ? (network === 'Mainnet' ? 'USDM' : 'tUSDM') : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
+                                  ? `${formatPrice(price.amount)} ADA`
+                                  : `${formatPrice(price.amount)} ${price.unit === getUsdcxConfig(network).fullAssetId ? 'USDCx' : price.unit === getUsdmConfig(network).fullAssetId ? (network === 'Mainnet' ? 'USDM' : 'tUSDM') : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
                               </div>
                             ))}
                         </td>
@@ -549,8 +525,14 @@ export default function AIAgentsPage() {
           </div>
 
           <RegisterAIAgentDialog
-            open={isRegisterDialogOpen}
-            onClose={() => setIsRegisterDialogOpen(false)}
+            open={shouldOpenRegisterDialog}
+            onClose={() => {
+              setIsRegisterDialogOpen(false);
+              if (router.query.action === 'register_agent') {
+                setDismissedQueryAction(true);
+                void router.replace('/ai-agents', undefined, { shallow: true });
+              }
+            }}
             onSuccess={() => {
               setTimeout(() => {
                 refetch();

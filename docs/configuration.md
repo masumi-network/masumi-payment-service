@@ -3,6 +3,15 @@
 Configure the environment variables by copying the `.env.example` file to `.env`or `.env.local` and setup the
 variables
 
+If you run the service directly on your machine, the process reads `.env` through `dotenv`.
+
+If you run the service with Docker:
+
+- pass backend secrets at runtime with `docker run --env-file .env ...` or Compose `env_file`
+- do not bake `.env` into the image
+- pass only explicit `NEXT_PUBLIC_*` frontend values as Docker `--build-arg`
+- treat every `NEXT_PUBLIC_*` variable as public client-side data
+
 **TLDR;** Most of the variables can be left as the example values, if you want to just test the service. However you will need to set the following:
 
 - **DATABASE_URL**: The endpoint for a PostgreSQL database to be used
@@ -17,7 +26,7 @@ variables
 - **PORT**: The port to run the server on (default is 3001)
 - **ENCRYPTION_KEY**: The key for encrypting the wallets in the database (Please see the [Security](#security)
   section for more details and security considerations)
-- **DATABASE_CA_CERT** *(optional)*: PEM-encoded CA certificate for database SSL connections (e.g. when using
+- **DATABASE_CA_CERT** _(optional)_: PEM-encoded CA certificate for database SSL connections (e.g. when using
   self-signed certificates). Use literal `\n` for newlines in the env var value. When set, the service
   automatically writes the certificate to `certs/ca-certificate.crt` at startup and appends
   `sslrootcert=<path>` to the database connection string.
@@ -54,3 +63,13 @@ variables
        a successful and completed purchase (not refund). It does not need any funds, however it is strongly recommended
        to create it via a hardware wallet or ensure its secret is stored securely. If you do not provide an address,
        the SELLING_WALLET will be used.
+
+## Frontend Build Variables
+
+The admin frontend is statically built and any `NEXT_PUBLIC_*` value is embedded into the generated assets. Only pass
+values that are safe to expose to the browser.
+
+The Docker image supports these explicit frontend build arguments. If you do not pass
+`NEXT_PUBLIC_PAYMENT_API_BASE_URL`, it defaults to `/api/v1`.
+
+- **NEXT_PUBLIC_PAYMENT_API_BASE_URL**: Public base URL used by the admin UI to call the backend API

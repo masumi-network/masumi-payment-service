@@ -23,6 +23,7 @@ export type AuthContext = {
 	networkLimit: Network[];
 	/** Whether this API key has usage credit limits (ignored if canAdmin=true) */
 	usageLimited: boolean;
+	walletScopeIds: string[] | null;
 };
 
 const authMiddlewareInputSchema = z.object({});
@@ -53,6 +54,9 @@ export const authMiddleware = (minPermission: RequiredPermission) =>
 					where: {
 						tokenHash: generateSHA256Hash(sentKey),
 					},
+					include: {
+						WalletScopes: { select: { hotWalletId: true } },
+					},
 				});
 
 				if (!apiKey) {
@@ -78,6 +82,11 @@ export const authMiddleware = (minPermission: RequiredPermission) =>
 					usageLimited = false;
 				}
 
+				const walletScopeIds =
+					apiKey.canAdmin || !apiKey.walletScopeEnabled
+						? null
+						: apiKey.WalletScopes.map((ws) => ws.hotWalletId);
+
 				return {
 					id: apiKey.id,
 					canRead: apiKey.canRead,
@@ -85,6 +94,7 @@ export const authMiddleware = (minPermission: RequiredPermission) =>
 					canAdmin: apiKey.canAdmin,
 					networkLimit: networkLimit,
 					usageLimited: usageLimited,
+					walletScopeIds: walletScopeIds,
 				}; // provides endpoints with options.user
 			} catch (error) {
 				//await a random amount to throttle invalid requests

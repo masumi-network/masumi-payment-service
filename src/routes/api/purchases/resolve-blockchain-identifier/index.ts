@@ -7,6 +7,7 @@ import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-aut
 import { transformPurchaseGetTimestamps, transformPurchaseGetAmounts } from '@/utils/shared/transformers';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { purchaseResponseSchema } from '@/routes/api/purchases';
+import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 
 export const postPurchaseRequestSchemaInput = z.object({
 	blockchainIdentifier: z.string().describe('The blockchain identifier to resolve'),
@@ -33,7 +34,7 @@ export const resolvePurchaseRequestPost = readAuthenticatedEndpointFactory.build
 	handler: async ({ input, ctx }: { input: z.infer<typeof postPurchaseRequestSchemaInput>; ctx: AuthContext }) => {
 		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.canAdmin);
 
-		const purchase = await prisma.purchaseRequest.findUnique({
+		const purchase = await prisma.purchaseRequest.findFirst({
 			where: {
 				PaymentSource: {
 					deletedAt: null,
@@ -41,6 +42,7 @@ export const resolvePurchaseRequestPost = readAuthenticatedEndpointFactory.build
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
 				},
 				blockchainIdentifier: input.blockchainIdentifier,
+				...buildWalletScopeFilter(ctx.walletScopeIds),
 			},
 			include: {
 				NextAction: {
@@ -146,9 +148,12 @@ export const resolvePurchaseRequestPost = readAuthenticatedEndpointFactory.build
 					: null,
 			ActionHistory: purchase.ActionHistory
 				? purchase.ActionHistory.map((action) => ({
-						...action,
-						createdAt: action.createdAt.toISOString(),
-						updatedAt: action.updatedAt.toISOString(),
+						id: action.id,
+						createdAt: action.createdAt,
+						updatedAt: action.updatedAt,
+						requestedAction: action.requestedAction,
+						errorType: action.errorType,
+						errorNote: action.errorNote,
 					}))
 				: null,
 		};

@@ -285,15 +285,15 @@ export function InvoiceDetailsDialog({
             </>
           )}
 
-          {invoice.coveredPaymentRequestIds.length > 0 && (
+          {invoice.CoveredPaymentRequestIds.length > 0 && (
             <>
               <Separator />
               <div className="text-sm">
                 <span className="text-muted-foreground font-medium">
-                  Covered Payment Requests ({invoice.coveredPaymentRequestIds.length})
+                  Covered Payment Requests ({invoice.CoveredPaymentRequestIds.length})
                 </span>
                 <div className="mt-2 space-y-1 max-h-32 overflow-y-auto">
-                  {invoice.coveredPaymentRequestIds.map((id) => (
+                  {invoice.CoveredPaymentRequestIds.map((id) => (
                     <div key={id} className="flex items-center gap-2 font-mono text-xs">
                       {id}
                       <CopyButton value={id} />

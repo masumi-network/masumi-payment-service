@@ -8,6 +8,7 @@ import { queryPaymentsSchemaOutput } from '@/routes/api/payments';
 import { transformPaymentGetAmounts, transformPaymentGetTimestamps } from '@/utils/shared/transformers';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { ez } from 'express-zod-api';
+import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 
 const paymentDiffLastUpdateSchema = ez.dateIn();
 
@@ -45,12 +46,14 @@ function buildPaymentDiffWhere({
 	sinceId,
 	network,
 	filterSmartContractAddress,
+	walletScopeIds,
 }: {
 	mode: PaymentDiffMode;
 	since: Date;
 	sinceId?: string;
 	network: Prisma.PaymentSourceWhereInput['network'];
 	filterSmartContractAddress?: string | null;
+	walletScopeIds: string[] | null;
 }): Prisma.PaymentRequestWhereInput {
 	const base: Prisma.PaymentRequestWhereInput = {
 		PaymentSource: {
@@ -58,6 +61,7 @@ function buildPaymentDiffWhere({
 			smartContractAddress: filterSmartContractAddress ?? undefined,
 			deletedAt: null,
 		},
+		...buildWalletScopeFilter(walletScopeIds),
 	};
 
 	switch (mode) {
@@ -141,6 +145,7 @@ async function queryPaymentDiffByMode({
 			sinceId,
 			network: input.network,
 			filterSmartContractAddress: input.filterSmartContractAddress,
+			walletScopeIds: ctx.walletScopeIds,
 		}),
 		orderBy: buildPaymentDiffOrderBy(mode),
 		take: input.limit,

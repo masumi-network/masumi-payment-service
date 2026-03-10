@@ -1,56 +1,57 @@
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
-import { z } from '@/utils/zod-openapi';
-import { ApiKeyStatus, Network } from '@/generated/prisma/client';
+import { ApiKeyStatus, Network, Permission } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import { createId } from '@paralleldrive/cuid2';
 import createHttpError from 'http-errors';
 import { generateSHA256Hash } from '@/utils/crypto';
 import { CONSTANTS } from '@/utils/config';
 import { transformBigIntAmounts } from '@/utils/shared/transformers';
+import { z } from '@/utils/zod-openapi';
+import {
+	addAPIKeySchemaInput,
+	addAPIKeySchemaOutput,
+	apiKeyOutputSchema,
+	deleteAPIKeySchemaInput,
+	deleteAPIKeySchemaOutput,
+	getAPIKeySchemaInput,
+	getAPIKeySchemaOutput,
+	updateAPIKeySchemaInput,
+	updateAPIKeySchemaOutput,
+} from './schemas';
 import { computePermissionFromFlags, flagsFromLegacyPermission } from '@/utils/permissions';
 
-export const getAPIKeySchemaInput = z.object({
-	limit: z.coerce.number().min(1).max(100).default(10).describe('The number of API keys to return'),
-	cursorToken: z.string().max(550).optional().describe('Used to paginate through the API keys'),
-});
+export {
+	addAPIKeySchemaInput,
+	addAPIKeySchemaOutput,
+	apiKeyOutputSchema,
+	deleteAPIKeySchemaInput,
+	deleteAPIKeySchemaOutput,
+	getAPIKeySchemaInput,
+	getAPIKeySchemaOutput,
+	updateAPIKeySchemaInput,
+	updateAPIKeySchemaOutput,
+};
 
-export const apiKeyOutputSchema = z
-	.object({
-		id: z.string().describe('Unique identifier for the API key'),
-		token: z.string().describe('The API key token'),
-		// Flag-based permissions (new system)
-		canRead: z.boolean().describe('Whether this API key can access read endpoints'),
-		canPay: z.boolean().describe('Whether this API key can access payment/purchase endpoints'),
-		canAdmin: z.boolean().describe('Whether this API key has admin access'),
-		// Legacy permission (computed from flags for backward compatibility)
-		permission: z
-			.enum(['Read', 'ReadAndPay', 'Admin'])
-			.describe('Permission level of the API key (computed from flags for backward compatibility)'),
-		usageLimited: z.boolean().describe('Whether the API key has usage limits'),
-		networkLimit: z.array(z.nativeEnum(Network)).describe('List of Cardano networks this API key is allowed to access'),
-		RemainingUsageCredits: z
-			.array(
-				z.object({
-					unit: z
-						.string()
-						.describe(
-							'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
-						),
-					amount: z
-						.string()
-						.describe(
-							'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
-						),
-				}),
-			)
-			.describe('Remaining usage credits for this API key'),
-		status: z.nativeEnum(ApiKeyStatus).describe('Current status of the API key'),
-	})
-	.openapi('APIKey');
-
-export const getAPIKeySchemaOutput = z.object({
-	ApiKeys: z.array(apiKeyOutputSchema).describe('List of API keys'),
-});
+export const mapApiKeyOutput = <
+	T extends {
+		canRead: boolean;
+		canPay: boolean;
+		canAdmin: boolean;
+		networkLimit: Network[];
+		RemainingUsageCredits: Array<{ amount: bigint; unit: string }>;
+		WalletScopes: Array<{ hotWalletId: string }>;
+	},
+>(
+	data: T,
+) => {
+	const { networkLimit, RemainingUsageCredits, ...rest } = data;
+	return {
+		...rest,
+		permission: computePermissionFromFlags(data.canRead, data.canPay, data.canAdmin),
+		NetworkLimit: networkLimit,
+		RemainingUsageCredits: transformBigIntAmounts(RemainingUsageCredits),
+	};
+};
 
 export const queryAPIKeyEndpointGet = adminAuthenticatedEndpointFactory.build({
 	method: 'get',
@@ -59,64 +60,17 @@ export const queryAPIKeyEndpointGet = adminAuthenticatedEndpointFactory.build({
 	handler: async ({ input }: { input: z.infer<typeof getAPIKeySchemaInput> }) => {
 		const result = await prisma.apiKey.findMany({
 			cursor: input.cursorToken ? { token: input.cursorToken } : undefined,
-			take: input.limit,
+			take: input.take,
 			include: {
 				RemainingUsageCredits: { select: { amount: true, unit: true } },
+				WalletScopes: { select: { hotWalletId: true } },
 			},
 		});
 		return {
-			ApiKeys: result.map((data) => ({
-				...data,
-				// Compute legacy permission from flags for backward compatibility
-				permission: computePermissionFromFlags(data.canRead, data.canPay, data.canAdmin),
-				RemainingUsageCredits: transformBigIntAmounts(data.RemainingUsageCredits),
-			})),
+			ApiKeys: result.map((data) => mapApiKeyOutput(data)),
 		};
 	},
 });
-
-export const addAPIKeySchemaInput = z.object({
-	usageLimited: z
-		.string()
-		.default('true')
-		.transform((s) => (s.toLowerCase() == 'true' ? true : false))
-		.describe(
-			'Whether the API key is usage limited. Meaning only allowed to use the specified credits or can freely spend',
-		),
-	UsageCredits: z
-		.array(
-			z.object({
-				unit: z
-					.string()
-					.max(150)
-					.describe(
-						'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
-					),
-				amount: z
-					.string()
-					.describe(
-						'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
-					),
-			}),
-		)
-		.describe('The credits allowed to be used by the API key. Only relevant if usageLimited is true. '),
-	networkLimit: z
-		.array(z.nativeEnum(Network))
-		.max(3)
-		.default([Network.Mainnet, Network.Preprod])
-		.describe('The networks the API key is allowed to use'),
-	// Flag-based permissions (new system - preferred)
-	canRead: z.boolean().optional().describe('Whether this API key can access read endpoints'),
-	canPay: z.boolean().optional().describe('Whether this API key can access payment/purchase endpoints'),
-	canAdmin: z.boolean().optional().describe('Whether this API key has admin access'),
-	// Legacy permission (for backward compatibility)
-	permission: z
-		.enum(['Read', 'ReadAndPay', 'Admin'])
-		.optional()
-		.describe('Legacy permission field (use canRead/canPay/canAdmin instead)'),
-});
-
-export const addAPIKeySchemaOutput = apiKeyOutputSchema;
 
 export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 	method: 'post',
@@ -146,18 +100,26 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 			canAdmin = false;
 		}
 
-		const apiKey = 'masumi-payment-' + (canAdmin ? 'admin-' : '') + createId();
-
+		const isAdmin = canAdmin;
+		if (isAdmin && input.walletScopeEnabled) {
+			throw createHttpError(400, 'Admin API keys cannot have wallet scope enabled');
+		}
+		if (isAdmin && input.usageLimited) {
+			throw createHttpError(400, 'Admin API keys cannot have usage limits');
+		}
+		const apiKey = 'masumi-payment-' + (isAdmin ? 'admin-' : '') + createId();
 		const result = await prisma.apiKey.create({
 			data: {
 				token: apiKey,
 				tokenHash: generateSHA256Hash(apiKey),
 				status: ApiKeyStatus.Active,
+				permission: computePermissionFromFlags(canRead, canPay, canAdmin) as Permission,
 				canRead: canRead,
 				canPay: canPay,
 				canAdmin: canAdmin,
-				usageLimited: canAdmin ? false : input.usageLimited,
-				networkLimit: canAdmin ? [Network.Mainnet, Network.Preprod] : input.networkLimit,
+				usageLimited: isAdmin ? false : input.usageLimited,
+				networkLimit: isAdmin ? [Network.Mainnet, Network.Preprod] : input.NetworkLimit,
+				walletScopeEnabled: isAdmin ? false : input.walletScopeEnabled,
 				RemainingUsageCredits: {
 					createMany: {
 						data: input.UsageCredits.map((usageCredit) => {
@@ -169,56 +131,26 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 						}),
 					},
 				},
+				...(input.walletScopeEnabled && input.WalletScopeHotWalletIds.length > 0
+					? {
+							WalletScopes: {
+								createMany: {
+									data: input.WalletScopeHotWalletIds.map((hotWalletId) => ({
+										hotWalletId,
+									})),
+								},
+							},
+						}
+					: {}),
 			},
 			include: {
 				RemainingUsageCredits: { select: { amount: true, unit: true } },
+				WalletScopes: { select: { hotWalletId: true } },
 			},
 		});
-		return {
-			...result,
-			permission: computePermissionFromFlags(canRead, canPay, canAdmin),
-			RemainingUsageCredits: transformBigIntAmounts(result.RemainingUsageCredits),
-		};
+		return mapApiKeyOutput(result);
 	},
 });
-
-export const updateAPIKeySchemaInput = z.object({
-	id: z.string().max(150).describe('The id of the API key to update. Provide either id or apiKey'),
-	token: z.string().min(15).max(550).optional().describe('To change the api key token'),
-	UsageCreditsToAddOrRemove: z
-		.array(
-			z.object({
-				unit: z
-					.string()
-					.max(150)
-					.describe(
-						'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
-					),
-				amount: z
-					.string()
-					.describe(
-						'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
-					),
-			}),
-		)
-		.max(25)
-		.optional()
-		.describe('The amount of credits to add or remove from the API key. Only relevant if usageLimited is true. '),
-	usageLimited: z.boolean().default(true).optional().describe('Whether the API key is usage limited'),
-	status: z.nativeEnum(ApiKeyStatus).default(ApiKeyStatus.Active).optional().describe('The status of the API key'),
-	networkLimit: z
-		.array(z.nativeEnum(Network))
-		.max(3)
-		.default([Network.Mainnet, Network.Preprod])
-		.optional()
-		.describe('The networks the API key is allowed to use'),
-	// Flag-based permissions (new system - optional for updates)
-	canRead: z.boolean().optional().describe('Whether this API key can access read endpoints'),
-	canPay: z.boolean().optional().describe('Whether this API key can access payment/purchase endpoints'),
-	canAdmin: z.boolean().optional().describe('Whether this API key has admin access'),
-});
-
-export const updateAPIKeySchemaOutput = apiKeyOutputSchema;
 
 export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build({
 	method: 'patch',
@@ -279,19 +211,45 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 				const newCanPay = input.canPay !== undefined ? input.canPay : apiKey.canPay;
 				const newCanAdmin = input.canAdmin !== undefined ? input.canAdmin : apiKey.canAdmin;
 
+				const resultingWalletScopeEnabled = input.walletScopeEnabled ?? apiKey.walletScopeEnabled;
+				if (newCanAdmin && resultingWalletScopeEnabled) {
+					throw createHttpError(400, 'Admin API keys cannot have wallet scope enabled');
+				}
+				if (newCanAdmin && input.usageLimited) {
+					throw createHttpError(400, 'Admin API keys cannot have usage limits');
+				}
+
+				if (input.WalletScopeHotWalletIds !== undefined) {
+					await prisma.apiKeyWalletScope.deleteMany({
+						where: { apiKeyId: input.id },
+					});
+					if (input.WalletScopeHotWalletIds.length > 0) {
+						await prisma.apiKeyWalletScope.createMany({
+							data: input.WalletScopeHotWalletIds.map((hotWalletId) => ({
+								apiKeyId: input.id,
+								hotWalletId,
+							})),
+						});
+					}
+				}
+
 				const result = await prisma.apiKey.update({
 					where: { id: input.id },
 					data: {
 						token: input.token,
+						tokenHash: input.token ? generateSHA256Hash(input.token) : undefined,
 						usageLimited: input.usageLimited,
 						status: input.status,
-						networkLimit: input.networkLimit,
+						networkLimit: input.NetworkLimit,
+						walletScopeEnabled: input.walletScopeEnabled,
 						canRead: newCanRead,
 						canPay: newCanPay,
 						canAdmin: newCanAdmin,
+						permission: computePermissionFromFlags(newCanRead, newCanPay, newCanAdmin) as Permission,
 					},
 					include: {
 						RemainingUsageCredits: { select: { amount: true, unit: true } },
+						WalletScopes: { select: { hotWalletId: true } },
 					},
 				});
 				return result;
@@ -302,19 +260,9 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 				isolationLevel: 'Serializable',
 			},
 		);
-		return {
-			...apiKey,
-			permission: computePermissionFromFlags(apiKey.canRead, apiKey.canPay, apiKey.canAdmin),
-			RemainingUsageCredits: transformBigIntAmounts(apiKey.RemainingUsageCredits),
-		};
+		return mapApiKeyOutput(apiKey);
 	},
 });
-
-export const deleteAPIKeySchemaInput = z.object({
-	id: z.string().max(150).describe('The id of the API key to be (soft) deleted.'),
-});
-
-export const deleteAPIKeySchemaOutput = apiKeyOutputSchema;
 
 export const deleteAPIKeyEndpointDelete = adminAuthenticatedEndpointFactory.build({
 	method: 'delete',
@@ -326,12 +274,9 @@ export const deleteAPIKeyEndpointDelete = adminAuthenticatedEndpointFactory.buil
 			data: { deletedAt: new Date(), status: ApiKeyStatus.Revoked },
 			include: {
 				RemainingUsageCredits: { select: { amount: true, unit: true } },
+				WalletScopes: { select: { hotWalletId: true } },
 			},
 		});
-		return {
-			...apiKey,
-			permission: computePermissionFromFlags(apiKey.canRead, apiKey.canPay, apiKey.canAdmin),
-			RemainingUsageCredits: transformBigIntAmounts(apiKey.RemainingUsageCredits),
-		};
+		return mapApiKeyOutput(apiKey);
 	},
 });

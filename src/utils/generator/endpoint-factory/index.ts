@@ -3,12 +3,16 @@ import { EndpointsFactory, ensureHttpError, FlatObject, ResultHandler } from 'ex
 import createHttpError, { HttpError } from 'http-errors';
 
 import { z } from '@/utils/zod-openapi';
+
+type ErrorLogger = {
+	error: (message: string, meta: { error: HttpError; url: string; payload: FlatObject | null }) => unknown;
+};
+
 export const getPublicErrorMessage = (error: HttpError): string =>
 	process.env.NODE_ENV === 'production' && !error.expose
 		? createHttpError(error.statusCode).message // default message for that code
 		: error.message;
-export const logServerError = (error: HttpError, logger: any, url: string, payload: FlatObject | null) =>
-	// eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+export const logServerError = (error: HttpError, logger: ErrorLogger, url: string, payload: FlatObject | null) =>
 	!error.expose && logger.error('Server side error', { error, url, payload });
 const customResultHandler = new ResultHandler({
 	positive: (output) => {

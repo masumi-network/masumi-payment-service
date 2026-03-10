@@ -1,10 +1,12 @@
-import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { z } from '@/utils/zod-openapi';
 import { prisma } from '@/utils/db';
 import { transformBigIntAmounts } from '@/utils/shared/transformers';
 import { isPaymentBillable } from '../shared';
+import { AuthContext } from '@/utils/middleware/auth-middleware';
+import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
+import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 
-export const getUninvoicedPaymentsSchemaInput = z.object({
+export const getMissingInvoicePaymentsSchemaInput = z.object({
 	month: z
 		.string()
 		.regex(/^\d{4}-\d{2}$/)
@@ -14,7 +16,7 @@ export const getUninvoicedPaymentsSchemaInput = z.object({
 	limit: z.coerce.number().min(1).max(100).default(10).describe('Number of results to return'),
 });
 
-export const getUninvoicedPaymentsSchemaOutput = z.object({
+export const getMissingInvoicePaymentsSchemaOutput = z.object({
 	UninvoicedPayments: z.array(
 		z.object({
 			id: z.string(),
@@ -36,11 +38,17 @@ export const getUninvoicedPaymentsSchemaOutput = z.object({
 	),
 });
 
-export const getUninvoicedPaymentsEndpoint = adminAuthenticatedEndpointFactory.build({
+export const getMissingInvoicePaymentsEndpoint = readAuthenticatedEndpointFactory.build({
 	method: 'get',
-	input: getUninvoicedPaymentsSchemaInput,
-	output: getUninvoicedPaymentsSchemaOutput,
-	handler: async ({ input }: { input: z.infer<typeof getUninvoicedPaymentsSchemaInput> }) => {
+	input: getMissingInvoicePaymentsSchemaInput,
+	output: getMissingInvoicePaymentsSchemaOutput,
+	handler: async ({
+		input,
+		ctx,
+	}: {
+		input: z.infer<typeof getMissingInvoicePaymentsSchemaInput>;
+		ctx: AuthContext;
+	}) => {
 		const [yearStr, monthStr] = input.month.split('-');
 		const year = Number(yearStr);
 		const monthIdx = Number(monthStr) - 1;
@@ -53,6 +61,7 @@ export const getUninvoicedPaymentsEndpoint = adminAuthenticatedEndpointFactory.b
 				invoiceBaseId: null,
 				...(input.buyerWalletVkey ? { BuyerWallet: { walletVkey: input.buyerWalletVkey } } : {}),
 				...(input.cursorId ? { id: { lt: input.cursorId } } : {}),
+				...buildWalletScopeFilter(ctx.walletScopeIds),
 				OR: [
 					{
 						onChainState: 'ResultSubmitted',
@@ -80,7 +89,7 @@ export const getUninvoicedPaymentsEndpoint = adminAuthenticatedEndpointFactory.b
 			take: input.limit,
 		});
 
-		const billable = payments.filter(isPaymentBillable);
+		const billable = payments.filter((payment) => isPaymentBillable(payment));
 
 		const result = billable.map((payment) => {
 			return {

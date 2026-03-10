@@ -33,8 +33,8 @@ import { unregisterAgentPost } from './registry/deregister';
 import { revealDataEndpointPost } from './signature/verify/reveal-data';
 import { postMonthlySignatureEndpoint } from './signature/sign/create-invoice/monthly';
 import { getMonthlyInvoiceListEndpoint, postGenerateMonthlyInvoiceEndpoint } from './invoice/monthly';
-import { postAdminGenerateMonthlyInvoiceEndpoint } from './invoice/monthly/admin';
-import { getUninvoicedPaymentsEndpoint } from './invoice/monthly/uninvoiced';
+import { postInternalGenerateMonthlyInvoiceEndpoint } from './invoice/monthly/internal';
+import { getMissingInvoicePaymentsEndpoint as getMissingPaymentsEndpoint } from './invoice/monthly/missing';
 import { paymentErrorStateRecoveryPost } from './payments/error-state-recovery';
 import { purchaseErrorStateRecoveryPost } from './purchases/error-state-recovery';
 import { queryRegistryDiffGet } from './registry/diff';
@@ -51,6 +51,14 @@ import {
 	queryPurchaseDiffOnChainStateOrResultGet,
 } from './purchases/diff';
 import { getMonitoringStatus, triggerMonitoringCycle, startMonitoring, stopMonitoring } from './monitoring';
+import {
+	swapTokensEndpointPost,
+	getSwapConfirmEndpointGet,
+	getSwapTransactionsEndpointGet,
+	getSwapEstimateEndpointGet,
+	cancelSwapEndpointPost,
+	acknowledgeSwapTimeoutEndpointPost,
+} from './swap';
 
 export const apiRouter: Routing = {
 	v1: {
@@ -166,15 +174,29 @@ export const apiRouter: Routing = {
 		'payment-source': {
 			get: paymentSourceEndpointGet,
 		},
+		swap: {
+			post: swapTokensEndpointPost,
+			confirm: getSwapConfirmEndpointGet,
+			cancel: {
+				post: cancelSwapEndpointPost,
+			},
+			'acknowledge-timeout': {
+				post: acknowledgeSwapTimeoutEndpointPost,
+			},
+			transactions: {
+				get: getSwapTransactionsEndpointGet,
+			},
+			estimate: getSwapEstimateEndpointGet,
+		},
 		invoice: {
 			monthly: {
 				get: getMonthlyInvoiceListEndpoint,
 				post: postGenerateMonthlyInvoiceEndpoint,
-				admin: {
-					post: postAdminGenerateMonthlyInvoiceEndpoint,
+				internal: {
+					post: postInternalGenerateMonthlyInvoiceEndpoint,
 				},
-				uninvoiced: {
-					get: getUninvoicedPaymentsEndpoint,
+				missing: {
+					get: getMissingPaymentsEndpoint,
 				},
 			},
 		},

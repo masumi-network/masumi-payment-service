@@ -8,7 +8,7 @@ import { CopyButton } from '@/components/ui/copy-button';
 import { WalletLink } from '@/components/ui/wallet-link';
 import { toast } from 'react-toastify';
 import { parseError } from '@/lib/utils';
-import { getUsdmConfig, TESTUSDM_CONFIG } from '@/lib/constants/defaultWallets';
+import { getUsdmConfig, TESTUSDM_CONFIG, USDCX_CONFIG } from '@/lib/constants/defaultWallets';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   Payment,
@@ -23,6 +23,7 @@ import {
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/WalletDetailsDialog';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
+import { findPaymentSourceWalletByVkey } from '@/lib/wallet-lookup';
 
 type Transaction =
   | (Payment & { type: 'payment' })
@@ -140,23 +141,9 @@ export default function TransactionDetailsDialog({
 
   const handleWalletClick = useCallback(
     (walletVkey: string) => {
-      const allWallets = currentNetworkPaymentSources.flatMap((source) => [
-        ...(source.SellingWallets || []).map((w: any) => ({
-          ...w,
-          type: 'Selling' as const,
-          balance: '0',
-          usdmBalance: '0',
-        })),
-        ...(source.PurchasingWallets || []).map((w: any) => ({
-          ...w,
-          type: 'Purchasing' as const,
-          balance: '0',
-          usdmBalance: '0',
-        })),
-      ]);
-      const found = allWallets.find((w: any) => w.walletVkey === walletVkey);
+      const found = findPaymentSourceWalletByVkey(currentNetworkPaymentSources, walletVkey);
       if (!found) return;
-      setSelectedWalletForDetails(found as WalletWithBalance);
+      setSelectedWalletForDetails(found);
     },
     [currentNetworkPaymentSources],
   );
@@ -558,6 +545,10 @@ export default function TransactionDetailsDialog({
                     transaction.RequestedFunds.length > 0 ? (
                       transaction.RequestedFunds.map((fund, index) => {
                         const usdmConfig = getUsdmConfig(network);
+                        const isUsdcx =
+                          fund.unit === USDCX_CONFIG.fullAssetId ||
+                          fund.unit === USDCX_CONFIG.policyId ||
+                          fund.unit === 'USDCx';
                         const isUsdm =
                           fund.unit === usdmConfig.fullAssetId ||
                           fund.unit === usdmConfig.policyId ||
@@ -569,11 +560,13 @@ export default function TransactionDetailsDialog({
                           <p key={index}>
                             {fund.unit === 'lovelace' || !fund.unit
                               ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ADA`
-                              : isUsdm
-                                ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${network === 'Preprod' ? 'tUSDM' : 'USDM'}`
-                                : isTestUsdm
-                                  ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} tUSDM`
-                                  : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`}
+                              : isUsdcx
+                                ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} USDCx`
+                                : isUsdm
+                                  ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${network === 'Preprod' ? 'tUSDM' : 'USDM'}`
+                                  : isTestUsdm
+                                    ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} tUSDM`
+                                    : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`}
                           </p>
                         );
                       })
@@ -582,6 +575,10 @@ export default function TransactionDetailsDialog({
                       transaction.PaidFunds.length > 0 ? (
                       transaction.PaidFunds.map((fund, index) => {
                         const usdmConfig = getUsdmConfig(network);
+                        const isUsdcx =
+                          fund.unit === USDCX_CONFIG.fullAssetId ||
+                          fund.unit === USDCX_CONFIG.policyId ||
+                          fund.unit === 'USDCx';
                         const isUsdm =
                           fund.unit === usdmConfig.fullAssetId ||
                           fund.unit === usdmConfig.policyId ||
@@ -593,11 +590,13 @@ export default function TransactionDetailsDialog({
                           <p key={index}>
                             {fund.unit === 'lovelace' || !fund.unit
                               ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ADA`
-                              : isUsdm
-                                ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${network === 'Preprod' ? 'tUSDM' : 'USDM'}`
-                                : isTestUsdm
-                                  ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} tUSDM`
-                                  : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`}
+                              : isUsdcx
+                                ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} USDCx`
+                                : isUsdm
+                                  ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${network === 'Preprod' ? 'tUSDM' : 'USDM'}`
+                                  : isTestUsdm
+                                    ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} tUSDM`
+                                    : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`}
                           </p>
                         );
                       })

@@ -15,6 +15,10 @@ import { dateRangeUtils } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { getPayment, getPurchase, Payment, Purchase } from '@/lib/api/generated';
 import { handleApiCall } from '@/lib/utils';
+import {
+  buildTransactionDownloadQuery,
+  mergeDownloadedTransactions,
+} from './download-details.helpers';
 
 type Transaction =
   | (Payment & { type: 'payment' })
@@ -39,7 +43,7 @@ const PRESET_OPTIONS = [
 ];
 
 export function DownloadDetailsDialog({ open, onClose, onDownload }: DownloadDetailsDialogProps) {
-  const { apiClient } = useAppContext();
+  const { apiClient, network } = useAppContext();
   const [selectedPreset, setSelectedPreset] = useState<PresetOption>('24h');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
@@ -63,12 +67,7 @@ export function DownloadDetailsDialog({ open, onClose, onDownload }: DownloadDet
           () =>
             getPurchase({
               client: apiClient,
-              query: {
-                network: 'Preprod',
-                cursorId: purchaseCursor || undefined,
-                includeHistory: 'true',
-                limit: 100,
-              },
+              query: buildTransactionDownloadQuery(network, purchaseCursor || undefined),
             }),
           {
             onError: (error: unknown) => {
@@ -79,12 +78,16 @@ export function DownloadDetailsDialog({ open, onClose, onDownload }: DownloadDet
         );
 
         if (purchases?.data?.data?.Purchases) {
-          purchases.data.data.Purchases.forEach((purchase) => {
-            allTx.push({
-              ...purchase,
-              type: 'purchase',
-            } as Transaction);
-          });
+          const nextPurchases = purchases.data.data.Purchases.map(
+            (purchase) =>
+              ({
+                ...purchase,
+                type: 'purchase',
+              }) as Transaction,
+          );
+          const mergedPurchases = mergeDownloadedTransactions(allTx, nextPurchases);
+          allTx.length = 0;
+          allTx.push(...mergedPurchases);
           hasMorePurchases = purchases.data.data.Purchases.length === 100;
           purchaseCursor =
             purchases.data.data.Purchases[purchases.data.data.Purchases.length - 1]?.id;
@@ -99,12 +102,7 @@ export function DownloadDetailsDialog({ open, onClose, onDownload }: DownloadDet
           () =>
             getPayment({
               client: apiClient,
-              query: {
-                network: 'Preprod',
-                cursorId: paymentCursor || undefined,
-                includeHistory: 'true',
-                limit: 100,
-              },
+              query: buildTransactionDownloadQuery(network, paymentCursor || undefined),
             }),
           {
             onError: (error: unknown) => {
@@ -115,12 +113,16 @@ export function DownloadDetailsDialog({ open, onClose, onDownload }: DownloadDet
         );
 
         if (payments?.data?.data?.Payments) {
-          payments.data.data.Payments.forEach((payment) => {
-            allTx.push({
-              ...payment,
-              type: 'payment',
-            } as Transaction);
-          });
+          const nextPayments = payments.data.data.Payments.map(
+            (payment) =>
+              ({
+                ...payment,
+                type: 'payment',
+              }) as Transaction,
+          );
+          const mergedPayments = mergeDownloadedTransactions(allTx, nextPayments);
+          allTx.length = 0;
+          allTx.push(...mergedPayments);
           hasMorePayments = payments.data.data.Payments.length === 100;
           paymentCursor = payments.data.data.Payments[payments.data.data.Payments.length - 1]?.id;
         } else {
@@ -134,7 +136,7 @@ export function DownloadDetailsDialog({ open, onClose, onDownload }: DownloadDet
     } finally {
       setIsLoading(false);
     }
-  }, [apiClient]);
+  }, [apiClient, network]);
   // Calculate filtered transactions for display
   const getFilteredTransactions = useCallback(() => {
     let startDate: Date;

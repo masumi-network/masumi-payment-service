@@ -1,4 +1,4 @@
-import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
+import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { z } from '@/utils/zod-openapi';
 import { Network, OnChainState, PaymentAction } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
@@ -7,6 +7,7 @@ import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/m
 import { paymentResponseSchema } from '@/routes/api/payments';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { transformPaymentGetAmounts, transformPaymentGetTimestamps } from '@/utils/shared/transformers';
+import { assertWalletInScope } from '@/utils/shared/wallet-scope';
 
 export const authorizePaymentRefundSchemaInput = z.object({
 	blockchainIdentifier: z.string().max(8000).describe('The identifier of the purchase to be refunded'),
@@ -18,7 +19,7 @@ export const authorizePaymentRefundSchemaOutput = paymentResponseSchema.omit({
 	ActionHistory: true,
 });
 
-export const authorizePaymentRefundEndpointPost = readAuthenticatedEndpointFactory.build({
+export const authorizePaymentRefundEndpointPost = payAuthenticatedEndpointFactory.build({
 	method: 'post',
 	input: authorizePaymentRefundSchemaInput,
 	output: authorizePaymentRefundSchemaOutput,
@@ -52,6 +53,7 @@ export const authorizePaymentRefundEndpointPost = readAuthenticatedEndpointFacto
 		if (payment == null) {
 			throw createHttpError(404, 'Payment not found or in invalid state');
 		}
+		assertWalletInScope(ctx.walletScopeIds, payment.smartContractWalletId);
 
 		if (payment.requestedById != ctx.id && !ctx.canAdmin) {
 			throw createHttpError(403, 'You are not authorized to authorize a refund for this payment');

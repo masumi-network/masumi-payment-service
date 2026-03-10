@@ -4,6 +4,7 @@ import { Client } from '@/lib/api/generated/client';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { getPaymentSourceExtended, PaymentSourceExtended } from '@/lib/api/generated';
 import { handleApiCall } from '@/lib/utils';
+import { appendInclusiveCursorPage } from '@/lib/pagination/cursor-pagination';
 
 type UsePaymentSourceExtendedAllParams = {
   apiClient: Client;
@@ -45,7 +46,9 @@ function usePaymentSourceExtendedAllInternal({
           break;
         }
 
-        aggregated.push(...sources);
+        const merged = appendInclusiveCursorPage(aggregated, sources, (source) => source.id);
+        aggregated.length = 0;
+        aggregated.push(...merged);
 
         if (sources.length < take) {
           break;

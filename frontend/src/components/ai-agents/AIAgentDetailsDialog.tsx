@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/rules-of-hooks */
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -20,6 +19,9 @@ import { toast } from 'react-toastify';
 import { Tabs } from '@/components/ui/tabs';
 import { AgentEarningsOverview } from './AgentEarningsOverview';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
+import { extractApiErrorMessage } from '@/lib/api-error';
+import { findPaymentSourceWalletByVkey } from '@/lib/wallet-lookup';
+import { useMemo } from 'react';
 
 type AIAgent = RegistryEntry;
 
@@ -62,7 +64,7 @@ const getStatusBadgeVariant = (status: AIAgent['state']) => {
   return 'secondary';
 };
 
-const useFormatPrice = (amount: string | undefined) => {
+const formatPrice = (amount: string | undefined) => {
   if (!amount) return '—';
   return formatBalance((parseInt(amount) / 1000000).toFixed(2));
 };
@@ -79,14 +81,12 @@ export function AIAgentDetailsDialog({
   const [isPurchaseDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(initialTab);
   const { paymentSources } = usePaymentSourceExtendedAll();
-  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] = useState<
-    PaymentSourceExtended[]
-  >([]);
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
     useState<WalletWithBalance | null>(null);
-  useEffect(() => {
-    setCurrentNetworkPaymentSources(paymentSources.filter((ps) => ps.network === network));
-  }, [paymentSources, network]);
+  const currentNetworkPaymentSources = useMemo(
+    () => paymentSources.filter((paymentSource) => paymentSource.network === network),
+    [paymentSources, network],
+  );
 
   // Update activeTab when initialTab changes (when dialog opens with different tab)
   useEffect(() => {
@@ -120,6 +120,9 @@ export function AIAgentDetailsDialog({
             toast.success('AI agent deleted from the database successfully');
             onClose();
             onSuccess?.();
+          },
+          onError: (error: unknown) => {
+            toast.error(extractApiErrorMessage(error, 'Failed to delete AI agent'));
           },
           onFinally: () => {
             setIsDeleting(false);
@@ -158,6 +161,9 @@ export function AIAgentDetailsDialog({
             onClose();
             onSuccess?.();
           },
+          onError: (error: unknown) => {
+            toast.error(extractApiErrorMessage(error, 'Failed to deregister AI agent'));
+          },
           onFinally: () => {
             setIsDeleting(false);
             setIsDeleteDialogOpen(false);
@@ -184,26 +190,12 @@ export function AIAgentDetailsDialog({
 
   const handleWalletClick = useCallback(
     (walletVkey: string) => {
-      const allWallets = currentNetworkPaymentSources.flatMap((source) => [
-        ...(source.SellingWallets || []).map((w: any) => ({
-          ...w,
-          type: 'Selling' as const,
-          balance: '0',
-          usdmBalance: '0',
-        })),
-        ...(source.PurchasingWallets || []).map((w: any) => ({
-          ...w,
-          type: 'Purchasing' as const,
-          balance: '0',
-          usdmBalance: '0',
-        })),
-      ]);
-      const found = allWallets.find((w: any) => w.walletVkey === walletVkey);
+      const found = findPaymentSourceWalletByVkey(currentNetworkPaymentSources, walletVkey);
       if (!found) {
         toast.error('Wallet not found');
         return;
       }
-      setSelectedWalletForDetails(found as WalletWithBalance);
+      setSelectedWalletForDetails(found);
     },
     [currentNetworkPaymentSources],
   );
@@ -340,7 +332,7 @@ export function AIAgentDetailsDialog({
                                   Price ({formatFundUnit(price.unit, network)})
                                 </span>
                                 <span className="font-medium">
-                                  {`${useFormatPrice(price.amount)} ${formatFundUnit(price.unit, network)}`}
+                                  {`${formatPrice(price.amount)} ${formatFundUnit(price.unit, network)}`}
                                 </span>
                               </div>
                             ))}

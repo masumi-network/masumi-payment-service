@@ -11,18 +11,6 @@ export const APIKeySchema = {
             type: 'string',
             description: 'The API key token'
         },
-        canRead: {
-            type: 'boolean',
-            description: 'Whether this API key can access read endpoints'
-        },
-        canPay: {
-            type: 'boolean',
-            description: 'Whether this API key can access payment/purchase endpoints'
-        },
-        canAdmin: {
-            type: 'boolean',
-            description: 'Whether this API key has admin access'
-        },
         permission: {
             type: 'string',
             enum: [
@@ -30,13 +18,13 @@ export const APIKeySchema = {
                 'ReadAndPay',
                 'Admin'
             ],
-            description: 'Permission level of the API key (computed from flags for backward compatibility)'
+            description: 'Permission level of the API key'
         },
         usageLimited: {
             type: 'boolean',
             description: 'Whether the API key has usage limits'
         },
-        networkLimit: {
+        NetworkLimit: {
             type: 'array',
             items: {
                 type: 'string',
@@ -75,19 +63,38 @@ export const APIKeySchema = {
                 'Revoked'
             ],
             description: 'Current status of the API key'
+        },
+        walletScopeEnabled: {
+            type: 'boolean',
+            description: 'Whether wallet scope filtering is enabled for this API key'
+        },
+        WalletScopes: {
+            type: 'array',
+            items: {
+                type: 'object',
+                properties: {
+                    hotWalletId: {
+                        type: 'string',
+                        description: 'ID of the hot wallet in scope'
+                    }
+                },
+                required: [
+                    'hotWalletId'
+                ]
+            },
+            description: 'List of hot wallets this API key is scoped to'
         }
     },
     required: [
         'id',
         'token',
-        'canRead',
-        'canPay',
-        'canAdmin',
         'permission',
         'usageLimited',
-        'networkLimit',
+        'NetworkLimit',
         'RemainingUsageCredits',
-        'status'
+        'status',
+        'walletScopeEnabled',
+        'WalletScopes'
     ]
 } as const;
 
@@ -201,12 +208,7 @@ export const GeneratedWalletSecretSchema = {
         'walletMnemonic',
         'walletAddress',
         'walletVkey'
-    ],
-    example: {
-        walletMnemonic: 'wallet_mnemonic',
-        walletAddress: 'wallet_address',
-        walletVkey: 'wallet_vkey'
-    }
+    ]
 } as const;
 
 export const PaymentSchema = {
@@ -1000,6 +1002,20 @@ export const PurchaseSchema = {
             items: {
                 type: 'object',
                 properties: {
+                    id: {
+                        type: 'string',
+                        description: 'Unique identifier for the action'
+                    },
+                    createdAt: {
+                        type: 'string',
+                        format: 'date-time',
+                        description: 'Timestamp when the action was created'
+                    },
+                    updatedAt: {
+                        type: 'string',
+                        format: 'date-time',
+                        description: 'Timestamp when the action was last updated'
+                    },
                     requestedAction: {
                         type: 'string',
                         enum: [
@@ -1036,6 +1052,9 @@ export const PurchaseSchema = {
                     }
                 },
                 required: [
+                    'id',
+                    'createdAt',
+                    'updatedAt',
                     'requestedAction',
                     'errorType',
                     'errorNote'
@@ -1577,7 +1596,7 @@ export const AgentMetadataSchema = {
                                     enum: [
                                         'Fixed'
                                     ],
-                                    description: 'Pricing type for the agent (Fixed or Free)'
+                                    description: 'Pricing type for the agent (Fixed)'
                                 },
                                 Pricing: {
                                     type: 'array',
@@ -1616,7 +1635,247 @@ export const AgentMetadataSchema = {
                                     enum: [
                                         'Free'
                                     ],
-                                    description: 'Pricing type for the agent (Fixed or Free)'
+                                    description: 'Pricing type for the agent (Free)'
+                                }
+                            },
+                            required: [
+                                'pricingType'
+                            ]
+                        }
+                    ],
+                    description: 'Pricing information for the agent'
+                },
+                image: {
+                    type: 'string',
+                    maxLength: 250,
+                    description: 'URL to the agent image/logo'
+                },
+                metadataVersion: {
+                    type: 'integer',
+                    minimum: 1,
+                    maximum: 1,
+                    description: 'Version of the metadata schema (currently only version 1 is supported)'
+                }
+            },
+            required: [
+                'name',
+                'apiBaseUrl',
+                'ExampleOutputs',
+                'Tags',
+                'Author',
+                'AgentPricing',
+                'image',
+                'metadataVersion'
+            ],
+            description: 'On-chain metadata for the agent'
+        }
+    },
+    required: [
+        'policyId',
+        'assetName',
+        'agentIdentifier',
+        'Metadata'
+    ]
+} as const;
+
+export const AgentIdentifierMetadataSchema = {
+    type: 'object',
+    properties: {
+        policyId: {
+            type: 'string',
+            description: 'Policy ID of the agent registry NFT'
+        },
+        assetName: {
+            type: 'string',
+            description: 'Asset name of the agent registry NFT'
+        },
+        agentIdentifier: {
+            type: 'string',
+            description: 'Full agent identifier (policy ID + asset name)'
+        },
+        Metadata: {
+            type: 'object',
+            properties: {
+                name: {
+                    type: 'string',
+                    maxLength: 250,
+                    description: 'Name of the agent'
+                },
+                description: {
+                    type: 'string',
+                    nullable: true,
+                    maxLength: 250,
+                    description: 'Description of the agent. Null if not provided'
+                },
+                apiBaseUrl: {
+                    type: 'string',
+                    maxLength: 250,
+                    description: 'Base URL of the agent API for interactions'
+                },
+                ExampleOutputs: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            name: {
+                                type: 'string',
+                                maxLength: 60,
+                                description: 'Name of the example output'
+                            },
+                            mimeType: {
+                                type: 'string',
+                                maxLength: 60,
+                                description: 'MIME type of the example output (e.g., image/png, text/plain)'
+                            },
+                            url: {
+                                type: 'string',
+                                maxLength: 250,
+                                description: 'URL to the example output'
+                            }
+                        },
+                        required: [
+                            'name',
+                            'mimeType',
+                            'url'
+                        ]
+                    },
+                    maxItems: 25,
+                    description: 'List of example outputs from the agent'
+                },
+                Tags: {
+                    type: 'array',
+                    items: {
+                        type: 'string',
+                        maxLength: 250
+                    },
+                    description: 'List of tags categorizing the agent'
+                },
+                Capability: {
+                    type: 'object',
+                    nullable: true,
+                    properties: {
+                        name: {
+                            type: 'string',
+                            nullable: true,
+                            maxLength: 250,
+                            description: 'Name of the AI model/capability. Null if not provided'
+                        },
+                        version: {
+                            type: 'string',
+                            nullable: true,
+                            maxLength: 250,
+                            description: 'Version of the AI model/capability. Null if not provided'
+                        }
+                    },
+                    description: 'Information about the AI model and version used by the agent. Null if not provided'
+                },
+                Author: {
+                    type: 'object',
+                    properties: {
+                        name: {
+                            type: 'string',
+                            maxLength: 250,
+                            description: 'Name of the agent author'
+                        },
+                        contactEmail: {
+                            type: 'string',
+                            nullable: true,
+                            maxLength: 250,
+                            description: 'Contact email of the author. Null if not provided'
+                        },
+                        contactOther: {
+                            type: 'string',
+                            nullable: true,
+                            maxLength: 250,
+                            description: 'Other contact information for the author. Null if not provided'
+                        },
+                        organization: {
+                            type: 'string',
+                            nullable: true,
+                            maxLength: 250,
+                            description: 'Organization of the author. Null if not provided'
+                        }
+                    },
+                    required: [
+                        'name'
+                    ],
+                    description: 'Author information for the agent'
+                },
+                Legal: {
+                    type: 'object',
+                    nullable: true,
+                    properties: {
+                        privacyPolicy: {
+                            type: 'string',
+                            nullable: true,
+                            maxLength: 250,
+                            description: 'URL to the privacy policy. Null if not provided'
+                        },
+                        terms: {
+                            type: 'string',
+                            nullable: true,
+                            maxLength: 250,
+                            description: 'URL to the terms of service. Null if not provided'
+                        },
+                        other: {
+                            type: 'string',
+                            nullable: true,
+                            maxLength: 250,
+                            description: 'Other legal information. Null if not provided'
+                        }
+                    },
+                    description: 'Legal information about the agent. Null if not provided'
+                },
+                AgentPricing: {
+                    anyOf: [
+                        {
+                            type: 'object',
+                            properties: {
+                                pricingType: {
+                                    type: 'string',
+                                    enum: [
+                                        'Fixed'
+                                    ],
+                                    description: 'Pricing type for the agent (Fixed)'
+                                },
+                                Pricing: {
+                                    type: 'array',
+                                    items: {
+                                        type: 'object',
+                                        properties: {
+                                            amount: {
+                                                type: 'string',
+                                                description: 'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)'
+                                            },
+                                            unit: {
+                                                type: 'string',
+                                                maxLength: 250,
+                                                description: 'Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)'
+                                            }
+                                        },
+                                        required: [
+                                            'amount',
+                                            'unit'
+                                        ]
+                                    },
+                                    minItems: 1,
+                                    description: 'List of assets and amounts for fixed pricing'
+                                }
+                            },
+                            required: [
+                                'pricingType',
+                                'Pricing'
+                            ]
+                        },
+                        {
+                            type: 'object',
+                            properties: {
+                                pricingType: {
+                                    type: 'string',
+                                    enum: [
+                                        'Free'
+                                    ],
+                                    description: 'Pricing type for the agent (Free)'
                                 }
                             },
                             required: [
@@ -1982,246 +2241,6 @@ export const RegistryEntrySchema = {
         'AgentPricing',
         'SmartContractWallet',
         'CurrentTransaction'
-    ]
-} as const;
-
-export const AgentIdentifierMetadataSchema = {
-    type: 'object',
-    properties: {
-        policyId: {
-            type: 'string',
-            description: 'Policy ID of the agent registry NFT'
-        },
-        assetName: {
-            type: 'string',
-            description: 'Asset name of the agent registry NFT'
-        },
-        agentIdentifier: {
-            type: 'string',
-            description: 'Full agent identifier (policy ID + asset name)'
-        },
-        Metadata: {
-            type: 'object',
-            properties: {
-                name: {
-                    type: 'string',
-                    maxLength: 250,
-                    description: 'Name of the agent'
-                },
-                description: {
-                    type: 'string',
-                    nullable: true,
-                    maxLength: 250,
-                    description: 'Description of the agent. Null if not provided'
-                },
-                apiBaseUrl: {
-                    type: 'string',
-                    maxLength: 250,
-                    description: 'Base URL of the agent API for interactions'
-                },
-                ExampleOutputs: {
-                    type: 'array',
-                    items: {
-                        type: 'object',
-                        properties: {
-                            name: {
-                                type: 'string',
-                                maxLength: 60,
-                                description: 'Name of the example output'
-                            },
-                            mimeType: {
-                                type: 'string',
-                                maxLength: 60,
-                                description: 'MIME type of the example output (e.g., image/png, text/plain)'
-                            },
-                            url: {
-                                type: 'string',
-                                maxLength: 250,
-                                description: 'URL to the example output'
-                            }
-                        },
-                        required: [
-                            'name',
-                            'mimeType',
-                            'url'
-                        ]
-                    },
-                    maxItems: 25,
-                    description: 'List of example outputs from the agent'
-                },
-                Tags: {
-                    type: 'array',
-                    items: {
-                        type: 'string',
-                        maxLength: 250
-                    },
-                    description: 'List of tags categorizing the agent'
-                },
-                Capability: {
-                    type: 'object',
-                    nullable: true,
-                    properties: {
-                        name: {
-                            type: 'string',
-                            nullable: true,
-                            maxLength: 250,
-                            description: 'Name of the AI model/capability. Null if not provided'
-                        },
-                        version: {
-                            type: 'string',
-                            nullable: true,
-                            maxLength: 250,
-                            description: 'Version of the AI model/capability. Null if not provided'
-                        }
-                    },
-                    description: 'Information about the AI model and version used by the agent. Null if not provided'
-                },
-                Author: {
-                    type: 'object',
-                    properties: {
-                        name: {
-                            type: 'string',
-                            maxLength: 250,
-                            description: 'Name of the agent author'
-                        },
-                        contactEmail: {
-                            type: 'string',
-                            nullable: true,
-                            maxLength: 250,
-                            description: 'Contact email of the author. Null if not provided'
-                        },
-                        contactOther: {
-                            type: 'string',
-                            nullable: true,
-                            maxLength: 250,
-                            description: 'Other contact information for the author. Null if not provided'
-                        },
-                        organization: {
-                            type: 'string',
-                            nullable: true,
-                            maxLength: 250,
-                            description: 'Organization of the author. Null if not provided'
-                        }
-                    },
-                    required: [
-                        'name'
-                    ],
-                    description: 'Author information for the agent'
-                },
-                Legal: {
-                    type: 'object',
-                    nullable: true,
-                    properties: {
-                        privacyPolicy: {
-                            type: 'string',
-                            nullable: true,
-                            maxLength: 250,
-                            description: 'URL to the privacy policy. Null if not provided'
-                        },
-                        terms: {
-                            type: 'string',
-                            nullable: true,
-                            maxLength: 250,
-                            description: 'URL to the terms of service. Null if not provided'
-                        },
-                        other: {
-                            type: 'string',
-                            nullable: true,
-                            maxLength: 250,
-                            description: 'Other legal information. Null if not provided'
-                        }
-                    },
-                    description: 'Legal information about the agent. Null if not provided'
-                },
-                AgentPricing: {
-                    anyOf: [
-                        {
-                            type: 'object',
-                            properties: {
-                                pricingType: {
-                                    type: 'string',
-                                    enum: [
-                                        'Fixed'
-                                    ],
-                                    description: 'Pricing type for the agent (Fixed)'
-                                },
-                                Pricing: {
-                                    type: 'array',
-                                    items: {
-                                        type: 'object',
-                                        properties: {
-                                            amount: {
-                                                type: 'string',
-                                                description: 'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)'
-                                            },
-                                            unit: {
-                                                type: 'string',
-                                                maxLength: 250,
-                                                description: 'Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)'
-                                            }
-                                        },
-                                        required: [
-                                            'amount',
-                                            'unit'
-                                        ]
-                                    },
-                                    minItems: 1,
-                                    description: 'List of assets and amounts for fixed pricing'
-                                }
-                            },
-                            required: [
-                                'pricingType',
-                                'Pricing'
-                            ]
-                        },
-                        {
-                            type: 'object',
-                            properties: {
-                                pricingType: {
-                                    type: 'string',
-                                    enum: [
-                                        'Free'
-                                    ],
-                                    description: 'Pricing type for the agent (Free)'
-                                }
-                            },
-                            required: [
-                                'pricingType'
-                            ]
-                        }
-                    ],
-                    description: 'Pricing information for the agent'
-                },
-                image: {
-                    type: 'string',
-                    maxLength: 250,
-                    description: 'URL to the agent image/logo'
-                },
-                metadataVersion: {
-                    type: 'integer',
-                    minimum: 1,
-                    maximum: 1,
-                    description: 'Version of the metadata schema (currently only version 1 is supported)'
-                }
-            },
-            required: [
-                'name',
-                'apiBaseUrl',
-                'ExampleOutputs',
-                'Tags',
-                'Author',
-                'AgentPricing',
-                'image',
-                'metadataVersion'
-            ],
-            description: 'On-chain metadata for the agent'
-        }
-    },
-    required: [
-        'policyId',
-        'assetName',
-        'agentIdentifier',
-        'Metadata'
     ]
 } as const;
 
@@ -2744,5 +2763,160 @@ export const RpcProviderKeySchema = {
         'createdAt',
         'updatedAt',
         'network'
+    ]
+} as const;
+
+export const MonitoringStatusSchema = {
+    type: 'object',
+    properties: {
+        MonitoringStatus: {
+            type: 'object',
+            properties: {
+                isMonitoring: {
+                    type: 'boolean',
+                    description: 'Whether the blockchain state monitoring service is currently running'
+                },
+                Stats: {
+                    type: 'object',
+                    nullable: true,
+                    properties: {
+                        trackedEntities: {
+                            type: 'number',
+                            description: 'Number of entities being tracked by the monitoring service'
+                        },
+                        PurchaseCursor: {
+                            type: 'object',
+                            properties: {
+                                timestamp: {
+                                    type: 'string',
+                                    description: 'Last processed purchase timestamp'
+                                },
+                                lastId: {
+                                    type: 'string',
+                                    nullable: true,
+                                    description: 'Last processed purchase ID'
+                                }
+                            },
+                            required: [
+                                'timestamp',
+                                'lastId'
+                            ],
+                            description: 'Cursor position for purchase diff tracking'
+                        },
+                        PaymentCursor: {
+                            type: 'object',
+                            properties: {
+                                timestamp: {
+                                    type: 'string',
+                                    description: 'Last processed payment timestamp'
+                                },
+                                lastId: {
+                                    type: 'string',
+                                    nullable: true,
+                                    description: 'Last processed payment ID'
+                                }
+                            },
+                            required: [
+                                'timestamp',
+                                'lastId'
+                            ],
+                            description: 'Cursor position for payment diff tracking'
+                        },
+                        MemoryUsage: {
+                            type: 'object',
+                            properties: {
+                                heapUsed: {
+                                    type: 'string',
+                                    description: 'Heap memory currently used by the monitoring service '
+                                },
+                                heapTotal: {
+                                    type: 'string',
+                                    description: 'Total heap memory allocated for the monitoring service '
+                                },
+                                external: {
+                                    type: 'string',
+                                    description: 'External memory used by the monitoring service '
+                                }
+                            },
+                            required: [
+                                'heapUsed',
+                                'heapTotal',
+                                'external'
+                            ],
+                            description: 'Memory usage statistics for the monitoring service'
+                        }
+                    },
+                    required: [
+                        'trackedEntities',
+                        'PurchaseCursor',
+                        'PaymentCursor',
+                        'MemoryUsage'
+                    ],
+                    description: 'Monitoring statistics. Null if monitoring is not active'
+                }
+            },
+            required: [
+                'isMonitoring',
+                'Stats'
+            ],
+            description: 'Current status of the blockchain state monitoring service'
+        }
+    },
+    required: [
+        'MonitoringStatus'
+    ]
+} as const;
+
+export const TriggeredMonitoringCycleSchema = {
+    type: 'object',
+    properties: {
+        message: {
+            type: 'string',
+            description: 'Status message about the monitoring cycle trigger'
+        },
+        triggered: {
+            type: 'boolean',
+            description: 'Whether the monitoring cycle was successfully triggered'
+        }
+    },
+    required: [
+        'message',
+        'triggered'
+    ]
+} as const;
+
+export const StartedMonitoringSchema = {
+    type: 'object',
+    properties: {
+        message: {
+            type: 'string',
+            description: 'Status message about starting the monitoring service'
+        },
+        started: {
+            type: 'boolean',
+            description: 'Whether the monitoring service was successfully started'
+        }
+    },
+    required: [
+        'message',
+        'started'
+    ]
+} as const;
+
+export const StoppedMonitoringSchema = {
+    type: 'object',
+    properties: {
+        message: {
+            type: 'string',
+            description: 'Status message about stopping the monitoring service'
+        },
+        stopped: {
+            type: 'boolean',
+            description: 'Whether the monitoring service was successfully stopped'
+        }
+    },
+    required: [
+        'message',
+        'stopped'
     ]
 } as const;
