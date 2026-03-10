@@ -1,7 +1,7 @@
 import express from 'express';
 import { CONFIG } from '@/utils/config/';
 import { logger } from '@/utils/logger/';
-import { initJobs } from '@/services/schedules';
+import { initJobs, stopJobs } from '@/services/schedules';
 import { createConfig, createServer } from 'express-zod-api';
 import { router } from '@/routes/index';
 import ui, { JsonObject } from 'swagger-ui-express';
@@ -49,6 +49,7 @@ function registerShutdownHandlers() {
 	const shutdown = async (signal: string) => {
 		try {
 			logger.info(`Received ${signal}. Shutting down gracefully...`);
+			await stopJobs();
 			blockchainStateMonitorService.stopMonitoring();
 			await cleanupDB();
 		} catch (e) {
