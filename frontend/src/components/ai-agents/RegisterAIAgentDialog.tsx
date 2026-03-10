@@ -308,7 +308,7 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
       const selectedWalletBalance = sellingWallets.find(
         (w) => w.wallet.walletVkey == selectedWalletVkey,
       )?.balance;
-      if (selectedWalletBalance == undefined || selectedWalletBalance <= 3000000) {
+      if (selectedWalletBalance === undefined || selectedWalletBalance <= 3000000) {
         toast.error('Insufficient balance in selected wallet');
         return false;
       }
