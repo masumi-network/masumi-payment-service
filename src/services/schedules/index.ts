@@ -15,6 +15,7 @@ import { authorizeRefundV1 } from '@/services/cardano-authorize-refund-handler/'
 import { handleAutomaticDecisions } from '@/services/automatic-decision-handler';
 import { checkRegistryTransactions } from '@/services/cardano-registry-tx-sync-handler/cardano-registry-tx-sync-handler.service';
 import { webhookQueueService } from '@/services/webhook-handler/webhook-queue.service';
+import { walletLowBalanceMonitorService } from '@/services/wallet-low-balance-monitor';
 
 export async function initJobs() {
 	const start = new Date();
@@ -173,6 +174,15 @@ export async function initJobs() {
 			await webhookQueueService.processPendingDeliveries();
 			logger.info('Finished webhook delivery processor in ' + (new Date().getTime() - start.getTime()) / 1000 + 's');
 		}, CONFIG.WEBHOOK_DELIVERY_INTERVAL * 1000); // Convert seconds to milliseconds
+	});
+
+	void new Promise((resolve) => setTimeout(resolve, 2500)).then(() => {
+		AsyncInterval.start(async () => {
+			logger.info('Starting low balance monitoring');
+			const start = new Date();
+			await walletLowBalanceMonitorService.runScheduledMonitoringCycle();
+			logger.info('Finished low balance monitoring in ' + (new Date().getTime() - start.getTime()) / 1000 + 's');
+		}, CONFIG.LOW_BALANCE_CHECK_INTERVAL * 1000);
 	});
 
 	void new Promise((resolve) => setTimeout(resolve, 50000)).then(() => {

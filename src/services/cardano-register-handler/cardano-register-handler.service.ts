@@ -13,6 +13,11 @@ import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { errorToString } from '@/utils/converter/error-string-convert';
 import { sortUtxosByLovelaceDesc } from '@/utils/utxo';
+import {
+	walletLowBalanceMonitorService,
+	toBalanceMapFromMeshUtxos,
+	type MeshLikeUtxo,
+} from '@/services/wallet-low-balance-monitor';
 
 const mutex = new Mutex();
 
@@ -165,6 +170,11 @@ export async function registerAgentV1() {
 							paymentSource.PaymentSourceConfig.rpcProviderApiKey,
 							request.SmartContractWallet.Secret.encryptedMnemonic,
 						);
+						await walletLowBalanceMonitorService.evaluateHotWalletById(
+							request.SmartContractWallet.id,
+							toBalanceMapFromMeshUtxos(utxos as MeshLikeUtxo[]),
+							'submission',
+						);
 
 						if (utxos.length === 0) {
 							throw new Error('No UTXOs found for the wallet');
@@ -229,6 +239,13 @@ export async function registerAgentV1() {
 						});
 						//submit the transaction to the blockchain
 						const newTxHash = await wallet.submitTx(signedTx);
+						await walletLowBalanceMonitorService.evaluateProjectedHotWalletById({
+							hotWalletId: request.SmartContractWallet.id,
+							walletAddress: address,
+							walletUtxos: limitedFilteredUtxos,
+							unsignedTx,
+							checkSource: 'submission',
+						});
 						await prisma.registryRequest.update({
 							where: { id: request.id },
 							data: {

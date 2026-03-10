@@ -1,7 +1,7 @@
 import { webhookQueueService } from './webhook-queue.service';
 import { logger } from '@/utils/logger';
 import { prisma } from '@/utils/db';
-import { WebhookEventType } from '@/generated/prisma/client';
+import { HotWalletType, Network, WebhookEventType } from '@/generated/prisma/client';
 
 export class WebhookEventsService {
 	private async queryPurchaseForWebhook(purchaseId: string) {
@@ -167,6 +167,41 @@ export class WebhookEventsService {
 
 	async triggerPaymentOnError(paymentId: string): Promise<void> {
 		await this.triggerGenericWebhook(WebhookEventType.PAYMENT_ON_ERROR as WebhookEventType, paymentId, 'payment', {});
+	}
+
+	async triggerWalletLowBalance(payload: {
+		ruleId: string;
+		walletId: string;
+		walletAddress: string;
+		walletVkey: string;
+		walletType: HotWalletType;
+		paymentSourceId: string;
+		network: Network;
+		assetUnit: string;
+		thresholdAmount: string;
+		currentAmount: string;
+		checkedAt: string;
+	}): Promise<void> {
+		try {
+			await webhookQueueService.queueWebhook(
+				WebhookEventType.WALLET_LOW_BALANCE as WebhookEventType,
+				payload,
+				payload.walletId,
+				payload.paymentSourceId,
+			);
+
+			logger.info('WALLET_LOW_BALANCE webhook triggered', {
+				walletId: payload.walletId,
+				paymentSourceId: payload.paymentSourceId,
+				assetUnit: payload.assetUnit,
+				network: payload.network,
+			});
+		} catch (error) {
+			logger.error('Failed to trigger WALLET_LOW_BALANCE webhook', {
+				walletId: payload.walletId,
+				error: error instanceof Error ? error.message : 'Unknown error',
+			});
+		}
 	}
 }
 

@@ -117,6 +117,7 @@ export const swapTokensEndpointPost = adminAuthenticatedEndpointFactory.build({
 
 			const result = await swapTokens(
 				{
+					walletId: wallet.id,
 					mnemonic: mnemonic,
 					fromAmount: input.amount,
 					fromToken: input.FromToken as Token,
@@ -683,6 +684,7 @@ export const cancelSwapEndpointPost = adminAuthenticatedEndpointFactory.build({
 
 			const result = await cancelSwapOrder(
 				{
+					walletId: wallet.id,
 					mnemonic,
 					orderTxHash: swapTx.txHash,
 					orderOutputIndex: swapTx.orderOutputIndex,

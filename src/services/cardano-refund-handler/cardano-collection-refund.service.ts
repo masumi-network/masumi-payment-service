@@ -21,6 +21,11 @@ import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractWithdrawTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
+import {
+	walletLowBalanceMonitorService,
+	toBalanceMapFromMeshUtxos,
+	type MeshLikeUtxo,
+} from '@/services/wallet-low-balance-monitor';
 
 type PaymentSourceWithPurchaseRelations = Prisma.PaymentSourceGetPayload<{
 	include: {
@@ -65,6 +70,11 @@ async function processSingleRefundCollection(
 		paymentContract.network,
 		paymentContract.PaymentSourceConfig.rpcProviderApiKey,
 		request.SmartContractWallet.Secret.encryptedMnemonic,
+	);
+	await walletLowBalanceMonitorService.evaluateHotWalletById(
+		request.SmartContractWallet.id,
+		toBalanceMapFromMeshUtxos(utxos as MeshLikeUtxo[]),
+		'submission',
 	);
 
 	if (utxos.length === 0) {
@@ -192,6 +202,13 @@ async function processSingleRefundCollection(
 
 	//submit the transaction to the blockchain
 	const newTxHash = await wallet.submitTx(signedTx);
+	await walletLowBalanceMonitorService.evaluateProjectedHotWalletById({
+		hotWalletId: request.SmartContractWallet.id,
+		walletAddress: address,
+		walletUtxos: limitedFilteredUtxos,
+		unsignedTx,
+		checkSource: 'submission',
+	});
 
 	await prisma.purchaseRequest.update({
 		where: { id: request.id },

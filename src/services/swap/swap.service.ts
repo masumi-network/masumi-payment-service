@@ -7,6 +7,12 @@ import { SundaeUtils } from '@sundaeswap/core/utilities';
 import type { IPoolData } from '@sundaeswap/core';
 import { logger } from '@/utils/logger';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
+import {
+	toBalanceMapFromLucidUtxos,
+	type LucidLikeUtxo,
+	type ProjectableLucidLikeUtxo,
+	walletLowBalanceMonitorService,
+} from '@/services/wallet-low-balance-monitor';
 
 export interface Token {
 	policyId: string;
@@ -44,6 +50,7 @@ export interface SwapResult {
 }
 
 export interface SwapParams {
+	walletId: string;
 	mnemonic: string;
 	fromAmount: number;
 	fromToken: Token;
@@ -131,10 +138,14 @@ export async function swapTokens(params: SwapParams, blockfrostApiKey: string): 
 		});
 
 		const wallet = await getWalletFromMnemonic(params.mnemonic, blockfrostApiKey);
-
-		const lovelaceBalance = await wallet.lucid.wallet.getUtxos();
+		const walletUtxos = await wallet.lucid.wallet.getUtxos();
+		await walletLowBalanceMonitorService.evaluateHotWalletById(
+			params.walletId,
+			toBalanceMapFromLucidUtxos(walletUtxos as LucidLikeUtxo[]),
+			'submission',
+		);
 		const adaBalance =
-			lovelaceBalance.reduce((acc: bigint, utxo) => {
+			walletUtxos.reduce((acc: bigint, utxo) => {
 				const lovelace = (utxo.assets as { lovelace: bigint }).lovelace;
 				return acc + lovelace;
 			}, 0n) / 1000000n;
@@ -210,7 +221,15 @@ export async function swapTokens(params: SwapParams, blockfrostApiKey: string): 
 			component: 'swap-service',
 		});
 
+		const unsignedTx = (builtTx as { toString: () => string }).toString();
 		const txHash = await submit();
+		await walletLowBalanceMonitorService.evaluateProjectedHotWalletById({
+			hotWalletId: params.walletId,
+			walletAddress: wallet.address,
+			walletUtxos: walletUtxos as ProjectableLucidLikeUtxo[],
+			unsignedTx,
+			checkSource: 'submission',
+		});
 
 		logger.info('Transaction submitted successfully', {
 			component: 'swap-service',
@@ -235,6 +254,7 @@ export async function swapTokens(params: SwapParams, blockfrostApiKey: string): 
 }
 
 export interface CancelSwapParams {
+	walletId: string;
 	mnemonic: string;
 	orderTxHash: string;
 	orderOutputIndex: number;
@@ -250,6 +270,12 @@ export async function cancelSwapOrder(params: CancelSwapParams, blockfrostApiKey
 		});
 
 		const wallet = await getWalletFromMnemonic(params.mnemonic, blockfrostApiKey);
+		const walletUtxos = await wallet.lucid.wallet.getUtxos();
+		await walletLowBalanceMonitorService.evaluateHotWalletById(
+			params.walletId,
+			toBalanceMapFromLucidUtxos(walletUtxos as LucidLikeUtxo[]),
+			'submission',
+		);
 		const txBuilder = new TxBuilderLucidV3(wallet.lucid, 'mainnet', new QueryProviderSundaeSwap('mainnet'));
 
 		const cancelResult = await txBuilder.cancel({
@@ -343,6 +369,13 @@ export async function cancelSwapOrder(params: CancelSwapParams, blockfrostApiKey
 		const txComplete = wallet.lucid.fromTx(txHex);
 		const signed = await txComplete.sign().complete();
 		const txHash = await signed.submit();
+		await walletLowBalanceMonitorService.evaluateProjectedHotWalletById({
+			hotWalletId: params.walletId,
+			walletAddress: wallet.address,
+			walletUtxos: walletUtxos as ProjectableLucidLikeUtxo[],
+			unsignedTx: txHex,
+			checkSource: 'submission',
+		});
 
 		logger.info('Cancel transaction submitted', {
 			component: 'swap-service',
