@@ -1752,7 +1752,7 @@ export const AgentIdentifierMetadataSchema = {
                         ]
                     },
                     maxItems: 25,
-                    description: 'List of example outputs from the agent'
+                    description: 'List of example outputs from the agent. Empty for A2A agents'
                 },
                 Tags: {
                     type: 'array',
@@ -1925,7 +1925,6 @@ export const AgentIdentifierMetadataSchema = {
             required: [
                 'name',
                 'apiBaseUrl',
-                'ExampleOutputs',
                 'Tags',
                 'image',
                 'metadataVersion'

@@ -928,9 +928,9 @@ export type AgentIdentifierMetadata = {
          */
         apiBaseUrl: string;
         /**
-         * List of example outputs from the agent
+         * List of example outputs from the agent. Empty for A2A agents
          */
-        ExampleOutputs: Array<{
+        ExampleOutputs?: Array<{
             /**
              * Name of the example output
              */
@@ -7959,6 +7959,21 @@ export type GetRegistryA2aData = {
         searchQuery?: string;
     };
     url: '/registry/a2a';
+};
+
+export type GetRegistryA2aErrors = {
+    /**
+     * Bad Request (possible parameters missing or invalid)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
 };
 
 export type GetRegistryA2aResponses = {
