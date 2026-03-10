@@ -1,5 +1,5 @@
 import { z } from '@/utils/zod-openapi';
-import { ApiKeyStatus, Network, Permission } from '@/generated/prisma/client';
+import { ApiKeyStatus, Network } from '@/generated/prisma/client';
 
 export const getAPIKeySchemaInput = z.object({
 	take: z.coerce.number().min(1).max(100).default(10).describe('The number of API keys to return'),
@@ -10,7 +10,9 @@ export const apiKeyOutputSchema = z
 	.object({
 		id: z.string().describe('Unique identifier for the API key'),
 		token: z.string().describe('The API key token'),
-		permission: z.nativeEnum(Permission).describe('Permission level of the API key (computed from flags for backward compatibility)'),
+		permission: z
+			.enum(['Read', 'ReadAndPay', 'Admin'])
+			.describe('Permission level of the API key (computed from flags for backward compatibility)'),
 		canRead: z.boolean().describe('Whether this API key can access read endpoints'),
 		canPay: z.boolean().describe('Whether this API key can access payment/purchase endpoints'),
 		canAdmin: z.boolean().describe('Whether this API key has admin access'),
@@ -78,7 +80,10 @@ export const addAPIKeySchemaInput = z.object({
 		.max(3)
 		.default([Network.Mainnet, Network.Preprod])
 		.describe('The networks the API key is allowed to use'),
-	permission: z.nativeEnum(Permission).default(Permission.Read).describe('The permission of the API key (legacy, use canRead/canPay/canAdmin instead)'),
+	permission: z
+		.enum(['Read', 'ReadAndPay', 'Admin'])
+		.default('Read')
+		.describe('The permission of the API key (legacy, use canRead/canPay/canAdmin instead)'),
 	// Flag-based permissions (new system - preferred)
 	canRead: z.boolean().optional().describe('Whether this API key can access read endpoints'),
 	canPay: z.boolean().optional().describe('Whether this API key can access payment/purchase endpoints'),

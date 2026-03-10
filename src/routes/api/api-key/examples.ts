@@ -1,11 +1,14 @@
-import { ApiKeyStatus, Network, Permission } from '@/generated/prisma/client';
+import { ApiKeyStatus, Network } from '@/generated/prisma/client';
 import { z } from '@/utils/zod-openapi';
 import { apiKeyOutputSchema } from './schemas';
 
 export const apiKeyExample = {
 	id: 'api_key_id',
 	token: 'masumi_payment_api_key_secret',
-	permission: Permission.Admin,
+	permission: 'Admin' as const,
+	canRead: true,
+	canPay: true,
+	canAdmin: true,
 	usageLimited: true,
 	NetworkLimit: [Network.Preprod],
 	RemainingUsageCredits: [
@@ -32,7 +35,7 @@ export const addAPIKeyBodyExample = {
 			amount: '10000000',
 		},
 	],
-	permission: Permission.Admin,
+	canAdmin: true,
 	walletScopeEnabled: 'false',
 	WalletScopeHotWalletIds: [],
 };

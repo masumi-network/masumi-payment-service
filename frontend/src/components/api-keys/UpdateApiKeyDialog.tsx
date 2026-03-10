@@ -230,15 +230,7 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
 
         <div className="flex items-center gap-2 rounded-lg border bg-muted/50 px-3 py-2.5 text-sm">
           <span className="text-muted-foreground">Permission:</span>
-          <Badge
-            variant={
-              apiKey.canAdmin
-                ? 'default'
-                : apiKey.canPay
-                  ? 'secondary'
-                  : 'outline'
-            }
-          >
+          <Badge variant={apiKey.canAdmin ? 'default' : apiKey.canPay ? 'secondary' : 'outline'}>
             {getPermissionLabel(apiKey.canRead, apiKey.canPay, apiKey.canAdmin)}
           </Badge>
           <Separator orientation="vertical" className="mx-1 h-4" />

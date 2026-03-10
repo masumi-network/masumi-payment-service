@@ -1,5 +1,5 @@
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
-import { ApiKeyStatus, Network, Permission } from '@/generated/prisma/client';
+import { ApiKeyStatus, Network } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import { createId } from '@paralleldrive/cuid2';
 import createHttpError from 'http-errors';
@@ -18,7 +18,7 @@ import {
 	updateAPIKeySchemaInput,
 	updateAPIKeySchemaOutput,
 } from './schemas';
-import { computePermissionFromFlags, flagsFromLegacyPermission } from '@/utils/permissions';
+import { computePermissionFromFlags, flagsFromLegacyPermission, LegacyPermission } from '@/utils/permissions';
 
 export {
 	addAPIKeySchemaInput,
@@ -89,7 +89,7 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 			canAdmin = input.canAdmin ?? false;
 		} else if (input.permission) {
 			// Legacy permission input - convert to flags
-			const flags = flagsFromLegacyPermission(input.permission);
+			const flags = flagsFromLegacyPermission(input.permission as LegacyPermission);
 			canRead = flags.canRead;
 			canPay = flags.canPay;
 			canAdmin = flags.canAdmin;
@@ -113,7 +113,6 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 				token: apiKey,
 				tokenHash: generateSHA256Hash(apiKey),
 				status: ApiKeyStatus.Active,
-				permission: computePermissionFromFlags(canRead, canPay, canAdmin) as Permission,
 				canRead: canRead,
 				canPay: canPay,
 				canAdmin: canAdmin,
@@ -245,7 +244,6 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 						canRead: newCanRead,
 						canPay: newCanPay,
 						canAdmin: newCanAdmin,
-						permission: computePermissionFromFlags(newCanRead, newCanPay, newCanAdmin) as Permission,
 					},
 					include: {
 						RemainingUsageCredits: { select: { amount: true, unit: true } },

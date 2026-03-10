@@ -83,9 +83,7 @@ export const authMiddleware = (minPermission: RequiredPermission) =>
 				}
 
 				const walletScopeIds =
-					apiKey.canAdmin || !apiKey.walletScopeEnabled
-						? null
-						: apiKey.WalletScopes.map((ws) => ws.hotWalletId);
+					apiKey.canAdmin || !apiKey.walletScopeEnabled ? null : apiKey.WalletScopes.map((ws) => ws.hotWalletId);
 
 				return {
 					id: apiKey.id,
