@@ -1,5 +1,6 @@
 import { Network } from '@/generated/prisma/client';
 import { z } from '@/utils/zod-openapi';
+import { lowBalanceSummarySchema } from '@/routes/api/wallet/low-balance.schemas';
 
 export const paymentSourceSchemaInput = z.object({
 	take: z.coerce.number().min(1).max(100).default(10).describe('The number of payment sources to return'),
@@ -20,6 +21,7 @@ export const purchasingWalletSchema = z
 		walletAddress: z.string().describe('Cardano address of the purchasing wallet'),
 		collectionAddress: z.string().nullable().describe('Optional collection address for this wallet. Null if not set'),
 		note: z.string().nullable().describe('Optional note about this wallet. Null if not set'),
+		LowBalanceSummary: lowBalanceSummarySchema.describe('Aggregated low-balance status for the wallet'),
 	})
 	.openapi('PurchasingWallet');
 
@@ -30,6 +32,7 @@ export const sellingWalletSchema = z
 		walletAddress: z.string().describe('Cardano address of the selling wallet'),
 		collectionAddress: z.string().nullable().describe('Optional collection address for this wallet. Null if not set'),
 		note: z.string().nullable().describe('Optional note about this wallet. Null if not set'),
+		LowBalanceSummary: lowBalanceSummarySchema.describe('Aggregated low-balance status for the wallet'),
 	})
 	.openapi('SellingWallet');
 

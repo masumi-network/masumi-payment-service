@@ -1,6 +1,15 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import {
   RefreshCw,
   Share,
@@ -11,11 +20,15 @@ import {
   PlusCircle,
 } from 'lucide-react';
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
+  deleteWalletLowBalance,
   getUtxos,
   getWallet,
   patchWallet,
+  patchWalletLowBalance,
+  postWalletLowBalance,
   getSwapTransactions,
   postSwapCancel,
   postSwapAcknowledgeTimeout,
@@ -37,6 +50,7 @@ import { useRate } from '@/lib/hooks/useRate';
 import { SwapDialog } from '@/components/wallets/SwapDialog';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
 import { CopyButton } from '@/components/ui/copy-button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   Dialog,
   DialogContent,
@@ -61,6 +75,212 @@ export interface TokenBalance {
   quantity: number;
 }
 
+type LowBalanceSummary = {
+  isLow: boolean;
+  lowRuleCount: number;
+  lastCheckedAt: Date | null;
+};
+
+type LowBalanceRule = {
+  id: string;
+  assetUnit: string;
+  thresholdAmount: string;
+  enabled: boolean;
+  status: 'Unknown' | 'Healthy' | 'Low';
+  lastKnownAmount: string | null;
+  lastCheckedAt: Date | null;
+  lastAlertedAt: Date | null;
+};
+
+type WalletDetailsState = {
+  LowBalanceSummary: LowBalanceSummary;
+  LowBalanceRules: LowBalanceRule[];
+};
+
+type RuleDraft = {
+  thresholdInput: string;
+  enabled: boolean;
+};
+
+type RuleAssetPreset = 'lovelace' | 'stablecoin' | 'custom';
+
+type RuleAssetMeta = {
+  assetUnit: string;
+  label: string;
+  decimals: number | null;
+  inputLabel: string;
+  helperText: string;
+};
+
+const EMPTY_LOW_BALANCE_SUMMARY: LowBalanceSummary = {
+  isLow: false,
+  lowRuleCount: 0,
+  lastCheckedAt: null,
+};
+
+const SUPPORTED_RULE_DECIMALS = 6;
+const CARDANO_POLICY_ID_HEX_LENGTH = 56;
+
+function getAssetUnitBreakdown(assetUnit: string) {
+  const normalized = assetUnit.trim();
+  const policyId = normalized.slice(0, CARDANO_POLICY_ID_HEX_LENGTH);
+  const assetNameHex = normalized.slice(CARDANO_POLICY_ID_HEX_LENGTH);
+  const decodedAssetName = assetNameHex ? hexToAscii(assetNameHex) : '';
+
+  return {
+    policyId,
+    assetNameHex,
+    decodedAssetName,
+  };
+}
+
+function getStablecoinRuleMeta(network: 'Preprod' | 'Mainnet'): RuleAssetMeta {
+  const stablecoin = network === 'Mainnet' ? USDCX_CONFIG : getUsdmConfig(network);
+
+  return {
+    assetUnit: stablecoin.fullAssetId,
+    label: network === 'Mainnet' ? 'USDCx' : 'tUSDM',
+    decimals: SUPPORTED_RULE_DECIMALS,
+    inputLabel: `Threshold (${network === 'Mainnet' ? 'USDCx' : 'tUSDM'})`,
+    helperText: 'Stored on-chain with 6 decimals.',
+  };
+}
+
+function getRuleAssetMeta(assetUnit: string, network: 'Preprod' | 'Mainnet'): RuleAssetMeta {
+  if (assetUnit === 'lovelace') {
+    return {
+      assetUnit: 'lovelace',
+      label: 'ADA',
+      decimals: SUPPORTED_RULE_DECIMALS,
+      inputLabel: 'Threshold (ADA)',
+      helperText: 'Stored on-chain as lovelace with 6 decimals.',
+    };
+  }
+
+  const stablecoin = getStablecoinRuleMeta(network);
+  if (assetUnit === stablecoin.assetUnit) {
+    return stablecoin;
+  }
+
+  const assetName = hexToAscii(assetUnit.slice(56));
+
+  return {
+    assetUnit,
+    label: assetName || shortenAddress(assetUnit, 8),
+    decimals: null,
+    inputLabel: 'Threshold (raw units)',
+    helperText: 'Custom assets are configured in raw on-chain quantity.',
+  };
+}
+
+function getRuleAssetMetaFromPreset(
+  preset: RuleAssetPreset,
+  network: 'Preprod' | 'Mainnet',
+  customAssetUnit: string,
+): RuleAssetMeta {
+  if (preset === 'lovelace') {
+    return getRuleAssetMeta('lovelace', network);
+  }
+
+  if (preset === 'stablecoin') {
+    return getStablecoinRuleMeta(network);
+  }
+
+  return getRuleAssetMeta(customAssetUnit.trim(), network);
+}
+
+function formatDecimalString(rawAmount: string, decimals: number) {
+  const normalized = rawAmount.replace(/^0+(?=\d)/, '') || '0';
+  const padded = normalized.padStart(decimals + 1, '0');
+  const whole = padded.slice(0, -decimals).replace(/^0+(?=\d)/, '') || '0';
+  const fraction = padded.slice(-decimals).replace(/0+$/, '');
+  return fraction ? `${whole}.${fraction}` : whole;
+}
+
+function parseDecimalToRawAmount(displayAmount: string, decimals: number) {
+  const normalized = displayAmount.trim();
+
+  if (!/^\d+(\.\d+)?$/.test(normalized)) {
+    return null;
+  }
+
+  const [wholePart, fractionalPart = ''] = normalized.split('.');
+  if (fractionalPart.length > decimals) {
+    return null;
+  }
+
+  const combined = `${wholePart}${fractionalPart.padEnd(decimals, '0')}`;
+  return combined.replace(/^0+(?=\d)/, '') || '0';
+}
+
+function getThresholdInputFromRaw(
+  rawAmount: string,
+  assetUnit: string,
+  network: 'Preprod' | 'Mainnet',
+) {
+  const assetMeta = getRuleAssetMeta(assetUnit, network);
+
+  if (assetMeta.decimals == null) {
+    return rawAmount;
+  }
+
+  return formatDecimalString(rawAmount, assetMeta.decimals);
+}
+
+function parseThresholdInputToRaw(
+  thresholdInput: string,
+  assetUnit: string,
+  network: 'Preprod' | 'Mainnet',
+) {
+  const assetMeta = getRuleAssetMeta(assetUnit, network);
+
+  if (assetMeta.decimals == null) {
+    const normalized = thresholdInput.trim();
+    return /^\d+$/.test(normalized) ? normalized : null;
+  }
+
+  return parseDecimalToRawAmount(thresholdInput, assetMeta.decimals);
+}
+
+function formatRuleAmount(
+  amount: string | null,
+  assetUnit: string,
+  network: 'Preprod' | 'Mainnet',
+) {
+  if (amount == null) {
+    return 'Unknown';
+  }
+
+  const assetMeta = getRuleAssetMeta(assetUnit, network);
+
+  if (assetMeta.decimals != null) {
+    return `${formatBalance(formatDecimalString(amount, assetMeta.decimals))} ${assetMeta.label}`;
+  }
+
+  return `${formatBalance(amount)} raw`;
+}
+
+function getRuleAssetLabel(assetUnit: string, network: 'Preprod' | 'Mainnet') {
+  return getRuleAssetMeta(assetUnit, network).label;
+}
+
+function getDeleteRuleDialogDescription(
+  rule: LowBalanceRule,
+  network: 'Preprod' | 'Mainnet',
+) {
+  const assetMeta = getRuleAssetMeta(rule.assetUnit, network);
+  const lines = [
+    `Remove the low-balance rule for ${assetMeta.label}?`,
+    'This stops interval checks and submission-time warnings for this asset until you add the rule again.',
+  ];
+
+  if (assetMeta.decimals == null) {
+    lines.push(`Asset unit: ${rule.assetUnit}`);
+  }
+
+  return lines.join('\n\n');
+}
+
 export interface WalletWithBalance {
   id: string;
   walletVkey: string;
@@ -70,6 +290,7 @@ export interface WalletWithBalance {
   type: 'Purchasing' | 'Selling' | 'Collection';
   balance: string;
   usdcxBalance: string;
+  LowBalanceSummary?: LowBalanceSummary;
 }
 
 interface WalletDetailsDialogProps {
@@ -85,10 +306,21 @@ export function WalletDetailsDialog({
   wallet,
   isChild,
 }: WalletDetailsDialogProps) {
+  const queryClient = useQueryClient();
   const { apiClient, network } = useAppContext();
   const [isLoading, setIsLoading] = useState(true);
+  const [isWalletDetailsLoading, setIsWalletDetailsLoading] = useState(false);
   const [tokenBalances, setTokenBalances] = useState<TokenBalance[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [walletDetails, setWalletDetails] = useState<WalletDetailsState | null>(null);
+  const [ruleDrafts, setRuleDrafts] = useState<Record<string, RuleDraft>>({});
+  const [newRuleAssetPreset, setNewRuleAssetPreset] = useState<RuleAssetPreset>('lovelace');
+  const [newRuleCustomAssetUnit, setNewRuleCustomAssetUnit] = useState('');
+  const [newRuleThresholdInput, setNewRuleThresholdInput] = useState('');
+  const [newRuleEnabled, setNewRuleEnabled] = useState(true);
+  const [mutatingRuleId, setMutatingRuleId] = useState<string | null>(null);
+  const [isCreatingRule, setIsCreatingRule] = useState(false);
+  const [pendingDeleteRule, setPendingDeleteRule] = useState<LowBalanceRule | null>(null);
   const { rate } = useRate();
   const [selectedWalletForSwap, setSelectedWalletForSwap] = useState<WalletWithBalance | null>(
     null,
@@ -129,10 +361,80 @@ export function WalletDetailsDialog({
   const [pollingTxId, setPollingTxId] = useState<string | null>(null);
   const pollingTxIdRef = useRef<string | null>(null);
   const fetchTokenBalancesRef = useRef<() => void>(() => {});
+  const fetchWalletDetailsRef = useRef<() => void>(() => {});
 
   const updateSwapTxStatus = useCallback((txId: string, updates: Partial<SwapTx>) => {
     setSwapTransactions((prev) => prev.map((tx) => (tx.id === txId ? { ...tx, ...updates } : tx)));
   }, []);
+
+  const invalidateWalletQueries = useCallback(async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['wallets'] }),
+      queryClient.invalidateQueries({ queryKey: ['payment-sources-all'] }),
+    ]);
+  }, [queryClient]);
+
+  const refreshWalletDetails = useCallback(async () => {
+    if (!wallet || wallet.type === 'Collection') {
+      setWalletDetails(null);
+      return;
+    }
+
+    setIsWalletDetailsLoading(true);
+
+    await handleApiCall(
+      () =>
+        getWallet({
+          client: apiClient,
+          query: {
+            walletType: wallet.type as 'Purchasing' | 'Selling',
+            id: wallet.id,
+          },
+        }),
+      {
+        onSuccess: (response) => {
+          const data = response.data?.data;
+          if (data) {
+            setWalletDetails({
+              LowBalanceSummary: data.LowBalanceSummary ?? EMPTY_LOW_BALANCE_SUMMARY,
+              LowBalanceRules: data.LowBalanceRules ?? [],
+            });
+          }
+        },
+        onError: (fetchError: unknown) => {
+          setWalletDetails(null);
+          toast.error(extractApiErrorMessage(fetchError, 'Failed to load wallet monitoring rules'));
+        },
+        onFinally: () => {
+          setIsWalletDetailsLoading(false);
+        },
+        errorMessage: 'Failed to load wallet monitoring rules',
+      },
+    );
+  }, [apiClient, wallet]);
+
+  const updateRuleDraft = useCallback(
+    (ruleId: string, updates: Partial<RuleDraft>) => {
+      setRuleDrafts((prev) => {
+        const currentRule = walletDetails?.LowBalanceRules.find((rule) => rule.id === ruleId);
+        const currentDraft = prev[ruleId] ?? {
+          thresholdInput: currentRule
+            ? getThresholdInputFromRaw(currentRule.thresholdAmount, currentRule.assetUnit, network)
+            : '',
+          enabled: currentRule?.enabled ?? true,
+        };
+
+        return {
+          ...prev,
+          [ruleId]: {
+            ...currentDraft,
+            ...updates,
+          },
+        };
+      });
+    },
+    [network, walletDetails],
+  );
 
   const { startPolling: startSwapPolling, stopPolling: stopSwapPolling } = useSwapStatusPolling({
     apiClient,
@@ -159,6 +461,7 @@ export function WalletDetailsDialog({
         setPollingTxId(null);
         pollingTxIdRef.current = null;
         fetchTokenBalancesRef.current();
+        fetchWalletDetailsRef.current();
         toast.success(
           swapStatus === 'CancelConfirmed'
             ? 'Cancel confirmed!'
@@ -344,6 +647,28 @@ export function WalletDetailsDialog({
     );
   };
   fetchTokenBalancesRef.current = fetchTokenBalances;
+  fetchWalletDetailsRef.current = () => {
+    void refreshWalletDetails();
+  };
+
+  useEffect(() => {
+    if (!walletDetails) {
+      setRuleDrafts({});
+      return;
+    }
+
+    setRuleDrafts(
+      Object.fromEntries(
+        walletDetails.LowBalanceRules.map((rule) => [
+          rule.id,
+          {
+            thresholdInput: getThresholdInputFromRaw(rule.thresholdAmount, rule.assetUnit, network),
+            enabled: rule.enabled,
+          },
+        ]),
+      ),
+    );
+  }, [network, walletDetails]);
 
   const checkPendingSwapStatuses = useCallback(
     async (txs: SwapTx[]) => {
@@ -416,16 +741,22 @@ export function WalletDetailsDialog({
       setTokenBalances([]);
       setError(null);
       setIsLoading(true);
+      setWalletDetails(null);
       setExportedMnemonic(null);
       setSwapTransactions([]);
       setSwapTxCursor(undefined);
       setHasMoreSwapTx(true);
+      setNewRuleAssetPreset('lovelace');
+      setNewRuleCustomAssetUnit('');
+      setNewRuleThresholdInput('');
+      setNewRuleEnabled(true);
       fetchTokenBalances();
+      void refreshWalletDetails();
       if (network === 'Mainnet') {
         fetchSwapTransactions();
       }
     }
-  }, [isOpen, wallet?.walletAddress]);
+  }, [isOpen, refreshWalletDetails, wallet?.walletAddress]);
 
   const usdmConfig = getUsdmConfig(network);
 
@@ -581,7 +912,169 @@ export function WalletDetailsDialog({
     setNewCollectionAddress('');
   };
 
+  const handleSaveLowBalanceRule = async (rule: LowBalanceRule) => {
+    const draft = ruleDrafts[rule.id] ?? {
+      thresholdInput: getThresholdInputFromRaw(rule.thresholdAmount, rule.assetUnit, network),
+      enabled: rule.enabled,
+    };
+    const rawThresholdAmount = parseThresholdInputToRaw(
+      draft.thresholdInput,
+      rule.assetUnit,
+      network,
+    );
+
+    if (rawThresholdAmount == null) {
+      const assetMeta = getRuleAssetMeta(rule.assetUnit, network);
+      toast.error(
+        assetMeta.decimals == null
+          ? 'Threshold amount must be a whole number in raw on-chain units.'
+          : `Threshold amount must be a valid ${assetMeta.label} value with up to ${assetMeta.decimals} decimals.`,
+      );
+      return;
+    }
+
+    setMutatingRuleId(rule.id);
+    const response = await handleApiCall(
+      () =>
+        patchWalletLowBalance({
+          client: apiClient,
+          body: {
+            ruleId: rule.id,
+            thresholdAmount: rawThresholdAmount,
+            enabled: draft.enabled,
+          },
+        }),
+      {
+        onError: (mutationError: unknown) => {
+          toast.error(extractApiErrorMessage(mutationError, 'Failed to update low-balance rule'));
+        },
+        errorMessage: 'Failed to update low-balance rule',
+      },
+    );
+    setMutatingRuleId(null);
+
+    if (response) {
+      toast.success('Low-balance rule updated');
+      await refreshWalletDetails();
+      await invalidateWalletQueries();
+    }
+  };
+
+  const handleDeleteLowBalanceRule = (rule: LowBalanceRule) => {
+    setPendingDeleteRule(rule);
+  };
+
+  const handleConfirmDeleteLowBalanceRule = async () => {
+    if (!pendingDeleteRule) {
+      return;
+    }
+
+    setMutatingRuleId(pendingDeleteRule.id);
+    const response = await handleApiCall(
+      () =>
+        deleteWalletLowBalance({
+          client: apiClient,
+          body: {
+            ruleId: pendingDeleteRule.id,
+          },
+        }),
+      {
+        onError: (mutationError: unknown) => {
+          toast.error(extractApiErrorMessage(mutationError, 'Failed to delete low-balance rule'));
+        },
+        errorMessage: 'Failed to delete low-balance rule',
+      },
+    );
+    setMutatingRuleId(null);
+    setPendingDeleteRule(null);
+
+    if (response) {
+      toast.success('Low-balance rule deleted');
+      await refreshWalletDetails();
+      await invalidateWalletQueries();
+    }
+  };
+
+  const handleCreateLowBalanceRule = async () => {
+    if (!wallet) return;
+
+    const assetMeta = getRuleAssetMetaFromPreset(
+      newRuleAssetPreset,
+      network,
+      newRuleCustomAssetUnit,
+    );
+    const assetUnit = assetMeta.assetUnit.trim();
+    const thresholdAmount = parseThresholdInputToRaw(
+      newRuleThresholdInput,
+      assetMeta.assetUnit,
+      network,
+    );
+
+    if (!assetUnit) {
+      toast.error('Asset unit is required.');
+      return;
+    }
+
+    if (thresholdAmount == null) {
+      toast.error(
+        assetMeta.decimals == null
+          ? 'Threshold amount must be a whole number in raw on-chain units.'
+          : `Threshold amount must be a valid ${assetMeta.label} value with up to ${assetMeta.decimals} decimals.`,
+      );
+      return;
+    }
+
+    setIsCreatingRule(true);
+    const response = await handleApiCall(
+      () =>
+        postWalletLowBalance({
+          client: apiClient,
+          body: {
+            walletId: wallet.id,
+            assetUnit,
+            thresholdAmount,
+            enabled: newRuleEnabled,
+          },
+        }),
+      {
+        onError: (mutationError: unknown) => {
+          toast.error(extractApiErrorMessage(mutationError, 'Failed to create low-balance rule'));
+        },
+        errorMessage: 'Failed to create low-balance rule',
+      },
+    );
+    setIsCreatingRule(false);
+
+    if (response) {
+      toast.success('Low-balance rule created');
+      setNewRuleAssetPreset('lovelace');
+      setNewRuleCustomAssetUnit('');
+      setNewRuleThresholdInput('');
+      setNewRuleEnabled(true);
+      await refreshWalletDetails();
+      await invalidateWalletQueries();
+    }
+  };
+
   if (!wallet) return null;
+
+  const monitoringSummary =
+    walletDetails?.LowBalanceSummary ?? wallet.LowBalanceSummary ?? EMPTY_LOW_BALANCE_SUMMARY;
+  const configuredRules = walletDetails?.LowBalanceRules ?? [];
+  const lowRules = configuredRules.filter((rule) => rule.enabled && rule.status === 'Low');
+  const enabledRuleCount = configuredRules.filter((rule) => rule.enabled).length;
+  const addRuleAssetMeta = getRuleAssetMetaFromPreset(
+    newRuleAssetPreset,
+    network,
+    newRuleCustomAssetUnit,
+  );
+  const newRuleAssetBreakdown = getAssetUnitBreakdown(newRuleCustomAssetUnit);
+  const newRuleRawThreshold = parseThresholdInputToRaw(
+    newRuleThresholdInput,
+    addRuleAssetMeta.assetUnit,
+    network,
+  );
+  const canCreateNewRule = addRuleAssetMeta.assetUnit.trim() !== '' && newRuleRawThreshold != null;
 
   return (
     <>
@@ -591,6 +1084,7 @@ export function WalletDetailsDialog({
           if (!open) {
             setSelectedWalletForSwap(null);
             setSelectedWalletForTopup(null);
+            setPendingDeleteRule(null);
             onClose();
           }
         }}
@@ -598,7 +1092,9 @@ export function WalletDetailsDialog({
         <DialogContent
           className="sm:max-w-[600px]"
           variant={isChild ? 'slide-from-right' : 'default'}
-          isPushedBack={!!selectedWalletForTopup || !!selectedWalletForSwap}
+          isPushedBack={
+            !!selectedWalletForTopup || !!selectedWalletForSwap || !!pendingDeleteRule
+          }
           hideOverlay={isChild}
           onBack={isChild ? onClose : undefined}
         >
@@ -614,14 +1110,17 @@ export function WalletDetailsDialog({
                 className="h-8 w-8"
                 onClick={() => {
                   fetchTokenBalances();
+                  void refreshWalletDetails();
                   if (network === 'Mainnet') {
                     setSwapTxCursor(undefined);
                     fetchSwapTransactions();
                   }
                 }}
-                disabled={isLoading}
+                disabled={isLoading || isWalletDetailsLoading}
               >
-                <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+                <RefreshCw
+                  className={`h-4 w-4 ${isLoading || isWalletDetailsLoading ? 'animate-spin' : ''}`}
+                />
               </Button>
             </div>
           </DialogHeader>
@@ -651,6 +1150,425 @@ export function WalletDetailsDialog({
                 <CopyButton value={wallet.walletVkey} />
               </div>
             </div>
+
+            {wallet.type !== 'Collection' && (
+              <section
+                className={`space-y-4 rounded-xl border p-4 ${
+                  monitoringSummary.isLow
+                    ? 'border-amber-500/40 bg-amber-500/10'
+                    : 'border-border bg-muted/40'
+                }`}
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="space-y-1.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-sm font-semibold">Low Balance Monitoring</h3>
+                      <Badge variant={monitoringSummary.isLow ? 'destructive' : 'secondary'}>
+                        {monitoringSummary.isLow
+                          ? `${monitoringSummary.lowRuleCount} warning${monitoringSummary.lowRuleCount === 1 ? '' : 's'}`
+                          : enabledRuleCount > 0
+                            ? `${enabledRuleCount} active`
+                            : 'Not configured'}
+                      </Badge>
+                    </div>
+                    <p className="max-w-xl text-xs leading-relaxed text-muted-foreground">
+                      New wallets inherit default monitoring rules automatically. Supported assets
+                      are edited in human units here and converted to on-chain quantities when
+                      saved. Custom assets show the underlying policy ID and asset-name hex parts.
+                    </p>
+                  </div>
+                  <div className="grid min-w-0 grid-cols-3 gap-2 sm:min-w-[260px]">
+                    <div className="rounded-lg border bg-background/70 px-3 py-2">
+                      <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                        Rules
+                      </div>
+                      <div className="mt-1 text-lg font-semibold">{configuredRules.length}</div>
+                    </div>
+                    <div className="rounded-lg border bg-background/70 px-3 py-2">
+                      <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                        Low
+                      </div>
+                      <div className="mt-1 text-lg font-semibold">{lowRules.length}</div>
+                    </div>
+                    <div className="rounded-lg border bg-background/70 px-3 py-2">
+                      <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                        Checked
+                      </div>
+                      <div className="mt-1 text-xs font-medium text-foreground">
+                        {monitoringSummary.lastCheckedAt
+                          ? monitoringSummary.lastCheckedAt.toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })
+                          : 'Never'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {monitoringSummary.lastCheckedAt && (
+                  <div className="text-xs text-muted-foreground">
+                    Last full check {monitoringSummary.lastCheckedAt.toLocaleString()}
+                  </div>
+                )}
+
+                {isWalletDetailsLoading ? (
+                  <div className="flex justify-center py-6">
+                    <Spinner size={18} />
+                  </div>
+                ) : (
+                  <>
+                    {lowRules.length > 0 && (
+                      <div className="space-y-2">
+                        {lowRules.map((rule) => (
+                          <div
+                            key={`low-warning-${rule.id}`}
+                            className="rounded-lg border border-amber-500/40 bg-background/80 px-4 py-3"
+                          >
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                              <div className="flex items-center gap-2 text-sm font-medium text-amber-700 dark:text-amber-400">
+                                <AlertTriangle className="h-4 w-4 shrink-0" />
+                                <span>{getRuleAssetLabel(rule.assetUnit, network)} dropped below threshold</span>
+                              </div>
+                              <Badge variant="destructive" className="w-fit">
+                                {formatRuleAmount(rule.lastKnownAmount, rule.assetUnit, network)}
+                              </Badge>
+                            </div>
+                            <div className="mt-2 grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
+                              <div>
+                                Threshold:{' '}
+                                <span className="text-foreground">
+                                  {formatRuleAmount(rule.thresholdAmount, rule.assetUnit, network)}
+                                </span>
+                              </div>
+                              <div>
+                                Asset unit:{' '}
+                                <span className="font-mono text-foreground">
+                                  {shortenAddress(rule.assetUnit, 8)}
+                                </span>
+                              </div>
+                              <div>
+                                Last warning:{' '}
+                                <span className="text-foreground">
+                                  {rule.lastAlertedAt
+                                    ? rule.lastAlertedAt.toLocaleString()
+                                    : 'Not sent'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="space-y-3">
+                      {configuredRules.length === 0 ? (
+                        <div className="rounded-lg border border-dashed bg-background/70 p-4 text-sm text-muted-foreground">
+                          No low-balance rules configured for this wallet yet.
+                        </div>
+                      ) : (
+                        configuredRules.map((rule) => {
+                          const assetMeta = getRuleAssetMeta(rule.assetUnit, network);
+                          const assetBreakdown = getAssetUnitBreakdown(rule.assetUnit);
+                          const draft = ruleDrafts[rule.id] ?? {
+                            thresholdInput: getThresholdInputFromRaw(
+                              rule.thresholdAmount,
+                              rule.assetUnit,
+                              network,
+                            ),
+                            enabled: rule.enabled,
+                          };
+                          const draftRawThreshold = parseThresholdInputToRaw(
+                            draft.thresholdInput,
+                            rule.assetUnit,
+                            network,
+                          );
+                          const hasChanges =
+                            draftRawThreshold !== rule.thresholdAmount ||
+                            draft.enabled !== rule.enabled;
+                          const isMutating = mutatingRuleId === rule.id;
+
+                          return (
+                            <div
+                              key={rule.id}
+                              className={`rounded-xl border bg-background/75 p-4 ${
+                                rule.enabled && rule.status === 'Low'
+                                  ? 'border-amber-500/40'
+                                  : 'border-border'
+                              }`}
+                            >
+                              <div className="flex flex-col gap-3">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0 space-y-1">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <span className="text-sm font-semibold">{assetMeta.label}</span>
+                                      <Badge
+                                        variant={
+                                          !rule.enabled
+                                            ? 'outline'
+                                            : rule.status === 'Low'
+                                              ? 'destructive'
+                                              : 'secondary'
+                                        }
+                                      >
+                                        {!rule.enabled ? 'Disabled' : rule.status}
+                                      </Badge>
+                                    </div>
+                                    <div className="text-xs text-muted-foreground">
+                                      {assetMeta.helperText}
+                                    </div>
+                                    <div className="font-mono text-[11px] leading-relaxed text-muted-foreground break-all">
+                                      {rule.assetUnit}
+                                    </div>
+                                  </div>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 shrink-0"
+                                    onClick={() => handleDeleteLowBalanceRule(rule)}
+                                    disabled={isMutating}
+                                  >
+                                    {isMutating ? <Spinner size={12} /> : <X className="h-3.5 w-3.5" />}
+                                  </Button>
+                                </div>
+
+                                <div className="grid gap-2 sm:grid-cols-3">
+                                  <div className="rounded-lg border bg-muted/30 px-3 py-2">
+                                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                                      Current
+                                    </div>
+                                    <div className="mt-1 text-sm font-medium">
+                                      {formatRuleAmount(rule.lastKnownAmount, rule.assetUnit, network)}
+                                    </div>
+                                  </div>
+                                  <div className="rounded-lg border bg-muted/30 px-3 py-2">
+                                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                                      Threshold
+                                    </div>
+                                    <div className="mt-1 text-sm font-medium">
+                                      {formatRuleAmount(rule.thresholdAmount, rule.assetUnit, network)}
+                                    </div>
+                                  </div>
+                                  <div className="rounded-lg border bg-muted/30 px-3 py-2">
+                                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                                      Last warning
+                                    </div>
+                                    <div className="mt-1 text-sm font-medium">
+                                      {rule.lastAlertedAt ? rule.lastAlertedAt.toLocaleString() : 'None'}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {assetMeta.decimals == null && (
+                                  <div className="grid gap-2 rounded-lg border bg-muted/20 p-3 sm:grid-cols-3">
+                                    <div>
+                                      <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                                        Policy ID
+                                      </div>
+                                      <div className="mt-1 font-mono text-xs break-all">
+                                        {assetBreakdown.policyId || 'Missing'}
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                                        Asset Name Hex
+                                      </div>
+                                      <div className="mt-1 font-mono text-xs break-all">
+                                        {assetBreakdown.assetNameHex || 'Empty'}
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                                        Decoded Name
+                                      </div>
+                                      <div className="mt-1 text-xs font-medium">
+                                        {assetBreakdown.decodedAssetName || 'Unavailable'}
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+
+                                <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_200px_auto] lg:items-end">
+                                  <div className="space-y-1.5">
+                                    <div className="text-xs text-muted-foreground">
+                                      {assetMeta.inputLabel}
+                                    </div>
+                                    <Input
+                                      value={draft.thresholdInput}
+                                      onChange={(event) =>
+                                        updateRuleDraft(rule.id, {
+                                          thresholdInput: event.target.value,
+                                        })
+                                      }
+                                      placeholder={assetMeta.decimals != null ? '5.0' : '5000000'}
+                                    />
+                                    <div className="text-[11px] text-muted-foreground">
+                                      Stored raw amount:{' '}
+                                      <span className="font-mono text-foreground">
+                                        {draftRawThreshold ?? 'Invalid input'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="rounded-lg border px-3 py-2">
+                                    <div className="flex items-center justify-between gap-3">
+                                      <div>
+                                        <div className="text-xs font-medium">Enabled</div>
+                                        <div className="text-[11px] text-muted-foreground">
+                                          Toggle monitoring for this asset
+                                        </div>
+                                      </div>
+                                      <Switch
+                                        checked={draft.enabled}
+                                        onCheckedChange={(checked) =>
+                                          updateRuleDraft(rule.id, { enabled: checked })
+                                        }
+                                      />
+                                    </div>
+                                  </div>
+                                  <Button
+                                    variant="outline"
+                                    className="w-full lg:w-auto"
+                                    onClick={() => handleSaveLowBalanceRule(rule)}
+                                    disabled={!hasChanges || isMutating || draftRawThreshold == null}
+                                  >
+                                    {isMutating ? <Spinner size={16} /> : 'Save'}
+                                  </Button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    <div className="rounded-xl border border-dashed bg-background/70 p-4">
+                      <div className="flex flex-col gap-1">
+                        <h4 className="text-sm font-semibold">Add monitoring rule</h4>
+                        <p className="text-xs text-muted-foreground">
+                          Pick a common asset or switch to custom for a full policy+asset unit.
+                        </p>
+                      </div>
+
+                      <div className="mt-4 grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)]">
+                        <div className="space-y-1.5">
+                          <div className="text-xs text-muted-foreground">Asset</div>
+                          <Select
+                            value={newRuleAssetPreset}
+                            onValueChange={(value) => {
+                              setNewRuleAssetPreset(value as RuleAssetPreset);
+                              setNewRuleThresholdInput('');
+                            }}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select asset" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="lovelace">ADA</SelectItem>
+                              <SelectItem value="stablecoin">
+                                {network === 'Mainnet' ? 'USDCx' : 'tUSDM'}
+                              </SelectItem>
+                              <SelectItem value="custom">Custom asset</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <div className="text-xs text-muted-foreground">
+                            {addRuleAssetMeta.inputLabel}
+                          </div>
+                          <Input
+                            value={newRuleThresholdInput}
+                            onChange={(event) => setNewRuleThresholdInput(event.target.value)}
+                            placeholder={addRuleAssetMeta.decimals != null ? '5.0' : '5000000'}
+                          />
+                          <div className="text-[11px] text-muted-foreground">
+                            {addRuleAssetMeta.decimals != null
+                              ? `Will be stored with ${addRuleAssetMeta.decimals} decimals for ${addRuleAssetMeta.label}.`
+                              : addRuleAssetMeta.helperText}
+                          </div>
+                        </div>
+                      </div>
+
+                      {newRuleAssetPreset === 'custom' && (
+                        <div className="mt-3 space-y-3">
+                          <div className="space-y-1.5">
+                            <div className="text-xs text-muted-foreground">Custom asset unit</div>
+                            <Input
+                              value={newRuleCustomAssetUnit}
+                              onChange={(event) => setNewRuleCustomAssetUnit(event.target.value)}
+                              placeholder="policyidassetnamehex"
+                            />
+                            <div className="text-[11px] leading-relaxed text-muted-foreground">
+                              Format: <span className="font-mono text-foreground">policyId + assetNameHex</span>.
+                              Example field shape:{' '}
+                              <span className="font-mono text-foreground">policyidassetnamehex</span>
+                            </div>
+                          </div>
+
+                          <div className="grid gap-2 rounded-lg border bg-muted/20 p-3 sm:grid-cols-3">
+                            <div>
+                              <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                                Policy ID
+                              </div>
+                              <div className="mt-1 font-mono text-xs break-all">
+                                {newRuleAssetBreakdown.policyId || 'Enter asset unit'}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                                Asset Name Hex
+                              </div>
+                              <div className="mt-1 font-mono text-xs break-all">
+                                {newRuleAssetBreakdown.assetNameHex || 'Enter asset unit'}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                                Decoded Name
+                              </div>
+                              <div className="mt-1 text-xs font-medium">
+                                {newRuleAssetBreakdown.decodedAssetName || 'Unavailable'}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_200px_auto] lg:items-end">
+                        <div className="rounded-lg border bg-muted/20 px-3 py-2">
+                          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                            Raw amount preview
+                          </div>
+                          <div className="mt-1 font-mono text-sm">
+                            {newRuleThresholdInput.trim() === ''
+                              ? 'Enter amount'
+                              : newRuleRawThreshold ?? 'Invalid input'}
+                          </div>
+                        </div>
+                        <div className="rounded-lg border px-3 py-2">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <div className="text-xs font-medium">Enabled</div>
+                              <div className="text-[11px] text-muted-foreground">
+                                Start monitoring immediately
+                              </div>
+                            </div>
+                            <Switch checked={newRuleEnabled} onCheckedChange={setNewRuleEnabled} />
+                          </div>
+                        </div>
+                        <Button
+                          className="w-full lg:w-auto"
+                          onClick={handleCreateLowBalanceRule}
+                          disabled={isCreatingRule || !canCreateNewRule}
+                        >
+                          {isCreatingRule ? <Spinner size={16} /> : 'Add rule'}
+                        </Button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </section>
+            )}
 
             <div className="bg-muted rounded-lg p-4 space-y-2">
               <div className="text-sm font-medium">Token Balances</div>
@@ -1082,6 +2000,23 @@ export function WalletDetailsDialog({
           </div>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!pendingDeleteRule}
+        onClose={() => setPendingDeleteRule(null)}
+        title={
+          pendingDeleteRule
+            ? `Delete ${getRuleAssetLabel(pendingDeleteRule.assetUnit, network)} rule?`
+            : 'Delete low-balance rule?'
+        }
+        description={
+          pendingDeleteRule
+            ? getDeleteRuleDialogDescription(pendingDeleteRule, network)
+            : 'Remove this low-balance rule?'
+        }
+        onConfirm={handleConfirmDeleteLowBalanceRule}
+        isLoading={mutatingRuleId === pendingDeleteRule?.id}
+      />
 
       <SwapDialog
         isOpen={!!selectedWalletForSwap}

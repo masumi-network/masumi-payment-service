@@ -12,6 +12,7 @@ import {
 	MeshWallet,
 	SLOT_CONFIG_NETWORK,
 	Transaction,
+	UTxO,
 	unixTimeToEnclosingSlot,
 } from '@meshsdk/core';
 import { logger } from '@/utils/logger';
@@ -23,6 +24,7 @@ import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import cbor from 'cbor';
 import { Address, Datum, toPlutusData, toValue, TransactionOutput } from '@meshsdk/core-cst';
 import { CONSTANTS } from '@/utils/config';
+import { toBalanceMapFromMeshUtxos, walletLowBalanceMonitorService } from '@/services/wallet-low-balance-monitor';
 
 type PaymentSourceWithWallets = Prisma.PaymentSourceGetPayload<{
 	include: {
@@ -56,6 +58,8 @@ type WalletPairing = {
 	wallet: MeshWallet;
 	scriptAddress: string;
 	walletId: string;
+	changeAddress: string;
+	utxos: UTxO[];
 	batchedRequests: BatchedRequest[];
 };
 
@@ -181,6 +185,13 @@ async function executeSpecificBatchPayment(
 	const signedTx = await wallet.signTx(completeTx);
 	logger.info('Batching payments, tx signed');
 	const txHash = await wallet.submitTx(signedTx);
+	await walletLowBalanceMonitorService.evaluateProjectedHotWalletById({
+		hotWalletId: walletId,
+		walletAddress: walletPairing.changeAddress,
+		walletUtxos: walletPairing.utxos,
+		unsignedTx: completeTx,
+		checkSource: 'submission',
+	});
 
 	logger.info('Batching payments, tx submitted', {
 		txHash: txHash,
@@ -367,19 +378,26 @@ export async function batchLatestPaymentEntriesV1() {
 
 					const walletAmounts = await Promise.all(
 						potentialWallets.map(async (wallet) => {
-							const { wallet: meshWallet } = await generateWalletExtended(
+							const { wallet: meshWallet, utxos, address } = await generateWalletExtended(
 								paymentContract.network,
 								paymentContract.PaymentSourceConfig.rpcProviderApiKey,
 								wallet.Secret.encryptedMnemonic,
 							);
-							const amounts = await meshWallet.getBalance();
+							const balanceMap = toBalanceMapFromMeshUtxos(utxos);
+							await walletLowBalanceMonitorService.evaluateHotWalletById(
+								wallet.id,
+								balanceMap,
+								'submission',
+							);
 							return {
 								wallet: meshWallet,
 								walletId: wallet.id,
+								changeAddress: address,
+								utxos,
 								scriptAddress: paymentContract.smartContractAddress,
-								amounts: amounts.map((amount) => ({
-									unit: amount.unit.toLowerCase() == 'lovelace' ? '' : amount.unit,
-									quantity: BigInt(amount.quantity),
+								amounts: Array.from(balanceMap.entries()).map(([unit, quantity]) => ({
+									unit: unit === 'lovelace' ? '' : unit,
+									quantity,
 								})),
 							};
 						}),
@@ -584,6 +602,8 @@ export async function batchLatestPaymentEntriesV1() {
 								wallet: wallet,
 								scriptAddress: walletData.scriptAddress,
 								walletId: walletData.walletId,
+								changeAddress: walletData.changeAddress,
+								utxos: walletData.utxos,
 								batchedRequests: batchedPaymentRequests,
 							});
 						}

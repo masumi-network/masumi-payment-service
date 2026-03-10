@@ -21,6 +21,7 @@ let blockchainStateTransitionDuration: Histogram | null = null;
 let blockchainJourneyDuration: Histogram | null = null;
 let blockchainStateTransitionCounter: Counter | null = null;
 let activePaymentGauge: UpDownCounter | null = null;
+let walletLowBalanceAlertCounter: Counter | null = null;
 
 const getBusinessEndpointErrorCounter = (): Counter => {
 	if (!businessEndpointErrorCounter) {
@@ -105,6 +106,15 @@ export const getActivePaymentGauge = (): UpDownCounter => {
 		});
 	}
 	return activePaymentGauge;
+};
+
+const getWalletLowBalanceAlertCounter = (): Counter => {
+	if (!walletLowBalanceAlertCounter) {
+		walletLowBalanceAlertCounter = getMeter().createCounter('wallet_low_balance_alerts_total', {
+			description: 'Total number of deduped wallet low-balance alerts',
+		});
+	}
+	return walletLowBalanceAlertCounter;
 };
 
 // Business Endpoint Types
@@ -399,6 +409,12 @@ export { getBusinessEndpoint };
 
 // Only these keys are safe for blockchain metrics (no entity_id to avoid unbounded cardinality).
 const BLOCKCHAIN_METRIC_ATTRIBUTE_KEYS = new Set<string>(['network']);
+const WALLET_LOW_BALANCE_METRIC_ATTRIBUTE_KEYS = new Set<string>([
+	'network',
+	'asset_unit',
+	'wallet_type',
+	'check_source',
+]);
 
 // Blockchain State Transition Recording Functions. Do not add entity_id to attributes.
 export const recordStateTransition = (
@@ -441,6 +457,13 @@ export const recordBlockchainJourney = (
 		final_state: finalState,
 		status: finalState.includes('Confirmed') || finalState.includes('Completed') ? 'success' : 'failed',
 	});
+};
+
+export const recordWalletLowBalanceAlert = (
+	attributes: Record<string, string | number> = {},
+) => {
+	const safeAttrs = filterToAllowlist(attributes, WALLET_LOW_BALANCE_METRIC_ATTRIBUTE_KEYS);
+	getWalletLowBalanceAlertCounter().add(1, safeAttrs);
 };
 
 // Custom span creation for detailed tracing (keeping for advanced usage)

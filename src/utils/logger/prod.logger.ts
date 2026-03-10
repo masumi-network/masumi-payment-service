@@ -10,19 +10,23 @@ interface LogInfo {
 	[key: string]: unknown;
 }
 
+// Strip ANSI escape codes that Winston's colorize format may inject
+const stripAnsi = (str: string) => str.replace(/\x1B\[[0-9;]*m/g, '');
+
 // Custom transport that sends logs to OpenTelemetry
 class OpenTelemetryTransport extends transports.Console {
 	log(info: LogInfo, callback?: () => void) {
 		// Fetch logger lazily so it uses the provider registered after SDK start
 		const otelLogger = logs.getLogger('winston-otel-bridge', '1.0.0');
+		const rawLevel = stripAnsi(info.level);
 
 		// Send to OpenTelemetry
 		otelLogger.emit({
-			severityNumber: this.getSeverityNumber(info.level),
-			severityText: info.level.toUpperCase(),
+			severityNumber: this.getSeverityNumber(rawLevel),
+			severityText: rawLevel.toUpperCase(),
 			body: String(info.message),
 			attributes: {
-				level: info.level,
+				level: rawLevel,
 				timestamp: new Date().toISOString(),
 				service: CONFIG.OTEL_SERVICE_NAME,
 				...(info.error && {

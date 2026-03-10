@@ -1,15 +1,8 @@
 import { logs, SeverityNumber } from '@opentelemetry/api-logs';
 import { logger as winstonLogger } from '@/utils/logger/';
-const logger = logs.getLogger('masumi-payment-logger', '1.0.0');
-logger.emit({
-	severityNumber: SeverityNumber.INFO,
-	severityText: 'INFO',
-	body: 'Logger initialized',
-	attributes: {
-		service: 'masumi-payment-service',
-	},
-	timestamp: Date.now(),
-});
+
+// Fetch logger lazily so it uses the provider registered after SDK start
+const getLogger = () => logs.getLogger('masumi-payment-logger', '1.0.0');
 
 export enum LogLevel {
 	DEBUG = 'debug',
@@ -66,7 +59,7 @@ const emitLog = (level: LogLevel, message: string, context?: LogContext, attribu
 		logAttributes.error_stack = error.stack || '';
 	}
 
-	logger.emit({
+	getLogger().emit({
 		severityNumber: getSeverityNumber(level),
 		severityText: level.toUpperCase(),
 		body: message,

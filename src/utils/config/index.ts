@@ -56,11 +56,75 @@ if (syncLockTimeoutInterval < 5) throw new Error('SYNC_LOCK_TIMEOUT_INTERVAL mus
 const walletLockTimeoutInterval = Number(process.env.WALLET_LOCK_TIMEOUT_INTERVAL ?? '300');
 if (walletLockTimeoutInterval < 5) throw new Error('WALLET_LOCK_TIMEOUT_INTERVAL must be at least 5 seconds');
 
+export type LowBalanceDefaultRule = {
+	assetUnit: string;
+	thresholdAmount: string;
+};
+
+function parseLowBalanceDefaultRules(
+	envVarName: 'LOW_BALANCE_DEFAULT_RULES_MAINNET' | 'LOW_BALANCE_DEFAULT_RULES_PREPROD',
+): LowBalanceDefaultRule[] {
+	const rawValue = process.env[envVarName];
+	if (rawValue == null || rawValue.trim() === '') {
+		return [];
+	}
+
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(rawValue);
+	} catch (error) {
+		throw new Error(`${envVarName} must be valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+	}
+
+	const rules = Array.isArray(parsed)
+		? parsed
+		: typeof parsed === 'object' && parsed != null
+			? Object.entries(parsed).map(([assetUnit, thresholdAmount]) => ({
+					assetUnit,
+					thresholdAmount,
+				}))
+			: null;
+
+	if (rules == null) {
+		throw new Error(`${envVarName} must be a JSON object map or array of rules`);
+	}
+
+	return rules.map((rule, index) => {
+		if (typeof rule !== 'object' || rule == null) {
+			throw new Error(`${envVarName}[${index}] must be an object`);
+		}
+
+		const assetUnit = 'assetUnit' in rule ? rule.assetUnit : undefined;
+		const thresholdAmount = 'thresholdAmount' in rule ? rule.thresholdAmount : undefined;
+
+		if (typeof assetUnit !== 'string' || assetUnit.trim() === '') {
+			throw new Error(`${envVarName}[${index}].assetUnit must be a non-empty string`);
+		}
+
+		const thresholdString = String(thresholdAmount ?? '').trim();
+		if (!/^\d+$/.test(thresholdString)) {
+			throw new Error(`${envVarName}[${index}].thresholdAmount must be a non-negative integer string`);
+		}
+
+		return {
+			assetUnit,
+			thresholdAmount: thresholdString,
+		};
+	});
+}
+
+const lowBalanceCheckInterval = Number(process.env.LOW_BALANCE_CHECK_INTERVAL ?? '60');
+if (lowBalanceCheckInterval < 5) throw new Error('LOW_BALANCE_CHECK_INTERVAL must be at least 5 seconds');
+
+const lowBalanceDefaultRulesMainnet = parseLowBalanceDefaultRules('LOW_BALANCE_DEFAULT_RULES_MAINNET');
+const lowBalanceDefaultRulesPreprod = parseLowBalanceDefaultRules('LOW_BALANCE_DEFAULT_RULES_PREPROD');
+
 export const CONFIG = {
 	PORT: process.env.PORT ?? '3001',
 	DATABASE_URL: process.env.DATABASE_URL,
 	SYNC_LOCK_TIMEOUT_INTERVAL: syncLockTimeoutInterval * 1000,
 	WALLET_LOCK_TIMEOUT_INTERVAL: walletLockTimeoutInterval * 1000,
+	LOW_BALANCE_CHECK_INTERVAL: lowBalanceCheckInterval,
 	BATCH_PAYMENT_INTERVAL: batchPaymentInterval,
 	BLOCK_CONFIRMATIONS_THRESHOLD: blockConfirmationsThreshold,
 	CHECK_TX_INTERVAL: checkTxInterval,
@@ -89,6 +153,8 @@ export const CONFIG = {
 	SIGNOZ_INGESTION_KEY: process.env.SIGNOZ_INGESTION_KEY,
 	COINGECKO_API_KEY: process.env.COINGECKO_API_KEY,
 	IS_COINGECKO_DEMO: process.env.IS_COINGECKO_DEMO?.toLowerCase() === 'true',
+	LOW_BALANCE_DEFAULT_RULES_MAINNET: lowBalanceDefaultRulesMainnet,
+	LOW_BALANCE_DEFAULT_RULES_PREPROD: lowBalanceDefaultRulesPreprod,
 	// Prisma span filtering: only export outlier (slow) queries and cap volume
 	OTEL_PRISMA_OUTLIER_THRESHOLD_MS: Number(process.env.OTEL_PRISMA_OUTLIER_THRESHOLD_MS ?? '100'),
 	OTEL_PRISMA_MAX_SPANS_PER_MINUTE: Number(process.env.OTEL_PRISMA_MAX_SPANS_PER_MINUTE ?? '60'),
