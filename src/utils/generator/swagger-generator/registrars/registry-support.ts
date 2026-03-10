@@ -1409,6 +1409,15 @@ export function registerRegistrySupportPaths({ registry, apiKeyAuth }: SwaggerRe
 					},
 				},
 			},
+			400: {
+				description: 'Bad Request (possible parameters missing or invalid)',
+			},
+			401: {
+				description: 'Unauthorized',
+			},
+			500: {
+				description: 'Internal Server Error',
+			},
 		},
 	});
 }

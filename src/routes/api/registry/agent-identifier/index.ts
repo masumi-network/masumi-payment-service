@@ -29,7 +29,8 @@ const agentMetadataObjectSchema = z.object({
 			}),
 		)
 		.max(25)
-		.describe('List of example outputs from the agent'),
+		.optional()
+		.describe('List of example outputs from the agent. Empty for A2A agents'),
 	Tags: z.array(z.string().max(250)).describe('List of tags categorizing the agent'),
 	Capability: z
 		.object({

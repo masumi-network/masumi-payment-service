@@ -545,39 +545,47 @@ export function AIAgentDetailsDialog({
                           <div>
                             <h3 className="font-medium mb-4">Author</h3>
                             <div className="space-y-3 text-sm">
-                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">Name:</span>
-                                <span>{agent.Author.name}</span>
-                              </div>
-                              {agent.Author.contactEmail && (
-                                <div className="flex justify-between">
-                                  <span className="text-muted-foreground">Email:</span>
-                                  <a
-                                    href={`mailto:${agent.Author.contactEmail}`}
-                                    className="text-primary hover:underline"
-                                  >
-                                    {agent.Author.contactEmail}
-                                  </a>
-                                </div>
-                              )}
-                              {agent.Author.organization && (
-                                <div className="flex justify-between">
-                                  <span className="text-muted-foreground">Organization:</span>
-                                  <span>{agent.Author.organization}</span>
-                                </div>
-                              )}
-                              {agent.Author.contactOther && (
-                                <div className="flex justify-between">
-                                  <span className="text-muted-foreground">Website:</span>
-                                  <a
-                                    href={agent.Author.contactOther}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-primary hover:underline flex items-center gap-1"
-                                  >
-                                    {agent.Author.contactOther} <Link2 className="h-3 w-3" />
-                                  </a>
-                                </div>
+                              {agent.Author ? (
+                                <>
+                                  <div className="flex justify-between">
+                                    <span className="text-muted-foreground">Name:</span>
+                                    <span>{agent.Author.name}</span>
+                                  </div>
+                                  {agent.Author.contactEmail && (
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">Email:</span>
+                                      <a
+                                        href={`mailto:${agent.Author.contactEmail}`}
+                                        className="text-primary hover:underline"
+                                      >
+                                        {agent.Author.contactEmail}
+                                      </a>
+                                    </div>
+                                  )}
+                                  {agent.Author.organization && (
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">Organization:</span>
+                                      <span>{agent.Author.organization}</span>
+                                    </div>
+                                  )}
+                                  {agent.Author.contactOther && (
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">Website:</span>
+                                      <a
+                                        href={agent.Author.contactOther}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-primary hover:underline flex items-center gap-1"
+                                      >
+                                        {agent.Author.contactOther} <Link2 className="h-3 w-3" />
+                                      </a>
+                                    </div>
+                                  )}
+                                </>
+                              ) : (
+                                <span className="text-muted-foreground">
+                                  No author information provided.
+                                </span>
                               )}
                             </div>
                           </div>
