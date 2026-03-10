@@ -33,6 +33,18 @@ export const registryEntryExample = {
 		},
 	],
 	agentIdentifier: 'policy_id_asset_name_policy_id_asset_name_policy_id_asset_name',
+	metadataVersion: 1,
+	agentCardUrl: null,
+	a2aProtocolVersions: [],
+	a2aAgentVersion: null,
+	a2aDefaultInputModes: [],
+	a2aDefaultOutputModes: [],
+	a2aProviderName: null,
+	a2aProviderUrl: null,
+	a2aDocumentationUrl: null,
+	a2aIconUrl: null,
+	a2aCapabilitiesStreaming: null,
+	a2aCapabilitiesPushNotifications: null,
 	AgentPricing: {
 		pricingType: PricingType.Fixed,
 		Pricing: [
