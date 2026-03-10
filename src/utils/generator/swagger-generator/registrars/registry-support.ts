@@ -1356,18 +1356,14 @@ export function registerRegistrySupportPaths({ registry, apiKeyAuth }: SwaggerRe
 			},
 		},
 		responses: {
-			200: successResponse(
-				'A2A agent registered',
-				registerA2AAgentSchemaOutput,
-				{
-					...registryEntryExample,
-					metadataVersion: 2,
-					agentCardUrl: 'https://api.example.com/.well-known/agent-card.json',
-					a2aProtocolVersions: ['0.2.5'],
-					Author: { name: '', contactEmail: null, contactOther: null, organization: null },
-					AgentPricing: { pricingType: PricingType.Free },
-				},
-			),
+			200: successResponse('A2A agent registered', registerA2AAgentSchemaOutput, {
+				...registryEntryExample,
+				metadataVersion: 2,
+				agentCardUrl: 'https://api.example.com/.well-known/agent-card.json',
+				a2aProtocolVersions: ['0.2.5'],
+				Author: { name: '', contactEmail: null, contactOther: null, organization: null },
+				AgentPricing: { pricingType: PricingType.Free },
+			}),
 			400: {
 				description: 'Bad Request (invalid input or Agent Card validation failed)',
 			},
