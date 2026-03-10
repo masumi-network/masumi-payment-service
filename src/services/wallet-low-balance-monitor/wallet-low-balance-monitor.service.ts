@@ -217,7 +217,9 @@ function projectBalanceMapFromUnsignedTx(
 
 	for (let inputIndex = 0; inputIndex < inputs.len(); inputIndex++) {
 		const input = inputs.get(inputIndex);
-		const inputBalanceMap = knownWalletInputs.get(createUtxoReferenceKey(input.transaction_id().to_hex(), input.index()));
+		const inputBalanceMap = knownWalletInputs.get(
+			createUtxoReferenceKey(input.transaction_id().to_hex(), input.index()),
+		);
 
 		if (inputBalanceMap == null) {
 			continue;
@@ -559,11 +561,7 @@ export class WalletLowBalanceMonitorService {
 					wallet.Secret.encryptedMnemonic,
 				);
 
-				await this.evaluateWalletContext(
-					wallet,
-					toBalanceMapFromMeshUtxos(utxos as MeshLikeUtxo[]),
-					'interval_check',
-				);
+				await this.evaluateWalletContext(wallet, toBalanceMapFromMeshUtxos(utxos as MeshLikeUtxo[]), 'interval_check');
 			}),
 		);
 	}

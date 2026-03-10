@@ -378,17 +378,17 @@ export async function batchLatestPaymentEntriesV1() {
 
 					const walletAmounts = await Promise.all(
 						potentialWallets.map(async (wallet) => {
-							const { wallet: meshWallet, utxos, address } = await generateWalletExtended(
+							const {
+								wallet: meshWallet,
+								utxos,
+								address,
+							} = await generateWalletExtended(
 								paymentContract.network,
 								paymentContract.PaymentSourceConfig.rpcProviderApiKey,
 								wallet.Secret.encryptedMnemonic,
 							);
 							const balanceMap = toBalanceMapFromMeshUtxos(utxos);
-							await walletLowBalanceMonitorService.evaluateHotWalletById(
-								wallet.id,
-								balanceMap,
-								'submission',
-							);
+							await walletLowBalanceMonitorService.evaluateHotWalletById(wallet.id, balanceMap, 'submission');
 							return {
 								wallet: meshWallet,
 								walletId: wallet.id,

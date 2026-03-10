@@ -61,6 +61,10 @@ export type LowBalanceDefaultRule = {
 	thresholdAmount: string;
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function parseLowBalanceDefaultRules(
 	envVarName: 'LOW_BALANCE_DEFAULT_RULES_MAINNET' | 'LOW_BALANCE_DEFAULT_RULES_PREPROD',
 ): LowBalanceDefaultRule[] {
@@ -78,7 +82,7 @@ function parseLowBalanceDefaultRules(
 
 	const rules = Array.isArray(parsed)
 		? parsed
-		: typeof parsed === 'object' && parsed != null
+		: isRecord(parsed)
 			? Object.entries(parsed).map(([assetUnit, thresholdAmount]) => ({
 					assetUnit,
 					thresholdAmount,
@@ -90,12 +94,12 @@ function parseLowBalanceDefaultRules(
 	}
 
 	return rules.map((rule, index) => {
-		if (typeof rule !== 'object' || rule == null) {
+		if (!isRecord(rule)) {
 			throw new Error(`${envVarName}[${index}] must be an object`);
 		}
 
-		const assetUnit = 'assetUnit' in rule ? rule.assetUnit : undefined;
-		const thresholdAmount = 'thresholdAmount' in rule ? rule.thresholdAmount : undefined;
+		const assetUnit = rule.assetUnit;
+		const thresholdAmount = rule.thresholdAmount;
 
 		if (typeof assetUnit !== 'string' || assetUnit.trim() === '') {
 			throw new Error(`${envVarName}[${index}].assetUnit must be a non-empty string`);

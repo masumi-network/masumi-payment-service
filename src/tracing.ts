@@ -135,7 +135,7 @@ export async function setupTracing() {
 	});
 
 	// Initialize the SDK and register with the OpenTelemetry API
-	await sdk.start();
+	await Promise.resolve(sdk.start());
 
 	logInfo(`🚀 Initializing OpenTelemetry for ${serviceName} v${serviceVersion}`, {
 		component: 'tracing',

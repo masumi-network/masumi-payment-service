@@ -1,10 +1,11 @@
 import { setupTracing } from '@/tracing';
 
-try {
+async function bootstrap() {
 	await setupTracing();
 	await import('@/app');
-} catch (error) {
+}
+
+bootstrap().catch((error: unknown) => {
 	console.error('Failed to bootstrap application', error);
 	process.exitCode = 1;
-	throw error;
-}
+});

@@ -264,10 +264,7 @@ function getRuleAssetLabel(assetUnit: string, network: 'Preprod' | 'Mainnet') {
   return getRuleAssetMeta(assetUnit, network).label;
 }
 
-function getDeleteRuleDialogDescription(
-  rule: LowBalanceRule,
-  network: 'Preprod' | 'Mainnet',
-) {
+function getDeleteRuleDialogDescription(rule: LowBalanceRule, network: 'Preprod' | 'Mainnet') {
   const assetMeta = getRuleAssetMeta(rule.assetUnit, network);
   const lines = [
     `Remove the low-balance rule for ${assetMeta.label}?`,
@@ -1092,9 +1089,7 @@ export function WalletDetailsDialog({
         <DialogContent
           className="sm:max-w-[600px]"
           variant={isChild ? 'slide-from-right' : 'default'}
-          isPushedBack={
-            !!selectedWalletForTopup || !!selectedWalletForSwap || !!pendingDeleteRule
-          }
+          isPushedBack={!!selectedWalletForTopup || !!selectedWalletForSwap || !!pendingDeleteRule}
           hideOverlay={isChild}
           onBack={isChild ? onClose : undefined}
         >
@@ -1228,7 +1223,10 @@ export function WalletDetailsDialog({
                             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                               <div className="flex items-center gap-2 text-sm font-medium text-amber-700 dark:text-amber-400">
                                 <AlertTriangle className="h-4 w-4 shrink-0" />
-                                <span>{getRuleAssetLabel(rule.assetUnit, network)} dropped below threshold</span>
+                                <span>
+                                  {getRuleAssetLabel(rule.assetUnit, network)} dropped below
+                                  threshold
+                                </span>
                               </div>
                               <Badge variant="destructive" className="w-fit">
                                 {formatRuleAmount(rule.lastKnownAmount, rule.assetUnit, network)}
@@ -1301,7 +1299,9 @@ export function WalletDetailsDialog({
                                 <div className="flex items-start justify-between gap-3">
                                   <div className="min-w-0 space-y-1">
                                     <div className="flex flex-wrap items-center gap-2">
-                                      <span className="text-sm font-semibold">{assetMeta.label}</span>
+                                      <span className="text-sm font-semibold">
+                                        {assetMeta.label}
+                                      </span>
                                       <Badge
                                         variant={
                                           !rule.enabled
@@ -1328,7 +1328,11 @@ export function WalletDetailsDialog({
                                     onClick={() => handleDeleteLowBalanceRule(rule)}
                                     disabled={isMutating}
                                   >
-                                    {isMutating ? <Spinner size={12} /> : <X className="h-3.5 w-3.5" />}
+                                    {isMutating ? (
+                                      <Spinner size={12} />
+                                    ) : (
+                                      <X className="h-3.5 w-3.5" />
+                                    )}
                                   </Button>
                                 </div>
 
@@ -1338,7 +1342,11 @@ export function WalletDetailsDialog({
                                       Current
                                     </div>
                                     <div className="mt-1 text-sm font-medium">
-                                      {formatRuleAmount(rule.lastKnownAmount, rule.assetUnit, network)}
+                                      {formatRuleAmount(
+                                        rule.lastKnownAmount,
+                                        rule.assetUnit,
+                                        network,
+                                      )}
                                     </div>
                                   </div>
                                   <div className="rounded-lg border bg-muted/30 px-3 py-2">
@@ -1346,7 +1354,11 @@ export function WalletDetailsDialog({
                                       Threshold
                                     </div>
                                     <div className="mt-1 text-sm font-medium">
-                                      {formatRuleAmount(rule.thresholdAmount, rule.assetUnit, network)}
+                                      {formatRuleAmount(
+                                        rule.thresholdAmount,
+                                        rule.assetUnit,
+                                        network,
+                                      )}
                                     </div>
                                   </div>
                                   <div className="rounded-lg border bg-muted/30 px-3 py-2">
@@ -1354,7 +1366,9 @@ export function WalletDetailsDialog({
                                       Last warning
                                     </div>
                                     <div className="mt-1 text-sm font-medium">
-                                      {rule.lastAlertedAt ? rule.lastAlertedAt.toLocaleString() : 'None'}
+                                      {rule.lastAlertedAt
+                                        ? rule.lastAlertedAt.toLocaleString()
+                                        : 'None'}
                                     </div>
                                   </div>
                                 </div>
@@ -1429,7 +1443,9 @@ export function WalletDetailsDialog({
                                     variant="outline"
                                     className="w-full lg:w-auto"
                                     onClick={() => handleSaveLowBalanceRule(rule)}
-                                    disabled={!hasChanges || isMutating || draftRawThreshold == null}
+                                    disabled={
+                                      !hasChanges || isMutating || draftRawThreshold == null
+                                    }
                                   >
                                     {isMutating ? <Spinner size={16} /> : 'Save'}
                                   </Button>
@@ -1499,9 +1515,14 @@ export function WalletDetailsDialog({
                               placeholder="policyidassetnamehex"
                             />
                             <div className="text-[11px] leading-relaxed text-muted-foreground">
-                              Format: <span className="font-mono text-foreground">policyId + assetNameHex</span>.
-                              Example field shape:{' '}
-                              <span className="font-mono text-foreground">policyidassetnamehex</span>
+                              Format:{' '}
+                              <span className="font-mono text-foreground">
+                                policyId + assetNameHex
+                              </span>
+                              . Example field shape:{' '}
+                              <span className="font-mono text-foreground">
+                                policyidassetnamehex
+                              </span>
                             </div>
                           </div>
 
@@ -1542,7 +1563,7 @@ export function WalletDetailsDialog({
                           <div className="mt-1 font-mono text-sm">
                             {newRuleThresholdInput.trim() === ''
                               ? 'Enter amount'
-                              : newRuleRawThreshold ?? 'Invalid input'}
+                              : (newRuleRawThreshold ?? 'Invalid input')}
                           </div>
                         </div>
                         <div className="rounded-lg border px-3 py-2">

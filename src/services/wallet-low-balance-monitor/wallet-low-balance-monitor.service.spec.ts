@@ -70,10 +70,8 @@ jest.unstable_mockModule('@opentelemetry/api', () => ({
 
 const { HotWalletType, Network } = await import('@/generated/prisma/client');
 const { LowBalanceStatus } = await import('@/generated/prisma/enums');
-const {
-	WalletLowBalanceMonitorService,
-	projectBalanceMapFromUnsignedTx,
-} = await import('./wallet-low-balance-monitor.service');
+const { WalletLowBalanceMonitorService, projectBalanceMapFromUnsignedTx } =
+	await import('./wallet-low-balance-monitor.service');
 const {
 	Address,
 	BigNum,
@@ -268,18 +266,8 @@ describe('WalletLowBalanceMonitorService', () => {
 		inputs.add(TransactionInput.new(TransactionHash.from_bytes(Buffer.from(txHash, 'hex')), 0));
 
 		const outputs = TransactionOutputs.new();
-		outputs.add(
-			TransactionOutput.new(
-				Address.from_bech32(validWalletAddress),
-				Value.new(BigNum.from_str('3500000')),
-			),
-		);
-		outputs.add(
-			TransactionOutput.new(
-				Address.from_bech32(otherAddress),
-				Value.new(BigNum.from_str('5500000')),
-			),
-		);
+		outputs.add(TransactionOutput.new(Address.from_bech32(validWalletAddress), Value.new(BigNum.from_str('3500000'))));
+		outputs.add(TransactionOutput.new(Address.from_bech32(otherAddress), Value.new(BigNum.from_str('5500000'))));
 
 		const unsignedTx = Buffer.from(
 			Transaction.new(

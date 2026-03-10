@@ -18,12 +18,13 @@ const __dirname = path.resolve();
 
 async function initialize() {
 	await initDB();
-	const defaultKey = await prisma.apiKey.findUnique({
-		where: {
-			token: DEFAULTS.DEFAULT_ADMIN_KEY,
-		},
-	});
-	if (defaultKey) {
+	const defaultKeyRows = await prisma.$queryRaw<Array<{ id: string }>>`
+		SELECT "id"
+		FROM "ApiKey"
+		WHERE "token" = ${DEFAULTS.DEFAULT_ADMIN_KEY}
+		LIMIT 1
+	`;
+	if (defaultKeyRows.length > 0) {
 		logger.warn('*****************************************************************');
 		logger.warn(
 			'*  WARNING: The default insecure ADMIN_KEY "' + DEFAULTS.DEFAULT_ADMIN_KEY + '" is in use.           *',

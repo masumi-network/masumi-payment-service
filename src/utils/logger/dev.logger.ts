@@ -5,14 +5,8 @@ import { CONFIG } from '../config';
 const { combine, timestamp, printf, errors } = format;
 const SPLAT = Symbol.for('splat');
 const CAPTURED_SPLAT_ARGS_KEY = '__capturedSplatArgs';
-const DEV_LOGGER_RESERVED_KEYS = new Set([
-	'level',
-	'message',
-	'timestamp',
-	'stack',
-	'error',
-	CAPTURED_SPLAT_ARGS_KEY,
-]);
+const DEV_LOGGER_RESERVED_KEYS = new Set(['level', 'message', 'timestamp', 'stack', 'error', CAPTURED_SPLAT_ARGS_KEY]);
+const ANSI_ESCAPE_PATTERN = new RegExp('\\u001B\\[[0-9;]*m', 'g');
 
 interface LogInfo extends TransformableInfo {
 	level: string;
@@ -23,7 +17,7 @@ interface LogInfo extends TransformableInfo {
 }
 
 // Strip ANSI escape codes that Winston's colorize format injects
-const stripAnsi = (str: string) => str.replace(/\x1B\[[0-9;]*m/g, '');
+const stripAnsi = (str: string) => str.replace(ANSI_ESCAPE_PATTERN, '');
 
 const padAnsi = (value: string, width: number) => {
 	const visibleLength = stripAnsi(value).length;
@@ -154,9 +148,9 @@ const extractInlineError = (info: LogInfo) => {
 };
 
 const captureSplatArgs = format((info: TransformableInfo) => {
-	const splatArgs = (info as TransformableInfo & { [key: symbol]: unknown })[SPLAT];
-	if (Array.isArray(splatArgs) && splatArgs.length > 0) {
-		(info as LogInfo)[CAPTURED_SPLAT_ARGS_KEY] = [...splatArgs];
+	const rawSplatArgs: unknown = (info as TransformableInfo & { [key: symbol]: unknown })[SPLAT];
+	if (Array.isArray(rawSplatArgs) && rawSplatArgs.length > 0) {
+		(info as LogInfo)[CAPTURED_SPLAT_ARGS_KEY] = rawSplatArgs;
 	}
 	return info;
 });

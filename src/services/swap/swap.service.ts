@@ -221,12 +221,13 @@ export async function swapTokens(params: SwapParams, blockfrostApiKey: string): 
 			component: 'swap-service',
 		});
 
+		const unsignedTx = (builtTx as { toString: () => string }).toString();
 		const txHash = await submit();
 		await walletLowBalanceMonitorService.evaluateProjectedHotWalletById({
 			hotWalletId: params.walletId,
 			walletAddress: wallet.address,
 			walletUtxos: walletUtxos as ProjectableLucidLikeUtxo[],
-			unsignedTx: builtTx.toString(),
+			unsignedTx,
 			checkSource: 'submission',
 		});
 

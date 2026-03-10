@@ -459,9 +459,7 @@ export const recordBlockchainJourney = (
 	});
 };
 
-export const recordWalletLowBalanceAlert = (
-	attributes: Record<string, string | number> = {},
-) => {
+export const recordWalletLowBalanceAlert = (attributes: Record<string, string | number> = {}) => {
 	const safeAttrs = filterToAllowlist(attributes, WALLET_LOW_BALANCE_METRIC_ATTRIBUTE_KEYS);
 	getWalletLowBalanceAlertCounter().add(1, safeAttrs);
 };
