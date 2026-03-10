@@ -80,7 +80,7 @@ export default function ApiKeys() {
     let filtered = [...allApiKeys];
 
     // Filter by network first (admin keys have access to all networks)
-    filtered = filtered.filter((key) => key.networkLimit.includes(network) || key.canAdmin);
+    filtered = filtered.filter((key) => key.NetworkLimit.includes(network) || key.canAdmin);
 
     // Then filter by permission tab using flag-based logic
     filtered = filtered.filter((key) => matchesPermissionTab(key, activeTab));
@@ -94,7 +94,7 @@ export default function ApiKeys() {
         const permissionMatch = getPermissionLabel(key).toLowerCase().includes(query) || false;
         const statusMatch = key.status?.toLowerCase().includes(query) || false;
         const networkMatch =
-          key.networkLimit?.some((n) => n.toLowerCase().includes(query)) || false;
+          key.NetworkLimit?.some((n) => n.toLowerCase().includes(query)) || false;
 
         return nameMatch || tokenMatch || permissionMatch || statusMatch || networkMatch;
       });
@@ -271,7 +271,7 @@ export default function ApiKeys() {
                       <td className="p-4 text-sm">{getPermissionLabel(key)}</td>
                       <td className="p-4 text-sm">
                         <div className="flex gap-1">
-                          {key.networkLimit.map((network) => (
+                          {key.NetworkLimit.map((network) => (
                             <span
                               key={network}
                               className="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-100/10 px-2 py-1 text-xs"
