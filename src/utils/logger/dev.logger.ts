@@ -1,5 +1,4 @@
 import { createLogger, format, transports } from 'winston';
-import type { TransformableInfo } from 'logform';
 import { logs } from '@opentelemetry/api-logs';
 import { CONFIG } from '../config';
 const { combine, timestamp, printf, errors } = format;
@@ -9,12 +8,13 @@ const DEV_LOGGER_RESERVED_KEYS = new Set(['level', 'message', 'timestamp', 'stac
 const ANSI_ESCAPE_CHARACTER = String.fromCharCode(27);
 const ANSI_ESCAPE_PATTERN = new RegExp(`${ANSI_ESCAPE_CHARACTER}\\[[0-9;]*m`, 'g');
 
-interface LogInfo extends TransformableInfo {
+interface LogInfo {
 	level: string;
 	message: unknown;
 	error?: unknown;
 	stack?: unknown;
 	[CAPTURED_SPLAT_ARGS_KEY]?: unknown[];
+	[key: string]: unknown;
 }
 
 // Strip ANSI escape codes that Winston's colorize format injects
@@ -148,8 +148,8 @@ const extractInlineError = (info: LogInfo) => {
 	return null;
 };
 
-const captureSplatArgs = format((info: TransformableInfo) => {
-	const rawSplatArgs: unknown = (info as TransformableInfo & { [key: symbol]: unknown })[SPLAT];
+const captureSplatArgs = format((info) => {
+	const rawSplatArgs: unknown = (info as LogInfo & { [key: symbol]: unknown })[SPLAT];
 	if (Array.isArray(rawSplatArgs) && rawSplatArgs.length > 0) {
 		(info as LogInfo)[CAPTURED_SPLAT_ARGS_KEY] = rawSplatArgs;
 	}
@@ -216,8 +216,8 @@ function buildDevLogger() {
 		const shouldShowSupplementaryDetails = ['warn', 'error', 'fatal'].includes(rawLevel);
 		const timestamp = String(info.timestamp);
 		const lines = [`${timestamp} ${separator} ${paddedLevelBadge} ${separator} ${String(info.message)}`];
-		const metadata = collectMetadata(info);
-		const error = extractInlineError(info);
+		const metadata = collectMetadata(info as LogInfo);
+		const error = extractInlineError(info as LogInfo);
 
 		if (shouldShowSupplementaryDetails && metadata) {
 			lines.push(...buildIndentedBlock(timestamp, 'Meta', metadata));

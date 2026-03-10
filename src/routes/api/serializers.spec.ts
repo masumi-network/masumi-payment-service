@@ -119,6 +119,7 @@ describe('route serializers', () => {
 					walletAddress: 'selling-address',
 					collectionAddress: null,
 					note: 'selling',
+					LowBalanceRules: [],
 				},
 				{
 					id: 'wallet-purchasing',
@@ -127,6 +128,7 @@ describe('route serializers', () => {
 					walletAddress: 'purchasing-address',
 					collectionAddress: null,
 					note: 'purchasing',
+					LowBalanceRules: [],
 				},
 			],
 		} as unknown as Parameters<typeof serializePaymentSourceEntry>[0];

@@ -747,13 +747,13 @@ export function WalletDetailsDialog({
       setNewRuleCustomAssetUnit('');
       setNewRuleThresholdInput('');
       setNewRuleEnabled(true);
-      fetchTokenBalances();
-      void refreshWalletDetails();
+      fetchTokenBalancesRef.current?.();
+      fetchWalletDetailsRef.current?.();
       if (network === 'Mainnet') {
         fetchSwapTransactions();
       }
     }
-  }, [isOpen, refreshWalletDetails, wallet?.walletAddress]);
+  }, [isOpen, wallet?.walletAddress]);
 
   const usdmConfig = getUsdmConfig(network);
 

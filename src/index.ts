@@ -6,7 +6,7 @@ export async function bootstrap() {
 	await startApp();
 }
 
-if (process.env.NODE_ENV !== 'test') {
+if (process.env.JEST_WORKER_ID == null) {
 	bootstrap().catch((error: unknown) => {
 		console.error('Failed to bootstrap application', error);
 		process.exitCode = 1;
