@@ -7,16 +7,16 @@ import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/Wal
 import formatBalance from '@/lib/formatBalance';
 import { CopyButton } from '@/components/ui/copy-button';
 import {
-  PaymentSourceExtended,
   postRegistryDeregister,
   RegistryEntry,
+  A2aRegistryEntry,
   deleteRegistry,
 } from '@/lib/api/generated';
 
 import { Separator } from '@/components/ui/separator';
 import { Link2, Trash2 } from 'lucide-react';
 import { Button } from '../ui/button';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { toast } from 'react-toastify';
@@ -25,9 +25,8 @@ import { AgentEarningsOverview } from './AgentEarningsOverview';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { extractApiErrorMessage } from '@/lib/api-error';
 import { findPaymentSourceWalletByVkey } from '@/lib/wallet-lookup';
-import { useMemo } from 'react';
 
-type AIAgent = RegistryEntry;
+type AIAgent = RegistryEntry | A2aRegistryEntry;
 
 interface AIAgentDetailsDialogProps {
   agent: AIAgent | null;
@@ -108,6 +107,7 @@ export function AIAgentDetailsDialog({
 
   const handleDelete = useCallback(async () => {
     if (agent?.state === 'RegistrationFailed' || agent?.state === 'DeregistrationConfirmed') {
+      setIsDeleting(true);
       await handleApiCall(
         () =>
           deleteRegistry({
@@ -214,7 +214,7 @@ export function AIAgentDetailsDialog({
                 <div className="flex items-center gap-2">
                   <DialogTitle>{agent.name}</DialogTitle>
                   <Badge variant="outline" className="text-xs font-mono">
-                    {agent.metadataVersion === 2 ? 'A2A' : 'Standard'}
+                    {'agentCardUrl' in agent ? 'A2A' : 'Standard'}
                   </Badge>
                 </div>
               </DialogHeader>
@@ -293,7 +293,7 @@ export function AIAgentDetailsDialog({
                     )}
 
                     {/* ── A2A-specific sections ─────────────────────────── */}
-                    {agent.metadataVersion === 2 && (
+                    {'agentCardUrl' in agent && (
                       <>
                         {/* Agent Card URL */}
                         {agent.agentCardUrl && (
@@ -489,7 +489,7 @@ export function AIAgentDetailsDialog({
                     </Card>
 
                     {/* ── Standard-only sections ────────────────────────── */}
-                    {agent.metadataVersion !== 2 && (
+                    {!('agentCardUrl' in agent) && (
                       <>
                         {/* Pricing */}
                         <Card>

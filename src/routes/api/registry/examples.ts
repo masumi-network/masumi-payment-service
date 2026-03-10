@@ -1,6 +1,6 @@
 import { PricingType, RegistrationState } from '@/generated/prisma/client';
 import { z } from '@/utils/zod-openapi';
-import { registerAgentSchemaOutput } from './schemas';
+import { a2aRegistryRequestOutputSchema, registerAgentSchemaOutput } from './schemas';
 
 export const registryEntryExample = {
 	error: null,
@@ -33,18 +33,6 @@ export const registryEntryExample = {
 		},
 	],
 	agentIdentifier: 'policy_id_asset_name_policy_id_asset_name_policy_id_asset_name',
-	metadataVersion: 1,
-	agentCardUrl: null,
-	a2aProtocolVersions: [],
-	a2aAgentVersion: null,
-	a2aDefaultInputModes: [],
-	a2aDefaultOutputModes: [],
-	a2aProviderName: null,
-	a2aProviderUrl: null,
-	a2aDocumentationUrl: null,
-	a2aIconUrl: null,
-	a2aCapabilitiesStreaming: null,
-	a2aCapabilitiesPushNotifications: null,
 	AgentPricing: {
 		pricingType: PricingType.Fixed,
 		Pricing: [
@@ -60,3 +48,36 @@ export const registryEntryExample = {
 	},
 	CurrentTransaction: null,
 } satisfies z.infer<typeof registerAgentSchemaOutput>;
+
+export const a2aRegistryEntryExample = {
+	error: null,
+	id: 'a2a_registry_id',
+	name: 'My A2A Agent',
+	description: 'An A2A-capable AI agent',
+	apiBaseUrl: 'https://api.example.com',
+	agentCardUrl: 'https://api.example.com/.well-known/agent-card.json',
+	a2aProtocolVersions: ['0.2.5'],
+	a2aAgentVersion: '1.0.0',
+	a2aDefaultInputModes: ['text/plain'],
+	a2aDefaultOutputModes: ['text/plain'],
+	a2aProviderName: 'Example Provider',
+	a2aProviderUrl: 'https://example.com',
+	a2aDocumentationUrl: null,
+	a2aIconUrl: null,
+	a2aCapabilitiesStreaming: false,
+	a2aCapabilitiesPushNotifications: false,
+	state: RegistrationState.RegistrationRequested,
+	Tags: ['a2a', 'agent'],
+	createdAt: new Date(1713636260),
+	updatedAt: new Date(1713636260),
+	lastCheckedAt: null,
+	agentIdentifier: 'policy_id_asset_name_policy_id_asset_name_policy_id_asset_name',
+	AgentPricing: {
+		pricingType: PricingType.Free,
+	},
+	SmartContractWallet: {
+		walletVkey: 'wallet_vkey',
+		walletAddress: 'wallet_address',
+	},
+	CurrentTransaction: null,
+} satisfies z.infer<typeof a2aRegistryRequestOutputSchema>;

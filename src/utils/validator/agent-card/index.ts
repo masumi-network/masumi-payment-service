@@ -4,10 +4,7 @@ import { logger } from '@/utils/logger';
 import { timedFetch } from '@/utils/timed-fetch';
 import net from 'net';
 
-function isPrivateIp(ip: string): boolean {
-	if (ip === '::1' || ip === '0:0:0:0:0:0:0:1') return true;
-	const parts = ip.split('.').map(Number);
-	if (parts.length !== 4) return false;
+function isPrivateIpv4(parts: number[]): boolean {
 	const [a, b] = parts;
 	return (
 		a === 127 || // 127.x.x.x loopback
@@ -18,6 +15,27 @@ function isPrivateIp(ip: string): boolean {
 		a === 0 || // 0.x.x.x
 		(a === 100 && b >= 64 && b <= 127) // 100.64-127.x.x shared address space
 	);
+}
+
+function isPrivateIp(ip: string): boolean {
+	// IPv6 loopback
+	if (ip === '::1' || ip === '0:0:0:0:0:0:0:1') return true;
+	// IPv6 unspecified
+	if (ip === '::' || ip === '0:0:0:0:0:0:0:0') return true;
+	// IPv4-mapped IPv6 (::ffff:x.x.x.x) — extract and check the IPv4 part
+	const ipv4MappedMatch = ip.match(/^::ffff:([\d.]+)$/i);
+	if (ipv4MappedMatch) {
+		const parts = ipv4MappedMatch[1].split('.').map(Number);
+		if (parts.length === 4) return isPrivateIpv4(parts);
+	}
+	// IPv6 unique-local (fc00::/7 — starts with fc or fd)
+	if (/^f[cd]/i.test(ip)) return true;
+	// IPv6 link-local (fe80::/10 — starts with fe8, fe9, fea, feb)
+	if (/^fe[89ab]/i.test(ip)) return true;
+	// Pure IPv4
+	const parts = ip.split('.').map(Number);
+	if (parts.length !== 4) return false;
+	return isPrivateIpv4(parts);
 }
 
 function assertPublicHttpsUrl(rawUrl: string): void {
@@ -42,8 +60,8 @@ function assertPublicHttpsUrl(rawUrl: string): void {
 export const agentCardSchema = z.object({
 	protocolVersions: z.array(z.string().min(1)).min(1),
 	name: z.string(),
-	description: z.string(),
-	version: z.string(),
+	description: z.string().optional(),
+	version: z.string().optional(),
 	supportedInterfaces: z
 		.array(
 			z.object({
@@ -86,14 +104,14 @@ export const agentCardSchema = z.object({
 			z.object({
 				id: z.string(),
 				name: z.string(),
-				description: z.string(),
+				description: z.string().optional(),
 				tags: z.array(z.string()),
 				examples: z.array(z.string()).optional(),
 				inputModes: z.array(z.string()),
 				outputModes: z.array(z.string()),
 			}),
 		)
-		.min(1),
+		.optional(),
 });
 
 export type AgentCard = z.infer<typeof agentCardSchema>;

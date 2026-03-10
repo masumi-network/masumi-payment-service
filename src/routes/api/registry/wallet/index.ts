@@ -428,7 +428,6 @@ export const queryAgentFromWalletGet = readAuthenticatedEndpointFactory.build({
 				assetName: extractAssetName(asset.unit),
 				agentIdentifier: asset.unit,
 				Metadata: asset.Metadata,
-				Tags: asset.Metadata.Tags,
 			})),
 		};
 	},

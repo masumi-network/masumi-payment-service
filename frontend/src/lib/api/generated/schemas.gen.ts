@@ -2117,71 +2117,6 @@ export const RegistryEntrySchema = {
             maxLength: 250,
             description: 'Full agent identifier (policy ID + asset name). Null if not yet minted'
         },
-        metadataVersion: {
-            type: 'integer',
-            description: 'Metadata version: 1 = standard MIP-002, 2 = MIP-002-A2A'
-        },
-        agentCardUrl: {
-            type: 'string',
-            nullable: true,
-            description: 'Agent Card URL for A2A agents. Null for standard agents'
-        },
-        a2aProtocolVersions: {
-            type: 'array',
-            items: {
-                type: 'string'
-            },
-            description: 'A2A protocol versions. Empty for standard agents'
-        },
-        a2aAgentVersion: {
-            type: 'string',
-            nullable: true,
-            description: 'Agent version from Agent Card. Null for standard agents'
-        },
-        a2aDefaultInputModes: {
-            type: 'array',
-            items: {
-                type: 'string'
-            },
-            description: 'A2A default input MIME types. Empty for standard agents'
-        },
-        a2aDefaultOutputModes: {
-            type: 'array',
-            items: {
-                type: 'string'
-            },
-            description: 'A2A default output MIME types. Empty for standard agents'
-        },
-        a2aProviderName: {
-            type: 'string',
-            nullable: true,
-            description: 'Agent Card provider name. Null for standard agents'
-        },
-        a2aProviderUrl: {
-            type: 'string',
-            nullable: true,
-            description: 'Agent Card provider URL. Null for standard agents'
-        },
-        a2aDocumentationUrl: {
-            type: 'string',
-            nullable: true,
-            description: 'Agent Card documentation URL. Null for standard agents'
-        },
-        a2aIconUrl: {
-            type: 'string',
-            nullable: true,
-            description: 'Agent Card icon URL. Null for standard agents'
-        },
-        a2aCapabilitiesStreaming: {
-            type: 'boolean',
-            nullable: true,
-            description: 'Streaming capability. Null for standard agents'
-        },
-        a2aCapabilitiesPushNotifications: {
-            type: 'boolean',
-            nullable: true,
-            description: 'Push notification capability. Null for standard agents'
-        },
         AgentPricing: {
             anyOf: [
                 {
@@ -2326,9 +2261,283 @@ export const RegistryEntrySchema = {
         'lastCheckedAt',
         'ExampleOutputs',
         'agentIdentifier',
-        'metadataVersion',
+        'AgentPricing',
+        'SmartContractWallet',
+        'CurrentTransaction'
+    ]
+} as const;
+
+export const A2ARegistryEntrySchema = {
+    type: 'object',
+    properties: {
+        error: {
+            type: 'string',
+            nullable: true,
+            description: 'Error message if registration failed. Null if no error'
+        },
+        id: {
+            type: 'string',
+            description: 'Unique identifier for the A2A registry request'
+        },
+        name: {
+            type: 'string',
+            description: 'Name of the agent'
+        },
+        description: {
+            type: 'string',
+            nullable: true,
+            description: 'Description of the agent. Null if not provided'
+        },
+        apiBaseUrl: {
+            type: 'string',
+            description: 'Base URL of the agent API for interactions'
+        },
+        agentCardUrl: {
+            type: 'string',
+            description: 'URL to the Agent Card JSON'
+        },
+        a2aProtocolVersions: {
+            type: 'array',
+            items: {
+                type: 'string'
+            },
+            description: 'A2A protocol versions supported by this agent'
+        },
+        Tags: {
+            type: 'array',
+            items: {
+                type: 'string'
+            },
+            description: 'List of tags categorizing the agent'
+        },
+        state: {
+            type: 'string',
+            enum: [
+                'RegistrationRequested',
+                'RegistrationInitiated',
+                'RegistrationConfirmed',
+                'RegistrationFailed',
+                'DeregistrationRequested',
+                'DeregistrationInitiated',
+                'DeregistrationConfirmed',
+                'DeregistrationFailed'
+            ],
+            description: 'Current state of the registration process'
+        },
+        createdAt: {
+            type: 'string',
+            format: 'date-time',
+            description: 'Timestamp when the registry request was created'
+        },
+        updatedAt: {
+            type: 'string',
+            format: 'date-time',
+            description: 'Timestamp when the registry request was last updated'
+        },
+        lastCheckedAt: {
+            type: 'string',
+            nullable: true,
+            format: 'date-time',
+            description: 'Timestamp when the registry was last checked. Null if never checked'
+        },
+        agentIdentifier: {
+            type: 'string',
+            nullable: true,
+            minLength: 57,
+            maxLength: 250,
+            description: 'Full agent identifier (policy ID + asset name). Null if not yet minted'
+        },
+        a2aAgentVersion: {
+            type: 'string',
+            nullable: true,
+            description: 'Agent version from Agent Card. Null if not fetched'
+        },
+        a2aDefaultInputModes: {
+            type: 'array',
+            items: {
+                type: 'string'
+            },
+            description: 'Default input MIME types from Agent Card'
+        },
+        a2aDefaultOutputModes: {
+            type: 'array',
+            items: {
+                type: 'string'
+            },
+            description: 'Default output MIME types from Agent Card'
+        },
+        a2aProviderName: {
+            type: 'string',
+            nullable: true,
+            description: 'Provider name from Agent Card. Null if not provided'
+        },
+        a2aProviderUrl: {
+            type: 'string',
+            nullable: true,
+            description: 'Provider URL from Agent Card. Null if not provided'
+        },
+        a2aDocumentationUrl: {
+            type: 'string',
+            nullable: true,
+            description: 'Documentation URL from Agent Card. Null if not provided'
+        },
+        a2aIconUrl: {
+            type: 'string',
+            nullable: true,
+            description: 'Icon URL from Agent Card. Null if not provided'
+        },
+        a2aCapabilitiesStreaming: {
+            type: 'boolean',
+            nullable: true,
+            description: 'Streaming capability. Null if not fetched'
+        },
+        a2aCapabilitiesPushNotifications: {
+            type: 'boolean',
+            nullable: true,
+            description: 'Push notification capability. Null if not fetched'
+        },
+        AgentPricing: {
+            anyOf: [
+                {
+                    type: 'object',
+                    properties: {
+                        pricingType: {
+                            type: 'string',
+                            enum: [
+                                'Fixed'
+                            ],
+                            description: 'Pricing type for the agent '
+                        },
+                        Pricing: {
+                            type: 'array',
+                            items: {
+                                type: 'object',
+                                properties: {
+                                    amount: {
+                                        type: 'string',
+                                        description: 'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)'
+                                    },
+                                    unit: {
+                                        type: 'string',
+                                        maxLength: 250,
+                                        description: 'Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)'
+                                    }
+                                },
+                                required: [
+                                    'amount',
+                                    'unit'
+                                ]
+                            },
+                            minItems: 1,
+                            description: 'List of assets and amounts for fixed pricing'
+                        }
+                    },
+                    required: [
+                        'pricingType',
+                        'Pricing'
+                    ]
+                },
+                {
+                    type: 'object',
+                    properties: {
+                        pricingType: {
+                            type: 'string',
+                            enum: [
+                                'Free'
+                            ],
+                            description: 'Pricing type for the agent '
+                        }
+                    },
+                    required: [
+                        'pricingType'
+                    ]
+                }
+            ],
+            description: 'Pricing information for the agent'
+        },
+        SmartContractWallet: {
+            type: 'object',
+            properties: {
+                walletVkey: {
+                    type: 'string',
+                    description: 'Payment key hash of the smart contract wallet'
+                },
+                walletAddress: {
+                    type: 'string',
+                    description: 'Cardano address of the smart contract wallet'
+                }
+            },
+            required: [
+                'walletVkey',
+                'walletAddress'
+            ],
+            description: 'Smart contract wallet managing this agent registration'
+        },
+        CurrentTransaction: {
+            type: 'object',
+            nullable: true,
+            properties: {
+                txHash: {
+                    type: 'string',
+                    nullable: true,
+                    description: 'Cardano transaction hash'
+                },
+                status: {
+                    type: 'string',
+                    enum: [
+                        'Pending',
+                        'Confirmed',
+                        'FailedViaTimeout',
+                        'FailedViaManualReset',
+                        'RolledBack'
+                    ],
+                    description: 'Current status of the transaction'
+                },
+                confirmations: {
+                    type: 'number',
+                    nullable: true,
+                    description: 'Number of block confirmations for this transaction. Null if not yet confirmed'
+                },
+                fees: {
+                    type: 'string',
+                    nullable: true,
+                    description: 'Fees of the transaction'
+                },
+                blockHeight: {
+                    type: 'number',
+                    nullable: true,
+                    description: 'Block height of the transaction'
+                },
+                blockTime: {
+                    type: 'number',
+                    nullable: true,
+                    description: 'Block time of the transaction'
+                }
+            },
+            required: [
+                'txHash',
+                'status',
+                'confirmations',
+                'fees',
+                'blockHeight',
+                'blockTime'
+            ]
+        }
+    },
+    required: [
+        'error',
+        'id',
+        'name',
+        'description',
+        'apiBaseUrl',
         'agentCardUrl',
         'a2aProtocolVersions',
+        'Tags',
+        'state',
+        'createdAt',
+        'updatedAt',
+        'lastCheckedAt',
+        'agentIdentifier',
         'a2aAgentVersion',
         'a2aDefaultInputModes',
         'a2aDefaultOutputModes',

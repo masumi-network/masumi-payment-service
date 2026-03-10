@@ -46,8 +46,9 @@ import {
 	paymentSourceExtendedExample,
 	updatePaymentSourceExtendedBodyExample,
 } from '@/routes/api/payment-source-extended/examples';
-import { registryEntryExample } from '@/routes/api/registry/examples';
+import { a2aRegistryEntryExample, registryEntryExample } from '@/routes/api/registry/examples';
 import { registerA2AAgentSchemaInput, registerA2AAgentSchemaOutput } from '@/routes/api/registry/a2a';
+import { queryA2ARegistryRequestSchemaOutput } from '@/routes/api/registry/schemas';
 import { successResponse, type SwaggerRegistrarContext } from '../shared';
 
 export function registerRegistrySupportPaths({ registry, apiKeyAuth }: SwaggerRegistrarContext) {
@@ -1356,14 +1357,7 @@ export function registerRegistrySupportPaths({ registry, apiKeyAuth }: SwaggerRe
 			},
 		},
 		responses: {
-			200: successResponse('A2A agent registered', registerA2AAgentSchemaOutput, {
-				...registryEntryExample,
-				metadataVersion: 2,
-				agentCardUrl: 'https://api.example.com/.well-known/agent-card.json',
-				a2aProtocolVersions: ['0.2.5'],
-				Author: { name: '', contactEmail: null, contactOther: null, organization: null },
-				AgentPricing: { pricingType: PricingType.Free },
-			}),
+			200: successResponse('A2A agent registered', registerA2AAgentSchemaOutput, a2aRegistryEntryExample),
 			400: {
 				description: 'Bad Request (invalid input or Agent Card validation failed)',
 			},
@@ -1375,6 +1369,45 @@ export function registerRegistrySupportPaths({ registry, apiKeyAuth }: SwaggerRe
 			},
 			500: {
 				description: 'Internal Server Error',
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'get',
+		path: '/registry/a2a',
+		description: 'Gets the A2A agent metadata.',
+		summary: 'List every A2A agent recorded in the Masumi Registry. (READ access required)',
+		tags: ['registry'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			query: queryRegistryRequestSchemaInput.openapi({
+				example: {
+					network: Network.Preprod,
+					cursorId: 'cursor_id',
+				},
+			}),
+		},
+		responses: {
+			200: {
+				description: 'A2A agent metadata',
+				content: {
+					'application/json': {
+						schema: z
+							.object({
+								status: z.string(),
+								data: queryA2ARegistryRequestSchemaOutput,
+							})
+							.openapi({
+								example: {
+									status: 'Success',
+									data: {
+										Assets: [a2aRegistryEntryExample],
+									},
+								},
+							}),
+					},
+				},
 			},
 		},
 	});

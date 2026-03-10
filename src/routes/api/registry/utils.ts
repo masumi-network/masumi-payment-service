@@ -21,20 +21,7 @@ export type RegistryRequestWithIncludes = {
 	createdAt: Date;
 	updatedAt: Date;
 	lastCheckedAt: Date | null;
-	metadataVersion: number;
 	paymentType: PaymentType;
-	// A2A fields:
-	agentCardUrl: string | null;
-	a2aProtocolVersions: string[];
-	a2aAgentVersion: string | null;
-	a2aDefaultInputModes: string[];
-	a2aDefaultOutputModes: string[];
-	a2aProviderName: string | null;
-	a2aProviderUrl: string | null;
-	a2aDocumentationUrl: string | null;
-	a2aIconUrl: string | null;
-	a2aCapabilitiesStreaming: boolean | null;
-	a2aCapabilitiesPushNotifications: boolean | null;
 	Pricing: {
 		pricingType: PricingType;
 		FixedPricing: {
@@ -56,18 +43,6 @@ export type RegistryRequestWithIncludes = {
 export function mapRegistryRequestToOutput(item: RegistryRequestWithIncludes) {
 	return {
 		...item,
-		metadataVersion: item.metadataVersion,
-		agentCardUrl: item.agentCardUrl ?? null,
-		a2aProtocolVersions: item.a2aProtocolVersions ?? [],
-		a2aAgentVersion: item.a2aAgentVersion ?? null,
-		a2aDefaultInputModes: item.a2aDefaultInputModes ?? [],
-		a2aDefaultOutputModes: item.a2aDefaultOutputModes ?? [],
-		a2aProviderName: item.a2aProviderName ?? null,
-		a2aProviderUrl: item.a2aProviderUrl ?? null,
-		a2aDocumentationUrl: item.a2aDocumentationUrl ?? null,
-		a2aIconUrl: item.a2aIconUrl ?? null,
-		a2aCapabilitiesStreaming: item.a2aCapabilitiesStreaming ?? null,
-		a2aCapabilitiesPushNotifications: item.a2aCapabilitiesPushNotifications ?? null,
 		Capability: {
 			name: item.capabilityName,
 			version: item.capabilityVersion,
@@ -99,6 +74,96 @@ export function mapRegistryRequestToOutput(item: RegistryRequestWithIncludes) {
 			? {
 					...item.CurrentTransaction,
 					fees: item.CurrentTransaction.fees?.toString() ?? null,
+				}
+			: null,
+	};
+}
+
+export type A2ARegistryRequestWithIncludes = {
+	id: string;
+	name: string;
+	description: string | null;
+	apiBaseUrl: string;
+	agentCardUrl: string;
+	a2aProtocolVersions: string[];
+	a2aAgentVersion: string | null;
+	a2aDefaultInputModes: string[];
+	a2aDefaultOutputModes: string[];
+	a2aProviderName: string | null;
+	a2aProviderUrl: string | null;
+	a2aDocumentationUrl: string | null;
+	a2aIconUrl: string | null;
+	a2aCapabilitiesStreaming: boolean | null;
+	a2aCapabilitiesPushNotifications: boolean | null;
+	state: RegistrationState;
+	tags: string[];
+	agentIdentifier: string | null;
+	error: string | null;
+	createdAt: Date;
+	updatedAt: Date;
+	lastCheckedAt: Date | null;
+	paymentType: PaymentType;
+	Pricing: {
+		pricingType: PricingType;
+		FixedPricing: {
+			Amounts: Array<{ unit: string; amount: bigint }>;
+		} | null;
+	};
+	SmartContractWallet: { walletVkey: string; walletAddress: string };
+	CurrentTransaction: {
+		txHash: string | null;
+		status: TransactionStatus;
+		confirmations: number | null;
+		fees: bigint | null;
+		blockHeight: number | null;
+		blockTime: number | null;
+	} | null;
+};
+
+export function mapA2ARegistryRequestToOutput(item: A2ARegistryRequestWithIncludes) {
+	return {
+		id: item.id,
+		name: item.name,
+		description: item.description,
+		apiBaseUrl: item.apiBaseUrl,
+		agentCardUrl: item.agentCardUrl,
+		a2aProtocolVersions: item.a2aProtocolVersions,
+		a2aAgentVersion: item.a2aAgentVersion,
+		a2aDefaultInputModes: item.a2aDefaultInputModes,
+		a2aDefaultOutputModes: item.a2aDefaultOutputModes,
+		a2aProviderName: item.a2aProviderName,
+		a2aProviderUrl: item.a2aProviderUrl,
+		a2aDocumentationUrl: item.a2aDocumentationUrl,
+		a2aIconUrl: item.a2aIconUrl,
+		a2aCapabilitiesStreaming: item.a2aCapabilitiesStreaming,
+		a2aCapabilitiesPushNotifications: item.a2aCapabilitiesPushNotifications,
+		state: item.state,
+		Tags: item.tags,
+		agentIdentifier: item.agentIdentifier,
+		error: item.error,
+		createdAt: item.createdAt,
+		updatedAt: item.updatedAt,
+		lastCheckedAt: item.lastCheckedAt,
+		AgentPricing:
+			item.Pricing.pricingType === PricingType.Fixed
+				? {
+						pricingType: PricingType.Fixed,
+						Pricing:
+							item.Pricing.FixedPricing?.Amounts.map((p) => ({
+								unit: p.unit,
+								amount: p.amount.toString(),
+							})) ?? [],
+					}
+				: { pricingType: PricingType.Free },
+		SmartContractWallet: item.SmartContractWallet,
+		CurrentTransaction: item.CurrentTransaction
+			? {
+					txHash: item.CurrentTransaction.txHash,
+					status: item.CurrentTransaction.status,
+					confirmations: item.CurrentTransaction.confirmations,
+					fees: item.CurrentTransaction.fees?.toString() ?? null,
+					blockHeight: item.CurrentTransaction.blockHeight,
+					blockTime: item.CurrentTransaction.blockTime,
 				}
 			: null,
 	};

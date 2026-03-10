@@ -86,6 +86,7 @@ model HotWallet {
   PaymentRequest           PaymentRequest[]
   PurchaseRequest          PurchaseRequest[]
   RegistryRequest          RegistryRequest[]
+  A2ARegistryRequest       A2ARegistryRequest[]
   apiKeyWalletScopes       ApiKeyWalletScope[]
   LimitedPurchaseRequests  PurchaseRequest[]   @relation("HotWalletLimit")
 }
@@ -115,6 +116,7 @@ model Transaction {
   PaymentRequestCurrent    PaymentRequest?   @relation("CurrentPaymentTransaction")
   PurchaseRequestCurrent   PurchaseRequest?  @relation("CurrentPurchaseTransaction")
   RegistryRequest          RegistryRequest[]
+  A2ARegistryRequest       A2ARegistryRequest[]
   PaymentRequestHistory    PaymentRequest?   @relation("PaymentTransactionHistory", fields: [paymentRequestHistoryId], references: [id])
   PurchaseRequestHistory   PurchaseRequest?  @relation("PurchaseTransactionHistory", fields: [purchaseRequestHistoryId], references: [id])
 }
@@ -185,20 +187,8 @@ model RegistryRequest {
   authorContactEmail             String?
   authorContactOther             String?
   authorOrganization             String?
-  metadataVersion                Int
   tags                           String[]
   agentPricingId                 String            @unique
-  agentCardUrl                   String?
-  a2aProtocolVersions            String[]  @default([])
-  a2aAgentVersion                String?
-  a2aDefaultInputModes           String[]  @default([])
-  a2aDefaultOutputModes          String[]  @default([])
-  a2aProviderName                String?
-  a2aProviderUrl                 String?
-  a2aDocumentationUrl            String?
-  a2aIconUrl                     String?
-  a2aCapabilitiesStreaming        Boolean?
-  a2aCapabilitiesPushNotifications Boolean?
   agentIdentifier                String?           @unique
   state                          RegistrationState
   registrationStateLastChangedAt DateTime          @default(now())
@@ -223,6 +213,41 @@ model ExampleOutput {
   RegistryRequest   RegistryRequest? @relation(fields: [registryRequestId], references: [id])
 }
 
+model A2ARegistryRequest {
+  id                               String            @id @default(cuid())
+  createdAt                        DateTime          @default(now())
+  updatedAt                        DateTime          @updatedAt
+  lastCheckedAt                    DateTime?
+  paymentSourceId                  String
+  smartContractWalletId            String
+  name                             String
+  description                      String?
+  apiBaseUrl                       String
+  agentCardUrl                     String
+  a2aProtocolVersions              String[]          @default([])
+  tags                             String[]          @default([])
+  agentPricingId                   String            @unique
+  a2aAgentVersion                  String?
+  a2aDefaultInputModes             String[]          @default([])
+  a2aDefaultOutputModes            String[]          @default([])
+  a2aProviderName                  String?
+  a2aProviderUrl                   String?
+  a2aDocumentationUrl              String?
+  a2aIconUrl                       String?
+  a2aCapabilitiesStreaming          Boolean?
+  a2aCapabilitiesPushNotifications  Boolean?
+  agentIdentifier                  String?           @unique
+  state                            RegistrationState
+  registrationStateLastChangedAt   DateTime          @default(now())
+  currentTransactionId             String?
+  error                            String?
+  paymentType                      PaymentType       @default(Web3CardanoV1)
+  Pricing                          AgentPricing      @relation(fields: [agentPricingId], references: [id])
+  CurrentTransaction               Transaction?      @relation(fields: [currentTransactionId], references: [id])
+  PaymentSource                    PaymentSource     @relation(fields: [paymentSourceId], references: [id])
+  SmartContractWallet              HotWallet         @relation(fields: [smartContractWalletId], references: [id])
+}
+
 model AgentPricing {
   id                  String             @id @default(cuid())
   createdAt           DateTime           @default(now())
@@ -231,6 +256,7 @@ model AgentPricing {
   agentFixedPricingId String?            @unique
   FixedPricing        AgentFixedPricing? @relation(fields: [agentFixedPricingId], references: [id])
   RegistryRequest     RegistryRequest?
+  A2ARegistryRequest  A2ARegistryRequest?
 }
 
 model AgentFixedPricing {
@@ -409,6 +435,7 @@ model PaymentSource {
   PaymentSourceIdentifiers PaymentSourceIdentifiers[]
   PurchaseRequests         PurchaseRequest[]          @relation("PurchaseRequestPaymentSource")
   RegistryRequest          RegistryRequest[]
+  A2ARegistryRequest       A2ARegistryRequest[]
   WalletBases              WalletBase[]
   WebhookEndpoints         WebhookEndpoint[]
 

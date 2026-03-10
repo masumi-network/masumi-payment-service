@@ -1,14 +1,21 @@
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
+import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import { z } from '@/utils/zod-openapi';
 import { HotWalletType, Network, PaymentType, PricingType, RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
-import { DEFAULTS } from '@/utils/config';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { fetchAndValidateAgentCard, AgentCard } from '@/utils/validator/agent-card';
-import { registryRequestOutputSchema } from '@/routes/api/registry';
-import { mapRegistryRequestToOutput } from '@/routes/api/registry/utils';
+import {
+	a2aRegistryRequestOutputSchema,
+	FilterStatus,
+	queryA2ARegistryRequestSchemaOutput,
+	queryRegistryRequestSchemaInput,
+} from '@/routes/api/registry/schemas';
+import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
+import { mapA2ARegistryRequestToOutput } from '@/routes/api/registry/utils';
 import { recordBusinessEndpointError } from '@/utils/metrics';
+import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 
 export const registerA2AAgentSchemaInput = z.object({
 	network: z.nativeEnum(Network).describe('The Cardano network used to register the agent on'),
@@ -30,7 +37,7 @@ export const registerA2AAgentSchemaInput = z.object({
 		.describe('Skip fetching and validating the Agent Card URL. Use with caution.'),
 });
 
-export const registerA2AAgentSchemaOutput = registryRequestOutputSchema;
+export const registerA2AAgentSchemaOutput = a2aRegistryRequestOutputSchema;
 
 export const registerA2AAgentPost = payAuthenticatedEndpointFactory.build({
 	method: 'post',
@@ -77,6 +84,7 @@ export const registerA2AAgentPost = payAuthenticatedEndpointFactory.build({
 				);
 				throw createHttpError(404, 'Network and Address combination not supported');
 			}
+			assertHotWalletInScope(ctx.walletScopeIds, sellingWallet.id);
 
 			// Fetch and validate the Agent Card unless explicitly skipped
 			let agentCard: AgentCard | null = null;
@@ -84,17 +92,13 @@ export const registerA2AAgentPost = payAuthenticatedEndpointFactory.build({
 				agentCard = await fetchAndValidateAgentCard(input.agentCardUrl, input.a2aProtocolVersions);
 			}
 
-			const result = await prisma.registryRequest.create({
+			const result = await prisma.a2ARegistryRequest.create({
 				data: {
 					name: input.name,
 					description: input.description ?? null,
 					apiBaseUrl: input.apiBaseUrl,
-
-					// A2A on-chain fields:
 					agentCardUrl: input.agentCardUrl,
 					a2aProtocolVersions: input.a2aProtocolVersions,
-
-					// A2A Agent Card data (populated when card was fetched; null/[] when skipped):
 					a2aAgentVersion: agentCard?.version ?? null,
 					a2aDefaultInputModes: agentCard?.defaultInputModes ?? [],
 					a2aDefaultOutputModes: agentCard?.defaultOutputModes ?? [],
@@ -104,27 +108,12 @@ export const registerA2AAgentPost = payAuthenticatedEndpointFactory.build({
 					a2aIconUrl: agentCard?.iconUrl ?? null,
 					a2aCapabilitiesStreaming: agentCard?.capabilities?.streaming ?? null,
 					a2aCapabilitiesPushNotifications: agentCard?.capabilities?.pushNotifications ?? null,
-
-					// v1-specific fields — null/empty for A2A:
-					capabilityName: null,
-					capabilityVersion: null,
-					other: null,
-					terms: null,
-					privacyPolicy: null,
-					authorName: '',
 					paymentType: PaymentType.Web3CardanoV1,
-					authorContactEmail: null,
-					authorContactOther: null,
-					authorOrganization: null,
 					state: RegistrationState.RegistrationRequested,
 					agentIdentifier: null,
-					metadataVersion: DEFAULTS.A2A_METADATA_VERSION,
 					tags: input.Tags,
-
 					SmartContractWallet: { connect: { id: sellingWallet.id } },
 					PaymentSource: { connect: { id: sellingWallet.paymentSourceId } },
-
-					// A2A pricing is off-chain (via x402 in Agent Card); register as Free here
 					Pricing: { create: { pricingType: PricingType.Free } },
 				},
 				include: {
@@ -137,9 +126,6 @@ export const registerA2AAgentPost = payAuthenticatedEndpointFactory.build({
 					},
 					SmartContractWallet: {
 						select: { walletVkey: true, walletAddress: true },
-					},
-					ExampleOutputs: {
-						select: { name: true, url: true, mimeType: true },
 					},
 					CurrentTransaction: {
 						select: {
@@ -154,7 +140,7 @@ export const registerA2AAgentPost = payAuthenticatedEndpointFactory.build({
 				},
 			});
 
-			return mapRegistryRequestToOutput(result);
+			return mapA2ARegistryRequestToOutput(result);
 		} catch (error: unknown) {
 			const errorInstance = error instanceof Error ? error : new Error(String(error));
 			const statusCode =
@@ -168,5 +154,79 @@ export const registerA2AAgentPost = payAuthenticatedEndpointFactory.build({
 			});
 			throw error;
 		}
+	},
+});
+
+export const queryA2ARegistryRequestGet = readAuthenticatedEndpointFactory.build({
+	method: 'get',
+	input: queryRegistryRequestSchemaInput,
+	output: queryA2ARegistryRequestSchemaOutput,
+	handler: async ({ input, ctx }: { input: z.infer<typeof queryRegistryRequestSchemaInput>; ctx: AuthContext }) => {
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+
+		const results = await prisma.a2ARegistryRequest.findMany({
+			where: {
+				PaymentSource: {
+					network: input.network,
+					deletedAt: null,
+					smartContractAddress: input.filterSmartContractAddress ?? undefined,
+				},
+				SmartContractWallet: { deletedAt: null },
+				...buildWalletScopeFilter(ctx.walletScopeIds),
+				...(input.filterStatus
+					? {
+							state: {
+								in:
+									input.filterStatus === FilterStatus.Registered
+										? [RegistrationState.RegistrationConfirmed]
+										: input.filterStatus === FilterStatus.Deregistered
+											? [RegistrationState.DeregistrationConfirmed]
+											: input.filterStatus === FilterStatus.Pending
+												? [RegistrationState.RegistrationRequested, RegistrationState.DeregistrationRequested]
+												: [RegistrationState.RegistrationFailed, RegistrationState.DeregistrationFailed],
+							},
+						}
+					: {}),
+				...(input.searchQuery
+					? {
+							OR: [
+								{ name: { contains: input.searchQuery, mode: 'insensitive' as const } },
+								{ description: { contains: input.searchQuery, mode: 'insensitive' as const } },
+								{ tags: { hasSome: [input.searchQuery.toLowerCase()] } },
+								{
+									SmartContractWallet: { walletAddress: { contains: input.searchQuery, mode: 'insensitive' as const } },
+								},
+							],
+						}
+					: {}),
+			},
+			orderBy: { createdAt: 'desc' },
+			take: input.limit,
+			cursor: input.cursorId ? { id: input.cursorId } : undefined,
+			include: {
+				Pricing: {
+					include: {
+						FixedPricing: {
+							include: { Amounts: { select: { unit: true, amount: true } } },
+						},
+					},
+				},
+				SmartContractWallet: {
+					select: { walletVkey: true, walletAddress: true },
+				},
+				CurrentTransaction: {
+					select: {
+						txHash: true,
+						status: true,
+						confirmations: true,
+						fees: true,
+						blockHeight: true,
+						blockTime: true,
+					},
+				},
+			},
+		});
+
+		return { Assets: results.map(mapA2ARegistryRequestToOutput) };
 	},
 });
