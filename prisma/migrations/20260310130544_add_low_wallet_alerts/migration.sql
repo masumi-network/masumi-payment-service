@@ -4,6 +4,9 @@ CREATE TYPE "LowBalanceStatus" AS ENUM ('Unknown', 'Healthy', 'Low');
 -- AlterEnum
 ALTER TYPE "WebhookEventType" ADD VALUE 'WALLET_LOW_BALANCE';
 
+-- AlterTable
+ALTER TABLE "PurchaseRequest" ALTER COLUMN "isLimitedToHotWallets" DROP DEFAULT;
+
 -- CreateTable
 CREATE TABLE "HotWalletLowBalanceRule" (
     "id" TEXT NOT NULL,
