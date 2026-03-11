@@ -2,6 +2,7 @@ import { Network } from '@/generated/prisma/client';
 import { generateWalletExtended } from '@/utils/generator/wallet-generator';
 import {
 	type MeshLikeUtxo,
+	type ProjectableMeshLikeUtxo,
 	type ProjectableWalletUtxo,
 	type WalletBalanceCheckSource,
 	toBalanceMapFromMeshUtxos,
@@ -11,7 +12,10 @@ import {
 export type WalletSession = Awaited<ReturnType<typeof generateWalletExtended>> & {
 	hotWalletId: string;
 	checkSource: WalletBalanceCheckSource;
-	evaluateProjectedBalance: (unsignedTx: string, walletUtxos?: ProjectableWalletUtxo[]) => Promise<void>;
+	evaluateProjectedBalance: (
+		unsignedTx: string,
+		walletUtxos?: Array<ProjectableMeshLikeUtxo | ProjectableWalletUtxo>,
+	) => Promise<void>;
 };
 
 export async function loadHotWalletSession(params: {
@@ -37,11 +41,14 @@ export async function loadHotWalletSession(params: {
 		...session,
 		hotWalletId: params.hotWalletId,
 		checkSource,
-		evaluateProjectedBalance: async (unsignedTx: string, walletUtxos?: ProjectableWalletUtxo[]) => {
+		evaluateProjectedBalance: async (
+			unsignedTx: string,
+			walletUtxos?: Array<ProjectableMeshLikeUtxo | ProjectableWalletUtxo>,
+		) => {
 			await walletLowBalanceMonitorService.evaluateProjectedHotWalletById({
 				hotWalletId: params.hotWalletId,
 				walletAddress: session.address,
-				walletUtxos: walletUtxos ?? (session.utxos as unknown as ProjectableWalletUtxo[]),
+				walletUtxos: walletUtxos ?? session.utxos,
 				unsignedTx,
 				checkSource,
 			});

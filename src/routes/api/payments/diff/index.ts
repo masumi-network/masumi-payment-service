@@ -9,7 +9,7 @@ import { transformPaymentGetAmounts, transformPaymentGetTimestamps } from '@/uti
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { ez } from 'express-zod-api';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
-import { assertNever } from '@/utils/assert-never';
+import { exhaustiveFallback } from '@/utils/assert-never';
 
 const paymentDiffLastUpdateSchema = ez.dateIn();
 
@@ -103,7 +103,7 @@ function buildPaymentDiffWhere({
 						nextActionOrOnChainStateOrResultLastChangedAt: { gte: since },
 					};
 		default:
-			return assertNever(mode, 'Unhandled payment diff mode');
+			return exhaustiveFallback(mode, base);
 	}
 }
 
@@ -116,7 +116,7 @@ function buildPaymentDiffOrderBy(mode: PaymentDiffMode): Prisma.PaymentRequestOr
 		case 'nextActionOrOnChainStateOrResultLastChangedAt':
 			return [{ nextActionOrOnChainStateOrResultLastChangedAt: 'asc' }, { id: 'asc' }];
 		default:
-			return assertNever(mode, 'Unhandled payment diff order mode');
+			return exhaustiveFallback(mode, [{ id: 'asc' }]);
 	}
 }
 

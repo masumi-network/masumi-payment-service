@@ -1,4 +1,5 @@
 import { SLOT_CONFIG_NETWORK, unixTimeToEnclosingSlot } from '@meshsdk/core';
+import { SERVICE_CONSTANTS } from '@/utils/config';
 
 export type TxWindow = {
 	invalidBefore: number;
@@ -20,9 +21,9 @@ export function createTxWindow(
 	} = {},
 ): TxWindow {
 	const nowMs = options.nowMs ?? Date.now();
-	const beforeBufferMs = options.beforeBufferMs ?? 150000;
-	const afterBufferMs = options.afterBufferMs ?? 150000;
-	const validitySlotBuffer = options.validitySlotBuffer ?? 5;
+	const beforeBufferMs = options.beforeBufferMs ?? SERVICE_CONSTANTS.TRANSACTION.timeBufferMs;
+	const afterBufferMs = options.afterBufferMs ?? SERVICE_CONSTANTS.TRANSACTION.timeBufferMs;
+	const validitySlotBuffer = options.validitySlotBuffer ?? SERVICE_CONSTANTS.TRANSACTION.validitySlotBuffer;
 
 	const invalidBefore = unixTimeToEnclosingSlot(nowMs - beforeBufferMs, SLOT_CONFIG_NETWORK[network]) - 1;
 	const defaultInvalidAfter =
@@ -37,7 +38,7 @@ export function createTxWindow(
 
 	const constrainedInvalidAfter =
 		unixTimeToEnclosingSlot(options.constrainAfterMs + afterBufferMs, SLOT_CONFIG_NETWORK[network]) +
-		(options.constrainSlotBuffer ?? 3);
+		(options.constrainSlotBuffer ?? SERVICE_CONSTANTS.TRANSACTION.resultTimeSlotBuffer);
 
 	return {
 		invalidBefore,

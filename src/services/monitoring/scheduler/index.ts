@@ -8,6 +8,8 @@ import type { JobDefinition } from '@/services/shared';
 const startupTimers = new Set<NodeJS.Timeout>();
 const activeJobStops = new Set<() => Promise<void>>();
 let jobsInitialized = false;
+let jobsInitializationPromise: Promise<void> | null = null;
+let jobsInitializationToken = 0;
 
 async function runScheduledJob(job: JobDefinition) {
 	logger.info(job.startMessage);
@@ -42,25 +44,48 @@ export async function initJobs() {
 		return;
 	}
 
-	jobsInitialized = true;
-
-	const start = new Date();
-	await new Promise((resolve) => setTimeout(resolve, 500));
-	await checkLatestTransactions();
-	await checkRegistryTransactions();
-	logger.info('Checked and synced transactions in ' + (new Date().getTime() - start.getTime()) / 1000 + 's');
-
-	if (!jobsInitialized) {
+	if (jobsInitializationPromise) {
+		logger.warn('Async intervals are already initializing');
+		await jobsInitializationPromise;
 		return;
 	}
 
-	scheduledJobs.forEach(scheduleJob);
+	const initializationToken = ++jobsInitializationToken;
+	const initializationPromise = (async () => {
+		const start = new Date();
+		await new Promise((resolve) => setTimeout(resolve, 500));
+		await checkLatestTransactions();
+		await checkRegistryTransactions();
+		logger.info('Checked and synced transactions in ' + (new Date().getTime() - start.getTime()) / 1000 + 's');
 
-	await new Promise((resolve) => setTimeout(resolve, 200));
-	logger.info('Initialized async intervals');
+		if (initializationToken !== jobsInitializationToken) {
+			return;
+		}
+
+		jobsInitialized = true;
+		scheduledJobs.forEach(scheduleJob);
+
+		await new Promise((resolve) => setTimeout(resolve, 200));
+		if (initializationToken !== jobsInitializationToken || !jobsInitialized) {
+			return;
+		}
+
+		logger.info('Initialized async intervals');
+	})();
+
+	jobsInitializationPromise = initializationPromise;
+
+	try {
+		await initializationPromise;
+	} finally {
+		if (jobsInitializationPromise === initializationPromise) {
+			jobsInitializationPromise = null;
+		}
+	}
 }
 
 export async function stopJobs() {
+	jobsInitializationToken += 1;
 	jobsInitialized = false;
 
 	for (const timer of startupTimers) {

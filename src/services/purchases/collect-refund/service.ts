@@ -20,7 +20,6 @@ import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractWithdrawTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
-import type { ProjectableWalletUtxo } from '@/services/wallets';
 import {
 	connectPreviousAction,
 	createMeshProvider,
@@ -193,7 +192,7 @@ async function processSingleRefundCollection(
 
 	//submit the transaction to the blockchain
 	const newTxHash = await wallet.submitTx(signedTx);
-	await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos as unknown as ProjectableWalletUtxo[]);
+	await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
 
 	await prisma.purchaseRequest.update({
 		where: { id: request.id },

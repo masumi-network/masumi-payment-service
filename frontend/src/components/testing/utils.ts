@@ -19,6 +19,8 @@ export function extractErrorMessage(
 
   if (typeof error === 'string') return error;
 
+  if (error instanceof Error) return error.message;
+
   if (isObject(error)) {
     const data = getOwnPlainObject(error, 'data');
     const directError = getOwnValue(error, 'error');

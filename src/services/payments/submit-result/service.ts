@@ -17,7 +17,6 @@ import { delayErrorResolver } from 'advanced-retry';
 import { advancedRetryAll } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
-import type { ProjectableWalletUtxo } from '@/services/wallets';
 import {
 	connectPreviousAction,
 	createMeshProvider,
@@ -260,7 +259,7 @@ async function processSinglePaymentRequest(
 	});
 	try {
 		const newTxHash = await wallet.submitTx(signedTx);
-		await walletSession.evaluateProjectedBalance(unsignedTx, limitedUtxos as unknown as ProjectableWalletUtxo[]);
+		await walletSession.evaluateProjectedBalance(unsignedTx, limitedUtxos);
 		await prisma.paymentRequest.update({
 			where: { id: request.id },
 			data: updateCurrentTransactionHash(newTxHash),

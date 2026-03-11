@@ -11,7 +11,6 @@ import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { errorToString } from '@/utils/converter/error-string-convert';
 import { extractAssetName } from '@/utils/converter/agent-identifier';
 import { sortAndLimitUtxos } from '@/utils/utxo';
-import type { ProjectableWalletUtxo } from '@/services/wallets';
 import {
 	createMeshProvider,
 	createPendingTransaction,
@@ -158,10 +157,7 @@ export async function deRegisterAgentV1() {
 
 						//submit the transaction to the blockchain
 						const newTxHash = await wallet.submitTx(signedTx);
-						await walletSession.evaluateProjectedBalance(
-							unsignedTx,
-							limitedFilteredUtxos as unknown as ProjectableWalletUtxo[],
-						);
+						await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
 						await prisma.registryRequest.update({
 							where: { id: request.id },
 							data: updateCurrentTransactionHash(newTxHash),

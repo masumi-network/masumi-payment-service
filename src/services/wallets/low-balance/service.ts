@@ -1,5 +1,6 @@
 import { trace } from '@opentelemetry/api';
 import { Address, Transaction, Value } from '@emurgo/cardano-serialization-lib-nodejs';
+import type { UTxO } from '@meshsdk/core';
 import { HotWalletType, Network } from '@/generated/prisma/client';
 import { LowBalanceStatus } from '@/generated/prisma/enums';
 import { prisma } from '@/utils/db';
@@ -56,12 +57,7 @@ type WalletLowBalanceRuleMutationRecord = WalletLowBalanceRuleRecord & {
 };
 
 type MeshLikeUtxo = {
-	output: {
-		amount: Array<{
-			unit: string;
-			quantity: string;
-		}>;
-	};
+	output: Pick<UTxO['output'], 'amount'>;
 };
 
 type LucidLikeUtxo = {
@@ -69,16 +65,8 @@ type LucidLikeUtxo = {
 };
 
 type ProjectableMeshLikeUtxo = {
-	input: {
-		txHash: string;
-		outputIndex: number;
-	};
-	output: {
-		amount: Array<{
-			unit: string;
-			quantity: string;
-		}>;
-	};
+	input: Pick<UTxO['input'], 'txHash' | 'outputIndex'>;
+	output: Pick<UTxO['output'], 'amount'>;
 };
 
 type ProjectableLucidLikeUtxo = {
