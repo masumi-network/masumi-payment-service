@@ -48,7 +48,7 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
 	input: queryPaymentsSchemaInput,
 	output: queryPaymentsSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof queryPaymentsSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 		const result = await getPaymentsForQuery(input, ctx.walletScopeIds);
 		if (result == null) {
@@ -64,7 +64,7 @@ export const queryPaymentCountGet = readAuthenticatedEndpointFactory.build({
 	input: queryPaymentCountSchemaInput,
 	output: queryPaymentCountSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof queryPaymentCountSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 		const total = await prisma.paymentRequest.count({
 			where: {
@@ -88,7 +88,7 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 	input: createPaymentsSchemaInput,
 	output: createPaymentSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof createPaymentsSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 		const policyId = extractPolicyId(input.agentIdentifier);
 
 		const specifiedPaymentContract = await prisma.paymentSource.findFirst({
@@ -106,7 +106,7 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 		if (specifiedPaymentContract == null) {
 			throw createHttpError(404, 'Network and policyId combination not supported');
 		}
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 		const purchaserId = input.identifierFromPurchaser;
 		if (validateHexString(purchaserId) == false) {
 			throw createHttpError(400, 'Purchaser identifier is not a valid hex string');

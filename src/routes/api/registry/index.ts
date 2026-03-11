@@ -42,7 +42,7 @@ export const queryRegistryRequestGet = readAuthenticatedEndpointFactory.build({
 	input: queryRegistryRequestSchemaInput,
 	output: queryRegistryRequestSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof queryRegistryRequestSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 		const result = await getRegistryEntriesForQuery(input, ctx.walletScopeIds);
 
 		return serializeRegistryEntriesResponse(result);
@@ -54,7 +54,7 @@ export const queryRegistryCountGet = readAuthenticatedEndpointFactory.build({
 	input: queryRegistryCountSchemaInput,
 	output: queryRegistryCountSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof queryRegistryCountSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 		const total = await prisma.registryRequest.count({
 			where: {
@@ -81,7 +81,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 	handler: async ({ input, ctx }: { input: z.infer<typeof registerAgentSchemaInput>; ctx: AuthContext }) => {
 		const startTime = Date.now();
 		try {
-			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 			const sellingWallet = await prisma.hotWallet.findUnique({
 				where: {
@@ -113,17 +113,6 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 				throw createHttpError(404, 'Network and Address combination not supported');
 			}
 			assertHotWalletInScope(ctx.walletScopeIds, sellingWallet.id);
-			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
-
-			if (sellingWallet == null) {
-				recordBusinessEndpointError('/api/v1/registry', 'POST', 404, 'Selling wallet not found', {
-					network: input.network,
-					operation: 'register_agent',
-					step: 'wallet_validation',
-					wallet_vkey: input.sellingWalletVkey,
-				});
-				throw createHttpError(404, 'Selling wallet not found');
-			}
 
 			// Validate pricing assets exist on-chain
 			if (input.AgentPricing.pricingType === PricingType.Fixed) {

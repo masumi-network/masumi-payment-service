@@ -198,7 +198,7 @@ export const queryAgentFromWalletSchemaOutput = z.object({
 								.describe('Legal information about the agent. Null if not provided'),
 							AgentPricing: z
 								.object({
-									pricingType: z.enum([PricingType.Fixed]).describe('Pricing type for the agent (Fixed)'),
+									pricingType: z.enum([PricingType.Fixed]).describe('Pricing type for the agent (Fixed or Free)'),
 									Pricing: z
 										.array(
 											z.object({
@@ -220,7 +220,7 @@ export const queryAgentFromWalletSchemaOutput = z.object({
 								})
 								.or(
 									z.object({
-										pricingType: z.enum([PricingType.Free]).describe('Pricing type for the agent (Free)'),
+										pricingType: z.enum([PricingType.Free]).describe('Pricing type for the agent (Fixed or Free)'),
 									}),
 								)
 								.describe('Pricing information for the agent'),
@@ -244,7 +244,7 @@ export const queryAgentFromWalletGet = readAuthenticatedEndpointFactory.build({
 	input: queryAgentFromWalletSchemaInput,
 	output: queryAgentFromWalletSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof queryAgentFromWalletSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 		const smartContractAddress =
 			input.smartContractAddress ??
 			(input.network == Network.Mainnet

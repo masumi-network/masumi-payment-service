@@ -14,7 +14,12 @@ model ApiKey {
   token                 String              @unique
   tokenHash             String              @unique
   status                ApiKeyStatus
-  permission            Permission
+
+  // Flag-based permissions (must be set explicitly on create)
+  canRead               Boolean
+  canPay                Boolean
+  canAdmin              Boolean
+
   networkLimit          Network[]
   usageLimited          Boolean             @default(false)
   walletScopeEnabled    Boolean             @default(false)
@@ -448,12 +453,6 @@ model PaymentSourceConfig {
 enum ApiKeyStatus {
   Active
   Revoked
-}
-
-enum Permission {
-  Read
-  ReadAndPay
-  Admin
 }
 
 enum HotWalletType {

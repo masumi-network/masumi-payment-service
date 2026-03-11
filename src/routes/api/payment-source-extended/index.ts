@@ -38,6 +38,55 @@ export {
 	paymentSourceExtendedUpdateSchemaOutput,
 };
 
+async function resolveLatestIdentifierCheckpoint(
+	network: Network,
+	rpcProviderApiKey: string,
+	smartContractAddress: string,
+): Promise<string | null> {
+	const blockfrost = getBlockfrostInstance(network, rpcProviderApiKey);
+
+	try {
+		const transactions = await blockfrost.addressesTransactions(smartContractAddress, {
+			page: 1,
+			order: 'desc',
+			count: 1,
+		});
+
+		if (transactions.length === 0) {
+			logger.info('No existing transactions found for new payment source', {
+				smartContractAddress,
+			});
+			return null;
+		}
+
+		const latestTxHash = transactions[0].tx_hash;
+		logger.info('Setting sync checkpoint to latest transaction', {
+			smartContractAddress,
+			latestTxHash,
+		});
+		return latestTxHash;
+	} catch (error) {
+		if (
+			error instanceof Error &&
+			(error.message.includes('404') || error.message.toLowerCase().includes('not found'))
+		) {
+			logger.info('Smart contract address has no transaction history yet', {
+				smartContractAddress,
+			});
+			return null;
+		}
+
+		logger.error('Failed to fetch transaction history from Blockfrost', {
+			smartContractAddress,
+			error: error instanceof Error ? error.message : String(error),
+		});
+		throw createHttpError(
+			503,
+			'Unable to verify smart contract status. Please check your Blockfrost API key and try again.',
+		);
+	}
+}
+
 export const paymentSourceExtendedEndpointGet = adminAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: paymentSourceExtendedSchemaInput,
@@ -59,7 +108,7 @@ export const paymentSourceExtendedEndpointPost = adminAuthenticatedEndpointFacto
 		input: z.infer<typeof paymentSourceExtendedCreateSchemaInput>;
 		ctx: AuthContext;
 	}) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 		const sellingWalletsMesh = input.SellingWallets.map((sellingWallet) => {
 			return {
 				wallet: generateOfflineWallet(input.network, sellingWallet.walletMnemonic.split(' ')),
@@ -90,47 +139,11 @@ export const paymentSourceExtendedEndpointPost = adminAuthenticatedEndpointFacto
 			);
 
 			const { policyId } = await getRegistryScriptV1(smartContractAddress, input.network);
-
-			let latestTxHash: string | null = null;
-			const blockfrost = getBlockfrostInstance(input.network, input.PaymentSourceConfig.rpcProviderApiKey);
-
-			try {
-				const transactions = await blockfrost.addressesTransactions(smartContractAddress, {
-					page: 1,
-					order: 'desc',
-					count: 1,
-				});
-
-				if (transactions.length > 0) {
-					latestTxHash = transactions[0].tx_hash;
-					logger.info('Setting sync checkpoint to latest transaction', {
-						smartContractAddress,
-						latestTxHash,
-					});
-				} else {
-					logger.info('No existing transactions found for new payment source', {
-						smartContractAddress,
-					});
-				}
-			} catch (error) {
-				if (
-					error instanceof Error &&
-					(error.message.includes('404') || error.message.toLowerCase().includes('not found'))
-				) {
-					logger.info('Smart contract address has no transaction history yet', {
-						smartContractAddress,
-					});
-				} else {
-					logger.error('Failed to fetch transaction history from Blockfrost', {
-						smartContractAddress,
-						error: error instanceof Error ? error.message : String(error),
-					});
-					throw createHttpError(
-						503,
-						'Unable to verify smart contract status. Please check your Blockfrost API key and try again.',
-					);
-				}
-			}
+			const latestIdentifierChecked = await resolveLatestIdentifierCheckpoint(
+				input.network,
+				input.PaymentSourceConfig.rpcProviderApiKey,
+				smartContractAddress,
+			);
 
 			const sellingWallets = await Promise.all(
 				sellingWalletsMesh.map(async (sw) => {
@@ -171,7 +184,7 @@ export const paymentSourceExtendedEndpointPost = adminAuthenticatedEndpointFacto
 					network: input.network,
 					smartContractAddress: smartContractAddress,
 					policyId: policyId,
-					lastIdentifierChecked: latestTxHash,
+					lastIdentifierChecked: latestIdentifierChecked,
 					PaymentSourceConfig: {
 						create: {
 							rpcProviderApiKey: input.PaymentSourceConfig.rpcProviderApiKey,
