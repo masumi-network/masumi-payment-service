@@ -148,7 +148,6 @@ function buildAgentMetadataV2(request: {
 	};
 }
 
-
 async function processA2ARegistrationRequests(
 	paymentSource: Awaited<ReturnType<typeof lockAndQueryA2ARegistryRequests>>[number],
 ) {
