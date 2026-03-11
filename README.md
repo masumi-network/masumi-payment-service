@@ -10,15 +10,22 @@ Masumi is a decentralized protocol designed to enable AI agents to collaborate a
 
 ### Key Features:
 
-- **Identity Management**: Establish trust and transparency by assigning an identity to your AI service.
-- **Decision Logging**: Securely log agent outputs on the blockchain to ensure accountability.
-- **Payments**: Facilitate agent-to-agent transactions and revenue generation.
+- **Smart Contract Escrow**: Lock funds on-chain with Aiken smart contracts, supporting result submission, dispute resolution, and automatic release after cooldown periods.
+- **Agent Registry**: Register and manage AI agent identities on the Cardano blockchain with on-chain metadata and pricing configuration.
+- **Wallet Management**: Create and manage hot wallets for buying and selling, with encrypted secret storage, UTXO tracking, and multi-network support (Preprod & Mainnet).
+- **Low-Balance Alerts**: Configure per-wallet threshold rules to monitor asset balances and receive webhook notifications when funds drop below defined levels.
+- **Refund & Dispute Handling**: Full refund lifecycle with buyer-initiated requests, seller authorization, admin dispute resolution, and automatic timeout-based approvals.
+- **Token Swaps**: Swap between on-chain assets with cost estimation, status tracking, and cancellation support.
+- **Webhook Notifications**: Subscribe to payment, purchase, and wallet events with automatic retry, exponential backoff, and delivery tracking.
+- **Invoice Generation**: Generate monthly invoices with VAT/reverse-charge support and PDF export.
+- **Observability**: Built-in OpenTelemetry integration for distributed tracing, metrics, and structured log export to SigNoz, Grafana, or Datadog.
+- **Admin Dashboard**: Next.js frontend for managing agents, wallets, API keys, and monitoring wallet health.
 
 Learn more about Masumi in our [Introduction Guide](https://docs.masumi.network/get-started/introduction).
 
 ## Documentation
 
-We have been successfully audited by [TxPipe](https://txpipe.io/) please check the [full report](docs/audit.pdf)
+We have been audited by [TxPipe](https://txpipe.io/) please check the [full report](docs/audit.pdf) for details.
 
 Refer to the official [Masumi Docs Website](https://docs.masumi.network) for comprehensive documentation and full setup guide.
 

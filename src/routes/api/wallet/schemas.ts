@@ -1,5 +1,6 @@
 import { Network } from '@/generated/prisma/client';
 import { z } from '@/utils/zod-openapi';
+import { lowBalanceRuleSchema, lowBalanceSummarySchema } from './low-balance.schemas';
 
 export const getWalletSchemaInput = z.object({
 	walletType: z.enum(['Selling', 'Purchasing']).describe('The type of wallet to query'),
@@ -37,6 +38,10 @@ export const getWalletSchemaOutput = z
 		walletVkey: z.string().describe('Payment key hash of the wallet'),
 		walletAddress: z.string().describe('Cardano address of the wallet'),
 		collectionAddress: z.string().nullable().describe('Collection address for this wallet. Null if not set'),
+		LowBalanceSummary: lowBalanceSummarySchema.describe('Aggregated low-balance state for this wallet'),
+		LowBalanceRules: z
+			.array(lowBalanceRuleSchema)
+			.describe('Configured low-balance rules for this wallet, including current deduped state'),
 	})
 	.openapi('Wallet');
 

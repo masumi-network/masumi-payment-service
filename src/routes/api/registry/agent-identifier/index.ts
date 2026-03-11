@@ -139,7 +139,7 @@ export const queryAgentByIdentifierGet = readAuthenticatedEndpointFactory.build(
 	output: queryAgentByIdentifierSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof queryAgentByIdentifierSchemaInput>; ctx: AuthContext }) => {
 		// Step 1: Network authorization check
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 		// Step 2: Validate hex format BEFORE extracting policyId
 		if (validateHexString(input.agentIdentifier) == false) {

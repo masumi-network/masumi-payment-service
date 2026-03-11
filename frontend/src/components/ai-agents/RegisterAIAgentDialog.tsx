@@ -288,6 +288,7 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
             walletAddress: w.walletAddress,
             collectionAddress: w.collectionAddress,
             note: w.note,
+            LowBalanceSummary: w.LowBalanceSummary,
           },
           balance: parseInt(w.balance, 10),
         })),

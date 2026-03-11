@@ -16,6 +16,11 @@ import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { errorToString } from '@/utils/converter/error-string-convert';
 import { sortUtxosByLovelaceDesc } from '@/utils/utxo';
+import {
+	walletLowBalanceMonitorService,
+	toBalanceMapFromMeshUtxos,
+	type MeshLikeUtxo,
+} from '@/services/wallet-low-balance-monitor';
 
 const mutex = new Mutex();
 
@@ -143,114 +148,6 @@ function buildAgentMetadataV2(request: {
 	};
 }
 
-async function processRegistrationRequests(
-	paymentSource: Awaited<ReturnType<typeof lockAndQueryRegistryRequests>>[number],
-) {
-	if (paymentSource.RegistryRequest.length === 0) return;
-
-	logger.info(`Registering ${paymentSource.RegistryRequest.length} agents for payment source ${paymentSource.id}`);
-
-	const network = convertNetwork(paymentSource.network);
-	const blockchainProvider = new BlockfrostProvider(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
-
-	const results = await advancedRetryAll({
-		errorResolvers: [delayErrorResolver({ configuration: SERVICE_CONSTANTS.RETRY })],
-		operations: paymentSource.RegistryRequest.map((request) => async () => {
-			validateRegistrationPricing(request);
-			const { wallet, utxos, address } = await generateWalletExtended(
-				paymentSource.network,
-				paymentSource.PaymentSourceConfig.rpcProviderApiKey,
-				request.SmartContractWallet.Secret.encryptedMnemonic,
-			);
-			if (utxos.length === 0) throw new Error('No UTXOs found for the wallet');
-
-			const { script, policyId } = await getRegistryScriptFromNetworkHandlerV1(paymentSource);
-			const limitedFilteredUtxos = sortUtxosByLovelaceDesc(utxos);
-			const firstUtxo = limitedFilteredUtxos[0];
-			const collateralUtxo = limitedFilteredUtxos[0];
-			const assetName = generateAssetName(firstUtxo);
-
-			const metadata = buildAgentMetadata(request);
-
-			const evaluationTx = await generateRegisterAgentTransaction(
-				blockchainProvider,
-				network,
-				script,
-				address,
-				policyId,
-				assetName,
-				firstUtxo,
-				collateralUtxo,
-				limitedFilteredUtxos,
-				metadata,
-			);
-			const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
-				budget: { mem: number; steps: number };
-			}>;
-			if (estimatedFee.length === 0) {
-				throw new Error('Transaction evaluation returned no budget estimates');
-			}
-			const unsignedTx = await generateRegisterAgentTransaction(
-				blockchainProvider,
-				network,
-				script,
-				address,
-				policyId,
-				assetName,
-				firstUtxo,
-				collateralUtxo,
-				limitedFilteredUtxos,
-				metadata,
-				estimatedFee[0].budget,
-			);
-
-			const signedTx = await wallet.signTx(unsignedTx, true);
-			await prisma.registryRequest.update({
-				where: { id: request.id },
-				data: {
-					state: RegistrationState.RegistrationInitiated,
-					CurrentTransaction: {
-						create: {
-							txHash: null,
-							status: TransactionStatus.Pending,
-							BlocksWallet: { connect: { id: request.SmartContractWallet.id } },
-						},
-					},
-				},
-			});
-
-			const newTxHash = await wallet.submitTx(signedTx);
-			await prisma.registryRequest.update({
-				where: { id: request.id },
-				data: {
-					agentIdentifier: policyId + assetName,
-					CurrentTransaction: { update: { txHash: newTxHash } },
-				},
-			});
-			logger.debug(
-				`Created registration transaction: ${newTxHash} — https://${network === 'preprod' ? 'preprod.' : ''}cardanoscan.io/transaction/${newTxHash}`,
-			);
-			return true;
-		}),
-	});
-
-	let index = 0;
-	for (const result of results) {
-		const request = paymentSource.RegistryRequest[index];
-		if (result.success === false || result.result !== true) {
-			logger.error(`Error registering agent ${request.id}`, { error: result.error });
-			await prisma.registryRequest.update({
-				where: { id: request.id },
-				data: {
-					state: RegistrationState.RegistrationFailed,
-					error: errorToString(result.error),
-					SmartContractWallet: { update: { lockedAt: null } },
-				},
-			});
-		}
-		index++;
-	}
-}
 
 async function processA2ARegistrationRequests(
 	paymentSource: Awaited<ReturnType<typeof lockAndQueryA2ARegistryRequests>>[number],
@@ -387,7 +284,155 @@ export async function registerAgentV1() {
 		]);
 
 		await Promise.allSettled([
-			...standardSources.map(processRegistrationRequests),
+			...standardSources.map(async (paymentSource) => {
+				if (paymentSource.RegistryRequest.length === 0) return;
+
+				logger.info(
+					`Registering ${paymentSource.RegistryRequest.length} agents for payment source ${paymentSource.id}`,
+				);
+
+				const network = convertNetwork(paymentSource.network);
+
+				const registryRequests = paymentSource.RegistryRequest;
+
+				if (registryRequests.length === 0) return;
+
+				const blockchainProvider = new BlockfrostProvider(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
+
+				const results = await advancedRetryAll({
+					errorResolvers: [
+						delayErrorResolver({
+							configuration: SERVICE_CONSTANTS.RETRY,
+						}),
+					],
+					operations: registryRequests.map((request) => async () => {
+						validateRegistrationPricing(request);
+						const { wallet, utxos, address } = await generateWalletExtended(
+							paymentSource.network,
+							paymentSource.PaymentSourceConfig.rpcProviderApiKey,
+							request.SmartContractWallet.Secret.encryptedMnemonic,
+						);
+						await walletLowBalanceMonitorService.evaluateHotWalletById(
+							request.SmartContractWallet.id,
+							toBalanceMapFromMeshUtxos(utxos as MeshLikeUtxo[]),
+							'submission',
+						);
+
+						if (utxos.length === 0) {
+							throw new Error('No UTXOs found for the wallet');
+						}
+						const { script, policyId } = await getRegistryScriptFromNetworkHandlerV1(paymentSource);
+
+						const limitedFilteredUtxos = sortUtxosByLovelaceDesc(utxos);
+
+						const firstUtxo = limitedFilteredUtxos[0];
+						const collateralUtxo = limitedFilteredUtxos[0];
+
+						const assetName = generateAssetName(firstUtxo);
+						const metadata = buildAgentMetadata(request);
+						const evaluationTx = await generateRegisterAgentTransaction(
+							blockchainProvider,
+							network,
+							script,
+							address,
+							policyId,
+							assetName,
+							firstUtxo,
+							collateralUtxo,
+							limitedFilteredUtxos,
+							metadata,
+						);
+						const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
+							budget: { mem: number; steps: number };
+						}>;
+
+						const unsignedTx = await generateRegisterAgentTransaction(
+							blockchainProvider,
+							network,
+							script,
+							address,
+							policyId,
+							assetName,
+							firstUtxo,
+							collateralUtxo,
+							limitedFilteredUtxos,
+							metadata,
+							estimatedFee[0].budget,
+						);
+
+						const signedTx = await wallet.signTx(unsignedTx, true);
+
+						await prisma.registryRequest.update({
+							where: { id: request.id },
+							data: {
+								state: RegistrationState.RegistrationInitiated,
+								CurrentTransaction: {
+									create: {
+										txHash: null,
+										status: TransactionStatus.Pending,
+										BlocksWallet: {
+											connect: {
+												id: request.SmartContractWallet.id,
+											},
+										},
+									},
+								},
+							},
+						});
+						//submit the transaction to the blockchain
+						const newTxHash = await wallet.submitTx(signedTx);
+						await walletLowBalanceMonitorService.evaluateProjectedHotWalletById({
+							hotWalletId: request.SmartContractWallet.id,
+							walletAddress: address,
+							walletUtxos: limitedFilteredUtxos,
+							unsignedTx,
+							checkSource: 'submission',
+						});
+						await prisma.registryRequest.update({
+							where: { id: request.id },
+							data: {
+								agentIdentifier: policyId + assetName,
+								CurrentTransaction: {
+									update: {
+										txHash: newTxHash,
+									},
+								},
+							},
+						});
+
+						logger.debug(`Created withdrawal transaction:
+                  Tx ID: ${newTxHash}
+                  View (after a bit) on https://${
+										network === 'preprod' ? 'preprod.' : ''
+									}cardanoscan.io/transaction/${newTxHash}
+              `);
+						return true;
+					}),
+				});
+				let index = 0;
+				for (const result of results) {
+					const request = registryRequests[index];
+					if (result.success === false || result.result !== true) {
+						const error = result.error;
+						logger.error(`Error registering agent ${request.id}`, {
+							error: error,
+						});
+						await prisma.registryRequest.update({
+							where: { id: request.id },
+							data: {
+								state: RegistrationState.RegistrationFailed,
+								error: errorToString(error),
+								SmartContractWallet: {
+									update: {
+										lockedAt: null,
+									},
+								},
+							},
+						});
+					}
+					index++;
+				}
+			}),
 			...a2aSources.map(processA2ARegistrationRequests),
 		]);
 	} catch (error) {

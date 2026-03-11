@@ -19,6 +19,12 @@ import {
 } from './payment-source-extended';
 import { queryAPIKeyStatusEndpointGet } from './api-key-status';
 import { patchWalletEndpointPatch, postWalletEndpointPost, queryWalletEndpointGet } from './wallet';
+import {
+	deleteWalletLowBalanceRuleEndpointDelete,
+	getWalletLowBalanceRulesEndpointGet,
+	patchWalletLowBalanceRuleEndpointPatch,
+	postWalletLowBalanceRuleEndpointPost,
+} from './wallet/low-balance';
 import { queryRpcProviderKeysEndpointGet } from './rpc-api-keys';
 import { queryUTXOEndpointGet } from './utxos';
 import { paymentSourceEndpointGet } from './payment-source';
@@ -163,6 +169,12 @@ export const apiRouter: Routing = {
 			get: queryWalletEndpointGet,
 			post: postWalletEndpointPost,
 			patch: patchWalletEndpointPatch,
+			'low-balance': {
+				get: getWalletLowBalanceRulesEndpointGet,
+				post: postWalletLowBalanceRuleEndpointPost,
+				patch: patchWalletLowBalanceRuleEndpointPatch,
+				delete: deleteWalletLowBalanceRuleEndpointDelete,
+			},
 		},
 		'payment-source-extended': {
 			get: paymentSourceExtendedEndpointGet,

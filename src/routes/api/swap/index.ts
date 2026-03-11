@@ -53,7 +53,7 @@ export const swapTokensEndpointPost = adminAuthenticatedEndpointFactory.build({
 		const startTime = Date.now();
 		let walletId: string | null = null;
 		try {
-			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, Network.Mainnet, ctx.permission);
+			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, Network.Mainnet);
 
 			// Lock the wallet in a transaction to prevent concurrent usage
 			const wallet = await prisma.$transaction(
@@ -117,6 +117,7 @@ export const swapTokensEndpointPost = adminAuthenticatedEndpointFactory.build({
 
 			const result = await swapTokens(
 				{
+					walletId: wallet.id,
 					mnemonic: mnemonic,
 					fromAmount: input.amount,
 					fromToken: input.FromToken as Token,
@@ -196,7 +197,7 @@ export const getSwapConfirmEndpointGet = adminAuthenticatedEndpointFactory.build
 	handler: async ({ input, ctx }: { input: z.infer<typeof getSwapConfirmSchemaInput>; ctx: AuthContext }) => {
 		const startTime = Date.now();
 		try {
-			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, Network.Mainnet, ctx.permission);
+			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, Network.Mainnet);
 
 			const wallet = await prisma.hotWallet.findFirst({
 				where: {
@@ -559,7 +560,7 @@ export const cancelSwapEndpointPost = adminAuthenticatedEndpointFactory.build({
 		const startTime = Date.now();
 		let walletId: string | null = null;
 		try {
-			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, Network.Mainnet, ctx.permission);
+			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, Network.Mainnet);
 
 			// Find the swap transaction
 			const swapTx = await prisma.swapTransaction.findUnique({
@@ -683,6 +684,7 @@ export const cancelSwapEndpointPost = adminAuthenticatedEndpointFactory.build({
 
 			const result = await cancelSwapOrder(
 				{
+					walletId: wallet.id,
 					mnemonic,
 					orderTxHash: swapTx.txHash,
 					orderOutputIndex: swapTx.orderOutputIndex,
@@ -749,7 +751,7 @@ export const acknowledgeSwapTimeoutEndpointPost = adminAuthenticatedEndpointFact
 	handler: async ({ input, ctx }: { input: z.infer<typeof acknowledgeSwapTimeoutSchemaInput>; ctx: AuthContext }) => {
 		const startTime = Date.now();
 		try {
-			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, Network.Mainnet, ctx.permission);
+			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, Network.Mainnet);
 
 			const swapTx = await prisma.swapTransaction.findUnique({
 				where: { id: input.swapTransactionId },
@@ -941,7 +943,7 @@ export const getSwapTransactionsEndpointGet = adminAuthenticatedEndpointFactory.
 	input: getSwapTransactionsSchemaInput,
 	output: getSwapTransactionsSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof getSwapTransactionsSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, Network.Mainnet, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, Network.Mainnet);
 
 		const wallet = await prisma.hotWallet.findFirst({
 			where: {

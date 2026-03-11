@@ -31,9 +31,17 @@ interface AddApiKeyDialogProps {
   onSuccess: () => void;
 }
 
+// Permission presets for convenient selection
+type PermissionPreset = 'Read' | 'ReadAndPay' | 'Admin';
+
 const apiKeySchema = z
   .object({
-    permission: z.enum(['Read', 'ReadAndPay', 'Admin']),
+    // UI selection for permission preset
+    permissionPreset: z.enum(['Read', 'ReadAndPay', 'Admin']),
+    // Flag-based permissions (derived from preset)
+    canRead: z.boolean(),
+    canPay: z.boolean(),
+    canAdmin: z.boolean(),
     networks: z.array(z.enum(['Preprod', 'Mainnet'])).min(1, 'Select at least one network'),
     usageLimited: z.boolean(),
     credits: z.object({
@@ -45,20 +53,40 @@ const apiKeySchema = z
   })
   .superRefine((val, ctx) => {
     if (
-      val.permission === 'ReadAndPay' &&
+      val.canPay &&
+      !val.canAdmin &&
       val.usageLimited &&
       !val.credits.lovelace &&
       !val.credits.usdcx
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Please specify usage credits for Read and Pay permission',
+        message: 'Please specify usage credits for payment permission',
         path: ['credits', 'lovelace'],
       });
     }
   });
 
 type ApiKeyFormValues = z.infer<typeof apiKeySchema>;
+
+/**
+ * Maps a permission preset to flag values.
+ */
+function presetToFlags(preset: PermissionPreset): {
+  canRead: boolean;
+  canPay: boolean;
+  canAdmin: boolean;
+} {
+  switch (preset) {
+    case 'Admin':
+      return { canRead: true, canPay: true, canAdmin: true };
+    case 'ReadAndPay':
+      return { canRead: true, canPay: true, canAdmin: false };
+    case 'Read':
+    default:
+      return { canRead: true, canPay: false, canAdmin: false };
+  }
+}
 
 export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
@@ -106,7 +134,10 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
   } = useForm<ApiKeyFormValues>({
     resolver: zodResolver(apiKeySchema),
     defaultValues: {
-      permission: 'Read',
+      permissionPreset: 'Read',
+      canRead: true,
+      canPay: false,
+      canAdmin: false,
       usageLimited: true,
       networks: ['Preprod', 'Mainnet'],
       credits: { lovelace: '', usdcx: '' },
@@ -115,24 +146,34 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
     },
   });
 
-  const permission = useWatch({ control, name: 'permission', defaultValue: 'Read' });
+  const permissionPreset = useWatch({ control, name: 'permissionPreset', defaultValue: 'Read' });
+  const canAdmin = useWatch({ control, name: 'canAdmin', defaultValue: false });
+  const canPay = useWatch({ control, name: 'canPay', defaultValue: false });
   const usageLimited = useWatch({ control, name: 'usageLimited', defaultValue: true });
   const walletScopeEnabled = useWatch({ control, name: 'walletScopeEnabled', defaultValue: false });
   const walletScopeIds = useWatch({ control, name: 'walletScopeIds', defaultValue: [] });
 
+  // Update flags when preset changes
   useEffect(() => {
-    if (permission === 'Admin') {
+    const flags = presetToFlags(permissionPreset);
+    setValue('canRead', flags.canRead);
+    setValue('canPay', flags.canPay);
+    setValue('canAdmin', flags.canAdmin);
+
+    // Auto-adjust usageLimited based on permission
+    if (flags.canAdmin) {
       setValue('usageLimited', false);
       setValue('networks', ['Preprod', 'Mainnet']);
       setValue('walletScopeEnabled', false);
       setValue('walletScopeIds', []);
-    } else if (permission === 'Read') {
+    } else if (!flags.canPay) {
+      // Read-only: always usage limited
       setValue('usageLimited', true);
     }
-  }, [permission, setValue]);
+  }, [permissionPreset, setValue]);
 
   const onSubmit = async (data: ApiKeyFormValues) => {
-    const isReadOnly = data.permission === 'Read';
+    const isReadOnly = !data.canPay && !data.canAdmin;
     const defaultCredits = [
       {
         unit: 'lovelace',
@@ -144,7 +185,10 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
         postApiKey({
           client: apiClient,
           body: {
-            permission: data.permission,
+            // Send flag-based permissions
+            canRead: data.canRead,
+            canPay: data.canPay,
+            canAdmin: data.canAdmin,
             usageLimited: isReadOnly ? 'true' : data.usageLimited.toString(),
             NetworkLimit: data.networks,
             UsageCredits: isReadOnly
@@ -192,6 +236,8 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
     onClose();
   };
 
+  const isReadOnly = !canPay && !canAdmin;
+
   return (
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent>
@@ -201,26 +247,28 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
 
         <div className="space-y-4">
           <div className="space-y-2">
-            <label className="text-sm font-medium">Permission</label>
+            <label className="text-sm font-medium">Permission Level</label>
             <Controller
               control={control}
-              name="permission"
+              name="permissionPreset"
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Read">Read</SelectItem>
+                    <SelectItem value="Read">Read Only</SelectItem>
                     <SelectItem value="ReadAndPay">Read and Pay</SelectItem>
                     <SelectItem value="Admin">Admin</SelectItem>
                   </SelectContent>
                 </Select>
               )}
             />
-            {errors.permission && (
-              <p className="text-xs text-destructive mt-1">{errors.permission.message}</p>
-            )}
+            <p className="text-xs text-muted-foreground">
+              {permissionPreset === 'Read' && 'Can read data but cannot make payments'}
+              {permissionPreset === 'ReadAndPay' && 'Can read data and make payments/purchases'}
+              {permissionPreset === 'Admin' && 'Full access to all operations'}
+            </p>
           </div>
 
           <div className="space-y-2">
@@ -233,7 +281,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                   render={({ field }) => (
                     <Checkbox
                       checked={field.value.includes('Preprod')}
-                      disabled={permission === 'Admin'}
+                      disabled={canAdmin}
                       onCheckedChange={() => {
                         if (field.value.includes('Preprod')) {
                           field.onChange(field.value.filter((n: string) => n !== 'Preprod'));
@@ -253,7 +301,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                   render={({ field }) => (
                     <Checkbox
                       checked={field.value.includes('Mainnet')}
-                      disabled={permission === 'Admin'}
+                      disabled={canAdmin}
                       onCheckedChange={() => {
                         if (field.value.includes('Mainnet')) {
                           field.onChange(field.value.filter((n: string) => n !== 'Mainnet'));
@@ -281,15 +329,18 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                   <Checkbox
                     checked={field.value}
                     onCheckedChange={field.onChange}
-                    disabled={permission === 'Read' || permission === 'Admin'}
+                    disabled={isReadOnly || canAdmin}
                   />
                 )}
               />
               <label className="text-sm font-medium">Limit Usage</label>
             </div>
+            {canAdmin && (
+              <p className="text-xs text-muted-foreground">Admin keys are not usage limited</p>
+            )}
           </div>
 
-          {usageLimited && permission !== 'Read' && permission !== 'Admin' && (
+          {usageLimited && !isReadOnly && (
             <>
               <div className="space-y-2">
                 <label className="text-sm font-medium">ADA Limit</label>
@@ -318,7 +369,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
             </>
           )}
 
-          {permission !== 'Admin' && (
+          {!canAdmin && (
             <>
               <div className="space-y-2">
                 <div className="flex items-center gap-2">

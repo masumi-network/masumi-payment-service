@@ -2,20 +2,40 @@ import { Middleware } from 'express-zod-api';
 import createHttpError from 'http-errors';
 import { prisma } from '@/utils/db';
 import { z } from '@/utils/zod-openapi';
-import { Permission, ApiKeyStatus, Network } from '@/generated/prisma/enums';
+import { ApiKeyStatus, Network } from '@/generated/prisma/enums';
 import { generateSHA256Hash } from '@/utils/crypto';
+import { RequiredPermissionFlags, hasPermission, getPermissionName } from '@/utils/permissions';
 
+/**
+ * Authentication context passed to endpoint handlers.
+ * Contains the authenticated user's permissions and limits.
+ */
 export type AuthContext = {
+	/** Unique identifier of the API key */
 	id: string;
-	permission: Permission;
+	/** Whether the user can access read endpoints */
+	canRead: boolean;
+	/** Whether the user can access pay/purchase endpoints */
+	canPay: boolean;
+	/** Whether the user has admin access (bypasses network/usage limits) */
+	canAdmin: boolean;
+	/** Networks this API key is allowed to access (already set to all networks if canAdmin=true) */
 	networkLimit: Network[];
+	/** Whether this API key has usage credit limits (already false if canAdmin=true) */
 	usageLimited: boolean;
 	walletScopeIds: string[] | null;
 };
 
 const authMiddlewareInputSchema = z.object({});
 
-export const authMiddleware = (minPermission: Permission) =>
+/**
+ * Authentication middleware factory.
+ * Creates middleware that validates API key and checks required permission flags.
+ *
+ * @param required - Permission flags that must be satisfied (e.g. { canRead: true })
+ * @returns Express-zod-api middleware
+ */
+export const authMiddleware = (required: RequiredPermissionFlags) =>
 	new Middleware<Record<string, never>, AuthContext, string, typeof authMiddlewareInputSchema>({
 		security: {
 			// this information is optional and used for generating documentation
@@ -47,43 +67,29 @@ export const authMiddleware = (minPermission: Permission) =>
 					throw createHttpError(401, 'Unauthorized, API key is revoked');
 				}
 
-				if (minPermission == Permission.Admin && apiKey.permission != Permission.Admin) {
-					throw createHttpError(401, 'Unauthorized, admin access required');
+				// Check if user has required permission flags
+				if (!hasPermission(required, apiKey.canRead, apiKey.canPay, apiKey.canAdmin)) {
+					const permissionName = getPermissionName(required);
+					throw createHttpError(401, `Unauthorized, ${permissionName} access required`);
 				}
 
-				if (
-					minPermission == Permission.ReadAndPay &&
-					apiKey.permission != Permission.ReadAndPay &&
-					apiKey.permission != Permission.Admin
-				) {
-					throw createHttpError(401, 'Unauthorized, payment access required');
-				}
-
-				if (
-					minPermission == Permission.Read &&
-					apiKey.permission != Permission.Read &&
-					apiKey.permission != Permission.Admin &&
-					apiKey.permission != Permission.ReadAndPay
-				) {
-					throw createHttpError(401, 'Unauthorized, read access required');
-				}
+				// Admin special handling: bypass network and usage limits
 				let networkLimit = apiKey.networkLimit;
-				if (apiKey.permission == Permission.Admin) {
-					networkLimit = [Network.Mainnet, Network.Preprod];
-				}
 				let usageLimited = apiKey.usageLimited;
-				if (apiKey.permission == Permission.Admin) {
+
+				if (apiKey.canAdmin) {
+					networkLimit = [Network.Mainnet, Network.Preprod];
 					usageLimited = false;
 				}
 
 				const walletScopeIds =
-					apiKey.permission === Permission.Admin || !apiKey.walletScopeEnabled
-						? null
-						: apiKey.WalletScopes.map((ws) => ws.hotWalletId);
+					apiKey.canAdmin || !apiKey.walletScopeEnabled ? null : apiKey.WalletScopes.map((ws) => ws.hotWalletId);
 
 				return {
 					id: apiKey.id,
-					permission: apiKey.permission,
+					canRead: apiKey.canRead,
+					canPay: apiKey.canPay,
+					canAdmin: apiKey.canAdmin,
 					networkLimit: networkLimit,
 					usageLimited: usageLimited,
 					walletScopeIds: walletScopeIds,
@@ -97,15 +103,16 @@ export const authMiddleware = (minPermission: Permission) =>
 		},
 	});
 
-export async function checkIsAllowedNetworkOrThrowUnauthorized(
-	networkLimit: Network[],
-	network: Network,
-	permission: Permission,
-) {
-	if (permission == Permission.Admin) {
-		return;
-	}
-
+/**
+ * Checks if the user is allowed to access the specified network.
+ * Note: admin users already have all networks set in their networkLimit by the auth middleware,
+ * so no explicit admin check is needed here.
+ *
+ * @param networkLimit - Networks the user is allowed to access
+ * @param network - The network being accessed
+ * @throws 401 Unauthorized if network is not allowed
+ */
+export async function checkIsAllowedNetworkOrThrowUnauthorized(networkLimit: Network[], network: Network) {
 	if (!networkLimit.includes(network)) {
 		//await a random amount to throttle invalid requests
 		await new Promise((resolve) => setTimeout(resolve, Math.random() * 1000));

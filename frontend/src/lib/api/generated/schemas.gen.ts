@@ -18,7 +18,19 @@ export const APIKeySchema = {
                 'ReadAndPay',
                 'Admin'
             ],
-            description: 'Permission level of the API key'
+            description: 'Permission level of the API key DEPRECATED (computed from flags for backward compatibility)'
+        },
+        canRead: {
+            type: 'boolean',
+            description: 'Whether this API key can access read endpoints'
+        },
+        canPay: {
+            type: 'boolean',
+            description: 'Whether this API key can access payment/purchase endpoints'
+        },
+        canAdmin: {
+            type: 'boolean',
+            description: 'Whether this API key has admin access'
         },
         usageLimited: {
             type: 'boolean',
@@ -89,6 +101,9 @@ export const APIKeySchema = {
         'id',
         'token',
         'permission',
+        'canRead',
+        'canPay',
+        'canAdmin',
         'usageLimited',
         'NetworkLimit',
         'RemainingUsageCredits',
@@ -177,6 +192,93 @@ export const WalletSchema = {
             type: 'string',
             nullable: true,
             description: 'Collection address for this wallet. Null if not set'
+        },
+        LowBalanceSummary: {
+            type: 'object',
+            properties: {
+                isLow: {
+                    type: 'boolean',
+                    description: 'Whether any enabled low-balance rule for this wallet is currently below threshold'
+                },
+                lowRuleCount: {
+                    type: 'integer',
+                    minimum: 0,
+                    description: 'How many enabled rules for this wallet are currently in low state'
+                },
+                lastCheckedAt: {
+                    type: 'string',
+                    nullable: true,
+                    format: 'date-time',
+                    description: 'Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked'
+                }
+            },
+            required: [
+                'isLow',
+                'lowRuleCount',
+                'lastCheckedAt'
+            ],
+            description: 'Aggregated low-balance state for this wallet'
+        },
+        LowBalanceRules: {
+            type: 'array',
+            items: {
+                type: 'object',
+                properties: {
+                    id: {
+                        type: 'string',
+                        description: 'Unique identifier for the low-balance rule'
+                    },
+                    assetUnit: {
+                        type: 'string',
+                        description: 'Raw on-chain asset unit, for example lovelace or a full policy+asset identifier'
+                    },
+                    thresholdAmount: {
+                        type: 'string',
+                        description: 'Threshold in raw on-chain units used to determine low balance'
+                    },
+                    enabled: {
+                        type: 'boolean',
+                        description: 'Whether the rule is active'
+                    },
+                    status: {
+                        type: 'string',
+                        enum: [
+                            'Unknown',
+                            'Healthy',
+                            'Low'
+                        ],
+                        description: 'Current deduped state of the rule'
+                    },
+                    lastKnownAmount: {
+                        type: 'string',
+                        nullable: true,
+                        description: 'Last observed balance for this asset in raw on-chain units. Null if never checked'
+                    },
+                    lastCheckedAt: {
+                        type: 'string',
+                        nullable: true,
+                        format: 'date-time',
+                        description: 'Timestamp when the rule was last evaluated. Null if never checked'
+                    },
+                    lastAlertedAt: {
+                        type: 'string',
+                        nullable: true,
+                        format: 'date-time',
+                        description: 'Timestamp when the wallet last entered low balance for this rule. Null if never alerted'
+                    }
+                },
+                required: [
+                    'id',
+                    'assetUnit',
+                    'thresholdAmount',
+                    'enabled',
+                    'status',
+                    'lastKnownAmount',
+                    'lastCheckedAt',
+                    'lastAlertedAt'
+                ]
+            },
+            description: 'Configured low-balance rules for this wallet, including current deduped state'
         }
     },
     required: [
@@ -184,7 +286,9 @@ export const WalletSchema = {
         'note',
         'walletVkey',
         'walletAddress',
-        'collectionAddress'
+        'collectionAddress',
+        'LowBalanceSummary',
+        'LowBalanceRules'
     ]
 } as const;
 
@@ -1596,7 +1700,7 @@ export const AgentMetadataSchema = {
                                     enum: [
                                         'Fixed'
                                     ],
-                                    description: 'Pricing type for the agent (Fixed)'
+                                    description: 'Pricing type for the agent (Fixed or Free)'
                                 },
                                 Pricing: {
                                     type: 'array',
@@ -1635,7 +1739,7 @@ export const AgentMetadataSchema = {
                                     enum: [
                                         'Free'
                                     ],
-                                    description: 'Pricing type for the agent (Free)'
+                                    description: 'Pricing type for the agent (Fixed or Free)'
                                 }
                             },
                             required: [
@@ -2697,6 +2801,32 @@ export const PurchasingWalletSchema = {
             type: 'string',
             nullable: true,
             description: 'Optional note about this wallet. Null if not set'
+        },
+        LowBalanceSummary: {
+            type: 'object',
+            properties: {
+                isLow: {
+                    type: 'boolean',
+                    description: 'Whether any enabled low-balance rule for this wallet is currently below threshold'
+                },
+                lowRuleCount: {
+                    type: 'integer',
+                    minimum: 0,
+                    description: 'How many enabled rules for this wallet are currently in low state'
+                },
+                lastCheckedAt: {
+                    type: 'string',
+                    nullable: true,
+                    format: 'date-time',
+                    description: 'Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked'
+                }
+            },
+            required: [
+                'isLow',
+                'lowRuleCount',
+                'lastCheckedAt'
+            ],
+            description: 'Aggregated low-balance status for the wallet'
         }
     },
     required: [
@@ -2704,7 +2834,8 @@ export const PurchasingWalletSchema = {
         'walletVkey',
         'walletAddress',
         'collectionAddress',
-        'note'
+        'note',
+        'LowBalanceSummary'
     ]
 } as const;
 
@@ -2732,6 +2863,32 @@ export const SellingWalletSchema = {
             type: 'string',
             nullable: true,
             description: 'Optional note about this wallet. Null if not set'
+        },
+        LowBalanceSummary: {
+            type: 'object',
+            properties: {
+                isLow: {
+                    type: 'boolean',
+                    description: 'Whether any enabled low-balance rule for this wallet is currently below threshold'
+                },
+                lowRuleCount: {
+                    type: 'integer',
+                    minimum: 0,
+                    description: 'How many enabled rules for this wallet are currently in low state'
+                },
+                lastCheckedAt: {
+                    type: 'string',
+                    nullable: true,
+                    format: 'date-time',
+                    description: 'Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked'
+                }
+            },
+            required: [
+                'isLow',
+                'lowRuleCount',
+                'lastCheckedAt'
+            ],
+            description: 'Aggregated low-balance status for the wallet'
         }
     },
     required: [
@@ -2739,7 +2896,8 @@ export const SellingWalletSchema = {
         'walletVkey',
         'walletAddress',
         'collectionAddress',
-        'note'
+        'note',
+        'LowBalanceSummary'
     ]
 } as const;
 
@@ -2860,6 +3018,32 @@ export const PaymentSourceExtendedSchema = {
                         type: 'string',
                         nullable: true,
                         description: 'Optional note about this wallet. Null if not set'
+                    },
+                    LowBalanceSummary: {
+                        type: 'object',
+                        properties: {
+                            isLow: {
+                                type: 'boolean',
+                                description: 'Whether any enabled low-balance rule for this wallet is currently below threshold'
+                            },
+                            lowRuleCount: {
+                                type: 'integer',
+                                minimum: 0,
+                                description: 'How many enabled rules for this wallet are currently in low state'
+                            },
+                            lastCheckedAt: {
+                                type: 'string',
+                                nullable: true,
+                                format: 'date-time',
+                                description: 'Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked'
+                            }
+                        },
+                        required: [
+                            'isLow',
+                            'lowRuleCount',
+                            'lastCheckedAt'
+                        ],
+                        description: 'Aggregated low-balance status for the wallet'
                     }
                 },
                 required: [
@@ -2867,7 +3051,8 @@ export const PaymentSourceExtendedSchema = {
                     'walletVkey',
                     'walletAddress',
                     'collectionAddress',
-                    'note'
+                    'note',
+                    'LowBalanceSummary'
                 ]
             },
             description: 'List of wallets used for purchasing (buyer side)'
@@ -2898,6 +3083,32 @@ export const PaymentSourceExtendedSchema = {
                         type: 'string',
                         nullable: true,
                         description: 'Optional note about this wallet. Null if not set'
+                    },
+                    LowBalanceSummary: {
+                        type: 'object',
+                        properties: {
+                            isLow: {
+                                type: 'boolean',
+                                description: 'Whether any enabled low-balance rule for this wallet is currently below threshold'
+                            },
+                            lowRuleCount: {
+                                type: 'integer',
+                                minimum: 0,
+                                description: 'How many enabled rules for this wallet are currently in low state'
+                            },
+                            lastCheckedAt: {
+                                type: 'string',
+                                nullable: true,
+                                format: 'date-time',
+                                description: 'Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked'
+                            }
+                        },
+                        required: [
+                            'isLow',
+                            'lowRuleCount',
+                            'lastCheckedAt'
+                        ],
+                        description: 'Aggregated low-balance status for the wallet'
                     }
                 },
                 required: [
@@ -2905,7 +3116,8 @@ export const PaymentSourceExtendedSchema = {
                     'walletVkey',
                     'walletAddress',
                     'collectionAddress',
-                    'note'
+                    'note',
+                    'LowBalanceSummary'
                 ]
             },
             description: 'List of wallets used for selling (seller side)'

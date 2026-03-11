@@ -17,6 +17,11 @@ import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
+import {
+	walletLowBalanceMonitorService,
+	toBalanceMapFromMeshUtxos,
+	type MeshLikeUtxo,
+} from '@/services/wallet-low-balance-monitor';
 
 type PaymentSourceWithPurchaseRelations = Prisma.PaymentSourceGetPayload<{
 	include: {
@@ -64,6 +69,11 @@ async function processSinglePurchaseRequest(
 		paymentContract.network,
 		paymentContract.PaymentSourceConfig.rpcProviderApiKey,
 		encryptedSecret,
+	);
+	await walletLowBalanceMonitorService.evaluateHotWalletById(
+		purchasingWallet.id,
+		toBalanceMapFromMeshUtxos(utxos as MeshLikeUtxo[]),
+		'submission',
 	);
 	if (utxos.length === 0) {
 		//this is if the seller wallet is empty
@@ -205,6 +215,13 @@ async function processSinglePurchaseRequest(
 
 	//submit the transaction to the blockchain
 	const newTxHash = await wallet.submitTx(signedTx);
+	await walletLowBalanceMonitorService.evaluateProjectedHotWalletById({
+		hotWalletId: purchasingWallet.id,
+		walletAddress: address,
+		walletUtxos: limitedFilteredUtxos,
+		unsignedTx,
+		checkSource: 'submission',
+	});
 	await prisma.purchaseRequest.update({
 		where: { id: request.id },
 		data: {

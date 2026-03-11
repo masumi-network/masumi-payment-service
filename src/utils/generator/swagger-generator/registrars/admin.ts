@@ -19,6 +19,16 @@ import {
 	patchWalletSchemaInput,
 	patchWalletSchemaOutput,
 } from '@/routes/api/wallet/schemas';
+import {
+	deleteWalletLowBalanceRuleSchemaInput,
+	deleteWalletLowBalanceRuleSchemaOutput,
+	getWalletLowBalanceRulesSchemaInput,
+	getWalletLowBalanceRulesSchemaOutput,
+	patchWalletLowBalanceRuleSchemaInput,
+	patchWalletLowBalanceRuleSchemaOutput,
+	postWalletLowBalanceRuleSchemaInput,
+	postWalletLowBalanceRuleSchemaOutput,
+} from '@/routes/api/wallet/low-balance';
 import { postRevealDataSchemaOutput, postVerifyDataRevealSchemaInput } from '@/routes/api/signature/verify/reveal-data';
 import {
 	swapTokensSchemaInput,
@@ -45,10 +55,15 @@ import {
 } from '@/routes/api/api-key/examples';
 import {
 	createWalletBodyExample,
+	createWalletLowBalanceRuleBodyExample,
 	createWalletResponseExample,
+	deleteWalletLowBalanceRuleBodyExample,
 	getWalletQueryExample,
+	getWalletLowBalanceRulesQueryExample,
+	updateWalletLowBalanceRuleBodyExample,
 	updateWalletBodyExample,
 	walletExample,
+	walletLowBalanceRuleExample,
 } from '@/routes/api/wallet/examples';
 import { successResponse, type SwaggerRegistrarContext } from '../shared';
 
@@ -158,6 +173,117 @@ export function registerAdminPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 			200: successResponse('Wallet updated', patchWalletSchemaOutput, walletExample),
 			404: {
 				description: 'Wallet not found',
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'get',
+		path: '/wallet/low-balance',
+		description: 'Lists low-balance monitoring rules for wallets',
+		summary: 'List wallet low-balance rules. (read access required)',
+		tags: ['wallet'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			query: getWalletLowBalanceRulesSchemaInput.openapi({ example: getWalletLowBalanceRulesQueryExample }),
+		},
+		responses: {
+			200: successResponse('Wallet low-balance rules', getWalletLowBalanceRulesSchemaOutput, {
+				Rules: [walletLowBalanceRuleExample],
+			}),
+		},
+	});
+
+	registry.registerPath({
+		method: 'post',
+		path: '/wallet/low-balance',
+		description: 'Creates a wallet low-balance monitoring rule',
+		summary: 'Create a wallet low-balance rule. (admin access required)',
+		tags: ['wallet'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			body: {
+				description: 'Low-balance rule to create',
+				content: {
+					'application/json': {
+						schema: postWalletLowBalanceRuleSchemaInput.openapi({
+							example: createWalletLowBalanceRuleBodyExample,
+						}),
+					},
+				},
+			},
+		},
+		responses: {
+			200: successResponse(
+				'Wallet low-balance rule created',
+				postWalletLowBalanceRuleSchemaOutput,
+				walletLowBalanceRuleExample,
+			),
+			404: {
+				description: 'Wallet not found',
+			},
+			409: {
+				description: 'Low-balance rule already exists for this wallet and asset',
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'patch',
+		path: '/wallet/low-balance',
+		description: 'Updates a wallet low-balance monitoring rule',
+		summary: 'Update a wallet low-balance rule. (admin access required)',
+		tags: ['wallet'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			body: {
+				description: 'Low-balance rule update',
+				content: {
+					'application/json': {
+						schema: patchWalletLowBalanceRuleSchemaInput.openapi({
+							example: updateWalletLowBalanceRuleBodyExample,
+						}),
+					},
+				},
+			},
+		},
+		responses: {
+			200: successResponse('Wallet low-balance rule updated', patchWalletLowBalanceRuleSchemaOutput, {
+				...walletLowBalanceRuleExample,
+				thresholdAmount: '7000000',
+			}),
+			404: {
+				description: 'Low-balance rule not found',
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'delete',
+		path: '/wallet/low-balance',
+		description: 'Deletes a wallet low-balance monitoring rule',
+		summary: 'Delete a wallet low-balance rule. (admin access required)',
+		tags: ['wallet'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			body: {
+				description: 'Low-balance rule to delete',
+				content: {
+					'application/json': {
+						schema: deleteWalletLowBalanceRuleSchemaInput.openapi({
+							example: deleteWalletLowBalanceRuleBodyExample,
+						}),
+					},
+				},
+			},
+		},
+		responses: {
+			200: successResponse('Wallet low-balance rule deleted', deleteWalletLowBalanceRuleSchemaOutput, {
+				ruleId: 'low_balance_rule_id',
+				deletedAt: new Date(1713636260),
+			}),
+			404: {
+				description: 'Low-balance rule not found',
 			},
 		},
 	});

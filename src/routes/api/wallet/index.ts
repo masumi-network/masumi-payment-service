@@ -16,6 +16,7 @@ import {
 	postWalletSchemaInput,
 	postWalletSchemaOutput,
 } from './schemas';
+import { serializeLowBalanceRecord, serializeLowBalanceSummary } from '@/services/wallet-low-balance-monitor';
 
 export {
 	getWalletSchemaInput,
@@ -59,6 +60,19 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
 								lastCheckedAt: true,
 							},
 						},
+						LowBalanceRules: {
+							orderBy: [{ assetUnit: 'asc' }],
+							select: {
+								id: true,
+								assetUnit: true,
+								thresholdAmount: true,
+								enabled: true,
+								status: true,
+								lastKnownAmount: true,
+								lastCheckedAt: true,
+								lastAlertedAt: true,
+							},
+						},
 					},
 				});
 				if (result == null) {
@@ -87,6 +101,8 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
 						walletVkey: result.walletVkey,
 						walletAddress: result.walletAddress,
 						collectionAddress: result.collectionAddress,
+						LowBalanceSummary: serializeLowBalanceSummary(result.LowBalanceRules),
+						LowBalanceRules: result.LowBalanceRules.map(serializeLowBalanceRecord),
 						Secret: {
 							createdAt: result.Secret.createdAt,
 							updatedAt: result.Secret.updatedAt,
@@ -107,6 +123,8 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
 					collectionAddress: result.collectionAddress,
 					walletVkey: result.walletVkey,
 					walletAddress: result.walletAddress,
+					LowBalanceSummary: serializeLowBalanceSummary(result.LowBalanceRules),
+					LowBalanceRules: result.LowBalanceRules.map(serializeLowBalanceRecord),
 				};
 			} else if (input.walletType == 'Purchasing') {
 				const result = await prisma.hotWallet.findFirst({
@@ -134,6 +152,19 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
 								lastCheckedAt: true,
 							},
 						},
+						LowBalanceRules: {
+							orderBy: [{ assetUnit: 'asc' }],
+							select: {
+								id: true,
+								assetUnit: true,
+								thresholdAmount: true,
+								enabled: true,
+								status: true,
+								lastKnownAmount: true,
+								lastCheckedAt: true,
+								lastAlertedAt: true,
+							},
+						},
 					},
 				});
 				if (result == null) {
@@ -157,6 +188,8 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
 						walletVkey: result.walletVkey,
 						walletAddress: result.walletAddress,
 						collectionAddress: result.collectionAddress,
+						LowBalanceSummary: serializeLowBalanceSummary(result.LowBalanceRules),
+						LowBalanceRules: result.LowBalanceRules.map(serializeLowBalanceRecord),
 						Secret: {
 							createdAt: result.Secret.createdAt,
 							updatedAt: result.Secret.updatedAt,
@@ -177,6 +210,8 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
 					walletVkey: result.walletVkey,
 					collectionAddress: result.collectionAddress,
 					walletAddress: result.walletAddress,
+					LowBalanceSummary: serializeLowBalanceSummary(result.LowBalanceRules),
+					LowBalanceRules: result.LowBalanceRules.map(serializeLowBalanceRecord),
 				};
 			}
 			throw createHttpError(400, 'Invalid wallet type');
@@ -205,7 +240,7 @@ export const postWalletEndpointPost = adminAuthenticatedEndpointFactory.build({
 	handler: async ({ input, ctx }) => {
 		const startTime = Date.now();
 		try {
-			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 			const secretKey = MeshWallet.brew(false);
 			const secretWords = typeof secretKey == 'string' ? secretKey.split(' ') : secretKey;
 
@@ -267,6 +302,19 @@ export const patchWalletEndpointPatch = adminAuthenticatedEndpointFactory.build(
 						lastCheckedAt: true,
 					},
 				},
+				LowBalanceRules: {
+					orderBy: [{ assetUnit: 'asc' }],
+					select: {
+						id: true,
+						assetUnit: true,
+						thresholdAmount: true,
+						enabled: true,
+						status: true,
+						lastKnownAmount: true,
+						lastCheckedAt: true,
+						lastAlertedAt: true,
+					},
+				},
 			},
 		});
 
@@ -283,6 +331,8 @@ export const patchWalletEndpointPatch = adminAuthenticatedEndpointFactory.build(
 			walletVkey: result.walletVkey,
 			walletAddress: result.walletAddress,
 			collectionAddress: result.collectionAddress,
+			LowBalanceSummary: serializeLowBalanceSummary(result.LowBalanceRules),
+			LowBalanceRules: result.LowBalanceRules.map(serializeLowBalanceRecord),
 		};
 	},
 });

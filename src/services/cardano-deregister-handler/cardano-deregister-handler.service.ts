@@ -15,6 +15,11 @@ import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { errorToString } from '@/utils/converter/error-string-convert';
 import { extractAssetName } from '@/utils/converter/agent-identifier';
 import { sortAndLimitUtxos } from '@/utils/utxo';
+import {
+	walletLowBalanceMonitorService,
+	toBalanceMapFromMeshUtxos,
+	type MeshLikeUtxo,
+} from '@/services/wallet-low-balance-monitor';
 
 const mutex = new Mutex();
 
@@ -93,7 +98,15 @@ export async function deRegisterAgentV1() {
 							paymentSource.PaymentSourceConfig.rpcProviderApiKey,
 							deregistrationRequest.SmartContractWallet.Secret.encryptedMnemonic,
 						);
-						if (utxos.length === 0) throw new Error('No UTXOs found for the wallet');
+						await walletLowBalanceMonitorService.evaluateHotWalletById(
+							deregistrationRequest.SmartContractWallet.id,
+							toBalanceMapFromMeshUtxos(utxos as MeshLikeUtxo[]),
+							'submission',
+						);
+
+						if (utxos.length === 0) {
+							throw new Error('No UTXOs found for the wallet');
+						}
 						const { script, policyId } = await getRegistryScriptFromNetworkHandlerV1(paymentSource);
 						if (!deregistrationRequest.agentIdentifier)
 							throw new Error('Agent identifier is required for deregistration');
@@ -128,6 +141,13 @@ export async function deRegisterAgentV1() {
 							},
 						});
 						const newTxHash = await wallet.submitTx(signedTx);
+						await walletLowBalanceMonitorService.evaluateProjectedHotWalletById({
+							hotWalletId: deregistrationRequest.SmartContractWallet.id,
+							walletAddress: address,
+							walletUtxos: limitedFilteredUtxos,
+							unsignedTx,
+							checkSource: 'submission',
+						});
 						await prisma.registryRequest.update({
 							where: { id: deregistrationRequest.id },
 							data: { CurrentTransaction: { update: { txHash: newTxHash } } },

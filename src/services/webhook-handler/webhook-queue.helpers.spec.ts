@@ -1,4 +1,4 @@
-import { WebhookEventType } from '@/generated/prisma/client';
+import { WebhookEventType } from '@/generated/prisma/enums';
 import { buildEndpointWebhookPayload, buildWebhookPayload, mergeWebhookEndpointBatch } from './webhook-queue.helpers';
 
 describe('webhook queue helpers', () => {

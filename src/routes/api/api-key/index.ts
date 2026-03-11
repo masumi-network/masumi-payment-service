@@ -1,5 +1,5 @@
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
-import { ApiKeyStatus, Network, Permission } from '@/generated/prisma/client';
+import { ApiKeyStatus, Network } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import { createId } from '@paralleldrive/cuid2';
 import createHttpError from 'http-errors';
@@ -18,6 +18,7 @@ import {
 	updateAPIKeySchemaInput,
 	updateAPIKeySchemaOutput,
 } from './schemas';
+import { computePermissionFromFlags, flagsFromLegacyPermission, LegacyPermission } from '@/utils/permissions';
 
 export {
 	addAPIKeySchemaInput,
@@ -33,6 +34,9 @@ export {
 
 export const mapApiKeyOutput = <
 	T extends {
+		canRead: boolean;
+		canPay: boolean;
+		canAdmin: boolean;
 		networkLimit: Network[];
 		RemainingUsageCredits: Array<{ amount: bigint; unit: string }>;
 		WalletScopes: Array<{ hotWalletId: string }>;
@@ -43,6 +47,7 @@ export const mapApiKeyOutput = <
 	const { networkLimit, RemainingUsageCredits, ...rest } = data;
 	return {
 		...rest,
+		permission: computePermissionFromFlags(data.canRead, data.canPay, data.canAdmin),
 		NetworkLimit: networkLimit,
 		RemainingUsageCredits: transformBigIntAmounts(RemainingUsageCredits),
 	};
@@ -72,7 +77,30 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 	input: addAPIKeySchemaInput,
 	output: addAPIKeySchemaOutput,
 	handler: async ({ input }: { input: z.infer<typeof addAPIKeySchemaInput> }) => {
-		const isAdmin = input.permission == Permission.Admin;
+		// Determine flags: prefer explicit flags, fall back to legacy permission
+		let canRead: boolean;
+		let canPay: boolean;
+		let canAdmin: boolean;
+
+		if (input.canRead !== undefined || input.canPay !== undefined || input.canAdmin !== undefined) {
+			// New flag-based input - use flags directly
+			canRead = input.canRead ?? true;
+			canPay = input.canPay ?? false;
+			canAdmin = input.canAdmin ?? false;
+		} else if (input.permission) {
+			// Legacy permission input - convert to flags
+			const flags = flagsFromLegacyPermission(input.permission as LegacyPermission);
+			canRead = flags.canRead;
+			canPay = flags.canPay;
+			canAdmin = flags.canAdmin;
+		} else {
+			// Default: read-only
+			canRead = true;
+			canPay = false;
+			canAdmin = false;
+		}
+
+		const isAdmin = canAdmin;
 		if (isAdmin && input.walletScopeEnabled) {
 			throw createHttpError(400, 'Admin API keys cannot have wallet scope enabled');
 		}
@@ -85,7 +113,9 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 				token: apiKey,
 				tokenHash: generateSHA256Hash(apiKey),
 				status: ApiKeyStatus.Active,
-				permission: input.permission,
+				canRead: canRead,
+				canPay: canPay,
+				canAdmin: canAdmin,
 				usageLimited: isAdmin ? false : input.usageLimited,
 				networkLimit: isAdmin ? [Network.Mainnet, Network.Preprod] : input.NetworkLimit,
 				walletScopeEnabled: isAdmin ? false : input.walletScopeEnabled,
@@ -174,12 +204,17 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 						}
 					}
 				}
+
+				// Determine new flag values
+				const newCanRead = input.canRead !== undefined ? input.canRead : apiKey.canRead;
+				const newCanPay = input.canPay !== undefined ? input.canPay : apiKey.canPay;
+				const newCanAdmin = input.canAdmin !== undefined ? input.canAdmin : apiKey.canAdmin;
+
 				const resultingWalletScopeEnabled = input.walletScopeEnabled ?? apiKey.walletScopeEnabled;
-				const resultingPermission = apiKey.permission;
-				if (resultingPermission === Permission.Admin && resultingWalletScopeEnabled) {
+				if (newCanAdmin && resultingWalletScopeEnabled) {
 					throw createHttpError(400, 'Admin API keys cannot have wallet scope enabled');
 				}
-				if (resultingPermission === Permission.Admin && input.usageLimited) {
+				if (newCanAdmin && input.usageLimited) {
 					throw createHttpError(400, 'Admin API keys cannot have usage limits');
 				}
 
@@ -206,6 +241,9 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 						status: input.status,
 						networkLimit: input.NetworkLimit,
 						walletScopeEnabled: input.walletScopeEnabled,
+						canRead: newCanRead,
+						canPay: newCanPay,
+						canAdmin: newCanAdmin,
 					},
 					include: {
 						RemainingUsageCredits: { select: { amount: true, unit: true } },
