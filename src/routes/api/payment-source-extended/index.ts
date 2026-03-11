@@ -11,7 +11,7 @@ import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/m
 import { DEFAULTS } from '@/utils/config';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { logger } from '@/utils/logger';
-import { walletLowBalanceMonitorService } from '@/services/wallet-low-balance-monitor';
+import { walletLowBalanceMonitorService } from '@/services/wallets';
 import {
 	paymentSourceExtendedCreateSchemaInput,
 	paymentSourceExtendedCreateSchemaOutput,
