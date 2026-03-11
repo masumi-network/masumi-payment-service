@@ -12,7 +12,7 @@ import { errorToString } from '@/utils/converter/error-string-convert';
 import { extractAssetName } from '@/utils/converter/agent-identifier';
 import { sortAndLimitUtxos } from '@/utils/utxo';
 import type { ProjectableWalletUtxo } from '@/services/wallets';
-import { createMeshProvider, loadHotWalletSession } from '@/services/shared';
+import { createMeshProvider, createPendingTransaction, loadHotWalletSession, updateCurrentTransactionHash } from '@/services/shared';
 
 const mutex = new Mutex();
 
@@ -147,17 +147,7 @@ export async function deRegisterAgentV1() {
 							where: { id: request.id },
 							data: {
 								state: RegistrationState.DeregistrationInitiated,
-								CurrentTransaction: {
-									create: {
-										txHash: null,
-										status: TransactionStatus.Pending,
-										BlocksWallet: {
-											connect: {
-												id: request.SmartContractWallet.id,
-											},
-										},
-									},
-								},
+								...createPendingTransaction(request.SmartContractWallet.id),
 							},
 						});
 
@@ -169,13 +159,7 @@ export async function deRegisterAgentV1() {
 						);
 						await prisma.registryRequest.update({
 							where: { id: request.id },
-							data: {
-								CurrentTransaction: {
-									update: {
-										txHash: newTxHash,
-									},
-								},
-							},
+							data: updateCurrentTransactionHash(newTxHash),
 						});
 
 						logger.debug(`Created withdrawal transaction:

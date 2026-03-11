@@ -18,7 +18,15 @@ import { Mutex, tryAcquire, MutexInterface } from 'async-mutex';
 import { SERVICE_CONSTANTS } from '@/utils/config';
 import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import type { ProjectableWalletUtxo } from '@/services/wallets';
-import { createMeshProvider, createTxWindow, loadHotWalletSession } from '@/services/shared';
+import {
+	connectPreviousAction,
+	createMeshProvider,
+	createNextPaymentAction,
+	createPendingTransaction,
+	createTxWindow,
+	loadHotWalletSession,
+	updateCurrentTransactionHash,
+} from '@/services/shared';
 
 const mutex = new Mutex();
 
@@ -195,27 +203,9 @@ export async function authorizeRefundV1() {
 						await prisma.paymentRequest.update({
 							where: { id: request.id },
 							data: {
-								ActionHistory: {
-									connect: {
-										id: request.nextActionId,
-									},
-								},
-								NextAction: {
-									create: {
-										requestedAction: PaymentAction.AuthorizeRefundInitiated,
-									},
-								},
-								CurrentTransaction: {
-									create: {
-										txHash: null,
-										status: TransactionStatus.Pending,
-										BlocksWallet: {
-											connect: {
-												id: request.SmartContractWallet!.id,
-											},
-										},
-									},
-								},
+								...connectPreviousAction(request.nextActionId),
+								...createNextPaymentAction(PaymentAction.AuthorizeRefundInitiated),
+								...createPendingTransaction(request.SmartContractWallet!.id),
 								TransactionHistory: {
 									connect: {
 										id: request.CurrentTransaction!.id,
@@ -231,13 +221,7 @@ export async function authorizeRefundV1() {
 						);
 						await prisma.paymentRequest.update({
 							where: { id: request.id },
-							data: {
-								CurrentTransaction: {
-									update: {
-										txHash: newTxHash,
-									},
-								},
-							},
+							data: updateCurrentTransactionHash(newTxHash),
 						});
 
 						logger.debug(`Created withdrawal transaction:
@@ -261,18 +245,11 @@ export async function authorizeRefundV1() {
 						await prisma.paymentRequest.update({
 							where: { id: request.id },
 							data: {
-								ActionHistory: {
-									connect: {
-										id: request.nextActionId,
-									},
-								},
-								NextAction: {
-									create: {
-										requestedAction: PaymentAction.WaitingForManualAction,
-										errorType: PaymentErrorType.Unknown,
-										errorNote: 'Authorizing refund failed: ' + errorToString(error),
-									},
-								},
+								...connectPreviousAction(request.nextActionId),
+								...createNextPaymentAction(PaymentAction.WaitingForManualAction, {
+									errorType: PaymentErrorType.Unknown,
+									errorNote: 'Authorizing refund failed: ' + errorToString(error),
+								}),
 								SmartContractWallet: {
 									update: {
 										lockedAt: null,

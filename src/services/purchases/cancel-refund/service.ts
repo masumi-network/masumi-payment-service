@@ -18,7 +18,15 @@ import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { SERVICE_CONSTANTS } from '@/utils/config';
 import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import type { ProjectableWalletUtxo } from '@/services/wallets';
-import { createMeshProvider, createTxWindow, loadHotWalletSession } from '@/services/shared';
+import {
+	connectPreviousAction,
+	createMeshProvider,
+	createNextPurchaseAction,
+	createPendingTransaction,
+	createTxWindow,
+	loadHotWalletSession,
+	updateCurrentTransactionHash,
+} from '@/services/shared';
 
 const mutex = new Mutex();
 function validatePurchaseRequestFields(request: {
@@ -235,27 +243,9 @@ export async function cancelRefundsV1() {
 						await prisma.purchaseRequest.update({
 							where: { id: request.id },
 							data: {
-								ActionHistory: {
-									connect: {
-										id: request.nextActionId,
-									},
-								},
-								NextAction: {
-									create: {
-										requestedAction: PurchasingAction.UnSetRefundRequestedInitiated,
-									},
-								},
-								CurrentTransaction: {
-									create: {
-										txHash: null,
-										status: TransactionStatus.Pending,
-										BlocksWallet: {
-											connect: {
-												id: purchasingWallet.id,
-											},
-										},
-									},
-								},
+								...connectPreviousAction(request.nextActionId),
+								...createNextPurchaseAction(PurchasingAction.UnSetRefundRequestedInitiated),
+								...createPendingTransaction(purchasingWallet.id),
 								TransactionHistory: {
 									connect: {
 										id: request.CurrentTransaction!.id,
@@ -271,13 +261,7 @@ export async function cancelRefundsV1() {
 						);
 						await prisma.purchaseRequest.update({
 							where: { id: request.id },
-							data: {
-								CurrentTransaction: {
-									update: {
-										txHash: newTxHash,
-									},
-								},
-							},
+							data: updateCurrentTransactionHash(newTxHash),
 						});
 
 						logger.debug(`Created withdrawal transaction:
@@ -301,18 +285,11 @@ export async function cancelRefundsV1() {
 						await prisma.purchaseRequest.update({
 							where: { id: request.id },
 							data: {
-								ActionHistory: {
-									connect: {
-										id: request.nextActionId,
-									},
-								},
-								NextAction: {
-									create: {
-										requestedAction: PurchasingAction.WaitingForManualAction,
-										errorType: PurchaseErrorType.Unknown,
-										errorNote: 'Cancelling refund failed: ' + errorToString(error),
-									},
-								},
+								...connectPreviousAction(request.nextActionId),
+								...createNextPurchaseAction(PurchasingAction.WaitingForManualAction, {
+									errorType: PurchaseErrorType.Unknown,
+									errorNote: 'Cancelling refund failed: ' + errorToString(error),
+								}),
 								SmartContractWallet: {
 									update: {
 										lockedAt: null,

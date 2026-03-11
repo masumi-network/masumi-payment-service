@@ -18,7 +18,15 @@ import { advancedRetryAll } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import type { ProjectableWalletUtxo } from '@/services/wallets';
-import { createMeshProvider, createTxWindow, loadHotWalletSession } from '@/services/shared';
+import {
+	connectPreviousAction,
+	createMeshProvider,
+	createNextPaymentAction,
+	createPendingTransaction,
+	createTxWindow,
+	loadHotWalletSession,
+	updateCurrentTransactionHash,
+} from '@/services/shared';
 
 type PaymentSourceWithRelations = Prisma.PaymentSourceGetPayload<{
 	include: {
@@ -79,18 +87,11 @@ async function handlePaymentRequestResults(
 			await prisma.paymentRequest.update({
 				where: { id: request.id },
 				data: {
-					ActionHistory: {
-						connect: {
-							id: request.nextActionId,
-						},
-					},
-					NextAction: {
-						create: {
-							requestedAction: PaymentAction.WaitingForManualAction,
-							errorType: PaymentErrorType.Unknown,
-							errorNote: 'Submitting result failed: ' + errorToString(result.error),
-						},
-					},
+					...connectPreviousAction(request.nextActionId),
+					...createNextPaymentAction(PaymentAction.WaitingForManualAction, {
+						errorType: PaymentErrorType.Unknown,
+						errorNote: 'Submitting result failed: ' + errorToString(result.error),
+					}),
 					SmartContractWallet: {
 						update: {
 							lockedAt: null,
@@ -247,27 +248,9 @@ async function processSinglePaymentRequest(
 	await prisma.paymentRequest.update({
 		where: { id: request.id },
 		data: {
-			ActionHistory: {
-				connect: {
-					id: request.nextActionId,
-				},
-			},
-			NextAction: {
-				create: {
-					requestedAction: PaymentAction.SubmitResultInitiated,
-				},
-			},
-			CurrentTransaction: {
-				create: {
-					txHash: null,
-					status: TransactionStatus.Pending,
-					BlocksWallet: {
-						connect: {
-							id: request.SmartContractWallet!.id,
-						},
-					},
-				},
-			},
+			...connectPreviousAction(request.nextActionId),
+			...createNextPaymentAction(PaymentAction.SubmitResultInitiated),
+			...createPendingTransaction(request.SmartContractWallet!.id),
 			TransactionHistory: {
 				connect: {
 					id: request.CurrentTransaction!.id,
@@ -280,13 +263,7 @@ async function processSinglePaymentRequest(
 		await walletSession.evaluateProjectedBalance(unsignedTx, limitedUtxos as unknown as ProjectableWalletUtxo[]);
 		await prisma.paymentRequest.update({
 			where: { id: request.id },
-			data: {
-				CurrentTransaction: {
-					update: {
-						txHash: newTxHash,
-					},
-				},
-			},
+			data: updateCurrentTransactionHash(newTxHash),
 		});
 
 		logger.debug(`Created submit result transaction:
@@ -303,19 +280,12 @@ async function processSinglePaymentRequest(
 		await prisma.paymentRequest.update({
 			where: { id: request.id },
 			data: {
-				ActionHistory: {
-					connect: {
-						id: request.nextActionId,
-					},
-				},
-				NextAction: {
-					create: {
-						requestedAction: PaymentAction.SubmitResultRequested,
-						errorType: null,
-						errorNote: null,
-						resultHash: request.NextAction.resultHash,
-					},
-				},
+				...connectPreviousAction(request.nextActionId),
+				...createNextPaymentAction(PaymentAction.SubmitResultRequested, {
+					errorType: null,
+					errorNote: null,
+					resultHash: request.NextAction.resultHash,
+				}),
 				SmartContractWallet: {
 					update: {
 						lockedAt: null,

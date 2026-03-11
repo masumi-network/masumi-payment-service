@@ -15,7 +15,13 @@ import { registerAgentV1, deRegisterAgentV1 } from '@/services/registry';
 import { CONFIG, DEFAULTS } from '@/utils/config';
 import { errorToString } from '@/utils/converter/error-string-convert';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
-import { createMeshProvider } from '@/services/shared';
+import {
+	connectPreviousAction,
+	createMeshProvider,
+	createNextPaymentAction,
+	createNextPurchaseAction,
+	updateCurrentTransactionStatus,
+} from '@/services/shared';
 
 const mutex = new Mutex();
 
@@ -98,18 +104,11 @@ export async function updateWalletTransactionHash() {
 														: undefined,
 											},
 										},
-							ActionHistory: {
-								connect: {
-									id: paymentRequest.nextActionId,
-								},
-							},
-							NextAction: {
-								create: {
-									requestedAction: PaymentAction.WaitingForExternalAction,
-									errorNote: 'Timeout when locking',
-									errorType: PaymentErrorType.Unknown,
-								},
-							},
+							...connectPreviousAction(paymentRequest.nextActionId),
+							...createNextPaymentAction(PaymentAction.WaitingForExternalAction, {
+								errorNote: 'Timeout when locking',
+								errorType: PaymentErrorType.Unknown,
+							}),
 						},
 					});
 				} else {
@@ -151,23 +150,12 @@ export async function updateWalletTransactionHash() {
 														: undefined,
 											},
 										},
-							CurrentTransaction: {
-								update: {
-									status: TransactionStatus.FailedViaTimeout,
-								},
-							},
-							ActionHistory: {
-								connect: {
-									id: paymentRequest.nextActionId,
-								},
-							},
-							NextAction: {
-								create: {
-									requestedAction: PaymentAction.WaitingForExternalAction,
-									errorNote: 'Timeout when waiting for transaction',
-									errorType: PaymentErrorType.Unknown,
-								},
-							},
+							...updateCurrentTransactionStatus(TransactionStatus.FailedViaTimeout),
+							...connectPreviousAction(paymentRequest.nextActionId),
+							...createNextPaymentAction(PaymentAction.WaitingForExternalAction, {
+								errorNote: 'Timeout when waiting for transaction',
+								errorType: PaymentErrorType.Unknown,
+							}),
 						},
 					});
 				}
@@ -245,18 +233,11 @@ export async function updateWalletTransactionHash() {
 														: undefined,
 											},
 										},
-							ActionHistory: {
-								connect: {
-									id: purchaseRequest.nextActionId,
-								},
-							},
-							NextAction: {
-								create: {
-									requestedAction: PurchasingAction.WaitingForExternalAction,
-									errorNote: 'Timeout when locking',
-									errorType: PurchaseErrorType.Unknown,
-								},
-							},
+							...connectPreviousAction(purchaseRequest.nextActionId),
+							...createNextPurchaseAction(PurchasingAction.WaitingForExternalAction, {
+								errorNote: 'Timeout when locking',
+								errorType: PurchaseErrorType.Unknown,
+							}),
 						},
 					});
 				} else {
@@ -298,23 +279,12 @@ export async function updateWalletTransactionHash() {
 														: undefined,
 											},
 										},
-							CurrentTransaction: {
-								update: {
-									status: TransactionStatus.FailedViaTimeout,
-								},
-							},
-							ActionHistory: {
-								connect: {
-									id: purchaseRequest.nextActionId,
-								},
-							},
-							NextAction: {
-								create: {
-									requestedAction: PurchasingAction.WaitingForExternalAction,
-									errorNote: 'Timeout when waiting for transaction',
-									errorType: PurchaseErrorType.Unknown,
-								},
-							},
+							...updateCurrentTransactionStatus(TransactionStatus.FailedViaTimeout),
+							...connectPreviousAction(purchaseRequest.nextActionId),
+							...createNextPurchaseAction(PurchasingAction.WaitingForExternalAction, {
+								errorNote: 'Timeout when waiting for transaction',
+								errorType: PurchaseErrorType.Unknown,
+							}),
 						},
 					});
 				}
@@ -435,11 +405,7 @@ export async function updateWalletTransactionHash() {
 														: undefined,
 											},
 										},
-							CurrentTransaction: {
-								update: {
-									status: TransactionStatus.FailedViaTimeout,
-								},
-							},
+							...updateCurrentTransactionStatus(TransactionStatus.FailedViaTimeout),
 							state:
 								registryRequest.state == RegistrationState.RegistrationInitiated
 									? RegistrationState.RegistrationFailed

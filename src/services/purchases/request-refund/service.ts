@@ -17,7 +17,15 @@ import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import type { ProjectableWalletUtxo } from '@/services/wallets';
-import { createMeshProvider, createTxWindow, loadHotWalletSession } from '@/services/shared';
+import {
+	connectPreviousAction,
+	createMeshProvider,
+	createNextPurchaseAction,
+	createPendingTransaction,
+	createTxWindow,
+	loadHotWalletSession,
+	updateCurrentTransactionHash,
+} from '@/services/shared';
 
 type PaymentSourceWithPurchaseRelations = Prisma.PaymentSourceGetPayload<{
 	include: {
@@ -174,27 +182,9 @@ async function processSinglePurchaseRequest(
 	await prisma.purchaseRequest.update({
 		where: { id: request.id },
 		data: {
-			ActionHistory: {
-				connect: {
-					id: request.nextActionId,
-				},
-			},
-			NextAction: {
-				create: {
-					requestedAction: PurchasingAction.SetRefundRequestedInitiated,
-				},
-			},
-			CurrentTransaction: {
-				create: {
-					txHash: null,
-					status: TransactionStatus.Pending,
-					BlocksWallet: {
-						connect: {
-							id: purchasingWallet.id,
-						},
-					},
-				},
-			},
+			...connectPreviousAction(request.nextActionId),
+			...createNextPurchaseAction(PurchasingAction.SetRefundRequestedInitiated),
+			...createPendingTransaction(purchasingWallet.id),
 			TransactionHistory: {
 				connect: {
 					id: request.CurrentTransaction!.id,
@@ -208,13 +198,7 @@ async function processSinglePurchaseRequest(
 	await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos as unknown as ProjectableWalletUtxo[]);
 	await prisma.purchaseRequest.update({
 		where: { id: request.id },
-		data: {
-			CurrentTransaction: {
-				update: {
-					txHash: newTxHash,
-				},
-			},
-		},
+		data: updateCurrentTransactionHash(newTxHash),
 	});
 
 	logger.debug(`Created refund request transaction:
@@ -285,18 +269,11 @@ export async function requestRefundsV1() {
 						await prisma.purchaseRequest.update({
 							where: { id: request.id },
 							data: {
-								ActionHistory: {
-									connect: {
-										id: request.nextActionId,
-									},
-								},
-								NextAction: {
-									create: {
-										requestedAction: PurchasingAction.WaitingForManualAction,
-										errorType: PurchaseErrorType.Unknown,
-										errorNote: 'Requesting refund failed: ' + errorToString(error),
-									},
-								},
+								...connectPreviousAction(request.nextActionId),
+								...createNextPurchaseAction(PurchasingAction.WaitingForManualAction, {
+									errorType: PurchaseErrorType.Unknown,
+									errorNote: 'Requesting refund failed: ' + errorToString(error),
+								}),
 								SmartContractWallet: {
 									update: {
 										lockedAt: null,

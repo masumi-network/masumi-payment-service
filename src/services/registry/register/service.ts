@@ -13,7 +13,7 @@ import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { errorToString } from '@/utils/converter/error-string-convert';
 import { sortUtxosByLovelaceDesc } from '@/utils/utxo';
 import type { ProjectableWalletUtxo } from '@/services/wallets';
-import { createMeshProvider, loadHotWalletSession } from '@/services/shared';
+import { createMeshProvider, createPendingTransaction, loadHotWalletSession, updateCurrentTransactionHash } from '@/services/shared';
 
 const mutex = new Mutex();
 
@@ -217,17 +217,7 @@ export async function registerAgentV1() {
 							where: { id: request.id },
 							data: {
 								state: RegistrationState.RegistrationInitiated,
-								CurrentTransaction: {
-									create: {
-										txHash: null,
-										status: TransactionStatus.Pending,
-										BlocksWallet: {
-											connect: {
-												id: request.SmartContractWallet.id,
-											},
-										},
-									},
-								},
+								...createPendingTransaction(request.SmartContractWallet.id),
 							},
 						});
 						//submit the transaction to the blockchain
@@ -240,11 +230,7 @@ export async function registerAgentV1() {
 							where: { id: request.id },
 							data: {
 								agentIdentifier: policyId + assetName,
-								CurrentTransaction: {
-									update: {
-										txHash: newTxHash,
-									},
-								},
+								...updateCurrentTransactionHash(newTxHash),
 							},
 						});
 

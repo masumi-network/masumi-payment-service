@@ -16,7 +16,14 @@ import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractWithdrawTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import { CONSTANTS } from '@/utils/config';
 import type { ProjectableWalletUtxo } from '@/services/wallets';
-import { createMeshProvider, createTxWindow, loadHotWalletSession } from '@/services/shared';
+import {
+	connectPreviousAction,
+	createMeshProvider,
+	createNextPaymentAction,
+	createTxWindow,
+	loadHotWalletSession,
+	updateCurrentTransactionHash,
+} from '@/services/shared';
 
 type PaymentSourceWithRelations = Prisma.PaymentSourceGetPayload<{
 	include: {
@@ -231,16 +238,8 @@ async function processSinglePaymentCollection(
 	await prisma.paymentRequest.update({
 		where: { id: request.id },
 		data: {
-			ActionHistory: {
-				connect: {
-					id: request.nextActionId,
-				},
-			},
-			NextAction: {
-				create: {
-					requestedAction: PaymentAction.WithdrawInitiated,
-				},
-			},
+			...connectPreviousAction(request.nextActionId),
+			...createNextPaymentAction(PaymentAction.WithdrawInitiated),
 			CurrentTransaction: {
 				update: {
 					txHash: null,
@@ -265,13 +264,7 @@ async function processSinglePaymentCollection(
 
 	await prisma.paymentRequest.update({
 		where: { id: request.id },
-		data: {
-			CurrentTransaction: {
-				update: {
-					txHash: newTxHash,
-				},
-			},
-		},
+		data: updateCurrentTransactionHash(newTxHash),
 	});
 	logger.debug(`Created withdrawal transaction:
         Tx ID: ${newTxHash}
@@ -344,18 +337,11 @@ export async function collectOutstandingPaymentsV1() {
 						await prisma.paymentRequest.update({
 							where: { id: request.id },
 							data: {
-								ActionHistory: {
-									connect: {
-										id: request.nextActionId,
-									},
-								},
-								NextAction: {
-									create: {
-										requestedAction: PaymentAction.WaitingForManualAction,
-										errorType: PaymentErrorType.Unknown,
-										errorNote: 'Collecting payments failed: ' + errorToString(error),
-									},
-								},
+								...connectPreviousAction(request.nextActionId),
+								...createNextPaymentAction(PaymentAction.WaitingForManualAction, {
+									errorType: PaymentErrorType.Unknown,
+									errorNote: 'Collecting payments failed: ' + errorToString(error),
+								}),
 								SmartContractWallet: {
 									update: {
 										lockedAt: null,

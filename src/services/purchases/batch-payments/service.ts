@@ -25,6 +25,12 @@ import cbor from 'cbor';
 import { Address, Datum, toPlutusData, toValue, TransactionOutput } from '@meshsdk/core-cst';
 import { CONSTANTS } from '@/utils/config';
 import { toBalanceMapFromMeshUtxos, walletLowBalanceMonitorService } from '@/services/wallets';
+import {
+	connectPreviousAction,
+	createNextPurchaseAction,
+	createPendingTransaction,
+	updateCurrentTransactionHash,
+} from '@/services/shared';
 
 type PaymentSourceWithWallets = Prisma.PaymentSourceGetPayload<{
 	include: {
@@ -131,33 +137,15 @@ async function executeSpecificBatchPayment(
 		await prisma.purchaseRequest.update({
 			where: { id: request.paymentRequest.id },
 			data: {
-				ActionHistory: {
-					connect: {
-						id: request.paymentRequest.nextActionId,
-					},
-				},
-				NextAction: {
-					create: {
-						requestedAction: PurchasingAction.FundsLockingInitiated,
-					},
-				},
+				...connectPreviousAction(request.paymentRequest.nextActionId),
+				...createNextPurchaseAction(PurchasingAction.FundsLockingInitiated),
 				collateralReturnLovelace: request.overpaidLovelace,
 				SmartContractWallet: {
 					connect: {
 						id: walletId,
 					},
 				},
-				CurrentTransaction: {
-					create: {
-						txHash: null,
-						status: TransactionStatus.Pending,
-						BlocksWallet: {
-							connect: {
-								id: walletId,
-							},
-						},
-					},
-				},
+				...createPendingTransaction(walletId),
 				TransactionHistory: request.paymentRequest.CurrentTransaction
 					? {
 							connect: {
@@ -201,13 +189,7 @@ async function executeSpecificBatchPayment(
 	for (const request of batchedRequests) {
 		await prisma.purchaseRequest.update({
 			where: { id: request.paymentRequest.id },
-			data: {
-				CurrentTransaction: {
-					update: {
-						txHash: txHash,
-					},
-				},
-			},
+			data: updateCurrentTransactionHash(txHash),
 		});
 	}
 	logger.info('Batching payments, purchase request updated');
