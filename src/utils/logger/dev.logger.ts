@@ -1,5 +1,4 @@
 import { createLogger, format, transports } from 'winston';
-import type { TransformableInfo } from 'logform';
 import { logs } from '@opentelemetry/api-logs';
 import { CONFIG } from '../config';
 import {
@@ -19,10 +18,17 @@ const ERROR_RESERVED_KEYS = new Set(['name', 'message', 'stack']);
 const ANSI_ESCAPE_CHARACTER = String.fromCharCode(27);
 const ANSI_ESCAPE_PATTERN = new RegExp(`${ANSI_ESCAPE_CHARACTER}\\[[0-9;]*m`, 'g');
 
-type DevLoggerInfo = TransformableInfo & {
+type LoggerInfoValue = RuntimePropertyValue | unknown[];
+
+type DevLoggerInfo = {
+	level: string;
+	message: LoggerInfoValue;
+	timestamp?: string;
 	[CAPTURED_SPLAT_ARGS_KEY]?: unknown[];
-	error?: unknown;
-	stack?: unknown;
+	error?: LoggerInfoValue;
+	stack?: LoggerInfoValue;
+	[key: string]: LoggerInfoValue;
+	[key: symbol]: LoggerInfoValue | undefined;
 };
 
 type ErrorDetails = {
@@ -159,8 +165,9 @@ const extractInlineError = (info: DevLoggerInfo) => {
 	const stack = typeof info.stack === 'string' && info.stack.length > 0 ? info.stack : undefined;
 	if (stack) {
 		return {
-			message: String(info.message),
+			message: serializeForLog(info.message),
 			stack,
+			extra: undefined,
 		};
 	}
 
@@ -187,7 +194,7 @@ class OpenTelemetryTransport extends transports.Console {
 		otelLogger.emit({
 			severityNumber: this.getSeverityNumber(rawLevel),
 			severityText: rawLevel.toUpperCase(),
-			body: String(info.message),
+			body: serializeForLog(info.message),
 			attributes: {
 				level: rawLevel,
 				timestamp: new Date().toISOString(),
