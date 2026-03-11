@@ -8,6 +8,7 @@ import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/u
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
+import { assertNever } from '@/utils/assert-never';
 
 type PurchaseDiffMode =
 	| 'nextActionLastChangedAt'
@@ -106,10 +107,8 @@ function buildPurchaseDiffWhere({
 						...base,
 						nextActionOrOnChainStateOrResultLastChangedAt: { gte: since },
 					};
-		default: {
-			void mode;
-			return base;
-		}
+		default:
+			return assertNever(mode, 'Unhandled purchase diff mode');
 	}
 }
 
@@ -121,10 +120,8 @@ function buildPurchaseDiffOrderBy(mode: PurchaseDiffMode): Prisma.PurchaseReques
 			return [{ onChainStateOrResultLastChangedAt: 'asc' }, { id: 'asc' }];
 		case 'nextActionOrOnChainStateOrResultLastChangedAt':
 			return [{ nextActionOrOnChainStateOrResultLastChangedAt: 'asc' }, { id: 'asc' }];
-		default: {
-			void mode;
-			return [{ id: 'asc' }];
-		}
+		default:
+			return assertNever(mode, 'Unhandled purchase diff order mode');
 	}
 }
 
