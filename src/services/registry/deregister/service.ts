@@ -12,7 +12,12 @@ import { errorToString } from '@/utils/converter/error-string-convert';
 import { extractAssetName } from '@/utils/converter/agent-identifier';
 import { sortAndLimitUtxos } from '@/utils/utxo';
 import type { ProjectableWalletUtxo } from '@/services/wallets';
-import { createMeshProvider, createPendingTransaction, loadHotWalletSession, updateCurrentTransactionHash } from '@/services/shared';
+import {
+	createMeshProvider,
+	createPendingTransaction,
+	loadHotWalletSession,
+	updateCurrentTransactionHash,
+} from '@/services/shared';
 
 const mutex = new Mutex();
 

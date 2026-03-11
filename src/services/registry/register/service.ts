@@ -13,7 +13,12 @@ import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { errorToString } from '@/utils/converter/error-string-convert';
 import { sortUtxosByLovelaceDesc } from '@/utils/utxo';
 import type { ProjectableWalletUtxo } from '@/services/wallets';
-import { createMeshProvider, createPendingTransaction, loadHotWalletSession, updateCurrentTransactionHash } from '@/services/shared';
+import {
+	createMeshProvider,
+	createPendingTransaction,
+	loadHotWalletSession,
+	updateCurrentTransactionHash,
+} from '@/services/shared';
 
 const mutex = new Mutex();
 
