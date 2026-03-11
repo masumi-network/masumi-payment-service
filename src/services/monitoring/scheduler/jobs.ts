@@ -1,5 +1,10 @@
 import { CONFIG } from '@/utils/config';
-import { handleAutomaticDecisions, collectOutstandingPaymentsV1, submitResultV1, authorizeRefundV1 } from '@/services/payments';
+import {
+	handleAutomaticDecisions,
+	collectOutstandingPaymentsV1,
+	submitResultV1,
+	authorizeRefundV1,
+} from '@/services/payments';
 import { batchLatestPaymentEntriesV1, collectRefundV1, requestRefundsV1, cancelRefundsV1 } from '@/services/purchases';
 import { registerAgentV1, deRegisterAgentV1, checkRegistryTransactions } from '@/services/registry';
 import { checkLatestTransactions, updateWalletTransactionHash } from '@/services/transactions';

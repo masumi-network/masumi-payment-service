@@ -13,7 +13,9 @@ export async function checkRegistryTransactions() {
 		try {
 			const paymentContracts = await getPaymentSourcesForSync();
 			if (paymentContracts.length == 0) {
-				logger.warn('No payment contracts found, skipping update. It could be that an other instance is already syncing');
+				logger.warn(
+					'No payment contracts found, skipping update. It could be that an other instance is already syncing',
+				);
 				return;
 			}
 

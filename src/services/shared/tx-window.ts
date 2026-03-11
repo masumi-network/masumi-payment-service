@@ -25,7 +25,8 @@ export function createTxWindow(
 	const validitySlotBuffer = options.validitySlotBuffer ?? 5;
 
 	const invalidBefore = unixTimeToEnclosingSlot(nowMs - beforeBufferMs, SLOT_CONFIG_NETWORK[network]) - 1;
-	const defaultInvalidAfter = unixTimeToEnclosingSlot(nowMs + afterBufferMs, SLOT_CONFIG_NETWORK[network]) + validitySlotBuffer;
+	const defaultInvalidAfter =
+		unixTimeToEnclosingSlot(nowMs + afterBufferMs, SLOT_CONFIG_NETWORK[network]) + validitySlotBuffer;
 
 	if (options.constrainAfterMs == null) {
 		return {
@@ -35,10 +36,8 @@ export function createTxWindow(
 	}
 
 	const constrainedInvalidAfter =
-		unixTimeToEnclosingSlot(
-			options.constrainAfterMs + afterBufferMs,
-			SLOT_CONFIG_NETWORK[network],
-		) + (options.constrainSlotBuffer ?? 3);
+		unixTimeToEnclosingSlot(options.constrainAfterMs + afterBufferMs, SLOT_CONFIG_NETWORK[network]) +
+		(options.constrainSlotBuffer ?? 3);
 
 	return {
 		invalidBefore,

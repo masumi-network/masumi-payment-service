@@ -60,10 +60,7 @@ async function processPaymentSource(
 	paymentContract: PaymentSourceWithConfig,
 	maxParallelTransactionsExtendedLookup: number,
 ) {
-	const blockfrost = createApiClient(
-		paymentContract.network,
-		paymentContract.PaymentSourceConfig.rpcProviderApiKey,
-	);
+	const blockfrost = createApiClient(paymentContract.network, paymentContract.PaymentSourceConfig.rpcProviderApiKey);
 	let latestIdentifier = paymentContract.lastIdentifierChecked;
 
 	const { latestTx, rolledBackTx } = await getTxsFromCardanoAfterSpecificTx(
