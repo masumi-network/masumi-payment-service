@@ -1,33 +1,50 @@
 import { getOwnPlainObject, getOwnString, getOwnValue, isObject } from '@/lib/object-properties';
 
-function getErrorInstanceApiMessage(value: object): string | undefined {
+type ApiErrorMessageCandidates = {
+  topLevelMessage: string | undefined;
+  nestedErrorMessage: string | undefined;
+  nestedDataMessage: string | undefined;
+  nestedDataErrorMessage: string | undefined;
+  nestedDataErrorValue: string | undefined;
+};
+
+function getApiErrorMessageCandidates(value: object): ApiErrorMessageCandidates {
   const nestedError = getOwnPlainObject(value, 'error');
   const nestedResponse = getOwnPlainObject(value, 'response');
   const nestedData = nestedResponse ? getOwnPlainObject(nestedResponse, 'data') : undefined;
   const nestedDataError = nestedData ? getOwnPlainObject(nestedData, 'error') : undefined;
   const nestedDataErrorValue = nestedData ? getOwnValue(nestedData, 'error') : undefined;
 
+  return {
+    topLevelMessage: getOwnString(value, 'message'),
+    nestedErrorMessage: nestedError ? getOwnString(nestedError, 'message') : undefined,
+    nestedDataMessage: nestedData ? getOwnString(nestedData, 'message') : undefined,
+    nestedDataErrorMessage: nestedDataError ? getOwnString(nestedDataError, 'message') : undefined,
+    nestedDataErrorValue:
+      typeof nestedDataErrorValue === 'string' ? nestedDataErrorValue : undefined,
+  };
+}
+
+function getErrorInstanceApiMessage(value: object): string | undefined {
+  const candidates = getApiErrorMessageCandidates(value);
+
   return (
-    (nestedDataError ? getOwnString(nestedDataError, 'message') : undefined) ||
-    (typeof nestedDataErrorValue === 'string' ? nestedDataErrorValue : undefined) ||
-    (nestedData ? getOwnString(nestedData, 'message') : undefined) ||
-    (nestedError ? getOwnString(nestedError, 'message') : undefined)
+    candidates.nestedDataErrorMessage ||
+    candidates.nestedDataErrorValue ||
+    candidates.nestedDataMessage ||
+    candidates.nestedErrorMessage
   );
 }
 
 function getPlainObjectApiMessage(value: object): string | undefined {
-  const nestedError = getOwnPlainObject(value, 'error');
-  const nestedResponse = getOwnPlainObject(value, 'response');
-  const nestedData = nestedResponse ? getOwnPlainObject(nestedResponse, 'data') : undefined;
-  const nestedDataError = nestedData ? getOwnPlainObject(nestedData, 'error') : undefined;
-  const nestedDataErrorValue = nestedData ? getOwnValue(nestedData, 'error') : undefined;
+  const candidates = getApiErrorMessageCandidates(value);
 
   return (
-    getOwnString(value, 'message') ||
-    (nestedError ? getOwnString(nestedError, 'message') : undefined) ||
-    (nestedData ? getOwnString(nestedData, 'message') : undefined) ||
-    (nestedDataError ? getOwnString(nestedDataError, 'message') : undefined) ||
-    (typeof nestedDataErrorValue === 'string' ? nestedDataErrorValue : undefined)
+    candidates.topLevelMessage ||
+    candidates.nestedErrorMessage ||
+    candidates.nestedDataMessage ||
+    candidates.nestedDataErrorMessage ||
+    candidates.nestedDataErrorValue
   );
 }
 

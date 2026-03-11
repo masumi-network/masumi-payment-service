@@ -96,8 +96,10 @@ export function AddWalletDialog({ open, onClose, onSuccess }: AddWalletDialogPro
       });
 
       if (response.error) {
-        const error = response.error as { message: string };
-        const errorMessage = error.message || 'Failed to generate mnemonic phrase';
+        const errorMessage = extractApiErrorMessage(
+          response.error,
+          'Failed to generate mnemonic phrase',
+        );
         setError(errorMessage);
         toast.error(errorMessage);
         return;
