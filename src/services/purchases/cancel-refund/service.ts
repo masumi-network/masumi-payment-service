@@ -1,6 +1,6 @@
 import { OnChainState, PurchaseErrorType, PurchasingAction, TransactionStatus } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
-import { BlockfrostProvider, deserializeDatum, UTxO } from '@meshsdk/core';
+import { deserializeDatum, UTxO } from '@meshsdk/core';
 import { logger } from '@/utils/logger';
 import {
 	getDatumFromBlockchainIdentifier,

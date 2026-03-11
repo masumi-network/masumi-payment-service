@@ -1,6 +1,6 @@
 import { TransactionStatus, RegistrationState, PricingType } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
-import { BlockfrostProvider, IFetcher, LanguageVersion, MeshTxBuilder, Network, UTxO } from '@meshsdk/core';
+import { IFetcher, LanguageVersion, MeshTxBuilder, Network, UTxO } from '@meshsdk/core';
 import { logger } from '@/utils/logger';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { lockAndQueryRegistryRequests } from '@/utils/db/lock-and-query-registry-request';
