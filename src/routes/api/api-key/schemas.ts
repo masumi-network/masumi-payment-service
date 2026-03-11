@@ -12,7 +12,7 @@ export const apiKeyOutputSchema = z
 		token: z.string().describe('The API key token'),
 		permission: z
 			.enum(['Read', 'ReadAndPay', 'Admin'])
-			.describe('Permission level of the API key (computed from flags for backward compatibility)'),
+			.describe('Permission level of the API key DEPRECATED (computed from flags for backward compatibility)'),
 		canRead: z.boolean().describe('Whether this API key can access read endpoints'),
 		canPay: z.boolean().describe('Whether this API key can access payment/purchase endpoints'),
 		canAdmin: z.boolean().describe('Whether this API key has admin access'),
