@@ -71,8 +71,8 @@ export class AsyncInterval {
 			this.timeoutId = null;
 		}
 		if (this.timeoutResolve) {
+			// Capture and invoke while the guard still matches
 			const resolveDelay = this.timeoutResolve;
-			this.timeoutResolve = null;
 			resolveDelay();
 		}
 		if (!this.isRunning) {
