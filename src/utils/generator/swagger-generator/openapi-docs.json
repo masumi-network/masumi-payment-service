@@ -38,7 +38,19 @@
                             "ReadAndPay",
                             "Admin"
                         ],
-                        "description": "Permission level of the API key"
+                        "description": "Permission level of the API key DEPRECATED (computed from flags for backward compatibility)"
+                    },
+                    "canRead": {
+                        "type": "boolean",
+                        "description": "Whether this API key can access read endpoints"
+                    },
+                    "canPay": {
+                        "type": "boolean",
+                        "description": "Whether this API key can access payment/purchase endpoints"
+                    },
+                    "canAdmin": {
+                        "type": "boolean",
+                        "description": "Whether this API key has admin access"
                     },
                     "usageLimited": {
                         "type": "boolean",
@@ -109,6 +121,9 @@
                     "id",
                     "token",
                     "permission",
+                    "canRead",
+                    "canPay",
+                    "canAdmin",
                     "usageLimited",
                     "NetworkLimit",
                     "RemainingUsageCredits",
@@ -1700,7 +1715,7 @@
                                                 "enum": [
                                                     "Fixed"
                                                 ],
-                                                "description": "Pricing type for the agent (Fixed)"
+                                                "description": "Pricing type for the agent (Fixed or Free)"
                                             },
                                             "Pricing": {
                                                 "type": "array",
@@ -1739,7 +1754,7 @@
                                                 "enum": [
                                                     "Free"
                                                 ],
-                                                "description": "Pricing type for the agent (Free)"
+                                                "description": "Pricing type for the agent (Fixed or Free)"
                                             }
                                         },
                                         "required": [
@@ -3209,6 +3224,9 @@
                                             "id": "api_key_id",
                                             "token": "masumi_payment_api_key_secret",
                                             "permission": "Admin",
+                                            "canRead": true,
+                                            "canPay": true,
+                                            "canAdmin": true,
                                             "usageLimited": true,
                                             "NetworkLimit": [
                                                 "Preprod"
@@ -4406,6 +4424,9 @@
                                                     "id": "api_key_id",
                                                     "token": "masumi_payment_api_key_secret",
                                                     "permission": "Admin",
+                                                    "canRead": true,
+                                                    "canPay": true,
+                                                    "canAdmin": true,
                                                     "usageLimited": true,
                                                     "NetworkLimit": [
                                                         "Preprod"
@@ -4508,7 +4529,19 @@
                                             "Admin"
                                         ],
                                         "default": "Read",
-                                        "description": "The permission of the API key"
+                                        "description": "[DEPRECATED] The permission of the API key. Use canRead/canPay/canAdmin flags instead. Will be removed in a future version."
+                                    },
+                                    "canRead": {
+                                        "type": "boolean",
+                                        "description": "Whether this API key can access read endpoints"
+                                    },
+                                    "canPay": {
+                                        "type": "boolean",
+                                        "description": "Whether this API key can access payment/purchase endpoints"
+                                    },
+                                    "canAdmin": {
+                                        "type": "boolean",
+                                        "description": "Whether this API key has admin access"
                                     },
                                     "walletScopeEnabled": {
                                         "type": "string",
@@ -4537,7 +4570,7 @@
                                             "amount": "10000000"
                                         }
                                     ],
-                                    "permission": "Admin",
+                                    "canAdmin": true,
                                     "walletScopeEnabled": "false",
                                     "WalletScopeHotWalletIds": []
                                 }
@@ -4570,6 +4603,9 @@
                                             "id": "api_key_id",
                                             "token": "masumi_payment_api_key_secret",
                                             "permission": "Admin",
+                                            "canRead": true,
+                                            "canPay": true,
+                                            "canAdmin": true,
                                             "usageLimited": true,
                                             "NetworkLimit": [
                                                 "Preprod"
@@ -4694,6 +4730,18 @@
                                         },
                                         "maxItems": 100,
                                         "description": "List of hot wallet IDs to scope this API key to. Replaces existing scopes when provided"
+                                    },
+                                    "canRead": {
+                                        "type": "boolean",
+                                        "description": "Whether this API key can access read endpoints"
+                                    },
+                                    "canPay": {
+                                        "type": "boolean",
+                                        "description": "Whether this API key can access payment/purchase endpoints"
+                                    },
+                                    "canAdmin": {
+                                        "type": "boolean",
+                                        "description": "Whether this API key has admin access"
                                     }
                                 },
                                 "required": [
@@ -4748,6 +4796,9 @@
                                             "id": "api_key_id",
                                             "token": "masumi_payment_api_key_secret",
                                             "permission": "Admin",
+                                            "canRead": true,
+                                            "canPay": true,
+                                            "canAdmin": true,
                                             "usageLimited": true,
                                             "NetworkLimit": [
                                                 "Preprod",
@@ -4838,6 +4889,9 @@
                                             "id": "api_key_id",
                                             "token": "masumi_payment_api_key_secret",
                                             "permission": "Admin",
+                                            "canRead": true,
+                                            "canPay": true,
+                                            "canAdmin": true,
                                             "usageLimited": true,
                                             "NetworkLimit": [
                                                 "Preprod"

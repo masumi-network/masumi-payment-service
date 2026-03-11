@@ -14,9 +14,21 @@ export type ApiKey = {
      */
     token: string;
     /**
-     * Permission level of the API key
+     * Permission level of the API key DEPRECATED (computed from flags for backward compatibility)
      */
     permission: 'Read' | 'ReadAndPay' | 'Admin';
+    /**
+     * Whether this API key can access read endpoints
+     */
+    canRead: boolean;
+    /**
+     * Whether this API key can access payment/purchase endpoints
+     */
+    canPay: boolean;
+    /**
+     * Whether this API key has admin access
+     */
+    canAdmin: boolean;
     /**
      * Whether the API key has usage limits
      */
@@ -911,7 +923,7 @@ export type AgentMetadata = {
          */
         AgentPricing: {
             /**
-             * Pricing type for the agent (Fixed)
+             * Pricing type for the agent (Fixed or Free)
              */
             pricingType: 'Fixed';
             /**
@@ -929,7 +941,7 @@ export type AgentMetadata = {
             }>;
         } | {
             /**
-             * Pricing type for the agent (Free)
+             * Pricing type for the agent (Fixed or Free)
              */
             pricingType: 'Free';
         };
@@ -2427,6 +2439,18 @@ export type PatchApiKeyData = {
          * List of hot wallet IDs to scope this API key to. Replaces existing scopes when provided
          */
         WalletScopeHotWalletIds?: Array<string>;
+        /**
+         * Whether this API key can access read endpoints
+         */
+        canRead?: boolean;
+        /**
+         * Whether this API key can access payment/purchase endpoints
+         */
+        canPay?: boolean;
+        /**
+         * Whether this API key has admin access
+         */
+        canAdmin?: boolean;
     };
     path?: never;
     query?: never;
@@ -2484,9 +2508,21 @@ export type PostApiKeyData = {
          */
         NetworkLimit?: Array<'Preprod' | 'Mainnet'>;
         /**
-         * The permission of the API key
+         * [DEPRECATED] The permission of the API key. Use canRead/canPay/canAdmin flags instead. Will be removed in a future version.
          */
         permission?: 'Read' | 'ReadAndPay' | 'Admin';
+        /**
+         * Whether this API key can access read endpoints
+         */
+        canRead?: boolean;
+        /**
+         * Whether this API key can access payment/purchase endpoints
+         */
+        canPay?: boolean;
+        /**
+         * Whether this API key has admin access
+         */
+        canAdmin?: boolean;
         /**
          * Whether to enable wallet scope filtering for this API key
          */

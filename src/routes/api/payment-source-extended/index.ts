@@ -9,8 +9,6 @@ import { z } from '@/utils/zod-openapi';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { DEFAULTS } from '@/utils/config';
-import { getBlockfrostInstance } from '@/utils/blockfrost';
-import { logger } from '@/utils/logger';
 import { walletLowBalanceMonitorService } from '@/services/wallet-low-balance-monitor';
 import {
 	paymentSourceExtendedCreateSchemaInput,
@@ -59,7 +57,7 @@ export const paymentSourceExtendedEndpointPost = adminAuthenticatedEndpointFacto
 		input: z.infer<typeof paymentSourceExtendedCreateSchemaInput>;
 		ctx: AuthContext;
 	}) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 		const sellingWalletsMesh = input.SellingWallets.map((sellingWallet) => {
 			return {
 				wallet: generateOfflineWallet(input.network, sellingWallet.walletMnemonic.split(' ')),
@@ -90,47 +88,6 @@ export const paymentSourceExtendedEndpointPost = adminAuthenticatedEndpointFacto
 			);
 
 			const { policyId } = await getRegistryScriptV1(smartContractAddress, input.network);
-
-			let latestTxHash: string | null = null;
-			const blockfrost = getBlockfrostInstance(input.network, input.PaymentSourceConfig.rpcProviderApiKey);
-
-			try {
-				const transactions = await blockfrost.addressesTransactions(smartContractAddress, {
-					page: 1,
-					order: 'desc',
-					count: 1,
-				});
-
-				if (transactions.length > 0) {
-					latestTxHash = transactions[0].tx_hash;
-					logger.info('Setting sync checkpoint to latest transaction', {
-						smartContractAddress,
-						latestTxHash,
-					});
-				} else {
-					logger.info('No existing transactions found for new payment source', {
-						smartContractAddress,
-					});
-				}
-			} catch (error) {
-				if (
-					error instanceof Error &&
-					(error.message.includes('404') || error.message.toLowerCase().includes('not found'))
-				) {
-					logger.info('Smart contract address has no transaction history yet', {
-						smartContractAddress,
-					});
-				} else {
-					logger.error('Failed to fetch transaction history from Blockfrost', {
-						smartContractAddress,
-						error: error instanceof Error ? error.message : String(error),
-					});
-					throw createHttpError(
-						503,
-						'Unable to verify smart contract status. Please check your Blockfrost API key and try again.',
-					);
-				}
-			}
 
 			const sellingWallets = await Promise.all(
 				sellingWalletsMesh.map(async (sw) => {
@@ -171,7 +128,6 @@ export const paymentSourceExtendedEndpointPost = adminAuthenticatedEndpointFacto
 					network: input.network,
 					smartContractAddress: smartContractAddress,
 					policyId: policyId,
-					lastIdentifierChecked: latestTxHash,
 					PaymentSourceConfig: {
 						create: {
 							rpcProviderApiKey: input.PaymentSourceConfig.rpcProviderApiKey,

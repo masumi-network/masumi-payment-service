@@ -1,7 +1,7 @@
 import { jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import { testEndpoint } from 'express-zod-api';
-import { ApiKeyStatus, HotWalletType, Network, Permission } from '@/generated/prisma/client';
+import { ApiKeyStatus, HotWalletType, Network } from '@/generated/prisma/client';
 import { LowBalanceStatus } from '@/generated/prisma/enums';
 import { generateSHA256Hash } from '@/utils/crypto';
 
@@ -74,14 +74,16 @@ jest.unstable_mockModule('@opentelemetry/api', () => ({
 const { getWalletLowBalanceRulesEndpointGet } = await import('./low-balance');
 
 describe('getWalletLowBalanceRulesEndpointGet', () => {
-	const asApiKey = (permission: Permission) => ({
+	const asApiKey = (flags: { canRead: boolean; canPay: boolean; canAdmin: boolean }) => ({
 		id: 'api-key-1',
-		permission,
+		canRead: flags.canRead,
+		canPay: flags.canPay,
+		canAdmin: flags.canAdmin,
 		status: ApiKeyStatus.Active,
 		tokenHash: generateSHA256Hash('valid'),
 		token: 'valid',
-		usageLimited: permission !== Permission.Admin,
-		networkLimit: permission === Permission.Admin ? [] : [Network.Preprod],
+		usageLimited: !flags.canAdmin,
+		networkLimit: flags.canAdmin ? [] : [Network.Preprod],
 		walletScopeEnabled: false,
 		WalletScopes: [],
 	});
@@ -91,7 +93,7 @@ describe('getWalletLowBalanceRulesEndpointGet', () => {
 	});
 
 	it('rejects a read key from listing full low-balance rules', async () => {
-		mockFindApiKey.mockResolvedValue(asApiKey(Permission.Read));
+		mockFindApiKey.mockResolvedValue(asApiKey({ canRead: true, canPay: false, canAdmin: false }));
 
 		const { responseMock } = await testEndpoint({
 			endpoint: getWalletLowBalanceRulesEndpointGet,
@@ -107,7 +109,7 @@ describe('getWalletLowBalanceRulesEndpointGet', () => {
 	});
 
 	it('allows an admin key to list low-balance rules', async () => {
-		mockFindApiKey.mockResolvedValue(asApiKey(Permission.Admin));
+		mockFindApiKey.mockResolvedValue(asApiKey({ canRead: true, canPay: true, canAdmin: true }));
 		mockFindManyRules.mockResolvedValue([
 			{
 				id: 'rule-1',
