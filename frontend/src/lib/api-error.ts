@@ -1,6 +1,22 @@
 import { getOwnPlainObject, getOwnString, getOwnValue, isObject } from '@/lib/object-properties';
 
-function getNestedApiErrorMessage(value: object): string | undefined {
+function getErrorInstanceApiMessage(value: object): string | undefined {
+  const nestedError = getOwnPlainObject(value, 'error');
+  const nestedResponse = getOwnPlainObject(value, 'response');
+  const nestedData = nestedResponse ? getOwnPlainObject(nestedResponse, 'data') : undefined;
+  const nestedDataError = nestedData ? getOwnPlainObject(nestedData, 'error') : undefined;
+  const nestedDataErrorValue = nestedData ? getOwnValue(nestedData, 'error') : undefined;
+
+  return (
+    (nestedError ? getOwnString(nestedError, 'message') : undefined) ||
+    (nestedDataError ? getOwnString(nestedDataError, 'message') : undefined) ||
+    (typeof nestedDataErrorValue === 'string' ? nestedDataErrorValue : undefined) ||
+    (nestedData ? getOwnString(nestedData, 'message') : undefined) ||
+    getOwnString(value, 'message')
+  );
+}
+
+function getPlainObjectApiMessage(value: object): string | undefined {
   const nestedError = getOwnPlainObject(value, 'error');
   const nestedResponse = getOwnPlainObject(value, 'response');
   const nestedData = nestedResponse ? getOwnPlainObject(nestedResponse, 'data') : undefined;
@@ -9,12 +25,12 @@ function getNestedApiErrorMessage(value: object): string | undefined {
   const nestedDataErrorValue = nestedData ? getOwnValue(nestedData, 'error') : undefined;
 
   return (
-    (typeof topLevelError === 'string' ? topLevelError : undefined) ||
+    getOwnString(value, 'message') ||
     (nestedError ? getOwnString(nestedError, 'message') : undefined) ||
+    (typeof topLevelError === 'string' ? topLevelError : undefined) ||
     (nestedDataError ? getOwnString(nestedDataError, 'message') : undefined) ||
     (typeof nestedDataErrorValue === 'string' ? nestedDataErrorValue : undefined) ||
-    (nestedData ? getOwnString(nestedData, 'message') : undefined) ||
-    getOwnString(value, 'message')
+    (nestedData ? getOwnString(nestedData, 'message') : undefined)
   );
 }
 
@@ -24,7 +40,8 @@ export function extractApiErrorMessage(error: unknown, fallback: string): string
   if (typeof error === 'string') return error;
 
   if (isObject(error)) {
-    const message = getNestedApiErrorMessage(error);
+    const message =
+      error instanceof Error ? getErrorInstanceApiMessage(error) : getPlainObjectApiMessage(error);
     return message || (error instanceof Error ? error.message : fallback);
   }
 
