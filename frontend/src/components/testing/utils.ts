@@ -24,14 +24,16 @@ export function extractErrorMessage(
   if (isObject(error)) {
     const data = getOwnPlainObject(error, 'data');
     const directError = getOwnValue(error, 'error');
+    const message = getOwnString(error, 'message');
+    const statusText = getOwnString(error, 'statusText');
 
-    if (typeof getOwnString(error, 'message') === 'string') return getOwnString(error, 'message')!;
+    if (message !== undefined) return message;
     if (typeof directError === 'string') return directError;
-    if (typeof getOwnString(error, 'statusText') === 'string')
-      return getOwnString(error, 'statusText')!;
+    if (statusText !== undefined) return statusText;
 
     if (data) {
-      if (typeof getOwnString(data, 'message') === 'string') return getOwnString(data, 'message')!;
+      const dataMessage = getOwnString(data, 'message');
+      if (dataMessage !== undefined) return dataMessage;
       const dataError = getOwnValue(data, 'error');
       if (typeof dataError === 'string') return dataError;
     }

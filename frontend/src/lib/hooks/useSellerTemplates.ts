@@ -31,40 +31,27 @@ export interface AddressTemplate {
   data: AddressTemplateData;
 }
 
+function hasRequiredStringFields(value: object, fields: readonly string[]): boolean {
+  return fields.every((field) => getOwnString(value, field) !== undefined);
+}
+
+const templateFields = ['id', 'label'] as const;
+const addressFields = ['country', 'city', 'zipCode', 'street', 'streetNumber'] as const;
+
 function isValidTemplate(value: unknown): value is SellerTemplate {
   if (!isPlainObject(value)) return false;
-  if (
-    typeof getOwnString(value, 'id') !== 'string' ||
-    typeof getOwnString(value, 'label') !== 'string'
-  )
-    return false;
+  if (!hasRequiredStringFields(value, templateFields)) return false;
   const s = getOwnPlainObject(value, 'seller');
   if (!s) return false;
-  return (
-    typeof getOwnString(s, 'country') === 'string' &&
-    typeof getOwnString(s, 'city') === 'string' &&
-    typeof getOwnString(s, 'zipCode') === 'string' &&
-    typeof getOwnString(s, 'street') === 'string' &&
-    typeof getOwnString(s, 'streetNumber') === 'string'
-  );
+  return hasRequiredStringFields(s, addressFields);
 }
 
 function isValidAddressTemplate(value: unknown): value is AddressTemplate {
   if (!isPlainObject(value)) return false;
-  if (
-    typeof getOwnString(value, 'id') !== 'string' ||
-    typeof getOwnString(value, 'label') !== 'string'
-  )
-    return false;
+  if (!hasRequiredStringFields(value, templateFields)) return false;
   const s = getOwnPlainObject(value, 'data');
   if (!s) return false;
-  return (
-    typeof getOwnString(s, 'country') === 'string' &&
-    typeof getOwnString(s, 'city') === 'string' &&
-    typeof getOwnString(s, 'zipCode') === 'string' &&
-    typeof getOwnString(s, 'street') === 'string' &&
-    typeof getOwnString(s, 'streetNumber') === 'string'
-  );
+  return hasRequiredStringFields(s, addressFields);
 }
 
 function loadTemplates(): SellerTemplate[] {

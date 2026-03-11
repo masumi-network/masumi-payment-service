@@ -39,7 +39,8 @@ export function extractApiErrorMessage(error: unknown, fallback: string): string
   if (isObject(error)) {
     const message =
       error instanceof Error ? getErrorInstanceApiMessage(error) : getPlainObjectApiMessage(error);
-    return message || (error instanceof Error ? error.message : fallback);
+    const inheritedErrorMessage = error instanceof Error ? error.message : undefined;
+    return message || inheritedErrorMessage || fallback;
   }
 
   return fallback;
