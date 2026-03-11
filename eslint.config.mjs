@@ -108,6 +108,7 @@ export default [
 	// Ignores
 	{
 		ignores: [
+			'.eslint-rules/**',
 			'src/**/*.spec.ts',
 			'src/**/*.test.ts',
 			'tests/**/*.ts',
