@@ -18,7 +18,7 @@ export const APIKeySchema = {
                 'ReadAndPay',
                 'Admin'
             ],
-            description: 'Permission level of the API key (computed from flags for backward compatibility)'
+            description: 'Permission level of the API key DEPRECATED (computed from flags for backward compatibility)'
         },
         canRead: {
             type: 'boolean',

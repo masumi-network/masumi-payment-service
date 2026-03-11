@@ -14,7 +14,7 @@ export type ApiKey = {
      */
     token: string;
     /**
-     * Permission level of the API key (computed from flags for backward compatibility)
+     * Permission level of the API key DEPRECATED (computed from flags for backward compatibility)
      */
     permission: 'Read' | 'ReadAndPay' | 'Admin';
     /**
