@@ -21,18 +21,42 @@ describe('webhook queue helpers', () => {
 
 	it('builds per-endpoint payloads without mutating the base payload', () => {
 		const basePayload = buildWebhookPayload(
-			WebhookEventType.PAYMENT_ON_CHAIN_STATUS_CHANGED,
-			{ id: 'payment-1' },
+			WebhookEventType.WALLET_LOW_BALANCE,
+			{
+				ruleId: 'rule-1',
+				walletId: 'wallet-1',
+				walletAddress: 'addr_test1...',
+				walletVkey: 'wallet-vkey',
+				walletType: 'Selling',
+				paymentSourceId: 'payment-source-1',
+				network: 'Preprod',
+				assetUnit: 'lovelace',
+				thresholdAmount: '1000000',
+				currentAmount: '500000',
+				checkedAt: '2026-03-09T12:00:00.000Z',
+			},
 			'2026-03-09T12:00:00.000Z',
 		);
 		const endpointPayload = buildEndpointWebhookPayload(basePayload, 'endpoint-1');
 
 		expect(basePayload.webhook_id).toBe('');
 		expect(endpointPayload).toEqual({
-			event_type: WebhookEventType.PAYMENT_ON_CHAIN_STATUS_CHANGED,
+			event_type: WebhookEventType.WALLET_LOW_BALANCE,
 			timestamp: '2026-03-09T12:00:00.000Z',
 			webhook_id: 'endpoint-1',
-			data: { id: 'payment-1' },
+			data: {
+				ruleId: 'rule-1',
+				walletId: 'wallet-1',
+				walletAddress: 'addr_test1...',
+				walletVkey: 'wallet-vkey',
+				walletType: 'Selling',
+				paymentSourceId: 'payment-source-1',
+				network: 'Preprod',
+				assetUnit: 'lovelace',
+				thresholdAmount: '1000000',
+				currentAmount: '500000',
+				checkedAt: '2026-03-09T12:00:00.000Z',
+			},
 		});
 	});
 });

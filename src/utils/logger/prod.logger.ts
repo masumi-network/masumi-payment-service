@@ -1,14 +1,12 @@
 import { createLogger, format, transports } from 'winston';
+import type { TransformableInfo } from 'logform';
 import { logs } from '@opentelemetry/api-logs';
 import { CONFIG } from '../config';
 const { combine, timestamp, errors, json } = format;
 
-interface LogInfo {
-	level: string;
-	message: string;
-	error?: Error;
-	[key: string]: unknown;
-}
+type ProdLoggerInfo = TransformableInfo & {
+	error?: unknown;
+};
 
 // Strip ANSI escape codes that Winston's colorize format may inject
 const ANSI_ESCAPE_CHARACTER = String.fromCharCode(27);
@@ -17,10 +15,11 @@ const stripAnsi = (str: string) => str.replace(ANSI_ESCAPE_PATTERN, '');
 
 // Custom transport that sends logs to OpenTelemetry
 class OpenTelemetryTransport extends transports.Console {
-	log(info: LogInfo, callback?: () => void) {
+	log(info: ProdLoggerInfo, callback?: () => void) {
 		// Fetch logger lazily so it uses the provider registered after SDK start
 		const otelLogger = logs.getLogger('winston-otel-bridge', '1.0.0');
 		const rawLevel = stripAnsi(info.level);
+		const error = info.error instanceof Error ? info.error : undefined;
 
 		// Send to OpenTelemetry
 		otelLogger.emit({
@@ -31,10 +30,10 @@ class OpenTelemetryTransport extends transports.Console {
 				level: rawLevel,
 				timestamp: new Date().toISOString(),
 				service: CONFIG.OTEL_SERVICE_NAME,
-				...(info.error && {
-					error_name: info.error.name,
-					error_message: info.error.message,
-					error_stack: info.error.stack,
+				...(error && {
+					error_name: error.name,
+					error_message: error.message,
+					error_stack: error.stack,
 				}),
 			},
 			timestamp: Date.now(),
@@ -43,7 +42,7 @@ class OpenTelemetryTransport extends transports.Console {
 		// Call parent log method for console output
 		const parentCallback = callback || (() => {});
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-		const parentLog = transports.Console.prototype.log as (info: LogInfo, callback: () => void) => void;
+		const parentLog = transports.Console.prototype.log as (info: ProdLoggerInfo, callback: () => void) => void;
 		parentLog.call(this, info, parentCallback);
 	}
 

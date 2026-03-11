@@ -28,6 +28,10 @@ interface LogContext {
 	[key: string]: string | number | boolean | undefined;
 }
 
+interface ConsoleMetadata {
+	[key: string]: string | number | boolean | Error | undefined;
+}
+
 const getSeverityNumber = (level: LogLevel): SeverityNumber => {
 	switch (level) {
 		case LogLevel.DEBUG:
@@ -46,7 +50,7 @@ const getSeverityNumber = (level: LogLevel): SeverityNumber => {
 };
 
 const toConsoleMetadata = (context?: LogContext, attributes?: LogAttributes, error?: Error) => {
-	const metadata: Record<string, unknown> = {
+	const metadata: ConsoleMetadata = {
 		...(context ?? {}),
 		...(attributes ?? {}),
 	};
@@ -58,7 +62,7 @@ const toConsoleMetadata = (context?: LogContext, attributes?: LogAttributes, err
 	return Object.keys(metadata).length > 0 ? metadata : undefined;
 };
 
-const emitConsoleLog = (level: LogLevel, message: string, metadata?: Record<string, unknown>) => {
+const emitConsoleLog = (level: LogLevel, message: string, metadata?: ConsoleMetadata) => {
 	switch (level) {
 		case LogLevel.DEBUG:
 			if (metadata) {

@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { getOwnPlainObject, getOwnString, isPlainObject } from '@/lib/object-properties';
 
 const SELLER_STORAGE_KEY = 'invoice-seller-templates';
 const BUYER_STORAGE_KEY = 'invoice-buyer-templates';
@@ -31,32 +32,38 @@ export interface AddressTemplate {
 }
 
 function isValidTemplate(value: unknown): value is SellerTemplate {
-  if (typeof value !== 'object' || value === null) return false;
-  const obj = value as Record<string, unknown>;
-  if (typeof obj.id !== 'string' || typeof obj.label !== 'string') return false;
-  if (typeof obj.seller !== 'object' || obj.seller === null) return false;
-  const s = obj.seller as Record<string, unknown>;
+  if (!isPlainObject(value)) return false;
+  if (
+    typeof getOwnString(value, 'id') !== 'string' ||
+    typeof getOwnString(value, 'label') !== 'string'
+  )
+    return false;
+  const s = getOwnPlainObject(value, 'seller');
+  if (!s) return false;
   return (
-    typeof s.country === 'string' &&
-    typeof s.city === 'string' &&
-    typeof s.zipCode === 'string' &&
-    typeof s.street === 'string' &&
-    typeof s.streetNumber === 'string'
+    typeof getOwnString(s, 'country') === 'string' &&
+    typeof getOwnString(s, 'city') === 'string' &&
+    typeof getOwnString(s, 'zipCode') === 'string' &&
+    typeof getOwnString(s, 'street') === 'string' &&
+    typeof getOwnString(s, 'streetNumber') === 'string'
   );
 }
 
 function isValidAddressTemplate(value: unknown): value is AddressTemplate {
-  if (typeof value !== 'object' || value === null) return false;
-  const obj = value as Record<string, unknown>;
-  if (typeof obj.id !== 'string' || typeof obj.label !== 'string') return false;
-  if (typeof obj.data !== 'object' || obj.data === null) return false;
-  const s = obj.data as Record<string, unknown>;
+  if (!isPlainObject(value)) return false;
+  if (
+    typeof getOwnString(value, 'id') !== 'string' ||
+    typeof getOwnString(value, 'label') !== 'string'
+  )
+    return false;
+  const s = getOwnPlainObject(value, 'data');
+  if (!s) return false;
   return (
-    typeof s.country === 'string' &&
-    typeof s.city === 'string' &&
-    typeof s.zipCode === 'string' &&
-    typeof s.street === 'string' &&
-    typeof s.streetNumber === 'string'
+    typeof getOwnString(s, 'country') === 'string' &&
+    typeof getOwnString(s, 'city') === 'string' &&
+    typeof getOwnString(s, 'zipCode') === 'string' &&
+    typeof getOwnString(s, 'street') === 'string' &&
+    typeof getOwnString(s, 'streetNumber') === 'string'
   );
 }
 

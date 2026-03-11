@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import prettier from 'eslint-plugin-prettier';
 import prettierConfig from 'eslint-config-prettier';
+import noUnknownValuedMapsRule from './.eslint-rules/no-unknown-valued-maps.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,6 +14,12 @@ const compat = new FlatCompat({
 	baseDirectory: __dirname,
 	recommendedConfig: pluginJs.configs.recommended,
 });
+
+const localRulesPlugin = {
+	rules: {
+		'no-unknown-valued-maps': noUnknownValuedMapsRule,
+	},
+};
 
 /** @type {import('eslint').Linter.Config[]} */
 export default [
@@ -41,6 +48,7 @@ export default [
 	{
 		plugins: {
 			prettier,
+			local: localRulesPlugin,
 		},
 		rules: {
 			'prettier/prettier': [
@@ -69,6 +77,7 @@ export default [
 			'@typescript-eslint/no-unsafe-argument': ['error'],
 			'@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
 			'@typescript-eslint/require-await': ['off'],
+			'local/no-unknown-valued-maps': ['error'],
 			'no-restricted-syntax': [
 				'error',
 				{

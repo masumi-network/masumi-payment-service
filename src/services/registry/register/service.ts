@@ -25,7 +25,7 @@ const mutex = new Mutex();
 function validateRegistrationPricing(request: {
 	Pricing: {
 		pricingType: PricingType;
-		FixedPricing: { Amounts: Array<{ [key: string]: unknown }> } | null;
+		FixedPricing: { Amounts: Array<{ unit: string; amount: bigint }> } | null;
 	};
 }): void {
 	if (request.Pricing.pricingType != PricingType.Fixed && request.Pricing.pricingType != PricingType.Free) {
@@ -73,7 +73,7 @@ function buildAgentMetadata(request: {
 	Pricing: {
 		pricingType: PricingType;
 		FixedPricing?: {
-			Amounts: Array<{ unit: string; amount: bigint; [key: string]: unknown }>;
+			Amounts: Array<{ unit: string; amount: bigint }>;
 		} | null;
 	};
 	metadataVersion: number;

@@ -2,15 +2,16 @@ import { HotWalletType, Network, WebhookEventType } from '@/generated/prisma/cli
 import { z } from 'zod';
 import { queryPurchaseRequestSchemaOutput } from '@/routes/api/purchases';
 import { queryPaymentsSchemaOutput } from '@/routes/api/payments';
+import type { Jsonified } from '@/utils/json-value';
 
 // Extract individual purchase/payment item schemas from existing API schemas
 const purchaseItemSchema = queryPurchaseRequestSchemaOutput.shape.Purchases.element;
 const paymentItemSchema = queryPaymentsSchemaOutput.shape.Payments.element;
 
 // Generic webhook payload schema factory
-const createWebhookPayloadSchema = <T extends z.ZodLiteral<WebhookEventType>>(
+const createWebhookPayloadSchema = <T extends z.ZodLiteral<WebhookEventType>, TDataSchema extends z.ZodTypeAny>(
 	eventType: T,
-	dataSchema: z.ZodType,
+	dataSchema: TDataSchema,
 	description: string,
 ) =>
 	z.object({
@@ -74,3 +75,7 @@ export const webhookPayloadSchema = z.discriminatedUnion('event_type', [
 ]);
 
 export type WebhookPayload = z.infer<typeof webhookPayloadSchema>;
+export type WebhookPayloadByEvent<T extends WebhookEventType> = Extract<WebhookPayload, { event_type: T }>;
+export type WebhookPayloadDataByEvent<T extends WebhookEventType> = WebhookPayloadByEvent<T>['data'];
+export type StoredWebhookPayload = Jsonified<WebhookPayload>;
+export type StoredWebhookPayloadByEvent<T extends WebhookEventType> = Extract<StoredWebhookPayload, { event_type: T }>;

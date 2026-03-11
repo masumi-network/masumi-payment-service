@@ -1,7 +1,15 @@
 import { webhookQueueService } from './queue.service';
 import { logger } from '@/utils/logger';
 import { prisma } from '@/utils/db';
-import { HotWalletType, Network, WebhookEventType } from '@/generated/prisma/client';
+import { WebhookEventType } from '@/generated/prisma/client';
+import type { WebhookPayloadDataByEvent } from '@/types/webhook-payloads';
+import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+
+type PaymentWebhookEvent = 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_ERROR';
+type PurchaseWebhookEvent = 'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR';
+type PaymentWebhookData = WebhookPayloadDataByEvent<PaymentWebhookEvent>;
+type PurchaseWebhookData = WebhookPayloadDataByEvent<PurchaseWebhookEvent>;
+type WalletLowBalanceWebhookData = WebhookPayloadDataByEvent<'WALLET_LOW_BALANCE'>;
 
 class WebhookEventsService {
 	private async queryPurchaseForWebhook(purchaseId: string) {
@@ -16,6 +24,7 @@ class WebhookEventsService {
 				CurrentTransaction: true,
 				WithdrawnForSeller: true,
 				WithdrawnForBuyer: true,
+				ActionHistory: { orderBy: { createdAt: 'desc' } },
 				TransactionHistory: { orderBy: { createdAt: 'desc' } },
 			},
 		});
@@ -33,14 +42,20 @@ class WebhookEventsService {
 				CurrentTransaction: true,
 				WithdrawnForSeller: true,
 				WithdrawnForBuyer: true,
+				ActionHistory: { orderBy: { createdAt: 'desc' } },
 				TransactionHistory: { orderBy: { createdAt: 'desc' } },
 			},
 		});
 	}
 
-	private formatPurchaseForWebhook(purchase: NonNullable<Awaited<ReturnType<typeof this.queryPurchaseForWebhook>>>) {
+	private formatPurchaseForWebhook(
+		purchase: NonNullable<Awaited<ReturnType<typeof this.queryPurchaseForWebhook>>>,
+	): PurchaseWebhookData {
 		return {
 			...purchase,
+			agentIdentifier: decodeBlockchainIdentifier(purchase.blockchainIdentifier)?.agentIdentifier ?? null,
+			totalBuyerCardanoFees: Number(purchase.totalBuyerCardanoFees.toString()) / 1_000_000,
+			totalSellerCardanoFees: Number(purchase.totalSellerCardanoFees.toString()) / 1_000_000,
 			PaidFunds: (purchase.PaidFunds as Array<{ unit: string; amount: bigint }>).map((amount) => ({
 				...amount,
 				amount: amount.amount.toString(),
@@ -53,6 +68,19 @@ class WebhookEventsService {
 				unit: amount.unit,
 				amount: amount.amount.toString(),
 			})),
+			CurrentTransaction: purchase.CurrentTransaction
+				? {
+						...purchase.CurrentTransaction,
+						fees: purchase.CurrentTransaction.fees?.toString() ?? null,
+					}
+				: null,
+			TransactionHistory:
+				purchase.TransactionHistory != null
+					? purchase.TransactionHistory.map((transaction) => ({
+							...transaction,
+							fees: transaction.fees?.toString() ?? null,
+						}))
+					: null,
 			collateralReturnLovelace: purchase.collateralReturnLovelace?.toString() ?? null,
 			payByTime: purchase.payByTime?.toString() ?? null,
 			submitResultTime: purchase.submitResultTime.toString(),
@@ -63,9 +91,14 @@ class WebhookEventsService {
 		};
 	}
 
-	private formatPaymentForWebhook(payment: NonNullable<Awaited<ReturnType<typeof this.queryPaymentForWebhook>>>) {
+	private formatPaymentForWebhook(
+		payment: NonNullable<Awaited<ReturnType<typeof this.queryPaymentForWebhook>>>,
+	): PaymentWebhookData {
 		return {
 			...payment,
+			agentIdentifier: decodeBlockchainIdentifier(payment.blockchainIdentifier)?.agentIdentifier ?? null,
+			totalBuyerCardanoFees: Number(payment.totalBuyerCardanoFees.toString()) / 1_000_000,
+			totalSellerCardanoFees: Number(payment.totalSellerCardanoFees.toString()) / 1_000_000,
 			submitResultTime: payment.submitResultTime.toString(),
 			cooldownTime: Number(payment.sellerCoolDownTime),
 			cooldownTimeOtherParty: Number(payment.buyerCoolDownTime),
@@ -85,17 +118,29 @@ class WebhookEventsService {
 				unit: amount.unit,
 				amount: amount.amount.toString(),
 			})),
+			CurrentTransaction: payment.CurrentTransaction
+				? {
+						...payment.CurrentTransaction,
+						fees: payment.CurrentTransaction.fees?.toString() ?? null,
+					}
+				: null,
+			TransactionHistory:
+				payment.TransactionHistory != null
+					? payment.TransactionHistory.map((transaction) => ({
+							...transaction,
+							fees: transaction.fees?.toString() ?? null,
+						}))
+					: null,
 		};
 	}
 
 	private async triggerGenericWebhook(
-		eventType: WebhookEventType,
+		eventType: PurchaseWebhookEvent | PaymentWebhookEvent,
 		entityId: string,
 		entityType: 'purchase' | 'payment',
-		logContext: Record<string, unknown>,
 	): Promise<void> {
 		try {
-			let formattedData;
+			let formattedData: PurchaseWebhookData | PaymentWebhookData;
 			let blockchainIdentifier: string;
 			let paymentSourceId: string;
 
@@ -128,7 +173,6 @@ class WebhookEventsService {
 			logger.info(`${String(eventType)} webhook triggered`, {
 				[`${entityType}Id`]: entityId,
 				blockchainIdentifier,
-				...logContext,
 			});
 		} catch (error) {
 			logger.error(`Failed to trigger ${String(eventType)} webhook`, {
@@ -139,52 +183,25 @@ class WebhookEventsService {
 	}
 
 	async triggerPurchaseOnChainStatusChanged(purchaseId: string): Promise<void> {
-		await this.triggerGenericWebhook(
-			WebhookEventType.PURCHASE_ON_CHAIN_STATUS_CHANGED as WebhookEventType,
-			purchaseId,
-			'purchase',
-			{},
-		);
+		await this.triggerGenericWebhook(WebhookEventType.PURCHASE_ON_CHAIN_STATUS_CHANGED, purchaseId, 'purchase');
 	}
 
 	async triggerPaymentOnChainStatusChanged(paymentId: string): Promise<void> {
-		await this.triggerGenericWebhook(
-			WebhookEventType.PAYMENT_ON_CHAIN_STATUS_CHANGED as WebhookEventType,
-			paymentId,
-			'payment',
-			{},
-		);
+		await this.triggerGenericWebhook(WebhookEventType.PAYMENT_ON_CHAIN_STATUS_CHANGED, paymentId, 'payment');
 	}
 
 	async triggerPurchaseOnError(purchaseId: string): Promise<void> {
-		await this.triggerGenericWebhook(
-			WebhookEventType.PURCHASE_ON_ERROR as WebhookEventType,
-			purchaseId,
-			'purchase',
-			{},
-		);
+		await this.triggerGenericWebhook(WebhookEventType.PURCHASE_ON_ERROR, purchaseId, 'purchase');
 	}
 
 	async triggerPaymentOnError(paymentId: string): Promise<void> {
-		await this.triggerGenericWebhook(WebhookEventType.PAYMENT_ON_ERROR as WebhookEventType, paymentId, 'payment', {});
+		await this.triggerGenericWebhook(WebhookEventType.PAYMENT_ON_ERROR, paymentId, 'payment');
 	}
 
-	async triggerWalletLowBalance(payload: {
-		ruleId: string;
-		walletId: string;
-		walletAddress: string;
-		walletVkey: string;
-		walletType: HotWalletType;
-		paymentSourceId: string;
-		network: Network;
-		assetUnit: string;
-		thresholdAmount: string;
-		currentAmount: string;
-		checkedAt: string;
-	}): Promise<void> {
+	async triggerWalletLowBalance(payload: WalletLowBalanceWebhookData): Promise<void> {
 		try {
 			await webhookQueueService.queueWebhook(
-				WebhookEventType.WALLET_LOW_BALANCE as WebhookEventType,
+				WebhookEventType.WALLET_LOW_BALANCE,
 				payload,
 				payload.walletId,
 				payload.paymentSourceId,

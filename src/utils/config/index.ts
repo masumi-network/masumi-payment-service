@@ -1,4 +1,12 @@
 import dotenv from 'dotenv';
+import {
+	getOwnEntries,
+	getOwnString,
+	getOwnValue,
+	isPlainObject,
+	type RuntimePropertyValue,
+} from '@/utils/object-properties';
+
 dotenv.config();
 if (process.env.DATABASE_URL == null) throw new Error('Undefined DATABASE_URL ENV variable');
 if (!process.env.ENCRYPTION_KEY || process.env.ENCRYPTION_KEY.length <= 20)
@@ -61,8 +69,49 @@ export type LowBalanceDefaultRule = {
 	thresholdAmount: string;
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null && !Array.isArray(value);
+type LowBalanceRuleCandidate = {
+	assetUnit: string;
+	thresholdAmount: RuntimePropertyValue;
+};
+
+function normalizeThresholdAmount(value: RuntimePropertyValue, path: string): string {
+	const thresholdString =
+		typeof value === 'string' || typeof value === 'number' || typeof value === 'bigint' ? String(value).trim() : '';
+	if (!/^\d+$/.test(thresholdString)) {
+		throw new Error(`${path}.thresholdAmount must be a non-negative integer string`);
+	}
+
+	return thresholdString;
+}
+
+function parseLowBalanceRuleCandidate(candidate: LowBalanceRuleCandidate, path: string): LowBalanceDefaultRule {
+	if (candidate.assetUnit.trim() === '') {
+		throw new Error(`${path}.assetUnit must be a non-empty string`);
+	}
+
+	return {
+		assetUnit: candidate.assetUnit,
+		thresholdAmount: normalizeThresholdAmount(candidate.thresholdAmount, path),
+	};
+}
+
+function parseLowBalanceRuleObject(value: unknown, path: string): LowBalanceDefaultRule {
+	if (!isPlainObject(value)) {
+		throw new Error(`${path} must be an object`);
+	}
+
+	const assetUnit = getOwnString(value, 'assetUnit');
+	if (assetUnit == null) {
+		throw new Error(`${path}.assetUnit must be a non-empty string`);
+	}
+
+	return parseLowBalanceRuleCandidate(
+		{
+			assetUnit,
+			thresholdAmount: getOwnValue(value, 'thresholdAmount'),
+		},
+		path,
+	);
 }
 
 function parseLowBalanceDefaultRules(
@@ -80,44 +129,23 @@ function parseLowBalanceDefaultRules(
 		throw new Error(`${envVarName} must be valid JSON: ${error instanceof Error ? error.message : String(error)}`);
 	}
 
-	const rules = Array.isArray(parsed)
-		? parsed
-		: isRecord(parsed)
-			? Object.entries(parsed).map(([assetUnit, thresholdAmount]) => ({
-					assetUnit,
-					thresholdAmount,
-				}))
-			: null;
+	if (Array.isArray(parsed)) {
+		return parsed.map((rule, index) => parseLowBalanceRuleObject(rule, `${envVarName}[${index}]`));
+	}
 
-	if (rules == null) {
+	if (!isPlainObject(parsed)) {
 		throw new Error(`${envVarName} must be a JSON object map or array of rules`);
 	}
 
-	return rules.map((rule, index) => {
-		if (!isRecord(rule)) {
-			throw new Error(`${envVarName}[${index}] must be an object`);
-		}
-
-		const assetUnit = rule.assetUnit;
-		const thresholdAmount = rule.thresholdAmount;
-
-		if (typeof assetUnit !== 'string' || assetUnit.trim() === '') {
-			throw new Error(`${envVarName}[${index}].assetUnit must be a non-empty string`);
-		}
-
-		const thresholdString =
-			typeof thresholdAmount === 'string' || typeof thresholdAmount === 'number' || typeof thresholdAmount === 'bigint'
-				? String(thresholdAmount).trim()
-				: '';
-		if (!/^\d+$/.test(thresholdString)) {
-			throw new Error(`${envVarName}[${index}].thresholdAmount must be a non-negative integer string`);
-		}
-
-		return {
-			assetUnit,
-			thresholdAmount: thresholdString,
-		};
-	});
+	return getOwnEntries(parsed).map(([assetUnit, thresholdAmount], index) =>
+		parseLowBalanceRuleCandidate(
+			{
+				assetUnit,
+				thresholdAmount,
+			},
+			`${envVarName}[${index}]`,
+		),
+	);
 }
 
 const lowBalanceCheckInterval = Number(process.env.LOW_BALANCE_CHECK_INTERVAL ?? '60');

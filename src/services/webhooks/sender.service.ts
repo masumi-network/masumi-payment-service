@@ -1,7 +1,8 @@
-import { WebhookDeliveryStatus } from '@/generated/prisma/client';
+import { WebhookDeliveryStatus, WebhookEventType } from '@/generated/prisma/client';
+import type { StoredWebhookPayload } from '@/types/webhook-payloads';
 import { prisma } from '@/utils/db';
 import { logger } from '@/utils/logger';
-import { WebhookPayload } from '@/types/webhook-payloads';
+import { getOwnPlainObject, getOwnString, isPlainObject } from '@/utils/object-properties';
 
 interface WebhookDeliveryResult {
 	success: boolean;
@@ -16,11 +17,12 @@ interface WebhookDeliveryResult {
 class WebhookSenderService {
 	private static readonly REQUEST_TIMEOUT = 10000;
 	private static readonly USER_AGENT = 'Masumi-Webhook/1.0';
+	private static readonly EVENT_TYPES = new Set<string>(Object.values(WebhookEventType));
 
 	/**
 	 * Send a webhook to a specific URL
 	 */
-	async sendWebhook(url: string, authToken: string, payload: WebhookPayload): Promise<WebhookDeliveryResult> {
+	async sendWebhook(url: string, authToken: string, payload: StoredWebhookPayload): Promise<WebhookDeliveryResult> {
 		const startTime = Date.now();
 
 		try {
@@ -166,10 +168,26 @@ class WebhookSenderService {
 			},
 		});
 
+		if (!this.isStoredWebhookPayload(delivery.payload)) {
+			logger.error('Webhook delivery payload is invalid', {
+				delivery_id: deliveryId,
+				webhook_id: delivery.webhookEndpointId,
+			});
+
+			await prisma.webhookDelivery.update({
+				where: { id: deliveryId },
+				data: {
+					status: WebhookDeliveryStatus.Failed as WebhookDeliveryStatus,
+					errorMessage: 'Invalid webhook payload stored in queue',
+				},
+			});
+			return;
+		}
+
 		const result = await this.sendWebhook(
 			delivery.WebhookEndpoint.url,
 			delivery.WebhookEndpoint.authToken,
-			delivery.payload as unknown as WebhookPayload,
+			delivery.payload,
 		);
 
 		if (result.success) {
@@ -257,6 +275,25 @@ class WebhookSenderService {
 		}
 
 		return false;
+	}
+
+	private isStoredWebhookPayload(value: unknown): value is StoredWebhookPayload {
+		if (!isPlainObject(value)) {
+			return false;
+		}
+
+		const eventType = getOwnString(value, 'event_type');
+		const timestamp = getOwnString(value, 'timestamp');
+		const webhookId = getOwnString(value, 'webhook_id');
+		const data = getOwnPlainObject(value, 'data');
+
+		return (
+			eventType !== undefined &&
+			WebhookSenderService.EVENT_TYPES.has(eventType) &&
+			timestamp !== undefined &&
+			webhookId !== undefined &&
+			data !== undefined
+		);
 	}
 
 	/**

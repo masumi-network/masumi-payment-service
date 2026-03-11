@@ -1,5 +1,15 @@
 import LZString from 'lz-string';
 import stringify from 'canonical-json';
+import { getOwnPlainObject, getOwnString, getOwnValue, isObject } from '@/lib/object-properties';
+
+type CanonicalJsonPrimitive = string | number | boolean | null;
+export type CanonicalJsonValue =
+  | CanonicalJsonPrimitive
+  | CanonicalJsonObject
+  | CanonicalJsonValue[];
+export interface CanonicalJsonObject {
+  [key: string]: CanonicalJsonValue;
+}
 
 export function extractErrorMessage(
   error: unknown,
@@ -9,19 +19,19 @@ export function extractErrorMessage(
 
   if (typeof error === 'string') return error;
 
-  if (error instanceof Error) return error.message;
+  if (isObject(error)) {
+    const data = getOwnPlainObject(error, 'data');
+    const directError = getOwnValue(error, 'error');
 
-  if (typeof error === 'object') {
-    const err = error as Record<string, unknown>;
+    if (typeof getOwnString(error, 'message') === 'string') return getOwnString(error, 'message')!;
+    if (typeof directError === 'string') return directError;
+    if (typeof getOwnString(error, 'statusText') === 'string')
+      return getOwnString(error, 'statusText')!;
 
-    if (typeof err.message === 'string') return err.message;
-    if (typeof err.error === 'string') return err.error;
-    if (typeof err.statusText === 'string') return err.statusText;
-
-    if (err.data && typeof err.data === 'object') {
-      const data = err.data as Record<string, unknown>;
-      if (typeof data.message === 'string') return data.message;
-      if (typeof data.error === 'string') return data.error;
+    if (data) {
+      if (typeof getOwnString(data, 'message') === 'string') return getOwnString(data, 'message')!;
+      const dataError = getOwnValue(data, 'error');
+      if (typeof dataError === 'string') return dataError;
     }
 
     try {
@@ -53,7 +63,7 @@ export async function generateSHA256Hex(data: string): Promise<string> {
 
 // MIP-004 Input Hash: SHA256(identifierFromPurchaser + ";" + JCS(input_data))
 export async function generateMIP004InputHash(
-  inputData: Record<string, unknown>,
+  inputData: CanonicalJsonObject,
   identifierFromPurchaser: string,
 ): Promise<string> {
   const canonicalJson = stringify(inputData);

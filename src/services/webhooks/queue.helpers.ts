@@ -1,35 +1,32 @@
 import { WebhookEventType } from '@/generated/prisma/client';
+import type { WebhookPayloadByEvent, WebhookPayloadDataByEvent } from '@/types/webhook-payloads';
 import {
 	appendInclusiveCursorItems,
 	getInclusiveCursorId,
 	type InclusiveCursorItem,
 } from '@/utils/pagination/inclusive-cursor';
 
-export type WebhookPayload = {
-	event_type: WebhookEventType;
-	timestamp: string;
-	webhook_id: string;
-	data: Record<string, unknown>;
-};
-
-export function buildWebhookPayload(
-	eventType: WebhookEventType,
-	payload: Record<string, unknown>,
+export function buildWebhookPayload<TEventType extends WebhookEventType>(
+	eventType: TEventType,
+	payload: WebhookPayloadDataByEvent<TEventType>,
 	timestamp = new Date().toISOString(),
-): WebhookPayload {
+): WebhookPayloadByEvent<TEventType> {
 	return {
 		event_type: eventType,
 		timestamp,
 		webhook_id: '',
 		data: payload,
-	};
+	} as WebhookPayloadByEvent<TEventType>;
 }
 
-export function buildEndpointWebhookPayload(webhookPayload: WebhookPayload, webhookId: string): WebhookPayload {
+export function buildEndpointWebhookPayload<TEventType extends WebhookEventType>(
+	webhookPayload: WebhookPayloadByEvent<TEventType>,
+	webhookId: string,
+): WebhookPayloadByEvent<TEventType> {
 	return {
 		...webhookPayload,
 		webhook_id: webhookId,
-	};
+	} as WebhookPayloadByEvent<TEventType>;
 }
 
 export function mergeWebhookEndpointBatch<T extends InclusiveCursorItem>(

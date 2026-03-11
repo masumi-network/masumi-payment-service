@@ -1,13 +1,15 @@
-import { Prisma, WebhookDeliveryStatus, WebhookEventType } from '@/generated/prisma/client';
+import { WebhookDeliveryStatus, WebhookEventType } from '@/generated/prisma/client';
+import type { WebhookPayloadDataByEvent } from '@/types/webhook-payloads';
 import { prisma } from '@/utils/db';
+import { toPrismaInputJsonValue } from '@/utils/json-value';
 import { logger } from '@/utils/logger';
 import { webhookSenderService } from './sender.service';
 import { buildEndpointWebhookPayload, buildWebhookPayload, mergeWebhookEndpointBatch } from './queue.helpers';
 
 class WebhookQueueService {
-	async queueWebhook(
-		eventType: WebhookEventType,
-		payload: Record<string, unknown>,
+	async queueWebhook<TEventType extends WebhookEventType>(
+		eventType: TEventType,
+		payload: WebhookPayloadDataByEvent<TEventType>,
 		entityId?: string,
 		paymentSourceId?: string,
 	): Promise<void> {
@@ -62,7 +64,7 @@ class WebhookQueueService {
 						data: {
 							webhookEndpointId: endpoint.id,
 							eventType,
-							payload: endpointPayload as unknown as Prisma.InputJsonValue,
+							payload: toPrismaInputJsonValue(endpointPayload),
 							entityId,
 							status: WebhookDeliveryStatus.Pending as WebhookDeliveryStatus,
 							nextRetryAt: new Date(),
