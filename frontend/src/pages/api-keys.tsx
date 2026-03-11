@@ -128,7 +128,7 @@ export default function ApiKeys() {
 
   const handleSelectAll = () => {
     setSelectedKeys(
-      selectedKeys.length === allApiKeys.length ? [] : allApiKeys.map((key) => key.token),
+      selectedKeys.length === filteredApiKeys.length ? [] : filteredApiKeys.map((key) => key.token),
     );
   };
 
@@ -226,7 +226,7 @@ export default function ApiKeys() {
                 <tr className="border-b">
                   <th className="w-12 p-4">
                     <Checkbox
-                      checked={allApiKeys.length > 0 && selectedKeys.length === allApiKeys.length}
+                      checked={filteredApiKeys.length > 0 && selectedKeys.length === filteredApiKeys.length}
                       onCheckedChange={handleSelectAll}
                     />
                   </th>
