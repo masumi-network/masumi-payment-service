@@ -11,9 +11,9 @@ function getNestedApiErrorMessage(value: object): string | undefined {
   return (
     (typeof topLevelError === 'string' ? topLevelError : undefined) ||
     (nestedError ? getOwnString(nestedError, 'message') : undefined) ||
-    (nestedData ? getOwnString(nestedData, 'message') : undefined) ||
     (nestedDataError ? getOwnString(nestedDataError, 'message') : undefined) ||
     (typeof nestedDataErrorValue === 'string' ? nestedDataErrorValue : undefined) ||
+    (nestedData ? getOwnString(nestedData, 'message') : undefined) ||
     getOwnString(value, 'message')
   );
 }
