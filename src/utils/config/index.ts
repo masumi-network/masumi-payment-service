@@ -55,6 +55,9 @@ if (autoDecisionInterval < 5) throw new Error('AUTO_DECISION_INTERVAL must be at
 const webhookDeliveryInterval = Number(process.env.WEBHOOK_DELIVERY_INTERVAL ?? '10');
 if (webhookDeliveryInterval < 5) throw new Error('WEBHOOK_DELIVERY_INTERVAL must be at least 5 seconds');
 
+const webhookCleanupInterval = Number(process.env.WEBHOOK_CLEANUP_INTERVAL ?? String(24 * 60 * 60));
+if (webhookCleanupInterval < 5) throw new Error('WEBHOOK_CLEANUP_INTERVAL must be at least 5 seconds');
+
 const blockConfirmationsThreshold = Number(process.env.BLOCK_CONFIRMATIONS_THRESHOLD ?? '1');
 if (blockConfirmationsThreshold < 0) throw new Error('BLOCK_CONFIRMATIONS_THRESHOLD must be at least 0');
 
@@ -178,6 +181,7 @@ export const CONFIG = {
 	AUTO_WITHDRAW_REFUNDS: autoWithdrawRefunds,
 	AUTO_DECISION_INTERVAL: autoDecisionInterval,
 	WEBHOOK_DELIVERY_INTERVAL: webhookDeliveryInterval,
+	WEBHOOK_CLEANUP_INTERVAL: webhookCleanupInterval,
 	// OpenTelemetry configuration
 	OTEL_SERVICE_NAME: process.env.OTEL_SERVICE_NAME ?? 'masumi-payment-service',
 	OTEL_SERVICE_VERSION: process.env.OTEL_SERVICE_VERSION ?? '0.1.0',

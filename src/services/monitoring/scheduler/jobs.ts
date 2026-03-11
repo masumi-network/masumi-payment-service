@@ -119,7 +119,7 @@ export const scheduledJobs: JobDefinition[] = [
 	},
 	{
 		initialDelayMs: 50000,
-		intervalMs: 24 * 60 * 60 * 1000,
+		intervalMs: CONFIG.WEBHOOK_CLEANUP_INTERVAL * 1000,
 		startMessage: 'Starting webhook cleanup',
 		finishMessage: 'Finished webhook cleanup',
 		run: () => webhookQueueService.cleanupOldDeliveries(),
