@@ -8,11 +8,10 @@ function getErrorInstanceApiMessage(value: object): string | undefined {
   const nestedDataErrorValue = nestedData ? getOwnValue(nestedData, 'error') : undefined;
 
   return (
-    (nestedError ? getOwnString(nestedError, 'message') : undefined) ||
     (nestedDataError ? getOwnString(nestedDataError, 'message') : undefined) ||
     (typeof nestedDataErrorValue === 'string' ? nestedDataErrorValue : undefined) ||
     (nestedData ? getOwnString(nestedData, 'message') : undefined) ||
-    getOwnString(value, 'message')
+    (nestedError ? getOwnString(nestedError, 'message') : undefined)
   );
 }
 
@@ -21,16 +20,14 @@ function getPlainObjectApiMessage(value: object): string | undefined {
   const nestedResponse = getOwnPlainObject(value, 'response');
   const nestedData = nestedResponse ? getOwnPlainObject(nestedResponse, 'data') : undefined;
   const nestedDataError = nestedData ? getOwnPlainObject(nestedData, 'error') : undefined;
-  const topLevelError = getOwnValue(value, 'error');
   const nestedDataErrorValue = nestedData ? getOwnValue(nestedData, 'error') : undefined;
 
   return (
     getOwnString(value, 'message') ||
     (nestedError ? getOwnString(nestedError, 'message') : undefined) ||
-    (typeof topLevelError === 'string' ? topLevelError : undefined) ||
+    (nestedData ? getOwnString(nestedData, 'message') : undefined) ||
     (nestedDataError ? getOwnString(nestedDataError, 'message') : undefined) ||
-    (typeof nestedDataErrorValue === 'string' ? nestedDataErrorValue : undefined) ||
-    (nestedData ? getOwnString(nestedData, 'message') : undefined)
+    (typeof nestedDataErrorValue === 'string' ? nestedDataErrorValue : undefined)
   );
 }
 

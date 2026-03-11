@@ -15,7 +15,6 @@ import { errorToString } from '@/utils/converter/error-string-convert';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, tryAcquire, MutexInterface } from 'async-mutex';
-import { SERVICE_CONSTANTS } from '@/utils/config';
 import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import {
 	connectPreviousAction,
@@ -43,16 +42,6 @@ function validatePaymentRequestFields(request: {
 	if (request.CurrentTransaction?.txHash == null) {
 		throw new Error('No transaction hash found');
 	}
-}
-function calculateTransactionTimeWindow(network: 'mainnet' | 'preprod' | 'testnet' | 'preview'): {
-	invalidBefore: number;
-	invalidAfter: number;
-} {
-	return createTxWindow(network, {
-		beforeBufferMs: SERVICE_CONSTANTS.TRANSACTION.timeBufferMs,
-		afterBufferMs: SERVICE_CONSTANTS.TRANSACTION.timeBufferMs,
-		validitySlotBuffer: SERVICE_CONSTANTS.TRANSACTION.validitySlotBuffer,
-	});
 }
 
 export async function authorizeRefundV1() {
@@ -179,7 +168,7 @@ export async function authorizeRefundV1() {
 							state: SmartContractState.RefundRequested,
 						});
 
-						const { invalidBefore, invalidAfter } = calculateTransactionTimeWindow(network);
+						const { invalidBefore, invalidAfter } = createTxWindow(network);
 
 						const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
 

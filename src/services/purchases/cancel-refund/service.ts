@@ -15,7 +15,6 @@ import { errorToString } from '@/utils/converter/error-string-convert';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
-import { SERVICE_CONSTANTS } from '@/utils/config';
 import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import {
 	connectPreviousAction,
@@ -46,16 +45,6 @@ function validatePurchaseRequestFields(request: {
 	if (request.SmartContractWallet == null) {
 		throw new Error('Purchasing wallet not found');
 	}
-}
-function calculateTransactionTimeWindow(network: 'mainnet' | 'preprod' | 'testnet' | 'preview'): {
-	invalidBefore: number;
-	invalidAfter: number;
-} {
-	return createTxWindow(network, {
-		beforeBufferMs: SERVICE_CONSTANTS.TRANSACTION.timeBufferMs,
-		afterBufferMs: SERVICE_CONSTANTS.TRANSACTION.timeBufferMs,
-		validitySlotBuffer: SERVICE_CONSTANTS.TRANSACTION.validitySlotBuffer,
-	});
 }
 function decodeAndValidateUtxoDatum(params: {
 	utxo: UTxO;
@@ -219,7 +208,7 @@ export async function cancelRefundsV1() {
 							cooldownTime: BigInt(paymentContract.cooldownTime),
 						});
 
-						const { invalidBefore, invalidAfter } = calculateTransactionTimeWindow(network);
+						const { invalidBefore, invalidAfter } = createTxWindow(network);
 
 						const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
 
