@@ -9,8 +9,6 @@ import { z } from '@/utils/zod-openapi';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { DEFAULTS } from '@/utils/config';
-import { getBlockfrostInstance } from '@/utils/blockfrost';
-import { logger } from '@/utils/logger';
 import { walletLowBalanceMonitorService } from '@/services/wallet-low-balance-monitor';
 import {
 	paymentSourceExtendedCreateSchemaInput,
