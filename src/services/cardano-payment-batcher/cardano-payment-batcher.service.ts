@@ -513,7 +513,7 @@ export async function batchLatestPaymentEntriesV1() {
 								if (overestimatedMinUtxoCost < txHandlerMinUtxo.minUtxoLovelace) {
 									overestimatedMinUtxoCost = txHandlerMinUtxo.minUtxoLovelace;
 								}
-							} catch (_minUtxoCheckError) {
+							} catch {
 								logger.debug('Failed to run tx-handler min-UTXO check, using CBOR-based estimate', {
 									overestimatedMinUtxoCost: overestimatedMinUtxoCost.toString(),
 								});

@@ -244,7 +244,7 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 				if (protocolParams.coins_per_utxo_size != null) {
 					coinsPerUtxoSize = Number(protocolParams.coins_per_utxo_size);
 				}
-			} catch (_protocolFetchError) {
+			} catch {
 				logger.debug('Failed to fetch protocol params for collateral estimate, using fallback', {
 					fallbackCoinsPerUtxoSize: coinsPerUtxoSize,
 				});
@@ -283,7 +283,7 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 				requiredCollateralReturnLovelace =
 					shortfall < CONSTANTS.MIN_COLLATERAL_LOVELACE ? CONSTANTS.MIN_COLLATERAL_LOVELACE : shortfall;
 			}
-		} catch (_collateralCalcError) {
+		} catch {
 			logger.warn('Failed to calculate required collateral for payment request', {
 				blockchainIdentifier: compressedEncodedBlockchainIdentifier,
 			});
