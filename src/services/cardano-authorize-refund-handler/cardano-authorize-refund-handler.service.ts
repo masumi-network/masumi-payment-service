@@ -18,6 +18,11 @@ import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, tryAcquire, MutexInterface } from 'async-mutex';
 import { SERVICE_CONSTANTS } from '@/utils/config';
 import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
+import {
+	walletLowBalanceMonitorService,
+	toBalanceMapFromMeshUtxos,
+	type MeshLikeUtxo,
+} from '@/services/wallet-low-balance-monitor';
 
 const mutex = new Mutex();
 
@@ -99,6 +104,11 @@ export async function authorizeRefundV1() {
 							paymentContract.network,
 							paymentContract.PaymentSourceConfig.rpcProviderApiKey,
 							request.SmartContractWallet!.Secret.encryptedMnemonic,
+						);
+						await walletLowBalanceMonitorService.evaluateHotWalletById(
+							request.SmartContractWallet!.id,
+							toBalanceMapFromMeshUtxos(utxos as MeshLikeUtxo[]),
+							'submission',
 						);
 						if (utxos.length === 0) {
 							throw new Error('No UTXOs found in the wallet. Wallet is empty.');
@@ -227,6 +237,13 @@ export async function authorizeRefundV1() {
 						});
 						//submit the transaction to the blockchain
 						const newTxHash = await wallet.submitTx(signedTx);
+						await walletLowBalanceMonitorService.evaluateProjectedHotWalletById({
+							hotWalletId: request.SmartContractWallet!.id,
+							walletAddress: address,
+							walletUtxos: limitedFilteredUtxos,
+							unsignedTx,
+							checkSource: 'submission',
+						});
 						await prisma.paymentRequest.update({
 							where: { id: request.id },
 							data: {

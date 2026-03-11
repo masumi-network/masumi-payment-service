@@ -93,6 +93,26 @@ model HotWallet {
   RegistryRequest          RegistryRequest[]
   apiKeyWalletScopes       ApiKeyWalletScope[]
   LimitedPurchaseRequests  PurchaseRequest[]   @relation("HotWalletLimit")
+  LowBalanceRules          HotWalletLowBalanceRule[]
+}
+
+model HotWalletLowBalanceRule {
+  id              String           @id @default(cuid())
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  hotWalletId     String
+  assetUnit       String
+  thresholdAmount BigInt
+  enabled         Boolean          @default(true)
+  status          LowBalanceStatus @default(Unknown)
+  lastKnownAmount BigInt?
+  lastCheckedAt   DateTime?
+  lastAlertedAt   DateTime?
+  HotWallet       HotWallet        @relation(fields: [hotWalletId], references: [id], onDelete: Cascade)
+
+  @@unique([hotWalletId, assetUnit])
+  @@index([hotWalletId, enabled])
+  @@index([enabled, status])
 }
 
 model Transaction {
@@ -657,6 +677,12 @@ enum RPCProvider {
   Blockfrost
 }
 
+enum LowBalanceStatus {
+  Unknown
+  Healthy
+  Low
+}
+
 // Webhook models
 model WebhookEndpoint {
   id        String   @id @default(cuid())
@@ -711,6 +737,7 @@ enum WebhookEventType {
   PAYMENT_ON_CHAIN_STATUS_CHANGED
   PURCHASE_ON_ERROR
   PAYMENT_ON_ERROR
+  WALLET_LOW_BALANCE
 }
 
 enum WebhookDeliveryStatus {

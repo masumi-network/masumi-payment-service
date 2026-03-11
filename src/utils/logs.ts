@@ -1,15 +1,8 @@
 import { logs, SeverityNumber } from '@opentelemetry/api-logs';
 import { logger as winstonLogger } from '@/utils/logger/';
-const logger = logs.getLogger('masumi-payment-logger', '1.0.0');
-logger.emit({
-	severityNumber: SeverityNumber.INFO,
-	severityText: 'INFO',
-	body: 'Logger initialized',
-	attributes: {
-		service: 'masumi-payment-service',
-	},
-	timestamp: Date.now(),
-});
+
+// Fetch logger lazily so it uses the provider registered after SDK start
+const getLogger = () => logs.getLogger('masumi-payment-logger', '1.0.0');
 
 export enum LogLevel {
 	DEBUG = 'debug',
@@ -52,6 +45,65 @@ const getSeverityNumber = (level: LogLevel): SeverityNumber => {
 	}
 };
 
+const toConsoleMetadata = (context?: LogContext, attributes?: LogAttributes, error?: Error) => {
+	const metadata: Record<string, unknown> = {
+		...(context ?? {}),
+		...(attributes ?? {}),
+	};
+
+	if (error) {
+		metadata.error = error;
+	}
+
+	return Object.keys(metadata).length > 0 ? metadata : undefined;
+};
+
+const emitConsoleLog = (level: LogLevel, message: string, metadata?: Record<string, unknown>) => {
+	switch (level) {
+		case LogLevel.DEBUG:
+			if (metadata) {
+				winstonLogger.debug(message, metadata);
+			} else {
+				winstonLogger.debug(message);
+			}
+			return;
+		case LogLevel.INFO:
+			if (metadata) {
+				winstonLogger.info(message, metadata);
+			} else {
+				winstonLogger.info(message);
+			}
+			return;
+		case LogLevel.WARN:
+			if (metadata) {
+				winstonLogger.warn(message, metadata);
+			} else {
+				winstonLogger.warn(message);
+			}
+			return;
+		case LogLevel.ERROR:
+			if (metadata) {
+				winstonLogger.error(message, metadata);
+			} else {
+				winstonLogger.error(message);
+			}
+			return;
+		case LogLevel.FATAL:
+			if (metadata) {
+				winstonLogger.log('fatal', message, metadata);
+			} else {
+				winstonLogger.log('fatal', message);
+			}
+			return;
+		default:
+			if (metadata) {
+				winstonLogger.info(message, metadata);
+			} else {
+				winstonLogger.info(message);
+			}
+	}
+};
+
 const emitLog = (level: LogLevel, message: string, context?: LogContext, attributes?: LogAttributes, error?: Error) => {
 	const logAttributes: LogAttributes = {
 		...attributes,
@@ -66,7 +118,7 @@ const emitLog = (level: LogLevel, message: string, context?: LogContext, attribu
 		logAttributes.error_stack = error.stack || '';
 	}
 
-	logger.emit({
+	getLogger().emit({
 		severityNumber: getSeverityNumber(level),
 		severityText: level.toUpperCase(),
 		body: message,
@@ -74,17 +126,7 @@ const emitLog = (level: LogLevel, message: string, context?: LogContext, attribu
 		timestamp: Date.now(),
 	});
 
-	// Also log to console in Winston format
-	const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
-	const separator = '│';
-	const paddedLevel = level.padEnd(5);
-
-	// Format context info similar to Winston format
-	const contextStr = context ? ` [${JSON.stringify(context)}]` : '';
-	const errorStr = error ? ` ERROR: ${error.message}` : '';
-	const fullMessage = `${message}${contextStr}${errorStr}`;
-
-	winstonLogger.info(`${timestamp} ${separator} [${paddedLevel}] ${separator} ${fullMessage}`);
+	emitConsoleLog(level, message, toConsoleMetadata(context, attributes, error));
 };
 
 export const logDebug = (message: string, context?: LogContext, attributes?: LogAttributes) => {

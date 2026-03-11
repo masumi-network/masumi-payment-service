@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { Plus, ArrowLeftRight, PlusCircle } from 'lucide-react';
+import { Plus, ArrowLeftRight, PlusCircle, AlertTriangle } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/router';
@@ -24,6 +24,7 @@ import {
   WalletWithBalance as BaseWalletWithBalance,
 } from '@/components/wallets/WalletDetailsDialog';
 import { CopyButton } from '@/components/ui/copy-button';
+import { Badge } from '@/components/ui/badge';
 import { WalletTypeBadge } from '@/components/ui/wallet-type-badge';
 import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 import { AnimatedPage } from '@/components/ui/animated-page';
@@ -283,18 +284,30 @@ export default function WalletsPage() {
                     {filteredWallets.map((wallet, index) => (
                       <tr
                         key={wallet.id}
-                        className="border-b last:border-b-0 hover:bg-muted/50 cursor-pointer animate-fade-in opacity-0 transition-[background-color,opacity] duration-150"
+                        className={`border-b last:border-b-0 cursor-pointer animate-fade-in opacity-0 transition-[background-color,opacity] duration-150 ${
+                          wallet.LowBalanceSummary?.isLow
+                            ? 'bg-amber-500/5 hover:bg-amber-500/10'
+                            : 'hover:bg-muted/50'
+                        }`}
                         style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
                         onClick={() => handleWalletClick(wallet)}
                       >
                         <td className="p-4 pl-6">
-                          {wallet.type === 'Collection' ? (
-                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-secondary text-secondary-foreground">
-                              Collection
-                            </span>
-                          ) : (
-                            <WalletTypeBadge type={wallet.type} />
-                          )}
+                          <div className="flex flex-col gap-2">
+                            {wallet.type === 'Collection' ? (
+                              <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-secondary text-secondary-foreground">
+                                Collection
+                              </span>
+                            ) : (
+                              <WalletTypeBadge type={wallet.type} />
+                            )}
+                            {wallet.LowBalanceSummary?.isLow && (
+                              <Badge variant="destructive" className="w-fit gap-1">
+                                <AlertTriangle className="h-3 w-3" />
+                                {wallet.LowBalanceSummary.lowRuleCount} low
+                              </Badge>
+                            )}
+                          </div>
                         </td>
                         <td className="p-4">
                           <div className="text-sm font-medium truncate">

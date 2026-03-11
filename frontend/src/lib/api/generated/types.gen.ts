@@ -124,6 +124,60 @@ export type Wallet = {
      * Collection address for this wallet. Null if not set
      */
     collectionAddress: string | null;
+    /**
+     * Aggregated low-balance state for this wallet
+     */
+    LowBalanceSummary: {
+        /**
+         * Whether any enabled low-balance rule for this wallet is currently below threshold
+         */
+        isLow: boolean;
+        /**
+         * How many enabled rules for this wallet are currently in low state
+         */
+        lowRuleCount: number;
+        /**
+         * Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked
+         */
+        lastCheckedAt: Date | null;
+    };
+    /**
+     * Configured low-balance rules for this wallet, including current deduped state
+     */
+    LowBalanceRules: Array<{
+        /**
+         * Unique identifier for the low-balance rule
+         */
+        id: string;
+        /**
+         * Raw on-chain asset unit, for example lovelace or a full policy+asset identifier
+         */
+        assetUnit: string;
+        /**
+         * Threshold in raw on-chain units used to determine low balance
+         */
+        thresholdAmount: string;
+        /**
+         * Whether the rule is active
+         */
+        enabled: boolean;
+        /**
+         * Current deduped state of the rule
+         */
+        status: 'Unknown' | 'Healthy' | 'Low';
+        /**
+         * Last observed balance for this asset in raw on-chain units. Null if never checked
+         */
+        lastKnownAmount: string | null;
+        /**
+         * Timestamp when the rule was last evaluated. Null if never checked
+         */
+        lastCheckedAt: Date | null;
+        /**
+         * Timestamp when the wallet last entered low balance for this rule. Null if never alerted
+         */
+        lastAlertedAt: Date | null;
+    }>;
 };
 
 export type GeneratedWalletSecret = {
@@ -1314,6 +1368,23 @@ export type PurchasingWallet = {
      * Optional note about this wallet. Null if not set
      */
     note: string | null;
+    /**
+     * Aggregated low-balance status for the wallet
+     */
+    LowBalanceSummary: {
+        /**
+         * Whether any enabled low-balance rule for this wallet is currently below threshold
+         */
+        isLow: boolean;
+        /**
+         * How many enabled rules for this wallet are currently in low state
+         */
+        lowRuleCount: number;
+        /**
+         * Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked
+         */
+        lastCheckedAt: Date | null;
+    };
 };
 
 export type SellingWallet = {
@@ -1337,6 +1408,23 @@ export type SellingWallet = {
      * Optional note about this wallet. Null if not set
      */
     note: string | null;
+    /**
+     * Aggregated low-balance status for the wallet
+     */
+    LowBalanceSummary: {
+        /**
+         * Whether any enabled low-balance rule for this wallet is currently below threshold
+         */
+        isLow: boolean;
+        /**
+         * How many enabled rules for this wallet are currently in low state
+         */
+        lowRuleCount: number;
+        /**
+         * Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked
+         */
+        lastCheckedAt: Date | null;
+    };
 };
 
 export type PaymentSourceExtended = {
@@ -1426,6 +1514,23 @@ export type PaymentSourceExtended = {
          * Optional note about this wallet. Null if not set
          */
         note: string | null;
+        /**
+         * Aggregated low-balance status for the wallet
+         */
+        LowBalanceSummary: {
+            /**
+             * Whether any enabled low-balance rule for this wallet is currently below threshold
+             */
+            isLow: boolean;
+            /**
+             * How many enabled rules for this wallet are currently in low state
+             */
+            lowRuleCount: number;
+            /**
+             * Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked
+             */
+            lastCheckedAt: Date | null;
+        };
     }>;
     /**
      * List of wallets used for selling (seller side)
@@ -1451,6 +1556,23 @@ export type PaymentSourceExtended = {
          * Optional note about this wallet. Null if not set
          */
         note: string | null;
+        /**
+         * Aggregated low-balance status for the wallet
+         */
+        LowBalanceSummary: {
+            /**
+             * Whether any enabled low-balance rule for this wallet is currently below threshold
+             */
+            isLow: boolean;
+            /**
+             * How many enabled rules for this wallet are currently in low state
+             */
+            lowRuleCount: number;
+            /**
+             * Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked
+             */
+            lastCheckedAt: Date | null;
+        };
     }>;
     /**
      * Wallet that receives network fees from transactions
@@ -1770,6 +1892,350 @@ export type PostWalletResponses = {
 };
 
 export type PostWalletResponse = PostWalletResponses[keyof PostWalletResponses];
+
+export type DeleteWalletLowBalanceData = {
+    /**
+     * Low-balance rule to delete
+     */
+    body?: {
+        /**
+         * Low-balance rule id to delete
+         */
+        ruleId: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/wallet/low-balance';
+};
+
+export type DeleteWalletLowBalanceErrors = {
+    /**
+     * Low-balance rule not found
+     */
+    404: unknown;
+};
+
+export type DeleteWalletLowBalanceResponses = {
+    /**
+     * Wallet low-balance rule deleted
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * Deleted rule id
+             */
+            ruleId: string;
+            /**
+             * Timestamp when the rule was deleted
+             */
+            deletedAt: Date;
+        };
+    };
+};
+
+export type DeleteWalletLowBalanceResponse = DeleteWalletLowBalanceResponses[keyof DeleteWalletLowBalanceResponses];
+
+export type GetWalletLowBalanceData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Optional: filter rules by wallet id
+         */
+        walletId?: string;
+        /**
+         * Optional: filter rules by payment source id
+         */
+        paymentSourceId?: string;
+        /**
+         * Whether to return only rules currently in low state
+         */
+        onlyLow?: string;
+        /**
+         * Whether to include disabled rules
+         */
+        includeDisabled?: string;
+    };
+    url: '/wallet/low-balance';
+};
+
+export type GetWalletLowBalanceResponses = {
+    /**
+     * Wallet low-balance rules
+     */
+    200: {
+        status: 'success';
+        data: {
+            Rules: Array<{
+                /**
+                 * Unique identifier for the low-balance rule
+                 */
+                id: string;
+                /**
+                 * Raw on-chain asset unit, for example lovelace or a full policy+asset identifier
+                 */
+                assetUnit: string;
+                /**
+                 * Threshold in raw on-chain units used to determine low balance
+                 */
+                thresholdAmount: string;
+                /**
+                 * Whether the rule is active
+                 */
+                enabled: boolean;
+                /**
+                 * Current deduped state of the rule
+                 */
+                status: 'Unknown' | 'Healthy' | 'Low';
+                /**
+                 * Last observed balance for this asset in raw on-chain units. Null if never checked
+                 */
+                lastKnownAmount: string | null;
+                /**
+                 * Timestamp when the rule was last evaluated. Null if never checked
+                 */
+                lastCheckedAt: Date | null;
+                /**
+                 * Timestamp when the wallet last entered low balance for this rule. Null if never alerted
+                 */
+                lastAlertedAt: Date | null;
+                /**
+                 * Hot wallet id the rule belongs to
+                 */
+                walletId: string;
+                /**
+                 * Wallet verification key
+                 */
+                walletVkey: string;
+                /**
+                 * Wallet address
+                 */
+                walletAddress: string;
+                /**
+                 * Hot wallet type
+                 */
+                walletType: 'Selling' | 'Purchasing';
+                /**
+                 * Payment source id owning the wallet
+                 */
+                paymentSourceId: string;
+                /**
+                 * Wallet network
+                 */
+                network: 'Preprod' | 'Mainnet';
+            }>;
+        };
+    };
+};
+
+export type GetWalletLowBalanceResponse = GetWalletLowBalanceResponses[keyof GetWalletLowBalanceResponses];
+
+export type PatchWalletLowBalanceData = {
+    /**
+     * Low-balance rule update
+     */
+    body?: {
+        /**
+         * Low-balance rule id to update
+         */
+        ruleId: string;
+        /**
+         * Updated threshold in raw on-chain units
+         */
+        thresholdAmount?: string;
+        /**
+         * Updated enabled state
+         */
+        enabled?: boolean;
+    };
+    path?: never;
+    query?: never;
+    url: '/wallet/low-balance';
+};
+
+export type PatchWalletLowBalanceErrors = {
+    /**
+     * Low-balance rule not found
+     */
+    404: unknown;
+};
+
+export type PatchWalletLowBalanceResponses = {
+    /**
+     * Wallet low-balance rule updated
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * Unique identifier for the low-balance rule
+             */
+            id: string;
+            /**
+             * Raw on-chain asset unit, for example lovelace or a full policy+asset identifier
+             */
+            assetUnit: string;
+            /**
+             * Threshold in raw on-chain units used to determine low balance
+             */
+            thresholdAmount: string;
+            /**
+             * Whether the rule is active
+             */
+            enabled: boolean;
+            /**
+             * Current deduped state of the rule
+             */
+            status: 'Unknown' | 'Healthy' | 'Low';
+            /**
+             * Last observed balance for this asset in raw on-chain units. Null if never checked
+             */
+            lastKnownAmount: string | null;
+            /**
+             * Timestamp when the rule was last evaluated. Null if never checked
+             */
+            lastCheckedAt: Date | null;
+            /**
+             * Timestamp when the wallet last entered low balance for this rule. Null if never alerted
+             */
+            lastAlertedAt: Date | null;
+            /**
+             * Hot wallet id the rule belongs to
+             */
+            walletId: string;
+            /**
+             * Wallet verification key
+             */
+            walletVkey: string;
+            /**
+             * Wallet address
+             */
+            walletAddress: string;
+            /**
+             * Hot wallet type
+             */
+            walletType: 'Selling' | 'Purchasing';
+            /**
+             * Payment source id owning the wallet
+             */
+            paymentSourceId: string;
+            /**
+             * Wallet network
+             */
+            network: 'Preprod' | 'Mainnet';
+        };
+    };
+};
+
+export type PatchWalletLowBalanceResponse = PatchWalletLowBalanceResponses[keyof PatchWalletLowBalanceResponses];
+
+export type PostWalletLowBalanceData = {
+    /**
+     * Low-balance rule to create
+     */
+    body?: {
+        /**
+         * Hot wallet id to attach the rule to
+         */
+        walletId: string;
+        /**
+         * Raw on-chain asset unit, for example lovelace or a policy+asset identifier
+         */
+        assetUnit: string;
+        /**
+         * Threshold in raw on-chain units. Example: 5000000 for 5 ADA
+         */
+        thresholdAmount: string;
+        /**
+         * Whether the rule should start enabled
+         */
+        enabled?: boolean;
+    };
+    path?: never;
+    query?: never;
+    url: '/wallet/low-balance';
+};
+
+export type PostWalletLowBalanceErrors = {
+    /**
+     * Wallet not found
+     */
+    404: unknown;
+    /**
+     * Low-balance rule already exists for this wallet and asset
+     */
+    409: unknown;
+};
+
+export type PostWalletLowBalanceResponses = {
+    /**
+     * Wallet low-balance rule created
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * Unique identifier for the low-balance rule
+             */
+            id: string;
+            /**
+             * Raw on-chain asset unit, for example lovelace or a full policy+asset identifier
+             */
+            assetUnit: string;
+            /**
+             * Threshold in raw on-chain units used to determine low balance
+             */
+            thresholdAmount: string;
+            /**
+             * Whether the rule is active
+             */
+            enabled: boolean;
+            /**
+             * Current deduped state of the rule
+             */
+            status: 'Unknown' | 'Healthy' | 'Low';
+            /**
+             * Last observed balance for this asset in raw on-chain units. Null if never checked
+             */
+            lastKnownAmount: string | null;
+            /**
+             * Timestamp when the rule was last evaluated. Null if never checked
+             */
+            lastCheckedAt: Date | null;
+            /**
+             * Timestamp when the wallet last entered low balance for this rule. Null if never alerted
+             */
+            lastAlertedAt: Date | null;
+            /**
+             * Hot wallet id the rule belongs to
+             */
+            walletId: string;
+            /**
+             * Wallet verification key
+             */
+            walletVkey: string;
+            /**
+             * Wallet address
+             */
+            walletAddress: string;
+            /**
+             * Hot wallet type
+             */
+            walletType: 'Selling' | 'Purchasing';
+            /**
+             * Payment source id owning the wallet
+             */
+            paymentSourceId: string;
+            /**
+             * Wallet network
+             */
+            network: 'Preprod' | 'Mainnet';
+        };
+    };
+};
+
+export type PostWalletLowBalanceResponse = PostWalletLowBalanceResponses[keyof PostWalletLowBalanceResponses];
 
 export type PostSignatureVerifyRevealDataData = {
     body?: {
@@ -7698,7 +8164,7 @@ export type GetWebhooksResponses = {
             Webhooks: Array<{
                 id: string;
                 url: string;
-                Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR'>;
+                Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE'>;
                 name: string | null;
                 isActive: boolean;
                 createdAt: Date;
@@ -7734,7 +8200,7 @@ export type PostWebhooksData = {
         /**
          * Array of event types to subscribe to
          */
-        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR'>;
+        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE'>;
         /**
          * Human-readable name for the webhook
          */
@@ -7781,7 +8247,7 @@ export type PostWebhooksResponses = {
         data: {
             id: string;
             url: string;
-            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR'>;
+            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE'>;
             name: string | null;
             isActive: boolean;
             createdAt: Date;

@@ -35,6 +35,21 @@ export async function getPaymentSourcesForQuery(
 					type: true,
 					collectionAddress: true,
 					note: true,
+					LowBalanceRules: {
+						where: {
+							enabled: true,
+						},
+						select: {
+							id: true,
+							assetUnit: true,
+							thresholdAmount: true,
+							enabled: true,
+							status: true,
+							lastKnownAmount: true,
+							lastCheckedAt: true,
+							lastAlertedAt: true,
+						},
+					},
 				},
 			},
 			FeeReceiverNetworkWallet: {

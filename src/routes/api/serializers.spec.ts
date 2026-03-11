@@ -1,9 +1,31 @@
-import { HotWalletType, PricingType, TransactionStatus } from '@/generated/prisma/client';
-import { generateBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
-import { serializePaymentSourceEntry } from './payment-source/serializers';
-import { serializePaymentListEntry } from './payments/serializers';
-import { serializeRegistryEntry } from './registry/serializers';
-import { serializeSwapTransaction } from './swap/serializers';
+import { jest } from '@jest/globals';
+
+jest.unstable_mockModule('@/utils/config', () => ({
+	CONFIG: {
+		LOW_BALANCE_DEFAULT_RULES_MAINNET: [],
+		LOW_BALANCE_DEFAULT_RULES_PREPROD: [],
+	},
+}));
+
+jest.unstable_mockModule('@/utils/logger', () => ({
+	logger: {
+		info: jest.fn(),
+		warn: jest.fn(),
+		error: jest.fn(),
+		debug: jest.fn(),
+	},
+}));
+
+jest.unstable_mockModule('@/utils/db', () => ({
+	prisma: {},
+}));
+
+const { HotWalletType, PricingType, TransactionStatus } = await import('@/generated/prisma/client');
+const { generateBlockchainIdentifier } = await import('@/utils/generator/blockchain-identifier-generator');
+const { serializePaymentSourceEntry } = await import('./payment-source/serializers');
+const { serializePaymentListEntry } = await import('./payments/serializers');
+const { serializeRegistryEntry } = await import('./registry/serializers');
+const { serializeSwapTransaction } = await import('./swap/serializers');
 
 describe('route serializers', () => {
 	it('serializes payment list entries without changing response shape', () => {
@@ -119,6 +141,7 @@ describe('route serializers', () => {
 					walletAddress: 'selling-address',
 					collectionAddress: null,
 					note: 'selling',
+					LowBalanceRules: [],
 				},
 				{
 					id: 'wallet-purchasing',
@@ -127,6 +150,7 @@ describe('route serializers', () => {
 					walletAddress: 'purchasing-address',
 					collectionAddress: null,
 					note: 'purchasing',
+					LowBalanceRules: [],
 				},
 			],
 		} as unknown as Parameters<typeof serializePaymentSourceEntry>[0];

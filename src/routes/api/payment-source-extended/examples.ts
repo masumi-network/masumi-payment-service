@@ -28,6 +28,11 @@ export const paymentSourceExtendedExample = {
 			walletVkey: 'wallet_vkey',
 			walletAddress: 'wallet_address',
 			id: 'unique_cuid_v2_auto_generated',
+			LowBalanceSummary: {
+				isLow: false,
+				lowRuleCount: 0,
+				lastCheckedAt: new Date(1713636260),
+			},
 		},
 		{
 			collectionAddress: 'send_refunds_to_this_address',
@@ -35,6 +40,11 @@ export const paymentSourceExtendedExample = {
 			walletVkey: 'wallet_vkey',
 			walletAddress: 'wallet_address',
 			id: 'unique_cuid_v2_auto_generated',
+			LowBalanceSummary: {
+				isLow: true,
+				lowRuleCount: 1,
+				lastCheckedAt: new Date(1713636260),
+			},
 		},
 	],
 	SellingWallets: [
@@ -44,6 +54,11 @@ export const paymentSourceExtendedExample = {
 			walletVkey: 'wallet_vkey',
 			walletAddress: 'wallet_address',
 			id: 'unique_cuid_v2_auto_generated',
+			LowBalanceSummary: {
+				isLow: false,
+				lowRuleCount: 0,
+				lastCheckedAt: new Date(1713636260),
+			},
 		},
 		{
 			collectionAddress: 'send_revenue_to_this_address',
@@ -51,6 +66,11 @@ export const paymentSourceExtendedExample = {
 			walletVkey: 'wallet_vkey',
 			walletAddress: 'wallet_address',
 			id: 'unique_cuid_v2_auto_generated',
+			LowBalanceSummary: {
+				isLow: false,
+				lowRuleCount: 0,
+				lastCheckedAt: new Date(1713636260),
+			},
 		},
 	],
 	FeeReceiverNetworkWallet: {
@@ -96,6 +116,11 @@ export const listPaymentSourceExtendedResponseExample = {
 					walletVkey: 'wallet_vkey',
 					walletAddress: 'wallet_address',
 					id: 'unique_cuid_v2_auto_generated',
+					LowBalanceSummary: {
+						isLow: false,
+						lowRuleCount: 0,
+						lastCheckedAt: new Date(1713636260),
+					},
 				},
 				{
 					collectionAddress: 'send_refunds_to_this_address',
@@ -103,6 +128,11 @@ export const listPaymentSourceExtendedResponseExample = {
 					walletVkey: 'wallet_vkey',
 					walletAddress: 'wallet_address',
 					id: 'unique_cuid_v2_auto_generated',
+					LowBalanceSummary: {
+						isLow: true,
+						lowRuleCount: 1,
+						lastCheckedAt: new Date(1713636260),
+					},
 				},
 			],
 			SellingWallets: [
@@ -112,6 +142,11 @@ export const listPaymentSourceExtendedResponseExample = {
 					walletVkey: 'wallet_vkey',
 					walletAddress: 'wallet_address',
 					id: 'unique_cuid_v2_auto_generated',
+					LowBalanceSummary: {
+						isLow: false,
+						lowRuleCount: 0,
+						lastCheckedAt: new Date(1713636260),
+					},
 				},
 				{
 					collectionAddress: 'send_revenue_to_this_address',
@@ -119,6 +154,11 @@ export const listPaymentSourceExtendedResponseExample = {
 					walletVkey: 'wallet_vkey',
 					walletAddress: 'wallet_address',
 					id: 'unique_cuid_v2_auto_generated',
+					LowBalanceSummary: {
+						isLow: false,
+						lowRuleCount: 0,
+						lastCheckedAt: new Date(1713636260),
+					},
 				},
 			],
 		},

@@ -10,9 +10,9 @@ import { PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
 import { BatchLogRecordProcessor } from '@opentelemetry/sdk-logs';
 import { ExpressInstrumentation } from '@opentelemetry/instrumentation-express';
 import { HttpInstrumentation } from '@opentelemetry/instrumentation-http';
-import { Span } from '@opentelemetry/api';
-import { IncomingMessage, OutgoingMessage } from 'http';
-import { Request } from 'express';
+import type { Span } from '@opentelemetry/api';
+import type { IncomingMessage, OutgoingMessage } from 'http';
+import type { Request } from 'express';
 import { PrismaInstrumentation } from '@prisma/instrumentation';
 import { PrismaOutlierFilterSpanExporter } from '@/utils/tracing/prisma-outlier-filter-exporter';
 import { CONFIG } from './utils/config';
@@ -134,6 +134,9 @@ export async function setupTracing() {
 		instrumentations,
 	});
 
+	// Initialize the SDK and register with the OpenTelemetry API
+	await Promise.resolve(sdk.start());
+
 	logInfo(`🚀 Initializing OpenTelemetry for ${serviceName} v${serviceVersion}`, {
 		component: 'tracing',
 		operation: 'initialization',
@@ -150,9 +153,6 @@ export async function setupTracing() {
 		component: 'tracing',
 		operation: 'configuration',
 	});
-
-	// Initialize the SDK and register with the OpenTelemetry API
-	sdk.start();
 
 	logInfo('✅ OpenTelemetry SDK initialized successfully', {
 		component: 'tracing',
