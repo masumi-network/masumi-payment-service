@@ -226,7 +226,9 @@ export default function ApiKeys() {
                 <tr className="border-b">
                   <th className="w-12 p-4">
                     <Checkbox
-                      checked={filteredApiKeys.length > 0 && selectedKeys.length === filteredApiKeys.length}
+                      checked={
+                        filteredApiKeys.length > 0 && selectedKeys.length === filteredApiKeys.length
+                      }
                       onCheckedChange={handleSelectAll}
                     />
                   </th>
