@@ -503,10 +503,9 @@ export async function batchLatestPaymentEntriesV1() {
 								BigInt(defaultOverheadSize + bufferSizeCooldownTime + Math.ceil(dummyCbor.length / 2)) *
 								BigInt(protocolParameter.coinsPerUtxoSize);
 
-							
 							try {
 								const txHandlerMinUtxo = calculateMinUtxo({
-									datum: cborEncodedDatum, 
+									datum: cborEncodedDatum,
 									nativeTokenCount: otherUnits,
 									coinsPerUtxoSize: protocolParameter.coinsPerUtxoSize,
 									includeBuffers: true,
@@ -515,7 +514,9 @@ export async function batchLatestPaymentEntriesV1() {
 									overestimatedMinUtxoCost = txHandlerMinUtxo.minUtxoLovelace;
 								}
 							} catch (_minUtxoCheckError) {
-								
+								logger.debug('Failed to run tx-handler min-UTXO check, using CBOR-based estimate', {
+									overestimatedMinUtxoCost: overestimatedMinUtxoCost.toString(),
+								});
 							}
 
 							//set min ada required;

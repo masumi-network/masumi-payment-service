@@ -236,7 +236,6 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 			input.identifierFromPurchaser,
 		);
 
-		
 		let requiredCollateralReturnLovelace: bigint = 0n;
 		try {
 			let coinsPerUtxoSize: number = CONSTANTS.FALLBACK_COINS_PER_UTXO_SIZE;
@@ -246,9 +245,11 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 					coinsPerUtxoSize = Number(protocolParams.coins_per_utxo_size);
 				}
 			} catch (_protocolFetchError) {
+				logger.debug('Failed to fetch protocol params for collateral estimate, using fallback', {
+					fallbackCoinsPerUtxoSize: coinsPerUtxoSize,
+				});
 			}
 
-	
 			const estimateDatum = getDatumFromBlockchainIdentifier({
 				buyerAddress: sellingWallet.walletAddress,
 				sellerAddress: sellingWallet.walletAddress,
@@ -265,7 +266,6 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 				state: SmartContractState.ResultSubmitted,
 			});
 
-		
 			const requestedLovelace = BigInt(
 				amounts.find((a) => a.unit === '' || a.unit.toLowerCase() === 'lovelace')?.amount ?? 0,
 			);
