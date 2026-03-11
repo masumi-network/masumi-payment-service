@@ -46,7 +46,7 @@ export const registerA2AAgentPost = payAuthenticatedEndpointFactory.build({
 	handler: async ({ input, ctx }: { input: z.infer<typeof registerA2AAgentSchemaInput>; ctx: AuthContext }) => {
 		const startTime = Date.now();
 		try {
-			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 			const sellingWallet = await prisma.hotWallet.findUnique({
 				where: {
@@ -162,7 +162,7 @@ export const queryA2ARegistryRequestGet = readAuthenticatedEndpointFactory.build
 	input: queryRegistryRequestSchemaInput,
 	output: queryA2ARegistryRequestSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof queryRegistryRequestSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 		const results = await prisma.a2ARegistryRequest.findMany({
 			where: {
