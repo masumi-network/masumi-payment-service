@@ -1,4 +1,14 @@
-import { PaymentAction, PurchasingAction, TransactionStatus } from '@/generated/prisma/client';
+import { PaymentAction, Prisma, PurchasingAction, TransactionStatus } from '@/generated/prisma/client';
+
+type PaymentNextActionCreateData = Prisma.XOR<
+	Omit<Prisma.PaymentActionDataCreateWithoutPaymentRequestCurrentInput, 'requestedAction'>,
+	Omit<Prisma.PaymentActionDataUncheckedCreateWithoutPaymentRequestCurrentInput, 'requestedAction'>
+>;
+
+type PurchaseNextActionCreateData = Prisma.XOR<
+	Omit<Prisma.PurchaseActionDataCreateWithoutPurchaseRequestCurrentInput, 'requestedAction'>,
+	Omit<Prisma.PurchaseActionDataUncheckedCreateWithoutPurchaseRequestCurrentInput, 'requestedAction'>
+>;
 
 export function connectPreviousAction(nextActionId: string) {
 	return {
@@ -7,7 +17,7 @@ export function connectPreviousAction(nextActionId: string) {
 				id: nextActionId,
 			},
 		},
-	};
+	} satisfies Pick<Prisma.PaymentRequestUpdateInput, 'ActionHistory'>;
 }
 
 export function createPendingTransaction(blocksWalletId: string) {
@@ -23,7 +33,7 @@ export function createPendingTransaction(blocksWalletId: string) {
 				},
 			},
 		},
-	};
+	} satisfies Pick<Prisma.PaymentRequestUpdateInput, 'CurrentTransaction'>;
 }
 
 export function updateCurrentTransactionHash(txHash: string) {
@@ -33,7 +43,7 @@ export function updateCurrentTransactionHash(txHash: string) {
 				txHash,
 			},
 		},
-	};
+	} satisfies Pick<Prisma.PaymentRequestUpdateInput, 'CurrentTransaction'>;
 }
 
 export function updateCurrentTransactionStatus(status: TransactionStatus) {
@@ -43,10 +53,10 @@ export function updateCurrentTransactionStatus(status: TransactionStatus) {
 				status,
 			},
 		},
-	};
+	} satisfies Pick<Prisma.PaymentRequestUpdateInput, 'CurrentTransaction'>;
 }
 
-export function createNextPaymentAction(requestedAction: PaymentAction, data: Record<string, unknown> = {}) {
+export function createNextPaymentAction(requestedAction: PaymentAction, data: PaymentNextActionCreateData = {}) {
 	return {
 		NextAction: {
 			create: {
@@ -54,10 +64,10 @@ export function createNextPaymentAction(requestedAction: PaymentAction, data: Re
 				...data,
 			},
 		},
-	};
+	} satisfies Pick<Prisma.PaymentRequestUpdateInput, 'NextAction'>;
 }
 
-export function createNextPurchaseAction(requestedAction: PurchasingAction, data: Record<string, unknown> = {}) {
+export function createNextPurchaseAction(requestedAction: PurchasingAction, data: PurchaseNextActionCreateData = {}) {
 	return {
 		NextAction: {
 			create: {
@@ -65,5 +75,5 @@ export function createNextPurchaseAction(requestedAction: PurchasingAction, data
 				...data,
 			},
 		},
-	};
+	} satisfies Pick<Prisma.PurchaseRequestUpdateInput, 'NextAction'>;
 }
