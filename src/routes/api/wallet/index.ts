@@ -205,7 +205,7 @@ export const postWalletEndpointPost = adminAuthenticatedEndpointFactory.build({
 	handler: async ({ input, ctx }) => {
 		const startTime = Date.now();
 		try {
-			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.canAdmin);
+			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 			const secretKey = MeshWallet.brew(false);
 			const secretWords = typeof secretKey == 'string' ? secretKey.split(' ') : secretKey;
 

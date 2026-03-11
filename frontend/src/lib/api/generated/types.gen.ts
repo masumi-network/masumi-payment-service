@@ -2042,7 +2042,7 @@ export type PostApiKeyData = {
          */
         NetworkLimit?: Array<'Preprod' | 'Mainnet'>;
         /**
-         * The permission of the API key (legacy, use canRead/canPay/canAdmin instead)
+         * [DEPRECATED] The permission of the API key. Use canRead/canPay/canAdmin flags instead. Will be removed in a future version.
          */
         permission?: 'Read' | 'ReadAndPay' | 'Admin';
         /**

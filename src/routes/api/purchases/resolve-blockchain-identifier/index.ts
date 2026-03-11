@@ -32,7 +32,7 @@ export const resolvePurchaseRequestPost = readAuthenticatedEndpointFactory.build
 	input: postPurchaseRequestSchemaInput,
 	output: postPurchaseRequestSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof postPurchaseRequestSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.canAdmin);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 		const purchase = await prisma.purchaseRequest.findFirst({
 			where: {

@@ -24,7 +24,7 @@ export const requestPurchaseRefundPost = payAuthenticatedEndpointFactory.build({
 	input: requestPurchaseRefundSchemaInput,
 	output: requestPurchaseRefundSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof requestPurchaseRefundSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.canAdmin);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 		const purchase = await prisma.purchaseRequest.findUnique({
 			where: {

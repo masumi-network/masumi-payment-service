@@ -244,7 +244,7 @@ export const queryAgentFromWalletGet = readAuthenticatedEndpointFactory.build({
 	input: queryAgentFromWalletSchemaInput,
 	output: queryAgentFromWalletSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof queryAgentFromWalletSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.canAdmin);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 		const smartContractAddress =
 			input.smartContractAddress ??
 			(input.network == Network.Mainnet

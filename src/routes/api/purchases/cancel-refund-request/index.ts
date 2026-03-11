@@ -30,7 +30,7 @@ export const cancelPurchaseRefundRequestPost = payAuthenticatedEndpointFactory.b
 		input: z.infer<typeof cancelPurchaseRefundRequestSchemaInput>;
 		ctx: AuthContext;
 	}) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.canAdmin);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 		const purchase = await prisma.purchaseRequest.findUnique({
 			where: {

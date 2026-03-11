@@ -34,7 +34,7 @@ export const purchaseErrorStateRecoveryPost = payAuthenticatedEndpointFactory.bu
 		ctx: AuthContext;
 	}) => {
 		// Check network permission
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.canAdmin);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 		// Find purchase request
 		const purchaseRequest = await prisma.purchaseRequest.findFirst({

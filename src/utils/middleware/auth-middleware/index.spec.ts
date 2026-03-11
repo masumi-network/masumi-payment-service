@@ -38,7 +38,7 @@ describe('authMiddleware', () => {
 			WalletScopes: [],
 		});
 		const { responseMock } = await testMiddleware({
-			middleware: authMiddleware('admin'),
+			middleware: authMiddleware({ canAdmin: true }),
 			requestProps: {
 				method: 'POST',
 				body: {},
@@ -51,7 +51,7 @@ describe('authMiddleware', () => {
 
 	it('should throw 401 if no token provided read', async () => {
 		const { responseMock } = await testMiddleware({
-			middleware: authMiddleware('read'),
+			middleware: authMiddleware({ canRead: true }),
 			requestProps: { method: 'POST', body: {}, headers: {} },
 		});
 
@@ -60,7 +60,7 @@ describe('authMiddleware', () => {
 
 	it('should throw 401 if no token provided pay', async () => {
 		const { responseMock } = await testMiddleware({
-			middleware: authMiddleware('pay'),
+			middleware: authMiddleware({ canPay: true }),
 			requestProps: { method: 'POST', body: {}, headers: {} },
 		});
 
@@ -69,7 +69,7 @@ describe('authMiddleware', () => {
 
 	it('should throw 401 if no token provided admin', async () => {
 		const { responseMock } = await testMiddleware({
-			middleware: authMiddleware('admin'),
+			middleware: authMiddleware({ canAdmin: true }),
 			requestProps: { method: 'POST', body: {}, headers: {} },
 		});
 
@@ -80,7 +80,7 @@ describe('authMiddleware', () => {
 		mockFindUnique.mockResolvedValue(null);
 
 		const { responseMock } = await testMiddleware({
-			middleware: authMiddleware('read'),
+			middleware: authMiddleware({ canRead: true }),
 			requestProps: {
 				method: 'POST',
 				body: {},
@@ -95,7 +95,7 @@ describe('authMiddleware', () => {
 		mockFindUnique.mockResolvedValue(null);
 
 		const { responseMock } = await testMiddleware({
-			middleware: authMiddleware('pay'),
+			middleware: authMiddleware({ canPay: true }),
 			requestProps: {
 				method: 'POST',
 				body: {},
@@ -110,7 +110,7 @@ describe('authMiddleware', () => {
 		mockFindUnique.mockResolvedValue(null);
 
 		const { responseMock } = await testMiddleware({
-			middleware: authMiddleware('admin'),
+			middleware: authMiddleware({ canAdmin: true }),
 			requestProps: {
 				method: 'POST',
 				body: {},
@@ -137,7 +137,7 @@ describe('authMiddleware', () => {
 		});
 
 		const { responseMock } = await testMiddleware({
-			middleware: authMiddleware('pay'),
+			middleware: authMiddleware({ canPay: true }),
 			requestProps: { method: 'POST', body: {}, headers: { token: 'valid' } },
 		});
 
@@ -160,7 +160,7 @@ describe('authMiddleware', () => {
 		});
 
 		const { responseMock } = await testMiddleware({
-			middleware: authMiddleware('admin'),
+			middleware: authMiddleware({ canAdmin: true }),
 			requestProps: { method: 'POST', body: {}, headers: { token: 'valid' } },
 		});
 
@@ -183,7 +183,7 @@ describe('authMiddleware', () => {
 		});
 
 		const { responseMock } = await testMiddleware({
-			middleware: authMiddleware('admin'),
+			middleware: authMiddleware({ canAdmin: true }),
 			requestProps: { method: 'POST', body: {}, headers: { token: 'valid' } },
 		});
 
@@ -207,7 +207,7 @@ describe('authMiddleware', () => {
 		mockFindUnique.mockResolvedValue(mockApiKey);
 
 		const { output } = await testMiddleware({
-			middleware: authMiddleware('read'),
+			middleware: authMiddleware({ canRead: true }),
 			requestProps: { method: 'POST', body: {}, headers: { token: 'valid' } },
 		});
 
@@ -237,7 +237,7 @@ describe('authMiddleware', () => {
 		mockFindUnique.mockResolvedValue(mockApiKey);
 
 		const { output } = await testMiddleware({
-			middleware: authMiddleware('pay'),
+			middleware: authMiddleware({ canPay: true }),
 			requestProps: { method: 'POST', body: {}, headers: { token: 'valid' } },
 		});
 
@@ -267,7 +267,7 @@ describe('authMiddleware', () => {
 		mockFindUnique.mockResolvedValue(mockApiKey);
 
 		const { output } = await testMiddleware({
-			middleware: authMiddleware('admin'),
+			middleware: authMiddleware({ canAdmin: true }),
 			requestProps: { method: 'POST', body: {}, headers: { token: 'valid' } },
 		});
 
@@ -297,7 +297,7 @@ describe('authMiddleware', () => {
 		mockFindUnique.mockResolvedValue(mockApiKey);
 
 		const { output, responseMock } = await testMiddleware({
-			middleware: authMiddleware('pay'),
+			middleware: authMiddleware({ canPay: true }),
 			requestProps: { method: 'POST', body: {}, headers: { token: 'valid' } },
 		});
 		expect(responseMock.statusCode).toBe(200);
@@ -328,7 +328,7 @@ describe('authMiddleware', () => {
 		});
 
 		const { responseMock } = await testMiddleware({
-			middleware: authMiddleware('read'),
+			middleware: authMiddleware({ canRead: true }),
 			requestProps: { method: 'POST', body: {}, headers: { token: 'valid' } },
 		});
 
@@ -349,7 +349,7 @@ describe('authMiddleware', () => {
 		});
 
 		const { responseMock } = await testMiddleware({
-			middleware: authMiddleware('pay'),
+			middleware: authMiddleware({ canPay: true }),
 			requestProps: { method: 'POST', body: {}, headers: { token: 'valid' } },
 		});
 
@@ -370,7 +370,7 @@ describe('authMiddleware', () => {
 		});
 
 		const { responseMock } = await testMiddleware({
-			middleware: authMiddleware('read'),
+			middleware: authMiddleware({ canRead: true }),
 			requestProps: { method: 'POST', body: {}, headers: { token: 'valid' } },
 		});
 

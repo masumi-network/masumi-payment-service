@@ -24,7 +24,7 @@ export const authorizePaymentRefundEndpointPost = payAuthenticatedEndpointFactor
 	input: authorizePaymentRefundSchemaInput,
 	output: authorizePaymentRefundSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof authorizePaymentRefundSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.canAdmin);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 		const payment = await prisma.paymentRequest.findUnique({
 			where: {

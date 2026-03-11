@@ -146,7 +146,7 @@ export const getPaymentIncome = readAuthenticatedEndpointFactory.build({
 	handler: async ({ input, ctx }: { input: z.infer<typeof postPaymentIncomeSchemaInput>; ctx: AuthContext }) => {
 		const startTime = Date.now();
 		try {
-			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.canAdmin);
+			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 			const { periodStart, periodEnd } = parseDateRange(input.startDate, input.endDate);
 

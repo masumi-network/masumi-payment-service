@@ -80,10 +80,13 @@ export const addAPIKeySchemaInput = z.object({
 		.max(3)
 		.default([Network.Mainnet, Network.Preprod])
 		.describe('The networks the API key is allowed to use'),
+	/** @deprecated Use canRead, canPay, canAdmin flags instead. Will be removed in a future version. */
 	permission: z
 		.enum(['Read', 'ReadAndPay', 'Admin'])
 		.default('Read')
-		.describe('The permission of the API key (legacy, use canRead/canPay/canAdmin instead)'),
+		.describe(
+			'[DEPRECATED] The permission of the API key. Use canRead/canPay/canAdmin flags instead. Will be removed in a future version.',
+		),
 	// Flag-based permissions (new system - preferred)
 	canRead: z.boolean().optional().describe('Whether this API key can access read endpoints'),
 	canPay: z.boolean().optional().describe('Whether this API key can access payment/purchase endpoints'),

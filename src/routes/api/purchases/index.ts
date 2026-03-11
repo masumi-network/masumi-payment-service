@@ -46,7 +46,7 @@ export const queryPurchaseRequestGet = readAuthenticatedEndpointFactory.build({
 	input: queryPurchaseRequestSchemaInput,
 	output: queryPurchaseRequestSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof queryPurchaseRequestSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.canAdmin);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 		const result = await getPurchasesForQuery(input, ctx.walletScopeIds);
 		if (result == null) {
@@ -61,7 +61,7 @@ export const queryPurchaseCountGet = readAuthenticatedEndpointFactory.build({
 	input: queryPurchaseCountSchemaInput,
 	output: queryPurchaseCountSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof queryPurchaseCountSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.canAdmin);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 		const total = await prisma.purchaseRequest.count({
 			where: {
@@ -87,7 +87,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 	handler: async ({ input, ctx }: { input: z.infer<typeof createPurchaseInitSchemaInput>; ctx: AuthContext }) => {
 		const startTime = Date.now();
 		try {
-			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.canAdmin);
+			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 			const existingPurchaseRequest = await prisma.purchaseRequest.findUnique({
 				where: {
 					blockchainIdentifier: input.blockchainIdentifier,

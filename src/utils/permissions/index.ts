@@ -4,14 +4,8 @@
  * This module provides utilities for:
  * - Converting between flags and legacy permission strings
  * - Checking if a user has required permissions
- * - Defining required permission levels for endpoints
+ * - Defining required permission flags for endpoints
  */
-
-/**
- * Required permission level for endpoint access.
- * Used by auth middleware to determine minimum access requirements.
- */
-export type RequiredPermission = 'read' | 'pay' | 'admin';
 
 /**
  * Legacy permission string values for backward compatibility.
@@ -29,6 +23,18 @@ export interface PermissionFlags {
 }
 
 /**
+ * Required permission flags for endpoint access.
+ * Used by auth middleware to specify which flags must be set.
+ * Set a flag to true to require it. Admin always bypasses all checks.
+ *
+ * Examples:
+ *   { canRead: true }  - requires read access
+ *   { canPay: true }   - requires payment access
+ *   { canAdmin: true } - requires admin access
+ */
+export type RequiredPermissionFlags = Partial<PermissionFlags>;
+
+/**
  * Computes the legacy permission string from flags for backward compatibility.
  * This allows API responses to include both flags AND the computed permission string.
  *
@@ -42,7 +48,7 @@ export interface PermissionFlags {
  * @param canAdmin - Whether the user has admin access
  * @returns The legacy permission string
  */
-export function computePermissionFromFlags(canRead: boolean, canPay: boolean, canAdmin: boolean): LegacyPermission {
+export function computePermissionFromFlags(_canRead: boolean, canPay: boolean, canAdmin: boolean): LegacyPermission {
 	if (canAdmin) return 'Admin';
 	if (canPay) return 'ReadAndPay';
 	return 'Read';
@@ -68,61 +74,49 @@ export function flagsFromLegacyPermission(permission: LegacyPermission): Permiss
 }
 
 /**
- * Checks if the given flags satisfy the required permission level.
+ * Checks if the given flags satisfy the required permission flags.
  *
  * Permission hierarchy:
- * - 'admin': Only canAdmin=true grants access
- * - 'pay': canPay=true OR canAdmin=true grants access
- * - 'read': canRead=true OR canPay=true OR canAdmin=true grants access
+ * - canAdmin=true bypasses all checks (admin has full access)
+ * - canPay=true also satisfies canRead requirements
  *
- * Note: canAdmin implicitly grants ALL permissions (admin > pay > read)
- *
- * @param required - The minimum permission level required
+ * @param required - The permission flags that must be satisfied
  * @param canRead - Whether the user can access read endpoints
  * @param canPay - Whether the user can access pay/purchase endpoints
  * @param canAdmin - Whether the user has admin access
  * @returns True if the user has sufficient permissions
  */
 export function hasPermission(
-	required: RequiredPermission,
+	required: RequiredPermissionFlags,
 	canRead: boolean,
 	canPay: boolean,
 	canAdmin: boolean,
 ): boolean {
-	// Admin has all permissions
+	// Admin bypasses all permission checks
 	if (canAdmin) return true;
 
-	switch (required) {
-		case 'admin':
-			// Only canAdmin grants admin access (already checked above)
-			return false;
-		case 'pay':
-			// canPay or canAdmin (canAdmin already returned true)
-			return canPay;
-		case 'read':
-			// canRead, canPay, or canAdmin all grant read access
-			// canAdmin already returned true, canPay implies read access
-			return canRead || canPay;
-		default:
-			return false;
-	}
+	// If admin is explicitly required but user is not admin
+	if (required.canAdmin) return false;
+
+	// If pay is required but user doesn't have pay (and isn't admin, checked above)
+	if (required.canPay && !canPay) return false;
+
+	// If read is required but user doesn't have read or pay
+	if (required.canRead && !(canRead || canPay)) return false;
+
+	return true;
 }
 
 /**
- * Returns a human-readable permission name for error messages.
+ * Returns a human-readable permission name for error messages,
+ * based on the highest required flag.
  *
- * @param required - The required permission level
+ * @param required - The required permission flags
  * @returns Human-readable permission name
  */
-export function getPermissionName(required: RequiredPermission): string {
-	switch (required) {
-		case 'admin':
-			return 'admin';
-		case 'pay':
-			return 'payment';
-		case 'read':
-			return 'read';
-		default:
-			return 'unknown';
-	}
+export function getPermissionName(required: RequiredPermissionFlags): string {
+	if (required.canAdmin) return 'admin';
+	if (required.canPay) return 'payment';
+	if (required.canRead) return 'read';
+	return 'unknown';
 }

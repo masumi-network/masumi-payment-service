@@ -57,7 +57,7 @@ export const paymentSourceExtendedEndpointPost = adminAuthenticatedEndpointFacto
 		input: z.infer<typeof paymentSourceExtendedCreateSchemaInput>;
 		ctx: AuthContext;
 	}) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.canAdmin);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 		const sellingWalletsMesh = input.SellingWallets.map((sellingWallet) => {
 			return {
 				wallet: generateOfflineWallet(input.network, sellingWallet.walletMnemonic.split(' ')),

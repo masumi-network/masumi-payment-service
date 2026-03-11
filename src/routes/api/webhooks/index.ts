@@ -34,10 +34,10 @@ export const registerWebhookPost = payAuthenticatedEndpointFactory.build({
 				throw createHttpError(404, 'Payment source not found');
 			}
 
-			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, paymentSource.network, ctx.canAdmin);
+			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, paymentSource.network);
 		} else {
 			for (const network of Object.values(Network)) {
-				await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, network, ctx.canAdmin);
+				await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, network);
 			}
 		}
 

@@ -42,7 +42,7 @@ export const queryRegistryRequestGet = readAuthenticatedEndpointFactory.build({
 	input: queryRegistryRequestSchemaInput,
 	output: queryRegistryRequestSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof queryRegistryRequestSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.canAdmin);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 		const result = await getRegistryEntriesForQuery(input, ctx.walletScopeIds);
 
 		return serializeRegistryEntriesResponse(result);
@@ -54,7 +54,7 @@ export const queryRegistryCountGet = readAuthenticatedEndpointFactory.build({
 	input: queryRegistryCountSchemaInput,
 	output: queryRegistryCountSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof queryRegistryCountSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.canAdmin);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 		const total = await prisma.registryRequest.count({
 			where: {
@@ -81,7 +81,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 	handler: async ({ input, ctx }: { input: z.infer<typeof registerAgentSchemaInput>; ctx: AuthContext }) => {
 		const startTime = Date.now();
 		try {
-			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.canAdmin);
+			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 			const sellingWallet = await prisma.hotWallet.findUnique({
 				where: {
