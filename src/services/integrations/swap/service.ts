@@ -63,7 +63,7 @@ async function initializeLucid(blockfrostApiKey: string): Promise<Lucid> {
 	return await Lucid.new(new Blockfrost('https://cardano-mainnet.blockfrost.io/api/v0', blockfrostApiKey), 'Mainnet');
 }
 
-export async function getWalletFromMnemonic(
+async function getWalletFromMnemonic(
 	mnemonic: string,
 	blockfrostApiKey: string,
 ): Promise<{ address: string; lucid: Lucid }> {

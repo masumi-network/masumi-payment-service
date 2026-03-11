@@ -1,4 +1,4 @@
-import { TransactionStatus, RegistrationState, PricingType } from '@/generated/prisma/client';
+import { RegistrationState, PricingType } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import { IFetcher, LanguageVersion, MeshTxBuilder, Network, UTxO } from '@meshsdk/core';
 import { logger } from '@/utils/logger';

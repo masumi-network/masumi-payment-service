@@ -8,5 +8,6 @@ declare module 'express-serve-static-core' {
 
 export const requestTiming = (req: Request, res: Response, next: NextFunction) => {
 	req.startTime = Date.now();
+	void res;
 	next();
 };

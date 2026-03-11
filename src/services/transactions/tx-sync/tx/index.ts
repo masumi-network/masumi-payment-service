@@ -64,7 +64,7 @@ export type UpdateTransactionInput = {
 	transaction: Transaction;
 };
 
-export async function handlePaymentTransactionCardanoV1(
+async function handlePaymentTransactionCardanoV1(
 	tx_hash: string,
 	newState: OnChainState,
 	paymentContractId: string,
@@ -219,7 +219,7 @@ export async function handlePaymentTransactionCardanoV1(
 	);
 }
 
-export async function handlePurchasingTransactionCardanoV1(
+async function handlePurchasingTransactionCardanoV1(
 	tx_hash: string,
 	newStatus: OnChainState,
 	paymentContractId: string,
@@ -525,7 +525,7 @@ export async function updateInitialTransactions(
 		);
 	}
 }
-export async function updateInitialPurchaseTransaction(
+async function updateInitialPurchaseTransaction(
 	paymentContract: { id: string; network: Network },
 	decodedNewContract: DecodedV1ContractDatum,
 	output: Extract<ExtractOnChainTransactionDataOutput, { type: 'Initial' }>['valueOutputs'][number],
@@ -837,7 +837,7 @@ export async function updateInitialPurchaseTransaction(
 	);
 }
 
-export async function updateInitialPaymentTransaction(
+async function updateInitialPaymentTransaction(
 	decodedNewContract: DecodedV1ContractDatum,
 	paymentContract: { id: string; network: Network },
 	tx: UpdateTransactionInput,

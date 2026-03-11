@@ -1,4 +1,4 @@
-import { PurchasingAction, TransactionStatus, PurchaseErrorType, Prisma } from '@/generated/prisma/client';
+import { PurchasingAction, PurchaseErrorType, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import { BlockfrostProvider, deserializeDatum } from '@meshsdk/core';
 import { logger } from '@/utils/logger';

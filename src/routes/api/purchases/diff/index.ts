@@ -107,7 +107,7 @@ function buildPurchaseDiffWhere({
 						nextActionOrOnChainStateOrResultLastChangedAt: { gte: since },
 					};
 		default: {
-			const _never: never = mode;
+			void mode;
 			return base;
 		}
 	}
@@ -122,7 +122,7 @@ function buildPurchaseDiffOrderBy(mode: PurchaseDiffMode): Prisma.PurchaseReques
 		case 'nextActionOrOnChainStateOrResultLastChangedAt':
 			return [{ nextActionOrOnChainStateOrResultLastChangedAt: 'asc' }, { id: 'asc' }];
 		default: {
-			const _never: never = mode;
+			void mode;
 			return [{ id: 'asc' }];
 		}
 	}

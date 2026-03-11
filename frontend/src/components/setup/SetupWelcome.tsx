@@ -41,7 +41,7 @@ import {
   postRegistry,
   getPaymentSourceExtended,
 } from '@/lib/api/generated';
-import { handleApiCall, shortenAddress, getExplorerUrl } from '@/lib/utils';
+import { handleApiCall, shortenAddress } from '@/lib/utils';
 import { WalletLink } from '@/components/ui/wallet-link';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { DEFAULT_ADMIN_WALLETS, DEFAULT_FEE_CONFIG } from '@/lib/constants/defaultWallets';

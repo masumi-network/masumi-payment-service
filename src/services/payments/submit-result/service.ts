@@ -1,4 +1,4 @@
-import { PaymentAction, TransactionStatus, PaymentErrorType, Network, Prisma } from '@/generated/prisma/client';
+import { PaymentAction, PaymentErrorType, Network, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import { BlockfrostProvider, deserializeDatum, UTxO } from '@meshsdk/core';
 import { logger } from '@/utils/logger';

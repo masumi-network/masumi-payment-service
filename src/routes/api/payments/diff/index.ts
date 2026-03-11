@@ -102,8 +102,7 @@ function buildPaymentDiffWhere({
 						nextActionOrOnChainStateOrResultLastChangedAt: { gte: since },
 					};
 		default: {
-			// Exhaustive check
-			const _never: never = mode;
+			void mode;
 			return base;
 		}
 	}
@@ -118,7 +117,7 @@ function buildPaymentDiffOrderBy(mode: PaymentDiffMode): Prisma.PaymentRequestOr
 		case 'nextActionOrOnChainStateOrResultLastChangedAt':
 			return [{ nextActionOrOnChainStateOrResultLastChangedAt: 'asc' }, { id: 'asc' }];
 		default: {
-			const _never: never = mode;
+			void mode;
 			return [{ id: 'asc' }];
 		}
 	}

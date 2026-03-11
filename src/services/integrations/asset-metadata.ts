@@ -2,20 +2,18 @@ import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { z } from 'zod';
 import { metadataSchema } from '@/routes/api/registry/wallet';
 
-export type FetchAssetInWalletAndMetadataSuccess = {
+type FetchAssetInWalletAndMetadataSuccess = {
 	data: {
 		assetInWallet: Array<{ address: string }>;
 		parsedMetadata: z.infer<typeof metadataSchema>;
 	};
 };
 
-export type FetchAssetInWalletAndMetadataError = {
+type FetchAssetInWalletAndMetadataError = {
 	error: { code: number; description: string };
 };
 
-export type FetchAssetInWalletAndMetadataResult =
-	| FetchAssetInWalletAndMetadataSuccess
-	| FetchAssetInWalletAndMetadataError;
+type FetchAssetInWalletAndMetadataResult = FetchAssetInWalletAndMetadataSuccess | FetchAssetInWalletAndMetadataError;
 
 export const fetchAssetInWalletAndMetadata = async (
 	provider: BlockFrostAPI,

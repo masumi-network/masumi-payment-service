@@ -1,4 +1,4 @@
-import { TransactionStatus, RegistrationState } from '@/generated/prisma/client';
+import { RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import { BlockfrostProvider, IFetcher, LanguageVersion, MeshTxBuilder, Network, UTxO } from '@meshsdk/core';
 import { logger } from '@/utils/logger';

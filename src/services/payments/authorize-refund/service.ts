@@ -1,4 +1,4 @@
-import { OnChainState, PaymentAction, PaymentErrorType, TransactionStatus } from '@/generated/prisma/client';
+import { OnChainState, PaymentAction, PaymentErrorType } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import { deserializeDatum } from '@meshsdk/core';
 import { logger } from '@/utils/logger';

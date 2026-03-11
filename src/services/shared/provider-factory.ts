@@ -3,12 +3,12 @@ import { BlockfrostProvider } from '@meshsdk/core';
 import { Network } from '@/generated/prisma/client';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 
-export type ProviderFactory = {
+type ProviderFactory = {
 	createApiClient: (network: Network, apiKey: string) => BlockFrostAPI;
 	createMeshProvider: (apiKey: string) => BlockfrostProvider;
 };
 
-export const providerFactory: ProviderFactory = {
+const providerFactory: ProviderFactory = {
 	createApiClient(network: Network, apiKey: string) {
 		return getBlockfrostInstance(network, apiKey);
 	},

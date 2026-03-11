@@ -34,7 +34,7 @@ import {
 	type PaymentWithInvoiceContext,
 } from './billing';
 
-export { getBillableFunds, isPaymentBillable } from './billing';
+export { isPaymentBillable } from './billing';
 
 const isUsdcxUnit = (unit: string) => unit === MAINNET_USDCX_UNIT;
 const isUsdmUnit = (unit: string) => unit === MAINNET_USDM_UNIT || unit === PREPROD_USDM_UNIT;

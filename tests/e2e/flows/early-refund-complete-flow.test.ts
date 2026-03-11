@@ -17,7 +17,6 @@
 import { Network } from '@/generated/prisma/enums';
 import { validateTestWallets } from '../fixtures/testWallets';
 import {
-	registerAndConfirmAgent,
 	createPayment,
 	createPurchase,
 	waitForFundsLocked,
@@ -26,7 +25,6 @@ import {
 	submitResult,
 	waitForDisputed,
 	authorizeRefund,
-	deregisterAgent,
 } from '../helperFunctions';
 
 const testNetwork = (process.env.TEST_NETWORK as Network) || Network.Preprod;

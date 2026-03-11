@@ -3,7 +3,7 @@ import { logger } from '@/utils/logger';
 import { prisma } from '@/utils/db';
 import { HotWalletType, Network, WebhookEventType } from '@/generated/prisma/client';
 
-export class WebhookEventsService {
+class WebhookEventsService {
 	private async queryPurchaseForWebhook(purchaseId: string) {
 		return prisma.purchaseRequest.findUnique({
 			where: { id: purchaseId },

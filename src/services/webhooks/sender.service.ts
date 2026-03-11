@@ -3,7 +3,7 @@ import { prisma } from '@/utils/db';
 import { logger } from '@/utils/logger';
 import { WebhookPayload } from '@/types/webhook-payloads';
 
-export interface WebhookDeliveryResult {
+interface WebhookDeliveryResult {
 	success: boolean;
 	responseCode?: number;
 	errorMessage?: string;
@@ -13,7 +13,7 @@ export interface WebhookDeliveryResult {
 /**
  * Service for sending individual webhook HTTP requests
  */
-export class WebhookSenderService {
+class WebhookSenderService {
 	private static readonly REQUEST_TIMEOUT = 10000;
 	private static readonly USER_AGENT = 'Masumi-Webhook/1.0';
 

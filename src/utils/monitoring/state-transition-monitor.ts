@@ -18,7 +18,7 @@ interface DiffCursor {
 	lastId?: string;
 }
 
-export class StateTransitionMonitor {
+class StateTransitionMonitor {
 	private static readonly BATCH_SIZE = 100;
 
 	private purchaseStateCache = new Map<string, EntityStateCache>();

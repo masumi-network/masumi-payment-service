@@ -18,12 +18,7 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useState, useEffect, useMemo } from 'react';
-import {
-  patchPaymentSourceExtended,
-  postWallet,
-  getUtxos,
-  PaymentSourceExtended,
-} from '@/lib/api/generated';
+import { patchPaymentSourceExtended, postWallet, getUtxos } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { useAppContext } from '@/lib/contexts/AppContext';
 

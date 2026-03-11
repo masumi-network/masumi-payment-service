@@ -1,11 +1,4 @@
-import {
-	HotWallet,
-	HotWalletType,
-	PurchaseErrorType,
-	PurchasingAction,
-	TransactionStatus,
-	Prisma,
-} from '@/generated/prisma/client';
+import { HotWallet, HotWalletType, PurchaseErrorType, PurchasingAction, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import {
 	BlockfrostProvider,

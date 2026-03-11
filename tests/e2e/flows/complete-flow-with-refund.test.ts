@@ -12,7 +12,6 @@
 import { Network } from '@/generated/prisma/enums';
 import { validateTestWallets } from '../fixtures/testWallets';
 import {
-	registerAndConfirmAgent,
 	createPaymentWithCustomTiming,
 	createPurchase,
 	waitForFundsLocked,
@@ -21,7 +20,6 @@ import {
 	requestRefund,
 	waitForDisputed,
 	authorizeRefund,
-	deregisterAgent,
 	TimingConfig,
 } from '../helperFunctions';
 

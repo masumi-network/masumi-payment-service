@@ -1,12 +1,5 @@
 import { OnChainState } from '@prisma/client';
 
-export function buildTransactionHistoryInclude(includeHistory: boolean) {
-	return {
-		orderBy: { createdAt: 'desc' as const },
-		take: includeHistory ? undefined : 0,
-	};
-}
-
 export function parseAmountSearchRange(searchQuery: string): { gte: bigint; lte: bigint } | undefined {
 	const numericMatch = searchQuery.match(/^(\d+\.?\d*)$/);
 	if (!numericMatch) return undefined;

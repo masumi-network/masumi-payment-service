@@ -4,7 +4,7 @@ import { logger } from '@/utils/logger';
 import { webhookSenderService } from './sender.service';
 import { buildEndpointWebhookPayload, buildWebhookPayload, mergeWebhookEndpointBatch } from './queue.helpers';
 
-export class WebhookQueueService {
+class WebhookQueueService {
 	async queueWebhook(
 		eventType: WebhookEventType,
 		payload: Record<string, unknown>,

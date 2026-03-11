@@ -1,7 +1,7 @@
 import { logger } from '@/utils/logger';
 import { stateTransitionMonitor } from '@/utils/monitoring/state-transition-monitor';
 
-export class BlockchainStateMonitorService {
+class BlockchainStateMonitorService {
 	private monitoringInterval: NodeJS.Timeout | null = null;
 	private isMonitoring = false;
 
