@@ -2,6 +2,7 @@ import { getOwnPlainObject, getOwnString, getOwnValue, isObject } from '@/lib/ob
 
 type ApiErrorMessageCandidates = {
   topLevelMessage: string | undefined;
+  topLevelErrorValue: string | undefined;
   nestedErrorMessage: string | undefined;
   nestedDataMessage: string | undefined;
   nestedDataErrorMessage: string | undefined;
@@ -13,10 +14,12 @@ function getApiErrorMessageCandidates(value: object): ApiErrorMessageCandidates 
   const nestedResponse = getOwnPlainObject(value, 'response');
   const nestedData = nestedResponse ? getOwnPlainObject(nestedResponse, 'data') : undefined;
   const nestedDataError = nestedData ? getOwnPlainObject(nestedData, 'error') : undefined;
+  const topLevelErrorValue = getOwnValue(value, 'error');
   const nestedDataErrorValue = nestedData ? getOwnValue(nestedData, 'error') : undefined;
 
   return {
     topLevelMessage: getOwnString(value, 'message'),
+    topLevelErrorValue: typeof topLevelErrorValue === 'string' ? topLevelErrorValue : undefined,
     nestedErrorMessage: nestedError ? getOwnString(nestedError, 'message') : undefined,
     nestedDataMessage: nestedData ? getOwnString(nestedData, 'message') : undefined,
     nestedDataErrorMessage: nestedDataError ? getOwnString(nestedDataError, 'message') : undefined,
@@ -29,6 +32,7 @@ function getErrorInstanceApiMessage(value: object): string | undefined {
   const candidates = getApiErrorMessageCandidates(value);
 
   return (
+    candidates.topLevelErrorValue ||
     candidates.nestedDataErrorMessage ||
     candidates.nestedDataErrorValue ||
     candidates.nestedDataMessage ||
@@ -41,6 +45,7 @@ function getPlainObjectApiMessage(value: object): string | undefined {
 
   return (
     candidates.topLevelMessage ||
+    candidates.topLevelErrorValue ||
     candidates.nestedErrorMessage ||
     candidates.nestedDataMessage ||
     candidates.nestedDataErrorMessage ||
