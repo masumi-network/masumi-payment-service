@@ -20,6 +20,10 @@ import { validateHexString } from '@/utils/validator/hex';
 import { transformPaymentGetAmounts, transformPaymentGetTimestamps } from '@/utils/shared/transformers';
 import { extractPolicyId } from '@/utils/converter/agent-identifier';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
+import { logger } from '@/utils/logger';
+import { CONSTANTS } from '@/utils/config';
+import { calculateMinUtxo, DUMMY_RESULT_HASH } from '@/utils/min-utxo';
+import { getDatumFromBlockchainIdentifier, SmartContractState } from '@/utils/generator/contract-generator';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { buildWalletScopeFilter, assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 import {
@@ -232,6 +236,59 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 			input.identifierFromPurchaser,
 		);
 
+		
+		let requiredCollateralReturnLovelace: bigint = 0n;
+		try {
+			let coinsPerUtxoSize: number = CONSTANTS.FALLBACK_COINS_PER_UTXO_SIZE;
+			try {
+				const protocolParams = await provider.epochsLatestParameters();
+				if (protocolParams.coins_per_utxo_size != null) {
+					coinsPerUtxoSize = Number(protocolParams.coins_per_utxo_size);
+				}
+			} catch (_protocolFetchError) {
+			}
+
+	
+			const estimateDatum = getDatumFromBlockchainIdentifier({
+				buyerAddress: sellingWallet.walletAddress,
+				sellerAddress: sellingWallet.walletAddress,
+				blockchainIdentifier: compressedEncodedBlockchainIdentifier,
+				inputHash: input.inputHash,
+				payByTime: payByTime,
+				collateralReturnLovelace: 0n,
+				resultHash: DUMMY_RESULT_HASH,
+				resultTime: submitResultTime,
+				unlockTime: BigInt(unlockTime),
+				externalDisputeUnlockTime: BigInt(externalDisputeUnlockTime),
+				newCooldownTimeSeller: 0n,
+				newCooldownTimeBuyer: 0n,
+				state: SmartContractState.ResultSubmitted,
+			});
+
+		
+			const requestedLovelace = BigInt(
+				amounts.find((a) => a.unit === '' || a.unit.toLowerCase() === 'lovelace')?.amount ?? 0,
+			);
+			const nativeTokenCount = amounts.filter((a) => a.unit !== '' && a.unit.toLowerCase() !== 'lovelace').length;
+
+			const minUtxoResult = calculateMinUtxo({
+				datum: estimateDatum.value,
+				nativeTokenCount,
+				coinsPerUtxoSize,
+				includeBuffers: true,
+			});
+
+			const shortfall = minUtxoResult.minUtxoLovelace - requestedLovelace;
+			if (shortfall > 0n) {
+				requiredCollateralReturnLovelace =
+					shortfall < CONSTANTS.MIN_COLLATERAL_LOVELACE ? CONSTANTS.MIN_COLLATERAL_LOVELACE : shortfall;
+			}
+		} catch (_collateralCalcError) {
+			logger.warn('Failed to calculate required collateral for payment request', {
+				blockchainIdentifier: compressedEncodedBlockchainIdentifier,
+			});
+		}
+
 		const payment = await prisma.paymentRequest.create({
 			data: {
 				totalBuyerCardanoFees: BigInt(0),
@@ -261,6 +318,7 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 				externalDisputeUnlockTime: externalDisputeUnlockTime,
 				sellerCoolDownTime: 0,
 				buyerCoolDownTime: 0,
+				collateralReturnLovelace: requiredCollateralReturnLovelace > 0n ? requiredCollateralReturnLovelace : undefined,
 				requestedBy: { connect: { id: ctx.id } },
 				metadata: input.metadata,
 			},
