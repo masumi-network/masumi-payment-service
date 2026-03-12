@@ -24,6 +24,7 @@ import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import cbor from 'cbor';
 import { Address, Datum, toPlutusData, toValue, TransactionOutput } from '@meshsdk/core-cst';
 import { CONSTANTS } from '@/utils/config';
+import { calculateMinUtxo } from '@/utils/min-utxo';
 import { toBalanceMapFromMeshUtxos, walletLowBalanceMonitorService } from '@/services/wallet-low-balance-monitor';
 
 type PaymentSourceWithWallets = Prisma.PaymentSourceGetPayload<{
@@ -501,6 +502,22 @@ export async function batchLatestPaymentEntriesV1() {
 							overestimatedMinUtxoCost =
 								BigInt(defaultOverheadSize + bufferSizeCooldownTime + Math.ceil(dummyCbor.length / 2)) *
 								BigInt(protocolParameter.coinsPerUtxoSize);
+
+							try {
+								const txHandlerMinUtxo = calculateMinUtxo({
+									datum: cborEncodedDatum,
+									nativeTokenCount: otherUnits,
+									coinsPerUtxoSize: protocolParameter.coinsPerUtxoSize,
+									includeBuffers: true,
+								});
+								if (overestimatedMinUtxoCost < txHandlerMinUtxo.minUtxoLovelace) {
+									overestimatedMinUtxoCost = txHandlerMinUtxo.minUtxoLovelace;
+								}
+							} catch {
+								logger.debug('Failed to run tx-handler min-UTXO check, using CBOR-based estimate', {
+									overestimatedMinUtxoCost: overestimatedMinUtxoCost.toString(),
+								});
+							}
 
 							//set min ada required;
 							const lovelaceRequired = paymentRequest.PaidFunds.findIndex((amount) => amount.unit.toLowerCase() === '');
