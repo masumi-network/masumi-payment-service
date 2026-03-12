@@ -49,7 +49,6 @@ export function limitUtxos(utxos: UTxO[], requiredLovelace: number, minPerUtxoLo
 	return selectedUtxos;
 }
 
-
 export function sortAndLimitUtxos(utxos: UTxO[], requiredLovelace: number, minPerUtxoLovelace = 5_000_000): UTxO[] {
 	const sortedUtxos = sortUtxosByBloatAsc(utxos);
 
