@@ -179,6 +179,7 @@ export async function registerAgentV1() {
 						if (utxos.length === 0) {
 							throw new Error('No UTXOs found for the wallet');
 						}
+
 						const { script, policyId } = await getRegistryScriptFromNetworkHandlerV1(paymentSource);
 
 						const limitedFilteredUtxos = sortUtxosByLovelaceDesc(utxos);
@@ -188,6 +189,7 @@ export async function registerAgentV1() {
 
 						const assetName = generateAssetName(firstUtxo);
 						const metadata = buildAgentMetadata(request);
+
 						const evaluationTx = await generateRegisterAgentTransaction(
 							blockchainProvider,
 							network,
@@ -239,6 +241,7 @@ export async function registerAgentV1() {
 						});
 						//submit the transaction to the blockchain
 						const newTxHash = await wallet.submitTx(signedTx);
+
 						await walletLowBalanceMonitorService.evaluateProjectedHotWalletById({
 							hotWalletId: request.SmartContractWallet.id,
 							walletAddress: address,
@@ -339,9 +342,7 @@ async function generateRegisterAgentTransaction(
 			},
 			version: '1',
 		})
-		.txIn(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
 		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
-		.setTotalCollateral(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount)
 		.txOut(walletAddress, [
 			{
 				unit: policyId + assetName,
@@ -349,7 +350,7 @@ async function generateRegisterAgentTransaction(
 			},
 			{
 				unit: SERVICE_CONSTANTS.CARDANO.NATIVE_TOKEN,
-				quantity: SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount,
+				quantity: SERVICE_CONSTANTS.SMART_CONTRACT.minNftOutputLovelace,
 			},
 		]);
 	for (const utxo of utxos) {

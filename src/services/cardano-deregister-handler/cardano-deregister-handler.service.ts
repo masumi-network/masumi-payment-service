@@ -128,7 +128,11 @@ export async function deRegisterAgentV1() {
 
 						const tokenUtxo = findTokenUtxo(utxos, request.agentIdentifier);
 
-						const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
+						const limitedFilteredUtxos = sortAndLimitUtxos(
+							utxos,
+							8_000_000,
+							SERVICE_CONSTANTS.SMART_CONTRACT.minSellingWalletUtxoLovelace,
+						);
 						const collateralUtxo = limitedFilteredUtxos[0];
 						if (collateralUtxo == null) {
 							throw new Error('Collateral UTXO not found');
@@ -280,9 +284,7 @@ async function generateDeregisterAgentTransaction(
 		.mint('-1', policyId, assetName)
 		.mintingScript(script.code)
 		.mintRedeemerValue({ alternative: 1, fields: [] }, 'Mesh', exUnits)
-		.txIn(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
-		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
-		.setTotalCollateral('3000000');
+		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex);
 	for (const utxo of utxos) {
 		txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
 	}

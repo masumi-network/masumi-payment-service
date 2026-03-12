@@ -17,7 +17,7 @@ export function sortUtxosByLovelaceDesc(utxos: UTxO[]): UTxO[] {
 }
 
 function sortUtxosByBloatAsc(utxos: UTxO[]): UTxO[] {
-	return utxos.sort((a, b) => a.output.amount.length - b.output.amount.length);
+	return [...utxos].sort((a, b) => a.output.amount.length - b.output.amount.length);
 }
 
 function filterUtxosByRequiredLovelace(utxos: UTxO[], requiredLovelace: number): UTxO[] {
@@ -28,11 +28,9 @@ function filterUtxosByRequiredLovelace(utxos: UTxO[], requiredLovelace: number):
 		return lovelace >= requiredLovelace;
 	});
 }
-/**
- * Limits UTXOs to maximum count for transaction size optimization
- */
-export function limitUtxos(utxos: UTxO[], requiredLovelace: number): UTxO[] {
-	const filteredUtxos = filterUtxosByRequiredLovelace(utxos, 5000000);
+
+export function limitUtxos(utxos: UTxO[], requiredLovelace: number, minPerUtxoLovelace = 5_000_000): UTxO[] {
+	const filteredUtxos = filterUtxosByRequiredLovelace(utxos, minPerUtxoLovelace);
 	if (filteredUtxos.length === 0) {
 		throw new Error('No suitable UTXOs found');
 	}
@@ -51,13 +49,11 @@ export function limitUtxos(utxos: UTxO[], requiredLovelace: number): UTxO[] {
 	return selectedUtxos;
 }
 
-/**
- * Combined function: sort and limit UTXOs in one operation
- */
-export function sortAndLimitUtxos(utxos: UTxO[], requiredLovelace: number): UTxO[] {
+
+export function sortAndLimitUtxos(utxos: UTxO[], requiredLovelace: number, minPerUtxoLovelace = 5_000_000): UTxO[] {
 	const sortedUtxos = sortUtxosByBloatAsc(utxos);
 
-	const limitedUtxos = limitUtxos(sortedUtxos, requiredLovelace);
+	const limitedUtxos = limitUtxos(sortedUtxos, requiredLovelace, minPerUtxoLovelace);
 	if (limitedUtxos.length === 0) {
 		throw new Error('No suitable UTXOs found');
 	}

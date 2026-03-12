@@ -211,7 +211,9 @@ export const SERVICE_CONSTANTS = {
 
 	// Smart contract constants
 	SMART_CONTRACT: {
-		collateralAmount: '5000000', // 5 ADA collateral
+		collateralAmount: '5000000', 
+		minNftOutputLovelace: '2000000',
+		minSellingWalletUtxoLovelace: 2_000_000,
 		mintQuantity: '1',
 		defaultExUnits: { mem: 7000000, steps: 3000000000 },
 	},
