@@ -182,10 +182,28 @@ export async function registerAgentV1() {
 
 						const { script, policyId } = await getRegistryScriptFromNetworkHandlerV1(paymentSource);
 
-						const limitedFilteredUtxos = sortUtxosByLovelaceDesc(utxos);
+						const sortedUtxos = sortUtxosByLovelaceDesc(utxos);
 
-						const firstUtxo = limitedFilteredUtxos[0];
-						const collateralUtxo = limitedFilteredUtxos[0];
+						if (sortedUtxos.length < 2) {
+							throw new Error(
+								'Wallet needs at least 2 UTxOs for agent registration. Please send ADA to the wallet to create a separate UTxO for collateral.',
+							);
+						}
+
+						const pureAdaUtxos = sortedUtxos.filter((u) =>
+							u.output.amount.every((a) => a.unit === 'lovelace' || a.unit === ''),
+						);
+						const collateralUtxo =
+							pureAdaUtxos[pureAdaUtxos.length - 1] ?? sortedUtxos[sortedUtxos.length - 1];
+
+						const inputUtxos = sortedUtxos.filter(
+							(u) =>
+								!(
+									u.input.txHash === collateralUtxo.input.txHash &&
+									u.input.outputIndex === collateralUtxo.input.outputIndex
+								),
+						);
+						const firstUtxo = inputUtxos[0];
 
 						const assetName = generateAssetName(firstUtxo);
 						const metadata = buildAgentMetadata(request);
@@ -199,7 +217,7 @@ export async function registerAgentV1() {
 							assetName,
 							firstUtxo,
 							collateralUtxo,
-							limitedFilteredUtxos,
+							inputUtxos,
 							metadata,
 						);
 						const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
@@ -215,7 +233,7 @@ export async function registerAgentV1() {
 							assetName,
 							firstUtxo,
 							collateralUtxo,
-							limitedFilteredUtxos,
+							inputUtxos,
 							metadata,
 							estimatedFee[0].budget,
 						);
@@ -245,7 +263,7 @@ export async function registerAgentV1() {
 						await walletLowBalanceMonitorService.evaluateProjectedHotWalletById({
 							hotWalletId: request.SmartContractWallet.id,
 							walletAddress: address,
-							walletUtxos: limitedFilteredUtxos,
+							walletUtxos: sortedUtxos,
 							unsignedTx,
 							checkSource: 'submission',
 						});
@@ -342,7 +360,12 @@ async function generateRegisterAgentTransaction(
 			},
 			version: '1',
 		})
-		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
+		.txInCollateral(
+			collateralUtxo.input.txHash,
+			collateralUtxo.input.outputIndex,
+			collateralUtxo.output.amount,
+			collateralUtxo.output.address,
+		)
 		.txOut(walletAddress, [
 			{
 				unit: policyId + assetName,
@@ -355,6 +378,21 @@ async function generateRegisterAgentTransaction(
 		]);
 	for (const utxo of utxos) {
 		txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
+	}
+	const collateralHasNativeTokens = collateralUtxo.output.amount.some(
+		(a) => a.unit !== 'lovelace' && a.unit !== '',
+	);
+	if (collateralHasNativeTokens) {
+		const collateralLovelace = BigInt(
+			collateralUtxo.output.amount.find((a) => a.unit === 'lovelace' || a.unit === '')?.quantity ?? '0',
+		);
+		const minCollateralReturn = 2_000_000n; 
+		if (collateralLovelace <= minCollateralReturn) {
+			throw new Error(
+				'Collateral UTxO does not have enough ADA. A UTxO with native tokens used as collateral needs more than 2 ADA.',
+			);
+		}
+		txBuilder.setTotalCollateral((collateralLovelace - minCollateralReturn).toString());
 	}
 	return await txBuilder
 		.requiredSignerHash(deserializedAddress.pubKeyHash)
