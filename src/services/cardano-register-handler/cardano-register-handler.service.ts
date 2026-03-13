@@ -184,17 +184,15 @@ export async function registerAgentV1() {
 
 						const sortedUtxos = sortUtxosByLovelaceDesc(utxos);
 
-						if (sortedUtxos.length < 2) {
-							throw new Error(
-								'Wallet needs at least 2 UTxOs for agent registration. Please send ADA to the wallet to create a separate UTxO for collateral.',
-							);
-						}
-
 						const pureAdaUtxos = sortedUtxos.filter((u) =>
 							u.output.amount.every((a) => a.unit === 'lovelace' || a.unit === ''),
 						);
 						const collateralUtxo = pureAdaUtxos[pureAdaUtxos.length - 1] ?? sortedUtxos[sortedUtxos.length - 1];
 
+						// All UTxOs except collateral are used as regular inputs.
+						// This ensures collateral ∩ inputs = ∅ (required by Cardano ledger rules).
+						// For a single-UTxO wallet, firstUtxo falls back to the collateral UTxO itself
+						// and the transaction is attempted — blockchain will return an error if needed.
 						const inputUtxos = sortedUtxos.filter(
 							(u) =>
 								!(
@@ -202,7 +200,7 @@ export async function registerAgentV1() {
 									u.input.outputIndex === collateralUtxo.input.outputIndex
 								),
 						);
-						const firstUtxo = inputUtxos[0];
+						const firstUtxo = inputUtxos[0] ?? collateralUtxo;
 
 						const assetName = generateAssetName(firstUtxo);
 						const metadata = buildAgentMetadata(request);

@@ -20,6 +20,7 @@ import { decodeV1ContractDatum, DecodedV1ContractDatum, newCooldownTime } from '
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
 import { errorToString } from '@/utils/converter/error-string-convert';
 import { sortAndLimitUtxos } from '@/utils/utxo';
+import { SERVICE_CONSTANTS } from '@/utils/config';
 import { delayErrorResolver } from 'advanced-retry';
 import { advancedRetryAll } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
@@ -242,7 +243,7 @@ async function processSinglePaymentRequest(
 		unixTimeToEnclosingSlot(Number(decodedContract.resultTime) + 150000, SLOT_CONFIG_NETWORK[network]) + 3,
 	);
 
-	const limitedUtxos = sortAndLimitUtxos(utxos, 8000000);
+	const limitedUtxos = sortAndLimitUtxos(utxos, 8000000, SERVICE_CONSTANTS.SMART_CONTRACT.minSellingWalletUtxoLovelace);
 
 	const unsignedTx = await generateMasumiSmartContractInteractionTransactionAutomaticFees(
 		'SubmitResult',
