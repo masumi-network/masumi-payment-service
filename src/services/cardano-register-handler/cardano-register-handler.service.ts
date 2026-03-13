@@ -193,8 +193,7 @@ export async function registerAgentV1() {
 						const pureAdaUtxos = sortedUtxos.filter((u) =>
 							u.output.amount.every((a) => a.unit === 'lovelace' || a.unit === ''),
 						);
-						const collateralUtxo =
-							pureAdaUtxos[pureAdaUtxos.length - 1] ?? sortedUtxos[sortedUtxos.length - 1];
+						const collateralUtxo = pureAdaUtxos[pureAdaUtxos.length - 1] ?? sortedUtxos[sortedUtxos.length - 1];
 
 						const inputUtxos = sortedUtxos.filter(
 							(u) =>
@@ -379,14 +378,12 @@ async function generateRegisterAgentTransaction(
 	for (const utxo of utxos) {
 		txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
 	}
-	const collateralHasNativeTokens = collateralUtxo.output.amount.some(
-		(a) => a.unit !== 'lovelace' && a.unit !== '',
-	);
+	const collateralHasNativeTokens = collateralUtxo.output.amount.some((a) => a.unit !== 'lovelace' && a.unit !== '');
 	if (collateralHasNativeTokens) {
 		const collateralLovelace = BigInt(
 			collateralUtxo.output.amount.find((a) => a.unit === 'lovelace' || a.unit === '')?.quantity ?? '0',
 		);
-		const minCollateralReturn = 2_000_000n; 
+		const minCollateralReturn = 2_000_000n;
 		if (collateralLovelace <= minCollateralReturn) {
 			throw new Error(
 				'Collateral UTxO does not have enough ADA. A UTxO with native tokens used as collateral needs more than 2 ADA.',
