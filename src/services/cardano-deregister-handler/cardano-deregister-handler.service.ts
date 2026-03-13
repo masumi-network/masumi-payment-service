@@ -140,7 +140,6 @@ export async function deRegisterAgentV1() {
 
 						const assetName = extractAssetName(request.agentIdentifier);
 
-
 						const extraInputUtxos = limitedFilteredUtxos.filter(
 							(u) =>
 								!(
