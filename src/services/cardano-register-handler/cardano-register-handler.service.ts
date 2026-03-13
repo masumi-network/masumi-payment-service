@@ -359,12 +359,7 @@ async function generateRegisterAgentTransaction(
 			},
 			version: '1',
 		})
-		.txInCollateral(
-			collateralUtxo.input.txHash,
-			collateralUtxo.input.outputIndex,
-			collateralUtxo.output.amount,
-			collateralUtxo.output.address,
-		)
+		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
 		.txOut(walletAddress, [
 			{
 				unit: policyId + assetName,
@@ -378,18 +373,15 @@ async function generateRegisterAgentTransaction(
 	for (const utxo of utxos) {
 		txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
 	}
-	const collateralHasNativeTokens = collateralUtxo.output.amount.some((a) => a.unit !== 'lovelace' && a.unit !== '');
-	if (collateralHasNativeTokens) {
-		const collateralLovelace = BigInt(
-			collateralUtxo.output.amount.find((a) => a.unit === 'lovelace' || a.unit === '')?.quantity ?? '0',
-		);
-		const minCollateralReturn = 2_000_000n;
-		if (collateralLovelace <= minCollateralReturn) {
-			throw new Error(
-				'Collateral UTxO does not have enough ADA. A UTxO with native tokens used as collateral needs more than 2 ADA.',
-			);
-		}
-		txBuilder.setTotalCollateral((collateralLovelace - minCollateralReturn).toString());
+	const collateralLovelace = BigInt(
+		collateralUtxo.output.amount.find((a) => a.unit === 'lovelace' || a.unit === '')?.quantity ?? '0',
+	);
+	const minCollateralReturnBigInt = BigInt(SERVICE_CONSTANTS.SMART_CONTRACT.minNftOutputLovelace);
+	if (collateralLovelace > minCollateralReturnBigInt) {
+		// setTotalCollateral causes MeshSDK to emit txTotalCollateral + collateralReturn in CBOR.
+		// We consume (collateralLovelace - minNftOutputLovelace) and return the rest,
+		// ensuring the return output stays above the minimum UTxO value.
+		txBuilder.setTotalCollateral((collateralLovelace - minCollateralReturnBigInt).toString());
 	}
 	return await txBuilder
 		.requiredSignerHash(deserializedAddress.pubKeyHash)
