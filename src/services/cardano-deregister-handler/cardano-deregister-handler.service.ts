@@ -140,6 +140,16 @@ export async function deRegisterAgentV1() {
 
 						const assetName = extractAssetName(request.agentIdentifier);
 
+
+						const extraInputUtxos = limitedFilteredUtxos.filter(
+							(u) =>
+								!(
+									u.input.txHash === collateralUtxo.input.txHash &&
+									u.input.outputIndex === collateralUtxo.input.outputIndex
+								) &&
+								!(u.input.txHash === tokenUtxo.input.txHash && u.input.outputIndex === tokenUtxo.input.outputIndex),
+						);
+
 						const unsignedTx = await generateDeregisterAgentTransactionAutomaticFees(
 							blockchainProvider,
 							network,
@@ -149,7 +159,7 @@ export async function deRegisterAgentV1() {
 							assetName,
 							tokenUtxo,
 							collateralUtxo,
-							limitedFilteredUtxos,
+							extraInputUtxos,
 						);
 
 						const signedTx = await wallet.signTx(unsignedTx);
