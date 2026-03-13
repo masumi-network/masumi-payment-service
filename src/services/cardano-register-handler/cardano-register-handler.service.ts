@@ -201,6 +201,8 @@ export async function registerAgentV1() {
 								),
 						);
 						const firstUtxo = inputUtxos[0] ?? collateralUtxo;
+						// Remaining inputs after firstUtxo — avoids duplicate txIn since firstUtxo is added explicitly in the builder
+						const remainingInputUtxos = inputUtxos.slice(1);
 
 						const assetName = generateAssetName(firstUtxo);
 						const metadata = buildAgentMetadata(request);
@@ -214,7 +216,7 @@ export async function registerAgentV1() {
 							assetName,
 							firstUtxo,
 							collateralUtxo,
-							inputUtxos,
+							remainingInputUtxos,
 							metadata,
 						);
 						const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
@@ -230,7 +232,7 @@ export async function registerAgentV1() {
 							assetName,
 							firstUtxo,
 							collateralUtxo,
-							inputUtxos,
+							remainingInputUtxos,
 							metadata,
 							estimatedFee[0].budget,
 						);
