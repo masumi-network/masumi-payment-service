@@ -251,14 +251,12 @@ export async function registerAgentV1() {
 
 							// Need 2 UTXOs but only have 1 (or filtered to 1). Attempt split if feasible.
 							const singleUtxo = currentUtxos.find((u) => getLovelaceFromUtxo(u) >= 2_000_000);
-							if (
-								singleUtxo != null &&
-								isLovelaceOnlyUtxo(singleUtxo) &&
-								getLovelaceFromUtxo(singleUtxo) >= MIN_LOVELACE_FOR_SPLIT
-							) {
+							const singleUtxoLovelace = singleUtxo != null ? getLovelaceFromUtxo(singleUtxo) : 0;
+							if (singleUtxo != null && singleUtxoLovelace >= MIN_LOVELACE_FOR_SPLIT) {
 								logger.info('[register] splitting single UTXO for collateral/input disjointness', {
 									requestId: request.id,
-									lovelace: getLovelaceFromUtxo(singleUtxo),
+									lovelace: singleUtxoLovelace,
+									hasTokens: !isLovelaceOnlyUtxo(singleUtxo),
 								});
 								const txBuilder = new MeshTxBuilder({
 									fetcher: blockchainProvider,
