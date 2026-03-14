@@ -19,6 +19,7 @@ import { lockAndQueryPurchases } from '@/utils/db/lock-and-query-purchases';
 import { errorToString } from '@/utils/converter/error-string-convert';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { sortAndLimitUtxos } from '@/utils/utxo';
+import { SERVICE_CONSTANTS } from '@/utils/config';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractWithdrawTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import {
@@ -141,7 +142,11 @@ async function processSingleRefundCollection(
 
 	const invalidAfter = unixTimeToEnclosingSlot(Date.now() + 150000, SLOT_CONFIG_NETWORK[network]) + 5;
 
-	const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
+	const limitedFilteredUtxos = sortAndLimitUtxos(
+		utxos,
+		8000000,
+		SERVICE_CONSTANTS.SMART_CONTRACT.minSellingWalletUtxoLovelace,
+	);
 	const collateralUtxo = limitedFilteredUtxos[0];
 	if (collateralUtxo == null) {
 		throw new Error('Collateral UTXO not found');

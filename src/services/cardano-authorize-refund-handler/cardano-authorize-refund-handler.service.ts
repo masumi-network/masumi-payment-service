@@ -186,7 +186,11 @@ export async function authorizeRefundV1() {
 
 						const { invalidBefore, invalidAfter } = calculateTransactionTimeWindow(network);
 
-						const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
+						const limitedFilteredUtxos = sortAndLimitUtxos(
+							utxos,
+							8000000,
+							SERVICE_CONSTANTS.SMART_CONTRACT.minSellingWalletUtxoLovelace,
+						);
 
 						const unsignedTx = await generateMasumiSmartContractInteractionTransactionAutomaticFees(
 							'AuthorizeRefund',

@@ -190,7 +190,10 @@ export async function registerAndConfirmAgent(network: Network): Promise<Confirm
 
 			// Fail fast on terminal error states (wait-for-expect would otherwise retry)
 			if (registration.state === 'RegistrationFailed') {
-				throw new FatalE2EError(`Registration failed for ${registrationResponse.id} (state=${registration.state})`);
+				const errDetail = (registration as { error?: string | null }).error ?? 'no error detail';
+				throw new FatalE2EError(
+					`Registration failed for ${registrationResponse.id} (state=${registration.state}) error="${errDetail}"`,
+				);
 			}
 
 			if (registration.state !== 'RegistrationConfirmed') {
@@ -221,8 +224,9 @@ export async function registerAndConfirmAgent(network: Network): Promise<Confirm
 
 			// Fail fast if registration flips into a terminal failure state while waiting
 			if (registration.state === 'RegistrationFailed') {
+				const errDetail = (registration as { error?: string | null }).error ?? 'no error detail';
 				throw new FatalE2EError(
-					`Registration failed for ${registrationResponse.id} while waiting for agent identifier (state=${registration.state})`,
+					`Registration failed for ${registrationResponse.id} (state=${registration.state}) error="${errDetail}"`,
 				);
 			}
 

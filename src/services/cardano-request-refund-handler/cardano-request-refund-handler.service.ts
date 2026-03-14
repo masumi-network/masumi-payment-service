@@ -14,7 +14,9 @@ import { decodeV1ContractDatum, newCooldownTime } from '@/utils/converter/string
 import { lockAndQueryPurchases } from '@/utils/db/lock-and-query-purchases';
 import { errorToString } from '@/utils/converter/error-string-convert';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
-import { sortAndLimitUtxos } from '@/utils/utxo';
+import { sortAndLimitUtxos, getLovelaceFromUtxo, executeSingleUtxoSplit, MIN_LOVELACE_FOR_SPLIT } from '@/utils/utxo';
+import { SERVICE_CONSTANTS } from '@/utils/config';
+import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import {
@@ -159,10 +161,71 @@ async function processSinglePurchaseRequest(
 		unixTimeToEnclosingSlot(Number(decodedContract.unlockTime) + 150000, SLOT_CONFIG_NETWORK[network]) + 3;
 	const invalidAfter = Math.min(initialInvalid, secondaryInvalid);
 
-	const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
+	let currentUtxos = utxos;
+	while (true) {
+		let limitedFilteredUtxos;
+		try {
+			limitedFilteredUtxos = sortAndLimitUtxos(
+				currentUtxos,
+				8_000_000,
+				SERVICE_CONSTANTS.SMART_CONTRACT.minSellingWalletUtxoLovelace,
+				2, // collateral and inputs must be disjoint
+			);
+		} catch (utxoErr) {
+			logger.error('RequestRefund sortAndLimitUtxos failed', {
+				requestId: request.id,
+				utxoCount: currentUtxos.length,
+				error: errorToString(utxoErr),
+			});
+			throw utxoErr;
+		}
+		if (limitedFilteredUtxos.length >= 2) {
+			break;
+		}
+		const singleUtxo = currentUtxos.find((u) => getLovelaceFromUtxo(u) >= 2_000_000);
+		const singleUtxoLovelace = singleUtxo != null ? getLovelaceFromUtxo(singleUtxo) : 0;
+		if (singleUtxo != null && singleUtxoLovelace >= MIN_LOVELACE_FOR_SPLIT) {
+			logger.info('RequestRefund: splitting single UTXO for collateral/input disjointness', {
+				requestId: request.id,
+				lovelace: singleUtxoLovelace,
+			});
+			const blockfrost = getBlockfrostInstance(
+				paymentContract.network,
+				paymentContract.PaymentSourceConfig.rpcProviderApiKey,
+			);
+			await executeSingleUtxoSplit({
+				wallet,
+				blockchainProvider,
+				address,
+				network,
+				singleUtxo,
+				blockfrost,
+				splitOutputLovelace: Number(SERVICE_CONSTANTS.SMART_CONTRACT.minNftOutputLovelace),
+			});
+			const refreshed = await generateWalletExtended(
+				paymentContract.network,
+				paymentContract.PaymentSourceConfig.rpcProviderApiKey,
+				encryptedSecret,
+			);
+			currentUtxos = refreshed.utxos;
+			continue;
+		}
+		throw new Error(
+			'RequestRefund requires at least 2 UTxOs (one for collateral, one for inputs). ' +
+				'Each UTxO must have ≥2 ADA. Please add funds with 2 separate transactions.',
+		);
+	}
+
+	const limitedFilteredUtxos = sortAndLimitUtxos(
+		currentUtxos,
+		8_000_000,
+		SERVICE_CONSTANTS.SMART_CONTRACT.minSellingWalletUtxoLovelace,
+		2,
+	);
 	const collateralUtxo = limitedFilteredUtxos[0];
-	if (collateralUtxo == null) {
-		throw new Error('Collateral UTXO not found');
+	const inputUtxos = limitedFilteredUtxos.slice(1);
+	if (collateralUtxo == null || inputUtxos.length === 0) {
+		throw new Error('Collateral or input UTXOs not found (expected at least 2 UTxOs)');
 	}
 
 	const unsignedTx = await generateMasumiSmartContractInteractionTransactionAutomaticFees(
@@ -172,8 +235,8 @@ async function processSinglePurchaseRequest(
 		script,
 		address,
 		utxo,
-		limitedFilteredUtxos[0],
-		limitedFilteredUtxos,
+		collateralUtxo,
+		inputUtxos,
 		datum.value,
 		invalidBefore,
 		invalidAfter,

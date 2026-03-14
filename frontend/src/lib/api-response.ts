@@ -21,7 +21,7 @@ export function extractApiPayload<T>(
     typeof responseData === 'object' &&
     responseData !== null &&
     'data' in responseData &&
-    Object.keys(responseData).length === 1
+    'status' in responseData
   ) {
     return (responseData as { data?: T }).data;
   }

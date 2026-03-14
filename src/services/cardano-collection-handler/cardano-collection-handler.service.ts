@@ -21,7 +21,7 @@ import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractWithdrawTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
-import { CONSTANTS } from '@/utils/config';
+import { CONSTANTS, SERVICE_CONSTANTS } from '@/utils/config';
 import {
 	walletLowBalanceMonitorService,
 	toBalanceMapFromMeshUtxos,
@@ -207,7 +207,11 @@ async function processSinglePaymentCollection(
 		collectionAddress = request.SmartContractWallet.walletAddress;
 	}
 
-	const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
+	const limitedFilteredUtxos = sortAndLimitUtxos(
+		utxos,
+		8000000,
+		SERVICE_CONSTANTS.SMART_CONTRACT.minSellingWalletUtxoLovelace,
+	);
 	const collateralUtxo = limitedFilteredUtxos[0];
 	if (collateralUtxo == null) {
 		throw new Error('Collateral UTXO not found');
