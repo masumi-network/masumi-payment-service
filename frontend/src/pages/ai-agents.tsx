@@ -13,7 +13,7 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import {
   deleteRegistry,
   RegistryEntry,
-  PaymentSourceExtended,
+  A2aRegistryEntry,
   postRegistryDeregister,
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
@@ -22,6 +22,7 @@ import Head from 'next/head';
 import { AIAgentTableSkeleton } from '@/components/skeletons/AIAgentTableSkeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { useAgents } from '@/lib/queries/useAgents';
+import { useA2AAgents } from '@/lib/queries/useA2AAgents';
 import formatBalance from '@/lib/formatBalance';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { FaRegClock } from 'react-icons/fa';
@@ -39,7 +40,8 @@ import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { parseAmountSearchRange } from '@/lib/parseAmountSearchRange';
 import { extractApiErrorMessage } from '@/lib/api-error';
 import { findPaymentSourceWalletByVkey } from '@/lib/wallet-lookup';
-type AIAgent = RegistryEntry;
+
+type AIAgent = RegistryEntry | A2aRegistryEntry;
 
 const parseAgentStatus = (status: AIAgent['state']): string => {
   switch (status) {
@@ -79,17 +81,43 @@ export default function AIAgentsPage() {
 
   // Use React Query for initial load (cached)
   const {
-    agents,
-    isLoading,
+    agents: standardAgents,
+    isLoading: isLoadingStandard,
     isFetching: isFetchingAgents,
     isPlaceholderData,
-    refetch,
+    refetch: refetchStandard,
     hasMore: hasMoreAgents,
     loadMore,
   } = useAgents({
     filterStatus,
     searchQuery: debouncedSearchQuery || undefined,
   });
+
+  const {
+    agents: a2aAgents,
+    isLoading: isLoadingA2A,
+    hasMore: hasMoreA2A,
+    loadMore: loadMoreA2A,
+    refetch: refetchA2A,
+  } = useA2AAgents({
+    filterStatus,
+    searchQuery: debouncedSearchQuery || undefined,
+  });
+
+  const agents = useMemo(
+    () =>
+      [...standardAgents, ...a2aAgents].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      ),
+    [standardAgents, a2aAgents],
+  );
+
+  const isLoading = isLoadingStandard || isLoadingA2A;
+
+  const refetch = useCallback(() => {
+    void refetchStandard();
+    void refetchA2A();
+  }, [refetchStandard, refetchA2A]);
 
   // True whenever server-authoritative results haven't arrived yet:
   // either the debounce hasn't fired, or the server fetch is still in-flight with stale data.
@@ -201,7 +229,6 @@ export default function AIAgentsPage() {
             refetch();
           },
           onError: (error: unknown) => {
-            console.error('Error deleting agent:', error);
             toast.error(extractApiErrorMessage(error, 'Failed to delete AI agent'));
           },
           onFinally: () => {
@@ -233,7 +260,6 @@ export default function AIAgentsPage() {
             refetch();
           },
           onError: (error: unknown) => {
-            console.error('Error deregistering agent:', error);
             toast.error(extractApiErrorMessage(error, 'Failed to deregister AI agent'));
           },
           onFinally: () => {
@@ -254,7 +280,7 @@ export default function AIAgentsPage() {
   };
 
   const handleWalletClick = useCallback(
-    async (walletVkey: string) => {
+    (walletVkey: string) => {
       const filteredSources = currentNetworkPaymentSources.filter((source) =>
         selectedPaymentSourceId ? source.id === selectedPaymentSourceId : true,
       );
@@ -341,6 +367,9 @@ export default function AIAgentsPage() {
                       Name
                     </th>
                     <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                      Type
+                    </th>
+                    <th className="p-4 text-left text-sm font-medium text-muted-foreground">
                       Added
                     </th>
                     <th className="p-4 text-left text-sm font-medium text-muted-foreground">
@@ -367,7 +396,7 @@ export default function AIAgentsPage() {
                     <AIAgentTableSkeleton rows={5} />
                   ) : displayAgents.length === 0 ? (
                     <tr>
-                      <td colSpan={8}>
+                      <td colSpan={9}>
                         <EmptyState
                           icon={searchQuery ? 'search' : 'inbox'}
                           title={
@@ -403,6 +432,11 @@ export default function AIAgentsPage() {
                           <div className="text-xs text-muted-foreground truncate">
                             {agent.description}
                           </div>
+                        </td>
+                        <td className="p-4">
+                          <Badge variant="outline" className="text-xs font-mono">
+                            {'agentCardUrl' in agent ? 'A2A' : 'Standard'}
+                          </Badge>
                         </td>
                         <td className="p-4 text-sm">{formatDate(agent.createdAt)}</td>
                         <td className="p-4">
@@ -516,9 +550,12 @@ export default function AIAgentsPage() {
             <div className="flex flex-col gap-4 items-center">
               {!(isLoading && !agents.length) && (
                 <Pagination
-                  hasMore={hasMoreAgents}
+                  hasMore={hasMoreAgents || hasMoreA2A}
                   isLoading={isFetchingAgents}
-                  onLoadMore={loadMore}
+                  onLoadMore={() => {
+                    void loadMore();
+                    void loadMoreA2A();
+                  }}
                 />
               )}
             </div>

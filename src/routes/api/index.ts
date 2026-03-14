@@ -45,6 +45,7 @@ import { paymentErrorStateRecoveryPost } from './payments/error-state-recovery';
 import { purchaseErrorStateRecoveryPost } from './purchases/error-state-recovery';
 import { queryRegistryDiffGet } from './registry/diff';
 import { queryAgentByIdentifierGet } from './registry/agent-identifier';
+import { registerA2AAgentPost, queryA2ARegistryRequestGet } from './registry/a2a';
 import { registerWebhookPost, listWebhooksGet, deleteWebhookDelete } from './webhooks';
 import {
 	queryPaymentDiffCombinedGet,
@@ -149,6 +150,10 @@ export const apiRouter: Routing = {
 			},
 			count: {
 				get: queryRegistryCountGet,
+			},
+			a2a: {
+				get: queryA2ARegistryRequestGet,
+				post: registerA2AAgentPost,
 			},
 		},
 		'api-key-status': {

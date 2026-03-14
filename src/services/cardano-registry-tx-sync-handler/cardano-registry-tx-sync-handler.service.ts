@@ -33,8 +33,14 @@ export async function checkRegistryTransactions() {
 						paymentContract.PaymentSourceConfig.rpcProviderApiKey,
 					);
 
-					const registryRequests = await getRegistrationRequestsToSync(paymentContract.id);
-					await syncRegistryRequests(registryRequests, blockfrost);
+					const [registryRequests, a2aRegistryRequests] = await Promise.all([
+						getRegistrationRequestsToSync(paymentContract.id),
+						getA2ARegistrationRequestsToSync(paymentContract.id),
+					]);
+					await Promise.all([
+						syncRegistryRequests(registryRequests, blockfrost),
+						syncA2ARegistryRequests(a2aRegistryRequests, blockfrost),
+					]);
 				}),
 			);
 
@@ -219,6 +225,147 @@ async function getRegistrationRequestsToSync(paymentContractId: string) {
 		include: {
 			CurrentTransaction: { include: { BlocksWallet: true } },
 		},
+	});
+}
+
+async function getA2ARegistrationRequestsToSync(paymentContractId: string) {
+	return await prisma.a2ARegistryRequest.findMany({
+		where: {
+			PaymentSource: {
+				id: paymentContractId,
+			},
+			state: {
+				in: [RegistrationState.RegistrationInitiated, RegistrationState.DeregistrationInitiated],
+			},
+			CurrentTransaction: {
+				isNot: null,
+			},
+			agentIdentifier: { not: null },
+			updatedAt: {
+				lt: new Date(Date.now() - 1000 * 60 * 1),
+			},
+		},
+		include: {
+			CurrentTransaction: { include: { BlocksWallet: true } },
+		},
+	});
+}
+
+async function syncA2ARegistryRequests(
+	a2aRequests: Array<{
+		id: string;
+		state: RegistrationState;
+		CurrentTransaction: {
+			BlocksWallet: { id: string } | null;
+			txHash: string | null;
+		} | null;
+		agentIdentifier: string | null;
+	}>,
+	blockfrost: BlockFrostAPI,
+) {
+	const results = await advancedRetryAll({
+		operations: a2aRequests.map((req) => async () => {
+			const owner = await blockfrost.assetsAddresses(req.agentIdentifier!, { order: 'desc' });
+
+			if (req.state == RegistrationState.RegistrationInitiated) {
+				if (owner.length >= 1 && owner[0].quantity == '1') {
+					if (req.CurrentTransaction == undefined || req.CurrentTransaction.txHash == null) {
+						throw new Error('A2A registry request has no tx hash');
+					}
+					const tx = await blockfrost.txs(req.CurrentTransaction.txHash);
+					const block = await blockfrost.blocks(tx.block);
+					await prisma.a2ARegistryRequest.update({
+						where: { id: req.id },
+						data: {
+							state: RegistrationState.RegistrationConfirmed,
+							CurrentTransaction: {
+								update: {
+									status: TransactionStatus.Confirmed,
+									confirmations: block.confirmations,
+									fees: BigInt(tx.fees),
+									blockHeight: tx.block_height,
+									blockTime: tx.block_time,
+									outputAmount: JSON.stringify(tx.output_amount),
+									utxoCount: tx.utxo_count,
+									withdrawalCount: tx.withdrawal_count,
+									assetMintOrBurnCount: tx.asset_mint_or_burn_count,
+									redeemerCount: tx.redeemer_count,
+									validContract: tx.valid_contract,
+									BlocksWallet: req.CurrentTransaction?.BlocksWallet != null ? { disconnect: true } : undefined,
+								},
+							},
+						},
+					});
+					if (req.CurrentTransaction?.BlocksWallet != null) {
+						await prisma.hotWallet.update({
+							where: { id: req.CurrentTransaction.BlocksWallet.id, deletedAt: null },
+							data: { lockedAt: null },
+						});
+					}
+				} else {
+					await prisma.a2ARegistryRequest.update({
+						where: { id: req.id },
+						data: { updatedAt: new Date() },
+					});
+				}
+			} else if (req.state == RegistrationState.DeregistrationInitiated) {
+				if (owner.length == 0 || owner[0].quantity == '0') {
+					if (req.CurrentTransaction == undefined || req.CurrentTransaction.txHash == null) {
+						throw new Error('A2A deregistration request has no tx hash');
+					}
+					const tx = await blockfrost.txs(req.CurrentTransaction.txHash);
+					const block = await blockfrost.blocks(tx.block);
+					await prisma.a2ARegistryRequest.update({
+						where: { id: req.id },
+						data: {
+							state: RegistrationState.DeregistrationConfirmed,
+							CurrentTransaction: {
+								update: {
+									status: TransactionStatus.Confirmed,
+									confirmations: block.confirmations,
+									fees: BigInt(tx.fees),
+									blockHeight: tx.block_height,
+									blockTime: tx.block_time,
+									outputAmount: JSON.stringify(tx.output_amount),
+									utxoCount: tx.utxo_count,
+									withdrawalCount: tx.withdrawal_count,
+									assetMintOrBurnCount: tx.asset_mint_or_burn_count,
+									redeemerCount: tx.redeemer_count,
+									validContract: tx.valid_contract,
+									BlocksWallet: req.CurrentTransaction?.BlocksWallet != null ? { disconnect: true } : undefined,
+								},
+							},
+						},
+					});
+					if (req.CurrentTransaction?.BlocksWallet != null) {
+						await prisma.hotWallet.update({
+							where: { id: req.CurrentTransaction.BlocksWallet.id, deletedAt: null },
+							data: { lockedAt: null },
+						});
+					}
+				} else {
+					await prisma.a2ARegistryRequest.update({
+						where: { id: req.id },
+						data: { updatedAt: new Date() },
+					});
+				}
+			}
+		}),
+		errorResolvers: [
+			delayErrorResolver({
+				configuration: {
+					maxRetries: 5,
+					backoffMultiplier: 2,
+					initialDelayMs: 500,
+					maxDelayMs: 1500,
+				},
+			}),
+		],
+	});
+	results.forEach((x) => {
+		if (x.success == false) {
+			logger.warn('Failed to update A2A registry request', { error: x.error });
+		}
 	});
 }
 

@@ -24,6 +24,56 @@ export const queryRegistryRequestSchemaInput = z.object({
 		.describe('Search query to filter by name, description, tags, wallet address, state, or price'),
 });
 
+const agentPricingSchema = z
+	.object({
+		pricingType: z.enum([PricingType.Fixed]).describe('Pricing type for the agent '),
+		Pricing: z
+			.array(
+				z.object({
+					amount: z
+						.string()
+						.describe(
+							'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
+						),
+					unit: z
+						.string()
+						.max(250)
+						.describe(
+							'Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
+						),
+				}),
+			)
+			.min(1)
+			.describe('List of assets and amounts for fixed pricing'),
+	})
+	.or(
+		z.object({
+			pricingType: z.enum([PricingType.Free]).describe('Pricing type for the agent '),
+		}),
+	)
+	.describe('Pricing information for the agent');
+
+const currentTransactionSchema = z
+	.object({
+		txHash: z.string().nullable().describe('Cardano transaction hash'),
+		status: z.nativeEnum(TransactionStatus).describe('Current status of the transaction'),
+		confirmations: z
+			.number()
+			.nullable()
+			.describe('Number of block confirmations for this transaction. Null if not yet confirmed'),
+		fees: z.string().nullable().describe('Fees of the transaction'),
+		blockHeight: z.number().nullable().describe('Block height of the transaction'),
+		blockTime: z.number().nullable().describe('Block time of the transaction'),
+	})
+	.nullable();
+
+const smartContractWalletSchema = z
+	.object({
+		walletVkey: z.string().describe('Payment key hash of the smart contract wallet'),
+		walletAddress: z.string().describe('Cardano address of the smart contract wallet'),
+	})
+	.describe('Smart contract wallet managing this agent registration');
+
 export const registryRequestOutputSchema = z
 	.object({
 		error: z.string().nullable().describe('Error message if registration failed. Null if no error'),
@@ -73,58 +123,56 @@ export const registryRequestOutputSchema = z
 			.max(250)
 			.nullable()
 			.describe('Full agent identifier (policy ID + asset name). Null if not yet minted'),
-		AgentPricing: z
-			.object({
-				pricingType: z.enum([PricingType.Fixed]).describe('Pricing type for the agent '),
-				Pricing: z
-					.array(
-						z.object({
-							amount: z
-								.string()
-								.describe(
-									'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
-								),
-							unit: z
-								.string()
-								.max(250)
-								.describe(
-									'Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
-								),
-						}),
-					)
-					.min(1)
-					.describe('List of assets and amounts for fixed pricing'),
-			})
-			.or(
-				z.object({
-					pricingType: z.enum([PricingType.Free]).describe('Pricing type for the agent '),
-				}),
-			)
-			.describe('Pricing information for the agent'),
-		SmartContractWallet: z
-			.object({
-				walletVkey: z.string().describe('Payment key hash of the smart contract wallet'),
-				walletAddress: z.string().describe('Cardano address of the smart contract wallet'),
-			})
-			.describe('Smart contract wallet managing this agent registration'),
-		CurrentTransaction: z
-			.object({
-				txHash: z.string().nullable().describe('Cardano transaction hash'),
-				status: z.nativeEnum(TransactionStatus).describe('Current status of the transaction'),
-				confirmations: z
-					.number()
-					.nullable()
-					.describe('Number of block confirmations for this transaction. Null if not yet confirmed'),
-				fees: z.string().nullable().describe('Fees of the transaction'),
-				blockHeight: z.number().nullable().describe('Block height of the transaction'),
-				blockTime: z.number().nullable().describe('Block time of the transaction'),
-			})
-			.nullable(),
+		AgentPricing: agentPricingSchema,
+		SmartContractWallet: smartContractWalletSchema,
+		CurrentTransaction: currentTransactionSchema,
 	})
 	.openapi('RegistryEntry');
 
+export const a2aRegistryRequestOutputSchema = z
+	.object({
+		error: z.string().nullable().describe('Error message if registration failed. Null if no error'),
+		id: z.string().describe('Unique identifier for the A2A registry request'),
+		name: z.string().describe('Name of the agent'),
+		description: z.string().nullable().describe('Description of the agent. Null if not provided'),
+		apiBaseUrl: z.string().describe('Base URL of the agent API for interactions'),
+		agentCardUrl: z.string().describe('URL to the Agent Card JSON'),
+		a2aProtocolVersions: z.array(z.string()).describe('A2A protocol versions supported by this agent'),
+		Tags: z.array(z.string()).describe('List of tags categorizing the agent'),
+		state: z.nativeEnum(RegistrationState).describe('Current state of the registration process'),
+		createdAt: z.date().describe('Timestamp when the registry request was created'),
+		updatedAt: z.date().describe('Timestamp when the registry request was last updated'),
+		lastCheckedAt: z.date().nullable().describe('Timestamp when the registry was last checked. Null if never checked'),
+		agentIdentifier: z
+			.string()
+			.min(57)
+			.max(250)
+			.nullable()
+			.describe('Full agent identifier (policy ID + asset name). Null if not yet minted'),
+		a2aAgentVersion: z.string().nullable().describe('Agent version from Agent Card. Null if not fetched'),
+		a2aDefaultInputModes: z.array(z.string()).describe('Default input MIME types from Agent Card'),
+		a2aDefaultOutputModes: z.array(z.string()).describe('Default output MIME types from Agent Card'),
+		a2aProviderName: z.string().nullable().describe('Provider name from Agent Card. Null if not provided'),
+		a2aProviderUrl: z.string().nullable().describe('Provider URL from Agent Card. Null if not provided'),
+		a2aDocumentationUrl: z.string().nullable().describe('Documentation URL from Agent Card. Null if not provided'),
+		a2aIconUrl: z.string().nullable().describe('Icon URL from Agent Card. Null if not provided'),
+		a2aCapabilitiesStreaming: z.boolean().nullable().describe('Streaming capability. Null if not fetched'),
+		a2aCapabilitiesPushNotifications: z
+			.boolean()
+			.nullable()
+			.describe('Push notification capability. Null if not fetched'),
+		AgentPricing: agentPricingSchema,
+		SmartContractWallet: smartContractWalletSchema,
+		CurrentTransaction: currentTransactionSchema,
+	})
+	.openapi('A2ARegistryEntry');
+
 export const queryRegistryRequestSchemaOutput = z.object({
 	Assets: z.array(registryRequestOutputSchema),
+});
+
+export const queryA2ARegistryRequestSchemaOutput = z.object({
+	Assets: z.array(a2aRegistryRequestOutputSchema),
 });
 
 export const queryRegistryCountSchemaInput = z.object({
@@ -217,4 +265,4 @@ export const deleteAgentRegistrationSchemaInput = z.object({
 	id: z.string().cuid().describe('The database ID of the agent registration record to be deleted.'),
 });
 
-export const deleteAgentRegistrationSchemaOutput = registryRequestOutputSchema;
+export const deleteAgentRegistrationSchemaOutput = registryRequestOutputSchema.or(a2aRegistryRequestOutputSchema);
