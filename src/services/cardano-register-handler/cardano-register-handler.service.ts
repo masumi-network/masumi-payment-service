@@ -164,12 +164,20 @@ export async function registerAgentV1() {
 						}),
 					],
 					operations: registryRequests.map((request) => async () => {
+						logger.info('[register] start', {
+							requestId: request.id,
+							walletId: request.SmartContractWallet.id,
+						});
 						validateRegistrationPricing(request);
 						const { wallet, utxos, address } = await generateWalletExtended(
 							paymentSource.network,
 							paymentSource.PaymentSourceConfig.rpcProviderApiKey,
 							request.SmartContractWallet.Secret.encryptedMnemonic,
 						);
+						logger.info('[register] utxos fetched', {
+							requestId: request.id,
+							utxoCount: utxos.length,
+						});
 						await walletLowBalanceMonitorService.evaluateHotWalletById(
 							request.SmartContractWallet.id,
 							toBalanceMapFromMeshUtxos(utxos as MeshLikeUtxo[]),
@@ -182,11 +190,26 @@ export async function registerAgentV1() {
 
 						const { script, policyId } = await getRegistryScriptFromNetworkHandlerV1(paymentSource);
 
-						const limitedUtxos = sortAndLimitUtxos(
-							utxos,
-							8_000_000,
-							SERVICE_CONSTANTS.SMART_CONTRACT.minSellingWalletUtxoLovelace,
-						);
+						let limitedUtxos;
+						try {
+							limitedUtxos = sortAndLimitUtxos(
+								utxos,
+								8_000_000,
+								SERVICE_CONSTANTS.SMART_CONTRACT.minSellingWalletUtxoLovelace,
+								2, // min 2 UTxOs: collateral and inputs must be disjoint
+							);
+						} catch (utxoErr) {
+							logger.error('[register] sortAndLimitUtxos failed', {
+								requestId: request.id,
+								utxoCount: utxos.length,
+								error: errorToString(utxoErr),
+							});
+							throw utxoErr;
+						}
+						logger.info('[register] utxos limited', {
+							requestId: request.id,
+							limitedCount: limitedUtxos.length,
+						});
 						if (limitedUtxos.length < 2) {
 							throw new Error(
 								'Registration requires at least 2 UTxOs (one for collateral, one for inputs). ' +
@@ -205,6 +228,7 @@ export async function registerAgentV1() {
 						const assetName = generateAssetName(firstUtxo);
 						const metadata = buildAgentMetadata(request);
 
+						logger.info('[register] building evaluation tx', { requestId: request.id });
 						const evaluationTx = await generateRegisterAgentTransaction(
 							blockchainProvider,
 							network,
@@ -217,10 +241,12 @@ export async function registerAgentV1() {
 							remainingInputUtxos,
 							metadata,
 						);
+						logger.info('[register] evaluating tx', { requestId: request.id });
 						const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
 							budget: { mem: number; steps: number };
 						}>;
 
+						logger.info('[register] building final tx', { requestId: request.id });
 						const unsignedTx = await generateRegisterAgentTransaction(
 							blockchainProvider,
 							network,
@@ -235,8 +261,10 @@ export async function registerAgentV1() {
 							estimatedFee[0].budget,
 						);
 
+						logger.info('[register] signing tx', { requestId: request.id });
 						const signedTx = await wallet.signTx(unsignedTx, true);
 
+						logger.info('[register] updating to RegistrationInitiated', { requestId: request.id });
 						await prisma.registryRequest.update({
 							where: { id: request.id },
 							data: {
@@ -254,7 +282,7 @@ export async function registerAgentV1() {
 								},
 							},
 						});
-						//submit the transaction to the blockchain
+						logger.info('[register] submitting tx to chain', { requestId: request.id });
 						const newTxHash = await wallet.submitTx(signedTx);
 
 						await walletLowBalanceMonitorService.evaluateProjectedHotWalletById({
@@ -290,8 +318,11 @@ export async function registerAgentV1() {
 					const request = registryRequests[index];
 					if (result.success === false || result.result !== true) {
 						const error = result.error;
-						logger.error(`Error registering agent ${request.id}`, {
+						const errStr = errorToString(error);
+						logger.error(`[register] FAILED requestId=${request.id} error="${errStr}"`, {
+							requestId: request.id,
 							error: error,
+							errorString: errStr,
 						});
 						await prisma.registryRequest.update({
 							where: { id: request.id },
