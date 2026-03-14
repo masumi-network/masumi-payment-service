@@ -76,3 +76,10 @@ export function sortAndLimitUtxos(
 export function getHighestLovelaceUtxo(utxos: UTxO[]): UTxO | undefined {
 	return sortUtxosByLovelaceDesc(utxos)[0];
 }
+
+export {
+	getLovelaceFromUtxo,
+	waitForTxConfirmation,
+	executeSingleUtxoSplit,
+	MIN_LOVELACE_FOR_SPLIT,
+} from './split-utxo';
