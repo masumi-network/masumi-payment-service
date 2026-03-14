@@ -18,8 +18,39 @@ import {
 	toBalanceMapFromMeshUtxos,
 	type MeshLikeUtxo,
 } from '@/services/wallet-low-balance-monitor';
+import { getBlockfrostInstance } from '@/utils/blockfrost';
 
 const mutex = new Mutex();
+
+/** Minimum lovelace in a single UTXO to attempt a split (2×2 ADA outputs + fee buffer) */
+const MIN_LOVELACE_FOR_SPLIT = 4_500_000;
+
+/** Poll interval and max wait for split tx confirmation */
+const SPLIT_TX_POLL_MS = 3000;
+const SPLIT_TX_MAX_WAIT_MS = 120_000;
+
+function getLovelaceFromUtxo(utxo: UTxO): number {
+	return parseInt(utxo.output.amount.find((a) => a.unit === 'lovelace' || a.unit === '')?.quantity ?? '0');
+}
+
+function isLovelaceOnlyUtxo(utxo: UTxO): boolean {
+	return utxo.output.amount.every((a) => a.unit === 'lovelace' || a.unit === '');
+}
+
+async function waitForTxConfirmation(
+	txHash: string,
+	blockfrost: ReturnType<typeof getBlockfrostInstance>,
+): Promise<void> {
+	const deadline = Date.now() + SPLIT_TX_MAX_WAIT_MS;
+	while (Date.now() < deadline) {
+		const tx = await blockfrost.txs(txHash);
+		if (tx.block != null) {
+			return;
+		}
+		await new Promise((resolve) => setTimeout(resolve, SPLIT_TX_POLL_MS));
+	}
+	throw new Error(`Split transaction ${txHash} did not confirm within ${SPLIT_TX_MAX_WAIT_MS / 1000}s`);
+}
 
 function validateRegistrationPricing(request: {
 	Pricing: {
@@ -189,33 +220,92 @@ export async function registerAgentV1() {
 						}
 
 						const { script, policyId } = await getRegistryScriptFromNetworkHandlerV1(paymentSource);
+						let currentUtxos = utxos;
 
-						let limitedUtxos;
-						try {
-							limitedUtxos = sortAndLimitUtxos(
-								utxos,
-								8_000_000,
-								SERVICE_CONSTANTS.SMART_CONTRACT.minSellingWalletUtxoLovelace,
-								2, // min 2 UTxOs: collateral and inputs must be disjoint
-							);
-						} catch (utxoErr) {
-							logger.error('[register] sortAndLimitUtxos failed', {
+						// Ensure 2+ UTXOs (collateral and inputs must be disjoint). Auto-split if possible.
+						while (true) {
+							let limitedUtxos;
+							try {
+								limitedUtxos = sortAndLimitUtxos(
+									currentUtxos,
+									8_000_000,
+									SERVICE_CONSTANTS.SMART_CONTRACT.minSellingWalletUtxoLovelace,
+									2, // min 2 UTxOs: collateral and inputs must be disjoint
+								);
+							} catch (utxoErr) {
+								logger.error('[register] sortAndLimitUtxos failed', {
+									requestId: request.id,
+									utxoCount: currentUtxos.length,
+									error: errorToString(utxoErr),
+								});
+								throw utxoErr;
+							}
+							logger.info('[register] utxos limited', {
 								requestId: request.id,
-								utxoCount: utxos.length,
-								error: errorToString(utxoErr),
+								limitedCount: limitedUtxos.length,
 							});
-							throw utxoErr;
-						}
-						logger.info('[register] utxos limited', {
-							requestId: request.id,
-							limitedCount: limitedUtxos.length,
-						});
-						if (limitedUtxos.length < 2) {
+
+							if (limitedUtxos.length >= 2) {
+								break;
+							}
+
+							// Need 2 UTXOs but only have 1 (or filtered to 1). Attempt split if feasible.
+							const singleUtxo = currentUtxos.find((u) => getLovelaceFromUtxo(u) >= 2_000_000);
+							if (
+								singleUtxo != null &&
+								isLovelaceOnlyUtxo(singleUtxo) &&
+								getLovelaceFromUtxo(singleUtxo) >= MIN_LOVELACE_FOR_SPLIT
+							) {
+								logger.info('[register] splitting single UTXO for collateral/input disjointness', {
+									requestId: request.id,
+									lovelace: getLovelaceFromUtxo(singleUtxo),
+								});
+								const txBuilder = new MeshTxBuilder({
+									fetcher: blockchainProvider,
+								});
+								// 1 input → 2 outputs: 2 ADA + change (each output must be ≥2 ADA)
+								const splitOutputLovelace = SERVICE_CONSTANTS.SMART_CONTRACT.minNftOutputLovelace;
+								const unsignedSplit = await txBuilder
+									.txIn(singleUtxo.input.txHash, singleUtxo.input.outputIndex)
+									.txOut(address, [{ unit: SERVICE_CONSTANTS.CARDANO.NATIVE_TOKEN, quantity: splitOutputLovelace }])
+									.changeAddress(address)
+									.setNetwork(network)
+									.complete();
+								const signedSplit = await wallet.signTx(unsignedSplit, true);
+								const splitTxHash = await wallet.submitTx(signedSplit);
+								logger.info('[register] split tx submitted', {
+									requestId: request.id,
+									txHash: splitTxHash,
+								});
+								const blockfrost = getBlockfrostInstance(
+									paymentSource.network,
+									paymentSource.PaymentSourceConfig.rpcProviderApiKey,
+								);
+								await waitForTxConfirmation(splitTxHash, blockfrost);
+								logger.info('[register] split tx confirmed, refetching UTXOs', {
+									requestId: request.id,
+								});
+								const refreshed = await generateWalletExtended(
+									paymentSource.network,
+									paymentSource.PaymentSourceConfig.rpcProviderApiKey,
+									request.SmartContractWallet.Secret.encryptedMnemonic,
+								);
+								currentUtxos = refreshed.utxos;
+								continue;
+							}
+
 							throw new Error(
 								'Registration requires at least 2 UTxOs (one for collateral, one for inputs). ' +
-									'Each UTxO must have ≥2 ADA. Please add funds or wait for UTxO consolidation.',
+									'Each UTxO must have ≥2 ADA. Please add funds with 2 separate transactions or wait for UTxO consolidation.',
 							);
 						}
+
+						const limitedUtxos = sortAndLimitUtxos(
+							currentUtxos,
+							8_000_000,
+							SERVICE_CONSTANTS.SMART_CONTRACT.minSellingWalletUtxoLovelace,
+							2,
+						);
 						const collateralUtxo = limitedUtxos[0];
 						const inputUtxos = limitedUtxos.slice(1);
 						const firstUtxo = inputUtxos[0];
@@ -223,7 +313,7 @@ export async function registerAgentV1() {
 							throw new Error('Expected at least one input UTxO (internal error)');
 						}
 						const remainingInputUtxos = inputUtxos.slice(1);
-						const sortedUtxos = sortUtxosByLovelaceDesc(utxos);
+						const sortedUtxos = sortUtxosByLovelaceDesc(currentUtxos);
 
 						const assetName = generateAssetName(firstUtxo);
 						const metadata = buildAgentMetadata(request);
