@@ -194,6 +194,7 @@ enum WebhookEventType {
   PAYMENT_ON_CHAIN_STATUS_CHANGED
   PURCHASE_ON_ERROR
   PAYMENT_ON_ERROR
+  WALLET_LOW_BALANCE
 }
 ```
 
@@ -206,7 +207,10 @@ interface BaseWebhookPayload {
 	event_type: WebhookEventType;
 	timestamp: string;
 	webhook_id: string;
-	data: Record<string, unknown>;
+	data:
+		| PurchaseOnChainStatusChangedPayload['data']
+		| PaymentOnChainStatusChangedPayload['data']
+		| WalletLowBalancePayload['data'];
 }
 ```
 

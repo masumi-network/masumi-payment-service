@@ -1,5 +1,5 @@
-import { metrics, trace } from '@opentelemetry/api';
-import type { Counter, Histogram, UpDownCounter } from '@opentelemetry/api';
+import { metrics } from '@opentelemetry/api';
+import type { Counter, Histogram } from '@opentelemetry/api';
 
 const meterName = 'masumi-payment-metrics';
 const meterVersion = '1.0.0';
@@ -16,11 +16,9 @@ let businessEndpointErrorCounter: Counter | null = null;
 let apiRequestDuration: Histogram | null = null;
 let apiErrorCounter: Counter | null = null;
 let businessEndpointDuration: Histogram | null = null;
-let businessEndpointSuccessCounter: Counter | null = null;
 let blockchainStateTransitionDuration: Histogram | null = null;
 let blockchainJourneyDuration: Histogram | null = null;
 let blockchainStateTransitionCounter: Counter | null = null;
-let activePaymentGauge: UpDownCounter | null = null;
 let walletLowBalanceAlertCounter: Counter | null = null;
 
 const getBusinessEndpointErrorCounter = (): Counter => {
@@ -61,15 +59,6 @@ const getBusinessEndpointDuration = (): Histogram => {
 	return businessEndpointDuration;
 };
 
-const getBusinessEndpointSuccessCounter = (): Counter => {
-	if (!businessEndpointSuccessCounter) {
-		businessEndpointSuccessCounter = getMeter().createCounter('business_endpoint_success_total', {
-			description: 'Total number of successful business endpoint requests',
-		});
-	}
-	return businessEndpointSuccessCounter;
-};
-
 const getBlockchainStateTransitionDuration = (): Histogram => {
 	if (!blockchainStateTransitionDuration) {
 		blockchainStateTransitionDuration = getMeter().createHistogram('blockchain_state_transition_duration_ms', {
@@ -97,15 +86,6 @@ const getBlockchainStateTransitionCounter = (): Counter => {
 		});
 	}
 	return blockchainStateTransitionCounter;
-};
-
-export const getActivePaymentGauge = (): UpDownCounter => {
-	if (!activePaymentGauge) {
-		activePaymentGauge = getMeter().createUpDownCounter('active_payments', {
-			description: 'Number of currently active payments',
-		});
-	}
-	return activePaymentGauge;
 };
 
 const getWalletLowBalanceAlertCounter = (): Counter => {
@@ -271,23 +251,7 @@ export const recordBusinessEndpointError = (
 	});
 };
 
-export const recordBusinessEndpointSuccess = (
-	endpoint: string,
-	method: string,
-	_duration: number,
-	attributes: Record<string, string | number> = {},
-) => {
-	const businessEndpoint = getBusinessEndpoint(endpoint);
-	const safeAttrs = filterToAllowlist(attributes, BUSINESS_METRIC_ATTRIBUTE_KEYS);
-
-	getBusinessEndpointSuccessCounter().add(1, {
-		...safeAttrs,
-		endpoint: businessEndpoint,
-		method: method.toLowerCase(),
-	});
-};
-
-export const recordBusinessEndpointDuration = (
+const recordBusinessEndpointDuration = (
 	endpoint: string,
 	method: string,
 	duration: number,
@@ -325,56 +289,6 @@ export const recordApiError = (
 	});
 };
 
-// Utility function to measure business endpoint performance
-export const measureBusinessEndpoint = <T>(
-	fn: () => Promise<T>,
-	endpoint: string,
-	method: string,
-	attributes: Record<string, string | number> = {},
-): Promise<T> => {
-	const start = Date.now();
-	let statusCode = 200;
-
-	return fn()
-		.then((result) => {
-			const duration = Date.now() - start;
-			recordBusinessEndpointSuccess(endpoint, method, duration, attributes);
-			recordBusinessEndpointDuration(endpoint, method, duration, statusCode, attributes);
-			return result;
-		})
-		.catch((error: unknown) => {
-			const duration = Date.now() - start;
-			const errorInstance = error instanceof Error ? error : new Error(String(error));
-			statusCode =
-				(errorInstance as { statusCode?: number; status?: number }).statusCode ||
-				(errorInstance as { statusCode?: number; status?: number }).status ||
-				500;
-			recordBusinessEndpointError(endpoint, method, statusCode, errorInstance, attributes);
-			recordBusinessEndpointDuration(endpoint, method, duration, statusCode, attributes);
-			throw error;
-		});
-};
-
-// Simplified duration recording that focuses on business endpoints
-export const recordBusinessProcessingDuration = (
-	duration: number,
-	endpoint: string,
-	method: string,
-	status: 'success' | 'failed',
-	attributes: Record<string, string | number> = {},
-) => {
-	const businessEndpoint = getBusinessEndpoint(endpoint);
-	const safeAttrs = filterToAllowlist(attributes, BUSINESS_METRIC_ATTRIBUTE_KEYS);
-
-	getBusinessEndpointDuration().record(duration, {
-		...safeAttrs,
-		endpoint: businessEndpoint,
-		method: method.toLowerCase(),
-		status,
-		operation: `${businessEndpoint}_${method.toLowerCase()}`,
-	});
-};
-
 // Keep the existing API request duration recording. Use normalized endpoint to avoid high cardinality.
 export const recordApiRequestDuration = (
 	duration: number,
@@ -403,9 +317,6 @@ export const recordApiRequestDuration = (
 export const isBusinessEndpoint = (endpoint: string): boolean => {
 	return getBusinessEndpoint(endpoint) !== 'unknown';
 };
-
-// Export the endpoint classifier for use in middleware
-export { getBusinessEndpoint };
 
 // Only these keys are safe for blockchain metrics (no entity_id to avoid unbounded cardinality).
 const BLOCKCHAIN_METRIC_ATTRIBUTE_KEYS = new Set<string>(['network']);
@@ -462,10 +373,4 @@ export const recordBlockchainJourney = (
 export const recordWalletLowBalanceAlert = (attributes: Record<string, string | number> = {}) => {
 	const safeAttrs = filterToAllowlist(attributes, WALLET_LOW_BALANCE_METRIC_ATTRIBUTE_KEYS);
 	getWalletLowBalanceAlertCounter().add(1, safeAttrs);
-};
-
-// Custom span creation for detailed tracing (keeping for advanced usage)
-export const createCustomSpan = (name: string, attributes: Record<string, string | number> = {}) => {
-	const tracer = trace.getTracer('masumi-payment-tracer', '1.0.0');
-	return tracer.startSpan(name, { attributes });
 };

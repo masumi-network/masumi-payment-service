@@ -2,7 +2,7 @@ import { prisma } from '@/utils/db';
 import { logger } from '@/utils/logger';
 import { recordStateTransition, recordBlockchainJourney } from '@/utils/metrics';
 import { PurchasingAction, PaymentAction, Prisma } from '@/generated/prisma/client';
-import { webhookEventsService } from '@/services/webhook-handler/webhook-events.service';
+import { webhookEventsService } from '@/services/webhooks';
 
 interface EntityStateCache {
 	currentState: string;
@@ -18,7 +18,7 @@ interface DiffCursor {
 	lastId?: string;
 }
 
-export class StateTransitionMonitor {
+class StateTransitionMonitor {
 	private static readonly BATCH_SIZE = 100;
 
 	private purchaseStateCache = new Map<string, EntityStateCache>();

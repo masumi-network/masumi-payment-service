@@ -1,65 +1,68 @@
+import { getOwnPlainObject, getOwnString, getOwnValue, isObject } from '@/lib/object-properties';
+
+type ApiErrorMessageCandidates = {
+  topLevelMessage: string | undefined;
+  topLevelErrorValue: string | undefined;
+  nestedErrorMessage: string | undefined;
+  nestedDataMessage: string | undefined;
+  nestedDataErrorMessage: string | undefined;
+  nestedDataErrorValue: string | undefined;
+};
+
+function getApiErrorMessageCandidates(value: object): ApiErrorMessageCandidates {
+  const nestedError = getOwnPlainObject(value, 'error');
+  const nestedResponse = getOwnPlainObject(value, 'response');
+  const nestedData = nestedResponse ? getOwnPlainObject(nestedResponse, 'data') : undefined;
+  const nestedDataError = nestedData ? getOwnPlainObject(nestedData, 'error') : undefined;
+  const topLevelErrorValue = getOwnValue(value, 'error');
+  const nestedDataErrorValue = nestedData ? getOwnValue(nestedData, 'error') : undefined;
+
+  return {
+    topLevelMessage: getOwnString(value, 'message'),
+    topLevelErrorValue: typeof topLevelErrorValue === 'string' ? topLevelErrorValue : undefined,
+    nestedErrorMessage: nestedError ? getOwnString(nestedError, 'message') : undefined,
+    nestedDataMessage: nestedData ? getOwnString(nestedData, 'message') : undefined,
+    nestedDataErrorMessage: nestedDataError ? getOwnString(nestedDataError, 'message') : undefined,
+    nestedDataErrorValue:
+      typeof nestedDataErrorValue === 'string' ? nestedDataErrorValue : undefined,
+  };
+}
+
+function getErrorInstanceApiMessage(value: object): string | undefined {
+  const candidates = getApiErrorMessageCandidates(value);
+
+  return (
+    candidates.topLevelErrorValue ||
+    candidates.nestedDataErrorMessage ||
+    candidates.nestedDataErrorValue ||
+    candidates.nestedDataMessage ||
+    candidates.nestedErrorMessage
+  );
+}
+
+function getPlainObjectApiMessage(value: object): string | undefined {
+  const candidates = getApiErrorMessageCandidates(value);
+
+  return (
+    candidates.topLevelMessage ||
+    candidates.topLevelErrorValue ||
+    candidates.nestedErrorMessage ||
+    candidates.nestedDataMessage ||
+    candidates.nestedDataErrorMessage ||
+    candidates.nestedDataErrorValue
+  );
+}
+
 export function extractApiErrorMessage(error: unknown, fallback: string): string {
   if (!error) return fallback;
 
   if (typeof error === 'string') return error;
 
-  if (error instanceof Error) {
-    const anyError = error as Error & {
-      response?: { data?: { error?: { message?: string } | string; message?: string } };
-      error?: { message?: string } | string;
-    };
-
-    const nestedMessage =
-      (typeof anyError.response?.data?.error === 'object' &&
-      anyError.response?.data?.error &&
-      'message' in anyError.response.data.error &&
-      typeof anyError.response.data.error.message === 'string'
-        ? anyError.response.data.error.message
-        : undefined) ||
-      (typeof anyError.response?.data?.error === 'string'
-        ? anyError.response.data.error
-        : undefined) ||
-      anyError.response?.data?.message ||
-      (typeof anyError.error === 'object' &&
-      anyError.error &&
-      'message' in anyError.error &&
-      typeof anyError.error.message === 'string'
-        ? anyError.error.message
-        : undefined);
-
-    return nestedMessage || anyError.message || fallback;
-  }
-
-  if (typeof error === 'object') {
-    const record = error as Record<string, unknown>;
-
-    const nestedError =
-      typeof record.error === 'object' && record.error !== null
-        ? (record.error as Record<string, unknown>)
-        : null;
-    const nestedResponse =
-      typeof record.response === 'object' && record.response !== null
-        ? (record.response as Record<string, unknown>)
-        : null;
-    const nestedData =
-      nestedResponse && typeof nestedResponse.data === 'object' && nestedResponse.data !== null
-        ? (nestedResponse.data as Record<string, unknown>)
-        : null;
-    const nestedDataError =
-      nestedData && typeof nestedData.error === 'object' && nestedData.error !== null
-        ? (nestedData.error as Record<string, unknown>)
-        : null;
-
+  if (isObject(error)) {
     const message =
-      (typeof record.message === 'string' ? record.message : undefined) ||
-      (nestedError && typeof nestedError.message === 'string' ? nestedError.message : undefined) ||
-      (nestedData && typeof nestedData.message === 'string' ? nestedData.message : undefined) ||
-      (nestedDataError && typeof nestedDataError.message === 'string'
-        ? nestedDataError.message
-        : undefined) ||
-      (nestedData && typeof nestedData.error === 'string' ? nestedData.error : undefined);
-
-    return message || fallback;
+      error instanceof Error ? getErrorInstanceApiMessage(error) : getPlainObjectApiMessage(error);
+    const inheritedErrorMessage = error instanceof Error ? error.message : undefined;
+    return message || inheritedErrorMessage || fallback;
   }
 
   return fallback;

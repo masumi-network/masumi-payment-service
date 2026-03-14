@@ -19,6 +19,7 @@ import { Spinner } from '../ui/spinner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { TOOLTIP_TEXTS } from '@/lib/constants/tooltips';
 import { HelpCircle } from 'lucide-react';
+import { extractApiErrorMessage } from '@/lib/api-error';
 
 interface AddPaymentSourceDialogProps {
   open: boolean;
@@ -308,9 +309,7 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
           onClose();
         },
         onError: (error: any) => {
-          const errorMessage =
-            error.message || error.error?.message || 'Failed to create payment source';
-          setError(errorMessage);
+          setError(extractApiErrorMessage(error, 'Failed to create payment source'));
         },
         onFinally: () => {
           setIsLoading(false);
@@ -342,8 +341,9 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
           }
         },
         onError: (error: any) => {
-          setWalletGenError(error?.message || 'Failed to generate mnemonic');
-          toast.error(error?.message || 'Failed to generate mnemonic');
+          const errorMessage = extractApiErrorMessage(error, 'Failed to generate mnemonic');
+          setWalletGenError(errorMessage);
+          toast.error(errorMessage);
         },
         onFinally: () => {
           setGeneratingPurchasing((prev) => ({ ...prev, [index]: false }));
@@ -373,8 +373,9 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
           }
         },
         onError: (error: any) => {
-          setWalletGenError(error?.message || 'Failed to generate mnemonic');
-          toast.error(error?.message || 'Failed to generate mnemonic');
+          const errorMessage = extractApiErrorMessage(error, 'Failed to generate mnemonic');
+          setWalletGenError(errorMessage);
+          toast.error(errorMessage);
         },
         onFinally: () => {
           setGeneratingSelling((prev) => ({ ...prev, [index]: false }));

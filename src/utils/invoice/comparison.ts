@@ -21,7 +21,7 @@ type PartyFields = {
 	phone: string | null;
 };
 
-export function partiesEqual(a: PartyFields, b: PartyFields): boolean {
+function partiesEqual(a: PartyFields, b: PartyFields): boolean {
 	return (
 		a.name === b.name &&
 		a.companyName === b.companyName &&

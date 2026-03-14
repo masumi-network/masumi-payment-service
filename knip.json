@@ -1,0 +1,50 @@
+{
+  "$schema": "./node_modules/knip/schema.json",
+  "ignoreDependencies": [
+    "@prisma/client",
+    "@typescript-eslint/eslint-plugin",
+    "@types/lz-string",
+    "sharp",
+    "tailwindcss-animate"
+  ],
+  "ignoreIssues": {
+    "frontend/src/lib/api/generated/**": ["exports", "types"],
+    "frontend/src/lib/api/generated/schemas.gen.ts": ["files"],
+    "src/routes/api/**/index.ts": ["exports", "types"],
+    "src/routes/api/**/schemas.ts": ["exports", "types", "duplicates"],
+    "src/routes/api/**/*.schemas.ts": ["exports", "types", "duplicates"],
+    "src/services/**/index.ts": ["exports", "types"],
+    "src/services/wallets/low-balance/service.ts": ["exports", "types"],
+    "src/utils/generator/swagger-generator/**/*.ts": ["exports", "types"],
+    "tests/e2e/utils/*.ts": ["duplicates"]
+  },
+  "workspaces": {
+    ".": {
+      "entry": [
+        "src/**/*.spec.ts",
+        "tests/**/*.ts",
+        "scripts/**/*.ts",
+        "jest*.ts"
+      ],
+      "project": ["src/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts", "prisma/**/*.ts", "jest*.ts"],
+      "ignoreFiles": [
+        "dist/**",
+        "smart-contracts/**",
+        "prisma/prisma.config.ts",
+        "prisma/seed.ts",
+        "scripts/generate-example-invoice.ts",
+        "src/utils/generator/swagger-generator/index.smoke.ts",
+        "src/utils/monitoring/diagnostic.ts"
+      ]
+    },
+    "frontend": {
+      "entry": [
+        "src/pages/**/*.{ts,tsx}",
+        "src/components/**/*.{ts,tsx}",
+        "src/lib/**/*.{ts,tsx}"
+      ],
+      "project": ["src/**/*.{ts,tsx}"],
+      "ignoreFiles": ["openapi-ts.config.ts", "public/fonts/inter/web/inter.css"]
+    }
+  }
+}

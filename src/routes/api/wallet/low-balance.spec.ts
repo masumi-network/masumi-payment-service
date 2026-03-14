@@ -59,7 +59,7 @@ jest.unstable_mockModule('@/utils/generator/wallet-generator', () => ({
 	generateWalletExtended: jest.fn(),
 }));
 
-jest.unstable_mockModule('@/services/webhook-handler/webhook-events.service', () => ({
+jest.unstable_mockModule('@/services/webhooks', () => ({
 	webhookEventsService: {
 		triggerWalletLowBalance: jest.fn(),
 	},

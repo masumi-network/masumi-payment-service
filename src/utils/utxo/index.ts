@@ -31,7 +31,7 @@ function filterUtxosByRequiredLovelace(utxos: UTxO[], requiredLovelace: number):
 /**
  * Limits UTXOs to maximum count for transaction size optimization
  */
-export function limitUtxos(utxos: UTxO[], requiredLovelace: number): UTxO[] {
+function limitUtxos(utxos: UTxO[], requiredLovelace: number): UTxO[] {
 	const filteredUtxos = filterUtxosByRequiredLovelace(utxos, 5000000);
 	if (filteredUtxos.length === 0) {
 		throw new Error('No suitable UTXOs found');
@@ -62,12 +62,4 @@ export function sortAndLimitUtxos(utxos: UTxO[], requiredLovelace: number): UTxO
 		throw new Error('No suitable UTXOs found');
 	}
 	return limitedUtxos;
-}
-
-/**
- * Gets the UTXO with highest lovelace amount (for transaction fees)
- * Returns the first UTXO after sorting by lovelace descending
- */
-export function getHighestLovelaceUtxo(utxos: UTxO[]): UTxO | undefined {
-	return sortUtxosByLovelaceDesc(utxos)[0];
 }

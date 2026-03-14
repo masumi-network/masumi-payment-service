@@ -16,7 +16,7 @@ import {
 	postWalletSchemaInput,
 	postWalletSchemaOutput,
 } from './schemas';
-import { serializeLowBalanceRecord, serializeLowBalanceSummary } from '@/services/wallet-low-balance-monitor';
+import { serializeLowBalanceRecord, serializeLowBalanceSummary } from '@/services/wallets';
 
 export {
 	getWalletSchemaInput,
