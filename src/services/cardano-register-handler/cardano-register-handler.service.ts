@@ -12,7 +12,7 @@ import { stringToMetadata, cleanMetadata } from '@/utils/converter/metadata-stri
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { errorToString } from '@/utils/converter/error-string-convert';
-import { sortUtxosByLovelaceDesc } from '@/utils/utxo';
+import { sortUtxosByLovelaceDesc, sortAndLimitUtxos } from '@/utils/utxo';
 import {
 	walletLowBalanceMonitorService,
 	toBalanceMapFromMeshUtxos,
@@ -182,27 +182,26 @@ export async function registerAgentV1() {
 
 						const { script, policyId } = await getRegistryScriptFromNetworkHandlerV1(paymentSource);
 
-						const sortedUtxos = sortUtxosByLovelaceDesc(utxos);
-
-						const pureAdaUtxos = sortedUtxos.filter((u) =>
-							u.output.amount.every((a) => a.unit === 'lovelace' || a.unit === ''),
+	
+						const limitedUtxos = sortAndLimitUtxos(
+							utxos,
+							8_000_000,
+							SERVICE_CONSTANTS.SMART_CONTRACT.minSellingWalletUtxoLovelace,
 						);
-						const collateralUtxo = pureAdaUtxos[pureAdaUtxos.length - 1] ?? sortedUtxos[sortedUtxos.length - 1];
-
-						// All UTxOs except collateral are used as regular inputs.
-						// This ensures collateral ∩ inputs = ∅ (required by Cardano ledger rules).
-						// For a single-UTxO wallet, firstUtxo falls back to the collateral UTxO itself
-						// and the transaction is attempted — blockchain will return an error if needed.
-						const inputUtxos = sortedUtxos.filter(
-							(u) =>
-								!(
-									u.input.txHash === collateralUtxo.input.txHash &&
-									u.input.outputIndex === collateralUtxo.input.outputIndex
-								),
-						);
-						const firstUtxo = inputUtxos[0] ?? collateralUtxo;
-						// Remaining inputs after firstUtxo — avoids duplicate txIn since firstUtxo is added explicitly in the builder
+						if (limitedUtxos.length < 2) {
+							throw new Error(
+								'Registration requires at least 2 UTxOs (one for collateral, one for inputs). ' +
+									'Each UTxO must have ≥2 ADA. Please add funds or wait for UTxO consolidation.',
+							);
+						}
+						const collateralUtxo = limitedUtxos[0];
+						const inputUtxos = limitedUtxos.slice(1);
+						const firstUtxo = inputUtxos[0];
+						if (firstUtxo == null) {
+							throw new Error('Expected at least one input UTxO (internal error)');
+						}
 						const remainingInputUtxos = inputUtxos.slice(1);
+						const sortedUtxos = sortUtxosByLovelaceDesc(utxos);
 
 						const assetName = generateAssetName(firstUtxo);
 						const metadata = buildAgentMetadata(request);
@@ -378,9 +377,6 @@ async function generateRegisterAgentTransaction(
 	);
 	const minCollateralReturnBigInt = BigInt(SERVICE_CONSTANTS.SMART_CONTRACT.minNftOutputLovelace);
 	if (collateralLovelace > minCollateralReturnBigInt) {
-		// setTotalCollateral causes MeshSDK to emit txTotalCollateral + collateralReturn in CBOR.
-		// We consume (collateralLovelace - minNftOutputLovelace) and return the rest,
-		// ensuring the return output stays above the minimum UTxO value.
 		txBuilder.setTotalCollateral((collateralLovelace - minCollateralReturnBigInt).toString());
 	}
 	return await txBuilder
