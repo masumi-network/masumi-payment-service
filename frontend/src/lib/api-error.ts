@@ -32,7 +32,6 @@ function getErrorInstanceApiMessage(value: object): string | undefined {
   const candidates = getApiErrorMessageCandidates(value);
 
   return (
-    candidates.topLevelErrorValue ||
     candidates.nestedDataErrorMessage ||
     candidates.nestedDataErrorValue ||
     candidates.nestedDataMessage ||
