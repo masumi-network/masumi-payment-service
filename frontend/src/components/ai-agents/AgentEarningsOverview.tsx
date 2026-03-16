@@ -77,8 +77,9 @@ export function AgentEarningsOverview({ agentIdentifier, agentName }: AgentEarni
         });
 
         const payments: Payment[] = paymentsResponse.data?.data?.Payments ?? [];
+        const paymentsToProcess = cursorId ? payments.slice(1) : payments;
 
-        payments
+        paymentsToProcess
           .filter(
             (payment) =>
               payment.agentIdentifier === agentIdentifier &&
