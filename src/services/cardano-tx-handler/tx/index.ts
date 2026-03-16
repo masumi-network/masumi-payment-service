@@ -1495,7 +1495,6 @@ export async function updateTransaction(
 				});
 				nextOpDescription = 'SubmitResult (ResultSubmitted)';
 			}
-		
 
 			if (nextStateDatum != null) {
 				const nativeTokenCount = getNativeTokenCount(extractedData.valueOutput.amount);
