@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { getPayment, Payment, PaymentSourceExtended } from '@/lib/api/generated';
+import { getPayment, Payment } from '@/lib/api/generated';
 import { Spinner } from '@/components/ui/spinner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -28,14 +28,12 @@ export function AgentEarningsOverview({ agentIdentifier, agentName }: AgentEarni
   const [error, setError] = useState<string | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState<TimePeriod>('30d');
 
-  const { paymentSources } = usePaymentSourceExtendedAll();
+  const { paymentSources, isLoading: isPaymentSourcesLoading } = usePaymentSourceExtendedAll();
 
-  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] = useState<
-    PaymentSourceExtended[]
-  >([]);
-  useEffect(() => {
-    setCurrentNetworkPaymentSources(paymentSources.filter((ps) => ps.network === network));
-  }, [paymentSources, network]);
+  const currentNetworkPaymentSources = useMemo(
+    () => paymentSources.filter((ps) => ps.network === network),
+    [paymentSources, network],
+  );
   const fetchAgentEarnings = useCallback(async () => {
     try {
       setIsLoading(true);
@@ -45,6 +43,11 @@ export function AgentEarningsOverview({ agentIdentifier, agentName }: AgentEarni
         (ps) => ps.id === selectedPaymentSourceId,
       );
       const smartContractAddress = selectedPaymentSource?.smartContractAddress;
+
+      if (!smartContractAddress) {
+        setEarningsData({ totalPayments: 0, totalEarnings: new Map() });
+        return;
+      }
 
       // Calculate date based on selected period
       const periodStartDate =
@@ -57,30 +60,26 @@ export function AgentEarningsOverview({ agentIdentifier, agentName }: AgentEarni
               return date;
             })();
 
-      // Filter transactions by agent identifier and last 30 days
       const allPayments: Payment[] = [];
-      let morePages = true;
-      while (morePages) {
-        // Fetch all payments for this agent
+      let cursorId: string | undefined = undefined;
+      let hasMorePages = true;
+
+      while (hasMorePages) {
         const paymentsResponse = await getPayment({
           client: apiClient,
           query: {
             network: network,
             includeHistory: 'true',
-            limit: 100, // Get more transactions for better accuracy
-            filterSmartContractAddress: smartContractAddress || undefined,
+            limit: 100,
+            filterSmartContractAddress: smartContractAddress,
+            cursorId: cursorId,
           },
         });
 
-        if (
-          paymentsResponse.data?.data == undefined ||
-          paymentsResponse.data?.data?.Payments.length < 100
-        ) {
-          morePages = false;
-        }
+        const payments: Payment[] = paymentsResponse.data?.data?.Payments ?? [];
 
-        if (paymentsResponse.data?.data?.Payments) {
-          paymentsResponse.data.data.Payments.filter(
+        payments
+          .filter(
             (payment) =>
               payment.agentIdentifier === agentIdentifier &&
               new Date(parseInt(payment.unlockTime || '0')) >= periodStartDate &&
@@ -88,9 +87,18 @@ export function AgentEarningsOverview({ agentIdentifier, agentName }: AgentEarni
               (payment.onChainState === 'Withdrawn' ||
                 payment.onChainState === 'ResultSubmitted' ||
                 payment.onChainState === 'DisputedWithdrawn'),
-          ).forEach((payment) => {
-            allPayments.push(payment);
-          });
+          )
+          .forEach((payment) => allPayments.push(payment));
+
+        if (payments.length < 100) {
+          hasMorePages = false;
+        } else {
+          const lastId = payments[payments.length - 1].id;
+          if (lastId === cursorId) {
+            hasMorePages = false;
+          } else {
+            cursorId = lastId;
+          }
         }
       }
 
@@ -132,10 +140,18 @@ export function AgentEarningsOverview({ agentIdentifier, agentName }: AgentEarni
   ]);
 
   useEffect(() => {
-    if (agentIdentifier) {
+    if (agentIdentifier && !isPaymentSourcesLoading) {
       fetchAgentEarnings();
     }
-  }, [agentIdentifier, fetchAgentEarnings]);
+  }, [agentIdentifier, isPaymentSourcesLoading, fetchAgentEarnings]);
+
+  if (!agentIdentifier) {
+    return (
+      <div className="p-8 text-center text-muted-foreground">
+        Earnings are not available for agents that have not been registered.
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
