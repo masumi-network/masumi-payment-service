@@ -22,6 +22,7 @@ import Head from 'next/head';
 import { AIAgentTableSkeleton } from '@/components/skeletons/AIAgentTableSkeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { useAgents } from '@/lib/queries/useAgents';
+import { useWallets } from '@/lib/queries/useWallets';
 import formatBalance from '@/lib/formatBalance';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { FaRegClock } from 'react-icons/fa';
@@ -90,6 +91,13 @@ export default function AIAgentsPage() {
     filterStatus,
     searchQuery: debouncedSearchQuery || undefined,
   });
+
+  const { refetch: refetchWallets } = useWallets();
+
+  const refetchAll = useCallback(() => {
+    void refetch();
+    void refetchWallets();
+  }, [refetch, refetchWallets]);
 
   // True whenever server-authoritative results haven't arrived yet:
   // either the debounce hasn't fired, or the server fetch is still in-flight with stale data.
@@ -198,7 +206,7 @@ export default function AIAgentsPage() {
             toast.success('AI agent deleted successfully');
             setIsDeleteDialogOpen(false);
             setSelectedAgentToDelete(null);
-            refetch();
+            refetchAll();
           },
           onError: (error: unknown) => {
             console.error('Error deleting agent:', error);
@@ -230,7 +238,7 @@ export default function AIAgentsPage() {
             toast.success('AI agent deregistered successfully');
             setIsDeleteDialogOpen(false);
             setSelectedAgentToDelete(null);
-            refetch();
+            refetchAll();
           },
           onError: (error: unknown) => {
             console.error('Error deregistering agent:', error);
@@ -294,7 +302,7 @@ export default function AIAgentsPage() {
             <div className="flex items-center gap-2">
               <RefreshButton
                 onRefresh={() => {
-                  refetch();
+                  refetchAll();
                 }}
                 isRefreshing={isFetchingAgents}
               />
@@ -535,7 +543,7 @@ export default function AIAgentsPage() {
             }}
             onSuccess={() => {
               setTimeout(() => {
-                refetch();
+                refetchAll();
               }, 250);
             }}
           />
@@ -548,7 +556,7 @@ export default function AIAgentsPage() {
             }}
             onSuccess={() => {
               setTimeout(() => {
-                refetch();
+                refetchAll();
               }, 2000);
             }}
             initialTab={initialDialogTab}
