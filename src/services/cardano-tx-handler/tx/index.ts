@@ -1464,11 +1464,6 @@ export async function updateTransaction(
 				});
 				nextOpDescription = 'SetRefundRequested (Disputed)';
 			} else if (newState === OnChainState.RefundRequested) {
-				// Next possible op: CancelRefund → FundsLocked (no result) or ResultSubmitted (with result)
-				const cancelRefundNextState =
-					dc.resultHash == null || dc.resultHash == ''
-						? SmartContractState.FundsLocked
-						: SmartContractState.ResultSubmitted;
 				nextStateDatum = getDatumFromBlockchainIdentifier({
 					buyerAddress: dc.buyerAddress,
 					sellerAddress: dc.sellerAddress,
@@ -1476,15 +1471,32 @@ export async function updateTransaction(
 					payByTime: dc.payByTime,
 					collateralReturnLovelace: dc.collateralReturnLovelace,
 					inputHash: dc.inputHash,
-					resultHash: dc.resultHash,
+					resultHash: DUMMY_RESULT_HASH,
 					resultTime: dc.resultTime,
 					unlockTime: dc.unlockTime,
 					externalDisputeUnlockTime: dc.externalDisputeUnlockTime,
 					newCooldownTimeSeller: BigInt(0),
 					newCooldownTimeBuyer: BigInt(0),
-					state: cancelRefundNextState,
+					state: SmartContractState.Disputed,
 				});
-				nextOpDescription = `CancelRefund (${cancelRefundNextState})`;
+				nextOpDescription = 'SubmitResult (Disputed)';
+			} else if (newState === OnChainState.FundsLocked) {
+				nextStateDatum = getDatumFromBlockchainIdentifier({
+					buyerAddress: dc.buyerAddress,
+					sellerAddress: dc.sellerAddress,
+					blockchainIdentifier: dc.blockchainIdentifier,
+					payByTime: dc.payByTime,
+					collateralReturnLovelace: dc.collateralReturnLovelace,
+					inputHash: dc.inputHash,
+					resultHash: DUMMY_RESULT_HASH,
+					resultTime: dc.resultTime,
+					unlockTime: dc.unlockTime,
+					externalDisputeUnlockTime: dc.externalDisputeUnlockTime,
+					newCooldownTimeSeller: BigInt(0),
+					newCooldownTimeBuyer: BigInt(0),
+					state: SmartContractState.ResultSubmitted,
+				});
+				nextOpDescription = 'SubmitResult (ResultSubmitted)';
 			} else if (newState === OnChainState.Disputed) {
 				// Next possible op: AuthorizeRefund → RefundRequested (result hash cleared)
 				nextStateDatum = getDatumFromBlockchainIdentifier({
