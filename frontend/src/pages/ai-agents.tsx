@@ -21,8 +21,8 @@ import { handleApiCall } from '@/lib/utils';
 import Head from 'next/head';
 import { AIAgentTableSkeleton } from '@/components/skeletons/AIAgentTableSkeleton';
 import { Spinner } from '@/components/ui/spinner';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAgents } from '@/lib/queries/useAgents';
-import { useWallets } from '@/lib/queries/useWallets';
 import formatBalance from '@/lib/formatBalance';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { FaRegClock } from 'react-icons/fa';
@@ -92,12 +92,12 @@ export default function AIAgentsPage() {
     searchQuery: debouncedSearchQuery || undefined,
   });
 
-  const { refetch: refetchWallets } = useWallets();
+  const queryClient = useQueryClient();
 
   const refetchAll = useCallback(() => {
     void refetch();
-    void refetchWallets();
-  }, [refetch, refetchWallets]);
+    void queryClient.invalidateQueries({ queryKey: ['wallets'] });
+  }, [refetch, queryClient]);
 
   // True whenever server-authoritative results haven't arrived yet:
   // either the debounce hasn't fired, or the server fetch is still in-flight with stale data.
