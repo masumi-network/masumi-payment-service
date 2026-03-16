@@ -511,6 +511,7 @@ export async function updateInitialTransactions(
 			tx.metadata,
 			buyerCardanoFees,
 			sellerCardanoFees,
+			rpcProviderApiKey,
 		);
 
 		await updateInitialPaymentTransaction(
@@ -533,6 +534,7 @@ export async function updateInitialPurchaseTransaction(
 	metadata: TransactionMetadata,
 	buyerCardanoFees: bigint,
 	sellerCardanoFees: bigint,
+	rpcProviderApiKey: string,
 ) {
 	await prisma.$transaction(
 		async (prisma) => {
@@ -753,6 +755,72 @@ export async function updateInitialPurchaseTransaction(
 				return;
 			}
 			//TODO: optional check amounts
+			try {
+				let coinsPerUtxoSize: number = CONSTANTS.FALLBACK_COINS_PER_UTXO_SIZE;
+				try {
+					const blockfrost = getBlockfrostInstance(paymentContract.network, rpcProviderApiKey);
+					const protocolParams = await blockfrost.epochsLatestParameters();
+					if (protocolParams.coins_per_utxo_size != null) {
+						coinsPerUtxoSize = Number(protocolParams.coins_per_utxo_size);
+					}
+					logger.debug('Fetched protocol parameters for min-UTXO validation (purchase)', {
+						coinsPerUtxoSize,
+						purchaseRequestId: dbEntry.id,
+					});
+				} catch (protocolFetchError) {
+					logger.warn('Failed to fetch protocol parameters for validation, using fallback', {
+						fallbackCoinsPerUtxoSize: coinsPerUtxoSize,
+						purchaseRequestId: dbEntry.id,
+						error: protocolFetchError instanceof Error ? protocolFetchError.message : String(protocolFetchError),
+					});
+				}
+
+				const datumForRequestRefund = getDatumFromBlockchainIdentifier({
+					buyerAddress: decodedNewContract.buyerAddress,
+					sellerAddress: decodedNewContract.sellerAddress,
+					blockchainIdentifier: decodedNewContract.blockchainIdentifier,
+					payByTime: decodedNewContract.payByTime,
+					collateralReturnLovelace: decodedNewContract.collateralReturnLovelace,
+					inputHash: decodedNewContract.inputHash,
+					resultHash: null,
+					resultTime: decodedNewContract.resultTime,
+					unlockTime: decodedNewContract.unlockTime,
+					externalDisputeUnlockTime: decodedNewContract.externalDisputeUnlockTime,
+					newCooldownTimeSeller: BigInt(0),
+					newCooldownTimeBuyer: BigInt(0),
+					state: SmartContractState.RefundRequested,
+				});
+
+				const nativeTokenCount = getNativeTokenCount(output.amount);
+				const minUtxoResult = calculateMinUtxo({
+					datum: datumForRequestRefund.value,
+					nativeTokenCount,
+					coinsPerUtxoSize,
+					includeBuffers: true,
+				});
+
+				const actualLovelace = getLovelaceFromAmounts(output.amount);
+
+				if (actualLovelace < minUtxoResult.minUtxoLovelace) {
+					const shortfall = minUtxoResult.minUtxoLovelace - actualLovelace;
+					logger.warn('Purchase may be underfunded for refund request. Top-up will be applied.', {
+						purchaseRequestId: dbEntry.id,
+						actualLovelace: actualLovelace.toString(),
+						requiredMinUtxo: minUtxoResult.minUtxoLovelace.toString(),
+						shortfall: shortfall.toString(),
+						nativeTokenCount,
+						coinsPerUtxoSize,
+						collateralReturnLovelace: decodedNewContract.collateralReturnLovelace.toString(),
+						note: 'Auto top-up will handle this during refund request submission',
+					});
+				}
+			} catch (minUtxoCheckError) {
+				logger.warn('Failed to perform min-UTXO validation check for purchase', {
+					purchaseRequestId: dbEntry.id,
+					error: minUtxoCheckError instanceof Error ? minUtxoCheckError.message : String(minUtxoCheckError),
+				});
+			}
+
 			await prisma.purchaseRequest.update({
 				where: { id: dbEntry.id },
 				data: {
@@ -1355,6 +1423,119 @@ export async function updateTransaction(
 				tx.tx.tx_hash,
 		);
 		return;
+	}
+
+	if (extractedData.valueOutput != null && extractedData.decodedNewContract != null) {
+		try {
+			let coinsPerUtxoSize: number = CONSTANTS.FALLBACK_COINS_PER_UTXO_SIZE;
+			try {
+				const protocolParams = await blockfrost.epochsLatestParameters();
+				if (protocolParams.coins_per_utxo_size != null) {
+					coinsPerUtxoSize = Number(protocolParams.coins_per_utxo_size);
+				}
+			} catch (protocolFetchError) {
+				logger.warn('Failed to fetch protocol parameters for min-UTXO transition validation, using fallback', {
+					fallbackCoinsPerUtxoSize: coinsPerUtxoSize,
+					newState,
+					error: protocolFetchError instanceof Error ? protocolFetchError.message : String(protocolFetchError),
+				});
+			}
+
+			const dc = extractedData.decodedNewContract;
+			let nextStateDatum: ReturnType<typeof getDatumFromBlockchainIdentifier> | null = null;
+			let nextOpDescription = '';
+
+			if (newState === OnChainState.ResultSubmitted) {
+				// Next possible op: SetRefundRequested → Disputed
+				nextStateDatum = getDatumFromBlockchainIdentifier({
+					buyerAddress: dc.buyerAddress,
+					sellerAddress: dc.sellerAddress,
+					blockchainIdentifier: dc.blockchainIdentifier,
+					payByTime: dc.payByTime,
+					collateralReturnLovelace: dc.collateralReturnLovelace,
+					inputHash: dc.inputHash,
+					resultHash: dc.resultHash,
+					resultTime: dc.resultTime,
+					unlockTime: dc.unlockTime,
+					externalDisputeUnlockTime: dc.externalDisputeUnlockTime,
+					newCooldownTimeSeller: BigInt(0),
+					newCooldownTimeBuyer: BigInt(0),
+					state: SmartContractState.Disputed,
+				});
+				nextOpDescription = 'SetRefundRequested (Disputed)';
+			} else if (newState === OnChainState.RefundRequested) {
+				// Next possible op: CancelRefund → FundsLocked (no result) or ResultSubmitted (with result)
+				const cancelRefundNextState =
+					dc.resultHash == null || dc.resultHash == ''
+						? SmartContractState.FundsLocked
+						: SmartContractState.ResultSubmitted;
+				nextStateDatum = getDatumFromBlockchainIdentifier({
+					buyerAddress: dc.buyerAddress,
+					sellerAddress: dc.sellerAddress,
+					blockchainIdentifier: dc.blockchainIdentifier,
+					payByTime: dc.payByTime,
+					collateralReturnLovelace: dc.collateralReturnLovelace,
+					inputHash: dc.inputHash,
+					resultHash: dc.resultHash,
+					resultTime: dc.resultTime,
+					unlockTime: dc.unlockTime,
+					externalDisputeUnlockTime: dc.externalDisputeUnlockTime,
+					newCooldownTimeSeller: BigInt(0),
+					newCooldownTimeBuyer: BigInt(0),
+					state: cancelRefundNextState,
+				});
+				nextOpDescription = `CancelRefund (${cancelRefundNextState})`;
+			} else if (newState === OnChainState.Disputed) {
+				// Next possible op: AuthorizeRefund → RefundRequested (result hash cleared)
+				nextStateDatum = getDatumFromBlockchainIdentifier({
+					buyerAddress: dc.buyerAddress,
+					sellerAddress: dc.sellerAddress,
+					blockchainIdentifier: dc.blockchainIdentifier,
+					payByTime: dc.payByTime,
+					collateralReturnLovelace: dc.collateralReturnLovelace,
+					inputHash: dc.inputHash,
+					resultHash: null,
+					resultTime: dc.resultTime,
+					unlockTime: dc.unlockTime,
+					externalDisputeUnlockTime: dc.externalDisputeUnlockTime,
+					newCooldownTimeSeller: BigInt(0),
+					newCooldownTimeBuyer: BigInt(0),
+					state: SmartContractState.RefundRequested,
+				});
+				nextOpDescription = 'AuthorizeRefund (RefundRequested)';
+			}
+
+			if (nextStateDatum != null) {
+				const nativeTokenCount = getNativeTokenCount(extractedData.valueOutput.amount);
+				const minUtxoResult = calculateMinUtxo({
+					datum: nextStateDatum.value,
+					nativeTokenCount,
+					coinsPerUtxoSize,
+					includeBuffers: true,
+				});
+
+				const actualLovelace = getLovelaceFromAmounts(extractedData.valueOutput.amount);
+
+				if (actualLovelace < minUtxoResult.minUtxoLovelace) {
+					const shortfall = minUtxoResult.minUtxoLovelace - actualLovelace;
+					logger.warn(`UTxO may be underfunded for next operation after ${String(newState)}. Top-up will be applied.`, {
+						newState,
+						nextOperation: nextOpDescription,
+						actualLovelace: actualLovelace.toString(),
+						requiredMinUtxo: minUtxoResult.minUtxoLovelace.toString(),
+						shortfall: shortfall.toString(),
+						nativeTokenCount,
+						coinsPerUtxoSize,
+						note: 'Auto top-up will handle this during next transaction submission',
+					});
+				}
+			}
+		} catch (minUtxoCheckError) {
+			logger.warn('Failed to perform min-UTXO validation check for state transition', {
+				newState,
+				error: minUtxoCheckError instanceof Error ? minUtxoCheckError.message : String(minUtxoCheckError),
+			});
+		}
 	}
 
 	if (newState == OnChainState.DisputedWithdrawn) {
