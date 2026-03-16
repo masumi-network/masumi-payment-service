@@ -18,12 +18,7 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useState, useEffect, useMemo } from 'react';
-import {
-  patchPaymentSourceExtended,
-  postWallet,
-  getUtxos,
-  PaymentSourceExtended,
-} from '@/lib/api/generated';
+import { patchPaymentSourceExtended, postWallet, getUtxos } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { useAppContext } from '@/lib/contexts/AppContext';
 
@@ -101,8 +96,10 @@ export function AddWalletDialog({ open, onClose, onSuccess }: AddWalletDialogPro
       });
 
       if (response.error) {
-        const error = response.error as { message: string };
-        const errorMessage = error.message || 'Failed to generate mnemonic phrase';
+        const errorMessage = extractApiErrorMessage(
+          response.error,
+          'Failed to generate mnemonic phrase',
+        );
         setError(errorMessage);
         toast.error(errorMessage);
         return;

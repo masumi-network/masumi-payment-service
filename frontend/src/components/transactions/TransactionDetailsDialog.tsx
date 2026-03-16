@@ -7,7 +7,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { CopyButton } from '@/components/ui/copy-button';
 import { WalletLink } from '@/components/ui/wallet-link';
 import { toast } from 'react-toastify';
-import { parseError } from '@/lib/utils';
 import { getUsdmConfig, TESTUSDM_CONFIG, USDCX_CONFIG } from '@/lib/constants/defaultWallets';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
@@ -24,6 +23,7 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/WalletDetailsDialog';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { findPaymentSourceWalletByVkey } from '@/lib/wallet-lookup';
+import { extractApiErrorMessage } from '@/lib/api-error';
 
 type Transaction =
   | (Payment & { type: 'payment' })
@@ -31,22 +31,14 @@ type Transaction =
       type: 'purchase';
     });
 
-interface ApiError {
-  message: string;
-  error?: {
-    message?: string;
-  };
-}
-
 interface TransactionDetailsDialogProps {
   transaction: Transaction | null;
   onClose: () => void;
   onRefresh: () => void;
 }
 
-const handleError = (error: ApiError) => {
-  const errorMessage = error.error?.message || error.message || 'An error occurred';
-  toast.error(errorMessage);
+const handleError = (error: unknown, fallback: string = 'An error occurred') => {
+  toast.error(extractApiErrorMessage(error, fallback));
 };
 
 const formatTimestamp = (timestamp: string | Date | null | undefined): string => {
@@ -237,9 +229,7 @@ export default function TransactionDetailsDialog({
           },
         });
         if (response.error) {
-          toast.error(
-            (response.error as { message: string }).message || 'Failed to clear error state',
-          );
+          handleError(response.error, 'Failed to clear error state');
           return false;
         }
         toast.success('Error state cleared successfully');
@@ -257,9 +247,7 @@ export default function TransactionDetailsDialog({
           },
         });
         if (response.error) {
-          toast.error(
-            (response.error as { message: string }).message || 'Failed to clear error state',
-          );
+          handleError(response.error, 'Failed to clear error state');
           return false;
         }
         toast.success('Error state cleared successfully');
@@ -270,7 +258,7 @@ export default function TransactionDetailsDialog({
 
       return false;
     } catch (error) {
-      handleError(error as ApiError);
+      handleError(error);
       return false;
     } finally {
       setIsLoading(false);
@@ -289,8 +277,7 @@ export default function TransactionDetailsDialog({
       });
 
       if (response.error) {
-        const error = response.error as { message: string };
-        toast.error(error.message || 'Refund request failed');
+        handleError(response.error, 'Refund request failed');
         return;
       }
 
@@ -303,7 +290,7 @@ export default function TransactionDetailsDialog({
       }
     } catch (error) {
       console.error('Refund error:', error);
-      toast.error(parseError(error));
+      handleError(error, 'Refund request failed');
     }
   };
 
@@ -319,8 +306,7 @@ export default function TransactionDetailsDialog({
       });
 
       if (response.error) {
-        const error = response.error as { message: string };
-        toast.error(error.message || 'Refund authorization failed');
+        handleError(response.error, 'Refund authorization failed');
         return;
       }
 
@@ -333,7 +319,7 @@ export default function TransactionDetailsDialog({
       }
     } catch (error) {
       console.error('Allow refund error:', error);
-      toast.error(parseError(error));
+      handleError(error, 'Refund authorization failed');
     }
   };
 
@@ -349,8 +335,7 @@ export default function TransactionDetailsDialog({
       });
 
       if (response.error) {
-        const error = response.error as { message: string };
-        toast.error(error.message || 'Refund cancel failed');
+        handleError(response.error, 'Refund cancel failed');
         return;
       }
 
@@ -363,7 +348,7 @@ export default function TransactionDetailsDialog({
       }
     } catch (error) {
       console.error('Cancel refund error:', error);
-      toast.error(parseError(error));
+      handleError(error, 'Refund cancel failed');
     }
   };
 

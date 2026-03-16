@@ -104,7 +104,7 @@ const formatPrice = (amount: string) => {
 };
 
 export default function Invoices() {
-  const { apiClient, network } = useAppContext();
+  const { network } = useAppContext();
 
   const [activeTab, setActiveTab] = useState('Generated Invoices');
   const [selectedMonth, setSelectedMonth] = useState(getPreviousMonth);

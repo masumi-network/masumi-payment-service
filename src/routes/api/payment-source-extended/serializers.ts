@@ -1,6 +1,6 @@
 import { splitWalletsByType } from '@/utils/shared/transformers';
 import type { PaymentSourceExtendedListRecord } from './queries';
-import { serializeLowBalanceSummary } from '@/services/wallet-low-balance-monitor';
+import { serializeLowBalanceSummary } from '@/services/wallets';
 
 export function serializePaymentSourceExtendedEntry(paymentSource: PaymentSourceExtendedListRecord) {
 	const { HotWallets, ...rest } = paymentSource;

@@ -6,7 +6,7 @@ import { WalletLink } from '@/components/ui/wallet-link';
 import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/WalletDetailsDialog';
 import formatBalance from '@/lib/formatBalance';
 import { CopyButton } from '@/components/ui/copy-button';
-import { PaymentSourceExtended, postRegistryDeregister } from '@/lib/api/generated';
+import { postRegistryDeregister } from '@/lib/api/generated';
 import { RegistryEntry, deleteRegistry } from '@/lib/api/generated';
 
 import { Separator } from '@/components/ui/separator';

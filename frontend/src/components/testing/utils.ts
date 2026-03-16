@@ -1,5 +1,15 @@
 import LZString from 'lz-string';
 import stringify from 'canonical-json';
+import { getOwnPlainObject, getOwnString, getOwnValue, isObject } from '@/lib/object-properties';
+
+type CanonicalJsonPrimitive = string | number | boolean | null;
+export type CanonicalJsonValue =
+  | CanonicalJsonPrimitive
+  | CanonicalJsonObject
+  | CanonicalJsonValue[];
+export interface CanonicalJsonObject {
+  [key: string]: CanonicalJsonValue;
+}
 
 export function extractErrorMessage(
   error: unknown,
@@ -11,17 +21,21 @@ export function extractErrorMessage(
 
   if (error instanceof Error) return error.message;
 
-  if (typeof error === 'object') {
-    const err = error as Record<string, unknown>;
+  if (isObject(error)) {
+    const data = getOwnPlainObject(error, 'data');
+    const directError = getOwnValue(error, 'error');
+    const message = getOwnString(error, 'message');
+    const statusText = getOwnString(error, 'statusText');
 
-    if (typeof err.message === 'string') return err.message;
-    if (typeof err.error === 'string') return err.error;
-    if (typeof err.statusText === 'string') return err.statusText;
+    if (message !== undefined) return message;
+    if (typeof directError === 'string') return directError;
+    if (statusText !== undefined) return statusText;
 
-    if (err.data && typeof err.data === 'object') {
-      const data = err.data as Record<string, unknown>;
-      if (typeof data.message === 'string') return data.message;
-      if (typeof data.error === 'string') return data.error;
+    if (data) {
+      const dataMessage = getOwnString(data, 'message');
+      if (dataMessage !== undefined) return dataMessage;
+      const dataError = getOwnValue(data, 'error');
+      if (typeof dataError === 'string') return dataError;
     }
 
     try {
@@ -53,7 +67,7 @@ export async function generateSHA256Hex(data: string): Promise<string> {
 
 // MIP-004 Input Hash: SHA256(identifierFromPurchaser + ";" + JCS(input_data))
 export async function generateMIP004InputHash(
-  inputData: Record<string, unknown>,
+  inputData: CanonicalJsonObject,
   identifierFromPurchaser: string,
 ): Promise<string> {
   const canonicalJson = stringify(inputData);

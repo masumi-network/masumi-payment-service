@@ -2,23 +2,16 @@ import { HotWalletType, Network, WebhookEventType } from '@/generated/prisma/cli
 import { z } from 'zod';
 import { queryPurchaseRequestSchemaOutput } from '@/routes/api/purchases';
 import { queryPaymentsSchemaOutput } from '@/routes/api/payments';
-
-// Base webhook payload schema
-export const baseWebhookPayloadSchema = z.object({
-	event_type: z.nativeEnum(WebhookEventType).describe('The type of webhook event that occurred'),
-	timestamp: z.string().datetime().describe('ISO 8601 timestamp when the webhook was triggered'),
-	webhook_id: z.string().describe('Unique identifier for this webhook delivery'),
-	data: z.record(z.string(), z.unknown()).describe('The actual data payload for the webhook event'),
-});
+import type { Jsonified } from '@/utils/json-value';
 
 // Extract individual purchase/payment item schemas from existing API schemas
 const purchaseItemSchema = queryPurchaseRequestSchemaOutput.shape.Purchases.element;
 const paymentItemSchema = queryPaymentsSchemaOutput.shape.Payments.element;
 
 // Generic webhook payload schema factory
-const createWebhookPayloadSchema = <T extends z.ZodLiteral<WebhookEventType>>(
+const createWebhookPayloadSchema = <T extends z.ZodLiteral<WebhookEventType>, TDataSchema extends z.ZodTypeAny>(
 	eventType: T,
-	dataSchema: z.ZodType,
+	dataSchema: TDataSchema,
 	description: string,
 ) =>
 	z.object({
@@ -29,32 +22,32 @@ const createWebhookPayloadSchema = <T extends z.ZodLiteral<WebhookEventType>>(
 	});
 
 // PURCHASE webhook schemas
-export const purchaseOnChainStatusChangedPayloadSchema = createWebhookPayloadSchema(
+const purchaseOnChainStatusChangedPayloadSchema = createWebhookPayloadSchema(
 	z.literal('PURCHASE_ON_CHAIN_STATUS_CHANGED'),
 	purchaseItemSchema,
 	'Complete purchase data matching the GET /purchases endpoint structure when purchase on-chain status changes',
 );
 
-export const purchaseOnErrorPayloadSchema = createWebhookPayloadSchema(
+const purchaseOnErrorPayloadSchema = createWebhookPayloadSchema(
 	z.literal('PURCHASE_ON_ERROR'),
 	purchaseItemSchema,
 	'Complete purchase data matching the GET /purchases endpoint structure when purchase encounters an error',
 );
 
 // PAYMENT webhook schemas
-export const paymentOnChainStatusChangedPayloadSchema = createWebhookPayloadSchema(
+const paymentOnChainStatusChangedPayloadSchema = createWebhookPayloadSchema(
 	z.literal('PAYMENT_ON_CHAIN_STATUS_CHANGED'),
 	paymentItemSchema,
 	'Complete payment data matching the GET /payments endpoint structure when payment on-chain status changes',
 );
 
-export const paymentOnErrorPayloadSchema = createWebhookPayloadSchema(
+const paymentOnErrorPayloadSchema = createWebhookPayloadSchema(
 	z.literal('PAYMENT_ON_ERROR'),
 	paymentItemSchema,
 	'Complete payment data matching the GET /payments endpoint structure when payment encounters an error',
 );
 
-export const walletLowBalancePayloadSchema = createWebhookPayloadSchema(
+const walletLowBalancePayloadSchema = createWebhookPayloadSchema(
 	z.literal('WALLET_LOW_BALANCE'),
 	z.object({
 		ruleId: z.string().describe('Low-balance rule id'),
@@ -81,19 +74,8 @@ export const webhookPayloadSchema = z.discriminatedUnion('event_type', [
 	walletLowBalancePayloadSchema,
 ]);
 
-// TypeScript types derived from schemas (for backward compatibility)
-export type BaseWebhookPayload = z.infer<typeof baseWebhookPayloadSchema>;
-export type PurchaseOnChainStatusChangedPayload = z.infer<typeof purchaseOnChainStatusChangedPayloadSchema>;
-export type PurchaseOnErrorPayload = z.infer<typeof purchaseOnErrorPayloadSchema>;
-export type PaymentOnChainStatusChangedPayload = z.infer<typeof paymentOnChainStatusChangedPayloadSchema>;
-export type PaymentOnErrorPayload = z.infer<typeof paymentOnErrorPayloadSchema>;
-export type WalletLowBalancePayload = z.infer<typeof walletLowBalancePayloadSchema>;
 export type WebhookPayload = z.infer<typeof webhookPayloadSchema>;
-
-export const WEBHOOK_EVENT_VALUES = {
-	PURCHASE_ON_CHAIN_STATUS_CHANGED: 'PURCHASE_ON_CHAIN_STATUS_CHANGED' as const,
-	PAYMENT_ON_CHAIN_STATUS_CHANGED: 'PAYMENT_ON_CHAIN_STATUS_CHANGED' as const,
-	PURCHASE_ON_ERROR: 'PURCHASE_ON_ERROR' as const,
-	PAYMENT_ON_ERROR: 'PAYMENT_ON_ERROR' as const,
-	WALLET_LOW_BALANCE: 'WALLET_LOW_BALANCE' as const,
-} as const;
+export type WebhookPayloadByEvent<T extends WebhookEventType> = Extract<WebhookPayload, { event_type: T }>;
+export type WebhookPayloadDataByEvent<T extends WebhookEventType> = WebhookPayloadByEvent<T>['data'];
+export type StoredWebhookPayload = Jsonified<WebhookPayload>;
+export type StoredWebhookPayloadByEvent<T extends WebhookEventType> = Extract<StoredWebhookPayload, { event_type: T }>;

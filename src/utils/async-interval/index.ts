@@ -5,8 +5,10 @@
 
 export class AsyncInterval {
 	private timeoutId: NodeJS.Timeout | null = null;
+	private timeoutResolve: (() => void) | null = null;
 	private isRunning = false;
 	private shouldStop = false;
+	private stopWaiters: Array<() => void> = [];
 
 	/**
 	 * Creates an async interval that waits for the previous execution to complete
@@ -14,7 +16,7 @@ export class AsyncInterval {
 	 * @param intervalMs The interval in milliseconds between executions
 	 * @returns A function to stop the interval
 	 */
-	static start(callback: () => Promise<void>, intervalMs: number): () => void {
+	static start(callback: () => Promise<void>, intervalMs: number): () => Promise<void> {
 		const instance = new AsyncInterval();
 		void instance.run(callback, intervalMs);
 		return () => instance.stop();
@@ -40,19 +42,44 @@ export class AsyncInterval {
 			}
 
 			await new Promise<void>((resolve) => {
-				this.timeoutId = setTimeout(() => resolve(), intervalMs);
+				const completeDelay = () => {
+					if (this.timeoutResolve !== completeDelay) {
+						return;
+					}
+
+					this.timeoutResolve = null;
+					this.timeoutId = null;
+					resolve();
+				};
+
+				this.timeoutResolve = completeDelay;
+				this.timeoutId = setTimeout(completeDelay, intervalMs);
 			});
 		}
 
 		this.isRunning = false;
 		this.timeoutId = null;
+		this.timeoutResolve = null;
+		const waiters = this.stopWaiters.splice(0);
+		waiters.forEach((waiter) => waiter());
 	}
 
-	private stop(): void {
+	private async stop(): Promise<void> {
 		this.shouldStop = true;
 		if (this.timeoutId) {
 			clearTimeout(this.timeoutId);
 			this.timeoutId = null;
 		}
+		if (this.timeoutResolve) {
+			// Capture and invoke while the guard still matches
+			const resolveDelay = this.timeoutResolve;
+			resolveDelay();
+		}
+		if (!this.isRunning) {
+			return;
+		}
+		await new Promise<void>((resolve) => {
+			this.stopWaiters.push(resolve);
+		});
 	}
 }
