@@ -536,6 +536,22 @@ export async function updateInitialPurchaseTransaction(
 	sellerCardanoFees: bigint,
 	rpcProviderApiKey: string,
 ) {
+	// Fetch coinsPerUtxoSize before the DB transaction — avoids holding serializable locks
+	// during a potentially slow external network call
+	let coinsPerUtxoSize: number = CONSTANTS.FALLBACK_COINS_PER_UTXO_SIZE;
+	try {
+		const blockfrost = getBlockfrostInstance(paymentContract.network, rpcProviderApiKey);
+		const protocolParams = await blockfrost.epochsLatestParameters();
+		if (protocolParams.coins_per_utxo_size != null) {
+			coinsPerUtxoSize = Number(protocolParams.coins_per_utxo_size);
+		}
+	} catch (protocolFetchError) {
+		logger.warn('Failed to fetch protocol parameters for min-UTXO validation (purchase), using fallback', {
+			fallbackCoinsPerUtxoSize: coinsPerUtxoSize,
+			error: protocolFetchError instanceof Error ? protocolFetchError.message : String(protocolFetchError),
+		});
+	}
+
 	await prisma.$transaction(
 		async (prisma) => {
 			const sellerWallet = await prisma.walletBase.findUnique({
@@ -756,25 +772,6 @@ export async function updateInitialPurchaseTransaction(
 			}
 			//TODO: optional check amounts
 			try {
-				let coinsPerUtxoSize: number = CONSTANTS.FALLBACK_COINS_PER_UTXO_SIZE;
-				try {
-					const blockfrost = getBlockfrostInstance(paymentContract.network, rpcProviderApiKey);
-					const protocolParams = await blockfrost.epochsLatestParameters();
-					if (protocolParams.coins_per_utxo_size != null) {
-						coinsPerUtxoSize = Number(protocolParams.coins_per_utxo_size);
-					}
-					logger.debug('Fetched protocol parameters for min-UTXO validation (purchase)', {
-						coinsPerUtxoSize,
-						purchaseRequestId: dbEntry.id,
-					});
-				} catch (protocolFetchError) {
-					logger.warn('Failed to fetch protocol parameters for validation, using fallback', {
-						fallbackCoinsPerUtxoSize: coinsPerUtxoSize,
-						purchaseRequestId: dbEntry.id,
-						error: protocolFetchError instanceof Error ? protocolFetchError.message : String(protocolFetchError),
-					});
-				}
-
 				const datumForRequestRefund = getDatumFromBlockchainIdentifier({
 					buyerAddress: decodedNewContract.buyerAddress,
 					sellerAddress: decodedNewContract.sellerAddress,
@@ -1497,25 +1494,8 @@ export async function updateTransaction(
 					state: SmartContractState.ResultSubmitted,
 				});
 				nextOpDescription = 'SubmitResult (ResultSubmitted)';
-			} else if (newState === OnChainState.Disputed) {
-				// Next possible op: AuthorizeRefund → RefundRequested (result hash cleared)
-				nextStateDatum = getDatumFromBlockchainIdentifier({
-					buyerAddress: dc.buyerAddress,
-					sellerAddress: dc.sellerAddress,
-					blockchainIdentifier: dc.blockchainIdentifier,
-					payByTime: dc.payByTime,
-					collateralReturnLovelace: dc.collateralReturnLovelace,
-					inputHash: dc.inputHash,
-					resultHash: null,
-					resultTime: dc.resultTime,
-					unlockTime: dc.unlockTime,
-					externalDisputeUnlockTime: dc.externalDisputeUnlockTime,
-					newCooldownTimeSeller: BigInt(0),
-					newCooldownTimeBuyer: BigInt(0),
-					state: SmartContractState.RefundRequested,
-				});
-				nextOpDescription = 'AuthorizeRefund (RefundRequested)';
 			}
+		
 
 			if (nextStateDatum != null) {
 				const nativeTokenCount = getNativeTokenCount(extractedData.valueOutput.amount);
