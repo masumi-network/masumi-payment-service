@@ -1,7 +1,7 @@
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { z } from '@/utils/zod-openapi';
 import createHttpError from 'http-errors';
-import { swapTokens, getPoolEstimate, Token, cancelSwapOrder, findOrderOutputIndex } from '@/services/swap';
+import { swapTokens, getPoolEstimate, Token, cancelSwapOrder, findOrderOutputIndex } from '@/services/integrations';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { Network, TransactionStatus, SwapStatus } from '@/generated/prisma/client';

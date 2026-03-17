@@ -10,12 +10,7 @@ import { Badge } from '@/components/ui/badge';
 
 import { cn, shortenAddress } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import {
-  deleteRegistry,
-  RegistryEntry,
-  PaymentSourceExtended,
-  postRegistryDeregister,
-} from '@/lib/api/generated';
+import { deleteRegistry, RegistryEntry, postRegistryDeregister } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { handleApiCall } from '@/lib/utils';
 import Head from 'next/head';

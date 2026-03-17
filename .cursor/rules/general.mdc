@@ -20,6 +20,7 @@ TypeScript Conventions
 - Use path aliases consistently: `@/*` maps to `src/*`, `@smart-contracts/*` maps to `smart-contracts/*`; never use relative imports like `../../`.
 - Prefix unused variables with underscore (e.g., `_error`, `_unused`) to satisfy ESLint.
 - Avoid `any` type when possible, but it is allowed in this project when necessary.
+- Never introduce unknown-valued map types; use domain types, explicit recursive value types, or property-reader helpers instead.
 - Use strict null checks; handle null and undefined explicitly.
 
 Formatting Standards

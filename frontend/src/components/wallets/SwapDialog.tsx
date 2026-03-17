@@ -12,7 +12,6 @@ import { Button } from '@/components/ui/button';
 import swappableTokens from '@/assets/swappableTokens.json';
 import { ArrowDownUp, Check, ChevronDown, ExternalLink, RefreshCw, XCircle } from 'lucide-react';
 import {
-  getSwapConfirm,
   getSwapEstimate,
   getUtxos,
   postSwap,

@@ -10,9 +10,11 @@
 	"scripts": {
 		"postinstall": "test -f prisma/prisma.config.ts && pnpm run prisma:generate || true",
 		"prepare": "husky",
-		"lint": "eslint \"src/**/*.{ts,js}\" --config eslint.config.mjs && pnpm -C frontend run lint",
-		"lint:fix": "eslint --fix \"src/**/*.{ts,js}\" --config eslint.config.mjs && pnpm -C frontend run lint:fix",
-		"lint-ci": "eslint \"src/**/*.{ts,js}\" --config eslint.config.mjs && pnpm -C frontend run lint",
+		"lint:backend": "eslint --config eslint.config.mjs",
+		"lint:backend:fix": "eslint --fix --config eslint.config.mjs",
+		"lint": "pnpm run lint:backend && pnpm -C frontend run lint",
+		"lint:fix": "pnpm run lint:backend:fix && pnpm -C frontend run lint:fix",
+		"lint-ci": "pnpm run lint:backend && pnpm -C frontend run lint",
 		"format": "prettier --log-level silent --write \"src/**/*.{ts,js}\" && pnpm -C frontend run format",
 		"test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest",
 		"test:watch": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --watch",
@@ -31,7 +33,8 @@
 		"start": "cross-env NODE_ENV=production node ./dist/index.js",
 		"swagger-json": "cross-env DATABASE_URL=postgresql://test@localhost:5432/masumi_payment_service ENCRYPTION_KEY=set-mock-enc-key-for-generation node --import tsx ./src/utils/generator/swagger-generator/cli.ts",
 		"swagger-postman": "pnpm run swagger-json && openapi2postmanv2 -s ./src/utils/generator/swagger-generator/openapi-docs.json -o ./masumi-payment-service.postman_collection.json -p",
-		"knip": "knip"
+		"knip": "knip",
+		"check:unused": "pnpm run knip && pnpm exec tsc --noEmit --noUnusedLocals --noUnusedParameters && pnpm -C frontend exec tsc --noEmit --noUnusedLocals --noUnusedParameters"
 	},
 	"dependencies": {
 		"@asteasolutions/zod-to-openapi": "^8.4.0",
@@ -62,7 +65,6 @@
 		"@prisma/instrumentation": "^7.2.0",
 		"@types/express": "^5.0.0",
 		"@types/swagger-ui-express": "^4.1.8",
-		"@typescript-eslint/eslint-plugin": "^8.53.0",
 		"advanced-retry": "^1.2.1",
 		"async-mutex": "^0.5.0",
 		"canonical-json": "^0.2.0",
@@ -73,7 +75,6 @@
 		"express": "^5.2.1",
 		"express-zod-api": "^26.3.1",
 		"http-errors": "^2.0.1",
-		"json-bigint": "^1.0.0",
 		"jspdf": "^4.2.0",
 		"jspdf-autotable": "^5.0.7",
 		"lucid-cardano": "0.10.7",
@@ -93,7 +94,6 @@
 		"@eslint/js": "^9.39.2",
 		"@jest/globals": "^30.2.0",
 		"@jest/types": "^30.2.0",
-		"@types/express-serve-static-core": "^5.1.1",
 		"@types/http-errors": "^2.0.5",
 		"@types/jest": "^30.0.0",
 		"@types/node": "^25.0.9",
@@ -112,11 +112,9 @@
 		"prettier": "^3.8.0",
 		"prisma": "^7.2.0",
 		"ts-jest": "^29.3.1",
-		"ts-node": "^10.9.2",
 		"tsconfig-paths": "^4.2.0",
 		"tsx": "^4.19.3",
 		"typescript": "^5.8.3",
-		"wait-for-expect": "^4.0.0",
 		"wait-on": "^9.0.3"
 	},
 	"overrides": {

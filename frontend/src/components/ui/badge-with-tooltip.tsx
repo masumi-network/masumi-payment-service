@@ -1,4 +1,3 @@
-import * as React from 'react';
 import { Badge, BadgeProps } from './badge';
 import { Tooltip, TooltipContent, TooltipTrigger } from './tooltip';
 import { cn } from '@/lib/utils';

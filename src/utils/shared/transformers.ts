@@ -16,10 +16,6 @@ export function transformBigIntAmounts<T extends { unit: string; amount: bigint 
 	}));
 }
 
-export function transformNullableBigInt(value: bigint | null | undefined): string | null {
-	return value != null ? value.toString() : null;
-}
-
 export function transformPaymentGetAmounts(payment: {
 	RequestedFunds: Array<{ unit: string; amount: bigint }>;
 	WithdrawnForSeller: Array<{ unit: string; amount: bigint }>;

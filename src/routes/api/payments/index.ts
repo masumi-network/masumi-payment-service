@@ -11,7 +11,7 @@ import { decrypt } from '@/utils/security/encryption';
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { generateSHA256Hash } from '@/utils/crypto';
 import stringify from 'canonical-json';
-import { fetchAssetInWalletAndMetadata } from '@/services/blockchain/asset-metadata';
+import { fetchAssetInWalletAndMetadata } from '@/services/integrations/asset-metadata';
 import {
 	decodeBlockchainIdentifier,
 	generateBlockchainIdentifier,
