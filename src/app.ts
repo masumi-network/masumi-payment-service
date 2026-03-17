@@ -21,7 +21,6 @@ const __dirname = path.resolve();
 async function initialize() {
 	await initDB();
 
-
 	await migrateApiKeyEncryption();
 
 	const defaultAdminHash = await generateApiKeySecureHash(DEFAULTS.DEFAULT_ADMIN_KEY);

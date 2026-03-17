@@ -394,9 +394,7 @@ describe('authMiddleware', () => {
 	});
 
 	it('network-limited key respects its allowed networks', async () => {
-		mockFindUnique.mockResolvedValue(
-			makeApiKey({ canPay: true, networkLimit: [Network.Preprod, Network.Mainnet] }),
-		);
+		mockFindUnique.mockResolvedValue(makeApiKey({ canPay: true, networkLimit: [Network.Preprod, Network.Mainnet] }));
 
 		const { responseMock, output } = await testMiddleware({
 			middleware: authMiddleware({ canPay: true }),

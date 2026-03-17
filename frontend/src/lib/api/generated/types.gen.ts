@@ -2380,9 +2380,9 @@ export type GetApiKeyData = {
          */
         take?: number;
         /**
-         * Used to paginate through the API keys
+         * Used to paginate through the API keys (provide the id of the last returned key)
          */
-        cursorToken?: string;
+        cursorId?: string;
     };
     url: '/api-key';
 };

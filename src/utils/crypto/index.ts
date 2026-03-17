@@ -7,7 +7,6 @@ const generateSHA256Hash = (data: string) => {
 
 const generateHash = generateSHA256Hash;
 
-
 let _apiKeySalt: Buffer | undefined;
 const _getApiKeySalt = (): Buffer => {
 	if (!_apiKeySalt) {
