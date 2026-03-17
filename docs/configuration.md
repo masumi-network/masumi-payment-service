@@ -42,8 +42,13 @@ If you run the service with Docker:
   - **CHECK_UNSET_REFUND_INTERVAL**: check interval in seconds for checking unset refund
   - **CHECK_AUTHORIZE_REFUND_INTERVAL**: check interval in seconds for checking authorize refund
   - **CHECK_SUBMIT_RESULT_INTERVAL**: check interval in seconds for checking submit result
+  - **CHECK_REGISTRY_TRANSACTIONS_INTERVAL**: check interval in seconds for syncing registry transactions
   - **REGISTER_AGENT_INTERVAL**: check interval in seconds for registering agent
   - **DEREGISTER_AGENT_INTERVAL**: check interval in seconds for deregistering agent
+  - **AUTO_DECISION_INTERVAL**: interval in seconds for automatic decision handling
+  - **WEBHOOK_DELIVERY_INTERVAL**: interval in seconds for processing queued webhook deliveries
+  - **WEBHOOK_CLEANUP_INTERVAL**: interval in seconds for deleting old webhook deliveries
+  - **LOW_BALANCE_CHECK_INTERVAL**: interval in seconds for monitored wallet low-balance checks
 
 1. If you're setting up the database for the first time (or want to provide some initial data) you also need the
    following variables:

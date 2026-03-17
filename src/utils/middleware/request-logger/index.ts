@@ -73,7 +73,8 @@ export const requestLogger = (req: Request, res: Response, next: NextFunction) =
 	}
 
 	res.on('finish', () => {
-		const duration = req.startTime ? Date.now() - req.startTime : 0;
+		const requestStartTime = typeof res.locals.requestStartTime === 'number' ? res.locals.requestStartTime : undefined;
+		const duration = requestStartTime != null ? Date.now() - requestStartTime : 0;
 		const statusCode = res.statusCode;
 		const isError = statusCode >= 400;
 		const shouldLog = !skip || isError;

@@ -98,7 +98,7 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 	);
 }
 
-export async function generateMasumiSmartContractInteractionTransactionCustomFee(
+async function generateMasumiSmartContractInteractionTransactionCustomFee(
 	type: 'AuthorizeRefund' | 'CancelRefund' | 'RequestRefund' | 'SubmitResult',
 	blockchainProvider: IFetcher,
 	network: Network,
@@ -315,7 +315,7 @@ export async function generateMasumiSmartContractWithdrawTransactionAutomaticFee
 	);
 }
 
-export async function generateMasumiSmartContractWithdrawTransactionCustomFee(
+async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 	type: 'CollectCompleted' | 'CollectRefund',
 	blockchainProvider: IFetcher,
 	network: Network,

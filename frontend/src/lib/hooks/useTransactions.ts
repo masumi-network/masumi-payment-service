@@ -7,7 +7,6 @@ import { handleApiCall } from '@/lib/utils';
 import {
   buildTransactionsPage,
   dedupeTransactions,
-  type Transaction,
   type TransactionsPage,
   type TransactionsPageParam,
 } from './useTransactions.helpers';

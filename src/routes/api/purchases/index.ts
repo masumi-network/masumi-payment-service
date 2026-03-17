@@ -8,7 +8,7 @@ import { checkSignature, resolvePaymentKeyHash } from '@meshsdk/core';
 import { logger } from '@/utils/logger';
 import { metadataSchema } from '../registry/wallet';
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
-import { handlePurchaseCreditInit } from '@/services/token-credit';
+import { handlePurchaseCreditInit } from '@/services/integrations';
 import stringify from 'canonical-json';
 import { getPublicKeyFromCoseKey } from '@/utils/converter/public-key-convert';
 import { generateSHA256Hash } from '@/utils/crypto';

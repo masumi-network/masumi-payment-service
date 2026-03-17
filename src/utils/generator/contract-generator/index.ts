@@ -231,7 +231,7 @@ export function getDatumFromBlockchainIdentifier({
 	});
 }
 
-export function getDatum({
+function getDatum({
 	buyerAddress,
 	sellerAddress,
 	referenceKey,

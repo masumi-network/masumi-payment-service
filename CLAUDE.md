@@ -4,16 +4,16 @@ Cardano blockchain payment escrow service with Aiken smart contracts. Enables se
 
 ## Quick Reference
 
-| Action | Command |
-|--------|---------|
-| Start dev server | `pnpm dev` |
-| Run linting | `pnpm run lint` |
-| Format code | `pnpm run format` |
-| Run tests | `pnpm run test` |
-| Run DB migrations | `pnpm run prisma:migrate:dev` |
-| Generate Prisma client | `pnpm run prisma:generate` |
+| Action                 | Command                                     |
+| ---------------------- | ------------------------------------------- |
+| Start dev server       | `pnpm dev`                                  |
+| Run linting            | `pnpm run lint`                             |
+| Format code            | `pnpm run format`                           |
+| Run tests              | `pnpm run test`                             |
+| Run DB migrations      | `pnpm run prisma:migrate:dev`               |
+| Generate Prisma client | `pnpm run prisma:generate`                  |
 | Generate OpenAPI types | `cd frontend && pnpm run openapi-ts-latest` |
-| Generate Swagger JSON | `pnpm run swagger-json` |
+| Generate Swagger JSON  | `pnpm run swagger-json`                     |
 
 ## Tech Stack
 
@@ -51,6 +51,7 @@ Cardano blockchain payment escrow service with Aiken smart contracts. Enables se
 - Use `createHttpError()` for HTTP errors, never throw plain Error.
 - Use logger from `@/utils/logger`; never use console.log.
 - Encrypt wallet secrets using `@/utils/security/encryption` utilities.
+- Never use unknown-valued map types; use domain types, Prisma JSON types, or explicit property guards.
 - Never edit files in `src/generated/` or `frontend/src/lib/api/generated/`.
 
 ## Formatting Standards
@@ -107,6 +108,7 @@ Cardano blockchain payment escrow service with Aiken smart contracts. Enables se
 ## Pre-push Hooks
 
 The following run automatically before push:
+
 - ESLint check on full project
 - Swagger JSON generation
 - Postman collection update
