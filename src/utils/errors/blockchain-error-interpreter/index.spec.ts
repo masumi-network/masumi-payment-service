@@ -129,6 +129,13 @@ describe('interpretBlockchainError', () => {
 			expect(result).toContain('concurrency lock');
 			expect(result).not.toContain('timed out');
 		});
+
+		it('should NOT match "tryacquire timeout" (goes to pattern 20 instead)', () => {
+			const result = interpretBlockchainError(new Error('tryacquire timeout exceeded'));
+			expect(result).toContain('. Hint:');
+			expect(result).toContain('concurrency lock');
+			expect(result).not.toContain('timed out');
+		});
 	});
 
 	describe('pattern 10 — Blockfrost 402', () => {

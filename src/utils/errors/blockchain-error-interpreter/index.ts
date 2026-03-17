@@ -40,7 +40,7 @@ const BLOCKCHAIN_ERROR_PATTERNS: ErrorPattern[] = [
 		hint: 'This transaction has already been submitted to the chain. No action needed; wait for confirmation.',
 	},
 	{
-		test: (msg) => msg.includes('timeout') && !msg.includes('mutex'),
+		test: (msg) => msg.includes('timeout') && !msg.includes('mutex') && !msg.includes('tryacquire'),
 		hint: 'The blockchain request timed out. The network may be congested; retry after a short delay.',
 	},
 	{
