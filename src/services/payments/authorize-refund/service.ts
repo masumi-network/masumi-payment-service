@@ -11,7 +11,7 @@ import {
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { decodeV1ContractDatum, newCooldownTime } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
-import { errorToString } from '@/utils/converter/error-string-convert';
+import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, tryAcquire, MutexInterface } from 'async-mutex';
@@ -233,7 +233,7 @@ export async function authorizeRefundV1() {
 								...connectPreviousAction(request.nextActionId),
 								...createNextPaymentAction(PaymentAction.WaitingForManualAction, {
 									errorType: PaymentErrorType.Unknown,
-									errorNote: 'Authorizing refund failed: ' + errorToString(error),
+									errorNote: 'Authorizing refund failed: ' + interpretBlockchainError(error),
 								}),
 								SmartContractWallet: {
 									update: {

@@ -11,7 +11,7 @@ import {
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { decodeV1ContractDatum, newCooldownTime } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPurchases } from '@/utils/db/lock-and-query-purchases';
-import { errorToString } from '@/utils/converter/error-string-convert';
+import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
@@ -273,7 +273,7 @@ export async function cancelRefundsV1() {
 								...connectPreviousAction(request.nextActionId),
 								...createNextPurchaseAction(PurchasingAction.WaitingForManualAction, {
 									errorType: PurchaseErrorType.Unknown,
-									errorNote: 'Cancelling refund failed: ' + errorToString(error),
+									errorNote: 'Cancelling refund failed: ' + interpretBlockchainError(error),
 								}),
 								SmartContractWallet: {
 									update: {

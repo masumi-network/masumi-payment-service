@@ -9,7 +9,7 @@ import {
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { decodeV1ContractDatum } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
-import { errorToString } from '@/utils/converter/error-string-convert';
+import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
@@ -339,7 +339,7 @@ export async function collectOutstandingPaymentsV1() {
 								...connectPreviousAction(request.nextActionId),
 								...createNextPaymentAction(PaymentAction.WaitingForManualAction, {
 									errorType: PaymentErrorType.Unknown,
-									errorNote: 'Collecting payments failed: ' + errorToString(error),
+									errorNote: 'Collecting payments failed: ' + interpretBlockchainError(error),
 								}),
 								SmartContractWallet: {
 									update: {

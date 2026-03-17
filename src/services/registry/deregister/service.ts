@@ -8,7 +8,7 @@ import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contrac
 import { SERVICE_CONSTANTS } from '@/utils/config';
 import { advancedRetry, delayErrorResolver, RetryResult } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
-import { errorToString } from '@/utils/converter/error-string-convert';
+import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { extractAssetName } from '@/utils/converter/agent-identifier';
 import { sortAndLimitUtxos } from '@/utils/utxo';
 import {
@@ -49,7 +49,7 @@ async function handlePotentialDeregistrationFailure(
 			where: { id: registryRequest.id },
 			data: {
 				state: RegistrationState.DeregistrationFailed,
-				error: errorToString(error),
+				error: interpretBlockchainError(error),
 				SmartContractWallet: {
 					update: {
 						lockedAt: null,

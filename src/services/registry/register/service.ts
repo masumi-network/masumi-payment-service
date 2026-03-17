@@ -10,7 +10,7 @@ import { blake2b } from 'ethereum-cryptography/blake2b';
 import { stringToMetadata, cleanMetadata } from '@/utils/converter/metadata-string-convert';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
-import { errorToString } from '@/utils/converter/error-string-convert';
+import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { sortUtxosByLovelaceDesc } from '@/utils/utxo';
 import {
 	createMeshProvider,
@@ -256,7 +256,7 @@ export async function registerAgentV1() {
 							where: { id: request.id },
 							data: {
 								state: RegistrationState.RegistrationFailed,
-								error: errorToString(error),
+								error: interpretBlockchainError(error),
 								SmartContractWallet: {
 									update: {
 										lockedAt: null,
