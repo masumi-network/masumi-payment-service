@@ -11,8 +11,10 @@ model ApiKey {
   id                    String              @id @default(cuid())
   createdAt             DateTime            @default(now())
   updatedAt             DateTime            @updatedAt
-  token                 String              @unique
-  tokenHash             String              @unique
+  token                 String?             @unique
+  tokenHash             String?             @unique
+  encryptedToken        String?
+  tokenHashSecure       String?             @unique
   status                ApiKeyStatus
 
   // Flag-based permissions (must be set explicitly on create)

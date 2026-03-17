@@ -3,7 +3,11 @@ import { ApiKeyStatus, Network } from '@/generated/prisma/client';
 
 export const getAPIKeySchemaInput = z.object({
 	take: z.coerce.number().min(1).max(100).default(10).describe('The number of API keys to return'),
-	cursorToken: z.string().max(550).optional().describe('Used to paginate through the API keys'),
+	cursorId: z
+		.string()
+		.max(550)
+		.optional()
+		.describe('Used to paginate through the API keys (provide the id of the last returned key)'),
 });
 
 export const apiKeyOutputSchema = z
