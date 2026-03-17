@@ -17,6 +17,7 @@ import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import cbor from 'cbor';
 import { Address, Datum, toPlutusData, toValue, TransactionOutput } from '@meshsdk/core-cst';
 import { CONSTANTS } from '@/utils/config';
+import { calculateMinUtxo } from '@/utils/min-utxo';
 import { toBalanceMapFromMeshUtxos, walletLowBalanceMonitorService } from '@/services/wallets';
 import {
 	connectPreviousAction,
