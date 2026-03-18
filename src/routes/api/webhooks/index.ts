@@ -97,7 +97,7 @@ export const listWebhooksGet = payAuthenticatedEndpointFactory.build({
 				CreatedByApiKey: {
 					select: {
 						id: true,
-						token: true, // For display purposes (safe to show)
+						token: true,
 					},
 				},
 			},
