@@ -8239,7 +8239,7 @@ export type GetWebhooksResponses = {
                 disabledAt: Date | null;
                 CreatedBy: {
                     apiKeyId: string;
-                    apiKeyToken: string;
+                    apiKeyToken: string | null;
                 } | null;
             }>;
         };
