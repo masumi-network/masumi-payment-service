@@ -11,7 +11,7 @@ import path from 'path';
 import { requestTiming } from '@/utils/middleware/request-timing';
 import { DEFAULTS } from '@/utils/config';
 import { requestLogger } from '@/utils/middleware/request-logger';
-import { generateApiKeySecureHash } from '@/utils/crypto';
+import { generateApiKeySecureHash } from '@/utils/crypto/api-key-hash';
 import { migrateApiKeyEncryption } from '@/utils/startup-migrations/api-key-encryption';
 import { blockchainStateMonitorService } from '@/services/monitoring';
 import fs from 'fs';

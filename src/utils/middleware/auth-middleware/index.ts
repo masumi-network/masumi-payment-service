@@ -3,7 +3,7 @@ import createHttpError from 'http-errors';
 import { prisma } from '@/utils/db';
 import { z } from '@/utils/zod-openapi';
 import { ApiKeyStatus, Network } from '@/generated/prisma/enums';
-import { generateApiKeySecureHash } from '@/utils/crypto';
+import { generateApiKeySecureHash } from '@/utils/crypto/api-key-hash';
 import { RequiredPermissionFlags, hasPermission, getPermissionName } from '@/utils/permissions';
 
 /**

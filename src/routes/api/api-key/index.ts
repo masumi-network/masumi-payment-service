@@ -3,7 +3,7 @@ import { ApiKeyStatus, Network } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import { createId } from '@paralleldrive/cuid2';
 import createHttpError from 'http-errors';
-import { generateApiKeySecureHash } from '@/utils/crypto';
+import { generateApiKeySecureHash } from '@/utils/crypto/api-key-hash';
 import { encrypt, decrypt } from '@/utils/security/encryption';
 import { CONSTANTS } from '@/utils/config';
 import { logger } from '@/utils/logger';

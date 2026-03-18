@@ -1,6 +1,6 @@
 import { prisma } from '@/utils/db';
 import { encrypt } from '@/utils/security/encryption';
-import { generateApiKeySecureHash } from '@/utils/crypto';
+import { generateApiKeySecureHash } from '@/utils/crypto/api-key-hash';
 import { logger } from '@/utils/logger';
 
 /**

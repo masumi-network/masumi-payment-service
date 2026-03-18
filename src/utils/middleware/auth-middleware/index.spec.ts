@@ -21,7 +21,7 @@ jest.unstable_mockModule('@/utils/db', () => ({
 
 const { authMiddleware } = await import('./index');
 const { prisma } = await import('@/utils/db');
-const { generateApiKeySecureHash } = await import('@/utils/crypto');
+const { generateApiKeySecureHash } = await import('@/utils/crypto/api-key-hash');
 const mockFindUnique = prisma.apiKey.findUnique as AnyMock;
 
 /** Build a minimal valid active API key DB row */

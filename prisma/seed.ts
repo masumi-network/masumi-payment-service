@@ -17,7 +17,7 @@ import { DEFAULTS } from './../src/utils/config';
 import { getRegistryScriptV1 } from './../src/utils/generator/contract-generator';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import paymentPlutus from '../smart-contracts/payment/plutus.json';
-import { generateApiKeySecureHash } from '../src/utils/crypto';
+import { generateApiKeySecureHash } from '../src/utils/crypto/api-key-hash';
 import { MeshWallet, PlutusScript } from '@meshsdk/core';
 
 import { Pool } from 'pg';

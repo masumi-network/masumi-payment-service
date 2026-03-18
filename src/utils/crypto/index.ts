@@ -7,4 +7,3 @@ const generateSHA256Hash = (data: string) => {
 const generateHash = generateSHA256Hash;
 
 export { generateHash, generateSHA256Hash };
-export { generateApiKeySecureHash } from './api-key-hash';
