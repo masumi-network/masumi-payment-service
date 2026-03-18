@@ -12,7 +12,7 @@ import { logger } from '@/utils/logger';
 import { generateWalletExtended } from '@/utils/generator/wallet-generator';
 import { getDatumFromBlockchainIdentifier, SmartContractState } from '@/utils/generator/contract-generator';
 import { convertNetwork } from '@/utils/converter/network-convert';
-import { errorToString } from '@/utils/converter/error-string-convert';
+import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import cbor from 'cbor';
 import { Address, Datum, toPlutusData, toValue, TransactionOutput } from '@meshsdk/core-cst';
@@ -680,7 +680,7 @@ export async function batchLatestPaymentEntriesV1() {
 												create: {
 													requestedAction: PurchasingAction.WaitingForManualAction,
 													errorType: PurchaseErrorType.Unknown,
-													errorNote: 'Batching payments failed: ' + errorToString(error),
+													errorNote: 'Batching payments failed: ' + interpretBlockchainError(error),
 												},
 											},
 										},
@@ -741,7 +741,7 @@ export async function batchLatestPaymentEntriesV1() {
 										create: {
 											requestedAction: PurchasingAction.WaitingForManualAction,
 											errorType: PurchaseErrorType.Unknown,
-											errorNote: 'Outer error: Batching payments failed: ' + errorToString(error),
+											errorNote: 'Outer error: Batching payments failed: ' + interpretBlockchainError(error),
 										},
 									},
 								},

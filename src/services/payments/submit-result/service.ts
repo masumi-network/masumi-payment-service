@@ -11,7 +11,7 @@ import {
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { decodeV1ContractDatum, DecodedV1ContractDatum, newCooldownTime } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
-import { errorToString } from '@/utils/converter/error-string-convert';
+import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { sortAndLimitUtxos } from '@/utils/utxo';
 import { delayErrorResolver } from 'advanced-retry';
 import { advancedRetryAll } from 'advanced-retry';
@@ -89,7 +89,7 @@ async function handlePaymentRequestResults(
 					...connectPreviousAction(request.nextActionId),
 					...createNextPaymentAction(PaymentAction.WaitingForManualAction, {
 						errorType: PaymentErrorType.Unknown,
-						errorNote: 'Submitting result failed: ' + errorToString(result.error),
+						errorNote: 'Submitting result failed: ' + interpretBlockchainError(result.error),
 					}),
 					SmartContractWallet: {
 						update: {
