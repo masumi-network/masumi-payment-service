@@ -312,12 +312,7 @@ async function processSinglePaymentRequest(
 		);
 	}
 
-	const limitedUtxos = sortAndLimitUtxos(
-		currentUtxos,
-		8_000_000,
-		collateralMinLovelace,
-		2,
-	);
+	const limitedUtxos = sortAndLimitUtxos(currentUtxos, 8_000_000, collateralMinLovelace, 2);
 	const collateralUtxo = limitedUtxos[0];
 	const inputUtxos = limitedUtxos.slice(1);
 	if (collateralUtxo == null || inputUtxos.length === 0) {

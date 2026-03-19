@@ -132,11 +132,7 @@ export async function deRegisterAgentV1() {
 						// Using minSellingWalletUtxoLovelace (2 ADA) here would allow selecting a UTXO
 						// that doesn't meet the collateral threshold, causing submission failures.
 						const collateralMinLovelace = parseInt(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount, 10);
-						const limitedFilteredUtxos = sortAndLimitUtxos(
-							utxos,
-							8_000_000,
-							collateralMinLovelace,
-						);
+						const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8_000_000, collateralMinLovelace);
 						const collateralUtxo = limitedFilteredUtxos[0];
 						if (collateralUtxo == null) {
 							throw new Error('Collateral UTXO not found');

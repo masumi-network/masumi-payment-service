@@ -144,11 +144,7 @@ async function processSingleRefundCollection(
 
 	// Collateral must be a single UTXO with ≥5 ADA as required by the Cardano protocol.
 	const collateralMinLovelace = parseInt(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount, 10);
-	const limitedFilteredUtxos = sortAndLimitUtxos(
-		utxos,
-		8000000,
-		collateralMinLovelace,
-	);
+	const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000, collateralMinLovelace);
 	const collateralUtxo = limitedFilteredUtxos[0];
 	if (collateralUtxo == null) {
 		throw new Error('Collateral UTXO not found');

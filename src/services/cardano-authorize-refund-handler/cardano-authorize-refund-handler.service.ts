@@ -188,11 +188,7 @@ export async function authorizeRefundV1() {
 
 						// Collateral must be a single UTXO with ≥5 ADA as required by the Cardano protocol.
 						const collateralMinLovelace = parseInt(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount, 10);
-						const limitedFilteredUtxos = sortAndLimitUtxos(
-							utxos,
-							8000000,
-							collateralMinLovelace,
-						);
+						const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000, collateralMinLovelace);
 
 						const unsignedTx = await generateMasumiSmartContractInteractionTransactionAutomaticFees(
 							'AuthorizeRefund',

@@ -229,12 +229,7 @@ async function processSinglePurchaseRequest(
 		);
 	}
 
-	const limitedFilteredUtxos = sortAndLimitUtxos(
-		currentUtxos,
-		8_000_000,
-		collateralMinLovelace,
-		2,
-	);
+	const limitedFilteredUtxos = sortAndLimitUtxos(currentUtxos, 8_000_000, collateralMinLovelace, 2);
 	const collateralUtxo = limitedFilteredUtxos[0];
 	const inputUtxos = limitedFilteredUtxos.slice(1);
 	if (collateralUtxo == null || inputUtxos.length === 0) {

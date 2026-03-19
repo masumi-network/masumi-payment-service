@@ -19,11 +19,7 @@ import {
 	type MeshLikeUtxo,
 } from '@/services/wallet-low-balance-monitor';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
-import {
-	getLovelaceFromUtxo,
-	waitForTxConfirmation,
-	MIN_LOVELACE_FOR_SPLIT,
-} from '@/utils/utxo/split-utxo';
+import { getLovelaceFromUtxo, waitForTxConfirmation, MIN_LOVELACE_FOR_SPLIT } from '@/utils/utxo/split-utxo';
 
 const mutex = new Mutex();
 
@@ -284,8 +280,7 @@ export async function registerAgentV1() {
 								// If the change would be below the min UTxO threshold (~1.5 ADA),
 								// abort early instead of producing an invalid 0-lovelace output.
 								const estimatedFeeBuffer = 500_000; // ~0.5 ADA conservative fee buffer
-								const estimatedChange =
-									singleUtxoLovelace - splitOutputLovelace - estimatedFeeBuffer;
+								const estimatedChange = singleUtxoLovelace - splitOutputLovelace - estimatedFeeBuffer;
 								if (estimatedChange < MIN_CHANGE_LOVELACE) {
 									throw new Error(
 										`Wallet balance too low to split: UTXO has ${singleUtxoLovelace} lovelace but splitting would leave ` +
@@ -331,12 +326,7 @@ export async function registerAgentV1() {
 							);
 						}
 
-						const limitedUtxos = sortAndLimitUtxos(
-							currentUtxos,
-							8_000_000,
-							MIN_COLLATERAL_UTXO_LOVELACE,
-							2,
-						);
+						const limitedUtxos = sortAndLimitUtxos(currentUtxos, 8_000_000, MIN_COLLATERAL_UTXO_LOVELACE, 2);
 						const collateralUtxo = limitedUtxos[0];
 						const inputUtxos = limitedUtxos.slice(1);
 						const firstUtxo = inputUtxos[0];
