@@ -18,9 +18,6 @@ import { HttpExistsError } from '@/utils/errors/http-exists-error';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
-import { CONSTANTS } from '@/utils/config';
-import { calculateMinUtxo, DUMMY_RESULT_HASH } from '@/utils/min-utxo';
-import { getDatumFromBlockchainIdentifier, SmartContractState } from '@/utils/generator/contract-generator';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import {
@@ -415,59 +412,6 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 			}
 			const smartContractAddress = paymentSource.smartContractAddress;
 
-			let requiredCollateralReturnLovelace: bigint = 0n;
-			try {
-				let coinsPerUtxoSize: number = CONSTANTS.FALLBACK_COINS_PER_UTXO_SIZE;
-				try {
-					const protocolParams = await provider.epochsLatestParameters();
-					if (protocolParams.coins_per_utxo_size != null) {
-						coinsPerUtxoSize = Number(protocolParams.coins_per_utxo_size);
-					}
-				} catch {
-					logger.debug('Failed to fetch protocol params for collateral estimate, using fallback', {
-						fallbackCoinsPerUtxoSize: coinsPerUtxoSize,
-					});
-				}
-
-				const estimateDatum = getDatumFromBlockchainIdentifier({
-					buyerAddress: addressOfAsset,
-					sellerAddress: addressOfAsset,
-					blockchainIdentifier: input.blockchainIdentifier,
-					inputHash: input.inputHash,
-					payByTime: payByTime,
-					collateralReturnLovelace: 0n,
-					resultHash: DUMMY_RESULT_HASH,
-					resultTime: submitResultTime,
-					unlockTime: unlockTime,
-					externalDisputeUnlockTime: externalDisputeUnlockTime,
-					newCooldownTimeSeller: 0n,
-					newCooldownTimeBuyer: 0n,
-					state: SmartContractState.ResultSubmitted,
-				});
-
-				const requestedLovelace = agentIdentifierAmountsMap.get('') ?? agentIdentifierAmountsMap.get('lovelace') ?? 0n;
-				const nativeTokenCount = Array.from(agentIdentifierAmountsMap.keys()).filter(
-					(u) => u !== '' && u.toLowerCase() !== 'lovelace',
-				).length;
-
-				const minUtxoResult = calculateMinUtxo({
-					datum: estimateDatum.value,
-					nativeTokenCount,
-					coinsPerUtxoSize,
-					includeBuffers: true,
-				});
-
-				const shortfall = minUtxoResult.minUtxoLovelace - requestedLovelace;
-				if (shortfall > 0n) {
-					requiredCollateralReturnLovelace =
-						shortfall < CONSTANTS.MIN_COLLATERAL_LOVELACE ? CONSTANTS.MIN_COLLATERAL_LOVELACE : shortfall;
-				}
-			} catch {
-				logger.warn('Failed to calculate required collateral for purchase request', {
-					blockchainIdentifier: input.blockchainIdentifier,
-				});
-			}
-
 			const initialPurchaseRequest = await handlePurchaseCreditInit({
 				id: ctx.id,
 				walletScopeIds: ctx.walletScopeIds,
@@ -489,7 +433,6 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 				unlockTime: unlockTime,
 				externalDisputeUnlockTime: externalDisputeUnlockTime,
 				inputHash: input.inputHash,
-				collateralReturnLovelace: requiredCollateralReturnLovelace > 0n ? requiredCollateralReturnLovelace : undefined,
 			});
 
 			return {

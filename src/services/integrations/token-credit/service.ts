@@ -18,7 +18,6 @@ export async function handlePurchaseCreditInit({
 	externalDisputeUnlockTime,
 	unlockTime,
 	inputHash,
-	collateralReturnLovelace,
 }: {
 	id: string;
 	walletScopeIds: string[] | null;
@@ -34,7 +33,6 @@ export async function handlePurchaseCreditInit({
 	externalDisputeUnlockTime: bigint;
 	unlockTime: bigint;
 	inputHash: string;
-	collateralReturnLovelace?: bigint;
 }) {
 	let remainingAttempts = 5;
 	while (remainingAttempts > 0) {
@@ -54,7 +52,6 @@ export async function handlePurchaseCreditInit({
 				externalDisputeUnlockTime,
 				unlockTime,
 				inputHash,
-				collateralReturnLovelace,
 			});
 		} catch (error) {
 			if (error instanceof InsufficientFundsError) {
