@@ -232,10 +232,12 @@ export async function cancelRefundsV1() {
 
 						const { invalidBefore, invalidAfter } = calculateTransactionTimeWindow(network);
 
+						// Collateral must be a single UTXO with ≥5 ADA as required by the Cardano protocol.
+						const collateralMinLovelace = parseInt(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount, 10);
 						const limitedFilteredUtxos = sortAndLimitUtxos(
 							utxos,
 							8000000,
-							SERVICE_CONSTANTS.SMART_CONTRACT.minSellingWalletUtxoLovelace,
+							collateralMinLovelace,
 						);
 
 						const unsignedTx = await generateMasumiSmartContractInteractionTransactionAutomaticFees(

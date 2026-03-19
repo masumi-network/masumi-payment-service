@@ -161,14 +161,18 @@ async function processSinglePurchaseRequest(
 		unixTimeToEnclosingSlot(Number(decodedContract.unlockTime) + 150000, SLOT_CONFIG_NETWORK[network]) + 3;
 	const invalidAfter = Math.min(initialInvalid, secondaryInvalid);
 
+	// Collateral requires a single UTXO with ≥5 ADA per the Cardano protocol.
+	const collateralMinLovelace = parseInt(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount, 10);
 	let currentUtxos = utxos;
+	let splitAttempts = 0;
+	const maxSplitAttempts = 3;
 	while (true) {
 		let limitedFilteredUtxos;
 		try {
 			limitedFilteredUtxos = sortAndLimitUtxos(
 				currentUtxos,
 				8_000_000,
-				SERVICE_CONSTANTS.SMART_CONTRACT.minSellingWalletUtxoLovelace,
+				collateralMinLovelace,
 				2, // collateral and inputs must be disjoint
 			);
 		} catch (utxoErr) {
@@ -182,12 +186,20 @@ async function processSinglePurchaseRequest(
 		if (limitedFilteredUtxos.length >= 2) {
 			break;
 		}
-		const singleUtxo = currentUtxos.find((u) => getLovelaceFromUtxo(u) >= 2_000_000);
+		if (splitAttempts >= maxSplitAttempts) {
+			throw new Error(
+				`RequestRefund requires at least 2 UTxOs (one for collateral ≥${collateralMinLovelace / 1_000_000} ADA, one for inputs). ` +
+					`Gave up after ${maxSplitAttempts} split attempt(s). Please add more funds.`,
+			);
+		}
+		const singleUtxo = currentUtxos.find((u) => getLovelaceFromUtxo(u) >= MIN_LOVELACE_FOR_SPLIT);
 		const singleUtxoLovelace = singleUtxo != null ? getLovelaceFromUtxo(singleUtxo) : 0;
 		if (singleUtxo != null && singleUtxoLovelace >= MIN_LOVELACE_FOR_SPLIT) {
+			splitAttempts++;
 			logger.info('RequestRefund: splitting single UTXO for collateral/input disjointness', {
 				requestId: request.id,
 				lovelace: singleUtxoLovelace,
+				attempt: splitAttempts,
 			});
 			const blockfrost = getBlockfrostInstance(
 				paymentContract.network,
@@ -200,7 +212,8 @@ async function processSinglePurchaseRequest(
 				network,
 				singleUtxo,
 				blockfrost,
-				splitOutputLovelace: Number(SERVICE_CONSTANTS.SMART_CONTRACT.minNftOutputLovelace),
+				// Split out a collateral-grade output (5 ADA); change covers inputs.
+				splitOutputLovelace: collateralMinLovelace,
 			});
 			const refreshed = await generateWalletExtended(
 				paymentContract.network,
@@ -211,15 +224,15 @@ async function processSinglePurchaseRequest(
 			continue;
 		}
 		throw new Error(
-			'RequestRefund requires at least 2 UTxOs (one for collateral, one for inputs). ' +
-				'Each UTxO must have ≥2 ADA. Please add funds with 2 separate transactions.',
+			`RequestRefund requires at least 2 UTxOs (one for collateral ≥${collateralMinLovelace / 1_000_000} ADA, one for inputs). ` +
+				'No single UTXO is large enough to split. Please add more funds.',
 		);
 	}
 
 	const limitedFilteredUtxos = sortAndLimitUtxos(
 		currentUtxos,
 		8_000_000,
-		SERVICE_CONSTANTS.SMART_CONTRACT.minSellingWalletUtxoLovelace,
+		collateralMinLovelace,
 		2,
 	);
 	const collateralUtxo = limitedFilteredUtxos[0];

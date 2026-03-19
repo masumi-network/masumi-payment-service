@@ -128,10 +128,14 @@ export async function deRegisterAgentV1() {
 
 						const tokenUtxo = findTokenUtxo(utxos, request.agentIdentifier);
 
+						// Collateral must be a single UTXO with ≥5 ADA as required by the Cardano protocol.
+						// Using minSellingWalletUtxoLovelace (2 ADA) here would allow selecting a UTXO
+						// that doesn't meet the collateral threshold, causing submission failures.
+						const collateralMinLovelace = parseInt(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount, 10);
 						const limitedFilteredUtxos = sortAndLimitUtxos(
 							utxos,
 							8_000_000,
-							SERVICE_CONSTANTS.SMART_CONTRACT.minSellingWalletUtxoLovelace,
+							collateralMinLovelace,
 						);
 						const collateralUtxo = limitedFilteredUtxos[0];
 						if (collateralUtxo == null) {
