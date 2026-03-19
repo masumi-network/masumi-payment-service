@@ -11,7 +11,10 @@ import { stringToMetadata, cleanMetadata } from '@/utils/converter/metadata-stri
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
-import { sortUtxosByLovelaceDesc } from '@/utils/utxo';
+import { sortAndLimitUtxos, getLovelaceFromUtxo, MIN_LOVELACE_FOR_SPLIT, waitForTxConfirmation } from '@/utils/utxo';
+import { getBlockfrostInstance } from '@/utils/blockfrost';
+import { generateWalletExtended } from '@/utils/generator/wallet-generator';
+import { errorToString } from '@/utils/converter/error-string-convert';
 import {
 	createMeshProvider,
 	createPendingTransaction,
@@ -325,7 +328,6 @@ export async function registerAgentV1() {
 							throw new Error('Expected at least one input UTxO (internal error)');
 						}
 						const remainingInputUtxos = inputUtxos.slice(1);
-						const sortedUtxos = sortUtxosByLovelaceDesc(currentUtxos);
 
 						const assetName = generateAssetName(firstUtxo);
 						const metadata = buildAgentMetadata(request);
@@ -376,7 +378,7 @@ export async function registerAgentV1() {
 						});
 						logger.info('[register] submitting tx to chain', { requestId: request.id });
 						const newTxHash = await wallet.submitTx(signedTx);
-						await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
+						await walletSession.evaluateProjectedBalance(unsignedTx, limitedUtxos);
 						await prisma.registryRequest.update({
 							where: { id: request.id },
 							data: {
