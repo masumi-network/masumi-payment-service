@@ -4,7 +4,7 @@ import { LowBalanceStatus } from '@/generated/prisma/enums';
 import { prisma } from '@/utils/db';
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { buildHotWalletScopeFilter } from '@/utils/shared/wallet-scope';
-import { serializeLowBalanceRecord, walletLowBalanceMonitorService } from '@/services/wallet-low-balance-monitor';
+import { serializeLowBalanceRecord, walletLowBalanceMonitorService } from '@/services/wallets';
 import {
 	deleteWalletLowBalanceRuleSchemaInput,
 	deleteWalletLowBalanceRuleSchemaOutput,

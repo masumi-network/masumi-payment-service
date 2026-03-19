@@ -28,6 +28,7 @@ import { CopyButton } from '@/components/ui/copy-button';
 import { shortenAddress } from '@/lib/utils';
 import { useApiKey } from '@/lib/hooks/useApiKey';
 import { ApiKey } from '@/lib/api/generated';
+import { extractApiErrorMessage } from '@/lib/api-error';
 
 /**
  * Get a human-readable permission label from flags.
@@ -150,7 +151,7 @@ export default function ApiKeys() {
         },
         onError: (error: any) => {
           console.error('Error deleting API key:', error);
-          toast.error(error.message || 'Failed to delete API key');
+          toast.error(extractApiErrorMessage(error, 'Failed to delete API key'));
         },
         onFinally: () => {
           setIsDeleting(false);

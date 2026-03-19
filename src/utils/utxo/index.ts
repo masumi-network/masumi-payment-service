@@ -28,14 +28,11 @@ function filterUtxosByRequiredLovelace(utxos: UTxO[], requiredLovelace: number):
 		return lovelace >= requiredLovelace;
 	});
 }
-
-export function limitUtxos(
-	utxos: UTxO[],
-	requiredLovelace: number,
-	minPerUtxoLovelace = 5_000_000,
-	minUtxoCount = 1,
-): UTxO[] {
-	const filteredUtxos = filterUtxosByRequiredLovelace(utxos, minPerUtxoLovelace);
+/**
+ * Limits UTXOs to maximum count for transaction size optimization
+ */
+function limitUtxos(utxos: UTxO[], requiredLovelace: number): UTxO[] {
+	const filteredUtxos = filterUtxosByRequiredLovelace(utxos, 5000000);
 	if (filteredUtxos.length === 0) {
 		throw new Error('No suitable UTXOs found');
 	}
@@ -68,18 +65,3 @@ export function sortAndLimitUtxos(
 	}
 	return limitedUtxos;
 }
-
-/**
- * Gets the UTXO with highest lovelace amount (for transaction fees)
- * Returns the first UTXO after sorting by lovelace descending
- */
-export function getHighestLovelaceUtxo(utxos: UTxO[]): UTxO | undefined {
-	return sortUtxosByLovelaceDesc(utxos)[0];
-}
-
-export {
-	getLovelaceFromUtxo,
-	waitForTxConfirmation,
-	executeSingleUtxoSplit,
-	MIN_LOVELACE_FOR_SPLIT,
-} from './split-utxo';
