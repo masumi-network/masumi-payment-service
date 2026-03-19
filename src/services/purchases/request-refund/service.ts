@@ -13,7 +13,13 @@ import { decodeV1ContractDatum, newCooldownTime } from '@/utils/converter/string
 import { lockAndQueryPurchases } from '@/utils/db/lock-and-query-purchases';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
-import { sortAndLimitUtxos, getLovelaceFromUtxo, executeSingleUtxoSplit, MIN_LOVELACE_FOR_SPLIT } from '@/utils/utxo';
+import {
+	sortAndLimitUtxos,
+	getLovelaceFromUtxo,
+	executeSingleUtxoSplit,
+	MIN_LOVELACE_FOR_SPLIT,
+	MIN_CHANGE_LOVELACE,
+} from '@/utils/utxo';
 import { SERVICE_CONSTANTS } from '@/utils/config';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { generateWalletExtended } from '@/utils/generator/wallet-generator';
@@ -200,6 +206,15 @@ async function processSinglePurchaseRequest(
 				lovelace: singleUtxoLovelace,
 				attempt: splitAttempts,
 			});
+			const estimatedFeeBuffer = 500_000;
+			const estimatedChange = singleUtxoLovelace - collateralMinLovelace - estimatedFeeBuffer;
+			if (estimatedChange < MIN_CHANGE_LOVELACE) {
+				throw new Error(
+					`Wallet balance too low to split: UTXO has ${singleUtxoLovelace} lovelace but splitting would leave ` +
+						`only ~${estimatedChange} lovelace as change (minimum ${MIN_CHANGE_LOVELACE} required). ` +
+						`Please add at least ${collateralMinLovelace / 1_000_000} ADA more to the wallet.`,
+				);
+			}
 			const blockfrost = getBlockfrostInstance(
 				paymentContract.network,
 				paymentContract.PaymentSourceConfig.rpcProviderApiKey,

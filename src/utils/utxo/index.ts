@@ -84,4 +84,5 @@ export {
 	waitForTxConfirmation,
 	executeSingleUtxoSplit,
 	MIN_LOVELACE_FOR_SPLIT,
+	MIN_CHANGE_LOVELACE,
 } from './split-utxo';

@@ -11,7 +11,13 @@ import { stringToMetadata, cleanMetadata } from '@/utils/converter/metadata-stri
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
-import { sortAndLimitUtxos, getLovelaceFromUtxo, MIN_LOVELACE_FOR_SPLIT, waitForTxConfirmation } from '@/utils/utxo';
+import {
+	sortAndLimitUtxos,
+	getLovelaceFromUtxo,
+	MIN_LOVELACE_FOR_SPLIT,
+	executeSingleUtxoSplit,
+	MIN_CHANGE_LOVELACE,
+} from '@/utils/utxo';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { generateWalletExtended } from '@/utils/generator/wallet-generator';
 import { errorToString } from '@/utils/converter/error-string-convert';
@@ -39,12 +45,6 @@ function isLovelaceOnlyUtxo(utxo: UTxO): boolean {
  * Cardano protocol requires collateral to cover at least 5 ADA (collateralAmount).
  */
 const MIN_COLLATERAL_UTXO_LOVELACE = parseInt(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount, 10);
-
-/**
- * Minimum lovelace that a change output must carry to be valid on-chain.
- * Outputs below this threshold cause BabbageOutputTooSmallUTxO submission errors.
- */
-const MIN_CHANGE_LOVELACE = 1_500_000;
 
 function validateRegistrationPricing(request: {
 	Pricing: {
@@ -262,9 +262,6 @@ export async function registerAgentV1() {
 									hasTokens: !isLovelaceOnlyUtxo(singleUtxo),
 									attempt: splitAttempts,
 								});
-								const txBuilder = new MeshTxBuilder({
-									fetcher: blockchainProvider,
-								});
 								// Split one collateral-grade output (5 ADA); change goes back to wallet.
 								// This ensures the first post-split UTXO satisfies the 5-ADA collateral
 								// requirement, while the change covers the registration inputs.
@@ -283,27 +280,18 @@ export async function registerAgentV1() {
 									);
 								}
 
-								const unsignedSplit = await txBuilder
-									.txIn(singleUtxo.input.txHash, singleUtxo.input.outputIndex)
-									.txOut(address, [
-										{ unit: SERVICE_CONSTANTS.CARDANO.NATIVE_TOKEN, quantity: splitOutputLovelace.toString() },
-									])
-									.changeAddress(address)
-									.setNetwork(network)
-									.complete();
-								const signedSplit = await wallet.signTx(unsignedSplit, true);
-								const splitTxHash = await wallet.submitTx(signedSplit);
-								logger.info('[register] split tx submitted', {
-									requestId: request.id,
-									txHash: splitTxHash,
-								});
 								const blockfrost = getBlockfrostInstance(
 									paymentSource.network,
 									paymentSource.PaymentSourceConfig.rpcProviderApiKey,
 								);
-								await waitForTxConfirmation(splitTxHash, blockfrost);
-								logger.info('[register] split tx confirmed, refetching UTXOs', {
-									requestId: request.id,
+								await executeSingleUtxoSplit({
+									wallet,
+									blockchainProvider,
+									address,
+									network,
+									singleUtxo,
+									blockfrost,
+									splitOutputLovelace,
 								});
 								const refreshed = await generateWalletExtended(
 									paymentSource.network,

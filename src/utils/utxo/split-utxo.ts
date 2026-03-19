@@ -6,6 +6,7 @@ import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
  * Needs to cover: collateral output (5 ADA) + fee buffer (~0.5 ADA) = 5_500_000
  */
 export const MIN_LOVELACE_FOR_SPLIT = 5_500_000;
+export const MIN_CHANGE_LOVELACE = 1_500_000;
 
 /** Poll interval and max wait for split tx confirmation */
 const SPLIT_TX_POLL_MS = 3000;
