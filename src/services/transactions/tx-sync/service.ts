@@ -1,4 +1,11 @@
-import { PaymentSource, PaymentSourceConfig, Prisma } from '@/generated/prisma/client';
+import {
+	OnChainState,
+	PaymentAction,
+	PaymentSource,
+	PaymentSourceConfig,
+	Prisma,
+	PurchasingAction,
+} from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import { logger } from '@/utils/logger';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
@@ -30,7 +37,10 @@ export async function checkLatestTransactions(
 ) {
 	await withJobLock(mutex, 'cardano_tx_sync', async () => {
 		try {
+			await invalidateTimedOutPurchaseRequests();
+			await invalidateTimedOutPaymentRequests();
 			const paymentContracts = await queryAndLockPaymentSourcesForSync();
+
 			if (paymentContracts == null) return;
 			try {
 				const results = await Promise.allSettled(
@@ -56,6 +66,7 @@ export async function checkLatestTransactions(
 		}
 	});
 }
+
 async function processPaymentSource(
 	paymentContract: PaymentSourceWithConfig,
 	maxParallelTransactionsExtendedLookup: number,
@@ -105,6 +116,65 @@ async function processPaymentSource(
 		}
 	}
 }
+
+async function invalidateTimedOutPurchaseRequests() {
+	const failTimedOutPurchaseRequests = await prisma.purchaseRequest.updateMany({
+		where: {
+			OR: [
+				{
+					onChainState: null,
+					NextAction: {
+						requestedAction: PurchasingAction.FundsLockingRequested,
+					},
+					payByTime: { lt: Date.now() + 1000 * 60 * 5 },
+				},
+				{
+					onChainState: null,
+					NextAction: {
+						errorType: { not: null },
+					},
+					payByTime: { lt: Date.now() + 1000 * 60 * 5 },
+				},
+			],
+		},
+		data: {
+			onChainState: OnChainState.FundsOrDatumInvalid,
+		},
+	});
+	logger.info('Failed timed out purchase requests', {
+		failTimedOutPurchaseRequests: failTimedOutPurchaseRequests,
+	});
+}
+
+async function invalidateTimedOutPaymentRequests() {
+	const failTimedOutPaymentRequests = await prisma.paymentRequest.updateMany({
+		where: {
+			OR: [
+				{
+					onChainState: null,
+					NextAction: {
+						requestedAction: PaymentAction.WaitingForExternalAction,
+					},
+					payByTime: { lt: Date.now() + 1000 * 60 * 5 },
+				},
+				{
+					onChainState: null,
+					NextAction: {
+						errorType: { not: null },
+					},
+					payByTime: { lt: Date.now() + 1000 * 60 * 5 },
+				},
+			],
+		},
+		data: {
+			onChainState: OnChainState.FundsOrDatumInvalid,
+		},
+	});
+	logger.info('Failed timed out payment requests', {
+		failTimedOutPaymentRequests: failTimedOutPaymentRequests,
+	});
+}
+
 async function processTransactionData(
 	tx: UpdateTransactionInput,
 	paymentContract: PaymentSourceWithConfig,

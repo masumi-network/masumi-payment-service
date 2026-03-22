@@ -1,11 +1,4 @@
-import {
-	HotWallet,
-	HotWalletType,
-	PurchaseErrorType,
-	PurchasingAction,
-	Prisma,
-	OnChainState,
-} from '@/generated/prisma/client';
+import { HotWallet, HotWalletType, PurchaseErrorType, PurchasingAction, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import {
 	BlockfrostProvider,
@@ -209,33 +202,6 @@ export async function batchLatestPaymentEntriesV1() {
 	}
 
 	try {
-		const failTimedOutPurchaseRequests = await prisma.purchaseRequest.updateMany({
-			where: {
-				OR: [
-					{
-						onChainState: null,
-						NextAction: {
-							requestedAction: PurchasingAction.FundsLockingRequested,
-						},
-						payByTime: { lt: Date.now() + 1000 * 60 * 5 },
-					},
-					{
-						onChainState: null,
-						NextAction: {
-							errorType: { not: null },
-						},
-						payByTime: { lt: Date.now() + 1000 * 60 * 5 },
-					},
-				],
-			},
-			data: {
-				onChainState: OnChainState.FundsOrDatumInvalid,
-			},
-		});
-		logger.info('Failed timed out purchase requests', {
-			failTimedOutPurchaseRequests: failTimedOutPurchaseRequests,
-		});
-
 		const paymentContractsWithWalletLocked = await prisma.$transaction(
 			async (prisma) => {
 				const payByTime = new Date().getTime() + 1000 * 57;
