@@ -126,14 +126,14 @@ async function invalidateTimedOutPurchaseRequests() {
 					NextAction: {
 						requestedAction: PurchasingAction.FundsLockingRequested,
 					},
-					payByTime: { lt: Date.now() + 1000 * 60 * 5 },
+					payByTime: { lt: Date.now() - 1000 * 60 * 5 },
 				},
 				{
 					onChainState: null,
 					NextAction: {
 						errorType: { not: null },
 					},
-					payByTime: { lt: Date.now() + 1000 * 60 * 5 },
+					payByTime: { lt: Date.now() - 1000 * 60 * 5 },
 				},
 			],
 		},
@@ -155,14 +155,14 @@ async function invalidateTimedOutPaymentRequests() {
 					NextAction: {
 						requestedAction: PaymentAction.WaitingForExternalAction,
 					},
-					payByTime: { lt: Date.now() + 1000 * 60 * 5 },
+					payByTime: { lt: Date.now() - 1000 * 60 * 5 },
 				},
 				{
 					onChainState: null,
 					NextAction: {
 						errorType: { not: null },
 					},
-					payByTime: { lt: Date.now() + 1000 * 60 * 5 },
+					payByTime: { lt: Date.now() - 1000 * 60 * 5 },
 				},
 			],
 		},
