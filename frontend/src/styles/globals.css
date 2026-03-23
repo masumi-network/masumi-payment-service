@@ -657,30 +657,6 @@ input[type='number'] {
   transform: translateY(-50%) scaleY(1);
 }
 
-/* ─── Network toggle active indicator (left bar) ─── */
-.network-active-bar {
-  position: relative;
-  overflow: hidden;
-}
-.network-active-bar::after {
-  content: '';
-  position: absolute;
-  left: 2px;
-  top: 50%;
-  transform: translateY(-50%) scaleY(0);
-  width: 2px;
-  height: 40%;
-  border-radius: 2px;
-  background-color: hsl(var(--primary));
-  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-.network-active-bar.is-active::after {
-  transform: translateY(-50%) scaleY(1);
-}
-.network-active-bar.is-active {
-  padding-left: 2px;
-}
-
 /* ─── Dialog stack system ─── */
 :root {
   --dialog-spring: cubic-bezier(0.32, 0.72, 0, 1);

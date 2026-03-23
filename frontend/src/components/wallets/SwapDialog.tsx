@@ -1,7 +1,6 @@
 /* eslint-disable react-hooks/exhaustive-deps */
-/* eslint-disable react/no-unescaped-entities */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -11,51 +10,141 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import swappableTokens from '@/assets/swappableTokens.json';
-import { FaExchangeAlt } from 'react-icons/fa';
-import { getUtxos, getWallet } from '@/lib/api/generated';
+import { ArrowDownUp, Check, ChevronDown, ExternalLink, RefreshCw, XCircle } from 'lucide-react';
+import {
+  getSwapEstimate,
+  getUtxos,
+  postSwap,
+  postSwapCancel,
+  postSwapAcknowledgeTimeout,
+} from '@/lib/api/generated';
+import { useQuery } from '@tanstack/react-query';
 import { useAppContext } from '@/lib/contexts/AppContext';
+import { useRate } from '@/lib/hooks/useRate';
 import { toast } from 'react-toastify';
 import BlinkingUnderscore from '../BlinkingUnderscore';
-import { MaestroProvider } from '@meshsdk/core';
-import { shortenAddress } from '@/lib/utils';
-import { Token } from '@/types/token';
+import { shortenAddress, handleApiCall, getExplorerUrl } from '@/lib/utils';
 import { Spinner } from '../ui/spinner';
 import formatBalance from '@/lib/formatBalance';
 import Image from 'next/image';
 import { getUsdmConfig } from '@/lib/constants/defaultWallets';
+import { CopyButton } from '@/components/ui/copy-button';
 import adaIcon from '@/assets/ada.png';
 import usdmIcon from '@/assets/usdm.png';
 import nmkrIcon from '@/assets/nmkr.png';
+import usdcxIcon from '@/assets/usdcx.png';
+import { extractApiPayload } from '@/lib/api-response';
+import { extractApiErrorMessage } from '@/lib/api-error';
+import {
+  extractSwapAcknowledgePayload,
+  extractSwapCancelPayload,
+  extractSwapSubmitPayload,
+} from './swap-api';
+import { useSwapStatusPolling } from './useSwapStatusPolling';
 
 interface SwapDialogProps {
   isOpen: boolean;
   onClose: () => void;
   walletAddress: string;
-  walletType: string;
-  walletId: string;
+  walletVkey: string;
+  network: 'Preprod' | 'Mainnet';
+  onSwapComplete?: () => void;
+}
+
+const TOKEN_ICONS: Record<string, typeof adaIcon> = {
+  ADA: adaIcon,
+  USDM: usdmIcon,
+  USDCx: usdcxIcon,
+  NMKR: nmkrIcon,
+};
+
+function TokenSelector({
+  selectedToken,
+  onSelect,
+  disabled,
+}: {
+  selectedToken: (typeof swappableTokens)[number];
+  onSelect: (index: number) => void;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => !disabled && setOpen(!open)}
+        disabled={disabled}
+        className="flex items-center gap-2 rounded-xl bg-background/60 border border-border/50 px-3 py-2 text-sm font-medium whitespace-nowrap hover:bg-background/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        <Image
+          src={TOKEN_ICONS[selectedToken.symbol] || adaIcon}
+          alt={selectedToken.symbol}
+          className="rounded-full"
+          width={22}
+          height={22}
+        />
+        <span>{selectedToken.symbol}</span>
+        <ChevronDown
+          className={`h-3.5 w-3.5 text-muted-foreground transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+        />
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 top-full mt-1 z-50 min-w-[160px] rounded-xl border border-border bg-popover p-1 shadow-lg">
+            {swappableTokens.map((token, index) => (
+              <button
+                key={token.symbol}
+                type="button"
+                onClick={() => {
+                  onSelect(index);
+                  setOpen(false);
+                }}
+                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm whitespace-nowrap hover:bg-accent transition-colors"
+              >
+                <Image
+                  src={TOKEN_ICONS[token.symbol] || adaIcon}
+                  alt={token.symbol}
+                  className="rounded-full"
+                  width={20}
+                  height={20}
+                />
+                <span className="font-medium">{token.symbol}</span>
+                <span className="ml-auto text-xs text-muted-foreground">{token.name}</span>
+                {token.symbol === selectedToken.symbol && (
+                  <Check className="h-3.5 w-3.5 text-primary" />
+                )}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 export function SwapDialog({
   isOpen,
   onClose,
   walletAddress,
-  walletType,
-  walletId,
+  walletVkey,
+  network,
+  onSwapComplete,
 }: SwapDialogProps) {
-  return <div></div>;
-  const { network, apiKey, apiClient } = useAppContext();
+  const { apiKey, apiClient } = useAppContext();
   const [adaBalance, setAdaBalance] = useState<number>(0);
   const [usdmBalance, setUsdmBalance] = useState<number>(0);
-  const [balanceError, setBalanceError] = useState<string | null>(null);
+  const [otherTokenBalances, setOtherTokenBalances] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
 
   const [fromAmount, setFromAmount] = useState<number>(1);
-  const [adaToUsdRate, setAdaToUsdRate] = useState<number>(0);
-  const [mnemonic, setMnemonic] = useState<string | null>(null);
-  const [loading, setLoading] = useState<boolean>(false);
+  const { rate: adaToUsdRate } = useRate();
   const [isFetchingDetails, setIsFetchingDetails] = useState<boolean>(true);
   const [isSwapping, setIsSwapping] = useState<boolean>(false);
   const [showConfirmation, setShowConfirmation] = useState<boolean>(false);
+  const [txHash, setTxHash] = useState<string | null>(null);
 
   const adaIndex = swappableTokens.findIndex((token) => token.symbol === 'ADA');
   const usdmIndex = swappableTokens.findIndex((token) => token.symbol === 'USDM');
@@ -63,72 +152,168 @@ export function SwapDialog({
   const [selectedFromToken, setSelectedFromToken] = useState(swappableTokens[adaIndex]);
   const [selectedToToken, setSelectedToToken] = useState(swappableTokens[usdmIndex]);
 
-  const isDev = process.env.NEXT_PUBLIC_DEV === 'Isaac';
-  const devWalletAddress = process.env.NEXT_PUBLIC_DEV_WALLET_ADDRESS || '';
-
-  const effectiveWalletAddress = isDev ? devWalletAddress : walletAddress;
-
-  const [tokenRates, setTokenRates] = useState<Record<string, number>>({});
-
-  const [swapStatus, setSwapStatus] = useState<'idle' | 'processing' | 'submitted' | 'confirmed'>(
-    'idle',
+  const conversionRateQueryKey = useMemo(
+    () => ['swap-conversion-rate', selectedFromToken.symbol, selectedToToken.symbol] as const,
+    [selectedFromToken.symbol, selectedToToken.symbol],
   );
 
-  const fetchTokenRates = async () => {
-    try {
-      const response = await fetch(
-        'https://api.coingecko.com/api/v3/simple/price?ids=cardano&vs_currencies=usd',
-      );
-      const data = await response.json();
-      setAdaToUsdRate(data?.cardano?.usd || 0);
+  const { data: conversionRate = 0 } = useQuery<number>({
+    queryKey: conversionRateQueryKey,
+    queryFn: async () => {
+      if (selectedFromToken.symbol === selectedToToken.symbol) return 0;
 
-      const rates: Record<string, number> = {};
-      for (const token of swappableTokens) {
-        if (token.symbol !== 'ADA' && token.policyId && token.hexedAssetName) {
-          const url = `https://dhapi.io/swap/averagePrice/ADA/${token.policyId}${token.hexedAssetName}`;
-          try {
-            const response = await fetch(url);
-            const data = await response.json();
-            rates[token.symbol] = data.price_ab || 0;
-          } catch (error) {
-            console.error(`Failed to fetch rate for ${token.symbol}`, error);
-            rates[token.symbol] = 0;
-          }
-        }
+      const nonAdaToken = selectedFromToken.symbol !== 'ADA' ? selectedFromToken : selectedToToken;
+      const poolId = (nonAdaToken as { poolId?: string }).poolId;
+      if (!poolId) return 0;
+
+      const fromPolicyId =
+        selectedFromToken.policyId === 'NATIVE' ? '' : selectedFromToken.policyId || '';
+      const fromAssetName =
+        selectedFromToken.hexedAssetName === 'NATIVE'
+          ? ''
+          : (selectedFromToken as { hexedAssetName?: string }).hexedAssetName || '';
+      const toPolicyId =
+        selectedToToken.policyId === 'NATIVE' ? '' : selectedToToken.policyId || '';
+      const toAssetName =
+        selectedToToken.hexedAssetName === 'NATIVE'
+          ? ''
+          : (selectedToToken as { hexedAssetName?: string }).hexedAssetName || '';
+
+      const result = await getSwapEstimate({
+        client: apiClient,
+        query: { fromPolicyId, fromAssetName, toPolicyId, toAssetName, poolId },
+      });
+      return extractApiPayload<{ rate?: number }>(result)?.rate ?? 0;
+    },
+    enabled: isOpen && selectedFromToken.symbol !== selectedToToken.symbol,
+    staleTime: 30_000,
+  });
+
+  const [swapStatus, setSwapStatus] = useState<
+    | 'idle'
+    | 'processing'
+    | 'submitted'
+    | 'orderConfirmed'
+    | 'cancelling'
+    | 'cancelConfirmed'
+    | 'confirmed'
+    | 'timeout'
+  >('idle');
+
+  const [swapTransactionId, setSwapTransactionId] = useState<string | null>(null);
+  const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollCancelledRef = useRef(false);
+
+  const { startPolling, stopPolling } = useSwapStatusPolling({
+    apiClient,
+    walletVkey,
+    onTimeout: () => {
+      if (pollCancelledRef.current) return;
+      toast.warning(
+        'Confirmation is taking longer than expected. You can check the transaction in the explorer.',
+        { theme: 'dark' },
+      );
+      setSwapStatus('timeout');
+      setIsSwapping(false);
+    },
+    onUpdate: (data) => {
+      const status = data.status;
+      const backendSwapStatus = data.swapStatus;
+      const returnedSwapTxId = data.swapTransactionId;
+
+      if (
+        backendSwapStatus === 'OrderSubmitTimeout' ||
+        backendSwapStatus === 'CancelSubmitTimeout'
+      ) {
+        if (returnedSwapTxId) setSwapTransactionId(returnedSwapTxId);
+        setSwapStatus('timeout');
+        setIsSwapping(false);
+        toast.error('Transaction timed out. You can acknowledge and check on-chain state.', {
+          theme: 'dark',
+        });
+        return true;
       }
-      setTokenRates(rates);
-    } catch (error) {
-      console.error('Failed to fetch rates', error);
-    }
-  };
+
+      if (status !== 'confirmed') {
+        return false;
+      }
+
+      if (backendSwapStatus === 'OrderConfirmed') {
+        if (returnedSwapTxId) setSwapTransactionId(returnedSwapTxId);
+        setSwapStatus('orderConfirmed');
+        setIsSwapping(false);
+        toast.info('Swap order placed on-chain. Awaiting scooper execution.', {
+          theme: 'dark',
+        });
+        return true;
+      }
+
+      if (backendSwapStatus === 'CancelConfirmed') {
+        void fetchBalance();
+        onSwapComplete?.();
+        setSwapStatus('cancelConfirmed');
+        toast.success('Swap order cancelled. Funds returned.', { theme: 'dark' });
+        setIsSwapping(false);
+        pollTimeoutRef.current = setTimeout(() => {
+          if (!pollCancelledRef.current) setSwapStatus('idle');
+        }, 3000);
+        return true;
+      }
+
+      void fetchBalance();
+      onSwapComplete?.();
+      setSwapStatus('confirmed');
+      toast.success('Swap confirmed on-chain.', { theme: 'dark' });
+      setIsSwapping(false);
+      pollTimeoutRef.current = setTimeout(() => {
+        if (!pollCancelledRef.current) setSwapStatus('idle');
+      }, 2000);
+      return true;
+    },
+  });
 
   useEffect(() => {
     if (isOpen) {
+      pollCancelledRef.current = false;
       setIsFetchingDetails(true);
+      setTxHash(null);
+      setError(null);
+      setSwapStatus('idle');
+      setSwapTransactionId(null);
+      setIsSwapping(false);
+      setShowConfirmation(false);
+      setSelectedFromToken(swappableTokens[adaIndex]);
+      setSelectedToToken(swappableTokens[usdmIndex]);
+      setFromAmount(1);
       fetchBalance();
-      fetchTokenRates();
-      fetchMnemonic();
 
       const balanceInterval = setInterval(() => {
         fetchBalance();
       }, 20000);
 
-      return () => clearInterval(balanceInterval);
+      return () => {
+        clearInterval(balanceInterval);
+        pollCancelledRef.current = true;
+        stopPolling();
+        if (pollTimeoutRef.current) {
+          clearTimeout(pollTimeoutRef.current);
+          pollTimeoutRef.current = null;
+        }
+      };
     }
-  }, [isOpen]);
+  }, [isOpen, stopPolling]);
 
   const fetchBalance = async () => {
     try {
       const result = await getUtxos({
         client: apiClient,
-        //no cache
         headers: {
           'Cache-Control': 'no-cache, no-store, must-revalidate',
           Pragma: 'no-cache',
           Expires: '0',
         },
         query: {
-          address: effectiveWalletAddress,
+          address: walletAddress,
           network: network,
         },
       });
@@ -158,68 +343,53 @@ export function SwapDialog({
           );
         }, 0) ?? 0;
 
-      setAdaBalance(lovelace / 1000000);
-      setUsdmBalance(usdm / 1000000);
-      setBalanceError(null);
+      const others: Record<string, number> = {};
+      for (const token of swappableTokens) {
+        if (token.symbol === 'ADA' || token.symbol === 'USDM') continue;
+        if (!token.policyId || !token.hexedAssetName || token.hexedAssetName === 'NATIVE') continue;
+        const fullUnit = token.policyId + token.hexedAssetName;
+        const sum =
+          result?.data?.data?.Utxos?.reduce((acc, utxo) => {
+            return (
+              acc +
+              utxo.Amounts.reduce((acc, asset) => {
+                if (asset.unit === fullUnit) {
+                  return acc + (asset.quantity ?? 0);
+                }
+                return acc;
+              }, 0)
+            );
+          }, 0) ?? 0;
+        const decimals = (token as { decimals?: number }).decimals ?? 6;
+        others[token.symbol] = sum / Math.pow(10, decimals);
+      }
+
+      const adaDecimals = swappableTokens.find((t) => t.symbol === 'ADA')?.decimals ?? 6;
+      const usdmDecimals = swappableTokens.find((t) => t.symbol === 'USDM')?.decimals ?? 6;
+      setAdaBalance(lovelace / Math.pow(10, adaDecimals));
+      setUsdmBalance(usdm / Math.pow(10, usdmDecimals));
+      setOtherTokenBalances(others);
+      setError(null);
     } catch (error) {
       console.error('Failed to fetch balance', error);
-      setBalanceError('Failed to fetch balance');
+      setError('Failed to fetch balance');
     } finally {
       setIsFetchingDetails(false);
     }
   };
 
-  const fetchMnemonic = async () => {
-    setLoading(true);
-    try {
-      if (isDev) {
-        setMnemonic(process.env.NEXT_PUBLIC_DEV_WALLET_MNEMONIC || null);
-      } else {
-        if (!apiKey) {
-          throw new Error('No API key found');
-        }
-
-        if (!walletId) {
-          throw new Error('No wallet ID found');
-        }
-
-        if (!walletType) {
-          throw new Error('No wallet type found');
-        }
-
-        const type = walletType?.toLowerCase() === 'purchasing' ? 'Purchasing' : 'Selling';
-
-        const response = await getWallet({
-          client: apiClient,
-          query: { walletType: type, id: walletId, includeSecret: 'true' },
-        });
-
-        const fetchedMnemonic = response.data?.data?.Secret?.mnemonic || null;
-        setMnemonic(fetchedMnemonic);
-      }
-    } catch (error: any) {
-      console.error('Failed to fetch mnemonic', error);
-      toast.error('Failed to fetch mnemonic: ' + error?.message, {
-        theme: 'dark',
-      });
-      setMnemonic(null);
-    } finally {
-      setLoading(false);
-      setIsFetchingDetails(false);
-    }
-  };
-
-  const canSwap = isDev
-    ? true
-    : adaBalance > 0 &&
-      selectedFromToken.symbol !== selectedToToken.symbol &&
-      network?.toLowerCase() !== 'preprod' &&
-      mnemonic !== null;
+  const canSwap =
+    adaBalance > 0 &&
+    selectedFromToken.symbol !== selectedToToken.symbol &&
+    network === 'Mainnet' &&
+    !!walletVkey;
 
   const handleSwitch = () => {
     if (selectedFromToken.symbol === 'ADA' || selectedToToken.symbol === 'ADA') {
+      const prevToAmount = conversionRate > 0 ? fromAmount * conversionRate : fromAmount;
       setSelectedFromToken(selectedToToken);
       setSelectedToToken(selectedFromToken);
+      setFromAmount(prevToAmount);
     }
   };
 
@@ -250,7 +420,7 @@ export function SwapDialog({
       case 'USDM':
         return usdmBalance;
       default:
-        return 0;
+        return otherTokenBalances[tokenSymbol] ?? 0;
     }
   };
 
@@ -274,34 +444,117 @@ export function SwapDialog({
     setFromAmount(normalizedValue);
   };
 
-  const getConversionRate = () => {
-    if (selectedFromToken.symbol === 'ADA' && selectedToToken.symbol === 'USDM') {
-      return adaToUsdRate;
-    } else if (selectedFromToken.symbol === 'USDM' && selectedToToken.symbol === 'ADA') {
-      return 1 / adaToUsdRate;
-    } else if (selectedFromToken.symbol === 'ADA') {
-      return tokenRates[selectedToToken.symbol] || 0;
-    } else if (selectedToToken.symbol === 'ADA') {
-      return 1 / (tokenRates[selectedFromToken.symbol] || 1);
-    } else {
-      const fromTokenInAda = tokenRates[selectedFromToken.symbol] || 0;
-      const toTokenInAda = tokenRates[selectedToToken.symbol] || 0;
-      return toTokenInAda > 0 ? fromTokenInAda / toTokenInAda : 0;
-    }
-  };
-
-  const conversionRate = getConversionRate();
   const toAmount = fromAmount * conversionRate;
 
-  const formattedDollarValue =
-    selectedFromToken.symbol === 'USDM' ? `~$${fromAmount.toFixed(2)}` : `$${toAmount.toFixed(2)}`;
+  const STABLECOIN_SYMBOLS = ['USDM', 'USDCx'];
+  const fromIsStablecoin = STABLECOIN_SYMBOLS.includes(selectedFromToken.symbol);
+  const toIsAda = selectedToToken.symbol === 'ADA';
+  const formattedDollarValue = fromIsStablecoin
+    ? `~$${fromAmount.toFixed(2)}`
+    : toIsAda
+      ? `$${(toAmount * (adaToUsdRate ?? 0)).toFixed(2)}`
+      : `$${toAmount.toFixed(2)}`;
 
-  const maestroProvider = new MaestroProvider({
-    network: 'Mainnet',
-    apiKey: process.env.NEXT_PUBLIC_MAESTRO_API_KEY || '',
-  });
+  const formattedFromBalance = formatBalance(
+    getBalanceForToken(selectedFromToken.symbol).toFixed(6),
+  );
+
+  const formattedToBalance = formatBalance(getBalanceForToken(selectedToToken.symbol).toFixed(6));
+
+  const handleCancelSwap = async () => {
+    if (!swapTransactionId || !walletVkey || !txHash) return;
+    setError(null);
+    setSwapStatus('cancelling');
+    setIsSwapping(true);
+
+    await handleApiCall(
+      () =>
+        postSwapCancel({
+          client: apiClient,
+          body: { walletVkey, swapTransactionId },
+        }),
+      {
+        onSuccess: (response) => {
+          const cancelTxHash = extractSwapCancelPayload(response).cancelTxHash;
+          if (cancelTxHash) {
+            toast.info('Cancel submitted. Waiting for confirmation...', { theme: 'dark' });
+            startPolling(cancelTxHash);
+          } else {
+            toast.warning('Cancel submitted but no tx hash returned.', { theme: 'dark' });
+            setIsSwapping(false);
+            setSwapStatus('orderConfirmed');
+          }
+        },
+        onError: (error: unknown) => {
+          const msg = extractApiErrorMessage(error, 'Cancel failed.');
+          setIsSwapping(false);
+          if (msg.includes('already executed') || msg.includes('swap completed')) {
+            onSwapComplete?.();
+            void fetchBalance();
+            setSwapStatus('confirmed');
+            toast.success('Order was already executed by the DEX — swap completed!', {
+              theme: 'dark',
+            });
+            pollTimeoutRef.current = setTimeout(() => {
+              if (!pollCancelledRef.current) setSwapStatus('idle');
+            }, 3000);
+          } else {
+            setError(msg || 'Cancel failed.');
+            setSwapStatus('orderConfirmed');
+          }
+        },
+        errorMessage: 'Cancel failed',
+      },
+    );
+  };
+
+  const handleAcknowledgeTimeout = async () => {
+    if (!swapTransactionId || !walletVkey) return;
+    setError(null);
+    setIsSwapping(true);
+
+    await handleApiCall(
+      () =>
+        postSwapAcknowledgeTimeout({
+          client: apiClient,
+          body: { walletVkey, swapTransactionId },
+        }),
+      {
+        onSuccess: (response) => {
+          const data = extractSwapAcknowledgePayload(response);
+          const newStatus = data.swapStatus;
+          const message = data.message;
+
+          if (newStatus === 'OrderConfirmed') {
+            setSwapStatus('orderConfirmed');
+            toast.info(message || 'Order recovered — you can retry cancelling.', {
+              theme: 'dark',
+            });
+          } else if (newStatus === 'CancelConfirmed' || newStatus === 'Completed') {
+            onSwapComplete?.();
+            void fetchBalance();
+            setSwapStatus('confirmed');
+            toast.success(message || 'Swap resolved.', { theme: 'dark' });
+            pollTimeoutRef.current = setTimeout(() => {
+              if (!pollCancelledRef.current) setSwapStatus('idle');
+            }, 3000);
+          } else {
+            toast.warning(message || 'Transaction was never confirmed.', { theme: 'dark' });
+            setSwapStatus('idle');
+          }
+          setIsSwapping(false);
+        },
+        onError: (error: unknown) => {
+          setError(extractApiErrorMessage(error, 'Failed to acknowledge timeout'));
+          setIsSwapping(false);
+        },
+        errorMessage: 'Acknowledge timeout failed',
+      },
+    );
+  };
 
   const handleSwapClick = () => {
+    setTxHash(null);
     setShowConfirmation(true);
   };
 
@@ -309,62 +562,154 @@ export function SwapDialog({
     setShowConfirmation(false);
     setIsSwapping(true);
     setError(null);
+    setSwapStatus('processing');
+
     try {
-      if (!mnemonic) {
-        throw new Error('Mnemonic not available');
+      if (!walletVkey) {
+        throw new Error('Wallet verification key not available');
       }
-      setTimeout(() => {
-        setSwapStatus('processing');
-      }, 500);
-      throw new Error('Swap is currently disabled');
 
-      setSwapStatus('submitted');
-      toast.info('Swap submitted!', { theme: 'dark' });
-      await fetchBalance();
+      if (!apiKey) {
+        throw new Error('API key not found');
+      }
 
-      maestroProvider.onTxConfirmed('txHash', async () => {
-        setSwapStatus('confirmed');
-        toast.success('Swap transaction confirmed!', { theme: 'dark' });
-        await fetchBalance();
-        setIsSwapping(false);
-        setTimeout(() => setSwapStatus('idle'), 2000);
-      });
-    } catch (error: any) {
-      console.error(error);
-      toast.error(`Swap failed: ${error?.response?.data?.error || error?.message}`, {
-        theme: 'dark',
-      });
-      setError(error?.response?.data?.error || error?.message || 'Swap failed');
+      const poolId = selectedFromToken.poolId || selectedToToken.poolId || '';
+
+      if (!poolId) {
+        throw new Error('Pool ID not found for selected tokens');
+      }
+
+      type SwappableToken = (typeof swappableTokens)[number] & { hexedAssetName?: string };
+      const assetNameForApi = (token: SwappableToken): string => {
+        if (token.assetName === 'ADA' || token.assetName === 'NATIVE') return '';
+        if (token.hexedAssetName && token.hexedAssetName !== 'NATIVE') return token.hexedAssetName;
+        return token.assetName || '';
+      };
+
+      const fromToken = {
+        policyId:
+          selectedFromToken.policyId === 'NATIVE' || selectedFromToken.policyId === ''
+            ? ''
+            : selectedFromToken.policyId || '',
+        assetName: assetNameForApi(selectedFromToken as SwappableToken),
+        name: selectedFromToken.name || selectedFromToken.symbol,
+      };
+
+      const toToken = {
+        policyId:
+          selectedToToken.policyId === 'NATIVE' || selectedToToken.policyId === ''
+            ? ''
+            : selectedToToken.policyId || '',
+        assetName: assetNameForApi(selectedToToken as SwappableToken),
+        name: selectedToToken.name || selectedToToken.symbol,
+      };
+
+      const response = await handleApiCall(
+        () =>
+          postSwap({
+            client: apiClient,
+            body: {
+              walletVkey,
+              amount: fromAmount,
+              FromToken: fromToken,
+              ToToken: toToken,
+              poolId,
+              slippage: 0.03,
+            },
+          }),
+        {
+          onSuccess: async (result) => {
+            const transactionHash = extractSwapSubmitPayload(result).txHash;
+
+            if (transactionHash) {
+              setTxHash(transactionHash);
+            }
+
+            setSwapStatus('submitted');
+            toast.info('Swap transaction submitted! Waiting for on-chain confirmation…', {
+              theme: 'dark',
+            });
+
+            if (transactionHash && walletVkey) {
+              startPolling(transactionHash);
+            } else {
+              toast.warning('Swap submitted but confirmation unavailable (missing tx hash).', {
+                theme: 'dark',
+              });
+              await fetchBalance();
+              setIsSwapping(false);
+              if (pollTimeoutRef.current) clearTimeout(pollTimeoutRef.current);
+              pollTimeoutRef.current = setTimeout(() => {
+                if (!pollCancelledRef.current) setSwapStatus('idle');
+              }, 2000);
+            }
+          },
+          onError: (error: unknown) => {
+            setError(extractApiErrorMessage(error, 'Swap failed'));
+            setIsSwapping(false);
+            setSwapStatus('idle');
+          },
+          errorMessage: 'Swap failed',
+        },
+      );
+
+      if (!response) {
+        return;
+      }
+    } catch (error: unknown) {
+      const errorMessage = extractApiErrorMessage(error, 'Swap failed');
+      toast.error(`Swap failed: ${errorMessage}`, { theme: 'dark' });
+      setError(errorMessage);
       setIsSwapping(false);
       setSwapStatus('idle');
     }
   };
 
-  const getProgressBarColor = () => {
-    switch (swapStatus) {
-      case 'processing':
-        return 'bg-orange-500';
-      case 'submitted':
-        return 'bg-blue-500';
-      case 'confirmed':
-        return 'bg-green-500';
-      default:
-        return 'bg-transparent';
-    }
-  };
+  const isOverMax = fromAmount > getMaxAmount(selectedFromToken.symbol);
 
-  const getTokenIcon = (symbol: string) => {
-    switch (symbol) {
-      case 'ADA':
-        return adaIcon;
-      case 'USDM':
-        return usdmIcon;
-      case 'NMKR':
-        return nmkrIcon;
-      default:
-        return adaIcon;
-    }
+  const statusLabelMap: Record<string, string> = {
+    processing: 'Signing transaction...',
+    submitted: 'Waiting for order confirmation...',
+    orderConfirmed: 'Order placed — awaiting execution',
+    cancelling: 'Cancelling order...',
+    cancelConfirmed: 'Order cancelled',
+    confirmed: 'Swap confirmed!',
+    timeout: 'Transaction timed out',
   };
+  const statusLabel = statusLabelMap[swapStatus] || null;
+
+  const statusColorMap: Record<string, string> = {
+    processing: 'text-orange-400',
+    submitted: 'text-blue-400',
+    orderConfirmed: 'text-yellow-400',
+    cancelling: 'text-orange-400',
+    cancelConfirmed: 'text-green-400',
+    confirmed: 'text-green-400',
+    timeout: 'text-red-400',
+  };
+  const statusColor = statusColorMap[swapStatus] || '';
+
+  const progressWidthMap: Record<string, string> = {
+    processing: '20%',
+    submitted: '50%',
+    orderConfirmed: '66%',
+    cancelling: '80%',
+    cancelConfirmed: '100%',
+    confirmed: '100%',
+    timeout: '100%',
+  };
+  const progressWidth = progressWidthMap[swapStatus] || '0%';
+
+  const progressColorMap: Record<string, string> = {
+    processing: 'bg-orange-500',
+    submitted: 'bg-blue-500',
+    orderConfirmed: 'bg-yellow-500',
+    cancelling: 'bg-orange-500',
+    cancelConfirmed: 'bg-green-500',
+    confirmed: 'bg-green-500',
+    timeout: 'bg-red-500',
+  };
+  const progressColor = progressColorMap[swapStatus] || 'bg-transparent';
 
   return (
     <>
@@ -377,213 +722,347 @@ export function SwapDialog({
           }
         }}
       >
-        <DialogContent className="overflow-y-hidden">
-          <DialogHeader>
-            <DialogTitle>Swap Tokens</DialogTitle>
-            <DialogDescription>
-              {isDev ? (
-                <>
-                  <b>DEV WALLET</b>
-                  <br />
-                  <i>{shortenAddress(effectiveWalletAddress)}</i>
-                </>
-              ) : (
-                <>
-                  {network?.toLowerCase() === 'preprod' ? 'PREPROD' : 'MAINNET'} Network
-                  <br />
-                  <i>{shortenAddress(effectiveWalletAddress)}</i>
-                </>
-              )}
-            </DialogDescription>
-          </DialogHeader>
+        <DialogContent className="sm:max-w-[440px] overflow-y-hidden p-0 gap-0 border-border/50">
+          {/* Header */}
+          <div className="flex items-center justify-between px-5 pt-10 pb-3">
+            <div>
+              <DialogHeader className="space-y-0.5">
+                <DialogTitle className="text-base">Swap</DialogTitle>
+                <DialogDescription className="text-xs">
+                  {shortenAddress(walletAddress, 6)}
+                </DialogDescription>
+              </DialogHeader>
+            </div>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8 rounded-lg"
+              onClick={() => {
+                setIsFetchingDetails(true);
+                fetchBalance();
+              }}
+              disabled={isFetchingDetails || isSwapping}
+              title="Refresh balance"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isFetchingDetails ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
+
           {isFetchingDetails ? (
-            <div className="text-center text-gray-500 mb-4">
+            <div className="flex items-center justify-center py-16 text-muted-foreground">
               <BlinkingUnderscore />
             </div>
+          ) : network?.toLowerCase() !== 'mainnet' ? (
+            <div className="px-5 pb-5 text-sm text-destructive">
+              Swap is only available on <span className="font-medium">Mainnet</span>
+            </div>
           ) : (
-            <>
-              {!isDev ? (
-                <>
-                  {adaBalance === 0 && (
-                    <div className="text-red-500 mb-4">Cannot swap zero balance</div>
-                  )}
-                  {network?.toLowerCase() === 'preprod' && (
-                    <div className="text-red-500 mb-4">
-                      Can't perform swap on <b>{network?.toUpperCase()}</b> network
-                    </div>
-                  )}
-                </>
-              ) : (
-                <></>
-              )}
+            <div className="px-5 pb-5">
               <div
-                style={{
-                  opacity: canSwap && !isSwapping ? 1 : 0.4,
-                  pointerEvents: canSwap && !isSwapping ? 'auto' : 'none',
-                }}
+                className={`transition-opacity duration-200 ${isSwapping ? 'opacity-40 pointer-events-none' : ''}`}
               >
-                <div className="flex flex-col space-y-4">
-                  <div className="flex justify-between items-center bg-secondary p-4 rounded-md">
-                    <div className="flex flex-col space-y-1">
-                      <div className="flex items-center space-x-2">
-                        <select
-                          value={swappableTokens.indexOf(selectedFromToken)}
-                          onChange={(e) => handleTokenChange('from', parseInt(e.target.value))}
-                          className="bg-transparent text-foreground"
-                        >
-                          {swappableTokens.map((token, index) => (
-                            <option key={token.symbol} value={index}>
-                              {token.symbol}
-                            </option>
-                          ))}
-                        </select>
-                        <Image
-                          src={getTokenIcon(selectedFromToken.symbol)}
-                          alt="Token"
-                          className="w-6 h-6 rounded-full"
-                          width={24}
-                          height={24}
-                        />
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        Balance:{' '}
-                        {formatBalance(getBalanceForToken(selectedFromToken.symbol).toFixed(6)) ??
-                          ''}
-                      </div>
-                    </div>
-                    <div className="flex flex-col items-end">
-                      <div className="relative w-full">
-                        <input
-                          type="number"
-                          className={`w-24 text-right bg-transparent border-b border-muted-foreground/50 focus:outline-hidden appearance-none text-[24px] font-bold mb-2 text-foreground ${
-                            fromAmount > getMaxAmount(selectedFromToken.symbol)
-                              ? 'text-red-500'
-                              : ''
-                          }`}
-                          placeholder="0"
-                          value={fromAmount || ''}
-                          onChange={handleFromAmountChange}
-                          step="0.2"
-                          style={{ MozAppearance: 'textfield' }}
-                        />
-                        <span
-                          className="absolute right-0 -top-3 text-xs text-muted-foreground cursor-pointer hover:text-foreground"
-                          onClick={handleMaxClick}
-                        >
-                          Max:{' '}
-                          {formatBalance(getMaxAmount(selectedFromToken.symbol).toFixed(2)) || ''}
-                        </span>
-                      </div>
-                      <span className="block text-xs text-muted-foreground">
-                        {formattedDollarValue}
-                      </span>
+                {/* From panel */}
+                <div className="rounded-xl bg-secondary/70 p-4 border border-border/30">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      You pay
+                    </span>
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <span>Balance: {formattedFromBalance}</span>
+                      <button
+                        type="button"
+                        onClick={handleMaxClick}
+                        className="text-primary hover:text-primary/80 font-medium transition-colors"
+                      >
+                        MAX
+                      </button>
                     </div>
                   </div>
-                  <div className="relative flex items-center">
-                    <div className="grow border-t border-border"></div>
-                    <Button
-                      onClick={handleSwitch}
-                      className="mx-4 p-2 w-10 h-10 flex items-center justify-center transform rotate-90"
-                    >
-                      <FaExchangeAlt className="w-5 h-5" />
-                    </Button>
-                    <div className="grow border-t border-border"></div>
+                  <div className="flex items-center justify-between gap-3">
+                    <TokenSelector
+                      selectedToken={selectedFromToken}
+                      onSelect={(i) => handleTokenChange('from', i)}
+                      disabled={isSwapping}
+                    />
+                    <input
+                      type="number"
+                      className={`w-full text-right bg-transparent focus:outline-none text-2xl font-semibold tabular-nums tracking-tight ${
+                        isOverMax ? 'text-destructive' : 'text-foreground'
+                      }`}
+                      placeholder="0"
+                      value={fromAmount || ''}
+                      onChange={handleFromAmountChange}
+                      step="0.1"
+                    />
                   </div>
-                  <div className="flex justify-between items-center bg-secondary p-4 rounded-md">
-                    <div className="flex flex-col space-y-1">
-                      <div className="flex items-center space-x-2">
-                        <select
-                          value={swappableTokens.indexOf(selectedToToken)}
-                          onChange={(e) => handleTokenChange('to', parseInt(e.target.value))}
-                          className="bg-transparent text-foreground"
-                        >
-                          {swappableTokens.map((token, index) => (
-                            <option key={token.symbol} value={index}>
-                              {token.symbol}
-                            </option>
-                          ))}
-                        </select>
-                        <Image
-                          src={getTokenIcon(selectedToToken.symbol)}
-                          alt="Token"
-                          className="w-6 h-6 rounded-full"
-                          width={24}
-                          height={24}
-                        />
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        Balance:{' '}
-                        {formatBalance(getBalanceForToken(selectedToToken.symbol).toFixed(6)) ?? ''}
-                      </div>
-                    </div>
-                    <div className="flex flex-col items-end">
-                      <input
-                        type="text"
-                        className="w-24 text-right bg-transparent focus:outline-hidden appearance-none text-foreground"
-                        placeholder="0"
-                        value={toAmount.toFixed(6)}
-                        readOnly
-                      />
-                    </div>
+                  <div className="text-right text-xs text-muted-foreground mt-1.5">
+                    {formattedDollarValue}
                   </div>
-                  <div className="text-center text-sm text-muted-foreground">
-                    1 {selectedFromToken.symbol} ≈ {conversionRate.toFixed(5)}{' '}
-                    {selectedToToken.symbol}
+                </div>
+
+                {/* Swap direction button */}
+                <div className="flex justify-center -my-3 relative z-10">
+                  <button
+                    type="button"
+                    onClick={handleSwitch}
+                    className="flex items-center justify-center h-9 w-9 rounded-xl bg-secondary border-[3px] border-background hover:bg-accent transition-all duration-150 active:scale-90"
+                  >
+                    <ArrowDownUp className="h-3.5 w-3.5 text-muted-foreground" />
+                  </button>
+                </div>
+
+                {/* To panel */}
+                <div className="rounded-xl bg-secondary/40 p-4 border border-border/20">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      You receive
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      Balance: {formattedToBalance}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <TokenSelector
+                      selectedToken={selectedToToken}
+                      onSelect={(i) => handleTokenChange('to', i)}
+                      disabled={isSwapping}
+                    />
+                    <span className="w-full text-right text-2xl font-semibold tabular-nums tracking-tight text-foreground/70">
+                      {toAmount > 0 ? toAmount.toFixed(6) : '0'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Rate info */}
+                {conversionRate > 0 && (
+                  <div className="flex items-center justify-center gap-1.5 mt-3 text-xs text-muted-foreground">
+                    <span>
+                      1 {selectedFromToken.symbol} = {conversionRate.toFixed(5)}{' '}
+                      {selectedToToken.symbol}
+                    </span>
+                    <span className="text-border">|</span>
+                    <span>3% slippage</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Swap button */}
+              <Button
+                variant="default"
+                className="w-full mt-4 h-11 text-sm font-semibold rounded-xl"
+                onClick={handleSwapClick}
+                disabled={
+                  !canSwap || isSwapping || fromAmount <= 0 || isOverMax || swapStatus !== 'idle'
+                }
+              >
+                {isSwapping ? (
+                  <span className="flex items-center gap-2">
+                    <Spinner size={14} />
+                    <span>{statusLabel}</span>
+                  </span>
+                ) : isOverMax ? (
+                  'Insufficient balance'
+                ) : (
+                  'Swap'
+                )}
+              </Button>
+
+              {/* Order confirmed — awaiting execution */}
+              {swapStatus === 'orderConfirmed' && !isSwapping && (
+                <div className="mt-4 rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-4 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-yellow-500/15">
+                      <Check className="h-3 w-3 text-yellow-500" />
+                    </div>
+                    <div className="space-y-0.5">
+                      <p className="text-sm font-medium text-yellow-400">Order placed on-chain</p>
+                      <p className="text-xs text-muted-foreground">
+                        Waiting for a scooper to execute. You can cancel if it takes too long.
+                      </p>
+                    </div>
                   </div>
                   <Button
-                    variant="default"
-                    className="w-full"
-                    onClick={handleSwapClick}
-                    disabled={
-                      !canSwap ||
-                      isSwapping ||
-                      fromAmount <= 0 ||
-                      fromAmount > getMaxAmount(selectedFromToken.symbol)
-                    }
+                    variant="destructive"
+                    className="w-full h-9 text-sm rounded-xl"
+                    onClick={handleCancelSwap}
+                    disabled={!swapTransactionId}
                   >
-                    {isSwapping ? 'Swap in Progress...' : 'Swap'}{' '}
-                    {isSwapping && <Spinner size={16} className="ml-1" />}
+                    <XCircle className="h-3.5 w-3.5 mr-1.5" />
+                    Cancel Order
                   </Button>
-                  {error && <div className="text-red-500 mt-2">{error}</div>}
-                </div>
-              </div>
-              {isSwapping && (
-                <div className="w-full h-[4px] bg-gray-700 rounded-full overflow-hidden animate-slide-up-from-bottom">
-                  <div
-                    className={`h-full transition-all duration-1000 ease-in-out ${getProgressBarColor()}`}
-                    style={{
-                      width:
-                        swapStatus === 'processing'
-                          ? '20%'
-                          : swapStatus === 'submitted'
-                            ? '66%'
-                            : swapStatus === 'confirmed'
-                              ? '100%'
-                              : '0%',
-                    }}
-                  />
                 </div>
               )}
-            </>
+
+              {/* Timeout — acknowledge & recover */}
+              {swapStatus === 'timeout' && !isSwapping && (
+                <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/5 p-4 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-red-500/15">
+                      <XCircle className="h-3 w-3 text-red-500" />
+                    </div>
+                    <div className="space-y-0.5">
+                      <p className="text-sm font-medium text-red-400">Transaction timed out</p>
+                      <p className="text-xs text-muted-foreground">
+                        Not confirmed in time. Check on-chain state to recover your funds.
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    className="w-full h-9 text-sm rounded-xl border-red-500/40 text-red-400 hover:bg-red-500/10"
+                    onClick={handleAcknowledgeTimeout}
+                    disabled={!swapTransactionId}
+                  >
+                    <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                    Acknowledge &amp; Recover
+                  </Button>
+                </div>
+              )}
+
+              {/* Progress bar */}
+              {isSwapping && (
+                <div className="mt-3 space-y-2">
+                  <div className="h-1 w-full bg-secondary rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-1000 ease-out ${progressColor}`}
+                      style={{ width: progressWidth }}
+                    />
+                  </div>
+                  {statusLabel && (
+                    <p className={`text-xs text-center font-medium ${statusColor}`}>
+                      {statusLabel}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Error */}
+              {error && (
+                <div className="mt-3 rounded-lg bg-destructive/10 border border-destructive/20 px-3 py-2">
+                  <p className="text-xs text-destructive">{error}</p>
+                </div>
+              )}
+
+              {/* Tx hash result */}
+              {txHash && (
+                <div className="mt-3 rounded-xl bg-secondary/50 border border-border/30 p-3">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs font-medium text-muted-foreground">Transaction</span>
+                    <a
+                      href={getExplorerUrl(txHash, network, 'transaction')}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors"
+                    >
+                      Explorer
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <code className="text-xs font-mono text-foreground/80 truncate flex-1">
+                      {shortenAddress(txHash, 10)}
+                    </code>
+                    <CopyButton value={txHash} />
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Confirmation dialog */}
       {showConfirmation && (
         <Dialog open={showConfirmation} onOpenChange={() => setShowConfirmation(false)}>
-          <DialogContent className="sm:max-w-[425px]">
-            <DialogHeader>
-              <DialogTitle>Confirm Swap</DialogTitle>
-              <DialogDescription>Are you sure you want to swap:</DialogDescription>
-              <div className="mt-2 font-medium">
-                {fromAmount} {selectedFromToken.symbol} → {toAmount.toFixed(6)}{' '}
-                {selectedToToken.symbol}
+          <DialogContent className="sm:max-w-[380px] p-0 gap-0 border-border/50">
+            <div className="px-5 pb-5 pt-10 space-y-4">
+              <DialogHeader className="space-y-1">
+                <DialogTitle className="text-base">Confirm Swap</DialogTitle>
+                <DialogDescription className="text-xs">
+                  Review your swap details before confirming
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-2">
+                {/* From summary */}
+                <div className="flex items-center justify-between rounded-xl bg-secondary/70 border border-border/30 p-3">
+                  <div className="flex items-center gap-2.5">
+                    <Image
+                      src={TOKEN_ICONS[selectedFromToken.symbol] || adaIcon}
+                      alt={selectedFromToken.symbol}
+                      className="rounded-full"
+                      width={28}
+                      height={28}
+                    />
+                    <div>
+                      <div className="text-xs text-muted-foreground">You pay</div>
+                      <div className="text-sm font-semibold">{selectedFromToken.symbol}</div>
+                    </div>
+                  </div>
+                  <span className="text-lg font-semibold tabular-nums">{fromAmount}</span>
+                </div>
+
+                {/* Arrow */}
+                <div className="flex justify-center">
+                  <div className="flex items-center justify-center h-6 w-6 rounded-md bg-secondary">
+                    <ArrowDownUp className="h-3 w-3 text-muted-foreground" />
+                  </div>
+                </div>
+
+                {/* To summary */}
+                <div className="flex items-center justify-between rounded-xl bg-secondary/40 border border-border/20 p-3">
+                  <div className="flex items-center gap-2.5">
+                    <Image
+                      src={TOKEN_ICONS[selectedToToken.symbol] || adaIcon}
+                      alt={selectedToToken.symbol}
+                      className="rounded-full"
+                      width={28}
+                      height={28}
+                    />
+                    <div>
+                      <div className="text-xs text-muted-foreground">You receive</div>
+                      <div className="text-sm font-semibold">{selectedToToken.symbol}</div>
+                    </div>
+                  </div>
+                  <span className="text-lg font-semibold tabular-nums">~{toAmount.toFixed(4)}</span>
+                </div>
               </div>
-            </DialogHeader>
-            <div className="flex justify-end space-x-2 mt-4">
-              <Button variant="outline" onClick={() => setShowConfirmation(false)}>
-                Cancel
-              </Button>
-              <Button onClick={handleConfirmSwap}>Confirm Swap</Button>
+
+              {/* Details */}
+              <div className="rounded-lg bg-muted/30 px-3 py-2 space-y-1">
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Rate</span>
+                  <span>
+                    1 {selectedFromToken.symbol} = {conversionRate.toFixed(5)}{' '}
+                    {selectedToToken.symbol}
+                  </span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Slippage</span>
+                  <span>3%</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">DEX</span>
+                  <span>SundaeSwap</span>
+                </div>
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  className="flex-1 h-10 rounded-xl"
+                  onClick={() => setShowConfirmation(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  className="flex-1 h-10 rounded-xl font-semibold"
+                  onClick={handleConfirmSwap}
+                >
+                  Confirm Swap
+                </Button>
+              </div>
             </div>
           </DialogContent>
         </Dialog>

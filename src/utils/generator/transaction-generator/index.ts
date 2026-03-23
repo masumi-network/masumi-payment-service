@@ -12,7 +12,10 @@ import {
 import { resolvePlutusScriptAddress } from '@meshsdk/core-cst';
 import { convertNetworkToId } from '@/utils/converter/network-convert';
 import { Network as PrismaNetwork } from '@/generated/prisma/client';
-import type { HydraContext } from '@/utils/hydra/create-l2-providers';
+import { logger } from '@/utils/logger';
+import { calculateMinUtxo, getLovelaceFromAmounts, getNativeTokenCount, calculateTopUpAmount } from '@/utils/min-utxo';
+import { CONSTANTS } from '@/utils/config';
+import { HydraContext } from '@/utils/hydra';
 
 function convertMeshNetworkToPrismaNetwork(network: Network): PrismaNetwork {
 	switch (network) {
@@ -42,25 +45,27 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 	invalidAfter: number,
 	hydraContext?: HydraContext,
 ) {
-	if (hydraContext) {
-		return await generateMasumiSmartContractInteractionTransactionCustomFee(
+	let coinsPerUtxoSize: number = CONSTANTS.FALLBACK_COINS_PER_UTXO_SIZE;
+	try {
+		const protocolParams = await blockchainProvider.fetchProtocolParameters();
+		if (protocolParams.coinsPerUtxoSize != null) {
+			coinsPerUtxoSize = protocolParams.coinsPerUtxoSize;
+		}
+		logger.debug('Fetched protocol parameters for min-UTXO calculation', {
+			coinsPerUtxoSize,
 			type,
-			hydraContext.hydraProvider,
-			network,
-			script,
-			walletAddress,
-			smartContractUtxo,
-			collateralUtxo,
-			walletUtxos,
-			newInlineDatum,
-			invalidBefore,
-			invalidAfter,
-		);
+		});
+	} catch (error) {
+		logger.warn('Failed to fetch protocol parameters, using fallback value for min-UTXO calculation', {
+			fallbackCoinsPerUtxoSize: coinsPerUtxoSize,
+			error: error instanceof Error ? error.message : String(error),
+			type,
+		});
 	}
 
 	const evaluationTx = await generateMasumiSmartContractInteractionTransactionCustomFee(
 		type,
-		blockchainProvider,
+		hydraContext?.hydraProvider ?? blockchainProvider,
 		network,
 		script,
 		walletAddress,
@@ -70,6 +75,8 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 		newInlineDatum,
 		invalidBefore,
 		invalidAfter,
+		undefined,
+		coinsPerUtxoSize,
 	);
 
 	const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
@@ -89,10 +96,11 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 		invalidBefore,
 		invalidAfter,
 		estimatedFee[0].budget,
+		coinsPerUtxoSize,
 	);
 }
 
-export async function generateMasumiSmartContractInteractionTransactionCustomFee(
+async function generateMasumiSmartContractInteractionTransactionCustomFee(
 	type: 'AuthorizeRefund' | 'CancelRefund' | 'RequestRefund' | 'SubmitResult',
 	blockchainProvider: IFetcher,
 	network: Network,
@@ -114,6 +122,8 @@ export async function generateMasumiSmartContractInteractionTransactionCustomFee
 		mem: 7e6,
 		steps: 3e9,
 	},
+
+	coinsPerUtxoSize: number = CONSTANTS.FALLBACK_COINS_PER_UTXO_SIZE,
 ) {
 	const txBuilder = new MeshTxBuilder({
 		fetcher: blockchainProvider,
@@ -125,6 +135,46 @@ export async function generateMasumiSmartContractInteractionTransactionCustomFee
 	);
 	if (typeof smartContractAddress !== 'string') {
 		throw new TypeError(`Expected resolvePlutusScriptAddress to return a string, got: ${typeof smartContractAddress}`);
+	}
+
+	const nativeTokenCount = getNativeTokenCount(smartContractUtxo.output.amount);
+	const minUtxoResult = calculateMinUtxo({
+		datum: newInlineDatum,
+		nativeTokenCount,
+		coinsPerUtxoSize,
+		includeBuffers: true,
+	});
+
+	const currentLovelace = getLovelaceFromAmounts(smartContractUtxo.output.amount);
+	const topUpAmount = calculateTopUpAmount(currentLovelace, minUtxoResult.minUtxoLovelace);
+
+	const outputAmount: Asset[] = [...smartContractUtxo.output.amount];
+
+	if (topUpAmount > 0n) {
+		logger.info('Applying min-UTXO top-up for smart contract interaction', {
+			type,
+			currentLovelace: currentLovelace.toString(),
+			requiredMinUtxo: minUtxoResult.minUtxoLovelace.toString(),
+			topUpAmount: topUpAmount.toString(),
+			nativeTokenCount,
+			coinsPerUtxoSize,
+			txHash: smartContractUtxo.input.txHash,
+			note: 'UTxO may have been created with different protocol parameters or underfunded externally',
+		});
+
+		const lovelaceIndex = outputAmount.findIndex((a) => a.unit === '' || a.unit.toLowerCase() === 'lovelace');
+
+		if (lovelaceIndex >= 0) {
+			outputAmount[lovelaceIndex] = {
+				...outputAmount[lovelaceIndex],
+				quantity: minUtxoResult.minUtxoLovelace.toString(),
+			};
+		} else {
+			outputAmount.push({
+				unit: 'lovelace',
+				quantity: minUtxoResult.minUtxoLovelace.toString(),
+			});
+		}
 	}
 
 	const deserializedAddress = txBuilder.serializer.deserializer.key.deserializeAddress(walletAddress);
@@ -142,7 +192,7 @@ export async function generateMasumiSmartContractInteractionTransactionCustomFee
 		.txInInlineDatumPresent()
 		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
 		.setTotalCollateral('3000000')
-		.txOut(smartContractAddress, smartContractUtxo.output.amount)
+		.txOut(smartContractAddress, outputAmount)
 		.txOutInlineDatumValue(newInlineDatum);
 
 	for (const utxo of walletUtxos) {
@@ -286,7 +336,7 @@ export async function generateMasumiSmartContractWithdrawTransactionAutomaticFee
 	);
 }
 
-export async function generateMasumiSmartContractWithdrawTransactionCustomFee(
+async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 	type: 'CollectCompleted' | 'CollectRefund',
 	blockchainProvider: IFetcher,
 	network: Network,

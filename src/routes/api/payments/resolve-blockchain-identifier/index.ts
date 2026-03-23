@@ -7,6 +7,7 @@ import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-aut
 import { transformPaymentGetTimestamps, transformPaymentGetAmounts } from '@/utils/shared/transformers';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { paymentResponseSchema } from '@/routes/api/payments';
+import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 
 export const postPaymentRequestSchemaInput = z.object({
 	blockchainIdentifier: z.string().describe('The blockchain identifier to resolve'),
@@ -32,9 +33,9 @@ export const resolvePaymentRequestPost = readAuthenticatedEndpointFactory.build(
 	input: postPaymentRequestSchemaInput,
 	output: postPaymentRequestSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof postPaymentRequestSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
-		const result = await prisma.paymentRequest.findUnique({
+		const result = await prisma.paymentRequest.findFirst({
 			where: {
 				PaymentSource: {
 					deletedAt: null,
@@ -42,6 +43,7 @@ export const resolvePaymentRequestPost = readAuthenticatedEndpointFactory.build(
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
 				},
 				blockchainIdentifier: input.blockchainIdentifier,
+				...buildWalletScopeFilter(ctx.walletScopeIds),
 			},
 			include: {
 				BuyerWallet: { select: { id: true, walletVkey: true } },

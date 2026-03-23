@@ -47,7 +47,7 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
             variant="ghost"
             size="sm2"
             className={cn(
-              'px-2 font-medium hover:scale-[1.03] transition-all duration-300 network-active-bar',
+              'px-2 font-medium hover:scale-[1.03] transition-all duration-300',
               network === 'Preprod'
                 ? 'bg-[#FFFFFFD0] dark:bg-background/70 hover:bg-[#FFFFFFD0] dark:hover:bg-background/70 cursor-default hover:scale-100 is-active'
                 : 'bg-[#0000000a] dark:bg-[#ffffff0a] hover:bg-[#00000014] dark:hover:bg-[#ffffff14]',
@@ -60,7 +60,7 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
             variant="ghost"
             size="sm2"
             className={cn(
-              'px-2 font-medium hover:scale-[1.03] transition-all duration-300 network-active-bar',
+              'px-2 font-medium hover:scale-[1.03] transition-all duration-300',
               network === 'Mainnet'
                 ? 'bg-[#FFFFFFD0] dark:bg-background/70 hover:bg-[#FFFFFFD0] dark:hover:bg-background/70 cursor-default hover:scale-100 is-active'
                 : 'bg-[#0000000a] dark:bg-[#ffffff0a] hover:bg-[#00000014] dark:hover:bg-[#ffffff14]',
@@ -104,7 +104,7 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
           variant="ghost"
           size="sm2"
           className={cn(
-            'flex-1 font-medium hover:scale-[1.03] transition-all duration-300 truncate network-active-bar',
+            'flex-1 font-medium hover:scale-[1.03] transition-all duration-300 truncate',
             network === 'Preprod'
               ? 'bg-[#FFFFFFD0] dark:bg-background/70 hover:bg-[#FFFFFFD0] dark:hover:bg-background/70 cursor-default hover:scale-100 is-active'
               : 'bg-[#0000000a] dark:bg-[#ffffff0a] hover:bg-[#00000014] dark:hover:bg-[#ffffff14]',
@@ -117,7 +117,7 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
           variant="ghost"
           size="sm2"
           className={cn(
-            'flex-1 font-medium hover:scale-[1.03] transition-all duration-300 truncate network-active-bar',
+            'flex-1 font-medium hover:scale-[1.03] transition-all duration-300 truncate',
             network === 'Mainnet'
               ? 'bg-[#FFFFFFD0] dark:bg-background/70 hover:bg-[#FFFFFFD0] dark:hover:bg-background/70 cursor-default hover:scale-100 is-active'
               : 'bg-[#0000000a] dark:bg-[#ffffff0a] hover:bg-[#00000014] dark:hover:bg-[#ffffff14]',

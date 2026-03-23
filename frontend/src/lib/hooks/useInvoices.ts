@@ -3,6 +3,7 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { getInvoiceMonthly } from '@/lib/api/generated';
 import { extractApiErrorMessage } from '@/lib/api-error';
+import { buildExclusiveCursorPage } from '@/lib/pagination/cursor-pagination';
 
 export type InvoiceSummary = NonNullable<
   Awaited<ReturnType<typeof getInvoiceMonthly>>['data']
@@ -29,11 +30,13 @@ export function useInvoices(month: string) {
       }
 
       const allInvoices = result.data?.data?.Invoices ?? [];
-      const hasMore = allInvoices.length > limit;
-      const invoices = hasMore ? allInvoices.slice(0, limit) : allInvoices;
-      const nextCursor = hasMore ? invoices[invoices.length - 1]?.id : undefined;
+      const page = buildExclusiveCursorPage(allInvoices, limit, (invoice) => invoice.id);
 
-      return { invoices, nextCursor, hasMore };
+      return {
+        invoices: page.items,
+        nextCursor: page.nextCursor,
+        hasMore: page.hasMore,
+      };
     },
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) =>

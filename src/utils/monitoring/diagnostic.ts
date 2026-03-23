@@ -59,7 +59,7 @@ export async function checkRegistryData() {
 		return {
 			recentCount: recentRegistrations,
 			recent: recentRegistrations,
-			allStates: Object.entries(allRegistrations).map(([state, count]) => ({
+			AllStates: Object.entries(allRegistrations).map(([state, count]) => ({
 				state,
 				count: count._count,
 			})),

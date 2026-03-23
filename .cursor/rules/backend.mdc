@@ -20,6 +20,7 @@ Import Conventions
 - Import Prisma client from `@/utils/db` as the singleton instance.
 - Import generated types from `@/generated/prisma/client` for type safety.
 - Use path aliases (`@/`) for all imports; avoid relative paths.
+- Do not use unknown-valued map types in backend code; prefer domain-specific interfaces, Prisma JSON/input JSON types, or object-property guard helpers.
 
 Endpoint Development
 

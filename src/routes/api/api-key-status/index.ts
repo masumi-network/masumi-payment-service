@@ -2,8 +2,7 @@ import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-aut
 import { z } from '@/utils/zod-openapi';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
-import { transformBigIntAmounts } from '@/utils/shared/transformers';
-import { apiKeyOutputSchema } from '@/routes/api/api-key';
+import { apiKeyOutputSchema, mapApiKeyOutput } from '@/routes/api/api-key';
 
 const getAPIKeyStatusSchemaInput = z.object({});
 
@@ -18,14 +17,12 @@ export const queryAPIKeyStatusEndpointGet = readAuthenticatedEndpointFactory.bui
 			where: { id: ctx.id },
 			include: {
 				RemainingUsageCredits: { select: { amount: true, unit: true } },
+				WalletScopes: { select: { hotWalletId: true } },
 			},
 		});
 		if (!result) {
 			throw createHttpError(404, 'API key not found');
 		}
-		return {
-			...result,
-			RemainingUsageCredits: transformBigIntAmounts(result.RemainingUsageCredits),
-		};
+		return mapApiKeyOutput(result);
 	},
 });

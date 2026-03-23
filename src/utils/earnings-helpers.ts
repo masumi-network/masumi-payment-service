@@ -2,13 +2,6 @@ import createHttpError from 'http-errors';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { logger } from '@/utils/logger';
 
-export function mapUnitAmountToResponse(unit: string, amount: bigint): { unit: string; amount: string } {
-	return {
-		unit: unit === '' ? 'lovelace' : unit,
-		amount: amount.toString(),
-	};
-}
-
 export function parseDateRange(
 	startDate: Date | null | undefined,
 	endDate: Date | null | undefined,
@@ -58,7 +51,7 @@ export type Fund = {
 	blockchainFees: number;
 };
 
-export function addToFundsMap(paymentFunds: Fund, unit: string, amount: bigint): void {
+function addToFundsMap(paymentFunds: Fund, unit: string, amount: bigint): void {
 	if (paymentFunds.units.has(unit)) {
 		paymentFunds.units.set(unit, paymentFunds.units.get(unit)! + Number(amount));
 	} else {
@@ -66,7 +59,7 @@ export function addToFundsMap(paymentFunds: Fund, unit: string, amount: bigint):
 	}
 }
 
-export function addToFundsMapArray(
+function addToFundsMapArray(
 	paymentFunds: Fund,
 	units: Array<{ unit: string; amount: bigint }>,
 	blockchainFees: bigint,
@@ -77,7 +70,7 @@ export function addToFundsMapArray(
 	paymentFunds.blockchainFees += Number(blockchainFees);
 }
 
-export function addToFundsMapArrayMap(
+function addToFundsMapArrayMap(
 	map: Map<string, Fund>,
 	key: string,
 	units: Array<{ unit: string; amount: bigint }>,
@@ -104,11 +97,11 @@ export function addToAllFundsMaps(
 }
 
 export function mapTotalFundsOutput(funds: Fund): {
-	units: Array<{ unit: string; amount: number }>;
+	Units: Array<{ unit: string; amount: number }>;
 	blockchainFees: number;
 } {
 	return {
-		units: Array.from(funds.units.entries()).map(([unit, amount]) => ({
+		Units: Array.from(funds.units.entries()).map(([unit, amount]) => ({
 			unit,
 			amount,
 		})),
@@ -127,12 +120,12 @@ export function mapDailyFundsOutput(fundsByDay: Map<string, Fund>): Array<{
 	day: number;
 	month: number;
 	year: number;
-	units: Array<{ unit: string; amount: number }>;
+	Units: Array<{ unit: string; amount: number }>;
 	blockchainFees: number;
 }> {
 	return Array.from(fundsByDay.entries()).map(([date, fund]) => ({
 		...getDayMonthAndYearFromDate(date),
-		units: Array.from(fund.units.entries()).map(([unit, amount]) => ({
+		Units: Array.from(fund.units.entries()).map(([unit, amount]) => ({
 			unit,
 			amount,
 		})),
@@ -151,12 +144,12 @@ function getMonthAndYearFromDate(date: string): {
 export function mapMonthlyFundsOutput(fundsByMonth: Map<string, Fund>): Array<{
 	month: number;
 	year: number;
-	units: Array<{ unit: string; amount: number }>;
+	Units: Array<{ unit: string; amount: number }>;
 	blockchainFees: number;
 }> {
 	return Array.from(fundsByMonth.entries()).map(([date, fund]) => ({
 		...getMonthAndYearFromDate(date),
-		units: Array.from(fund.units.entries()).map(([unit, amount]) => ({
+		Units: Array.from(fund.units.entries()).map(([unit, amount]) => ({
 			unit,
 			amount,
 		})),

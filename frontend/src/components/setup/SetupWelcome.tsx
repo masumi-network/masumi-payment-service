@@ -41,7 +41,7 @@ import {
   postRegistry,
   getPaymentSourceExtended,
 } from '@/lib/api/generated';
-import { handleApiCall, shortenAddress, getExplorerUrl } from '@/lib/utils';
+import { handleApiCall, shortenAddress } from '@/lib/utils';
 import { WalletLink } from '@/components/ui/wallet-link';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { DEFAULT_ADMIN_WALLETS, DEFAULT_FEE_CONFIG } from '@/lib/constants/defaultWallets';
@@ -52,7 +52,10 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
-import { getUsdmConfig } from '@/lib/constants/defaultWallets';
+import {
+  getActiveStablecoinConfig,
+  getActiveStablecoinSymbol,
+} from '@/lib/constants/defaultWallets';
 import {
   Select,
   SelectContent,
@@ -61,6 +64,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { extractApiErrorMessage } from '@/lib/api-error';
 
 function formatNetworkDisplay(networkType: string): string {
   return networkType?.toUpperCase() === 'MAINNET' ? 'Mainnet' : 'Preprod';
@@ -184,7 +188,7 @@ function SeedPhrasesScreen({
           }),
         {
           onError: (error: any) => {
-            setError(error.message || 'Failed to generate buying wallet');
+            setError(extractApiErrorMessage(error, 'Failed to generate buying wallet'));
             toast.error('Failed to generate buying wallet');
           },
           onFinally: () => {
@@ -220,7 +224,7 @@ function SeedPhrasesScreen({
           }),
         {
           onError: (error: any) => {
-            setError(error.message || 'Failed to generate selling wallet');
+            setError(extractApiErrorMessage(error, 'Failed to generate selling wallet'));
             toast.error('Failed to generate selling wallet');
           },
           onFinally: () => {
@@ -696,34 +700,32 @@ function PaymentSourceSetupScreen({
           onNext();
         },
         onError: (error: unknown) => {
-          let msg = 'Failed to create payment source';
+          let msg = extractApiErrorMessage(error, 'Failed to create payment source');
+          const normalizedMessage = msg.toLowerCase();
 
-          if (error && typeof error === 'object' && 'message' in error) {
-            const errorMessage = String((error as { message: string }).message).toLowerCase();
-
-            // Check for Blockfrost-specific errors
-            if (
-              errorMessage.includes('invalid project token') ||
-              errorMessage.includes('unauthorized') ||
-              errorMessage.includes('403') ||
-              errorMessage.includes('invalid api key')
-            ) {
-              msg = 'Invalid Blockfrost API key. Please check your key and try again.';
-            } else if (
-              errorMessage.includes('mainnet') ||
-              errorMessage.includes('preprod') ||
-              errorMessage.includes('testnet') ||
-              errorMessage.includes('network mismatch') ||
-              errorMessage.includes('wrong network')
-            ) {
-              const expectedNetwork = network === 'Mainnet' ? 'Mainnet' : 'Preprod';
-              msg = `Your Blockfrost API key is for the wrong network. Please use a ${expectedNetwork} API key.`;
-            } else if (errorMessage.includes('blockfrost') || errorMessage.includes('rpc')) {
-              msg =
-                'Unable to connect to Blockfrost. Please verify your API key is valid and for the correct network.';
-            } else {
-              msg = String((error as { message: string }).message);
-            }
+          // Check for Blockfrost-specific errors
+          if (
+            normalizedMessage.includes('invalid project token') ||
+            normalizedMessage.includes('unauthorized') ||
+            normalizedMessage.includes('403') ||
+            normalizedMessage.includes('invalid api key')
+          ) {
+            msg = 'Invalid Blockfrost API key. Please check your key and try again.';
+          } else if (
+            normalizedMessage.includes('mainnet') ||
+            normalizedMessage.includes('preprod') ||
+            normalizedMessage.includes('testnet') ||
+            normalizedMessage.includes('network mismatch') ||
+            normalizedMessage.includes('wrong network')
+          ) {
+            const expectedNetwork = network === 'Mainnet' ? 'Mainnet' : 'Preprod';
+            msg = `Your Blockfrost API key is for the wrong network. Please use a ${expectedNetwork} API key.`;
+          } else if (
+            normalizedMessage.includes('blockfrost') ||
+            normalizedMessage.includes('rpc')
+          ) {
+            msg =
+              'Unable to connect to Blockfrost. Please verify your API key is valid and for the correct network.';
           }
 
           setError(msg);
@@ -1060,8 +1062,9 @@ function AddAiAgentScreen({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>('');
 
+  const stablecoinUnit = getActiveStablecoinSymbol(network);
   const priceSchema = z.object({
-    unit: z.enum(['lovelace', 'USDM'] as const, {
+    unit: z.enum(['lovelace', stablecoinUnit] as const, {
       error: () => 'Token is required',
     }),
     amount: z.string().refine((val) => {
@@ -1192,8 +1195,7 @@ function AddAiAgentScreen({
       });
 
       if (response.error) {
-        const error = response.error as { message: string };
-        setError(error.message || 'Failed to fetch payment sources');
+        setError(extractApiErrorMessage(response.error, 'Failed to fetch payment sources'));
         return;
       }
 
@@ -1237,7 +1239,10 @@ function AddAiAgentScreen({
             : {
                 pricingType: 'Fixed',
                 Pricing: data.prices.map((price) => ({
-                  unit: price.unit === 'lovelace' ? 'lovelace' : getUsdmConfig(network).fullAssetId,
+                  unit:
+                    price.unit === 'lovelace'
+                      ? 'lovelace'
+                      : getActiveStablecoinConfig(network).fullAssetId,
                   amount: (parseFloat(price.amount) * 1000000).toString(),
                 })),
               },
@@ -1257,8 +1262,7 @@ function AddAiAgentScreen({
       });
 
       if (registryResponse.error) {
-        const error = registryResponse.error as { message: string };
-        setError(error.message || 'Failed to register AI agent');
+        setError(extractApiErrorMessage(registryResponse.error, 'Failed to register AI agent'));
         return;
       }
 
@@ -1266,7 +1270,7 @@ function AddAiAgentScreen({
       onAgentCreated?.();
       onNext();
     } catch (err) {
-      setError('An unexpected error occurred');
+      setError(extractApiErrorMessage(err, 'An unexpected error occurred'));
       console.error('Error registering AI agent:', err);
     } finally {
       setIsLoading(false);
@@ -1449,7 +1453,7 @@ function AddAiAgentScreen({
                     <Select
                       value={watch(`prices.${index}.unit`)}
                       onValueChange={(value) =>
-                        setValue(`prices.${index}.unit`, value as 'lovelace' | 'USDM')
+                        setValue(`prices.${index}.unit`, value as 'lovelace' | 'USDCx' | 'tUSDM')
                       }
                     >
                       <SelectTrigger className="w-28">
@@ -1457,7 +1461,7 @@ function AddAiAgentScreen({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="lovelace">ADA</SelectItem>
-                        <SelectItem value="USDM">USDM</SelectItem>
+                        <SelectItem value={stablecoinUnit}>{stablecoinUnit}</SelectItem>
                       </SelectContent>
                     </Select>
                     {priceFields.length > 1 && (

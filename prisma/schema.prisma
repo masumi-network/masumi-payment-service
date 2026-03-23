@@ -8,20 +8,40 @@ datasource db {
 }
 
 model ApiKey {
-  id                    String            @id @default(cuid())
-  createdAt             DateTime          @default(now())
-  updatedAt             DateTime          @updatedAt
-  token                 String            @unique
-  tokenHash             String            @unique
-  status                ApiKeyStatus
-  permission            Permission
+  id        String       @id @default(cuid())
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  token     String       @unique
+  tokenHash String       @unique
+  status    ApiKeyStatus
+
+  // Flag-based permissions (must be set explicitly on create)
+  canRead  Boolean
+  canPay   Boolean
+  canAdmin Boolean
+
   networkLimit          Network[]
-  usageLimited          Boolean           @default(false)
+  usageLimited          Boolean             @default(false)
+  walletScopeEnabled    Boolean             @default(false)
   deletedAt             DateTime?
   PaymentRequest        PaymentRequest[]
   PurchaseRequest       PurchaseRequest[]
   RemainingUsageCredits UnitValue[]
   CreatedWebhooks       WebhookEndpoint[]
+  WalletScopes          ApiKeyWalletScope[]
+}
+
+model ApiKeyWalletScope {
+  id          String    @id @default(cuid())
+  createdAt   DateTime  @default(now())
+  apiKeyId    String
+  hotWalletId String
+  ApiKey      ApiKey    @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+  HotWallet   HotWallet @relation(fields: [hotWalletId], references: [id], onDelete: Cascade)
+
+  @@unique([apiKeyId, hotWalletId])
+  @@index([apiKeyId])
+  @@index([hotWalletId])
 }
 
 model UnitValue {
@@ -49,27 +69,52 @@ model UnitValue {
 }
 
 model HotWallet {
-  id                     String                  @id @default(cuid())
-  createdAt              DateTime                @default(now())
-  updatedAt              DateTime                @updatedAt
-  walletVkey             String                  @unique
-  walletAddress          String
-  type                   HotWalletType
-  secretId               String
-  collectionAddress      String?
-  pendingTransactionId   String?                 @unique
-  paymentSourceId        String
-  lockedAt               DateTime?
-  note                   String?
-  deletedAt              DateTime?
-  PaymentSource          PaymentSource           @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
-  PendingTransaction     Transaction?            @relation(fields: [pendingTransactionId], references: [id])
-  Secret                 WalletSecret            @relation(fields: [secretId], references: [id])
-  PaymentRequest         PaymentRequest[]
-  PurchaseRequest        PurchaseRequest[]
-  RegistryRequest        RegistryRequest[]
-  HydraLocalParticipants HydraLocalParticipant[] @relation("HydraLocalParticipantWallet")
-  HydraRelations         HydraRelation[]
+  id                       String                    @id @default(cuid())
+  createdAt                DateTime                  @default(now())
+  updatedAt                DateTime                  @updatedAt
+  walletVkey               String                    @unique
+  walletAddress            String
+  type                     HotWalletType
+  secretId                 String
+  collectionAddress        String?
+  pendingTransactionId     String?                   @unique
+  pendingSwapTransactionId String?                   @unique
+  paymentSourceId          String
+  lockedAt                 DateTime?
+  note                     String?
+  deletedAt                DateTime?
+  PaymentSource            PaymentSource             @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
+  PendingTransaction       Transaction?              @relation(fields: [pendingTransactionId], references: [id])
+  PendingSwapTransaction   SwapTransaction?          @relation(fields: [pendingSwapTransactionId], references: [id])
+  SwapTransactionHistory   SwapTransaction[]         @relation("SwapTransactionHistory")
+  Secret                   WalletSecret              @relation(fields: [secretId], references: [id])
+  PaymentRequest           PaymentRequest[]
+  PurchaseRequest          PurchaseRequest[]
+  RegistryRequest          RegistryRequest[]
+  apiKeyWalletScopes       ApiKeyWalletScope[]
+  LimitedPurchaseRequests  PurchaseRequest[]         @relation("HotWalletLimit")
+  LowBalanceRules          HotWalletLowBalanceRule[]
+  hydraRelations           HydraRelation[]
+  hydraLocalParticipants   HydraLocalParticipant[]
+}
+
+model HotWalletLowBalanceRule {
+  id              String           @id @default(cuid())
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  hotWalletId     String
+  assetUnit       String
+  thresholdAmount BigInt
+  enabled         Boolean          @default(true)
+  status          LowBalanceStatus @default(Unknown)
+  lastKnownAmount BigInt?
+  lastCheckedAt   DateTime?
+  lastAlertedAt   DateTime?
+  HotWallet       HotWallet        @relation(fields: [hotWalletId], references: [id], onDelete: Cascade)
+
+  @@unique([hotWalletId, assetUnit])
+  @@index([hotWalletId, enabled])
+  @@index([enabled, status])
 }
 
 model Transaction {
@@ -110,6 +155,29 @@ model Transaction {
 
   @@index([layer])
   @@index([hydraHeadId])
+}
+
+model SwapTransaction {
+  id               String            @id @default(cuid())
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  txHash           String?
+  status           TransactionStatus
+  swapStatus       SwapStatus        @default(OrderPending)
+  confirmations    Int?
+  lastCheckedAt    DateTime?
+  fromPolicyId     String
+  fromAssetName    String
+  fromAmount       String
+  toPolicyId       String
+  toAssetName      String
+  poolId           String
+  slippage         Float?
+  cancelTxHash     String?
+  orderOutputIndex Int?
+  hotWalletId      String?
+  BlocksWallet     HotWallet?
+  HotWallet        HotWallet?        @relation("SwapTransactionHistory", fields: [hotWalletId], references: [id])
 }
 
 model WalletSecret {
@@ -309,6 +377,8 @@ model PurchaseRequest {
   requestedBy                                   ApiKey               @relation(fields: [requestedById], references: [id])
   SellerWallet                                  WalletBase           @relation(fields: [sellerWalletId], references: [id], onDelete: Cascade)
   SmartContractWallet                           HotWallet?           @relation(fields: [smartContractWalletId], references: [id])
+  isLimitedToHotWallets                         Boolean
+  HotWalletLimit                                HotWallet[]          @relation("HotWalletLimit")
   TransactionHistory                            Transaction[]        @relation("PurchaseTransactionHistory")
   WithdrawnForBuyer                             UnitValue[]          @relation("BuyerWithdrawnPurchaseRequest")
   PaidFunds                                     UnitValue[]
@@ -408,12 +478,6 @@ enum ApiKeyStatus {
   Revoked
 }
 
-enum Permission {
-  Read
-  ReadAndPay
-  Admin
-}
-
 enum HotWalletType {
   Selling
   Purchasing
@@ -467,6 +531,16 @@ enum TransactionStatus {
 enum TransactionLayer {
   L1
   L2
+}
+
+enum SwapStatus {
+  OrderPending
+  OrderConfirmed
+  CancelPending
+  CancelConfirmed
+  Completed
+  OrderSubmitTimeout
+  CancelSubmitTimeout
 }
 
 enum OnChainState {
@@ -631,6 +705,12 @@ enum RPCProvider {
   Blockfrost
 }
 
+enum LowBalanceStatus {
+  Unknown
+  Healthy
+  Low
+}
+
 // Webhook models
 model WebhookEndpoint {
   id        String   @id @default(cuid())
@@ -685,6 +765,7 @@ enum WebhookEventType {
   PAYMENT_ON_CHAIN_STATUS_CHANGED
   PURCHASE_ON_ERROR
   PAYMENT_ON_ERROR
+  WALLET_LOW_BALANCE
 }
 
 enum WebhookDeliveryStatus {
@@ -826,7 +907,7 @@ model HydraLocalParticipant {
 
   /// The HotWallet this participant operates with (has secret mnemonic)
   walletId String
-  Wallet   HotWallet @relation("HydraLocalParticipantWallet", fields: [walletId], references: [id], onDelete: Restrict)
+  wallet   HotWallet @relation(fields: [walletId], references: [id], onDelete: Restrict)
 
   /// WebSocket URL for this participant's Hydra node (e.g. ws://127.0.0.1:4001)
   nodeUrl String
@@ -842,7 +923,7 @@ model HydraLocalParticipant {
 
   /// Encrypted Hydra signing key (1:1)
   hydraSecretKeyId String         @unique
-  HydraSecretKey   HydraSecretKey @relation(fields: [hydraSecretKeyId], references: [id], onDelete: Cascade)
+  HydraSecretKey   HydraSecretKey @relation(fields: [hydraSecretKeyId], references: [id], onDelete: Restrict)
 
   @@index([walletId])
 }
@@ -877,7 +958,7 @@ model HydraRemoteParticipant {
 
   /// Hydra verification key (1:1)
   hydraVerificationKeyId String               @unique
-  HydraVerificationKey   HydraVerificationKey @relation(fields: [hydraVerificationKeyId], references: [id], onDelete: Cascade)
+  HydraVerificationKey   HydraVerificationKey @relation(fields: [hydraVerificationKeyId], references: [id], onDelete: Restrict)
 
   /// Same wallet cannot join the same head twice
   @@unique([hydraHeadId, walletId])

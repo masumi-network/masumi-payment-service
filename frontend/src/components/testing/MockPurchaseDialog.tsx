@@ -31,6 +31,7 @@ import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/Wal
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { shortenAddress } from '@/lib/utils';
 import { CopyButton } from '@/components/ui/copy-button';
+import { findPaymentSourceWalletByVkey } from '@/lib/wallet-lookup';
 
 interface MockPurchaseDialogProps {
   open: boolean;
@@ -136,26 +137,12 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
 
   const handleWalletClick = useCallback(
     (walletVkey: string) => {
-      const allWallets = currentNetworkPaymentSources.flatMap((source) => [
-        ...(source.SellingWallets || []).map((w) => ({
-          ...w,
-          type: 'Selling' as const,
-          balance: '0',
-          usdmBalance: '0',
-        })),
-        ...(source.PurchasingWallets || []).map((w) => ({
-          ...w,
-          type: 'Purchasing' as const,
-          balance: '0',
-          usdmBalance: '0',
-        })),
-      ]);
-      const found = allWallets.find((w) => w.walletVkey === walletVkey);
+      const found = findPaymentSourceWalletByVkey(currentNetworkPaymentSources, walletVkey);
       if (!found) {
         toast.error('Wallet not found in current payment sources');
         return;
       }
-      setSelectedWalletForDetails(found as WalletWithBalance);
+      setSelectedWalletForDetails(found);
     },
     [currentNetworkPaymentSources],
   );

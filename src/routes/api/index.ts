@@ -19,6 +19,12 @@ import {
 } from './payment-source-extended';
 import { queryAPIKeyStatusEndpointGet } from './api-key-status';
 import { patchWalletEndpointPatch, postWalletEndpointPost, queryWalletEndpointGet } from './wallet';
+import {
+	deleteWalletLowBalanceRuleEndpointDelete,
+	getWalletLowBalanceRulesEndpointGet,
+	patchWalletLowBalanceRuleEndpointPatch,
+	postWalletLowBalanceRuleEndpointPost,
+} from './wallet/low-balance';
 import { queryRpcProviderKeysEndpointGet } from './rpc-api-keys';
 import { queryUTXOEndpointGet } from './utxos';
 import { paymentSourceEndpointGet } from './payment-source';
@@ -33,8 +39,8 @@ import { unregisterAgentPost } from './registry/deregister';
 import { revealDataEndpointPost } from './signature/verify/reveal-data';
 import { postMonthlySignatureEndpoint } from './signature/sign/create-invoice/monthly';
 import { getMonthlyInvoiceListEndpoint, postGenerateMonthlyInvoiceEndpoint } from './invoice/monthly';
-import { postAdminGenerateMonthlyInvoiceEndpoint } from './invoice/monthly/admin';
-import { getUninvoicedPaymentsEndpoint } from './invoice/monthly/uninvoiced';
+import { postInternalGenerateMonthlyInvoiceEndpoint } from './invoice/monthly/internal';
+import { getMissingInvoicePaymentsEndpoint as getMissingPaymentsEndpoint } from './invoice/monthly/missing';
 import { paymentErrorStateRecoveryPost } from './payments/error-state-recovery';
 import { purchaseErrorStateRecoveryPost } from './purchases/error-state-recovery';
 import { queryRegistryDiffGet } from './registry/diff';
@@ -52,23 +58,31 @@ import {
 } from './purchases/diff';
 import { getMonitoringStatus, triggerMonitoringCycle, startMonitoring, stopMonitoring } from './monitoring';
 import {
-	getOrListRelationsGet,
-	createRelationPost,
-	deleteRelationDelete,
-	getOrListHeadsGet,
-	createHeadPost,
-	updateHeadPatch,
-	listHeadErrorsGet,
-	initHeadPost,
-	commitHeadPost,
+	swapTokensEndpointPost,
+	getSwapConfirmEndpointGet,
+	getSwapTransactionsEndpointGet,
+	getSwapEstimateEndpointGet,
+	cancelSwapEndpointPost,
+	acknowledgeSwapTimeoutEndpointPost,
+} from './swap';
+import {
 	closeHeadPost,
-	fanoutHeadPost,
+	commitHeadPost,
+	createHeadPost,
 	createLocalParticipantPost,
-	getLocalParticipantGet,
-	deleteLocalParticipantDelete,
+	createRelationPost,
 	createRemoteParticipantPost,
-	getRemoteParticipantGet,
+	deleteLocalParticipantDelete,
+	deleteRelationDelete,
 	deleteRemoteParticipantDelete,
+	fanoutHeadPost,
+	getLocalParticipantGet,
+	getOrListHeadsGet,
+	getOrListRelationsGet,
+	getRemoteParticipantGet,
+	initHeadPost,
+	listHeadErrorsGet,
+	updateHeadPatch,
 } from './hydra';
 
 export const apiRouter: Routing = {
@@ -169,6 +183,12 @@ export const apiRouter: Routing = {
 			get: queryWalletEndpointGet,
 			post: postWalletEndpointPost,
 			patch: patchWalletEndpointPatch,
+			'low-balance': {
+				get: getWalletLowBalanceRulesEndpointGet,
+				post: postWalletLowBalanceRuleEndpointPost,
+				patch: patchWalletLowBalanceRuleEndpointPatch,
+				delete: deleteWalletLowBalanceRuleEndpointDelete,
+			},
 		},
 		'payment-source-extended': {
 			get: paymentSourceExtendedEndpointGet,
@@ -185,15 +205,29 @@ export const apiRouter: Routing = {
 		'payment-source': {
 			get: paymentSourceEndpointGet,
 		},
+		swap: {
+			post: swapTokensEndpointPost,
+			confirm: getSwapConfirmEndpointGet,
+			cancel: {
+				post: cancelSwapEndpointPost,
+			},
+			'acknowledge-timeout': {
+				post: acknowledgeSwapTimeoutEndpointPost,
+			},
+			transactions: {
+				get: getSwapTransactionsEndpointGet,
+			},
+			estimate: getSwapEstimateEndpointGet,
+		},
 		invoice: {
 			monthly: {
 				get: getMonthlyInvoiceListEndpoint,
 				post: postGenerateMonthlyInvoiceEndpoint,
-				admin: {
-					post: postAdminGenerateMonthlyInvoiceEndpoint,
+				internal: {
+					post: postInternalGenerateMonthlyInvoiceEndpoint,
 				},
-				uninvoiced: {
-					get: getUninvoicedPaymentsEndpoint,
+				missing: {
+					get: getMissingPaymentsEndpoint,
 				},
 			},
 		},

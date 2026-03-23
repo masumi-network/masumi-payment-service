@@ -10,6 +10,7 @@ import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/m
 import { extractAssetName } from '@/utils/converter/agent-identifier';
 import { registryRequestOutputSchema } from '@/routes/api/registry';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
+import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 
 export const unregisterAgentSchemaInput = z.object({
 	agentIdentifier: z
@@ -32,7 +33,7 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 	input: unregisterAgentSchemaInput,
 	output: unregisterAgentSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof unregisterAgentSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 		const smartContractAddress =
 			input.smartContractAddress ??
 			(input.network == Network.Mainnet
@@ -78,6 +79,7 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 		if (sellingWallet == null) {
 			throw createHttpError(404, 'Registered Wallet not found');
 		}
+		assertHotWalletInScope(ctx.walletScopeIds, sellingWallet.id);
 		const registryRequest = await prisma.registryRequest.findUnique({
 			where: {
 				agentIdentifier: policyId + assetName,

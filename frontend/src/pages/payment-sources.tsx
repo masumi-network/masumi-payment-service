@@ -37,6 +37,7 @@ import { TOOLTIP_TEXTS } from '@/lib/constants/tooltips';
 import { handleApiCall } from '@/lib/utils';
 import { useRouter } from 'next/router';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
+import { extractApiErrorMessage } from '@/lib/api-error';
 
 interface UpdatePaymentSourceDialogProps {
   open: boolean;
@@ -74,9 +75,8 @@ function UpdatePaymentSourceDialog({
     });
 
     if (response.error) {
-      const error = response.error as { message: string };
-      console.error('Error updating payment source:', error);
-      toast.error(error.message || 'Failed to update payment source');
+      console.error('Error updating payment source:', response.error);
+      toast.error(extractApiErrorMessage(response.error, 'Failed to update payment source'));
       setIsLoading(false);
       return;
     }
@@ -184,7 +184,7 @@ export default function PaymentSourcesPage() {
         },
         onError: (error: any) => {
           console.error('Error deleting payment source:', error);
-          toast.error(error.message || 'Failed to delete payment source');
+          toast.error(extractApiErrorMessage(error, 'Failed to delete payment source'));
         },
         onFinally: () => {
           setIsDeleting(false);

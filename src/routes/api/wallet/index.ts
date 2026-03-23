@@ -3,50 +3,29 @@ import { z } from '@/utils/zod-openapi';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { decrypt } from '@/utils/security/encryption';
-import { HotWalletType, Network } from '@/generated/prisma/client';
+import { HotWalletType } from '@/generated/prisma/client';
 import { MeshWallet, resolvePaymentKeyHash } from '@meshsdk/core';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { recordBusinessEndpointError } from '@/utils/metrics';
+import {
+	getWalletSchemaInput,
+	getWalletSchemaOutput,
+	patchWalletSchemaInput,
+	patchWalletSchemaOutput,
+	postWalletSchemaInput,
+	postWalletSchemaOutput,
+} from './schemas';
+import { serializeLowBalanceRecord, serializeLowBalanceSummary } from '@/services/wallets';
 
-export const getWalletSchemaInput = z.object({
-	walletType: z.enum(['Selling', 'Purchasing']).describe('The type of wallet to query'),
-	id: z.string().min(1).max(250).describe('The id of the wallet to query'),
-	includeSecret: z
-		.string()
-		.default('false')
-		.transform((s) => s.toLowerCase() === 'true')
-		.describe('Whether to include the decrypted secret in the response'),
-});
-
-export const getWalletSchemaOutput = z
-	.object({
-		Secret: z
-			.object({
-				createdAt: z.date().describe('Timestamp when the secret was created'),
-				updatedAt: z.date().describe('Timestamp when the secret was last updated'),
-				mnemonic: z.string().describe('Decrypted 24-word mnemonic phrase for the wallet'),
-			})
-			.optional()
-			.describe('Wallet secret (mnemonic). Only included if includeSecret is true'),
-		PendingTransaction: z
-			.object({
-				createdAt: z.date().describe('Timestamp when the pending transaction was created'),
-				updatedAt: z.date().describe('Timestamp when the pending transaction was last updated'),
-				hash: z.string().nullable().describe('Transaction hash of the pending transaction. Null if not yet submitted'),
-				lastCheckedAt: z
-					.date()
-					.nullable()
-					.describe('Timestamp when the pending transaction was last checked. Null if never checked'),
-			})
-			.nullable()
-			.describe('Pending transaction for this wallet. Null if no transaction is pending'),
-		note: z.string().nullable().describe('Optional note about this wallet. Null if not set'),
-		walletVkey: z.string().describe('Payment key hash of the wallet'),
-		walletAddress: z.string().describe('Cardano address of the wallet'),
-		collectionAddress: z.string().nullable().describe('Collection address for this wallet. Null if not set'),
-	})
-	.openapi('Wallet');
+export {
+	getWalletSchemaInput,
+	getWalletSchemaOutput,
+	patchWalletSchemaInput,
+	patchWalletSchemaOutput,
+	postWalletSchemaInput,
+	postWalletSchemaOutput,
+};
 
 export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
 	method: 'get',
@@ -81,6 +60,19 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
 								lastCheckedAt: true,
 							},
 						},
+						LowBalanceRules: {
+							orderBy: [{ assetUnit: 'asc' }],
+							select: {
+								id: true,
+								assetUnit: true,
+								thresholdAmount: true,
+								enabled: true,
+								status: true,
+								lastKnownAmount: true,
+								lastCheckedAt: true,
+								lastAlertedAt: true,
+							},
+						},
 					},
 				});
 				if (result == null) {
@@ -109,6 +101,8 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
 						walletVkey: result.walletVkey,
 						walletAddress: result.walletAddress,
 						collectionAddress: result.collectionAddress,
+						LowBalanceSummary: serializeLowBalanceSummary(result.LowBalanceRules),
+						LowBalanceRules: result.LowBalanceRules.map(serializeLowBalanceRecord),
 						Secret: {
 							createdAt: result.Secret.createdAt,
 							updatedAt: result.Secret.updatedAt,
@@ -129,6 +123,8 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
 					collectionAddress: result.collectionAddress,
 					walletVkey: result.walletVkey,
 					walletAddress: result.walletAddress,
+					LowBalanceSummary: serializeLowBalanceSummary(result.LowBalanceRules),
+					LowBalanceRules: result.LowBalanceRules.map(serializeLowBalanceRecord),
 				};
 			} else if (input.walletType == 'Purchasing') {
 				const result = await prisma.hotWallet.findFirst({
@@ -156,6 +152,19 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
 								lastCheckedAt: true,
 							},
 						},
+						LowBalanceRules: {
+							orderBy: [{ assetUnit: 'asc' }],
+							select: {
+								id: true,
+								assetUnit: true,
+								thresholdAmount: true,
+								enabled: true,
+								status: true,
+								lastKnownAmount: true,
+								lastCheckedAt: true,
+								lastAlertedAt: true,
+							},
+						},
 					},
 				});
 				if (result == null) {
@@ -179,6 +188,8 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
 						walletVkey: result.walletVkey,
 						walletAddress: result.walletAddress,
 						collectionAddress: result.collectionAddress,
+						LowBalanceSummary: serializeLowBalanceSummary(result.LowBalanceRules),
+						LowBalanceRules: result.LowBalanceRules.map(serializeLowBalanceRecord),
 						Secret: {
 							createdAt: result.Secret.createdAt,
 							updatedAt: result.Secret.updatedAt,
@@ -199,6 +210,8 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
 					walletVkey: result.walletVkey,
 					collectionAddress: result.collectionAddress,
 					walletAddress: result.walletAddress,
+					LowBalanceSummary: serializeLowBalanceSummary(result.LowBalanceRules),
+					LowBalanceRules: result.LowBalanceRules.map(serializeLowBalanceRecord),
 				};
 			}
 			throw createHttpError(400, 'Invalid wallet type');
@@ -220,20 +233,6 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
 	},
 });
 
-export const postWalletSchemaInput = z.object({
-	network: z.nativeEnum(Network).describe('The network the Cardano wallet will be used on'),
-});
-
-export const postWalletSchemaOutput = z
-	.object({
-		walletMnemonic: z
-			.string()
-			.describe('24-word mnemonic phrase for the newly generated wallet. IMPORTANT: Backup this mnemonic securely'),
-		walletAddress: z.string().describe('Cardano address of the newly generated wallet'),
-		walletVkey: z.string().describe('Payment key hash of the newly generated wallet'),
-	})
-	.openapi('GeneratedWalletSecret');
-
 export const postWalletEndpointPost = adminAuthenticatedEndpointFactory.build({
 	method: 'post',
 	input: postWalletSchemaInput,
@@ -241,7 +240,7 @@ export const postWalletEndpointPost = adminAuthenticatedEndpointFactory.build({
 	handler: async ({ input, ctx }) => {
 		const startTime = Date.now();
 		try {
-			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 			const secretKey = MeshWallet.brew(false);
 			const secretWords = typeof secretKey == 'string' ? secretKey.split(' ') : secretKey;
 
@@ -274,17 +273,6 @@ export const postWalletEndpointPost = adminAuthenticatedEndpointFactory.build({
 	},
 });
 
-export const patchWalletSchemaInput = z.object({
-	id: z.string().min(1).max(250).describe('The id of the wallet to update'),
-	newCollectionAddress: z
-		.string()
-		.max(250)
-		.nullable()
-		.describe('The new collection address to set for this wallet. Pass null to clear.'),
-});
-
-export const patchWalletSchemaOutput = getWalletSchemaOutput;
-
 export const patchWalletEndpointPatch = adminAuthenticatedEndpointFactory.build({
 	method: 'patch',
 	input: patchWalletSchemaInput,
@@ -314,6 +302,19 @@ export const patchWalletEndpointPatch = adminAuthenticatedEndpointFactory.build(
 						lastCheckedAt: true,
 					},
 				},
+				LowBalanceRules: {
+					orderBy: [{ assetUnit: 'asc' }],
+					select: {
+						id: true,
+						assetUnit: true,
+						thresholdAmount: true,
+						enabled: true,
+						status: true,
+						lastKnownAmount: true,
+						lastCheckedAt: true,
+						lastAlertedAt: true,
+					},
+				},
 			},
 		});
 
@@ -330,6 +331,8 @@ export const patchWalletEndpointPatch = adminAuthenticatedEndpointFactory.build(
 			walletVkey: result.walletVkey,
 			walletAddress: result.walletAddress,
 			collectionAddress: result.collectionAddress,
+			LowBalanceSummary: serializeLowBalanceSummary(result.LowBalanceRules),
+			LowBalanceRules: result.LowBalanceRules.map(serializeLowBalanceRecord),
 		};
 	},
 });

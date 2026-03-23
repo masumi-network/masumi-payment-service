@@ -2,7 +2,8 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { toast } from 'react-toastify';
 import { deserializeAddress } from '@meshsdk/core';
-import { TESTUSDM_CONFIG, getUsdmConfig } from '@/lib/constants/defaultWallets';
+import { TESTUSDM_CONFIG, USDCX_CONFIG, getUsdmConfig } from '@/lib/constants/defaultWallets';
+import { extractApiErrorMessage } from '@/lib/api-error';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -23,21 +24,12 @@ export async function copyToClipboard(text: string) {
   }
 }
 
-export function parseError(error: any): string {
-  if (error?.error) {
-    return error.error;
-  }
-  if (error?.response?.data?.error) {
-    return error.response.data.error;
-  }
-  if (error?.message) {
-    return error.message;
-  }
-  return 'An error occurred';
+export function parseError(error: unknown): string {
+  return extractApiErrorMessage(error, 'An error occurred');
 }
 
-export function parseFetchError(errorData: any, response: Response): string {
-  return errorData.message || errorData.error || `HTTP ${response.status}: ${response.statusText}`;
+export function parseFetchError(errorData: unknown, response: Response): string {
+  return extractApiErrorMessage(errorData, `HTTP ${response.status}: ${response.statusText}`);
 }
 
 export async function handleApiCall<T>(
@@ -54,13 +46,14 @@ export async function handleApiCall<T>(
 
     // Check for API errors (response.error pattern)
     if (response && typeof response === 'object' && 'error' in response && response.error) {
-      const error = response.error as { message: string };
-      console.error('API Error:', error);
+      console.error('API Error:', response.error);
 
       if (options.onError) {
-        options.onError(error);
+        options.onError(response.error);
       } else {
-        toast.error(error.message || options.errorMessage || 'API call failed');
+        toast.error(
+          extractApiErrorMessage(response.error, options.errorMessage || 'API call failed'),
+        );
       }
 
       return null;
@@ -79,7 +72,9 @@ export async function handleApiCall<T>(
     if (options.onError) {
       options.onError(error);
     } else {
-      toast.error(options.errorMessage || 'An unexpected error occurred');
+      toast.error(
+        extractApiErrorMessage(error, options.errorMessage || 'An unexpected error occurred'),
+      );
     }
 
     return null;
@@ -278,6 +273,13 @@ export function formatFundUnit(unit: string | undefined, network: string | undef
 
   if (!unit) {
     return 'ADA';
+  }
+
+  const isUsdcx =
+    unit === USDCX_CONFIG.fullAssetId || unit === USDCX_CONFIG.policyId || unit === 'USDCx';
+
+  if (isUsdcx) {
+    return 'USDCx';
   }
 
   const usdmConfig = getUsdmConfig(network);

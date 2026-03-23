@@ -1,9 +1,10 @@
 import { prisma } from '@/utils/db';
 import { InsufficientFundsError } from '@/utils/errors/insufficient-funds-error';
-import { Network, Permission, PurchasingAction, WalletBase, WalletType } from '@/generated/prisma/client';
+import { Network, PurchasingAction, WalletBase, WalletType } from '@/generated/prisma/client';
 
 async function handlePurchaseCreditInit({
 	id,
+	walletScopeIds,
 	cost,
 	metadata,
 	network,
@@ -18,6 +19,7 @@ async function handlePurchaseCreditInit({
 	inputHash,
 }: {
 	id: string;
+	walletScopeIds: string[] | null;
 	cost: Array<{ amount: bigint; unit: string }>;
 	metadata: string | null | undefined;
 	network: Network;
@@ -65,7 +67,7 @@ async function handlePurchaseCreditInit({
 			if (!result) {
 				throw Error('Invalid id: ' + id);
 			}
-			if (result.permission != Permission.Admin && !result.networkLimit.includes(network)) {
+			if (!result.canAdmin && !result.networkLimit.includes(network)) {
 				throw Error('No permission for network: ' + network + ' for id: ' + id);
 			}
 
@@ -161,6 +163,10 @@ async function handlePurchaseCreditInit({
 					externalDisputeUnlockTime: externalDisputeUnlockTime,
 					unlockTime: unlockTime,
 					metadata: metadata,
+					isLimitedToHotWallets: walletScopeIds !== null,
+					...(walletScopeIds !== null && walletScopeIds.length > 0
+						? { HotWalletLimit: { connect: walletScopeIds.map((wId) => ({ id: wId })) } }
+						: {}),
 				},
 				include: {
 					SellerWallet: { select: { id: true, walletVkey: true } },

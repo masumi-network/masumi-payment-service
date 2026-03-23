@@ -1,7 +1,8 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { Button } from '@/components/ui/button';
-
+import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
 import Head from 'next/head';
@@ -13,37 +14,52 @@ import { AddApiKeyDialog } from '@/components/api-keys/AddApiKeyDialog';
 import { UpdateApiKeyDialog } from '@/components/api-keys/UpdateApiKeyDialog';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { ApiKeyTableSkeleton } from '@/components/skeletons/ApiKeyTableSkeleton';
-import { Plus, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { Search, Plus } from 'lucide-react';
 import { Tabs } from '@/components/ui/tabs';
-import { Badge } from '@/components/ui/badge';
-import { AnimatedPage } from '@/components/ui/animated-page';
-import { SearchInput } from '@/components/ui/search-input';
-import { EmptyState } from '@/components/ui/empty-state';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Pagination } from '@/components/ui/pagination';
 import { CopyButton } from '@/components/ui/copy-button';
 import { shortenAddress } from '@/lib/utils';
 import { useApiKey } from '@/lib/hooks/useApiKey';
 import { ApiKey } from '@/lib/api/generated';
+import { extractApiErrorMessage } from '@/lib/api-error';
+
+/**
+ * Get a human-readable permission label from flags.
+ */
+function getPermissionLabel(apiKey: ApiKey): string {
+  if (apiKey.canAdmin) return 'Admin';
+  if (apiKey.canPay) return 'Read and Pay';
+  return 'Read Only';
+}
+
+/**
+ * Check if an API key matches a permission tab filter.
+ */
+function matchesPermissionTab(apiKey: ApiKey, tab: string): boolean {
+  switch (tab) {
+    case 'Read':
+      return apiKey.canRead && !apiKey.canPay && !apiKey.canAdmin;
+    case 'ReadAndPay':
+      return apiKey.canPay && !apiKey.canAdmin;
+    case 'Admin':
+      return apiKey.canAdmin;
+    case 'All':
+    default:
+      return true;
+  }
+}
 
 export default function ApiKeys() {
   const router = useRouter();
   const { apiClient, network, apiKey } = useAppContext();
-
+  const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [keyToUpdate, setKeyToUpdate] = useState<ApiKey | null>(null);
@@ -51,40 +67,7 @@ export default function ApiKeys() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [activeTab, setActiveTab] = useState('All');
   const { allApiKeys, isLoading, hasMore, loadMore, refetch } = useApiKey();
-
-  const filteredApiKeys = useMemo(() => {
-    let filtered = [...allApiKeys];
-    filtered = filtered.filter(
-      (key) => key.networkLimit.includes(network) || key.permission === 'Admin',
-    );
-    if (activeTab === 'Read') {
-      filtered = filtered.filter((key) => key.permission === 'Read');
-    } else if (activeTab === 'ReadAndPay') {
-      filtered = filtered.filter((key) => key.permission === 'ReadAndPay');
-    } else if (activeTab === 'Admin') {
-      filtered = filtered.filter((key) => key.permission === 'Admin');
-    }
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter((key) => {
-        const nameMatch = key.id?.toLowerCase().includes(query) || false;
-        const tokenMatch = key.token?.toLowerCase().includes(query) || false;
-        const permissionMatch = key.permission?.toLowerCase().includes(query) || false;
-        const statusMatch = key.status?.toLowerCase().includes(query) || false;
-        const networkMatch =
-          key.networkLimit?.some((n) => n.toLowerCase().includes(query)) || false;
-        return nameMatch || tokenMatch || permissionMatch || statusMatch || networkMatch;
-      });
-    }
-    return filtered;
-  }, [allApiKeys, searchQuery, activeTab, network]);
-
-  useEffect(() => {
-    if (router.query.action === 'add_api_key') {
-      queueMicrotask(() => setIsAddDialogOpen(true));
-      router.replace('/api-keys', undefined, { shallow: true });
-    }
-  }, [router.query.action, router]);
+  const handledActionRef = useRef(false);
 
   const tabs = [
     { name: 'All', count: null },
@@ -93,8 +76,61 @@ export default function ApiKeys() {
     { name: 'Admin', count: null },
   ];
 
+  // Derive filtered API keys from state (no setState in effect needed)
+  const filteredApiKeys = useMemo(() => {
+    let filtered = [...allApiKeys];
+
+    // Filter by network first (admin keys have access to all networks)
+    filtered = filtered.filter((key) => key.NetworkLimit.includes(network) || key.canAdmin);
+
+    // Then filter by permission tab using flag-based logic
+    filtered = filtered.filter((key) => matchesPermissionTab(key, activeTab));
+
+    // Then filter by search query
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter((key) => {
+        const nameMatch = key.id?.toLowerCase().includes(query) || false;
+        const tokenMatch = key.token?.toLowerCase().includes(query) || false;
+        const permissionMatch = getPermissionLabel(key).toLowerCase().includes(query) || false;
+        const statusMatch = key.status?.toLowerCase().includes(query) || false;
+        const networkMatch =
+          key.NetworkLimit?.some((n) => n.toLowerCase().includes(query)) || false;
+
+        return nameMatch || tokenMatch || permissionMatch || statusMatch || networkMatch;
+      });
+    }
+
+    return filtered;
+  }, [allApiKeys, searchQuery, activeTab, network]);
+
+  // Handle action query parameter from search
+  useEffect(() => {
+    if (router.query.action === 'add_api_key' && !handledActionRef.current) {
+      handledActionRef.current = true;
+      // Use queueMicrotask to avoid synchronous setState within the effect
+      queueMicrotask(() => {
+        setIsAddDialogOpen(true);
+      });
+      // Clean up the query parameter
+      router.replace('/api-keys', undefined, { shallow: true });
+    }
+  }, [router.query.action, router]);
+
   const handleLoadMore = () => {
     loadMore();
+  };
+
+  const handleSelectKey = (token: string) => {
+    setSelectedKeys((prev) =>
+      prev.includes(token) ? prev.filter((k) => k !== token) : [...prev, token],
+    );
+  };
+
+  const handleSelectAll = () => {
+    setSelectedKeys(
+      selectedKeys.length === filteredApiKeys.length ? [] : filteredApiKeys.map((key) => key.token),
+    );
   };
 
   const handleDeleteApiKey = async () => {
@@ -115,7 +151,7 @@ export default function ApiKeys() {
         },
         onError: (error: any) => {
           console.error('Error deleting API key:', error);
-          toast.error(error.message || 'Failed to delete API key');
+          toast.error(extractApiErrorMessage(error, 'Failed to delete API key'));
         },
         onFinally: () => {
           setIsDeleting(false);
@@ -131,11 +167,11 @@ export default function ApiKeys() {
       <Head>
         <title>API Keys | Admin Interface</title>
       </Head>
-      <AnimatedPage>
-        <div className="space-y-6">
+      <div>
+        <div className="mb-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight">API keys</h1>
+              <h1 className="text-xl font-semibold mb-1">API keys</h1>
               <p className="text-sm text-muted-foreground">
                 Manage your API keys for accessing the payment service.{' '}
                 <a
@@ -154,12 +190,15 @@ export default function ApiKeys() {
                 }}
                 isRefreshing={isLoading}
               />
-              <Button className="btn-hover-lift" onClick={() => setIsAddDialogOpen(true)}>
+              <Button onClick={() => setIsAddDialogOpen(true)}>
                 <Plus className="h-4 w-4" />
                 Add API key
               </Button>
             </div>
           </div>
+        </div>
+
+        <div className="space-y-6">
           <Tabs
             tabs={tabs}
             activeTab={activeTab}
@@ -170,104 +209,86 @@ export default function ApiKeys() {
           />
 
           <div className="flex justify-between items-center">
-            <div className="flex-1">
-              <SearchInput
-                value={searchQuery}
-                onChange={setSearchQuery}
+            <div className="relative flex-1">
+              <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                type="search"
                 placeholder="Search by name, key ID, permission, status, network, or usage"
-                className="max-w-xs"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="max-w-xs pl-10"
               />
             </div>
           </div>
 
-          <div className="border rounded-lg">
-            <Table>
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="p-4 pl-6">ID</TableHead>
-                  <TableHead className="p-4">Key</TableHead>
-                  <TableHead className="p-4">Permission</TableHead>
-                  <TableHead className="p-4">Network Limits</TableHead>
-                  <TableHead className="p-4">Usage Limits</TableHead>
-                  <TableHead className="p-4">Status</TableHead>
-                  <TableHead className="w-10 p-4"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+          <div className="border rounded-lg overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b">
+                  <th className="w-12 p-4">
+                    <Checkbox
+                      checked={
+                        filteredApiKeys.length > 0 && selectedKeys.length === filteredApiKeys.length
+                      }
+                      onCheckedChange={handleSelectAll}
+                    />
+                  </th>
+                  <th className="p-4 text-left text-sm font-medium">ID</th>
+                  <th className="p-4 text-left text-sm font-medium">Key</th>
+                  <th className="p-4 text-left text-sm font-medium">Permission</th>
+                  <th className="p-4 text-left text-sm font-medium">Networks</th>
+                  <th className="p-4 text-left text-sm font-medium">Usage Limits</th>
+                  <th className="p-4 text-left text-sm font-medium">Status</th>
+                  <th className="w-12 p-4"></th>
+                </tr>
+              </thead>
+              <tbody>
                 {isLoading ? (
                   <ApiKeyTableSkeleton rows={5} />
                 ) : filteredApiKeys.length === 0 ? (
-                  <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={7}>
-                      <EmptyState
-                        icon={searchQuery ? 'search' : 'inbox'}
-                        title={
-                          searchQuery
-                            ? 'No API keys found matching your search'
-                            : 'No API keys found'
-                        }
-                        description={
-                          searchQuery
-                            ? 'Try adjusting your search terms'
-                            : 'Add an API key to get started'
-                        }
-                      />
-                    </TableCell>
-                  </TableRow>
+                  <tr>
+                    <td colSpan={8} className="text-center py-8">
+                      {searchQuery ? 'No API keys found matching your search' : 'No API keys found'}
+                    </td>
+                  </tr>
                 ) : (
                   filteredApiKeys.map((key, index) => (
-                    <TableRow
-                      key={index}
-                      className="animate-fade-in opacity-0"
-                      style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
-                    >
-                      <TableCell className="p-4 pl-6 font-mono text-xs text-muted-foreground">
-                        {shortenAddress(key.id)}
-                      </TableCell>
-                      <TableCell className="p-4">
+                    <tr key={index} className="border-b" onClick={() => {}}>
+                      <td className="p-4">
+                        <Checkbox
+                          checked={selectedKeys.includes(key.token)}
+                          onCheckedChange={() => handleSelectKey(key.token)}
+                        />
+                      </td>
+                      <td className="p-4">
+                        <div className="text-sm">{key.id}</div>
+                      </td>
+                      <td className="p-4 truncate">
                         <div className="flex items-center gap-2">
                           <span className="font-mono text-sm text-muted-foreground">
                             {shortenAddress(key.token)}
                           </span>
                           <CopyButton value={key.token} />
                         </div>
-                      </TableCell>
-                      <TableCell className="p-4">
-                        <Badge
-                          variant={
-                            key.permission === 'Admin'
-                              ? 'default'
-                              : key.permission === 'ReadAndPay'
-                                ? 'secondary'
-                                : 'outline'
-                          }
-                          className={
-                            key.permission === 'Admin'
-                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 hover:bg-amber-100/80 dark:hover:bg-amber-900/40'
-                              : ''
-                          }
-                        >
-                          {key.permission}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="p-4">
-                        {key.networkLimit.length > 0 ? (
-                          <div className="flex gap-1">
-                            {key.networkLimit.map((net) => (
-                              <Badge key={net} variant="outline" className="font-normal">
-                                {net}
-                              </Badge>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="text-muted-foreground">Unlimited</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="p-4 text-sm">
+                      </td>
+                      <td className="p-4 text-sm">{getPermissionLabel(key)}</td>
+                      <td className="p-4 text-sm">
+                        <div className="flex gap-1">
+                          {key.NetworkLimit.map((network) => (
+                            <span
+                              key={network}
+                              className="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-100/10 px-2 py-1 text-xs"
+                            >
+                              {network}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="p-4 text-sm">
                         {key.usageLimited ? (
-                          <div className="space-y-0.5">
-                            {key.RemainingUsageCredits.map((credit, i) => (
-                              <div key={i} className="text-muted-foreground">
+                          <div className="space-y-1">
+                            {key.RemainingUsageCredits.map((credit, index) => (
+                              <div key={index}>
                                 {credit.unit === 'lovelace'
                                   ? `${(Number(credit.amount) / 1000000).toLocaleString()} ADA`
                                   : `${credit.amount} ${credit.unit}`}
@@ -275,54 +296,51 @@ export default function ApiKeys() {
                             ))}
                           </div>
                         ) : (
-                          <span className="text-muted-foreground">Unlimited</span>
+                          'Unlimited'
                         )}
-                      </TableCell>
-                      <TableCell className="p-4">
-                        <Badge
-                          variant={key.status === 'Active' ? 'default' : 'destructive'}
-                          className={
+                      </td>
+                      <td className="p-4 text-sm">
+                        <span
+                          className={`inline-flex items-center rounded-full px-2 py-1 text-xs ${
                             key.status === 'Active'
-                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/30'
-                              : ''
-                          }
+                              ? 'bg-green-100 text-green-700'
+                              : 'bg-red-100 text-red-700'
+                          }`}
                         >
                           {key.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="p-4">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <MoreHorizontal className="h-4 w-4" />
-                              <span className="sr-only">Actions</span>
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="min-w-[120px]">
-                            <DropdownMenuItem
-                              onClick={() => setKeyToUpdate(key)}
-                              className="whitespace-nowrap"
-                            >
-                              <Pencil className="mr-2 h-4 w-4 shrink-0" />
-                              Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
+                        </span>
+                      </td>
+                      <td className="p-4">
+                        <Select
+                          onValueChange={(value) => {
+                            if (value === 'update') {
+                              setKeyToUpdate(key);
+                            } else if (value === 'delete') {
+                              setKeyToDelete(key);
+                            }
+                          }}
+                          value=""
+                        >
+                          <SelectTrigger className="w-[100px]">
+                            <SelectValue placeholder="Actions" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="update">Update</SelectItem>
+                            <SelectItem
                               disabled={key.token === apiKey}
-                              onClick={() => setKeyToDelete(key)}
-                              className="whitespace-nowrap text-destructive focus:text-destructive"
+                              value="delete"
+                              className="text-red-600"
                             >
-                              <Trash2 className="mr-2 h-4 w-4 shrink-0" />
-                              <span>{key.token === apiKey ? 'In use' : 'Delete'}</span>
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
+                              {key.token === apiKey ? 'Cannot delete current API key' : 'Delete'}
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </td>
+                    </tr>
                   ))
                 )}
-              </TableBody>
-            </Table>
+              </tbody>
+            </table>
           </div>
 
           <div className="flex flex-col gap-4 items-center">
@@ -331,35 +349,35 @@ export default function ApiKeys() {
             )}
           </div>
         </div>
+      </div>
 
-        <AddApiKeyDialog
-          open={isAddDialogOpen}
-          onClose={() => setIsAddDialogOpen(false)}
+      <AddApiKeyDialog
+        open={isAddDialogOpen}
+        onClose={() => setIsAddDialogOpen(false)}
+        onSuccess={() => {
+          refetch();
+        }}
+      />
+
+      {keyToUpdate && (
+        <UpdateApiKeyDialog
+          open={true}
+          onClose={() => setKeyToUpdate(null)}
           onSuccess={() => {
             refetch();
           }}
+          apiKey={keyToUpdate}
         />
+      )}
 
-        {keyToUpdate && (
-          <UpdateApiKeyDialog
-            open={true}
-            onClose={() => setKeyToUpdate(null)}
-            onSuccess={() => {
-              refetch();
-            }}
-            apiKey={keyToUpdate}
-          />
-        )}
-
-        <ConfirmDialog
-          open={!!keyToDelete}
-          onClose={() => setKeyToDelete(null)}
-          title="Delete API Key"
-          description="Are you sure you want to delete this API key? This action cannot be undone."
-          onConfirm={handleDeleteApiKey}
-          isLoading={isDeleting}
-        />
-      </AnimatedPage>
+      <ConfirmDialog
+        open={!!keyToDelete}
+        onClose={() => setKeyToDelete(null)}
+        title="Delete API Key"
+        description="Are you sure you want to delete this API key? This action cannot be undone."
+        onConfirm={handleDeleteApiKey}
+        isLoading={isDeleting}
+      />
     </MainLayout>
   );
 }

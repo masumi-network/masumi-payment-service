@@ -1,12 +1,14 @@
 import { z } from '@/utils/zod-openapi';
 import { prisma } from '@/utils/db';
-import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { Network, Prisma, PurchaseErrorType, PurchasingAction } from '@/generated/prisma/client';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import createHttpError from 'http-errors';
 import { queryPurchaseRequestSchemaOutput } from '@/routes/api/purchases';
 import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
+import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
+import { exhaustiveFallback } from '@/utils/assert-never';
 
 type PurchaseDiffMode =
 	| 'nextActionLastChangedAt'
@@ -50,12 +52,14 @@ function buildPurchaseDiffWhere({
 	sinceId,
 	network,
 	filterSmartContractAddress,
+	walletScopeIds,
 }: {
 	mode: PurchaseDiffMode;
 	since: Date;
 	sinceId?: string;
 	network: Prisma.PaymentSourceWhereInput['network'];
 	filterSmartContractAddress?: string | null;
+	walletScopeIds: string[] | null;
 }): Prisma.PurchaseRequestWhereInput {
 	const base: Prisma.PurchaseRequestWhereInput = {
 		PaymentSource: {
@@ -63,6 +67,7 @@ function buildPurchaseDiffWhere({
 			network,
 			smartContractAddress: filterSmartContractAddress ?? undefined,
 		},
+		...buildWalletScopeFilter(walletScopeIds),
 	};
 
 	switch (mode) {
@@ -102,10 +107,8 @@ function buildPurchaseDiffWhere({
 						...base,
 						nextActionOrOnChainStateOrResultLastChangedAt: { gte: since },
 					};
-		default: {
-			const _never: never = mode;
-			return base;
-		}
+		default:
+			return exhaustiveFallback(mode, base);
 	}
 }
 
@@ -117,10 +120,8 @@ function buildPurchaseDiffOrderBy(mode: PurchaseDiffMode): Prisma.PurchaseReques
 			return [{ onChainStateOrResultLastChangedAt: 'asc' }, { id: 'asc' }];
 		case 'nextActionOrOnChainStateOrResultLastChangedAt':
 			return [{ nextActionOrOnChainStateOrResultLastChangedAt: 'asc' }, { id: 'asc' }];
-		default: {
-			const _never: never = mode;
-			return [{ id: 'asc' }];
-		}
+		default:
+			return exhaustiveFallback(mode, [{ id: 'asc' }]);
 	}
 }
 
@@ -133,7 +134,7 @@ async function queryPurchaseDiffByMode({
 	ctx: AuthContext;
 	mode: PurchaseDiffMode;
 }) {
-	await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+	await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 	const since = input.lastUpdate;
 	const sinceId = input.cursorId;
@@ -145,6 +146,7 @@ async function queryPurchaseDiffByMode({
 			sinceId,
 			network: input.network,
 			filterSmartContractAddress: input.filterSmartContractAddress,
+			walletScopeIds: ctx.walletScopeIds,
 		}),
 		orderBy: buildPurchaseDiffOrderBy(mode),
 		take: input.limit,
@@ -276,7 +278,7 @@ async function queryPurchaseDiffByMode({
 	};
 }
 
-export const queryPurchaseDiffCombinedGet = payAuthenticatedEndpointFactory.build({
+export const queryPurchaseDiffCombinedGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: queryPurchaseDiffSchemaInput,
 	output: queryPurchaseRequestSchemaOutput,
@@ -288,7 +290,7 @@ export const queryPurchaseDiffCombinedGet = payAuthenticatedEndpointFactory.buil
 		}),
 });
 
-export const queryPurchaseDiffNextActionGet = payAuthenticatedEndpointFactory.build({
+export const queryPurchaseDiffNextActionGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: queryPurchaseDiffSchemaInput,
 	output: queryPurchaseRequestSchemaOutput,
@@ -300,7 +302,7 @@ export const queryPurchaseDiffNextActionGet = payAuthenticatedEndpointFactory.bu
 		}),
 });
 
-export const queryPurchaseDiffOnChainStateOrResultGet = payAuthenticatedEndpointFactory.build({
+export const queryPurchaseDiffOnChainStateOrResultGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: queryPurchaseDiffSchemaInput,
 	output: queryPurchaseRequestSchemaOutput,

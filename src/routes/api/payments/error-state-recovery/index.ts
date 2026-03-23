@@ -9,6 +9,7 @@ import { ez } from 'express-zod-api';
 import { paymentResponseSchema } from '..';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { transformPaymentGetTimestamps, transformPaymentGetAmounts } from '@/utils/shared/transformers';
+import { assertWalletInScope } from '@/utils/shared/wallet-scope';
 
 export const paymentErrorStateRecoverySchemaInput = z.object({
 	blockchainIdentifier: z.string().min(1).describe('The blockchain identifier of the payment request'),
@@ -33,7 +34,7 @@ export const paymentErrorStateRecoveryPost = payAuthenticatedEndpointFactory.bui
 		ctx: AuthContext;
 	}) => {
 		// Check network permission
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 		// Find payment request
 		const paymentRequest = await prisma.paymentRequest.findFirst({
@@ -57,6 +58,7 @@ export const paymentErrorStateRecoveryPost = payAuthenticatedEndpointFactory.bui
 		if (!paymentRequest) {
 			throw createHttpError(404, 'Payment request not found with the provided blockchain identifier or it was changed');
 		}
+		assertWalletInScope(ctx.walletScopeIds, paymentRequest.smartContractWalletId);
 
 		if (!paymentRequest.onChainState) {
 			throw createHttpError(

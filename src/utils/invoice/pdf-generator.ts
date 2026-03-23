@@ -620,7 +620,7 @@ function buildInvoicePDF(
 
 // ── Exported API (same signatures as before) ───────────────────────────────
 
-export async function generateInvoicePDF(
+async function generateInvoicePDF(
 	invoiceGroups: InvoiceGroup[],
 	seller: InvoiceSeller,
 	buyer: InvoiceBuyer,

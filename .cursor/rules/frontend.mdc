@@ -19,6 +19,7 @@ Generated Code
 - Never manually edit files in `frontend/src/lib/api/generated/`; these are auto-generated from OpenAPI spec.
 - Run `cd frontend && pnpm run openapi-ts-latest` after backend API changes to regenerate types.
 - Import API types from generated files for type-safe API interactions.
+- Do not use unknown-valued map types in frontend code; prefer explicit JSON/object types and runtime property helpers for narrowing `unknown`.
 
 Component Structure
 

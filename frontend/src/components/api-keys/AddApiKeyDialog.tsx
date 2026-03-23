@@ -8,7 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { postApiKey } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
@@ -17,6 +17,13 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useForm, Controller, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { Badge } from '@/components/ui/badge';
+import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
+import { shortenAddress } from '@/lib/utils';
+import {
+  getActiveStablecoinConfig,
+  getActiveStablecoinSymbol,
+} from '@/lib/constants/defaultWallets';
 
 interface AddApiKeyDialogProps {
   open: boolean;
@@ -24,26 +31,37 @@ interface AddApiKeyDialogProps {
   onSuccess: () => void;
 }
 
+// Permission presets for convenient selection
+type PermissionPreset = 'Read' | 'ReadAndPay' | 'Admin';
+
 const apiKeySchema = z
   .object({
-    permission: z.enum(['Read', 'ReadAndPay', 'Admin']),
+    // UI selection for permission preset
+    permissionPreset: z.enum(['Read', 'ReadAndPay', 'Admin']),
+    // Flag-based permissions (derived from preset)
+    canRead: z.boolean(),
+    canPay: z.boolean(),
+    canAdmin: z.boolean(),
     networks: z.array(z.enum(['Preprod', 'Mainnet'])).min(1, 'Select at least one network'),
     usageLimited: z.boolean(),
     credits: z.object({
       lovelace: z.string().optional(),
-      usdm: z.string().optional(),
+      usdcx: z.string().optional(),
     }),
+    walletScopeEnabled: z.boolean(),
+    walletScopeIds: z.array(z.string()),
   })
   .superRefine((val, ctx) => {
     if (
-      val.permission === 'ReadAndPay' &&
+      val.canPay &&
+      !val.canAdmin &&
       val.usageLimited &&
       !val.credits.lovelace &&
-      !val.credits.usdm
+      !val.credits.usdcx
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Please specify usage credits for Read and Pay permission',
+        message: 'Please specify usage credits for payment permission',
         path: ['credits', 'lovelace'],
       });
     }
@@ -51,9 +69,60 @@ const apiKeySchema = z
 
 type ApiKeyFormValues = z.infer<typeof apiKeySchema>;
 
+/**
+ * Maps a permission preset to flag values.
+ */
+function presetToFlags(preset: PermissionPreset): {
+  canRead: boolean;
+  canPay: boolean;
+  canAdmin: boolean;
+} {
+  switch (preset) {
+    case 'Admin':
+      return { canRead: true, canPay: true, canAdmin: true };
+    case 'ReadAndPay':
+      return { canRead: true, canPay: true, canAdmin: false };
+    case 'Read':
+    default:
+      return { canRead: true, canPay: false, canAdmin: false };
+  }
+}
+
 export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
-  const { apiClient } = useAppContext();
+  const { apiClient, network } = useAppContext();
+  const { paymentSources } = usePaymentSourceExtendedAll();
+
+  const allWallets = useMemo(() => {
+    const wallets: Array<{
+      id: string;
+      type: 'Purchasing' | 'Selling';
+      network: string;
+      walletAddress: string;
+      note: string | null;
+    }> = [];
+    for (const ps of paymentSources) {
+      for (const w of ps.PurchasingWallets ?? []) {
+        wallets.push({
+          id: w.id,
+          type: 'Purchasing',
+          network: ps.network,
+          walletAddress: w.walletAddress,
+          note: w.note,
+        });
+      }
+      for (const w of ps.SellingWallets ?? []) {
+        wallets.push({
+          id: w.id,
+          type: 'Selling',
+          network: ps.network,
+          walletAddress: w.walletAddress,
+          note: w.note,
+        });
+      }
+    }
+    return wallets;
+  }, [paymentSources]);
 
   const {
     register,
@@ -65,26 +134,46 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
   } = useForm<ApiKeyFormValues>({
     resolver: zodResolver(apiKeySchema),
     defaultValues: {
-      permission: 'Read',
+      permissionPreset: 'Read',
+      canRead: true,
+      canPay: false,
+      canAdmin: false,
       usageLimited: true,
       networks: ['Preprod', 'Mainnet'],
-      credits: { lovelace: '', usdm: '' },
+      credits: { lovelace: '', usdcx: '' },
+      walletScopeEnabled: false,
+      walletScopeIds: [],
     },
   });
 
-  const permission = useWatch({ control, name: 'permission', defaultValue: 'Read' });
+  const permissionPreset = useWatch({ control, name: 'permissionPreset', defaultValue: 'Read' });
+  const canAdmin = useWatch({ control, name: 'canAdmin', defaultValue: false });
+  const canPay = useWatch({ control, name: 'canPay', defaultValue: false });
   const usageLimited = useWatch({ control, name: 'usageLimited', defaultValue: true });
+  const walletScopeEnabled = useWatch({ control, name: 'walletScopeEnabled', defaultValue: false });
+  const walletScopeIds = useWatch({ control, name: 'walletScopeIds', defaultValue: [] });
 
+  // Update flags when preset changes
   useEffect(() => {
-    if (permission === 'Admin') {
+    const flags = presetToFlags(permissionPreset);
+    setValue('canRead', flags.canRead);
+    setValue('canPay', flags.canPay);
+    setValue('canAdmin', flags.canAdmin);
+
+    // Auto-adjust usageLimited based on permission
+    if (flags.canAdmin) {
       setValue('usageLimited', false);
-    } else if (permission === 'Read') {
+      setValue('networks', ['Preprod', 'Mainnet']);
+      setValue('walletScopeEnabled', false);
+      setValue('walletScopeIds', []);
+    } else if (!flags.canPay) {
+      // Read-only: always usage limited
       setValue('usageLimited', true);
     }
-  }, [permission, setValue]);
+  }, [permissionPreset, setValue]);
 
   const onSubmit = async (data: ApiKeyFormValues) => {
-    const isReadOnly = data.permission === 'Read';
+    const isReadOnly = !data.canPay && !data.canAdmin;
     const defaultCredits = [
       {
         unit: 'lovelace',
@@ -96,9 +185,12 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
         postApiKey({
           client: apiClient,
           body: {
-            permission: data.permission,
+            // Send flag-based permissions
+            canRead: data.canRead,
+            canPay: data.canPay,
+            canAdmin: data.canAdmin,
             usageLimited: isReadOnly ? 'true' : data.usageLimited.toString(),
-            networkLimit: data.networks,
+            NetworkLimit: data.networks,
             UsageCredits: isReadOnly
               ? defaultCredits
               : data.usageLimited
@@ -111,16 +203,18 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                           },
                         ]
                       : []),
-                    ...(data.credits.usdm
+                    ...(data.credits.usdcx
                       ? [
                           {
-                            unit: 'usdm',
-                            amount: data.credits.usdm,
+                            unit: getActiveStablecoinConfig(network).fullAssetId,
+                            amount: (parseFloat(data.credits.usdcx) * 1000000).toString(),
                           },
                         ]
                       : []),
                   ]
                 : [],
+            walletScopeEnabled: data.walletScopeEnabled.toString(),
+            WalletScopeHotWalletIds: data.walletScopeEnabled ? data.walletScopeIds : [],
           },
         }),
       {
@@ -142,6 +236,8 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
     onClose();
   };
 
+  const isReadOnly = !canPay && !canAdmin;
+
   return (
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent>
@@ -151,26 +247,28 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
 
         <div className="space-y-4">
           <div className="space-y-2">
-            <label className="text-sm font-medium">Permission</label>
+            <label className="text-sm font-medium">Permission Level</label>
             <Controller
               control={control}
-              name="permission"
+              name="permissionPreset"
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Read">Read</SelectItem>
+                    <SelectItem value="Read">Read Only</SelectItem>
                     <SelectItem value="ReadAndPay">Read and Pay</SelectItem>
                     <SelectItem value="Admin">Admin</SelectItem>
                   </SelectContent>
                 </Select>
               )}
             />
-            {errors.permission && (
-              <p className="text-xs text-destructive mt-1">{errors.permission.message}</p>
-            )}
+            <p className="text-xs text-muted-foreground">
+              {permissionPreset === 'Read' && 'Can read data but cannot make payments'}
+              {permissionPreset === 'ReadAndPay' && 'Can read data and make payments/purchases'}
+              {permissionPreset === 'Admin' && 'Full access to all operations'}
+            </p>
           </div>
 
           <div className="space-y-2">
@@ -183,6 +281,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                   render={({ field }) => (
                     <Checkbox
                       checked={field.value.includes('Preprod')}
+                      disabled={canAdmin}
                       onCheckedChange={() => {
                         if (field.value.includes('Preprod')) {
                           field.onChange(field.value.filter((n: string) => n !== 'Preprod'));
@@ -202,6 +301,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                   render={({ field }) => (
                     <Checkbox
                       checked={field.value.includes('Mainnet')}
+                      disabled={canAdmin}
                       onCheckedChange={() => {
                         if (field.value.includes('Mainnet')) {
                           field.onChange(field.value.filter((n: string) => n !== 'Mainnet'));
@@ -229,15 +329,18 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                   <Checkbox
                     checked={field.value}
                     onCheckedChange={field.onChange}
-                    disabled={permission === 'Read'}
+                    disabled={isReadOnly || canAdmin}
                   />
                 )}
               />
               <label className="text-sm font-medium">Limit Usage</label>
             </div>
+            {canAdmin && (
+              <p className="text-xs text-muted-foreground">Admin keys are not usage limited</p>
+            )}
           </div>
 
-          {usageLimited && permission !== 'Read' && (
+          {usageLimited && !isReadOnly && (
             <>
               <div className="space-y-2">
                 <label className="text-sm font-medium">ADA Limit</label>
@@ -253,14 +356,98 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium">USDM Limit</label>
-                <Input type="number" placeholder="0.00" {...register('credits.usdm')} />
-                {errors.credits && 'usdm' in errors.credits && errors.credits.usdm && (
+                <label className="text-sm font-medium">
+                  {getActiveStablecoinSymbol(network)} Limit
+                </label>
+                <Input type="number" placeholder="0.00" {...register('credits.usdcx')} />
+                {errors.credits && 'usdcx' in errors.credits && errors.credits.usdcx && (
                   <p className="text-xs text-destructive mt-1">
-                    {(errors.credits.usdm as any).message}
+                    {(errors.credits.usdcx as any).message}
                   </p>
                 )}
               </div>
+            </>
+          )}
+
+          {!canAdmin && (
+            <>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Controller
+                    control={control}
+                    name="walletScopeEnabled"
+                    render={({ field }) => (
+                      <Checkbox
+                        checked={field.value}
+                        onCheckedChange={(checked) => {
+                          field.onChange(checked);
+                          if (!checked) {
+                            setValue('walletScopeIds', []);
+                          }
+                        }}
+                      />
+                    )}
+                  />
+                  <label className="text-sm font-medium">Restrict to specific wallets</label>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  When enabled, this API key can only access data for the selected wallets.
+                </p>
+              </div>
+
+              {walletScopeEnabled && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Wallets in scope</label>
+                  <div className="border rounded-md max-h-48 overflow-y-auto">
+                    {allWallets.length === 0 ? (
+                      <p className="text-xs text-muted-foreground p-3">No wallets available</p>
+                    ) : (
+                      allWallets.map((wallet) => (
+                        <label
+                          key={wallet.id}
+                          className="flex items-center gap-2 px-3 py-2 hover:bg-muted/50 cursor-pointer border-b last:border-b-0"
+                        >
+                          <Checkbox
+                            checked={walletScopeIds.includes(wallet.id)}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setValue('walletScopeIds', [...walletScopeIds, wallet.id]);
+                              } else {
+                                setValue(
+                                  'walletScopeIds',
+                                  walletScopeIds.filter((id) => id !== wallet.id),
+                                );
+                              }
+                            }}
+                          />
+                          <span className="flex items-center gap-2 min-w-0">
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 shrink-0">
+                              {wallet.type}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground shrink-0">
+                              {wallet.network}
+                            </span>
+                            <span className="font-mono text-xs truncate">
+                              {shortenAddress(wallet.walletAddress)}
+                            </span>
+                            {wallet.note && (
+                              <span className="text-xs text-muted-foreground truncate max-w-[120px]">
+                                ({wallet.note})
+                              </span>
+                            )}
+                          </span>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                  {walletScopeIds.length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      {walletScopeIds.length} wallet{walletScopeIds.length !== 1 ? 's' : ''}{' '}
+                      selected
+                    </p>
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>

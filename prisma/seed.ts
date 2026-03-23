@@ -2,7 +2,6 @@ import {
 	ApiKeyStatus,
 	HotWalletType,
 	Network,
-	Permission,
 	PrismaClient,
 	RPCProvider,
 	WalletType,
@@ -61,13 +60,18 @@ export const seed = async (prisma: PrismaClient) => {
 		create: {
 			token: adminKey,
 			tokenHash: generateSHA256Hash(adminKey),
-			permission: Permission.Admin,
+			// Flag-based permissions (new system)
+			canRead: true,
+			canPay: true,
+			canAdmin: true,
 			status: ApiKeyStatus.Active,
 		},
 		update: {
 			token: adminKey,
 			tokenHash: generateSHA256Hash(adminKey),
-			permission: Permission.Admin,
+			canRead: true,
+			canPay: true,
+			canAdmin: true,
 			status: ApiKeyStatus.Active,
 		},
 		where: { token: adminKey },
@@ -179,10 +183,7 @@ export const seed = async (prisma: PrismaClient) => {
 
 		let latestTx: { tx_hash: string }[] | null = null;
 		try {
-			latestTx = await blockfrostApi.addressesTransactions(smartContractAddress, {
-				count: 1,
-				order: 'desc',
-			});
+			latestTx = await blockfrostApi.addressesTransactions(smartContractAddress, { count: 1, order: 'desc' });
 			if (latestTx.length > 0) {
 				console.log(
 					'Smart contract address exists on preprod, syncing after tx: ' + (latestTx[0]?.tx_hash ?? 'no tx hash'),
@@ -454,10 +455,7 @@ export const seed = async (prisma: PrismaClient) => {
 		});
 		let latestTx: { tx_hash: string }[] | null = null;
 		try {
-			latestTx = await blockfrostApi.addressesTransactions(smartContractAddress, {
-				count: 1,
-				order: 'desc',
-			});
+			latestTx = await blockfrostApi.addressesTransactions(smartContractAddress, { count: 1, order: 'desc' });
 			if (latestTx.length > 0) {
 				console.log(
 					'Smart contract address exists on mainnet, syncing after tx: ' + (latestTx[0]?.tx_hash ?? 'no tx hash'),

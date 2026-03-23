@@ -1,4 +1,4 @@
-import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
+import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import { z } from '@/utils/zod-openapi';
 import { HotWalletType, Network, PricingType } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
@@ -10,6 +10,7 @@ import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/m
 import { logger } from '@/utils/logger';
 import { extractAssetName } from '@/utils/converter/agent-identifier';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
+import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 
 export const metadataSchema = z.object({
 	name: z
@@ -89,7 +90,7 @@ export const metadataSchema = z.object({
 });
 
 export const queryAgentFromWalletSchemaInput = z.object({
-	walletVKey: z.string().max(250).describe('The payment key of the wallet to be queried'),
+	walletVkey: z.string().max(250).describe('The payment key of the wallet to be queried'),
 	network: z.nativeEnum(Network).describe('The Cardano network used to register the agent on'),
 	smartContractAddress: z
 		.string()
@@ -197,7 +198,7 @@ export const queryAgentFromWalletSchemaOutput = z.object({
 								.describe('Legal information about the agent. Null if not provided'),
 							AgentPricing: z
 								.object({
-									pricingType: z.enum([PricingType.Fixed]).describe('Pricing type for the agent (Fixed)'),
+									pricingType: z.enum([PricingType.Fixed]).describe('Pricing type for the agent (Fixed or Free)'),
 									Pricing: z
 										.array(
 											z.object({
@@ -219,7 +220,7 @@ export const queryAgentFromWalletSchemaOutput = z.object({
 								})
 								.or(
 									z.object({
-										pricingType: z.enum([PricingType.Free]).describe('Pricing type for the agent (Free)'),
+										pricingType: z.enum([PricingType.Free]).describe('Pricing type for the agent (Fixed or Free)'),
 									}),
 								)
 								.describe('Pricing information for the agent'),
@@ -238,12 +239,12 @@ export const queryAgentFromWalletSchemaOutput = z.object({
 		.describe('List of agent assets registered to this wallet'),
 });
 
-export const queryAgentFromWalletGet = payAuthenticatedEndpointFactory.build({
+export const queryAgentFromWalletGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: queryAgentFromWalletSchemaInput,
 	output: queryAgentFromWalletSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof queryAgentFromWalletSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 		const smartContractAddress =
 			input.smartContractAddress ??
 			(input.network == Network.Mainnet
@@ -276,11 +277,12 @@ export const queryAgentFromWalletGet = payAuthenticatedEndpointFactory.build({
 
 		const blockfrost = getBlockfrostInstance(input.network, paymentSource.PaymentSourceConfig.rpcProviderApiKey);
 		const wallet = paymentSource.HotWallets.find(
-			(wallet) => wallet.walletVkey == input.walletVKey && wallet.type == HotWalletType.Selling,
+			(wallet) => wallet.walletVkey == input.walletVkey && wallet.type == HotWalletType.Selling,
 		);
 		if (wallet == null) {
 			throw createHttpError(404, 'Wallet not found');
 		}
+		assertHotWalletInScope(ctx.walletScopeIds, wallet.id);
 		const { policyId } = await getRegistryScriptFromNetworkHandlerV1(paymentSource);
 
 		const addressInfo = await blockfrost.addresses(wallet.walletAddress);

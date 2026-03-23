@@ -1,5 +1,5 @@
 import { z } from '@/utils/zod-openapi';
-import { Network, PurchasingAction, OnChainState, Permission } from '@/generated/prisma/client';
+import { Network, PurchasingAction, OnChainState } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
@@ -7,6 +7,7 @@ import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/m
 import { purchaseResponseSchema } from '@/routes/api/purchases';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
+import { assertWalletInScope } from '@/utils/shared/wallet-scope';
 
 export const requestPurchaseRefundSchemaInput = z.object({
 	blockchainIdentifier: z.string().max(8000).describe('The identifier of the purchase to be refunded'),
@@ -23,7 +24,7 @@ export const requestPurchaseRefundPost = payAuthenticatedEndpointFactory.build({
 	input: requestPurchaseRefundSchemaInput,
 	output: requestPurchaseRefundSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof requestPurchaseRefundSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 		const purchase = await prisma.purchaseRequest.findUnique({
 			where: {
@@ -52,8 +53,9 @@ export const requestPurchaseRefundPost = payAuthenticatedEndpointFactory.build({
 		if (purchase == null) {
 			throw createHttpError(404, 'Purchase not found or not in valid state');
 		}
+		assertWalletInScope(ctx.walletScopeIds, purchase.smartContractWalletId);
 
-		if (purchase.requestedById != ctx.id && ctx.permission != Permission.Admin) {
+		if (purchase.requestedById != ctx.id && !ctx.canAdmin) {
 			throw createHttpError(403, 'You are not authorized to request a refund for this purchase');
 		}
 

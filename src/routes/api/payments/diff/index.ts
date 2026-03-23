@@ -8,6 +8,8 @@ import { queryPaymentsSchemaOutput } from '@/routes/api/payments';
 import { transformPaymentGetAmounts, transformPaymentGetTimestamps } from '@/utils/shared/transformers';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { ez } from 'express-zod-api';
+import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
+import { exhaustiveFallback } from '@/utils/assert-never';
 
 const paymentDiffLastUpdateSchema = ez.dateIn();
 
@@ -45,12 +47,14 @@ function buildPaymentDiffWhere({
 	sinceId,
 	network,
 	filterSmartContractAddress,
+	walletScopeIds,
 }: {
 	mode: PaymentDiffMode;
 	since: Date;
 	sinceId?: string;
 	network: Prisma.PaymentSourceWhereInput['network'];
 	filterSmartContractAddress?: string | null;
+	walletScopeIds: string[] | null;
 }): Prisma.PaymentRequestWhereInput {
 	const base: Prisma.PaymentRequestWhereInput = {
 		PaymentSource: {
@@ -58,6 +62,7 @@ function buildPaymentDiffWhere({
 			smartContractAddress: filterSmartContractAddress ?? undefined,
 			deletedAt: null,
 		},
+		...buildWalletScopeFilter(walletScopeIds),
 	};
 
 	switch (mode) {
@@ -97,11 +102,8 @@ function buildPaymentDiffWhere({
 						...base,
 						nextActionOrOnChainStateOrResultLastChangedAt: { gte: since },
 					};
-		default: {
-			// Exhaustive check
-			const _never: never = mode;
-			return base;
-		}
+		default:
+			return exhaustiveFallback(mode, base);
 	}
 }
 
@@ -113,10 +115,8 @@ function buildPaymentDiffOrderBy(mode: PaymentDiffMode): Prisma.PaymentRequestOr
 			return [{ onChainStateOrResultLastChangedAt: 'asc' }, { id: 'asc' }];
 		case 'nextActionOrOnChainStateOrResultLastChangedAt':
 			return [{ nextActionOrOnChainStateOrResultLastChangedAt: 'asc' }, { id: 'asc' }];
-		default: {
-			const _never: never = mode;
-			return [{ id: 'asc' }];
-		}
+		default:
+			return exhaustiveFallback(mode, [{ id: 'asc' }]);
 	}
 }
 
@@ -129,7 +129,7 @@ async function queryPaymentDiffByMode({
 	ctx: AuthContext;
 	mode: PaymentDiffMode;
 }) {
-	await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+	await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 	const since = input.lastUpdate;
 	const sinceId = input.cursorId;
@@ -141,6 +141,7 @@ async function queryPaymentDiffByMode({
 			sinceId,
 			network: input.network,
 			filterSmartContractAddress: input.filterSmartContractAddress,
+			walletScopeIds: ctx.walletScopeIds,
 		}),
 		orderBy: buildPaymentDiffOrderBy(mode),
 		take: input.limit,

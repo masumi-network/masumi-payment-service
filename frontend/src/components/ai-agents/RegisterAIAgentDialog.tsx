@@ -19,7 +19,7 @@ import { Trash2 } from 'lucide-react';
 import { useForm, Controller, useFieldArray } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { getUsdmConfig } from '@/lib/constants/defaultWallets';
+import { getActiveStablecoinConfig } from '@/lib/constants/defaultWallets';
 import { Separator } from '@/components/ui/separator';
 import { useWallets } from '@/lib/queries/useWallets';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
@@ -31,9 +31,9 @@ interface RegisterAIAgentDialogProps {
 }
 
 const createPriceSchema = (network: 'Mainnet' | 'Preprod') => {
-  const usdmUnit = network === 'Mainnet' ? 'USDM' : 'tUSDM';
+  const stablecoinUnit = network === 'Mainnet' ? 'USDCx' : 'tUSDM';
   return z.object({
-    unit: z.enum(['lovelace', usdmUnit] as const, {
+    unit: z.enum(['lovelace', stablecoinUnit] as const, {
       error: () => 'Token is required',
     }),
     amount: z.string().refine((val) => {
@@ -138,6 +138,7 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
 
   const { wallets, isLoading: isLoadingWallets } = useWallets();
   const { apiClient, network } = useAppContext();
+  const stablecoinUnit = network === 'Mainnet' ? 'USDCx' : 'tUSDM';
 
   const {
     register,
@@ -209,6 +210,7 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
             walletAddress: w.walletAddress,
             collectionAddress: w.collectionAddress,
             note: w.note,
+            LowBalanceSummary: w.LowBalanceSummary,
           },
           balance: parseInt(w.balance, 10),
         })),
@@ -229,16 +231,6 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
         const selectedWalletBalance = sellingWallets.find(
           (w) => w.wallet.walletVkey == selectedWalletVkey,
         )?.balance;
-        data.prices.map((price) => {
-          const unit =
-            price.unit === 'USDM' || price.unit === 'tUSDM'
-              ? getUsdmConfig(network).fullAssetId
-              : price.unit;
-          return {
-            unit,
-            amount: (parseFloat(price.amount) * 1_000_000).toString(),
-          };
-        });
         if (selectedWalletBalance == undefined || selectedWalletBalance <= 3000000) {
           toast.error('Insufficient balance in selected wallet');
           return;
@@ -304,8 +296,8 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
                 pricingType: 'Fixed',
                 Pricing: data.prices.map((price) => {
                   const unit =
-                    price.unit === 'USDM' || price.unit === 'tUSDM'
-                      ? getUsdmConfig(network).fullAssetId
+                    price.unit === stablecoinUnit
+                      ? getActiveStablecoinConfig(network).fullAssetId
                       : price.unit;
                   return {
                     unit,
@@ -340,7 +332,16 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
         setIsLoading(false);
       }
     },
-    [sellingWallets, currentNetworkPaymentSources, apiClient, network, onSuccess, onClose, reset],
+    [
+      sellingWallets,
+      currentNetworkPaymentSources,
+      apiClient,
+      network,
+      stablecoinUnit,
+      onSuccess,
+      onClose,
+      reset,
+    ],
   );
 
   // Tag management
@@ -510,9 +511,7 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
                           <SelectItem value="lovelace">
                             {formatFundUnit('lovelace', network)}
                           </SelectItem>
-                          <SelectItem value={network === 'Mainnet' ? 'USDM' : 'tUSDM'}>
-                            {formatFundUnit('USDM', network)}
-                          </SelectItem>
+                          <SelectItem value={stablecoinUnit}>{stablecoinUnit}</SelectItem>
                         </SelectContent>
                       </Select>
                     )}
