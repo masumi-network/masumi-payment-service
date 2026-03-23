@@ -12,6 +12,7 @@ import {
 import { resolvePlutusScriptAddress } from '@meshsdk/core-cst';
 import { convertNetworkToId } from '@/utils/converter/network-convert';
 import { Network as PrismaNetwork } from '@/generated/prisma/client';
+import type { HydraContext } from '@/utils/hydra/create-l2-providers';
 
 function convertMeshNetworkToPrismaNetwork(network: Network): PrismaNetwork {
 	switch (network) {
@@ -39,7 +40,24 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 	newInlineDatum: Data,
 	invalidBefore: number,
 	invalidAfter: number,
+	hydraContext?: HydraContext,
 ) {
+	if (hydraContext) {
+		return await generateMasumiSmartContractInteractionTransactionCustomFee(
+			type,
+			hydraContext.hydraProvider,
+			network,
+			script,
+			walletAddress,
+			smartContractUtxo,
+			collateralUtxo,
+			walletUtxos,
+			newInlineDatum,
+			invalidBefore,
+			invalidAfter,
+		);
+	}
+
 	const evaluationTx = await generateMasumiSmartContractInteractionTransactionCustomFee(
 		type,
 		blockchainProvider,
@@ -210,7 +228,26 @@ export async function generateMasumiSmartContractWithdrawTransactionAutomaticFee
 	} | null,
 	invalidBefore: number,
 	invalidAfter: number,
+	hydraContext?: HydraContext,
 ) {
+	if (hydraContext) {
+		return await generateMasumiSmartContractWithdrawTransactionCustomFee(
+			type,
+			hydraContext.hydraProvider,
+			network,
+			script,
+			walletAddress,
+			smartContractUtxo,
+			collateralUtxo,
+			walletUtxos,
+			collection,
+			fee,
+			collateralReturn,
+			invalidBefore,
+			invalidAfter,
+		);
+	}
+
 	const evaluationTx = await generateMasumiSmartContractWithdrawTransactionCustomFee(
 		type,
 		blockchainProvider,

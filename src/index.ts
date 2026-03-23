@@ -15,6 +15,7 @@ import { requestLogger } from '@/utils/middleware/request-logger';
 import { blockchainStateMonitorService } from '@/services/monitoring/blockchain-state-monitor.service';
 import fs from 'fs';
 import { setupTracing } from '@/tracing';
+import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 
 const __dirname = path.resolve();
 
@@ -36,6 +37,10 @@ async function initialize() {
 		logger.warn('*****************************************************************');
 	}
 	await initJobs();
+
+	// Reconnect to any enabled Hydra heads that are reachable
+	await getHydraConnectionManager().initialize();
+	logger.info('Hydra connection manager initialized', { component: 'hydra' });
 
 	// Start blockchain state monitoring
 	await blockchainStateMonitorService.startMonitoring(30000); // Monitor every 30 seconds
@@ -293,6 +298,7 @@ initialize()
 			try {
 				logger.info(`Received ${signal}. Shutting down gracefully...`);
 				blockchainStateMonitorService.stopMonitoring();
+				await getHydraConnectionManager().shutdown();
 				await cleanupDB();
 			} catch (e) {
 				logger.error('Error during shutdown', e);

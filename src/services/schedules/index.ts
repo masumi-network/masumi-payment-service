@@ -15,6 +15,7 @@ import { authorizeRefundV1 } from '@/services/cardano-authorize-refund-handler/'
 import { handleAutomaticDecisions } from '@/services/automatic-decision-handler';
 import { checkRegistryTransactions } from '@/services/cardano-registry-tx-sync-handler/cardano-registry-tx-sync-handler.service';
 import { webhookQueueService } from '@/services/webhook-handler/webhook-queue.service';
+import { checkHydraTransactions } from '@/services/hydra-tx-handler/';
 
 export async function initJobs() {
 	const start = new Date();
@@ -173,6 +174,17 @@ export async function initJobs() {
 			await webhookQueueService.processPendingDeliveries();
 			logger.info('Finished webhook delivery processor in ' + (new Date().getTime() - start.getTime()) / 1000 + 's');
 		}, CONFIG.WEBHOOK_DELIVERY_INTERVAL * 1000); // Convert seconds to milliseconds
+	});
+
+	void new Promise((resolve) => setTimeout(resolve, 3000)).then(() => {
+		AsyncInterval.start(async () => {
+			logger.info('Starting to check hydra L2 transactions');
+			const start = new Date();
+			await checkHydraTransactions();
+			logger.info(
+				'Finished checking hydra L2 transactions in ' + (new Date().getTime() - start.getTime()) / 1000 + 's',
+			);
+		}, CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000);
 	});
 
 	void new Promise((resolve) => setTimeout(resolve, 50000)).then(() => {

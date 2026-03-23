@@ -5,6 +5,7 @@ import {
 	Permission,
 	PrismaClient,
 	RPCProvider,
+	WalletType,
 } from '../src/generated/prisma/client';
 import dotenv from 'dotenv';
 import {
@@ -224,7 +225,7 @@ export const seed = async (prisma: PrismaClient) => {
 					'Registry policyId is changed expected: ' + DEFAULTS.REGISTRY_POLICY_ID_PREPROD + ' got: ' + policyId,
 				);
 			}
-			await prisma.paymentSource.create({
+			const paymentSourcePreprod = await prisma.paymentSource.create({
 				data: {
 					smartContractAddress: smartContractAddress,
 					policyId: policyId,
@@ -277,6 +278,104 @@ export const seed = async (prisma: PrismaClient) => {
 			});
 
 			console.log('Contract seeded on preprod: ' + smartContractAddress + ' added. Registry policyId: ' + policyId);
+
+			// --- Hydra L2 seeding (preprod) ---
+			const hydraNodeUrl = process.env.HYDRA_NODE_URL;
+			const hydraRemoteNodeUrl = process.env.HYDRA_REMOTE_NODE_URL;
+			const hydraRemoteWalletAddress = process.env.HYDRA_REMOTE_WALLET_ADDRESS;
+			const hydraRemoteWalletVkey = process.env.HYDRA_REMOTE_WALLET_VKEY;
+			const hydraLocalSK = process.env.HYDRA_SK;
+			const hydraRemoteVK = process.env.HYDRA_REMOTE_VK;
+			const hydraLocalWalletType = process.env.HYDRA_LOCAL_WALLET_TYPE;
+
+			if (
+				hydraNodeUrl &&
+				hydraRemoteNodeUrl &&
+				hydraLocalWalletType &&
+				hydraLocalSK &&
+				hydraRemoteWalletAddress &&
+				hydraRemoteWalletVkey &&
+				hydraRemoteVK
+			) {
+				try {
+					const hydraNodeHttpUrl =
+						process.env.HYDRA_NODE_HTTP_URL ||
+						hydraNodeUrl.replace(/^ws:\/\//, 'http://').replace(/^wss:\/\//, 'https://');
+					const hydraRemoteNodeHttpUrl =
+						process.env.HYDRA_REMOTE_NODE_HTTP_URL ||
+						hydraRemoteNodeUrl.replace(/^ws:\/\//, 'http://').replace(/^wss:\/\//, 'https://');
+
+					const [localWalletType, remoteWalletType] =
+						hydraLocalWalletType === 'Selling'
+							? [HotWalletType.Selling, WalletType.Buyer]
+							: [HotWalletType.Purchasing, WalletType.Seller];
+					const localHotWallet = await prisma.hotWallet.findFirstOrThrow({
+						where: { paymentSourceId: paymentSourcePreprod.id, type: localWalletType },
+					});
+
+					const remoteWalletBase = await prisma.walletBase.create({
+						data: {
+							walletVkey: hydraRemoteWalletVkey,
+							walletAddress: hydraRemoteWalletAddress,
+							type: remoteWalletType,
+							paymentSourceId: paymentSourcePreprod.id,
+							note: 'Hydra remote counterparty (created by seeding)',
+						},
+					});
+
+					const hydraRelation = await prisma.hydraRelation.create({
+						data: {
+							network: Network.Preprod,
+							localHotWalletId: localHotWallet.id,
+							remoteWalletId: remoteWalletBase.id,
+						},
+					});
+
+					const localParticipant = await prisma.hydraLocalParticipant.create({
+						data: {
+							Wallet: { connect: { id: localHotWallet.id } },
+							nodeUrl: hydraNodeUrl,
+							nodeHttpUrl: hydraNodeHttpUrl,
+							HydraSecretKey: {
+								create: { hydraSK: encrypt(hydraLocalSK) },
+							},
+						},
+					});
+
+					const remoteParticipant = await prisma.hydraRemoteParticipant.create({
+						data: {
+							Wallet: { connect: { id: remoteWalletBase.id } },
+							nodeUrl: hydraRemoteNodeUrl,
+							nodeHttpUrl: hydraRemoteNodeHttpUrl,
+							HydraVerificationKey: {
+								create: { hydraVK: encrypt(hydraRemoteVK) },
+							},
+						},
+					});
+
+					const hydraHead = await prisma.hydraHead.create({
+						data: {
+							HydraRelation: { connect: { id: hydraRelation.id } },
+							LocalParticipant: { connect: { id: localParticipant.id } },
+							RemoteParticipants: { connect: [{ id: remoteParticipant.id }] },
+						},
+					});
+
+					console.log('[Hydra] Preprod seed complete (local wallet: ' + localWalletType + '):');
+					console.log('  LocalHotWallet:            ' + localHotWallet.id);
+					console.log('  WalletBase (remote):       ' + remoteWalletBase.id);
+					console.log('  HydraRelation:             ' + hydraRelation.id);
+					console.log('  HydraLocalParticipant:     ' + localParticipant.id);
+					console.log('  HydraRemoteParticipant:    ' + remoteParticipant.id);
+					console.log('  HydraHead:                 ' + hydraHead.id);
+				} catch (hydraError) {
+					console.error('[Hydra] Error seeding Hydra models on preprod:', hydraError);
+				}
+			} else {
+				console.log(
+					'[Hydra] Skipping Hydra seeding on preprod. Provide HYDRA_NODE_URL, HYDRA_REMOTE_NODE_URL, HYDRA_REMOTE_WALLET_ADDRESS, and HYDRA_REMOTE_WALLET_VKEY in .env',
+				);
+			}
 		} catch (error) {
 			console.error(
 				'Error when seeding preprod, ensure you succeed with seeding, the following error occurred: ',

@@ -18,6 +18,8 @@ import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, tryAcquire, MutexInterface } from 'async-mutex';
 import { SERVICE_CONSTANTS } from '@/utils/config';
 import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
+import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
+import type { HydraContext } from '@/utils/hydra/create-l2-providers';
 
 const mutex = new Mutex();
 
@@ -95,10 +97,21 @@ export async function authorizeRefundV1() {
 					operations: paymentRequests.map((request) => async () => {
 						validatePaymentRequestFields(request);
 
+						const isL2 = request.layer === 'L2';
+						let hydraContext: HydraContext | undefined;
+
+						if (isL2 && request.CurrentTransaction?.hydraHeadId) {
+							const provider = getHydraConnectionManager().getProvider(request.CurrentTransaction.hydraHeadId);
+							if (provider) {
+								hydraContext = { hydraProvider: provider, hydraHeadId: request.CurrentTransaction.hydraHeadId };
+							}
+						}
+
 						const { wallet, utxos, address } = await generateWalletExtended(
 							paymentContract.network,
 							paymentContract.PaymentSourceConfig.rpcProviderApiKey,
 							request.SmartContractWallet!.Secret.encryptedMnemonic,
+							hydraContext?.hydraProvider,
 						);
 						if (utxos.length === 0) {
 							throw new Error('No UTXOs found in the wallet. Wallet is empty.');
@@ -108,7 +121,9 @@ export async function authorizeRefundV1() {
 						if (txHash == null) {
 							throw new Error('No transaction hash found');
 						}
-						const utxoByHash = await blockchainProvider.fetchUTxOs(txHash);
+						const utxoByHash = hydraContext
+							? await hydraContext.hydraProvider.fetchUTxOs(txHash)
+							: await blockchainProvider.fetchUTxOs(txHash);
 
 						const utxo = utxoByHash.find((utxo) => {
 							if (utxo.input.txHash != txHash) {
@@ -190,6 +205,7 @@ export async function authorizeRefundV1() {
 							datum.value,
 							invalidBefore,
 							invalidAfter,
+							hydraContext,
 						);
 
 						const signedTx = await wallet.signTx(unsignedTx);

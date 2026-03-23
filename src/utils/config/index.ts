@@ -56,6 +56,9 @@ if (syncLockTimeoutInterval < 5) throw new Error('SYNC_LOCK_TIMEOUT_INTERVAL mus
 const walletLockTimeoutInterval = Number(process.env.WALLET_LOCK_TIMEOUT_INTERVAL ?? '300');
 if (walletLockTimeoutInterval < 5) throw new Error('WALLET_LOCK_TIMEOUT_INTERVAL must be at least 5 seconds');
 
+const checkHydraTxInterval = Number(process.env.CHECK_HYDRA_TX_INTERVAL ?? '10');
+if (checkHydraTxInterval < 5) throw new Error('CHECK_HYDRA_TX_INTERVAL must be at least 5 seconds');
+
 export const CONFIG = {
 	PORT: process.env.PORT ?? '3001',
 	DATABASE_URL: process.env.DATABASE_URL,
@@ -79,6 +82,7 @@ export const CONFIG = {
 	AUTO_WITHDRAW_REFUNDS: autoWithdrawRefunds,
 	AUTO_DECISION_INTERVAL: autoDecisionInterval,
 	WEBHOOK_DELIVERY_INTERVAL: webhookDeliveryInterval,
+	CHECK_HYDRA_TX_INTERVAL: checkHydraTxInterval,
 	// OpenTelemetry configuration
 	OTEL_SERVICE_NAME: process.env.OTEL_SERVICE_NAME ?? 'masumi-payment-service',
 	OTEL_SERVICE_VERSION: process.env.OTEL_SERVICE_VERSION ?? '0.1.0',
