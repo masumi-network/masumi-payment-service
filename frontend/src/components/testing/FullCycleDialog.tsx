@@ -72,12 +72,17 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
     },
   });
 
-  const paidAgents = agents.filter(
-    (agent) =>
-      agent.state === 'RegistrationConfirmed' &&
-      agent.agentIdentifier !== null &&
-      agent.AgentPricing?.pricingType !== 'Free',
-  );
+  const paidAgents = agents
+    .filter(
+      (agent) =>
+        agent.state === 'RegistrationConfirmed' &&
+        agent.agentIdentifier !== null &&
+        agent.AgentPricing?.pricingType !== 'Free',
+    )
+    .map((agent) => ({
+      ...agent,
+      pricingType: agent.AgentPricing?.pricingType,
+    }));
 
   const { inputData, setInputData, inputDataError, resetInputData } = useInputDataHash(
     setValue,
@@ -157,6 +162,22 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
         setPaymentError(null);
 
         const times = calculateDefaultTimes();
+        const selectedAgent = paidAgents.find((a) => a.agentIdentifier === data.agentIdentifier);
+        const isDynamic = selectedAgent?.pricingType === 'Dynamic';
+
+        const requestedFunds =
+          isDynamic && data.requestedFundsAmount
+            ? [
+                {
+                  amount: (parseFloat(data.requestedFundsAmount) * 1_000_000).toString(),
+                  unit:
+                    data.requestedFundsUnit === 'lovelace' || !data.requestedFundsUnit
+                      ? ''
+                      : data.requestedFundsUnit,
+                },
+              ]
+            : undefined;
+
         const requestBody = {
           network: network,
           agentIdentifier: data.agentIdentifier,
@@ -167,6 +188,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
           unlockTime: times.unlockTime,
           externalDisputeUnlockTime: times.externalDisputeUnlockTime,
           metadata: data.metadata || undefined,
+          RequestedFunds: requestedFunds,
         };
 
         const baseUrl = process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL || '';
@@ -202,7 +224,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
         setIsLoadingPayment(false);
       }
     },
-    [apiClient, apiKey, network, createPurchaseAutomatically],
+    [apiClient, apiKey, network, paidAgents, createPurchaseAutomatically],
   );
 
   const handleClose = () => {

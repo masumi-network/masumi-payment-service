@@ -85,14 +85,17 @@ export const paymentFormSchema = z.object({
     .max(26, 'Maximum 26 characters')
     .regex(/^[0-9a-fA-F]+$/, 'Must be valid hex'),
   metadata: z.string().optional(),
+  requestedFundsAmount: z.string().optional(),
+  requestedFundsUnit: z.string().optional(),
 });
 
 export type PaymentFormValues = z.infer<typeof paymentFormSchema>;
 
-interface PaidAgent {
+export interface PaidAgent {
   id: string;
   name: string;
   agentIdentifier: string | null;
+  pricingType?: string;
 }
 
 interface PaymentFormFieldsProps {
@@ -170,6 +173,9 @@ export function PaymentFormFields({
   inputDataError: string | null;
 }) {
   const [isSpinning, setIsSpinning] = useState(false);
+  const selectedAgentId = _watch('agentIdentifier');
+  const selectedAgent = paidAgents.find((a) => a.agentIdentifier === selectedAgentId);
+  const isDynamicPricing = selectedAgent?.pricingType === 'Dynamic';
 
   const handleGenerateIdentifier = () => {
     setIsSpinning(true);
@@ -222,6 +228,46 @@ export function PaymentFormFields({
           </p>
         )}
       </div>
+
+      {/* Dynamic Pricing Amount */}
+      {isDynamicPricing && (
+        <div className="space-y-2 p-3 border rounded-md bg-muted/40">
+          <Label>
+            Requested Amount <span className="text-red-500">*</span>
+          </Label>
+          <p className="text-xs text-muted-foreground">
+            This agent uses dynamic pricing. Specify the amount for this payment.
+          </p>
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <Input
+                type="number"
+                placeholder="Amount (e.g., 5.00)"
+                step="0.000001"
+                min="0"
+                onWheel={(e) => e.currentTarget.blur()}
+                {...register('requestedFundsAmount')}
+              />
+            </div>
+            <div className="w-[140px]">
+              <Controller
+                control={control}
+                name="requestedFundsUnit"
+                render={({ field }) => (
+                  <Select value={field.value || 'lovelace'} onValueChange={field.onChange}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Unit" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="lovelace">ADA</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Purchaser Identifier */}
       <div className="space-y-2 animate-fade-in-up opacity-0 animate-stagger-2">

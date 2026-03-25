@@ -1086,9 +1086,9 @@ function AddAiAgentScreen({
       .string()
       .min(1, 'Description is required')
       .max(250, 'Description must be less than 250 characters'),
-    prices: z.array(priceSchema).min(1, 'At least one price is required'),
+    prices: z.array(priceSchema),
     tags: z.array(z.string().min(1)).min(1, 'At least one tag is required'),
-    isFree: z.boolean().optional(),
+    pricingType: z.enum(['Fixed', 'Free', 'Dynamic']),
     // Additional Fields
     authorName: z
       .string()
@@ -1151,7 +1151,7 @@ function AddAiAgentScreen({
       description: '',
       prices: [{ unit: 'lovelace', amount: '' }],
       tags: [],
-      isFree: false,
+      pricingType: 'Fixed',
       authorName: '',
       authorEmail: '',
       organization: '',
@@ -1232,20 +1232,24 @@ function AddAiAgentScreen({
             data.capabilityName && data.capabilityVersion
               ? { name: data.capabilityName, version: data.capabilityVersion }
               : { name: 'Custom Agent', version: '1.0.0' },
-          AgentPricing: data.isFree
-            ? {
-                pricingType: 'Free',
-              }
-            : {
-                pricingType: 'Fixed',
-                Pricing: data.prices.map((price) => ({
-                  unit:
-                    price.unit === 'lovelace'
-                      ? 'lovelace'
-                      : getActiveStablecoinConfig(network).fullAssetId,
-                  amount: (parseFloat(price.amount) * 1000000).toString(),
-                })),
-              },
+          AgentPricing: (() => {
+            if (data.pricingType === 'Free') {
+              return { pricingType: 'Free' as const };
+            }
+            if (data.pricingType === 'Dynamic') {
+              return { pricingType: 'Dynamic' as const };
+            }
+            return {
+              pricingType: 'Fixed' as const,
+              Pricing: data.prices.map((price) => ({
+                unit:
+                  price.unit === 'lovelace'
+                    ? 'lovelace'
+                    : getActiveStablecoinConfig(network).fullAssetId,
+                amount: (parseFloat(price.amount) * 1000000).toString(),
+              })),
+            };
+          })(),
           Author: {
             name: data.authorName || 'Setup User',
             contactEmail: data.authorEmail || '',
