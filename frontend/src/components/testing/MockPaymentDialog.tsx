@@ -94,6 +94,12 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
         const selectedAgent = paidAgents.find((a) => a.agentIdentifier === data.agentIdentifier);
         const isDynamic = selectedAgent?.pricingType === 'Dynamic';
 
+        if (isDynamic && !data.requestedFundsAmount) {
+          setError('Amount is required for dynamic pricing agents');
+          toast.error('Amount is required for dynamic pricing agents');
+          return;
+        }
+
         const requestedFunds =
           isDynamic && data.requestedFundsAmount
             ? [

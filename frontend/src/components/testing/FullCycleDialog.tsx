@@ -176,6 +176,12 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
         const selectedAgent = paidAgents.find((a) => a.agentIdentifier === data.agentIdentifier);
         const isDynamic = selectedAgent?.pricingType === 'Dynamic';
 
+        if (isDynamic && !data.requestedFundsAmount) {
+          setPaymentError('Amount is required for dynamic pricing agents');
+          toast.error('Amount is required for dynamic pricing agents');
+          return;
+        }
+
         const requestedFunds =
           isDynamic && data.requestedFundsAmount
             ? [
