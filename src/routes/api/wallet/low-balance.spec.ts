@@ -3,7 +3,6 @@ import type { Mock } from 'jest-mock';
 import { testEndpoint } from 'express-zod-api';
 import { ApiKeyStatus, HotWalletType, Network } from '@/generated/prisma/client';
 import { LowBalanceStatus } from '@/generated/prisma/enums';
-import { generateSHA256Hash } from '@/utils/crypto';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -83,7 +82,7 @@ describe('getWalletLowBalanceRulesEndpointGet', () => {
 		status: ApiKeyStatus.Active,
 		token: null,
 		tokenHash: null,
-		tokenHashSecure: generateSHA256Hash('valid'),
+		tokenHashSecure: 'pbkdf2-placeholder',
 		usageLimited: !flags.canAdmin,
 		networkLimit: flags.canAdmin ? [] : [Network.Preprod],
 		walletScopeEnabled: false,

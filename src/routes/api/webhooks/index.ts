@@ -3,6 +3,8 @@ import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { Network } from '@/generated/prisma/client';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { decrypt } from '@/utils/security/encryption';
+import { logger } from '@/utils/logger';
 import {
 	deleteWebhookSchemaInput,
 	deleteWebhookSchemaOutput,
@@ -19,6 +21,16 @@ export {
 	listWebhooksSchemaOutput,
 	registerWebhookSchemaInput,
 	registerWebhookSchemaOutput,
+};
+
+const decryptApiKeyTokenSafe = (encryptedToken: string | null): string | null => {
+	if (!encryptedToken) return null;
+	try {
+		return decrypt(encryptedToken);
+	} catch (e) {
+		logger.error('Failed to decrypt API key token for webhook CreatedBy field', { error: e });
+		return null;
+	}
 };
 
 export const registerWebhookPost = payAuthenticatedEndpointFactory.build({
@@ -97,7 +109,7 @@ export const listWebhooksGet = payAuthenticatedEndpointFactory.build({
 				CreatedByApiKey: {
 					select: {
 						id: true,
-						token: true,
+						encryptedToken: true,
 					},
 				},
 			},
@@ -122,7 +134,7 @@ export const listWebhooksGet = payAuthenticatedEndpointFactory.build({
 				CreatedBy: webhook.CreatedByApiKey
 					? {
 							apiKeyId: webhook.CreatedByApiKey.id,
-							apiKeyToken: webhook.CreatedByApiKey.token,
+							apiKeyToken: decryptApiKeyTokenSafe(webhook.CreatedByApiKey.encryptedToken),
 						}
 					: null,
 			})),
