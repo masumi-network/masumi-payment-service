@@ -479,6 +479,7 @@ enum RegistrationState {
 enum PricingType {
   Fixed
   Free
+  Dynamic
 }
 
 enum PaymentErrorType {

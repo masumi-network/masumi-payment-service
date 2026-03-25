@@ -338,23 +338,38 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 			}
 
 			const pricing = parsedMetadata.data.agentPricing;
-			if (pricing.pricingType != PricingType.Fixed) {
+			if (pricing.pricingType != PricingType.Fixed && pricing.pricingType != PricingType.Dynamic) {
 				throw createHttpError(400, 'Agent identifier pricing type not supported');
 			}
-			const amounts = pricing.fixedPricing;
 
 			const agentIdentifierAmountsMap = new Map<string, bigint>();
-			for (const amount of amounts) {
-				const unit = metadataToString(amount.unit)!.toLowerCase() == '' ? '' : metadataToString(amount.unit)!;
-				if (agentIdentifierAmountsMap.has(unit)) {
-					agentIdentifierAmountsMap.set(unit, agentIdentifierAmountsMap.get(unit)! + BigInt(amount.amount));
-				} else {
-					agentIdentifierAmountsMap.set(unit, BigInt(amount.amount));
+			if (pricing.pricingType == PricingType.Fixed) {
+				if (input.Amounts != undefined) {
+					throw createHttpError(400, 'Agent identifier amounts must not be provided for fixed pricing');
 				}
-			}
-			//for fixed pricing, the amounts must not be provided
-			if (input.Amounts != undefined) {
-				throw createHttpError(400, 'Agent identifier amounts must not be provided for fixed pricing');
+				const amounts = pricing.fixedPricing;
+				for (const amount of amounts) {
+					const unit = metadataToString(amount.unit)!.toLowerCase() == '' ? '' : metadataToString(amount.unit)!;
+					if (agentIdentifierAmountsMap.has(unit)) {
+						agentIdentifierAmountsMap.set(unit, agentIdentifierAmountsMap.get(unit)! + BigInt(amount.amount));
+					} else {
+						agentIdentifierAmountsMap.set(unit, BigInt(amount.amount));
+					}
+				}
+			} else {
+				if (input.Amounts == undefined || input.Amounts.length == 0) {
+					throw createHttpError(400, 'For dynamic pricing, Amounts must be provided');
+				}
+				for (const amount of input.Amounts) {
+					if (agentIdentifierAmountsMap.has(amount.unit)) {
+						agentIdentifierAmountsMap.set(
+							amount.unit,
+							agentIdentifierAmountsMap.get(amount.unit)! + BigInt(amount.amount),
+						);
+					} else {
+						agentIdentifierAmountsMap.set(amount.unit, BigInt(amount.amount));
+					}
+				}
 			}
 			const decoded = decodeBlockchainIdentifier(input.blockchainIdentifier);
 			if (decoded == null) {
@@ -392,8 +407,13 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 				agentIdentifier: input.agentIdentifier,
 				purchaserIdentifier: purchaserId,
 				sellerIdentifier: sellerId,
-				//RequestedFunds: is null for fixed pricing
-				RequestedFunds: null,
+				RequestedFunds:
+					pricing.pricingType == PricingType.Dynamic
+						? Array.from(agentIdentifierAmountsMap.entries()).map(([unit, amount]) => ({
+								amount: Number(amount),
+								unit,
+							}))
+						: null,
 				payByTime: input.payByTime,
 				submitResultTime: input.submitResultTime,
 				unlockTime: unlockTime.toString(),

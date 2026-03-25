@@ -84,6 +84,11 @@ export const metadataSchema = z.object({
 			z.object({
 				pricingType: z.enum([PricingType.Free]),
 			}),
+		)
+		.or(
+			z.object({
+				pricingType: z.enum([PricingType.Dynamic]),
+			}),
 		),
 	image: z.string().or(z.array(z.string())),
 	metadata_version: z.coerce.number().int().min(1).max(1),
@@ -220,7 +225,12 @@ export const queryAgentFromWalletSchemaOutput = z.object({
 								})
 								.or(
 									z.object({
-										pricingType: z.enum([PricingType.Free]).describe('Pricing type for the agent (Fixed or Free)'),
+										pricingType: z.enum([PricingType.Free]).describe('Pricing type for the agent (Free)'),
+									}),
+								)
+								.or(
+									z.object({
+										pricingType: z.enum([PricingType.Dynamic]).describe('Pricing type for the agent (Dynamic)'),
 									}),
 								)
 								.describe('Pricing information for the agent'),

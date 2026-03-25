@@ -75,7 +75,7 @@ export const registryRequestOutputSchema = z
 			.describe('Full agent identifier (policy ID + asset name). Null if not yet minted'),
 		AgentPricing: z
 			.object({
-				pricingType: z.enum([PricingType.Fixed]).describe('Pricing type for the agent '),
+				pricingType: z.enum([PricingType.Fixed]).describe('Pricing type for the agent'),
 				Pricing: z
 					.array(
 						z.object({
@@ -97,7 +97,14 @@ export const registryRequestOutputSchema = z
 			})
 			.or(
 				z.object({
-					pricingType: z.enum([PricingType.Free]).describe('Pricing type for the agent '),
+					pricingType: z.enum([PricingType.Free]).describe('Pricing type for the agent'),
+				}),
+			)
+			.or(
+				z.object({
+					pricingType: z
+						.enum([PricingType.Dynamic])
+						.describe('Pricing type for the agent. Amounts are provided per payment/purchase request'),
 				}),
 			)
 			.describe('Pricing information for the agent'),
@@ -165,7 +172,7 @@ export const registerAgentSchemaInput = z.object({
 		.describe('Provide information about the used AI model and version'),
 	AgentPricing: z
 		.object({
-			pricingType: z.enum([PricingType.Fixed]).describe('Pricing type for the agent '),
+			pricingType: z.enum([PricingType.Fixed]).describe('Pricing type for the agent'),
 			Pricing: z
 				.array(
 					z.object({
@@ -189,7 +196,14 @@ export const registerAgentSchemaInput = z.object({
 		})
 		.or(
 			z.object({
-				pricingType: z.enum([PricingType.Free]).describe('Pricing type for the agent '),
+				pricingType: z.enum([PricingType.Free]).describe('Pricing type for the agent'),
+			}),
+		)
+		.or(
+			z.object({
+				pricingType: z
+					.enum([PricingType.Dynamic])
+					.describe('Pricing type for the agent. Amounts are provided per payment/purchase request'),
 			}),
 		)
 		.describe('Pricing information for the agent'),
