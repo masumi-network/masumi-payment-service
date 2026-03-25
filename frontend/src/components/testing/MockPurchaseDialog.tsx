@@ -87,7 +87,10 @@ function tryExtractPaymentFields(json: string): ExtractedPaymentFields | null {
     const pricingType = obj.pricingType;
     const amounts =
       Array.isArray(obj.RequestedFunds) && obj.RequestedFunds.length > 0
-        ? obj.RequestedFunds
+        ? obj.RequestedFunds.map((f: { amount: string; unit: string }) => ({
+            amount: f.amount,
+            unit: f.unit,
+          }))
         : undefined;
     // Only return if we got at least blockchainIdentifier
     if (fields.blockchainIdentifier) return { formFields: fields, pricingType, amounts };
@@ -110,7 +113,6 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
   const [selectedBuyerWalletId, setSelectedBuyerWalletId] = useState<string>('');
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
     useState<WalletWithBalance | null>(null);
-  const [extractedPricingType, setExtractedPricingType] = useState<string | undefined>(undefined);
   const [extractedAmounts, setExtractedAmounts] = useState<
     Array<{ amount: string; unit: string }> | undefined
   >(undefined);
@@ -202,7 +204,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
       setPasteValue(value);
       if (!value.trim()) {
         setPasteError(null);
-        setExtractedPricingType(undefined);
+
         setExtractedAmounts(undefined);
         return;
       }
@@ -210,7 +212,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
       if (result) {
         setPasteError(null);
         applyFields(result.formFields);
-        setExtractedPricingType(result.pricingType);
+
         setExtractedAmounts(result.amounts);
         toast.success('Fields populated from pasted response');
       } else {
@@ -258,7 +260,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
         setValue('externalDisputeUnlockTime', payment.externalDisputeUnlockTime || '');
 
         // Extract pricingType and RequestedFunds for dynamic pricing
-        setExtractedPricingType(payment.pricingType);
+
         if (payment.RequestedFunds && payment.RequestedFunds.length > 0) {
           setExtractedAmounts(
             payment.RequestedFunds.map((f) => ({ amount: f.amount, unit: f.unit })),

@@ -1,6 +1,6 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { postPayment, PostPaymentResponse } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
@@ -53,17 +53,21 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
     },
   });
 
-  const paidAgents = agents
-    .filter(
-      (agent) =>
-        agent.state === 'RegistrationConfirmed' &&
-        agent.agentIdentifier !== null &&
-        agent.AgentPricing?.pricingType !== 'Free',
-    )
-    .map((agent) => ({
-      ...agent,
-      pricingType: agent.AgentPricing?.pricingType,
-    }));
+  const paidAgents = useMemo(
+    () =>
+      agents
+        .filter(
+          (agent) =>
+            agent.state === 'RegistrationConfirmed' &&
+            agent.agentIdentifier !== null &&
+            agent.AgentPricing?.pricingType !== 'Free',
+        )
+        .map((agent) => ({
+          ...agent,
+          pricingType: agent.AgentPricing?.pricingType,
+        })),
+    [agents],
+  );
 
   const { inputData, setInputData, inputDataError, resetInputData } = useInputDataHash(
     setValue,

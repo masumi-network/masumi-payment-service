@@ -1,6 +1,6 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
   postPayment,
@@ -72,17 +72,21 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
     },
   });
 
-  const paidAgents = agents
-    .filter(
-      (agent) =>
-        agent.state === 'RegistrationConfirmed' &&
-        agent.agentIdentifier !== null &&
-        agent.AgentPricing?.pricingType !== 'Free',
-    )
-    .map((agent) => ({
-      ...agent,
-      pricingType: agent.AgentPricing?.pricingType,
-    }));
+  const paidAgents = useMemo(
+    () =>
+      agents
+        .filter(
+          (agent) =>
+            agent.state === 'RegistrationConfirmed' &&
+            agent.agentIdentifier !== null &&
+            agent.AgentPricing?.pricingType !== 'Free',
+        )
+        .map((agent) => ({
+          ...agent,
+          pricingType: agent.AgentPricing?.pricingType,
+        })),
+    [agents],
+  );
 
   const { inputData, setInputData, inputDataError, resetInputData } = useInputDataHash(
     setValue,
