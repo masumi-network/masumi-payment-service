@@ -194,7 +194,14 @@ export function PaymentFormFields({
           control={control}
           name="agentIdentifier"
           render={({ field }) => (
-            <Select value={field.value} onValueChange={field.onChange}>
+            <Select
+              value={field.value}
+              onValueChange={(val) => {
+                field.onChange(val);
+                setValue('requestedFundsAmount', '');
+                setValue('requestedFundsUnit', undefined);
+              }}
+            >
               <SelectTrigger
                 disabled={isLoadingAgents || paidAgents.length === 0}
                 className={`transition-colors duration-200 ${errors.agentIdentifier ? 'border-red-500' : ''}`}
@@ -228,46 +235,6 @@ export function PaymentFormFields({
           </p>
         )}
       </div>
-
-      {/* Dynamic Pricing Amount */}
-      {isDynamicPricing && (
-        <div className="space-y-2 p-3 border rounded-md bg-muted/40">
-          <Label>
-            Requested Amount <span className="text-red-500">*</span>
-          </Label>
-          <p className="text-xs text-muted-foreground">
-            This agent uses dynamic pricing. Specify the amount for this payment.
-          </p>
-          <div className="flex gap-2">
-            <div className="flex-1">
-              <Input
-                type="number"
-                placeholder="Amount (e.g., 5.00)"
-                step="0.000001"
-                min="0"
-                onWheel={(e) => e.currentTarget.blur()}
-                {...register('requestedFundsAmount')}
-              />
-            </div>
-            <div className="w-[140px]">
-              <Controller
-                control={control}
-                name="requestedFundsUnit"
-                render={({ field }) => (
-                  <Select value={field.value || 'lovelace'} onValueChange={field.onChange}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Unit" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="lovelace">ADA</SelectItem>
-                    </SelectContent>
-                  </Select>
-                )}
-              />
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Purchaser Identifier */}
       <div className="space-y-2 animate-fade-in-up opacity-0 animate-stagger-2">
@@ -372,6 +339,51 @@ export function PaymentFormFields({
           className="resize-none"
         />
       </div>
+
+      {/* Simulate Dynamic Price */}
+      {isDynamicPricing && (
+        <Card className="animate-fade-in-up opacity-0 animate-stagger-5 border-dashed">
+          <CardContent className="p-4 space-y-3">
+            <div className="space-y-1">
+              <Label className="text-sm font-medium">
+                Simulate Dynamic Price <span className="text-red-500">*</span>
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                This agent uses dynamic pricing — in production the agent determines the price per
+                request. Enter an amount to simulate.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <Input
+                  type="number"
+                  placeholder="Amount (e.g., 5.00)"
+                  step="0.000001"
+                  min="0"
+                  onWheel={(e) => e.currentTarget.blur()}
+                  {...register('requestedFundsAmount')}
+                />
+              </div>
+              <div className="w-[140px]">
+                <Controller
+                  control={control}
+                  name="requestedFundsUnit"
+                  render={({ field }) => (
+                    <Select value={field.value || 'lovelace'} onValueChange={field.onChange}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Unit" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="lovelace">ADA</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </>
   );
 }

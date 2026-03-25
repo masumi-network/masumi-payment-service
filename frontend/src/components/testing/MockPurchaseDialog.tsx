@@ -53,7 +53,12 @@ const mockPurchaseSchema = z.object({
 
 type MockPurchaseFormValues = z.infer<typeof mockPurchaseSchema>;
 
-function tryExtractPaymentFields(json: string): Partial<MockPurchaseFormValues> | null {
+interface ExtractedPaymentFields {
+  formFields: Partial<MockPurchaseFormValues>;
+  requestedFunds?: Array<{ amount: string; unit: string }>;
+}
+
+function tryExtractPaymentFields(json: string): ExtractedPaymentFields | null {
   try {
     let obj = JSON.parse(json);
     // Support wrapped responses: { data: { ... } } or { data: { data: { ... } } }
@@ -77,8 +82,10 @@ function tryExtractPaymentFields(json: string): Partial<MockPurchaseFormValues> 
         fields.identifierFromPurchaser = decoded.purchaserId;
       }
     }
+    // Extract RequestedFunds for dynamic pricing
+    const requestedFunds = Array.isArray(obj.RequestedFunds) ? obj.RequestedFunds : undefined;
     // Only return if we got at least blockchainIdentifier
-    if (fields.blockchainIdentifier) return fields;
+    if (fields.blockchainIdentifier) return { formFields: fields, requestedFunds };
     return null;
   } catch {
     return null;
@@ -98,6 +105,9 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
   const [selectedBuyerWalletId, setSelectedBuyerWalletId] = useState<string>('');
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
     useState<WalletWithBalance | null>(null);
+  const [extractedAmounts, setExtractedAmounts] = useState<
+    Array<{ amount: string; unit: string }> | undefined
+  >(undefined);
 
   const currentNetworkPaymentSources = useMemo(
     () => paymentSources.filter((ps) => ps.network === network),
@@ -186,12 +196,14 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
       setPasteValue(value);
       if (!value.trim()) {
         setPasteError(null);
+        setExtractedAmounts(undefined);
         return;
       }
-      const fields = tryExtractPaymentFields(value);
-      if (fields) {
+      const result = tryExtractPaymentFields(value);
+      if (result) {
         setPasteError(null);
-        applyFields(fields);
+        applyFields(result.formFields);
+        setExtractedAmounts(result.requestedFunds);
         toast.success('Fields populated from pasted response');
       } else {
         setPasteError(
@@ -237,6 +249,13 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
         setValue('unlockTime', payment.unlockTime || '');
         setValue('externalDisputeUnlockTime', payment.externalDisputeUnlockTime || '');
 
+        // Extract RequestedFunds for dynamic pricing
+        if (payment.RequestedFunds && payment.RequestedFunds.length > 0) {
+          setExtractedAmounts(
+            payment.RequestedFunds.map((f) => ({ amount: f.amount, unit: f.unit })),
+          );
+        }
+
         if (decoded) {
           setValue('identifierFromPurchaser', decoded.purchaserId);
         } else {
@@ -279,6 +298,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
           unlockTime: data.unlockTime,
           externalDisputeUnlockTime: data.externalDisputeUnlockTime,
           metadata: data.metadata || undefined,
+          Amounts: extractedAmounts,
         };
 
         const baseUrl = process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL || '';
@@ -309,7 +329,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
         setIsLoading(false);
       }
     },
-    [apiClient, apiKey, network],
+    [apiClient, apiKey, network, extractedAmounts],
   );
 
   const handleClose = () => {
@@ -317,6 +337,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
     setSelectedBuyerWalletId('');
     setPasteValue('');
     setPasteError(null);
+    setExtractedAmounts(undefined);
     setResponse(null);
     setError(null);
     setCurlCommand('');

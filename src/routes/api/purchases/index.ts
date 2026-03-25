@@ -345,7 +345,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 			const agentIdentifierAmountsMap = new Map<string, bigint>();
 			if (pricing.pricingType == PricingType.Fixed) {
 				if (input.Amounts != undefined) {
-					throw createHttpError(400, 'Agent identifier amounts must not be provided for fixed pricing');
+					throw createHttpError(400, 'Amounts must not be provided for fixed pricing');
 				}
 				const amounts = pricing.fixedPricing;
 				for (const amount of amounts) {

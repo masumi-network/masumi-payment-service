@@ -110,6 +110,14 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
         setPurchaseError(null);
         setStep(2);
 
+        // For dynamic pricing, pass the requested funds as Amounts for the purchase.
+        // Only include Amounts when the payment was created with dynamic pricing
+        // (i.e. when the form had a requestedFundsAmount set).
+        const isDynamic = !!originalFormData.requestedFundsAmount;
+        const amounts = isDynamic
+          ? payment.RequestedFunds?.map((f) => ({ amount: f.amount, unit: f.unit }))
+          : undefined;
+
         const requestBody = {
           blockchainIdentifier: payment.blockchainIdentifier,
           network: network,
@@ -122,6 +130,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
           unlockTime: payment.unlockTime || '',
           externalDisputeUnlockTime: payment.externalDisputeUnlockTime || '',
           metadata: originalFormData.metadata || undefined,
+          Amounts: amounts,
         };
 
         const baseUrl = process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL || '';
