@@ -183,7 +183,7 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 						unit: metadataToString(amount.unit)?.toLowerCase() == 'lovelace' ? '' : metadataToString(amount.unit)!,
 					}))
 				: input.RequestedFunds!.map((fund) => ({
-						amount: Number(fund.amount),
+						amount: fund.amount,
 						unit: fund.unit,
 					}));
 

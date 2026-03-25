@@ -424,10 +424,10 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 				purchaserIdentifier: purchaserId,
 				sellerIdentifier: sellerId,
 				RequestedFunds:
-					pricing.pricingType == PricingType.Dynamic
-						? Array.from(agentIdentifierAmountsMap.entries()).map(([unit, amount]) => ({
-								amount: Number(amount),
-								unit,
+					pricing.pricingType == PricingType.Dynamic && input.Amounts
+						? input.Amounts.map((a) => ({
+								amount: a.amount,
+								unit: a.unit,
 							}))
 						: null,
 				payByTime: input.payByTime,
