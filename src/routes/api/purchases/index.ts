@@ -344,9 +344,6 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 
 			const agentIdentifierAmountsMap = new Map<string, bigint>();
 			if (pricing.pricingType == PricingType.Fixed) {
-				if (input.Amounts != undefined) {
-					throw createHttpError(400, 'Amounts must not be provided for fixed pricing');
-				}
 				const amounts = pricing.fixedPricing;
 				for (const amount of amounts) {
 					const unit = metadataToString(amount.unit)!.toLowerCase() == '' ? '' : metadataToString(amount.unit)!;
@@ -354,6 +351,25 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 						agentIdentifierAmountsMap.set(unit, agentIdentifierAmountsMap.get(unit)! + BigInt(amount.amount));
 					} else {
 						agentIdentifierAmountsMap.set(unit, BigInt(amount.amount));
+					}
+				}
+				// If Amounts are provided for fixed pricing, verify they match
+				if (input.Amounts != undefined) {
+					const inputAmountsMap = new Map<string, bigint>();
+					for (const amount of input.Amounts) {
+						if (inputAmountsMap.has(amount.unit)) {
+							inputAmountsMap.set(amount.unit, inputAmountsMap.get(amount.unit)! + BigInt(amount.amount));
+						} else {
+							inputAmountsMap.set(amount.unit, BigInt(amount.amount));
+						}
+					}
+					if (inputAmountsMap.size != agentIdentifierAmountsMap.size) {
+						throw createHttpError(400, 'Provided Amounts do not match the fixed pricing of the agent');
+					}
+					for (const [unit, amount] of agentIdentifierAmountsMap) {
+						if (inputAmountsMap.get(unit) != amount) {
+							throw createHttpError(400, 'Provided Amounts do not match the fixed pricing of the agent');
+						}
 					}
 				}
 			} else {
@@ -453,6 +469,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 				unlockTime: unlockTime,
 				externalDisputeUnlockTime: externalDisputeUnlockTime,
 				inputHash: input.inputHash,
+				pricingType: pricing.pricingType,
 			});
 
 			return {

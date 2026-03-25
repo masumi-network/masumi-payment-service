@@ -484,8 +484,8 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
                     <SelectValue placeholder="Select pricing type" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Fixed">Fixed - Set price per interaction</SelectItem>
-                    <SelectItem value="Dynamic">Dynamic - Price set per request</SelectItem>
+                    <SelectItem value="Fixed">Fixed - Price per Agent</SelectItem>
+                    <SelectItem value="Dynamic">Dynamic - Price set per payment</SelectItem>
                     <SelectItem value="Free">Free - No cost for interactions</SelectItem>
                   </SelectContent>
                 </Select>

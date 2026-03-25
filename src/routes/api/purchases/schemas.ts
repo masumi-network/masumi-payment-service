@@ -1,6 +1,7 @@
 import {
 	Network,
 	OnChainState,
+	PricingType,
 	PurchaseErrorType,
 	PurchasingAction,
 	TransactionStatus,
@@ -52,6 +53,7 @@ export const purchaseResponseSchema = z
 		updatedAt: z.date().describe('Timestamp when the purchase was last updated'),
 		blockchainIdentifier: z.string().describe('Unique blockchain identifier for the purchase'),
 		agentIdentifier: z.string().nullable().describe('Identifier of the agent that is being purchased'),
+		pricingType: z.nativeEnum(PricingType).describe('Pricing type of the agent (Fixed, Free, or Dynamic)'),
 		lastCheckedAt: z
 			.date()
 			.nullable()

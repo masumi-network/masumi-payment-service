@@ -341,6 +341,15 @@ export const PaymentSchema = {
             nullable: true,
             description: 'Identifier of the agent that is being paid'
         },
+        pricingType: {
+            type: 'string',
+            enum: [
+                'Fixed',
+                'Free',
+                'Dynamic'
+            ],
+            description: 'Pricing type of the agent (Fixed, Free, or Dynamic)'
+        },
         lastCheckedAt: {
             type: 'string',
             nullable: true,
@@ -910,6 +919,7 @@ export const PaymentSchema = {
         'updatedAt',
         'blockchainIdentifier',
         'agentIdentifier',
+        'pricingType',
         'lastCheckedAt',
         'payByTime',
         'submitResultTime',
@@ -966,6 +976,15 @@ export const PurchaseSchema = {
             type: 'string',
             nullable: true,
             description: 'Identifier of the agent that is being purchased'
+        },
+        pricingType: {
+            type: 'string',
+            enum: [
+                'Fixed',
+                'Free',
+                'Dynamic'
+            ],
+            description: 'Pricing type of the agent (Fixed, Free, or Dynamic)'
         },
         lastCheckedAt: {
             type: 'string',
@@ -1511,6 +1530,7 @@ export const PurchaseSchema = {
         'updatedAt',
         'blockchainIdentifier',
         'agentIdentifier',
+        'pricingType',
         'lastCheckedAt',
         'payByTime',
         'submitResultTime',

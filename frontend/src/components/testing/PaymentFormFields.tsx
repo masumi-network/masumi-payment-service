@@ -198,8 +198,8 @@ export function PaymentFormFields({
               value={field.value}
               onValueChange={(val) => {
                 field.onChange(val);
-                setValue('requestedFundsAmount', '');
-                setValue('requestedFundsUnit', undefined);
+                setValue('requestedFundsAmount', '', { shouldDirty: false });
+                setValue('requestedFundsUnit', '', { shouldDirty: false });
               }}
             >
               <SelectTrigger

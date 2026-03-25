@@ -358,6 +358,15 @@
                         "nullable": true,
                         "description": "Identifier of the agent that is being paid"
                     },
+                    "pricingType": {
+                        "type": "string",
+                        "enum": [
+                            "Fixed",
+                            "Free",
+                            "Dynamic"
+                        ],
+                        "description": "Pricing type of the agent (Fixed, Free, or Dynamic)"
+                    },
                     "lastCheckedAt": {
                         "type": "string",
                         "nullable": true,
@@ -927,6 +936,7 @@
                     "updatedAt",
                     "blockchainIdentifier",
                     "agentIdentifier",
+                    "pricingType",
                     "lastCheckedAt",
                     "payByTime",
                     "submitResultTime",
@@ -982,6 +992,15 @@
                         "type": "string",
                         "nullable": true,
                         "description": "Identifier of the agent that is being purchased"
+                    },
+                    "pricingType": {
+                        "type": "string",
+                        "enum": [
+                            "Fixed",
+                            "Free",
+                            "Dynamic"
+                        ],
+                        "description": "Pricing type of the agent (Fixed, Free, or Dynamic)"
                     },
                     "lastCheckedAt": {
                         "type": "string",
@@ -1527,6 +1546,7 @@
                     "updatedAt",
                     "blockchainIdentifier",
                     "agentIdentifier",
+                    "pricingType",
                     "lastCheckedAt",
                     "payByTime",
                     "submitResultTime",
@@ -6074,6 +6094,15 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being paid"
                                                 },
+                                                "pricingType": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Fixed",
+                                                        "Free",
+                                                        "Dynamic"
+                                                    ],
+                                                    "description": "Pricing type of the agent (Fixed, Free, or Dynamic)"
+                                                },
                                                 "lastCheckedAt": {
                                                     "type": "string",
                                                     "nullable": true,
@@ -6462,6 +6491,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
                                                 "submitResultTime",
@@ -7408,6 +7438,15 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being paid"
                                                 },
+                                                "pricingType": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Fixed",
+                                                        "Free",
+                                                        "Dynamic"
+                                                    ],
+                                                    "description": "Pricing type of the agent (Fixed, Free, or Dynamic)"
+                                                },
                                                 "lastCheckedAt": {
                                                     "type": "string",
                                                     "nullable": true,
@@ -7796,6 +7835,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
                                                 "submitResultTime",
@@ -7984,6 +8024,15 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being paid"
                                                 },
+                                                "pricingType": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Fixed",
+                                                        "Free",
+                                                        "Dynamic"
+                                                    ],
+                                                    "description": "Pricing type of the agent (Fixed, Free, or Dynamic)"
+                                                },
                                                 "lastCheckedAt": {
                                                     "type": "string",
                                                     "nullable": true,
@@ -8372,6 +8421,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
                                                 "submitResultTime",
@@ -8582,6 +8632,15 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being paid"
                                                 },
+                                                "pricingType": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Fixed",
+                                                        "Free",
+                                                        "Dynamic"
+                                                    ],
+                                                    "description": "Pricing type of the agent (Fixed, Free, or Dynamic)"
+                                                },
                                                 "lastCheckedAt": {
                                                     "type": "string",
                                                     "nullable": true,
@@ -8970,6 +9029,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
                                                 "submitResultTime",
@@ -9194,6 +9254,15 @@
                                                     "type": "string",
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being purchased"
+                                                },
+                                                "pricingType": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Fixed",
+                                                        "Free",
+                                                        "Dynamic"
+                                                    ],
+                                                    "description": "Pricing type of the agent (Fixed, Free, or Dynamic)"
                                                 },
                                                 "lastCheckedAt": {
                                                     "type": "string",
@@ -9567,6 +9636,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
                                                 "submitResultTime",
@@ -11786,6 +11856,15 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being purchased"
                                                 },
+                                                "pricingType": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Fixed",
+                                                        "Free",
+                                                        "Dynamic"
+                                                    ],
+                                                    "description": "Pricing type of the agent (Fixed, Free, or Dynamic)"
+                                                },
                                                 "lastCheckedAt": {
                                                     "type": "string",
                                                     "nullable": true,
@@ -12158,6 +12237,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
                                                 "submitResultTime",
@@ -12304,6 +12384,15 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being purchased"
                                                 },
+                                                "pricingType": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Fixed",
+                                                        "Free",
+                                                        "Dynamic"
+                                                    ],
+                                                    "description": "Pricing type of the agent (Fixed, Free, or Dynamic)"
+                                                },
                                                 "lastCheckedAt": {
                                                     "type": "string",
                                                     "nullable": true,
@@ -12676,6 +12765,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
                                                 "submitResultTime",
@@ -13294,6 +13384,15 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being purchased"
                                                 },
+                                                "pricingType": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Fixed",
+                                                        "Free",
+                                                        "Dynamic"
+                                                    ],
+                                                    "description": "Pricing type of the agent (Fixed, Free, or Dynamic)"
+                                                },
                                                 "lastCheckedAt": {
                                                     "type": "string",
                                                     "nullable": true,
@@ -13666,6 +13765,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
                                                 "submitResultTime",
@@ -13853,6 +13953,15 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being purchased"
                                                 },
+                                                "pricingType": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Fixed",
+                                                        "Free",
+                                                        "Dynamic"
+                                                    ],
+                                                    "description": "Pricing type of the agent (Fixed, Free, or Dynamic)"
+                                                },
                                                 "lastCheckedAt": {
                                                     "type": "string",
                                                     "nullable": true,
@@ -14225,6 +14334,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
                                                 "submitResultTime",

@@ -113,7 +113,7 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
           unlockTime: times.unlockTime,
           externalDisputeUnlockTime: times.externalDisputeUnlockTime,
           metadata: data.metadata || undefined,
-          RequestedFunds: requestedFunds,
+          ...(requestedFunds ? { RequestedFunds: requestedFunds } : {}),
         };
 
         const baseUrl = process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL || '';

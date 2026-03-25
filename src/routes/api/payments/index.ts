@@ -246,6 +246,7 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 			data: {
 				totalBuyerCardanoFees: BigInt(0),
 				totalSellerCardanoFees: BigInt(0),
+				pricingType: pricing.pricingType,
 				blockchainIdentifier: compressedEncodedBlockchainIdentifier,
 				PaymentSource: { connect: { id: specifiedPaymentContract.id } },
 				RequestedFunds: {
