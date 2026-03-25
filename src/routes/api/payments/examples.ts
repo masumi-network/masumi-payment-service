@@ -6,6 +6,7 @@ export const paymentSchemaOutputExample = {
 	id: 'cuid_v2_auto_generated',
 	blockchainIdentifier: 'blockchain_identifier',
 	agentIdentifier: 'agent_identifier',
+	pricingType: 'Fixed',
 	createdAt: new Date(1713636260),
 	updatedAt: new Date(1713636260),
 	submitResultTime: '0',
