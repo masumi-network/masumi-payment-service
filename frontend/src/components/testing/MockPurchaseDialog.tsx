@@ -219,6 +219,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
         setPasteError(
           'Could not extract payment data. Paste the JSON response from Create Payment.',
         );
+        setExtractedAmounts(undefined);
       }
     },
     [applyFields],
@@ -348,7 +349,6 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
     setSelectedBuyerWalletId('');
     setPasteValue('');
     setPasteError(null);
-    setExtractedPricingType(undefined);
     setExtractedAmounts(undefined);
     setResponse(null);
     setError(null);
