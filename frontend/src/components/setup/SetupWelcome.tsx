@@ -1448,6 +1448,34 @@ function AddAiAgentScreen({
           <CardContent className="space-y-5">
             <div className="space-y-3">
               <Label className="text-sm">
+                Pricing Type <span className="text-destructive">*</span>
+              </Label>
+              <Select
+                value={watch('pricingType')}
+                onValueChange={(val) => {
+                  setValue('pricingType', val as 'Fixed' | 'Free' | 'Dynamic');
+                  if (val !== 'Fixed') {
+                    setValue('prices', [{ unit: 'lovelace', amount: '0.00' }]);
+                  }
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select pricing type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Fixed">Fixed - Price per Agent</SelectItem>
+                  <SelectItem value="Dynamic">Dynamic - Price set per payment</SelectItem>
+                  <SelectItem value="Free">Free - No cost for interactions</SelectItem>
+                </SelectContent>
+              </Select>
+              {watch('pricingType') === 'Dynamic' && (
+                <p className="text-xs text-muted-foreground">
+                  The price will be determined per payment/purchase request by the agent.
+                </p>
+              )}
+            </div>
+            <div className="space-y-3">
+              <Label className="text-sm">
                 Pricing <span className="text-destructive">*</span>
               </Label>
               <div className="space-y-3">
@@ -1459,6 +1487,7 @@ function AddAiAgentScreen({
                       type="number"
                       step="0.01"
                       min={0}
+                      disabled={watch('pricingType') !== 'Fixed'}
                       className={cn(
                         'flex-1',
                         errors.prices?.[index]?.amount && 'border-destructive',
@@ -1466,6 +1495,7 @@ function AddAiAgentScreen({
                     />
                     <Select
                       value={watch(`prices.${index}.unit`)}
+                      disabled={watch('pricingType') !== 'Fixed'}
                       onValueChange={(value) =>
                         setValue(`prices.${index}.unit`, value as 'lovelace' | 'USDCx' | 'tUSDM')
                       }
@@ -1497,6 +1527,7 @@ function AddAiAgentScreen({
                   variant="outline"
                   size="sm"
                   className="gap-1.5"
+                  disabled={watch('pricingType') !== 'Fixed'}
                   onClick={() => appendPrice({ unit: 'lovelace', amount: '' })}
                 >
                   <span className="text-lg leading-none">+</span> Add price option

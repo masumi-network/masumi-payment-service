@@ -376,14 +376,17 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 				if (input.Amounts == undefined || input.Amounts.length == 0) {
 					throw createHttpError(400, 'For dynamic pricing, Amounts must be provided');
 				}
+				for (const fund of input.Amounts) {
+					if (BigInt(fund.amount) <= 0n) {
+						throw createHttpError(400, 'Amounts must be positive');
+					}
+				}
 				for (const amount of input.Amounts) {
-					if (agentIdentifierAmountsMap.has(amount.unit)) {
-						agentIdentifierAmountsMap.set(
-							amount.unit,
-							agentIdentifierAmountsMap.get(amount.unit)! + BigInt(amount.amount),
-						);
+					const unit = amount.unit.toLowerCase() == 'lovelace' ? '' : amount.unit;
+					if (agentIdentifierAmountsMap.has(unit)) {
+						agentIdentifierAmountsMap.set(unit, agentIdentifierAmountsMap.get(unit)! + BigInt(amount.amount));
 					} else {
-						agentIdentifierAmountsMap.set(amount.unit, BigInt(amount.amount));
+						agentIdentifierAmountsMap.set(unit, BigInt(amount.amount));
 					}
 				}
 			}
@@ -427,7 +430,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 					pricing.pricingType == PricingType.Dynamic && input.Amounts
 						? input.Amounts.map((a) => ({
 								amount: a.amount,
-								unit: a.unit,
+								unit: a.unit.toLowerCase() == 'lovelace' ? '' : a.unit,
 							}))
 						: null,
 				payByTime: input.payByTime,

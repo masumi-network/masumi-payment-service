@@ -176,6 +176,14 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 			throw createHttpError(400, 'Pricing type not supported for payments');
 		}
 
+		if (pricing.pricingType == PricingType.Dynamic && input.RequestedFunds) {
+			for (const fund of input.RequestedFunds) {
+				if (BigInt(fund.amount) <= 0n) {
+					throw createHttpError(400, 'RequestedFunds amounts must be positive');
+				}
+			}
+		}
+
 		const amounts =
 			pricing.pricingType == PricingType.Fixed
 				? pricing.fixedPricing.map((amount) => ({
@@ -184,7 +192,7 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 					}))
 				: input.RequestedFunds!.map((fund) => ({
 						amount: fund.amount,
-						unit: fund.unit,
+						unit: fund.unit.toLowerCase() == 'lovelace' ? '' : fund.unit,
 					}));
 
 		const vKey = resolvePaymentKeyHash(assetInWallet[0].address);

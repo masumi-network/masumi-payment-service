@@ -350,35 +350,21 @@ export function PaymentFormFields({
               </Label>
               <p className="text-xs text-muted-foreground">
                 This agent uses dynamic pricing — in production the agent determines the price per
-                request. Enter an amount to simulate.
+                request. Enter the amount in the smallest unit (e.g., lovelace for ADA where 1 ADA =
+                1000000 lovelace).
               </p>
             </div>
             <div className="flex gap-2">
               <div className="flex-1">
                 <Input
-                  type="number"
-                  placeholder="Amount (e.g., 5.00)"
-                  step="0.000001"
-                  min="0"
+                  type="text"
+                  placeholder="Amount in smallest unit (e.g., 2000000)"
                   onWheel={(e) => e.currentTarget.blur()}
                   {...register('requestedFundsAmount')}
                 />
               </div>
-              <div className="w-[140px]">
-                <Controller
-                  control={control}
-                  name="requestedFundsUnit"
-                  render={({ field }) => (
-                    <Select value={field.value || 'lovelace'} onValueChange={field.onChange}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Unit" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="lovelace">ADA</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
+              <div className="w-[160px]">
+                <Input placeholder="Unit (empty for ADA)" {...register('requestedFundsUnit')} />
               </div>
             </div>
           </CardContent>

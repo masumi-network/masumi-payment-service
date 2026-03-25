@@ -260,13 +260,11 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
         setValue('unlockTime', payment.unlockTime || '');
         setValue('externalDisputeUnlockTime', payment.externalDisputeUnlockTime || '');
 
-        // Extract pricingType and RequestedFunds for dynamic pricing
-
-        if (payment.RequestedFunds && payment.RequestedFunds.length > 0) {
-          setExtractedAmounts(
-            payment.RequestedFunds.map((f) => ({ amount: f.amount, unit: f.unit })),
-          );
-        }
+        setExtractedAmounts(
+          payment.RequestedFunds && payment.RequestedFunds.length > 0
+            ? payment.RequestedFunds.map((f) => ({ amount: f.amount, unit: f.unit }))
+            : undefined,
+        );
 
         if (decoded) {
           setValue('identifierFromPurchaser', decoded.purchaserId);

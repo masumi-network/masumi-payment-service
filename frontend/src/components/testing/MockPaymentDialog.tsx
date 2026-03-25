@@ -98,7 +98,7 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
           isDynamic && data.requestedFundsAmount
             ? [
                 {
-                  amount: (parseFloat(data.requestedFundsAmount) * 1_000_000).toString(),
+                  amount: data.requestedFundsAmount,
                   unit:
                     data.requestedFundsUnit === 'lovelace' || !data.requestedFundsUnit
                       ? ''
