@@ -11,8 +11,6 @@ const BUFFER_SIZE_PER_UNIT = 50;
 
 const SAFETY_MARGIN_BYTES = 20;
 
-export const DUMMY_RESULT_HASH = 'd4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35';
-
 export interface MinUtxoCalculationParams {
 	datum: Data | Buffer;
 	nativeTokenCount?: number;
