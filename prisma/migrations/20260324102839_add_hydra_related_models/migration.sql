@@ -195,7 +195,7 @@ ALTER TABLE "HydraLocalParticipant" ADD CONSTRAINT "HydraLocalParticipant_hydraH
 ALTER TABLE "HydraLocalParticipant" ADD CONSTRAINT "HydraLocalParticipant_walletId_fkey" FOREIGN KEY ("walletId") REFERENCES "HotWallet"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "HydraLocalParticipant" ADD CONSTRAINT "HydraLocalParticipant_hydraSecretKeyId_fkey" FOREIGN KEY ("hydraSecretKeyId") REFERENCES "HydraSecretKey"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "HydraLocalParticipant" ADD CONSTRAINT "HydraLocalParticipant_hydraSecretKeyId_fkey" FOREIGN KEY ("hydraSecretKeyId") REFERENCES "HydraSecretKey"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "HydraRemoteParticipant" ADD CONSTRAINT "HydraRemoteParticipant_hydraHeadId_fkey" FOREIGN KEY ("hydraHeadId") REFERENCES "HydraHead"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -204,7 +204,7 @@ ALTER TABLE "HydraRemoteParticipant" ADD CONSTRAINT "HydraRemoteParticipant_hydr
 ALTER TABLE "HydraRemoteParticipant" ADD CONSTRAINT "HydraRemoteParticipant_walletId_fkey" FOREIGN KEY ("walletId") REFERENCES "WalletBase"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "HydraRemoteParticipant" ADD CONSTRAINT "HydraRemoteParticipant_hydraVerificationKeyId_fkey" FOREIGN KEY ("hydraVerificationKeyId") REFERENCES "HydraVerificationKey"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "HydraRemoteParticipant" ADD CONSTRAINT "HydraRemoteParticipant_hydraVerificationKeyId_fkey" FOREIGN KEY ("hydraVerificationKeyId") REFERENCES "HydraVerificationKey"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "HydraHeadError" ADD CONSTRAINT "HydraHeadError_hydraHeadId_fkey" FOREIGN KEY ("hydraHeadId") REFERENCES "HydraHead"("id") ON DELETE CASCADE ON UPDATE CASCADE;

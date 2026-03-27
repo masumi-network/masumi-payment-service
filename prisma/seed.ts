@@ -211,6 +211,11 @@ export const seed = async (prisma: PrismaClient) => {
 					words: sellingWalletPreprodMnemonic.split(' '),
 				},
 			});
+
+			console.log('Mnemonics: ', {
+				purchasingMnemonic: purchaseWalletPreprodMnemonic,
+				sellingMnemonic: sellingWalletPreprodMnemonic,
+			});
 			const purchasingWalletSecret = encrypt(purchaseWalletPreprodMnemonic);
 			const sellingWalletSecret = encrypt(sellingWalletPreprodMnemonic);
 			const purchasingWalletSecretId = await prisma.walletSecret.create({

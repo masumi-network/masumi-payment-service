@@ -907,7 +907,7 @@ model HydraLocalParticipant {
 
   /// The HotWallet this participant operates with (has secret mnemonic)
   walletId String
-  wallet   HotWallet @relation(fields: [walletId], references: [id], onDelete: Restrict)
+  Wallet   HotWallet @relation(fields: [walletId], references: [id], onDelete: Restrict)
 
   /// WebSocket URL for this participant's Hydra node (e.g. ws://127.0.0.1:4001)
   nodeUrl String
