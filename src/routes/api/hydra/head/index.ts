@@ -5,12 +5,13 @@ import createHttpError from 'http-errors';
 import { HydraHeadStatus, HydraErrorType } from '@/generated/prisma/client';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { logger } from '@/utils/logger';
+import { toPrismaJsonValue } from '@/utils/json-value';
 
 // --- Shared schemas ---
 
 const localParticipantSchema = z.object({
 	id: z.string(),
-	createdAt: z.date(),
+	createdAt: z.string(),
 	walletId: z.string(),
 	nodeUrl: z.string(),
 	nodeHttpUrl: z.string(),
@@ -20,7 +21,7 @@ const localParticipantSchema = z.object({
 
 const remoteParticipantSchema = z.object({
 	id: z.string(),
-	createdAt: z.date(),
+	createdAt: z.string(),
 	walletId: z.string(),
 	nodeUrl: z.string(),
 	nodeHttpUrl: z.string(),
@@ -32,19 +33,19 @@ const remoteParticipantSchema = z.object({
 const hydraHeadSchema = z
 	.object({
 		id: z.string(),
-		createdAt: z.date(),
-		updatedAt: z.date(),
+		createdAt: z.string(),
+		updatedAt: z.string(),
 		hydraRelationId: z.string(),
 		headId: z.string().nullable(),
 		status: z.nativeEnum(HydraHeadStatus),
-		contestationPeriod: z.bigint(),
+		contestationPeriod: z.string(),
 		isEnabled: z.boolean(),
-		openedAt: z.date().nullable(),
-		closedAt: z.date().nullable(),
-		finalizedAt: z.date().nullable(),
-		contestationDeadline: z.date().nullable(),
-		latestActivityAt: z.date().nullable(),
-		latestSnapshotNumber: z.bigint(),
+		openedAt: z.string().nullable(),
+		closedAt: z.string().nullable(),
+		finalizedAt: z.string().nullable(),
+		contestationDeadline: z.string().nullable(),
+		latestActivityAt: z.string().nullable(),
+		latestSnapshotNumber: z.string(),
 		initTxHash: z.string().nullable(),
 		closeTxHash: z.string().nullable(),
 		fanoutTxHash: z.string().nullable(),
@@ -120,7 +121,7 @@ export const getOrListHeadsGet = adminAuthenticatedEndpointFactory.build({
 				throw createHttpError(404, 'Hydra head not found');
 			}
 
-			return { heads: [head] };
+			return { heads: [toPrismaJsonValue(head)] };
 		}
 
 		const heads = await prisma.hydraHead.findMany({
@@ -136,7 +137,7 @@ export const getOrListHeadsGet = adminAuthenticatedEndpointFactory.build({
 			...(input.cursorId ? { skip: 1 } : {}),
 		});
 
-		return { heads };
+		return { heads: heads.map(toPrismaJsonValue) };
 	},
 });
 
@@ -211,7 +212,7 @@ export const createHeadPost = adminAuthenticatedEndpointFactory.build({
 			include: headInclude,
 		});
 
-		return head;
+		return toPrismaJsonValue(head);
 	},
 });
 
@@ -240,7 +241,7 @@ export const updateHeadPatch = adminAuthenticatedEndpointFactory.build({
 			include: headInclude,
 		});
 
-		return head;
+		return toPrismaJsonValue(head);
 	},
 });
 
