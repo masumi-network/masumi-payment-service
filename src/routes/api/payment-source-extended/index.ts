@@ -9,9 +9,9 @@ import { z } from '@/utils/zod-openapi';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { DEFAULTS } from '@/utils/config';
-import { splitWalletsByType } from '@/utils/shared/transformers';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { logger } from '@/utils/logger';
+import { walletLowBalanceMonitorService } from '@/services/wallets';
 import {
 	paymentSourceExtendedCreateSchemaInput,
 	paymentSourceExtendedCreateSchemaOutput,
@@ -23,8 +23,8 @@ import {
 	paymentSourceExtendedUpdateSchemaInput,
 	paymentSourceExtendedUpdateSchemaOutput,
 } from './schemas';
-import { getPaymentSourceExtendedForQuery } from './queries';
-import { serializePaymentSourceExtendedResponse } from './serializers';
+import { getPaymentSourceExtendedForQuery, paymentSourceExtendedInclude } from './queries';
+import { serializePaymentSourceExtendedEntry, serializePaymentSourceExtendedResponse } from './serializers';
 
 export {
 	paymentSourceExtendedCreateSchemaInput,
@@ -37,6 +37,55 @@ export {
 	paymentSourceExtendedUpdateSchemaInput,
 	paymentSourceExtendedUpdateSchemaOutput,
 };
+
+async function resolveLatestIdentifierCheckpoint(
+	network: Network,
+	rpcProviderApiKey: string,
+	smartContractAddress: string,
+): Promise<string | null> {
+	const blockfrost = getBlockfrostInstance(network, rpcProviderApiKey);
+
+	try {
+		const transactions = await blockfrost.addressesTransactions(smartContractAddress, {
+			page: 1,
+			order: 'desc',
+			count: 1,
+		});
+
+		if (transactions.length === 0) {
+			logger.info('No existing transactions found for new payment source', {
+				smartContractAddress,
+			});
+			return null;
+		}
+
+		const latestTxHash = transactions[0].tx_hash;
+		logger.info('Setting sync checkpoint to latest transaction', {
+			smartContractAddress,
+			latestTxHash,
+		});
+		return latestTxHash;
+	} catch (error) {
+		if (
+			error instanceof Error &&
+			(error.message.includes('404') || error.message.toLowerCase().includes('not found'))
+		) {
+			logger.info('Smart contract address has no transaction history yet', {
+				smartContractAddress,
+			});
+			return null;
+		}
+
+		logger.error('Failed to fetch transaction history from Blockfrost', {
+			smartContractAddress,
+			error: error instanceof Error ? error.message : String(error),
+		});
+		throw createHttpError(
+			503,
+			'Unable to verify smart contract status. Please check your Blockfrost API key and try again.',
+		);
+	}
+}
 
 export const paymentSourceExtendedEndpointGet = adminAuthenticatedEndpointFactory.build({
 	method: 'get',
@@ -59,7 +108,7 @@ export const paymentSourceExtendedEndpointPost = adminAuthenticatedEndpointFacto
 		input: z.infer<typeof paymentSourceExtendedCreateSchemaInput>;
 		ctx: AuthContext;
 	}) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 		const sellingWalletsMesh = input.SellingWallets.map((sellingWallet) => {
 			return {
 				wallet: generateOfflineWallet(input.network, sellingWallet.walletMnemonic.split(' ')),
@@ -77,7 +126,7 @@ export const paymentSourceExtendedEndpointPost = adminAuthenticatedEndpointFacto
 			};
 		});
 
-		return await prisma.$transaction(async (prisma) => {
+		const createdPaymentSource = await prisma.$transaction(async (prisma) => {
 			const { smartContractAddress } = await getPaymentScriptV1(
 				input.AdminWallets[0].walletAddress,
 				input.AdminWallets[1].walletAddress,
@@ -90,47 +139,11 @@ export const paymentSourceExtendedEndpointPost = adminAuthenticatedEndpointFacto
 			);
 
 			const { policyId } = await getRegistryScriptV1(smartContractAddress, input.network);
-
-			let latestTxHash: string | null = null;
-			const blockfrost = getBlockfrostInstance(input.network, input.PaymentSourceConfig.rpcProviderApiKey);
-
-			try {
-				const transactions = await blockfrost.addressesTransactions(smartContractAddress, {
-					page: 1,
-					order: 'desc',
-					count: 1,
-				});
-
-				if (transactions.length > 0) {
-					latestTxHash = transactions[0].tx_hash;
-					logger.info('Setting sync checkpoint to latest transaction', {
-						smartContractAddress,
-						latestTxHash,
-					});
-				} else {
-					logger.info('No existing transactions found for new payment source', {
-						smartContractAddress,
-					});
-				}
-			} catch (error) {
-				if (
-					error instanceof Error &&
-					(error.message.includes('404') || error.message.toLowerCase().includes('not found'))
-				) {
-					logger.info('Smart contract address has no transaction history yet', {
-						smartContractAddress,
-					});
-				} else {
-					logger.error('Failed to fetch transaction history from Blockfrost', {
-						smartContractAddress,
-						error: error instanceof Error ? error.message : String(error),
-					});
-					throw createHttpError(
-						503,
-						'Unable to verify smart contract status. Please check your Blockfrost API key and try again.',
-					);
-				}
-			}
+			const latestIdentifierChecked = await resolveLatestIdentifierCheckpoint(
+				input.network,
+				input.PaymentSourceConfig.rpcProviderApiKey,
+				smartContractAddress,
+			);
 
 			const sellingWallets = await Promise.all(
 				sellingWalletsMesh.map(async (sw) => {
@@ -171,7 +184,7 @@ export const paymentSourceExtendedEndpointPost = adminAuthenticatedEndpointFacto
 					network: input.network,
 					smartContractAddress: smartContractAddress,
 					policyId: policyId,
-					lastIdentifierChecked: latestTxHash,
+					lastIdentifierChecked: latestIdentifierChecked,
 					PaymentSourceConfig: {
 						create: {
 							rpcProviderApiKey: input.PaymentSourceConfig.rpcProviderApiKey,
@@ -207,39 +220,26 @@ export const paymentSourceExtendedEndpointPost = adminAuthenticatedEndpointFacto
 						where: { deletedAt: null },
 						select: {
 							id: true,
-							walletVkey: true,
-							walletAddress: true,
-							type: true,
-							collectionAddress: true,
-							note: true,
-						},
-					},
-					PaymentSourceConfig: {
-						select: {
-							rpcProviderApiKey: true,
-							rpcProvider: true,
-						},
-					},
-					AdminWallets: {
-						select: {
-							walletAddress: true,
-							order: true,
-						},
-					},
-					FeeReceiverNetworkWallet: {
-						select: {
-							walletAddress: true,
 						},
 					},
 				},
 			});
 
-			const { HotWallets, ...rest } = paymentSource;
-			return {
-				...rest,
-				...splitWalletsByType(HotWallets),
-			};
+			return paymentSource;
 		});
+
+		await walletLowBalanceMonitorService.seedDefaultRulesForWallets(
+			createdPaymentSource.HotWallets.map((wallet) => wallet.id),
+		);
+
+		const paymentSource = await prisma.paymentSource.findUniqueOrThrow({
+			where: {
+				id: createdPaymentSource.id,
+			},
+			include: paymentSourceExtendedInclude,
+		});
+
+		return serializePaymentSourceExtendedEntry(paymentSource);
 	},
 });
 
@@ -259,6 +259,18 @@ export const paymentSourceExtendedEndpointPatch = adminAuthenticatedEndpointFact
 				id: input.id,
 				network: { in: ctx.networkLimit },
 				deletedAt: null,
+			},
+			select: {
+				id: true,
+				network: true,
+				HotWallets: {
+					where: {
+						deletedAt: null,
+					},
+					select: {
+						id: true,
+					},
+				},
 			},
 		});
 		if (paymentSource == null) {
@@ -339,7 +351,7 @@ export const paymentSourceExtendedEndpointPatch = adminAuthenticatedEndpointFact
 				});
 			}
 
-			const paymentSource = await prisma.paymentSource.update({
+			const updatedPaymentSource = await prisma.paymentSource.update({
 				where: { id: input.id },
 				data: {
 					lastIdentifierChecked: input.lastIdentifierChecked,
@@ -362,40 +374,28 @@ export const paymentSourceExtendedEndpointPatch = adminAuthenticatedEndpointFact
 						where: { deletedAt: null },
 						select: {
 							id: true,
-							walletVkey: true,
-							walletAddress: true,
-							type: true,
-							collectionAddress: true,
-							note: true,
-						},
-					},
-					PaymentSourceConfig: {
-						select: {
-							rpcProviderApiKey: true,
-							rpcProvider: true,
-						},
-					},
-					AdminWallets: {
-						select: {
-							walletAddress: true,
-							order: true,
-						},
-					},
-					FeeReceiverNetworkWallet: {
-						select: {
-							walletAddress: true,
 						},
 					},
 				},
 			});
 
-			return paymentSource;
+			return updatedPaymentSource;
 		});
-		const { HotWallets, ...rest } = result;
-		return {
-			...rest,
-			...splitWalletsByType(HotWallets),
-		};
+
+		const existingWalletIds = new Set(paymentSource.HotWallets.map((wallet) => wallet.id));
+		const createdWalletIds = result.HotWallets.map((wallet) => wallet.id).filter(
+			(walletId) => !existingWalletIds.has(walletId),
+		);
+		await walletLowBalanceMonitorService.seedDefaultRulesForWallets(createdWalletIds);
+
+		const paymentSourceWithRelations = await prisma.paymentSource.findUniqueOrThrow({
+			where: {
+				id: result.id,
+			},
+			include: paymentSourceExtendedInclude,
+		});
+
+		return serializePaymentSourceExtendedEntry(paymentSourceWithRelations);
 	},
 });
 
@@ -413,41 +413,8 @@ export const paymentSourceExtendedEndpointDelete = adminAuthenticatedEndpointFac
 		const paymentSource = await prisma.paymentSource.update({
 			where: { id: input.id, network: { in: ctx.networkLimit } },
 			data: { deletedAt: new Date() },
-			include: {
-				HotWallets: {
-					where: { deletedAt: null },
-					select: {
-						id: true,
-						walletVkey: true,
-						walletAddress: true,
-						type: true,
-						collectionAddress: true,
-						note: true,
-					},
-				},
-				PaymentSourceConfig: {
-					select: {
-						rpcProviderApiKey: true,
-						rpcProvider: true,
-					},
-				},
-				AdminWallets: {
-					select: {
-						walletAddress: true,
-						order: true,
-					},
-				},
-				FeeReceiverNetworkWallet: {
-					select: {
-						walletAddress: true,
-					},
-				},
-			},
+			include: paymentSourceExtendedInclude,
 		});
-		const { HotWallets, ...rest } = paymentSource;
-		return {
-			...rest,
-			...splitWalletsByType(HotWallets),
-		};
+		return serializePaymentSourceExtendedEntry(paymentSource);
 	},
 });

@@ -84,6 +84,11 @@ export const metadataSchema = z.object({
 			z.object({
 				pricingType: z.enum([PricingType.Free]),
 			}),
+		)
+		.or(
+			z.object({
+				pricingType: z.enum([PricingType.Dynamic]),
+			}),
 		),
 	image: z.string().or(z.array(z.string())),
 	metadata_version: z.coerce.number().int().min(1).max(1),
@@ -198,7 +203,7 @@ export const queryAgentFromWalletSchemaOutput = z.object({
 								.describe('Legal information about the agent. Null if not provided'),
 							AgentPricing: z
 								.object({
-									pricingType: z.enum([PricingType.Fixed]).describe('Pricing type for the agent (Fixed)'),
+									pricingType: z.enum([PricingType.Fixed]).describe('Pricing type for the agent (Fixed or Free)'),
 									Pricing: z
 										.array(
 											z.object({
@@ -223,6 +228,11 @@ export const queryAgentFromWalletSchemaOutput = z.object({
 										pricingType: z.enum([PricingType.Free]).describe('Pricing type for the agent (Free)'),
 									}),
 								)
+								.or(
+									z.object({
+										pricingType: z.enum([PricingType.Dynamic]).describe('Pricing type for the agent (Dynamic)'),
+									}),
+								)
 								.describe('Pricing information for the agent'),
 							image: z.string().max(250).describe('URL to the agent image/logo'),
 							metadataVersion: z.coerce
@@ -244,7 +254,7 @@ export const queryAgentFromWalletGet = readAuthenticatedEndpointFactory.build({
 	input: queryAgentFromWalletSchemaInput,
 	output: queryAgentFromWalletSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof queryAgentFromWalletSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 		const smartContractAddress =
 			input.smartContractAddress ??
 			(input.network == Network.Mainnet

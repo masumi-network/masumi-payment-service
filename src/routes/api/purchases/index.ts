@@ -8,7 +8,7 @@ import { checkSignature, resolvePaymentKeyHash } from '@meshsdk/core';
 import { logger } from '@/utils/logger';
 import { metadataSchema } from '../registry/wallet';
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
-import { handlePurchaseCreditInit } from '@/services/token-credit';
+import { handlePurchaseCreditInit } from '@/services/integrations';
 import stringify from 'canonical-json';
 import { getPublicKeyFromCoseKey } from '@/utils/converter/public-key-convert';
 import { generateSHA256Hash } from '@/utils/crypto';
@@ -46,7 +46,7 @@ export const queryPurchaseRequestGet = readAuthenticatedEndpointFactory.build({
 	input: queryPurchaseRequestSchemaInput,
 	output: queryPurchaseRequestSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof queryPurchaseRequestSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 		const result = await getPurchasesForQuery(input, ctx.walletScopeIds);
 		if (result == null) {
@@ -61,7 +61,7 @@ export const queryPurchaseCountGet = readAuthenticatedEndpointFactory.build({
 	input: queryPurchaseCountSchemaInput,
 	output: queryPurchaseCountSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof queryPurchaseCountSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 		const total = await prisma.purchaseRequest.count({
 			where: {
@@ -87,7 +87,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 	handler: async ({ input, ctx }: { input: z.infer<typeof createPurchaseInitSchemaInput>; ctx: AuthContext }) => {
 		const startTime = Date.now();
 		try {
-			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 			const existingPurchaseRequest = await prisma.purchaseRequest.findUnique({
 				where: {
 					blockchainIdentifier: input.blockchainIdentifier,
@@ -338,23 +338,57 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 			}
 
 			const pricing = parsedMetadata.data.agentPricing;
-			if (pricing.pricingType != PricingType.Fixed) {
+			if (pricing.pricingType != PricingType.Fixed && pricing.pricingType != PricingType.Dynamic) {
 				throw createHttpError(400, 'Agent identifier pricing type not supported');
 			}
-			const amounts = pricing.fixedPricing;
 
 			const agentIdentifierAmountsMap = new Map<string, bigint>();
-			for (const amount of amounts) {
-				const unit = metadataToString(amount.unit)!.toLowerCase() == '' ? '' : metadataToString(amount.unit)!;
-				if (agentIdentifierAmountsMap.has(unit)) {
-					agentIdentifierAmountsMap.set(unit, agentIdentifierAmountsMap.get(unit)! + BigInt(amount.amount));
-				} else {
-					agentIdentifierAmountsMap.set(unit, BigInt(amount.amount));
+			if (pricing.pricingType == PricingType.Fixed) {
+				const amounts = pricing.fixedPricing;
+				for (const amount of amounts) {
+					const unit = metadataToString(amount.unit)!.toLowerCase() == '' ? '' : metadataToString(amount.unit)!;
+					if (agentIdentifierAmountsMap.has(unit)) {
+						agentIdentifierAmountsMap.set(unit, agentIdentifierAmountsMap.get(unit)! + BigInt(amount.amount));
+					} else {
+						agentIdentifierAmountsMap.set(unit, BigInt(amount.amount));
+					}
 				}
-			}
-			//for fixed pricing, the amounts must not be provided
-			if (input.Amounts != undefined) {
-				throw createHttpError(400, 'Agent identifier amounts must not be provided for fixed pricing');
+				// If Amounts are provided for fixed pricing, verify they match
+				if (input.Amounts != undefined) {
+					const inputAmountsMap = new Map<string, bigint>();
+					for (const amount of input.Amounts) {
+						if (inputAmountsMap.has(amount.unit)) {
+							inputAmountsMap.set(amount.unit, inputAmountsMap.get(amount.unit)! + BigInt(amount.amount));
+						} else {
+							inputAmountsMap.set(amount.unit, BigInt(amount.amount));
+						}
+					}
+					if (inputAmountsMap.size != agentIdentifierAmountsMap.size) {
+						throw createHttpError(400, 'Provided Amounts do not match the fixed pricing of the agent');
+					}
+					for (const [unit, amount] of agentIdentifierAmountsMap) {
+						if (inputAmountsMap.get(unit) != amount) {
+							throw createHttpError(400, 'Provided Amounts do not match the fixed pricing of the agent');
+						}
+					}
+				}
+			} else {
+				if (input.Amounts == undefined || input.Amounts.length == 0) {
+					throw createHttpError(400, 'For dynamic pricing, Amounts must be provided');
+				}
+				for (const fund of input.Amounts) {
+					if (BigInt(fund.amount) <= 0n) {
+						throw createHttpError(400, 'Amounts must be positive');
+					}
+				}
+				for (const amount of input.Amounts) {
+					const unit = amount.unit.toLowerCase() == 'lovelace' ? '' : amount.unit;
+					if (agentIdentifierAmountsMap.has(unit)) {
+						agentIdentifierAmountsMap.set(unit, agentIdentifierAmountsMap.get(unit)! + BigInt(amount.amount));
+					} else {
+						agentIdentifierAmountsMap.set(unit, BigInt(amount.amount));
+					}
+				}
 			}
 			const decoded = decodeBlockchainIdentifier(input.blockchainIdentifier);
 			if (decoded == null) {
@@ -392,8 +426,13 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 				agentIdentifier: input.agentIdentifier,
 				purchaserIdentifier: purchaserId,
 				sellerIdentifier: sellerId,
-				//RequestedFunds: is null for fixed pricing
-				RequestedFunds: null,
+				RequestedFunds:
+					pricing.pricingType == PricingType.Dynamic && input.Amounts
+						? input.Amounts.map((a) => ({
+								amount: a.amount,
+								unit: a.unit.toLowerCase() == 'lovelace' ? '' : a.unit,
+							}))
+						: null,
 				payByTime: input.payByTime,
 				submitResultTime: input.submitResultTime,
 				unlockTime: unlockTime.toString(),
@@ -433,6 +472,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 				unlockTime: unlockTime,
 				externalDisputeUnlockTime: externalDisputeUnlockTime,
 				inputHash: input.inputHash,
+				pricingType: pricing.pricingType,
 			});
 
 			return {

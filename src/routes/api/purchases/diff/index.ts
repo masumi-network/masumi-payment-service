@@ -8,6 +8,7 @@ import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/u
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
+import { exhaustiveFallback } from '@/utils/assert-never';
 
 type PurchaseDiffMode =
 	| 'nextActionLastChangedAt'
@@ -106,10 +107,8 @@ function buildPurchaseDiffWhere({
 						...base,
 						nextActionOrOnChainStateOrResultLastChangedAt: { gte: since },
 					};
-		default: {
-			const _never: never = mode;
-			return base;
-		}
+		default:
+			return exhaustiveFallback(mode, base);
 	}
 }
 
@@ -121,10 +120,8 @@ function buildPurchaseDiffOrderBy(mode: PurchaseDiffMode): Prisma.PurchaseReques
 			return [{ onChainStateOrResultLastChangedAt: 'asc' }, { id: 'asc' }];
 		case 'nextActionOrOnChainStateOrResultLastChangedAt':
 			return [{ nextActionOrOnChainStateOrResultLastChangedAt: 'asc' }, { id: 'asc' }];
-		default: {
-			const _never: never = mode;
-			return [{ id: 'asc' }];
-		}
+		default:
+			return exhaustiveFallback(mode, [{ id: 'asc' }]);
 	}
 }
 
@@ -137,7 +134,7 @@ async function queryPurchaseDiffByMode({
 	ctx: AuthContext;
 	mode: PurchaseDiffMode;
 }) {
-	await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+	await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 	const since = input.lastUpdate;
 	const sinceId = input.cursorId;

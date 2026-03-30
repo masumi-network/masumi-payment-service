@@ -1,5 +1,6 @@
 import { Network, RPCProvider } from '@/generated/prisma/client';
 import { z } from '@/utils/zod-openapi';
+import { lowBalanceSummarySchema } from '@/routes/api/wallet/low-balance.schemas';
 
 export const paymentSourceExtendedSchemaInput = z.object({
 	take: z.coerce.number().min(1).max(100).default(10).describe('The number of payment sources to return'),
@@ -45,6 +46,7 @@ export const paymentSourceExtendedOutputSchema = z
 						.nullable()
 						.describe('Optional collection address for this wallet. Null if not set'),
 					note: z.string().nullable().describe('Optional note about this wallet. Null if not set'),
+					LowBalanceSummary: lowBalanceSummarySchema.describe('Aggregated low-balance status for the wallet'),
 				}),
 			)
 			.describe('List of wallets used for purchasing (buyer side)'),
@@ -59,6 +61,7 @@ export const paymentSourceExtendedOutputSchema = z
 						.nullable()
 						.describe('Optional collection address for this wallet. Null if not set'),
 					note: z.string().nullable().describe('Optional note about this wallet. Null if not set'),
+					LowBalanceSummary: lowBalanceSummarySchema.describe('Aggregated low-balance status for the wallet'),
 				}),
 			)
 			.describe('List of wallets used for selling (seller side)'),

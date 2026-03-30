@@ -131,12 +131,12 @@ export const postPaymentIncomeSchemaOutput = z.object({
 
 function getDayNumberLocal(date: Date, timeZone: string): string {
 	const sp = spacetime.fromUnixSeconds(date.getTime() / 1000).goto(timeZone);
-	return sp.format('YYYY-MM-DD');
+	return sp.format('{YYYY}-{MM}-{DD}');
 }
 
 function getMonthNumberLocal(date: Date, timeZone: string): string {
 	const sp = spacetime.fromUnixSeconds(date.getTime() / 1000).goto(timeZone);
-	return sp.format('YYYY-MM');
+	return sp.format('{YYYY}-{MM}');
 }
 
 export const getPaymentIncome = readAuthenticatedEndpointFactory.build({
@@ -146,7 +146,7 @@ export const getPaymentIncome = readAuthenticatedEndpointFactory.build({
 	handler: async ({ input, ctx }: { input: z.infer<typeof postPaymentIncomeSchemaInput>; ctx: AuthContext }) => {
 		const startTime = Date.now();
 		try {
-			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 			const { periodStart, periodEnd } = parseDateRange(input.startDate, input.endDate);
 

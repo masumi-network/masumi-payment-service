@@ -68,7 +68,7 @@ export const queryRegistryDiffGet = readAuthenticatedEndpointFactory.build({
 	input: queryRegistryDiffSchemaInput,
 	output: queryRegistryRequestSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof queryRegistryDiffSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 		const result = await prisma.registryRequest.findMany({
 			where: buildRegistryDiffWhere({
@@ -144,7 +144,7 @@ export const queryRegistryDiffGet = readAuthenticatedEndpointFactory.build({
 									})) ?? [],
 							}
 						: {
-								pricingType: PricingType.Free,
+								pricingType: item.Pricing.pricingType,
 							},
 				Tags: item.tags,
 				CurrentTransaction: item.CurrentTransaction

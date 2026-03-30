@@ -1,6 +1,6 @@
 import { prisma } from '@/utils/db';
 import { InsufficientFundsError } from '@/utils/errors/insufficient-funds-error';
-import { Network, Permission, PurchasingAction, WalletBase, WalletType } from '@/generated/prisma/client';
+import { Network, PricingType, PurchasingAction, WalletBase, WalletType } from '@/generated/prisma/client';
 
 async function handlePurchaseCreditInit({
 	id,
@@ -17,6 +17,7 @@ async function handlePurchaseCreditInit({
 	unlockTime,
 	externalDisputeUnlockTime,
 	inputHash,
+	pricingType,
 }: {
 	id: string;
 	walletScopeIds: string[] | null;
@@ -32,6 +33,7 @@ async function handlePurchaseCreditInit({
 	unlockTime: bigint;
 	externalDisputeUnlockTime: bigint;
 	inputHash: string;
+	pricingType: PricingType;
 }) {
 	return await prisma.$transaction(
 		async (prisma) => {
@@ -67,7 +69,7 @@ async function handlePurchaseCreditInit({
 			if (!result) {
 				throw Error('Invalid id: ' + id);
 			}
-			if (result.permission != Permission.Admin && !result.networkLimit.includes(network)) {
+			if (!result.canAdmin && !result.networkLimit.includes(network)) {
 				throw Error('No permission for network: ' + network + ' for id: ' + id);
 			}
 
@@ -137,6 +139,7 @@ async function handlePurchaseCreditInit({
 				data: {
 					totalBuyerCardanoFees: BigInt(0),
 					totalSellerCardanoFees: BigInt(0),
+					pricingType: pricingType,
 					requestedBy: { connect: { id: id } },
 					PaidFunds: {
 						create: Array.from(totalCost.entries()).map(([unit, amount]) => ({

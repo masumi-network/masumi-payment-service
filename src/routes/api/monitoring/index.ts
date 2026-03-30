@@ -1,6 +1,6 @@
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { z } from '@/utils/zod-openapi';
-import { blockchainStateMonitorService } from '@/services/monitoring/blockchain-state-monitor.service';
+import { blockchainStateMonitorService } from '@/services/monitoring';
 import createHttpError from 'http-errors';
 import {
 	monitoringStatusResponseSchema,

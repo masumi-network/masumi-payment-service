@@ -8,11 +8,11 @@ type ErrorLogger = {
 	error: (message: string, meta: { error: HttpError; url: string; payload: FlatObject | null }) => unknown;
 };
 
-export const getPublicErrorMessage = (error: HttpError): string =>
+const getPublicErrorMessage = (error: HttpError): string =>
 	process.env.NODE_ENV === 'production' && !error.expose
 		? createHttpError(error.statusCode).message // default message for that code
 		: error.message;
-export const logServerError = (error: HttpError, logger: ErrorLogger, url: string, payload: FlatObject | null) =>
+const logServerError = (error: HttpError, logger: ErrorLogger, url: string, payload: FlatObject | null) =>
 	!error.expose && logger.error('Server side error', { error, url, payload });
 const customResultHandler = new ResultHandler({
 	positive: (output) => {

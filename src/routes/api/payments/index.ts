@@ -11,7 +11,7 @@ import { decrypt } from '@/utils/security/encryption';
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { generateSHA256Hash } from '@/utils/crypto';
 import stringify from 'canonical-json';
-import { fetchAssetInWalletAndMetadata } from '@/services/blockchain/asset-metadata';
+import { fetchAssetInWalletAndMetadata } from '@/services/integrations/asset-metadata';
 import {
 	decodeBlockchainIdentifier,
 	generateBlockchainIdentifier,
@@ -48,7 +48,7 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
 	input: queryPaymentsSchemaInput,
 	output: queryPaymentsSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof queryPaymentsSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 		const result = await getPaymentsForQuery(input, ctx.walletScopeIds);
 		if (result == null) {
@@ -64,7 +64,7 @@ export const queryPaymentCountGet = readAuthenticatedEndpointFactory.build({
 	input: queryPaymentCountSchemaInput,
 	output: queryPaymentCountSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof queryPaymentCountSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 		const total = await prisma.paymentRequest.count({
 			where: {
@@ -88,7 +88,7 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 	input: createPaymentsSchemaInput,
 	output: createPaymentSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof createPaymentsSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 		const policyId = extractPolicyId(input.agentIdentifier);
 
 		const specifiedPaymentContract = await prisma.paymentSource.findFirst({
@@ -106,7 +106,7 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 		if (specifiedPaymentContract == null) {
 			throw createHttpError(404, 'Network and policyId combination not supported');
 		}
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 		const purchaserId = input.identifierFromPurchaser;
 		if (validateHexString(purchaserId) == false) {
 			throw createHttpError(400, 'Purchaser identifier is not a valid hex string');
@@ -167,14 +167,33 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 		const pricing = parsedMetadata.agentPricing;
 		if (pricing.pricingType == PricingType.Fixed && input.RequestedFunds != null) {
 			throw createHttpError(400, 'For fixed pricing, RequestedFunds must be null');
-		} else if (pricing.pricingType != PricingType.Fixed) {
-			throw createHttpError(400, 'Non fixed price not supported yet');
+		} else if (
+			pricing.pricingType == PricingType.Dynamic &&
+			(input.RequestedFunds == null || input.RequestedFunds.length == 0)
+		) {
+			throw createHttpError(400, 'For dynamic pricing, RequestedFunds must be provided');
+		} else if (pricing.pricingType != PricingType.Fixed && pricing.pricingType != PricingType.Dynamic) {
+			throw createHttpError(400, 'Pricing type not supported for payments');
 		}
 
-		const amounts = pricing.fixedPricing.map((amount) => ({
-			amount: amount.amount,
-			unit: metadataToString(amount.unit)?.toLowerCase() == 'lovelace' ? '' : metadataToString(amount.unit)!,
-		}));
+		if (pricing.pricingType == PricingType.Dynamic && input.RequestedFunds) {
+			for (const fund of input.RequestedFunds) {
+				if (BigInt(fund.amount) <= 0n) {
+					throw createHttpError(400, 'RequestedFunds amounts must be positive');
+				}
+			}
+		}
+
+		const amounts =
+			pricing.pricingType == PricingType.Fixed
+				? pricing.fixedPricing.map((amount) => ({
+						amount: amount.amount,
+						unit: metadataToString(amount.unit)?.toLowerCase() == 'lovelace' ? '' : metadataToString(amount.unit)!,
+					}))
+				: input.RequestedFunds!.map((fund) => ({
+						amount: fund.amount,
+						unit: fund.unit.toLowerCase() == 'lovelace' ? '' : fund.unit,
+					}));
 
 		const vKey = resolvePaymentKeyHash(assetInWallet[0].address);
 
@@ -202,8 +221,7 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 			agentIdentifier: input.agentIdentifier,
 			purchaserIdentifier: input.identifierFromPurchaser,
 			sellerIdentifier: sellerId,
-			//RequestedFunds: is null for fixed pricing
-			RequestedFunds: null,
+			RequestedFunds: pricing.pricingType == PricingType.Dynamic ? amounts : null,
 			payByTime: input.payByTime.getTime().toString(),
 			submitResultTime: input.submitResultTime.getTime().toString(),
 			unlockTime: unlockTime.toString(),
@@ -236,6 +254,7 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 			data: {
 				totalBuyerCardanoFees: BigInt(0),
 				totalSellerCardanoFees: BigInt(0),
+				pricingType: pricing.pricingType,
 				blockchainIdentifier: compressedEncodedBlockchainIdentifier,
 				PaymentSource: { connect: { id: specifiedPaymentContract.id } },
 				RequestedFunds: {

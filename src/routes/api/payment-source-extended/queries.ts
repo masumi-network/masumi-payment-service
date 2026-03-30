@@ -5,6 +5,45 @@ import { paymentSourceExtendedSchemaInput } from './schemas';
 
 export type PaymentSourceExtendedListQueryInput = z.infer<typeof paymentSourceExtendedSchemaInput>;
 
+export const paymentSourceExtendedInclude = {
+	AdminWallets: {
+		orderBy: { order: 'asc' },
+		select: { walletAddress: true, order: true },
+	},
+	HotWallets: {
+		where: { deletedAt: null },
+		select: {
+			id: true,
+			walletVkey: true,
+			walletAddress: true,
+			type: true,
+			collectionAddress: true,
+			note: true,
+			LowBalanceRules: {
+				where: {
+					enabled: true,
+				},
+				select: {
+					id: true,
+					assetUnit: true,
+					thresholdAmount: true,
+					enabled: true,
+					status: true,
+					lastKnownAmount: true,
+					lastCheckedAt: true,
+					lastAlertedAt: true,
+				},
+			},
+		},
+	},
+	FeeReceiverNetworkWallet: {
+		select: { walletAddress: true },
+	},
+	PaymentSourceConfig: {
+		select: { rpcProviderApiKey: true, rpcProvider: true },
+	},
+} as const;
+
 export async function getPaymentSourceExtendedForQuery(
 	input: PaymentSourceExtendedListQueryInput,
 	networkLimit: AuthContext['networkLimit'],
@@ -21,29 +60,7 @@ export async function getPaymentSourceExtendedForQuery(
 			createdAt: 'desc',
 		},
 		cursor: input.cursorId ? { id: input.cursorId } : undefined,
-		include: {
-			AdminWallets: {
-				orderBy: { order: 'asc' },
-				select: { walletAddress: true, order: true },
-			},
-			HotWallets: {
-				where: { deletedAt: null },
-				select: {
-					id: true,
-					walletVkey: true,
-					walletAddress: true,
-					type: true,
-					collectionAddress: true,
-					note: true,
-				},
-			},
-			FeeReceiverNetworkWallet: {
-				select: { walletAddress: true },
-			},
-			PaymentSourceConfig: {
-				select: { rpcProviderApiKey: true, rpcProvider: true },
-			},
-		},
+		include: paymentSourceExtendedInclude,
 	});
 }
 

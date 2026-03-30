@@ -504,5 +504,3 @@ export class ApiClient {
 		return this.makeRequest<QueryPaymentSourcesResponse>(endpoint);
 	}
 }
-
-export default ApiClient;

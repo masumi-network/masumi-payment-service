@@ -1,4 +1,12 @@
 import dotenv from 'dotenv';
+import {
+	getOwnEntries,
+	getOwnString,
+	getOwnValue,
+	isPlainObject,
+	type RuntimePropertyValue,
+} from '@/utils/object-properties';
+
 dotenv.config();
 if (process.env.DATABASE_URL == null) throw new Error('Undefined DATABASE_URL ENV variable');
 if (!process.env.ENCRYPTION_KEY || process.env.ENCRYPTION_KEY.length <= 20)
@@ -47,6 +55,9 @@ if (autoDecisionInterval < 5) throw new Error('AUTO_DECISION_INTERVAL must be at
 const webhookDeliveryInterval = Number(process.env.WEBHOOK_DELIVERY_INTERVAL ?? '10');
 if (webhookDeliveryInterval < 5) throw new Error('WEBHOOK_DELIVERY_INTERVAL must be at least 5 seconds');
 
+const webhookCleanupInterval = Number(process.env.WEBHOOK_CLEANUP_INTERVAL ?? String(24 * 60 * 60));
+if (webhookCleanupInterval < 5) throw new Error('WEBHOOK_CLEANUP_INTERVAL must be at least 5 seconds');
+
 const blockConfirmationsThreshold = Number(process.env.BLOCK_CONFIRMATIONS_THRESHOLD ?? '1');
 if (blockConfirmationsThreshold < 0) throw new Error('BLOCK_CONFIRMATIONS_THRESHOLD must be at least 0');
 
@@ -56,11 +67,102 @@ if (syncLockTimeoutInterval < 5) throw new Error('SYNC_LOCK_TIMEOUT_INTERVAL mus
 const walletLockTimeoutInterval = Number(process.env.WALLET_LOCK_TIMEOUT_INTERVAL ?? '300');
 if (walletLockTimeoutInterval < 5) throw new Error('WALLET_LOCK_TIMEOUT_INTERVAL must be at least 5 seconds');
 
+export type LowBalanceDefaultRule = {
+	assetUnit: string;
+	thresholdAmount: string;
+};
+
+type LowBalanceRuleCandidate = {
+	assetUnit: string;
+	thresholdAmount: RuntimePropertyValue;
+};
+
+function normalizeThresholdAmount(value: RuntimePropertyValue, path: string): string {
+	const thresholdString =
+		typeof value === 'string' || typeof value === 'number' || typeof value === 'bigint' ? String(value).trim() : '';
+	if (!/^\d+$/.test(thresholdString)) {
+		throw new Error(`${path}.thresholdAmount must be a non-negative integer string`);
+	}
+
+	return thresholdString;
+}
+
+function parseLowBalanceRuleCandidate(candidate: LowBalanceRuleCandidate, path: string): LowBalanceDefaultRule {
+	if (candidate.assetUnit.trim() === '') {
+		throw new Error(`${path}.assetUnit must be a non-empty string`);
+	}
+
+	return {
+		assetUnit: candidate.assetUnit,
+		thresholdAmount: normalizeThresholdAmount(candidate.thresholdAmount, path),
+	};
+}
+
+function parseLowBalanceRuleObject(value: unknown, path: string): LowBalanceDefaultRule {
+	if (!isPlainObject(value)) {
+		throw new Error(`${path} must be an object`);
+	}
+
+	const assetUnit = getOwnString(value, 'assetUnit');
+	if (assetUnit == null) {
+		throw new Error(`${path}.assetUnit must be a non-empty string`);
+	}
+
+	return parseLowBalanceRuleCandidate(
+		{
+			assetUnit,
+			thresholdAmount: getOwnValue(value, 'thresholdAmount'),
+		},
+		path,
+	);
+}
+
+function parseLowBalanceDefaultRules(
+	envVarName: 'LOW_BALANCE_DEFAULT_RULES_MAINNET' | 'LOW_BALANCE_DEFAULT_RULES_PREPROD',
+): LowBalanceDefaultRule[] {
+	const rawValue = process.env[envVarName];
+	if (rawValue == null || rawValue.trim() === '') {
+		return [];
+	}
+
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(rawValue);
+	} catch (error) {
+		throw new Error(`${envVarName} must be valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+	}
+
+	if (Array.isArray(parsed)) {
+		return parsed.map((rule, index) => parseLowBalanceRuleObject(rule, `${envVarName}[${index}]`));
+	}
+
+	if (!isPlainObject(parsed)) {
+		throw new Error(`${envVarName} must be a JSON object map or array of rules`);
+	}
+
+	return getOwnEntries(parsed).map(([assetUnit, thresholdAmount], index) =>
+		parseLowBalanceRuleCandidate(
+			{
+				assetUnit,
+				thresholdAmount,
+			},
+			`${envVarName}[${index}]`,
+		),
+	);
+}
+
+const lowBalanceCheckInterval = Number(process.env.LOW_BALANCE_CHECK_INTERVAL ?? '60');
+if (lowBalanceCheckInterval < 5) throw new Error('LOW_BALANCE_CHECK_INTERVAL must be at least 5 seconds');
+
+const lowBalanceDefaultRulesMainnet = parseLowBalanceDefaultRules('LOW_BALANCE_DEFAULT_RULES_MAINNET');
+const lowBalanceDefaultRulesPreprod = parseLowBalanceDefaultRules('LOW_BALANCE_DEFAULT_RULES_PREPROD');
+
 export const CONFIG = {
 	PORT: process.env.PORT ?? '3001',
 	DATABASE_URL: process.env.DATABASE_URL,
 	SYNC_LOCK_TIMEOUT_INTERVAL: syncLockTimeoutInterval * 1000,
 	WALLET_LOCK_TIMEOUT_INTERVAL: walletLockTimeoutInterval * 1000,
+	LOW_BALANCE_CHECK_INTERVAL: lowBalanceCheckInterval,
 	BATCH_PAYMENT_INTERVAL: batchPaymentInterval,
 	BLOCK_CONFIRMATIONS_THRESHOLD: blockConfirmationsThreshold,
 	CHECK_TX_INTERVAL: checkTxInterval,
@@ -79,6 +181,7 @@ export const CONFIG = {
 	AUTO_WITHDRAW_REFUNDS: autoWithdrawRefunds,
 	AUTO_DECISION_INTERVAL: autoDecisionInterval,
 	WEBHOOK_DELIVERY_INTERVAL: webhookDeliveryInterval,
+	WEBHOOK_CLEANUP_INTERVAL: webhookCleanupInterval,
 	// OpenTelemetry configuration
 	OTEL_SERVICE_NAME: process.env.OTEL_SERVICE_NAME ?? 'masumi-payment-service',
 	OTEL_SERVICE_VERSION: process.env.OTEL_SERVICE_VERSION ?? '0.1.0',
@@ -89,6 +192,8 @@ export const CONFIG = {
 	SIGNOZ_INGESTION_KEY: process.env.SIGNOZ_INGESTION_KEY,
 	COINGECKO_API_KEY: process.env.COINGECKO_API_KEY,
 	IS_COINGECKO_DEMO: process.env.IS_COINGECKO_DEMO?.toLowerCase() === 'true',
+	LOW_BALANCE_DEFAULT_RULES_MAINNET: lowBalanceDefaultRulesMainnet,
+	LOW_BALANCE_DEFAULT_RULES_PREPROD: lowBalanceDefaultRulesPreprod,
 	// Prisma span filtering: only export outlier (slow) queries and cap volume
 	OTEL_PRISMA_OUTLIER_THRESHOLD_MS: Number(process.env.OTEL_PRISMA_OUTLIER_THRESHOLD_MS ?? '100'),
 	OTEL_PRISMA_MAX_SPANS_PER_MINUTE: Number(process.env.OTEL_PRISMA_MAX_SPANS_PER_MINUTE ?? '60'),

@@ -2,13 +2,6 @@ import createHttpError from 'http-errors';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { logger } from '@/utils/logger';
 
-export function mapUnitAmountToResponse(unit: string, amount: bigint): { unit: string; amount: string } {
-	return {
-		unit: unit === '' ? 'lovelace' : unit,
-		amount: amount.toString(),
-	};
-}
-
 export function parseDateRange(
 	startDate: Date | null | undefined,
 	endDate: Date | null | undefined,
@@ -58,7 +51,7 @@ export type Fund = {
 	blockchainFees: number;
 };
 
-export function addToFundsMap(paymentFunds: Fund, unit: string, amount: bigint): void {
+function addToFundsMap(paymentFunds: Fund, unit: string, amount: bigint): void {
 	if (paymentFunds.units.has(unit)) {
 		paymentFunds.units.set(unit, paymentFunds.units.get(unit)! + Number(amount));
 	} else {
@@ -66,7 +59,7 @@ export function addToFundsMap(paymentFunds: Fund, unit: string, amount: bigint):
 	}
 }
 
-export function addToFundsMapArray(
+function addToFundsMapArray(
 	paymentFunds: Fund,
 	units: Array<{ unit: string; amount: bigint }>,
 	blockchainFees: bigint,
@@ -77,7 +70,7 @@ export function addToFundsMapArray(
 	paymentFunds.blockchainFees += Number(blockchainFees);
 }
 
-export function addToFundsMapArrayMap(
+function addToFundsMapArrayMap(
 	map: Map<string, Fund>,
 	key: string,
 	units: Array<{ unit: string; amount: bigint }>,

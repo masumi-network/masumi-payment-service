@@ -6,7 +6,7 @@ import { WalletLink } from '@/components/ui/wallet-link';
 import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/WalletDetailsDialog';
 import formatBalance from '@/lib/formatBalance';
 import { CopyButton } from '@/components/ui/copy-button';
-import { PaymentSourceExtended, postRegistryDeregister } from '@/lib/api/generated';
+import { postRegistryDeregister } from '@/lib/api/generated';
 import { RegistryEntry, deleteRegistry } from '@/lib/api/generated';
 
 import { Separator } from '@/components/ui/separator';
@@ -316,6 +316,12 @@ export function AIAgentDetailsDialog({
                           {agent.AgentPricing?.pricingType == 'Free' && (
                             <div className="text-sm text-muted-foreground">
                               <span className="font-medium">Free</span>
+                            </div>
+                          )}
+                          {agent.AgentPricing?.pricingType == 'Dynamic' && (
+                            <div className="text-sm text-muted-foreground">
+                              <span className="font-medium">Dynamic</span>
+                              <span className="ml-1 text-xs">(price set per request)</span>
                             </div>
                           )}
                           {agent.AgentPricing &&

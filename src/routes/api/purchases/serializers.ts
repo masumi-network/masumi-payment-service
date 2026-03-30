@@ -3,7 +3,7 @@ import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identif
 import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
 import type { PurchaseListRecord } from './queries';
 
-export function serializePurchaseListEntry(purchase: PurchaseListRecord) {
+function serializePurchaseListEntry(purchase: PurchaseListRecord) {
 	return {
 		...purchase,
 		...transformPurchaseGetTimestamps(purchase),

@@ -1,34 +1,64 @@
 import { createLogger, format, transports } from 'winston';
 import { logs } from '@opentelemetry/api-logs';
+import type { RuntimePropertyValue } from '@/utils/object-properties';
 import { CONFIG } from '../config';
 const { combine, timestamp, errors, json } = format;
 
-interface LogInfo {
+type LoggerInfoValue = RuntimePropertyValue | unknown[];
+
+type ProdLoggerInfo = {
 	level: string;
-	message: string;
-	error?: Error;
-	[key: string]: unknown;
-}
+	message: LoggerInfoValue;
+	error?: LoggerInfoValue;
+	[key: string]: LoggerInfoValue;
+	[key: symbol]: LoggerInfoValue | undefined;
+};
+
+// Strip ANSI escape codes that Winston's colorize format may inject
+const ANSI_ESCAPE_CHARACTER = String.fromCharCode(27);
+const ANSI_ESCAPE_PATTERN = new RegExp(`${ANSI_ESCAPE_CHARACTER}\\[[0-9;]*m`, 'g');
+const stripAnsi = (str: string) => str.replace(ANSI_ESCAPE_PATTERN, '');
+
+const serializeLogMessage = (message: LoggerInfoValue): string => {
+	switch (typeof message) {
+		case 'string':
+			return message;
+		case 'number':
+		case 'boolean':
+		case 'bigint':
+			return String(message);
+		case 'symbol':
+			return message.toString();
+		case 'undefined':
+			return '';
+		case 'function':
+			return '[function]';
+		default:
+			return JSON.stringify(message) ?? '';
+	}
+};
 
 // Custom transport that sends logs to OpenTelemetry
 class OpenTelemetryTransport extends transports.Console {
-	log(info: LogInfo, callback?: () => void) {
+	log(info: ProdLoggerInfo, callback?: () => void) {
 		// Fetch logger lazily so it uses the provider registered after SDK start
 		const otelLogger = logs.getLogger('winston-otel-bridge', '1.0.0');
+		const rawLevel = stripAnsi(info.level);
+		const error = info.error instanceof Error ? info.error : undefined;
 
 		// Send to OpenTelemetry
 		otelLogger.emit({
-			severityNumber: this.getSeverityNumber(info.level),
-			severityText: info.level.toUpperCase(),
-			body: String(info.message),
+			severityNumber: this.getSeverityNumber(rawLevel),
+			severityText: rawLevel.toUpperCase(),
+			body: serializeLogMessage(info.message),
 			attributes: {
-				level: info.level,
+				level: rawLevel,
 				timestamp: new Date().toISOString(),
 				service: CONFIG.OTEL_SERVICE_NAME,
-				...(info.error && {
-					error_name: info.error.name,
-					error_message: info.error.message,
-					error_stack: info.error.stack,
+				...(error && {
+					error_name: error.name,
+					error_message: error.message,
+					error_stack: error.stack,
 				}),
 			},
 			timestamp: Date.now(),
@@ -37,7 +67,7 @@ class OpenTelemetryTransport extends transports.Console {
 		// Call parent log method for console output
 		const parentCallback = callback || (() => {});
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-		const parentLog = transports.Console.prototype.log as (info: LogInfo, callback: () => void) => void;
+		const parentLog = transports.Console.prototype.log as (info: ProdLoggerInfo, callback: () => void) => void;
 		parentLog.call(this, info, parentCallback);
 	}
 

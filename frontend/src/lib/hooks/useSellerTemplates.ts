@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { getOwnPlainObject, getOwnString, isPlainObject } from '@/lib/object-properties';
 
 const SELLER_STORAGE_KEY = 'invoice-seller-templates';
 const BUYER_STORAGE_KEY = 'invoice-buyer-templates';
@@ -30,34 +31,27 @@ export interface AddressTemplate {
   data: AddressTemplateData;
 }
 
+function hasRequiredStringFields(value: object, fields: readonly string[]): boolean {
+  return fields.every((field) => getOwnString(value, field) !== undefined);
+}
+
+const templateFields = ['id', 'label'] as const;
+const addressFields = ['country', 'city', 'zipCode', 'street', 'streetNumber'] as const;
+
 function isValidTemplate(value: unknown): value is SellerTemplate {
-  if (typeof value !== 'object' || value === null) return false;
-  const obj = value as Record<string, unknown>;
-  if (typeof obj.id !== 'string' || typeof obj.label !== 'string') return false;
-  if (typeof obj.seller !== 'object' || obj.seller === null) return false;
-  const s = obj.seller as Record<string, unknown>;
-  return (
-    typeof s.country === 'string' &&
-    typeof s.city === 'string' &&
-    typeof s.zipCode === 'string' &&
-    typeof s.street === 'string' &&
-    typeof s.streetNumber === 'string'
-  );
+  if (!isPlainObject(value)) return false;
+  if (!hasRequiredStringFields(value, templateFields)) return false;
+  const s = getOwnPlainObject(value, 'seller');
+  if (!s) return false;
+  return hasRequiredStringFields(s, addressFields);
 }
 
 function isValidAddressTemplate(value: unknown): value is AddressTemplate {
-  if (typeof value !== 'object' || value === null) return false;
-  const obj = value as Record<string, unknown>;
-  if (typeof obj.id !== 'string' || typeof obj.label !== 'string') return false;
-  if (typeof obj.data !== 'object' || obj.data === null) return false;
-  const s = obj.data as Record<string, unknown>;
-  return (
-    typeof s.country === 'string' &&
-    typeof s.city === 'string' &&
-    typeof s.zipCode === 'string' &&
-    typeof s.street === 'string' &&
-    typeof s.streetNumber === 'string'
-  );
+  if (!isPlainObject(value)) return false;
+  if (!hasRequiredStringFields(value, templateFields)) return false;
+  const s = getOwnPlainObject(value, 'data');
+  if (!s) return false;
+  return hasRequiredStringFields(s, addressFields);
 }
 
 function loadTemplates(): SellerTemplate[] {

@@ -14,7 +14,12 @@ model ApiKey {
   token                 String              @unique
   tokenHash             String              @unique
   status                ApiKeyStatus
-  permission            Permission
+
+  // Flag-based permissions (must be set explicitly on create)
+  canRead               Boolean
+  canPay                Boolean
+  canAdmin              Boolean
+
   networkLimit          Network[]
   usageLimited          Boolean             @default(false)
   walletScopeEnabled    Boolean             @default(false)
@@ -88,6 +93,26 @@ model HotWallet {
   RegistryRequest          RegistryRequest[]
   apiKeyWalletScopes       ApiKeyWalletScope[]
   LimitedPurchaseRequests  PurchaseRequest[]   @relation("HotWalletLimit")
+  LowBalanceRules          HotWalletLowBalanceRule[]
+}
+
+model HotWalletLowBalanceRule {
+  id              String           @id @default(cuid())
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  hotWalletId     String
+  assetUnit       String
+  thresholdAmount BigInt
+  enabled         Boolean          @default(true)
+  status          LowBalanceStatus @default(Unknown)
+  lastKnownAmount BigInt?
+  lastCheckedAt   DateTime?
+  lastAlertedAt   DateTime?
+  HotWallet       HotWallet        @relation(fields: [hotWalletId], references: [id], onDelete: Cascade)
+
+  @@unique([hotWalletId, assetUnit])
+  @@index([hotWalletId, enabled])
+  @@index([enabled, status])
 }
 
 model Transaction {
@@ -241,6 +266,7 @@ model PaymentRequest {
   nextActionId                                  String              @unique
   nextActionLastChangedAt                       DateTime            @default(now())
   metadata                                      String?
+  pricingType                                   PricingType         @default(Fixed)
   blockchainIdentifier                          String              @unique
   submitResultTime                              BigInt
   unlockTime                                    BigInt
@@ -307,6 +333,7 @@ model PurchaseRequest {
   sellerWalletId                                String
   smartContractWalletId                         String?
   metadata                                      String?
+  pricingType                                   PricingType          @default(Fixed)
   blockchainIdentifier                          String               @unique
   submitResultTime                              BigInt
   unlockTime                                    BigInt
@@ -430,12 +457,6 @@ enum ApiKeyStatus {
   Revoked
 }
 
-enum Permission {
-  Read
-  ReadAndPay
-  Admin
-}
-
 enum HotWalletType {
   Selling
   Purchasing
@@ -460,6 +481,7 @@ enum RegistrationState {
 enum PricingType {
   Fixed
   Free
+  Dynamic
 }
 
 enum PaymentErrorType {
@@ -658,6 +680,12 @@ enum RPCProvider {
   Blockfrost
 }
 
+enum LowBalanceStatus {
+  Unknown
+  Healthy
+  Low
+}
+
 // Webhook models
 model WebhookEndpoint {
   id        String   @id @default(cuid())
@@ -712,6 +740,7 @@ enum WebhookEventType {
   PAYMENT_ON_CHAIN_STATUS_CHANGED
   PURCHASE_ON_ERROR
   PAYMENT_ON_ERROR
+  WALLET_LOW_BALANCE
 }
 
 enum WebhookDeliveryStatus {

@@ -108,6 +108,13 @@ const agentMetadataObjectSchema = z.object({
 				pricingType: z.enum([PricingType.Free]).describe('Pricing type for the agent (Free)'),
 			}),
 		)
+		.or(
+			z.object({
+				pricingType: z
+					.enum([PricingType.Dynamic])
+					.describe('Pricing type for the agent (Dynamic). Amounts are provided per payment/purchase request'),
+			}),
+		)
 		.describe('Pricing information for the agent'),
 	image: z.string().max(250).describe('URL to the agent image/logo'),
 	metadataVersion: z.coerce
@@ -133,7 +140,7 @@ export const queryAgentByIdentifierGet = readAuthenticatedEndpointFactory.build(
 	output: queryAgentByIdentifierSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof queryAgentByIdentifierSchemaInput>; ctx: AuthContext }) => {
 		// Step 1: Network authorization check
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 		// Step 2: Validate hex format BEFORE extracting policyId
 		if (validateHexString(input.agentIdentifier) == false) {

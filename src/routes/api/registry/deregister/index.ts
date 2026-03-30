@@ -33,7 +33,7 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 	input: unregisterAgentSchemaInput,
 	output: unregisterAgentSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof unregisterAgentSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 		const smartContractAddress =
 			input.smartContractAddress ??
 			(input.network == Network.Mainnet
@@ -151,7 +151,7 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 								})) ?? [],
 						}
 					: {
-							pricingType: PricingType.Free,
+							pricingType: result.Pricing.pricingType,
 						},
 			Tags: result.tags,
 			CurrentTransaction: result.CurrentTransaction

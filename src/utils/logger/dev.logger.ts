@@ -1,34 +1,208 @@
 import { createLogger, format, transports } from 'winston';
 import { logs } from '@opentelemetry/api-logs';
 import { CONFIG } from '../config';
-const { combine, timestamp, printf, errors } = format;
+import {
+	getOwnEntries,
+	getOwnString,
+	getOwnValue,
+	isPlainObject,
+	type RuntimeObject,
+	type RuntimePropertyValue,
+} from '@/utils/object-properties';
 
-interface LogInfo {
+const { combine, timestamp, printf, errors } = format;
+const SPLAT = Symbol.for('splat');
+const CAPTURED_SPLAT_ARGS_KEY = '__capturedSplatArgs';
+const DEV_LOGGER_RESERVED_KEYS = new Set(['level', 'message', 'timestamp', 'stack', 'error', CAPTURED_SPLAT_ARGS_KEY]);
+const ERROR_RESERVED_KEYS = new Set(['name', 'message', 'stack']);
+const ANSI_ESCAPE_CHARACTER = String.fromCharCode(27);
+const ANSI_ESCAPE_PATTERN = new RegExp(`${ANSI_ESCAPE_CHARACTER}\\[[0-9;]*m`, 'g');
+
+type LoggerInfoValue = RuntimePropertyValue | unknown[];
+
+type DevLoggerInfo = {
 	level: string;
-	message: string;
-	error?: Error;
-	[key: string]: unknown;
-}
+	message: LoggerInfoValue;
+	timestamp?: string;
+	[CAPTURED_SPLAT_ARGS_KEY]?: unknown[];
+	error?: LoggerInfoValue;
+	stack?: LoggerInfoValue;
+	[key: string]: LoggerInfoValue;
+	[key: symbol]: LoggerInfoValue | undefined;
+};
+
+type ErrorDetails = {
+	name?: string;
+	message?: string;
+	stack?: string;
+	extra?: RuntimeObject;
+};
+
+// Strip ANSI escape codes that Winston's colorize format injects
+const stripAnsi = (str: string) => str.replace(ANSI_ESCAPE_PATTERN, '');
+
+const padAnsi = (value: string, width: number) => {
+	const visibleLength = stripAnsi(value).length;
+	return value + ' '.repeat(Math.max(0, width - visibleLength));
+};
+
+const buildRuntimeObject = (entries: Array<readonly [string, RuntimePropertyValue]>): RuntimeObject | null => {
+	const metadata: RuntimeObject = {};
+
+	for (const [key, value] of entries) {
+		metadata[key] = value;
+	}
+
+	return Object.keys(metadata).length > 0 ? metadata : null;
+};
+
+const getErrorDetails = (value: unknown): ErrorDetails | null => {
+	if (value instanceof Error) {
+		const extra = buildRuntimeObject(getOwnEntries(value).filter(([key]) => !ERROR_RESERVED_KEYS.has(key)));
+		return {
+			name: value.name,
+			message: value.message,
+			stack: value.stack,
+			extra: extra ?? undefined,
+		};
+	}
+
+	if (!isPlainObject(value)) {
+		return null;
+	}
+
+	const name = getOwnString(value, 'name');
+	const message = getOwnString(value, 'message');
+	const stack = getOwnString(value, 'stack');
+	if (!name && !message && !stack) {
+		return null;
+	}
+
+	const extra = buildRuntimeObject(getOwnEntries(value).filter(([key]) => !ERROR_RESERVED_KEYS.has(key)));
+	return {
+		name,
+		message,
+		stack,
+		extra: extra ?? undefined,
+	};
+};
+
+const logReplacer = (_key: string, value: unknown) => {
+	if (typeof value === 'bigint') {
+		return value.toString();
+	}
+	if (value instanceof Error) {
+		return {
+			name: value.name,
+			message: value.message,
+			stack: value.stack,
+		};
+	}
+	return value;
+};
+
+const serializeForLog = (value: unknown) => {
+	if (typeof value === 'string') {
+		return value;
+	}
+
+	const compact = JSON.stringify(value, logReplacer);
+	if (compact && compact.length <= 140) {
+		return compact;
+	}
+
+	return JSON.stringify(value, logReplacer, 2) ?? String(value);
+};
+
+const buildIndentedBlock = (timestampValue: string, label: string, value: unknown) => {
+	const indent = `${''.padStart(timestampValue.length)} │            │ `;
+	const serialized = serializeForLog(value);
+	const lines = serialized.split('\n');
+	return lines.map((line, index) => `${indent}${index === 0 ? `${label}: ` : ''}${line}`);
+};
+
+const getCapturedSplatArgs = (info: DevLoggerInfo): unknown[] => {
+	const capturedArgs = info[CAPTURED_SPLAT_ARGS_KEY];
+	return Array.isArray(capturedArgs) ? capturedArgs : [];
+};
+
+const collectMetadata = (info: DevLoggerInfo) => {
+	const metadata: RuntimeObject = {};
+
+	for (const [key, value] of getOwnEntries(info)) {
+		if (!DEV_LOGGER_RESERVED_KEYS.has(key)) {
+			metadata[key] = value;
+		}
+	}
+
+	for (const arg of getCapturedSplatArgs(info)) {
+		if (!isPlainObject(arg) || getErrorDetails(arg)) {
+			continue;
+		}
+
+		const isDuplicate = getOwnEntries(arg).every(([key, value]) => getOwnValue(info, key) === value);
+		if (!isDuplicate) {
+			Object.assign(metadata, arg);
+		}
+	}
+
+	return Object.keys(metadata).length > 0 ? metadata : null;
+};
+
+const extractInlineError = (info: DevLoggerInfo) => {
+	const directError = getErrorDetails(info.error);
+	if (directError) {
+		return directError;
+	}
+
+	for (const arg of getCapturedSplatArgs(info)) {
+		const error = getErrorDetails(arg);
+		if (error) {
+			return error;
+		}
+	}
+
+	const stack = typeof info.stack === 'string' && info.stack.length > 0 ? info.stack : undefined;
+	if (stack) {
+		return {
+			message: serializeForLog(info.message),
+			stack,
+			extra: undefined,
+		};
+	}
+
+	return null;
+};
+
+const captureSplatArgs = format((info) => {
+	const rawSplatArgs = getOwnValue(info, SPLAT);
+	if (Array.isArray(rawSplatArgs) && rawSplatArgs.length > 0) {
+		(info as DevLoggerInfo)[CAPTURED_SPLAT_ARGS_KEY] = rawSplatArgs;
+	}
+	return info;
+});
 
 // Custom transport that sends logs to OpenTelemetry
 class OpenTelemetryTransport extends transports.Console {
-	log(info: LogInfo, callback?: () => void) {
+	log(info: DevLoggerInfo, callback?: () => void) {
 		// Fetch logger lazily so it uses the provider registered after SDK start
 		const otelLogger = logs.getLogger('winston-otel-bridge', '1.0.0');
+		const rawLevel = stripAnsi(info.level);
+		const error = getErrorDetails(info.error);
 
 		// Send to OpenTelemetry
 		otelLogger.emit({
-			severityNumber: this.getSeverityNumber(info.level),
-			severityText: info.level.toUpperCase(),
-			body: String(info.message),
+			severityNumber: this.getSeverityNumber(rawLevel),
+			severityText: rawLevel.toUpperCase(),
+			body: serializeForLog(info.message),
 			attributes: {
-				level: info.level,
+				level: rawLevel,
 				timestamp: new Date().toISOString(),
 				service: CONFIG.OTEL_SERVICE_NAME,
-				...(info.error && {
-					error_name: info.error.name,
-					error_message: info.error.message,
-					error_stack: info.error.stack,
+				...(error && {
+					error_name: error.name,
+					error_message: error.message,
+					error_stack: error.stack,
 				}),
 			},
 			timestamp: Date.now(),
@@ -37,7 +211,7 @@ class OpenTelemetryTransport extends transports.Console {
 		// Call parent log method for console output
 		const parentCallback = callback || (() => {});
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-		const parentLog = transports.Console.prototype.log as (info: LogInfo, callback: () => void) => void;
+		const parentLog = transports.Console.prototype.log as (info: DevLoggerInfo, callback: () => void) => void;
 		parentLog.call(this, info, parentCallback);
 	}
 
@@ -62,44 +236,33 @@ class OpenTelemetryTransport extends transports.Console {
 function buildDevLogger() {
 	const logFormat = printf((info) => {
 		const separator = '│';
-		// Pad the level to maintain consistent width
-		const paddedLevel = String(info.level).padEnd(7);
+		const levelBadge = `[${String(info.level)}]`;
+		const paddedLevelBadge = padAnsi(levelBadge, 9);
+		const rawLevel = stripAnsi(String(info.level));
+		const shouldShowSupplementaryDetails = ['warn', 'error', 'fatal'].includes(rawLevel);
+		const timestampValue = String(info.timestamp);
+		const devInfo = info as DevLoggerInfo;
+		const lines = [`${timestampValue} ${separator} ${paddedLevelBadge} ${separator} ${String(info.message)}`];
+		const metadata = collectMetadata(devInfo);
+		const error = extractInlineError(devInfo);
 
-		// Handle error objects and their properties
-		let mainMessage = String(info.message);
-		if (info instanceof Error || (info.error && info.error instanceof Error)) {
-			const error = info instanceof Error ? info : (info.error as Error);
-			mainMessage = error.message || mainMessage;
-		}
-		const timestamp = String(info.timestamp);
-
-		// Handle stack traces
-		if (info.stack) {
-			const stackLines = String(JSON.stringify(info.stack)).split('\n');
-
-			return `${timestamp} ${separator} [${paddedLevel}] ${separator} ${mainMessage}\n${stackLines
-				.slice(1)
-				.map(
-					(line: string) =>
-						`${''.padStart(String(info.timestamp).length)} ${separator}            ${separator} ${line.trim()}`,
-				)
-				.join('\n')}`;
+		if (shouldShowSupplementaryDetails && metadata) {
+			lines.push(...buildIndentedBlock(timestampValue, 'Meta', metadata));
 		}
 
-		// Handle additional error properties
-		let additionalInfo = '';
-		if (typeof info.error === 'object' && info.error !== null) {
-			const errorObj = info.error as Record<string, unknown>;
-			const errorProps = Object.entries(errorObj)
-				.filter(([key]) => key !== 'message' && key !== 'stack')
-				.map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
-				.join(', ');
-			if (errorProps) {
-				additionalInfo = `\n${' '.padStart(timestamp.length)} ${separator}            ${separator} Additional Details: ${errorProps}`;
-			}
+		if (shouldShowSupplementaryDetails && error?.message && !String(info.message).includes(error.message)) {
+			lines.push(...buildIndentedBlock(timestampValue, 'Error', error.message));
 		}
 
-		return `${timestamp} ${separator} [${paddedLevel}] ${separator} ${mainMessage}${additionalInfo}`;
+		if (shouldShowSupplementaryDetails && error?.extra && Object.keys(error.extra).length > 0) {
+			lines.push(...buildIndentedBlock(timestampValue, 'Error Details', error.extra));
+		}
+
+		if (shouldShowSupplementaryDetails && error?.stack) {
+			lines.push(...buildIndentedBlock(timestampValue, 'Stack', error.stack));
+		}
+
+		return lines.join('\n');
 	});
 
 	return createLogger({
@@ -107,6 +270,7 @@ function buildDevLogger() {
 			format.colorize({ all: false, level: true }),
 			timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
 			errors({ stack: true }),
+			captureSplatArgs(),
 			format.splat(),
 			logFormat,
 		),

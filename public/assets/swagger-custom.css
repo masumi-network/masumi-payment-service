@@ -840,6 +840,7 @@
 	font-size: 0.8125rem !important;
 	padding: var(--swg-space-2) var(--swg-space-5) !important;
 	min-height: 36px;
+	box-sizing: border-box;
 	letter-spacing: 0.01em;
 	cursor: pointer;
 	transition:
@@ -896,6 +897,16 @@
 	margin-top: var(--swg-space-4) !important;
 }
 
+.swagger-ui .execute-wrapper .btn,
+.swagger-ui .try-out__btn {
+	height: 42px !important;
+	min-height: 42px !important;
+	display: inline-flex !important;
+	align-items: center !important;
+	justify-content: center !important;
+	line-height: 1 !important;
+}
+
 /* Execute button */
 .swagger-ui .btn.execute {
 	background: var(--swg-brand-gradient) !important;
@@ -903,7 +914,6 @@
 	color: var(--swg-text-inverse) !important;
 	font-weight: 700 !important;
 	padding: var(--swg-space-3) var(--swg-space-8) !important;
-	min-height: 42px;
 	font-size: 0.875rem !important;
 }
 

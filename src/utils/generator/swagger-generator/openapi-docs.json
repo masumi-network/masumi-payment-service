@@ -38,7 +38,19 @@
                             "ReadAndPay",
                             "Admin"
                         ],
-                        "description": "Permission level of the API key"
+                        "description": "Permission level of the API key DEPRECATED (computed from flags for backward compatibility)"
+                    },
+                    "canRead": {
+                        "type": "boolean",
+                        "description": "Whether this API key can access read endpoints"
+                    },
+                    "canPay": {
+                        "type": "boolean",
+                        "description": "Whether this API key can access payment/purchase endpoints"
+                    },
+                    "canAdmin": {
+                        "type": "boolean",
+                        "description": "Whether this API key has admin access"
                     },
                     "usageLimited": {
                         "type": "boolean",
@@ -109,6 +121,9 @@
                     "id",
                     "token",
                     "permission",
+                    "canRead",
+                    "canPay",
+                    "canAdmin",
                     "usageLimited",
                     "NetworkLimit",
                     "RemainingUsageCredits",
@@ -196,6 +211,93 @@
                         "type": "string",
                         "nullable": true,
                         "description": "Collection address for this wallet. Null if not set"
+                    },
+                    "LowBalanceSummary": {
+                        "type": "object",
+                        "properties": {
+                            "isLow": {
+                                "type": "boolean",
+                                "description": "Whether any enabled low-balance rule for this wallet is currently below threshold"
+                            },
+                            "lowRuleCount": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "description": "How many enabled rules for this wallet are currently in low state"
+                            },
+                            "lastCheckedAt": {
+                                "type": "string",
+                                "nullable": true,
+                                "format": "date-time",
+                                "description": "Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked"
+                            }
+                        },
+                        "required": [
+                            "isLow",
+                            "lowRuleCount",
+                            "lastCheckedAt"
+                        ],
+                        "description": "Aggregated low-balance state for this wallet"
+                    },
+                    "LowBalanceRules": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "description": "Unique identifier for the low-balance rule"
+                                },
+                                "assetUnit": {
+                                    "type": "string",
+                                    "description": "Raw on-chain asset unit, for example lovelace or a full policy+asset identifier"
+                                },
+                                "thresholdAmount": {
+                                    "type": "string",
+                                    "description": "Threshold in raw on-chain units used to determine low balance"
+                                },
+                                "enabled": {
+                                    "type": "boolean",
+                                    "description": "Whether the rule is active"
+                                },
+                                "status": {
+                                    "type": "string",
+                                    "enum": [
+                                        "Unknown",
+                                        "Healthy",
+                                        "Low"
+                                    ],
+                                    "description": "Current deduped state of the rule"
+                                },
+                                "lastKnownAmount": {
+                                    "type": "string",
+                                    "nullable": true,
+                                    "description": "Last observed balance for this asset in raw on-chain units. Null if never checked"
+                                },
+                                "lastCheckedAt": {
+                                    "type": "string",
+                                    "nullable": true,
+                                    "format": "date-time",
+                                    "description": "Timestamp when the rule was last evaluated. Null if never checked"
+                                },
+                                "lastAlertedAt": {
+                                    "type": "string",
+                                    "nullable": true,
+                                    "format": "date-time",
+                                    "description": "Timestamp when the wallet last entered low balance for this rule. Null if never alerted"
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "assetUnit",
+                                "thresholdAmount",
+                                "enabled",
+                                "status",
+                                "lastKnownAmount",
+                                "lastCheckedAt",
+                                "lastAlertedAt"
+                            ]
+                        },
+                        "description": "Configured low-balance rules for this wallet, including current deduped state"
                     }
                 },
                 "required": [
@@ -203,7 +305,9 @@
                     "note",
                     "walletVkey",
                     "walletAddress",
-                    "collectionAddress"
+                    "collectionAddress",
+                    "LowBalanceSummary",
+                    "LowBalanceRules"
                 ]
             },
             "GeneratedWalletSecret": {
@@ -253,6 +357,15 @@
                         "type": "string",
                         "nullable": true,
                         "description": "Identifier of the agent that is being paid"
+                    },
+                    "pricingType": {
+                        "type": "string",
+                        "enum": [
+                            "Fixed",
+                            "Free",
+                            "Dynamic"
+                        ],
+                        "description": "Pricing type of the agent (Fixed, Free, or Dynamic)"
                     },
                     "lastCheckedAt": {
                         "type": "string",
@@ -823,6 +936,7 @@
                     "updatedAt",
                     "blockchainIdentifier",
                     "agentIdentifier",
+                    "pricingType",
                     "lastCheckedAt",
                     "payByTime",
                     "submitResultTime",
@@ -878,6 +992,15 @@
                         "type": "string",
                         "nullable": true,
                         "description": "Identifier of the agent that is being purchased"
+                    },
+                    "pricingType": {
+                        "type": "string",
+                        "enum": [
+                            "Fixed",
+                            "Free",
+                            "Dynamic"
+                        ],
+                        "description": "Pricing type of the agent (Fixed, Free, or Dynamic)"
                     },
                     "lastCheckedAt": {
                         "type": "string",
@@ -1423,6 +1546,7 @@
                     "updatedAt",
                     "blockchainIdentifier",
                     "agentIdentifier",
+                    "pricingType",
                     "lastCheckedAt",
                     "payByTime",
                     "submitResultTime",
@@ -1611,7 +1735,7 @@
                                                 "enum": [
                                                     "Fixed"
                                                 ],
-                                                "description": "Pricing type for the agent (Fixed)"
+                                                "description": "Pricing type for the agent (Fixed or Free)"
                                             },
                                             "Pricing": {
                                                 "type": "array",
@@ -1651,6 +1775,21 @@
                                                     "Free"
                                                 ],
                                                 "description": "Pricing type for the agent (Free)"
+                                            }
+                                        },
+                                        "required": [
+                                            "pricingType"
+                                        ]
+                                    },
+                                    {
+                                        "type": "object",
+                                        "properties": {
+                                            "pricingType": {
+                                                "type": "string",
+                                                "enum": [
+                                                    "Dynamic"
+                                                ],
+                                                "description": "Pricing type for the agent (Dynamic)"
                                             }
                                         },
                                         "required": [
@@ -1895,6 +2034,21 @@
                                         "required": [
                                             "pricingType"
                                         ]
+                                    },
+                                    {
+                                        "type": "object",
+                                        "properties": {
+                                            "pricingType": {
+                                                "type": "string",
+                                                "enum": [
+                                                    "Dynamic"
+                                                ],
+                                                "description": "Pricing type for the agent (Dynamic). Amounts are provided per payment/purchase request"
+                                            }
+                                        },
+                                        "required": [
+                                            "pricingType"
+                                        ]
                                     }
                                 ],
                                 "description": "Pricing information for the agent"
@@ -2117,7 +2271,7 @@
                                         "enum": [
                                             "Fixed"
                                         ],
-                                        "description": "Pricing type for the agent "
+                                        "description": "Pricing type for the agent"
                                     },
                                     "Pricing": {
                                         "type": "array",
@@ -2156,7 +2310,22 @@
                                         "enum": [
                                             "Free"
                                         ],
-                                        "description": "Pricing type for the agent "
+                                        "description": "Pricing type for the agent"
+                                    }
+                                },
+                                "required": [
+                                    "pricingType"
+                                ]
+                            },
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "pricingType": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Dynamic"
+                                        ],
+                                        "description": "Pricing type for the agent. Amounts are provided per payment/purchase request"
                                     }
                                 },
                                 "required": [
@@ -2399,6 +2568,32 @@
                         "type": "string",
                         "nullable": true,
                         "description": "Optional note about this wallet. Null if not set"
+                    },
+                    "LowBalanceSummary": {
+                        "type": "object",
+                        "properties": {
+                            "isLow": {
+                                "type": "boolean",
+                                "description": "Whether any enabled low-balance rule for this wallet is currently below threshold"
+                            },
+                            "lowRuleCount": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "description": "How many enabled rules for this wallet are currently in low state"
+                            },
+                            "lastCheckedAt": {
+                                "type": "string",
+                                "nullable": true,
+                                "format": "date-time",
+                                "description": "Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked"
+                            }
+                        },
+                        "required": [
+                            "isLow",
+                            "lowRuleCount",
+                            "lastCheckedAt"
+                        ],
+                        "description": "Aggregated low-balance status for the wallet"
                     }
                 },
                 "required": [
@@ -2406,7 +2601,8 @@
                     "walletVkey",
                     "walletAddress",
                     "collectionAddress",
-                    "note"
+                    "note",
+                    "LowBalanceSummary"
                 ]
             },
             "SellingWallet": {
@@ -2433,6 +2629,32 @@
                         "type": "string",
                         "nullable": true,
                         "description": "Optional note about this wallet. Null if not set"
+                    },
+                    "LowBalanceSummary": {
+                        "type": "object",
+                        "properties": {
+                            "isLow": {
+                                "type": "boolean",
+                                "description": "Whether any enabled low-balance rule for this wallet is currently below threshold"
+                            },
+                            "lowRuleCount": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "description": "How many enabled rules for this wallet are currently in low state"
+                            },
+                            "lastCheckedAt": {
+                                "type": "string",
+                                "nullable": true,
+                                "format": "date-time",
+                                "description": "Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked"
+                            }
+                        },
+                        "required": [
+                            "isLow",
+                            "lowRuleCount",
+                            "lastCheckedAt"
+                        ],
+                        "description": "Aggregated low-balance status for the wallet"
                     }
                 },
                 "required": [
@@ -2440,7 +2662,8 @@
                     "walletVkey",
                     "walletAddress",
                     "collectionAddress",
-                    "note"
+                    "note",
+                    "LowBalanceSummary"
                 ]
             },
             "PaymentSourceExtended": {
@@ -2560,6 +2783,32 @@
                                     "type": "string",
                                     "nullable": true,
                                     "description": "Optional note about this wallet. Null if not set"
+                                },
+                                "LowBalanceSummary": {
+                                    "type": "object",
+                                    "properties": {
+                                        "isLow": {
+                                            "type": "boolean",
+                                            "description": "Whether any enabled low-balance rule for this wallet is currently below threshold"
+                                        },
+                                        "lowRuleCount": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "description": "How many enabled rules for this wallet are currently in low state"
+                                        },
+                                        "lastCheckedAt": {
+                                            "type": "string",
+                                            "nullable": true,
+                                            "format": "date-time",
+                                            "description": "Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked"
+                                        }
+                                    },
+                                    "required": [
+                                        "isLow",
+                                        "lowRuleCount",
+                                        "lastCheckedAt"
+                                    ],
+                                    "description": "Aggregated low-balance status for the wallet"
                                 }
                             },
                             "required": [
@@ -2567,7 +2816,8 @@
                                 "walletVkey",
                                 "walletAddress",
                                 "collectionAddress",
-                                "note"
+                                "note",
+                                "LowBalanceSummary"
                             ]
                         },
                         "description": "List of wallets used for purchasing (buyer side)"
@@ -2598,6 +2848,32 @@
                                     "type": "string",
                                     "nullable": true,
                                     "description": "Optional note about this wallet. Null if not set"
+                                },
+                                "LowBalanceSummary": {
+                                    "type": "object",
+                                    "properties": {
+                                        "isLow": {
+                                            "type": "boolean",
+                                            "description": "Whether any enabled low-balance rule for this wallet is currently below threshold"
+                                        },
+                                        "lowRuleCount": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "description": "How many enabled rules for this wallet are currently in low state"
+                                        },
+                                        "lastCheckedAt": {
+                                            "type": "string",
+                                            "nullable": true,
+                                            "format": "date-time",
+                                            "description": "Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked"
+                                        }
+                                    },
+                                    "required": [
+                                        "isLow",
+                                        "lowRuleCount",
+                                        "lastCheckedAt"
+                                    ],
+                                    "description": "Aggregated low-balance status for the wallet"
                                 }
                             },
                             "required": [
@@ -2605,7 +2881,8 @@
                                 "walletVkey",
                                 "walletAddress",
                                 "collectionAddress",
-                                "note"
+                                "note",
+                                "LowBalanceSummary"
                             ]
                         },
                         "description": "List of wallets used for selling (seller side)"
@@ -3012,6 +3289,9 @@
                                             "id": "api_key_id",
                                             "token": "masumi_payment_api_key_secret",
                                             "permission": "Admin",
+                                            "canRead": true,
+                                            "canPay": true,
+                                            "canAdmin": true,
                                             "usageLimited": true,
                                             "NetworkLimit": [
                                                 "Preprod"
@@ -3111,7 +3391,24 @@
                                             "note": "note",
                                             "PendingTransaction": null,
                                             "walletAddress": "wallet_address",
-                                            "collectionAddress": "collection_address"
+                                            "collectionAddress": "collection_address",
+                                            "LowBalanceSummary": {
+                                                "isLow": true,
+                                                "lowRuleCount": 1,
+                                                "lastCheckedAt": "1970-01-20T20:00:36.260Z"
+                                            },
+                                            "LowBalanceRules": [
+                                                {
+                                                    "id": "low_balance_rule_id",
+                                                    "assetUnit": "lovelace",
+                                                    "thresholdAmount": "5000000",
+                                                    "enabled": true,
+                                                    "status": "Low",
+                                                    "lastKnownAmount": "4200000",
+                                                    "lastCheckedAt": "1970-01-20T20:00:36.260Z",
+                                                    "lastAlertedAt": "1970-01-20T20:00:36.260Z"
+                                                }
+                                            ]
                                         }
                                     }
                                 }
@@ -3265,7 +3562,24 @@
                                             "note": "note",
                                             "PendingTransaction": null,
                                             "walletAddress": "wallet_address",
-                                            "collectionAddress": "collection_address"
+                                            "collectionAddress": "collection_address",
+                                            "LowBalanceSummary": {
+                                                "isLow": true,
+                                                "lowRuleCount": 1,
+                                                "lastCheckedAt": "1970-01-20T20:00:36.260Z"
+                                            },
+                                            "LowBalanceRules": [
+                                                {
+                                                    "id": "low_balance_rule_id",
+                                                    "assetUnit": "lovelace",
+                                                    "thresholdAmount": "5000000",
+                                                    "enabled": true,
+                                                    "status": "Low",
+                                                    "lastKnownAmount": "4200000",
+                                                    "lastCheckedAt": "1970-01-20T20:00:36.260Z",
+                                                    "lastAlertedAt": "1970-01-20T20:00:36.260Z"
+                                                }
+                                            ]
                                         }
                                     }
                                 }
@@ -3274,6 +3588,694 @@
                     },
                     "404": {
                         "description": "Wallet not found"
+                    }
+                }
+            }
+        },
+        "/wallet/low-balance": {
+            "get": {
+                "description": "Lists low-balance monitoring rules for wallets",
+                "summary": "List wallet low-balance rules. (read access required)",
+                "tags": [
+                    "wallet"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Optional: filter rules by wallet id"
+                        },
+                        "required": false,
+                        "description": "Optional: filter rules by wallet id",
+                        "name": "walletId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Optional: filter rules by payment source id"
+                        },
+                        "required": false,
+                        "description": "Optional: filter rules by payment source id",
+                        "name": "paymentSourceId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "default": "false",
+                            "description": "Whether to return only rules currently in low state"
+                        },
+                        "required": false,
+                        "description": "Whether to return only rules currently in low state",
+                        "name": "onlyLow",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "default": "false",
+                            "description": "Whether to include disabled rules"
+                        },
+                        "required": false,
+                        "description": "Whether to include disabled rules",
+                        "name": "includeDisabled",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Wallet low-balance rules",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "Rules": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "id": {
+                                                                "type": "string",
+                                                                "description": "Unique identifier for the low-balance rule"
+                                                            },
+                                                            "assetUnit": {
+                                                                "type": "string",
+                                                                "description": "Raw on-chain asset unit, for example lovelace or a full policy+asset identifier"
+                                                            },
+                                                            "thresholdAmount": {
+                                                                "type": "string",
+                                                                "description": "Threshold in raw on-chain units used to determine low balance"
+                                                            },
+                                                            "enabled": {
+                                                                "type": "boolean",
+                                                                "description": "Whether the rule is active"
+                                                            },
+                                                            "status": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "Unknown",
+                                                                    "Healthy",
+                                                                    "Low"
+                                                                ],
+                                                                "description": "Current deduped state of the rule"
+                                                            },
+                                                            "lastKnownAmount": {
+                                                                "type": "string",
+                                                                "nullable": true,
+                                                                "description": "Last observed balance for this asset in raw on-chain units. Null if never checked"
+                                                            },
+                                                            "lastCheckedAt": {
+                                                                "type": "string",
+                                                                "nullable": true,
+                                                                "format": "date-time",
+                                                                "description": "Timestamp when the rule was last evaluated. Null if never checked"
+                                                            },
+                                                            "lastAlertedAt": {
+                                                                "type": "string",
+                                                                "nullable": true,
+                                                                "format": "date-time",
+                                                                "description": "Timestamp when the wallet last entered low balance for this rule. Null if never alerted"
+                                                            },
+                                                            "walletId": {
+                                                                "type": "string",
+                                                                "description": "Hot wallet id the rule belongs to"
+                                                            },
+                                                            "walletVkey": {
+                                                                "type": "string",
+                                                                "description": "Wallet verification key"
+                                                            },
+                                                            "walletAddress": {
+                                                                "type": "string",
+                                                                "description": "Wallet address"
+                                                            },
+                                                            "walletType": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "Selling",
+                                                                    "Purchasing"
+                                                                ],
+                                                                "description": "Hot wallet type"
+                                                            },
+                                                            "paymentSourceId": {
+                                                                "type": "string",
+                                                                "description": "Payment source id owning the wallet"
+                                                            },
+                                                            "network": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "Preprod",
+                                                                    "Mainnet"
+                                                                ],
+                                                                "description": "Wallet network"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "id",
+                                                            "assetUnit",
+                                                            "thresholdAmount",
+                                                            "enabled",
+                                                            "status",
+                                                            "lastKnownAmount",
+                                                            "lastCheckedAt",
+                                                            "lastAlertedAt",
+                                                            "walletId",
+                                                            "walletVkey",
+                                                            "walletAddress",
+                                                            "walletType",
+                                                            "paymentSourceId",
+                                                            "network"
+                                                        ]
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "Rules"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "Rules": [
+                                                {
+                                                    "id": "low_balance_rule_id",
+                                                    "assetUnit": "lovelace",
+                                                    "thresholdAmount": "5000000",
+                                                    "enabled": true,
+                                                    "status": "Low",
+                                                    "lastKnownAmount": "4200000",
+                                                    "lastCheckedAt": "1970-01-20T20:00:36.260Z",
+                                                    "lastAlertedAt": "1970-01-20T20:00:36.260Z",
+                                                    "walletId": "unique_cuid_v2_of_wallet",
+                                                    "walletVkey": "wallet_vkey",
+                                                    "walletAddress": "wallet_address",
+                                                    "walletType": "Purchasing",
+                                                    "paymentSourceId": "payment_source_id",
+                                                    "network": "Preprod"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Creates a wallet low-balance monitoring rule",
+                "summary": "Create a wallet low-balance rule. (admin access required)",
+                "tags": [
+                    "wallet"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Low-balance rule to create",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "walletId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 250,
+                                        "description": "Hot wallet id to attach the rule to"
+                                    },
+                                    "assetUnit": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 500,
+                                        "description": "Raw on-chain asset unit, for example lovelace or a policy+asset identifier"
+                                    },
+                                    "thresholdAmount": {
+                                        "type": "string",
+                                        "pattern": "^\\d+$",
+                                        "description": "Threshold in raw on-chain units. Example: 5000000 for 5 ADA"
+                                    },
+                                    "enabled": {
+                                        "type": "boolean",
+                                        "default": true,
+                                        "description": "Whether the rule should start enabled"
+                                    }
+                                },
+                                "required": [
+                                    "walletId",
+                                    "assetUnit",
+                                    "thresholdAmount"
+                                ],
+                                "example": {
+                                    "walletId": "unique_cuid_v2_of_wallet",
+                                    "assetUnit": "lovelace",
+                                    "thresholdAmount": "5000000",
+                                    "enabled": true
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Wallet low-balance rule created",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string",
+                                                    "description": "Unique identifier for the low-balance rule"
+                                                },
+                                                "assetUnit": {
+                                                    "type": "string",
+                                                    "description": "Raw on-chain asset unit, for example lovelace or a full policy+asset identifier"
+                                                },
+                                                "thresholdAmount": {
+                                                    "type": "string",
+                                                    "description": "Threshold in raw on-chain units used to determine low balance"
+                                                },
+                                                "enabled": {
+                                                    "type": "boolean",
+                                                    "description": "Whether the rule is active"
+                                                },
+                                                "status": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Unknown",
+                                                        "Healthy",
+                                                        "Low"
+                                                    ],
+                                                    "description": "Current deduped state of the rule"
+                                                },
+                                                "lastKnownAmount": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Last observed balance for this asset in raw on-chain units. Null if never checked"
+                                                },
+                                                "lastCheckedAt": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "format": "date-time",
+                                                    "description": "Timestamp when the rule was last evaluated. Null if never checked"
+                                                },
+                                                "lastAlertedAt": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "format": "date-time",
+                                                    "description": "Timestamp when the wallet last entered low balance for this rule. Null if never alerted"
+                                                },
+                                                "walletId": {
+                                                    "type": "string",
+                                                    "description": "Hot wallet id the rule belongs to"
+                                                },
+                                                "walletVkey": {
+                                                    "type": "string",
+                                                    "description": "Wallet verification key"
+                                                },
+                                                "walletAddress": {
+                                                    "type": "string",
+                                                    "description": "Wallet address"
+                                                },
+                                                "walletType": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Selling",
+                                                        "Purchasing"
+                                                    ],
+                                                    "description": "Hot wallet type"
+                                                },
+                                                "paymentSourceId": {
+                                                    "type": "string",
+                                                    "description": "Payment source id owning the wallet"
+                                                },
+                                                "network": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Preprod",
+                                                        "Mainnet"
+                                                    ],
+                                                    "description": "Wallet network"
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "assetUnit",
+                                                "thresholdAmount",
+                                                "enabled",
+                                                "status",
+                                                "lastKnownAmount",
+                                                "lastCheckedAt",
+                                                "lastAlertedAt",
+                                                "walletId",
+                                                "walletVkey",
+                                                "walletAddress",
+                                                "walletType",
+                                                "paymentSourceId",
+                                                "network"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "id": "low_balance_rule_id",
+                                            "assetUnit": "lovelace",
+                                            "thresholdAmount": "5000000",
+                                            "enabled": true,
+                                            "status": "Low",
+                                            "lastKnownAmount": "4200000",
+                                            "lastCheckedAt": "1970-01-20T20:00:36.260Z",
+                                            "lastAlertedAt": "1970-01-20T20:00:36.260Z",
+                                            "walletId": "unique_cuid_v2_of_wallet",
+                                            "walletVkey": "wallet_vkey",
+                                            "walletAddress": "wallet_address",
+                                            "walletType": "Purchasing",
+                                            "paymentSourceId": "payment_source_id",
+                                            "network": "Preprod"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Wallet not found"
+                    },
+                    "409": {
+                        "description": "Low-balance rule already exists for this wallet and asset"
+                    }
+                }
+            },
+            "patch": {
+                "description": "Updates a wallet low-balance monitoring rule",
+                "summary": "Update a wallet low-balance rule. (admin access required)",
+                "tags": [
+                    "wallet"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Low-balance rule update",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "ruleId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 250,
+                                        "description": "Low-balance rule id to update"
+                                    },
+                                    "thresholdAmount": {
+                                        "type": "string",
+                                        "pattern": "^\\d+$",
+                                        "description": "Updated threshold in raw on-chain units"
+                                    },
+                                    "enabled": {
+                                        "type": "boolean",
+                                        "description": "Updated enabled state"
+                                    }
+                                },
+                                "required": [
+                                    "ruleId"
+                                ],
+                                "example": {
+                                    "ruleId": "low_balance_rule_id",
+                                    "thresholdAmount": "7000000",
+                                    "enabled": true
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Wallet low-balance rule updated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string",
+                                                    "description": "Unique identifier for the low-balance rule"
+                                                },
+                                                "assetUnit": {
+                                                    "type": "string",
+                                                    "description": "Raw on-chain asset unit, for example lovelace or a full policy+asset identifier"
+                                                },
+                                                "thresholdAmount": {
+                                                    "type": "string",
+                                                    "description": "Threshold in raw on-chain units used to determine low balance"
+                                                },
+                                                "enabled": {
+                                                    "type": "boolean",
+                                                    "description": "Whether the rule is active"
+                                                },
+                                                "status": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Unknown",
+                                                        "Healthy",
+                                                        "Low"
+                                                    ],
+                                                    "description": "Current deduped state of the rule"
+                                                },
+                                                "lastKnownAmount": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Last observed balance for this asset in raw on-chain units. Null if never checked"
+                                                },
+                                                "lastCheckedAt": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "format": "date-time",
+                                                    "description": "Timestamp when the rule was last evaluated. Null if never checked"
+                                                },
+                                                "lastAlertedAt": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "format": "date-time",
+                                                    "description": "Timestamp when the wallet last entered low balance for this rule. Null if never alerted"
+                                                },
+                                                "walletId": {
+                                                    "type": "string",
+                                                    "description": "Hot wallet id the rule belongs to"
+                                                },
+                                                "walletVkey": {
+                                                    "type": "string",
+                                                    "description": "Wallet verification key"
+                                                },
+                                                "walletAddress": {
+                                                    "type": "string",
+                                                    "description": "Wallet address"
+                                                },
+                                                "walletType": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Selling",
+                                                        "Purchasing"
+                                                    ],
+                                                    "description": "Hot wallet type"
+                                                },
+                                                "paymentSourceId": {
+                                                    "type": "string",
+                                                    "description": "Payment source id owning the wallet"
+                                                },
+                                                "network": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Preprod",
+                                                        "Mainnet"
+                                                    ],
+                                                    "description": "Wallet network"
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "assetUnit",
+                                                "thresholdAmount",
+                                                "enabled",
+                                                "status",
+                                                "lastKnownAmount",
+                                                "lastCheckedAt",
+                                                "lastAlertedAt",
+                                                "walletId",
+                                                "walletVkey",
+                                                "walletAddress",
+                                                "walletType",
+                                                "paymentSourceId",
+                                                "network"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "id": "low_balance_rule_id",
+                                            "assetUnit": "lovelace",
+                                            "thresholdAmount": "7000000",
+                                            "enabled": true,
+                                            "status": "Low",
+                                            "lastKnownAmount": "4200000",
+                                            "lastCheckedAt": "1970-01-20T20:00:36.260Z",
+                                            "lastAlertedAt": "1970-01-20T20:00:36.260Z",
+                                            "walletId": "unique_cuid_v2_of_wallet",
+                                            "walletVkey": "wallet_vkey",
+                                            "walletAddress": "wallet_address",
+                                            "walletType": "Purchasing",
+                                            "paymentSourceId": "payment_source_id",
+                                            "network": "Preprod"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Low-balance rule not found"
+                    }
+                }
+            },
+            "delete": {
+                "description": "Deletes a wallet low-balance monitoring rule",
+                "summary": "Delete a wallet low-balance rule. (admin access required)",
+                "tags": [
+                    "wallet"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Low-balance rule to delete",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "ruleId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 250,
+                                        "description": "Low-balance rule id to delete"
+                                    }
+                                },
+                                "required": [
+                                    "ruleId"
+                                ],
+                                "example": {
+                                    "ruleId": "low_balance_rule_id"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Wallet low-balance rule deleted",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "ruleId": {
+                                                    "type": "string",
+                                                    "description": "Deleted rule id"
+                                                },
+                                                "deletedAt": {
+                                                    "type": "string",
+                                                    "format": "date-time",
+                                                    "description": "Timestamp when the rule was deleted"
+                                                }
+                                            },
+                                            "required": [
+                                                "ruleId",
+                                                "deletedAt"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "ruleId": "low_balance_rule_id",
+                                            "deletedAt": "1970-01-20T20:00:36.260Z"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Low-balance rule not found"
                     }
                 }
             }
@@ -3487,6 +4489,9 @@
                                                     "id": "api_key_id",
                                                     "token": "masumi_payment_api_key_secret",
                                                     "permission": "Admin",
+                                                    "canRead": true,
+                                                    "canPay": true,
+                                                    "canAdmin": true,
                                                     "usageLimited": true,
                                                     "NetworkLimit": [
                                                         "Preprod"
@@ -3589,7 +4594,19 @@
                                             "Admin"
                                         ],
                                         "default": "Read",
-                                        "description": "The permission of the API key"
+                                        "description": "[DEPRECATED] The permission of the API key. Use canRead/canPay/canAdmin flags instead. Will be removed in a future version."
+                                    },
+                                    "canRead": {
+                                        "type": "boolean",
+                                        "description": "Whether this API key can access read endpoints"
+                                    },
+                                    "canPay": {
+                                        "type": "boolean",
+                                        "description": "Whether this API key can access payment/purchase endpoints"
+                                    },
+                                    "canAdmin": {
+                                        "type": "boolean",
+                                        "description": "Whether this API key has admin access"
                                     },
                                     "walletScopeEnabled": {
                                         "type": "string",
@@ -3618,7 +4635,7 @@
                                             "amount": "10000000"
                                         }
                                     ],
-                                    "permission": "Admin",
+                                    "canAdmin": true,
                                     "walletScopeEnabled": "false",
                                     "WalletScopeHotWalletIds": []
                                 }
@@ -3651,6 +4668,9 @@
                                             "id": "api_key_id",
                                             "token": "masumi_payment_api_key_secret",
                                             "permission": "Admin",
+                                            "canRead": true,
+                                            "canPay": true,
+                                            "canAdmin": true,
                                             "usageLimited": true,
                                             "NetworkLimit": [
                                                 "Preprod"
@@ -3775,6 +4795,18 @@
                                         },
                                         "maxItems": 100,
                                         "description": "List of hot wallet IDs to scope this API key to. Replaces existing scopes when provided"
+                                    },
+                                    "canRead": {
+                                        "type": "boolean",
+                                        "description": "Whether this API key can access read endpoints"
+                                    },
+                                    "canPay": {
+                                        "type": "boolean",
+                                        "description": "Whether this API key can access payment/purchase endpoints"
+                                    },
+                                    "canAdmin": {
+                                        "type": "boolean",
+                                        "description": "Whether this API key has admin access"
                                     }
                                 },
                                 "required": [
@@ -3829,6 +4861,9 @@
                                             "id": "api_key_id",
                                             "token": "masumi_payment_api_key_secret",
                                             "permission": "Admin",
+                                            "canRead": true,
+                                            "canPay": true,
+                                            "canAdmin": true,
                                             "usageLimited": true,
                                             "NetworkLimit": [
                                                 "Preprod",
@@ -3919,6 +4954,9 @@
                                             "id": "api_key_id",
                                             "token": "masumi_payment_api_key_secret",
                                             "permission": "Admin",
+                                            "canRead": true,
+                                            "canPay": true,
+                                            "canAdmin": true,
                                             "usageLimited": true,
                                             "NetworkLimit": [
                                                 "Preprod"
@@ -4798,6 +5836,7 @@
                                                     "id": "cuid_v2_auto_generated",
                                                     "blockchainIdentifier": "blockchain_identifier",
                                                     "agentIdentifier": "agent_identifier",
+                                                    "pricingType": "Fixed",
                                                     "createdAt": "1970-01-20T20:00:36.260Z",
                                                     "updatedAt": "1970-01-20T20:00:36.260Z",
                                                     "submitResultTime": "0",
@@ -5055,6 +6094,15 @@
                                                     "type": "string",
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being paid"
+                                                },
+                                                "pricingType": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Fixed",
+                                                        "Free",
+                                                        "Dynamic"
+                                                    ],
+                                                    "description": "Pricing type of the agent (Fixed, Free, or Dynamic)"
                                                 },
                                                 "lastCheckedAt": {
                                                     "type": "string",
@@ -5444,6 +6492,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
                                                 "submitResultTime",
@@ -5486,6 +6535,7 @@
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
                                             "agentIdentifier": "agent_identifier",
+                                            "pricingType": "Fixed",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
                                             "submitResultTime": "0",
@@ -5682,6 +6732,7 @@
                                                     "id": "cuid_v2_auto_generated",
                                                     "blockchainIdentifier": "blockchain_identifier",
                                                     "agentIdentifier": "agent_identifier",
+                                                    "pricingType": "Fixed",
                                                     "createdAt": "1970-01-20T20:00:36.260Z",
                                                     "updatedAt": "1970-01-20T20:00:36.260Z",
                                                     "submitResultTime": "0",
@@ -5881,6 +6932,7 @@
                                                     "id": "cuid_v2_auto_generated",
                                                     "blockchainIdentifier": "blockchain_identifier",
                                                     "agentIdentifier": "agent_identifier",
+                                                    "pricingType": "Fixed",
                                                     "createdAt": "1970-01-20T20:00:36.260Z",
                                                     "updatedAt": "1970-01-20T20:00:36.260Z",
                                                     "submitResultTime": "0",
@@ -6240,6 +7292,7 @@
                                                     "id": "cuid_v2_auto_generated",
                                                     "blockchainIdentifier": "blockchain_identifier",
                                                     "agentIdentifier": "agent_identifier",
+                                                    "pricingType": "Fixed",
                                                     "createdAt": "1970-01-20T20:00:36.260Z",
                                                     "updatedAt": "1970-01-20T20:00:36.260Z",
                                                     "submitResultTime": "0",
@@ -6390,6 +7443,15 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being paid"
                                                 },
+                                                "pricingType": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Fixed",
+                                                        "Free",
+                                                        "Dynamic"
+                                                    ],
+                                                    "description": "Pricing type of the agent (Fixed, Free, or Dynamic)"
+                                                },
                                                 "lastCheckedAt": {
                                                     "type": "string",
                                                     "nullable": true,
@@ -6778,6 +7840,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
                                                 "submitResultTime",
@@ -6820,6 +7883,7 @@
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
                                             "agentIdentifier": "agent_identifier",
+                                            "pricingType": "Fixed",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
                                             "submitResultTime": "0",
@@ -6966,6 +8030,15 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being paid"
                                                 },
+                                                "pricingType": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Fixed",
+                                                        "Free",
+                                                        "Dynamic"
+                                                    ],
+                                                    "description": "Pricing type of the agent (Fixed, Free, or Dynamic)"
+                                                },
                                                 "lastCheckedAt": {
                                                     "type": "string",
                                                     "nullable": true,
@@ -7354,6 +8427,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
                                                 "submitResultTime",
@@ -7396,6 +8470,7 @@
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
                                             "agentIdentifier": "agent_identifier",
+                                            "pricingType": "Fixed",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
                                             "submitResultTime": "0",
@@ -7564,6 +8639,15 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being paid"
                                                 },
+                                                "pricingType": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Fixed",
+                                                        "Free",
+                                                        "Dynamic"
+                                                    ],
+                                                    "description": "Pricing type of the agent (Fixed, Free, or Dynamic)"
+                                                },
                                                 "lastCheckedAt": {
                                                     "type": "string",
                                                     "nullable": true,
@@ -7952,6 +9036,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
                                                 "submitResultTime",
@@ -8176,6 +9261,15 @@
                                                     "type": "string",
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being purchased"
+                                                },
+                                                "pricingType": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Fixed",
+                                                        "Free",
+                                                        "Dynamic"
+                                                    ],
+                                                    "description": "Pricing type of the agent (Fixed, Free, or Dynamic)"
                                                 },
                                                 "lastCheckedAt": {
                                                     "type": "string",
@@ -8549,6 +9643,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
                                                 "submitResultTime",
@@ -10768,6 +11863,15 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being purchased"
                                                 },
+                                                "pricingType": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Fixed",
+                                                        "Free",
+                                                        "Dynamic"
+                                                    ],
+                                                    "description": "Pricing type of the agent (Fixed, Free, or Dynamic)"
+                                                },
                                                 "lastCheckedAt": {
                                                     "type": "string",
                                                     "nullable": true,
@@ -11140,6 +12244,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
                                                 "submitResultTime",
@@ -11182,6 +12287,7 @@
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
                                             "agentIdentifier": "agent_identifier",
+                                            "pricingType": "Fixed",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
                                             "lastCheckedAt": null,
@@ -11286,6 +12392,15 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being purchased"
                                                 },
+                                                "pricingType": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Fixed",
+                                                        "Free",
+                                                        "Dynamic"
+                                                    ],
+                                                    "description": "Pricing type of the agent (Fixed, Free, or Dynamic)"
+                                                },
                                                 "lastCheckedAt": {
                                                     "type": "string",
                                                     "nullable": true,
@@ -11658,6 +12773,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
                                                 "submitResultTime",
@@ -11704,6 +12820,7 @@
                                         "id": "cuid_v2_auto_generated",
                                         "blockchainIdentifier": "blockchain_identifier",
                                         "agentIdentifier": "agent_identifier",
+                                        "pricingType": "Fixed",
                                         "createdAt": "1970-01-20T20:00:36.260Z",
                                         "updatedAt": "1970-01-20T20:00:36.260Z",
                                         "lastCheckedAt": null,
@@ -12276,6 +13393,15 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being purchased"
                                                 },
+                                                "pricingType": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Fixed",
+                                                        "Free",
+                                                        "Dynamic"
+                                                    ],
+                                                    "description": "Pricing type of the agent (Fixed, Free, or Dynamic)"
+                                                },
                                                 "lastCheckedAt": {
                                                     "type": "string",
                                                     "nullable": true,
@@ -12648,6 +13774,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
                                                 "submitResultTime",
@@ -12690,6 +13817,7 @@
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
                                             "agentIdentifier": "agent_identifier",
+                                            "pricingType": "Fixed",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
                                             "lastCheckedAt": null,
@@ -12835,6 +13963,15 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being purchased"
                                                 },
+                                                "pricingType": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Fixed",
+                                                        "Free",
+                                                        "Dynamic"
+                                                    ],
+                                                    "description": "Pricing type of the agent (Fixed, Free, or Dynamic)"
+                                                },
                                                 "lastCheckedAt": {
                                                     "type": "string",
                                                     "nullable": true,
@@ -13207,6 +14344,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
                                                 "submitResultTime",
@@ -13249,6 +14387,7 @@
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
                                             "agentIdentifier": "agent_identifier",
+                                            "pricingType": "Fixed",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
                                             "lastCheckedAt": null,
@@ -14158,7 +15297,7 @@
                                                         "enum": [
                                                             "Fixed"
                                                         ],
-                                                        "description": "Pricing type for the agent "
+                                                        "description": "Pricing type for the agent"
                                                     },
                                                     "Pricing": {
                                                         "type": "array",
@@ -14199,7 +15338,22 @@
                                                         "enum": [
                                                             "Free"
                                                         ],
-                                                        "description": "Pricing type for the agent "
+                                                        "description": "Pricing type for the agent"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "pricingType"
+                                                ]
+                                            },
+                                            {
+                                                "type": "object",
+                                                "properties": {
+                                                    "pricingType": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "Dynamic"
+                                                        ],
+                                                        "description": "Pricing type for the agent. Amounts are provided per payment/purchase request"
                                                     }
                                                 },
                                                 "required": [
@@ -15109,14 +16263,24 @@
                                                             "note": "note",
                                                             "walletVkey": "wallet_vkey",
                                                             "walletAddress": "wallet_address",
-                                                            "id": "unique_cuid_v2_auto_generated"
+                                                            "id": "unique_cuid_v2_auto_generated",
+                                                            "LowBalanceSummary": {
+                                                                "isLow": false,
+                                                                "lowRuleCount": 0,
+                                                                "lastCheckedAt": "1970-01-20T20:00:36.260Z"
+                                                            }
                                                         },
                                                         {
                                                             "collectionAddress": "send_refunds_to_this_address",
                                                             "note": "note",
                                                             "walletVkey": "wallet_vkey",
                                                             "walletAddress": "wallet_address",
-                                                            "id": "unique_cuid_v2_auto_generated"
+                                                            "id": "unique_cuid_v2_auto_generated",
+                                                            "LowBalanceSummary": {
+                                                                "isLow": true,
+                                                                "lowRuleCount": 1,
+                                                                "lastCheckedAt": "1970-01-20T20:00:36.260Z"
+                                                            }
                                                         }
                                                     ],
                                                     "SellingWallets": [
@@ -15125,14 +16289,24 @@
                                                             "note": "note",
                                                             "walletVkey": "wallet_vkey",
                                                             "walletAddress": "wallet_address",
-                                                            "id": "unique_cuid_v2_auto_generated"
+                                                            "id": "unique_cuid_v2_auto_generated",
+                                                            "LowBalanceSummary": {
+                                                                "isLow": false,
+                                                                "lowRuleCount": 0,
+                                                                "lastCheckedAt": "1970-01-20T20:00:36.260Z"
+                                                            }
                                                         },
                                                         {
                                                             "collectionAddress": "send_revenue_to_this_address",
                                                             "note": "note",
                                                             "walletVkey": "wallet_vkey",
                                                             "walletAddress": "wallet_address",
-                                                            "id": "unique_cuid_v2_auto_generated"
+                                                            "id": "unique_cuid_v2_auto_generated",
+                                                            "LowBalanceSummary": {
+                                                                "isLow": false,
+                                                                "lowRuleCount": 0,
+                                                                "lastCheckedAt": "1970-01-20T20:00:36.260Z"
+                                                            }
                                                         }
                                                     ]
                                                 }
@@ -15407,14 +16581,24 @@
                                                     "note": "note",
                                                     "walletVkey": "wallet_vkey",
                                                     "walletAddress": "wallet_address",
-                                                    "id": "unique_cuid_v2_auto_generated"
+                                                    "id": "unique_cuid_v2_auto_generated",
+                                                    "LowBalanceSummary": {
+                                                        "isLow": false,
+                                                        "lowRuleCount": 0,
+                                                        "lastCheckedAt": "1970-01-20T20:00:36.260Z"
+                                                    }
                                                 },
                                                 {
                                                     "collectionAddress": "send_refunds_to_this_address",
                                                     "note": "note",
                                                     "walletVkey": "wallet_vkey",
                                                     "walletAddress": "wallet_address",
-                                                    "id": "unique_cuid_v2_auto_generated"
+                                                    "id": "unique_cuid_v2_auto_generated",
+                                                    "LowBalanceSummary": {
+                                                        "isLow": true,
+                                                        "lowRuleCount": 1,
+                                                        "lastCheckedAt": "1970-01-20T20:00:36.260Z"
+                                                    }
                                                 }
                                             ],
                                             "SellingWallets": [
@@ -15423,14 +16607,24 @@
                                                     "note": "note",
                                                     "walletVkey": "wallet_vkey",
                                                     "walletAddress": "wallet_address",
-                                                    "id": "unique_cuid_v2_auto_generated"
+                                                    "id": "unique_cuid_v2_auto_generated",
+                                                    "LowBalanceSummary": {
+                                                        "isLow": false,
+                                                        "lowRuleCount": 0,
+                                                        "lastCheckedAt": "1970-01-20T20:00:36.260Z"
+                                                    }
                                                 },
                                                 {
                                                     "collectionAddress": "send_revenue_to_this_address",
                                                     "note": "note",
                                                     "walletVkey": "wallet_vkey",
                                                     "walletAddress": "wallet_address",
-                                                    "id": "unique_cuid_v2_auto_generated"
+                                                    "id": "unique_cuid_v2_auto_generated",
+                                                    "LowBalanceSummary": {
+                                                        "isLow": false,
+                                                        "lowRuleCount": 0,
+                                                        "lastCheckedAt": "1970-01-20T20:00:36.260Z"
+                                                    }
                                                 }
                                             ],
                                             "FeeReceiverNetworkWallet": {
@@ -15688,14 +16882,24 @@
                                                     "note": "note",
                                                     "walletVkey": "wallet_vkey",
                                                     "walletAddress": "wallet_address",
-                                                    "id": "unique_cuid_v2_auto_generated"
+                                                    "id": "unique_cuid_v2_auto_generated",
+                                                    "LowBalanceSummary": {
+                                                        "isLow": false,
+                                                        "lowRuleCount": 0,
+                                                        "lastCheckedAt": "1970-01-20T20:00:36.260Z"
+                                                    }
                                                 },
                                                 {
                                                     "collectionAddress": "send_refunds_to_this_address",
                                                     "note": "note",
                                                     "walletVkey": "wallet_vkey",
                                                     "walletAddress": "wallet_address",
-                                                    "id": "unique_cuid_v2_auto_generated"
+                                                    "id": "unique_cuid_v2_auto_generated",
+                                                    "LowBalanceSummary": {
+                                                        "isLow": true,
+                                                        "lowRuleCount": 1,
+                                                        "lastCheckedAt": "1970-01-20T20:00:36.260Z"
+                                                    }
                                                 }
                                             ],
                                             "SellingWallets": [
@@ -15704,14 +16908,24 @@
                                                     "note": "note",
                                                     "walletVkey": "wallet_vkey",
                                                     "walletAddress": "wallet_address",
-                                                    "id": "unique_cuid_v2_auto_generated"
+                                                    "id": "unique_cuid_v2_auto_generated",
+                                                    "LowBalanceSummary": {
+                                                        "isLow": false,
+                                                        "lowRuleCount": 0,
+                                                        "lastCheckedAt": "1970-01-20T20:00:36.260Z"
+                                                    }
                                                 },
                                                 {
                                                     "collectionAddress": "send_revenue_to_this_address",
                                                     "note": "note",
                                                     "walletVkey": "wallet_vkey",
                                                     "walletAddress": "wallet_address",
-                                                    "id": "unique_cuid_v2_auto_generated"
+                                                    "id": "unique_cuid_v2_auto_generated",
+                                                    "LowBalanceSummary": {
+                                                        "isLow": false,
+                                                        "lowRuleCount": 0,
+                                                        "lastCheckedAt": "1970-01-20T20:00:36.260Z"
+                                                    }
                                                 }
                                             ],
                                             "FeeReceiverNetworkWallet": {
@@ -15814,14 +17028,24 @@
                                                     "note": "note",
                                                     "walletVkey": "wallet_vkey",
                                                     "walletAddress": "wallet_address",
-                                                    "id": "unique_cuid_v2_auto_generated"
+                                                    "id": "unique_cuid_v2_auto_generated",
+                                                    "LowBalanceSummary": {
+                                                        "isLow": false,
+                                                        "lowRuleCount": 0,
+                                                        "lastCheckedAt": "1970-01-20T20:00:36.260Z"
+                                                    }
                                                 },
                                                 {
                                                     "collectionAddress": "send_refunds_to_this_address",
                                                     "note": "note",
                                                     "walletVkey": "wallet_vkey",
                                                     "walletAddress": "wallet_address",
-                                                    "id": "unique_cuid_v2_auto_generated"
+                                                    "id": "unique_cuid_v2_auto_generated",
+                                                    "LowBalanceSummary": {
+                                                        "isLow": true,
+                                                        "lowRuleCount": 1,
+                                                        "lastCheckedAt": "1970-01-20T20:00:36.260Z"
+                                                    }
                                                 }
                                             ],
                                             "SellingWallets": [
@@ -15830,14 +17054,24 @@
                                                     "note": "note",
                                                     "walletVkey": "wallet_vkey",
                                                     "walletAddress": "wallet_address",
-                                                    "id": "unique_cuid_v2_auto_generated"
+                                                    "id": "unique_cuid_v2_auto_generated",
+                                                    "LowBalanceSummary": {
+                                                        "isLow": false,
+                                                        "lowRuleCount": 0,
+                                                        "lastCheckedAt": "1970-01-20T20:00:36.260Z"
+                                                    }
                                                 },
                                                 {
                                                     "collectionAddress": "send_revenue_to_this_address",
                                                     "note": "note",
                                                     "walletVkey": "wallet_vkey",
                                                     "walletAddress": "wallet_address",
-                                                    "id": "unique_cuid_v2_auto_generated"
+                                                    "id": "unique_cuid_v2_auto_generated",
+                                                    "LowBalanceSummary": {
+                                                        "isLow": false,
+                                                        "lowRuleCount": 0,
+                                                        "lastCheckedAt": "1970-01-20T20:00:36.260Z"
+                                                    }
                                                 }
                                             ],
                                             "FeeReceiverNetworkWallet": {
@@ -17466,7 +18700,8 @@
                                                                         "PURCHASE_ON_CHAIN_STATUS_CHANGED",
                                                                         "PAYMENT_ON_CHAIN_STATUS_CHANGED",
                                                                         "PURCHASE_ON_ERROR",
-                                                                        "PAYMENT_ON_ERROR"
+                                                                        "PAYMENT_ON_ERROR",
+                                                                        "WALLET_LOW_BALANCE"
                                                                     ]
                                                                 }
                                                             },
@@ -17555,7 +18790,7 @@
                                                     "name": "My Webhook",
                                                     "Events": [
                                                         "PURCHASE_ON_CHAIN_STATUS_CHANGED",
-                                                        "PAYMENT_ON_ERROR"
+                                                        "WALLET_LOW_BALANCE"
                                                     ],
                                                     "isActive": true,
                                                     "createdAt": "1970-01-20T20:00:36.260Z",
@@ -17622,7 +18857,8 @@
                                                 "PURCHASE_ON_CHAIN_STATUS_CHANGED",
                                                 "PAYMENT_ON_CHAIN_STATUS_CHANGED",
                                                 "PURCHASE_ON_ERROR",
-                                                "PAYMENT_ON_ERROR"
+                                                "PAYMENT_ON_ERROR",
+                                                "WALLET_LOW_BALANCE"
                                             ]
                                         },
                                         "minItems": 1,
@@ -17650,7 +18886,7 @@
                                     "authToken": "your-webhook-secret-token",
                                     "Events": [
                                         "PURCHASE_ON_CHAIN_STATUS_CHANGED",
-                                        "PAYMENT_ON_ERROR"
+                                        "WALLET_LOW_BALANCE"
                                     ],
                                     "name": "My Payment Webhook",
                                     "paymentSourceId": "payment_source_id_optional"
@@ -17687,7 +18923,8 @@
                                                             "PURCHASE_ON_CHAIN_STATUS_CHANGED",
                                                             "PAYMENT_ON_CHAIN_STATUS_CHANGED",
                                                             "PURCHASE_ON_ERROR",
-                                                            "PAYMENT_ON_ERROR"
+                                                            "PAYMENT_ON_ERROR",
+                                                            "WALLET_LOW_BALANCE"
                                                         ]
                                                     }
                                                 },
@@ -17730,7 +18967,7 @@
                                             "name": "My Payment Webhook",
                                             "Events": [
                                                 "PURCHASE_ON_CHAIN_STATUS_CHANGED",
-                                                "PAYMENT_ON_ERROR"
+                                                "WALLET_LOW_BALANCE"
                                             ],
                                             "isActive": true,
                                             "createdAt": "1970-01-20T20:00:36.260Z",

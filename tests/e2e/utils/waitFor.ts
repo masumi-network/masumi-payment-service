@@ -93,5 +93,3 @@ export async function waitForServer(
 		},
 	);
 }
-
-export default waitFor;
