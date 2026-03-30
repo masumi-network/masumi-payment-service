@@ -117,6 +117,7 @@ export default function AIAgentsPage() {
       if (agent.SmartContractWallet?.walletAddress?.toLowerCase().includes(query)) return true;
       if (agent.state?.toLowerCase().includes(query)) return true;
       if (agent.AgentPricing?.pricingType === 'Free' && 'free'.startsWith(query)) return true;
+      if (agent.AgentPricing?.pricingType === 'Dynamic' && 'dynamic'.startsWith(query)) return true;
       if (
         amountRange &&
         agent.AgentPricing?.pricingType === 'Fixed' &&
@@ -438,6 +439,9 @@ export default function AIAgentsPage() {
                         <td className="p-4 text-sm truncate max-w-25">
                           {agent.AgentPricing && agent.AgentPricing.pricingType == 'Free' && (
                             <div className="whitespace-nowrap">Free</div>
+                          )}
+                          {agent.AgentPricing && agent.AgentPricing.pricingType == 'Dynamic' && (
+                            <div className="whitespace-nowrap">Dynamic</div>
                           )}
                           {agent.AgentPricing &&
                             agent.AgentPricing.pricingType == 'Fixed' &&

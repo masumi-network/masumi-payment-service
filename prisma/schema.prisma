@@ -266,6 +266,7 @@ model PaymentRequest {
   nextActionId                                  String              @unique
   nextActionLastChangedAt                       DateTime            @default(now())
   metadata                                      String?
+  pricingType                                   PricingType         @default(Fixed)
   blockchainIdentifier                          String              @unique
   submitResultTime                              BigInt
   unlockTime                                    BigInt
@@ -332,6 +333,7 @@ model PurchaseRequest {
   sellerWalletId                                String
   smartContractWalletId                         String?
   metadata                                      String?
+  pricingType                                   PricingType          @default(Fixed)
   blockchainIdentifier                          String               @unique
   submitResultTime                              BigInt
   unlockTime                                    BigInt
@@ -479,6 +481,7 @@ enum RegistrationState {
 enum PricingType {
   Fixed
   Free
+  Dynamic
 }
 
 enum PaymentErrorType {

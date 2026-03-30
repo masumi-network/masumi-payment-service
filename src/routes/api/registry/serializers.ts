@@ -30,7 +30,7 @@ export function serializeRegistryEntry(item: RegistryListRecord) {
 							})) ?? [],
 					}
 				: {
-						pricingType: PricingType.Free,
+						pricingType: item.Pricing.pricingType,
 					},
 		Tags: item.tags,
 		CurrentTransaction: item.CurrentTransaction

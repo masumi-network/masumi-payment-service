@@ -154,7 +154,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 					privacyPolicy: input.Legal?.privacyPolicy,
 					authorName: input.Author.name,
 					paymentType:
-						input.AgentPricing.pricingType == PricingType.Fixed ? PaymentType.None : PaymentType.Web3CardanoV1,
+						input.AgentPricing.pricingType == PricingType.Free ? PaymentType.Web3CardanoV1 : PaymentType.None,
 					authorContactEmail: input.Author.contactEmail,
 					authorContactOther: input.Author.contactOther,
 					authorOrganization: input.Author.organization,
@@ -263,7 +263,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 									})) ?? [],
 							}
 						: {
-								pricingType: PricingType.Free,
+								pricingType: result.Pricing.pricingType,
 							},
 				Tags: result.tags,
 				CurrentTransaction: result.CurrentTransaction
@@ -409,7 +409,7 @@ export const deleteAgentRegistration = adminAuthenticatedEndpointFactory.build({
 									})) ?? [],
 							}
 						: {
-								pricingType: PricingType.Free,
+								pricingType: item.Pricing.pricingType,
 							},
 				Tags: item.tags,
 				CurrentTransaction: item.CurrentTransaction

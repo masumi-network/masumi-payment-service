@@ -1,6 +1,6 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
   postPayment,
@@ -72,11 +72,20 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
     },
   });
 
-  const paidAgents = agents.filter(
-    (agent) =>
-      agent.state === 'RegistrationConfirmed' &&
-      agent.agentIdentifier !== null &&
-      agent.AgentPricing?.pricingType !== 'Free',
+  const paidAgents = useMemo(
+    () =>
+      agents
+        .filter(
+          (agent) =>
+            agent.state === 'RegistrationConfirmed' &&
+            agent.agentIdentifier !== null &&
+            agent.AgentPricing?.pricingType !== 'Free',
+        )
+        .map((agent) => ({
+          ...agent,
+          pricingType: agent.AgentPricing?.pricingType,
+        })),
+    [agents],
   );
 
   const { inputData, setInputData, inputDataError, resetInputData } = useInputDataHash(
@@ -105,6 +114,12 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
         setPurchaseError(null);
         setStep(2);
 
+        // Always pass amounts — backend validates Fixed matches, Dynamic requires them
+        const amounts =
+          payment.RequestedFunds && payment.RequestedFunds.length > 0
+            ? payment.RequestedFunds.map((f) => ({ amount: f.amount, unit: f.unit }))
+            : undefined;
+
         const requestBody = {
           blockchainIdentifier: payment.blockchainIdentifier,
           network: network,
@@ -117,6 +132,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
           unlockTime: payment.unlockTime || '',
           externalDisputeUnlockTime: payment.externalDisputeUnlockTime || '',
           metadata: originalFormData.metadata || undefined,
+          ...(amounts ? { Amounts: amounts } : {}),
         };
 
         const baseUrl = process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL || '';
@@ -157,6 +173,28 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
         setPaymentError(null);
 
         const times = calculateDefaultTimes();
+        const selectedAgent = paidAgents.find((a) => a.agentIdentifier === data.agentIdentifier);
+        const isDynamic = selectedAgent?.pricingType === 'Dynamic';
+
+        if (isDynamic && !data.requestedFundsAmount) {
+          setPaymentError('Amount is required for dynamic pricing agents');
+          toast.error('Amount is required for dynamic pricing agents');
+          return;
+        }
+
+        const requestedFunds =
+          isDynamic && data.requestedFundsAmount
+            ? [
+                {
+                  amount: data.requestedFundsAmount,
+                  unit:
+                    data.requestedFundsUnit === 'lovelace' || !data.requestedFundsUnit
+                      ? ''
+                      : data.requestedFundsUnit,
+                },
+              ]
+            : undefined;
+
         const requestBody = {
           network: network,
           agentIdentifier: data.agentIdentifier,
@@ -167,6 +205,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
           unlockTime: times.unlockTime,
           externalDisputeUnlockTime: times.externalDisputeUnlockTime,
           metadata: data.metadata || undefined,
+          ...(requestedFunds ? { RequestedFunds: requestedFunds } : {}),
         };
 
         const baseUrl = process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL || '';
@@ -202,7 +241,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
         setIsLoadingPayment(false);
       }
     },
-    [apiClient, apiKey, network, createPurchaseAutomatically],
+    [apiClient, apiKey, network, paidAgents, createPurchaseAutomatically],
   );
 
   const handleClose = () => {

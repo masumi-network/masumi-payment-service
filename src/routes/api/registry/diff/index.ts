@@ -144,7 +144,7 @@ export const queryRegistryDiffGet = readAuthenticatedEndpointFactory.build({
 									})) ?? [],
 							}
 						: {
-								pricingType: PricingType.Free,
+								pricingType: item.Pricing.pricingType,
 							},
 				Tags: item.tags,
 				CurrentTransaction: item.CurrentTransaction

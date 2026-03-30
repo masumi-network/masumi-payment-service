@@ -358,6 +358,15 @@
                         "nullable": true,
                         "description": "Identifier of the agent that is being paid"
                     },
+                    "pricingType": {
+                        "type": "string",
+                        "enum": [
+                            "Fixed",
+                            "Free",
+                            "Dynamic"
+                        ],
+                        "description": "Pricing type of the agent (Fixed, Free, or Dynamic)"
+                    },
                     "lastCheckedAt": {
                         "type": "string",
                         "nullable": true,
@@ -927,6 +936,7 @@
                     "updatedAt",
                     "blockchainIdentifier",
                     "agentIdentifier",
+                    "pricingType",
                     "lastCheckedAt",
                     "payByTime",
                     "submitResultTime",
@@ -982,6 +992,15 @@
                         "type": "string",
                         "nullable": true,
                         "description": "Identifier of the agent that is being purchased"
+                    },
+                    "pricingType": {
+                        "type": "string",
+                        "enum": [
+                            "Fixed",
+                            "Free",
+                            "Dynamic"
+                        ],
+                        "description": "Pricing type of the agent (Fixed, Free, or Dynamic)"
                     },
                     "lastCheckedAt": {
                         "type": "string",
@@ -1527,6 +1546,7 @@
                     "updatedAt",
                     "blockchainIdentifier",
                     "agentIdentifier",
+                    "pricingType",
                     "lastCheckedAt",
                     "payByTime",
                     "submitResultTime",
@@ -1754,7 +1774,22 @@
                                                 "enum": [
                                                     "Free"
                                                 ],
-                                                "description": "Pricing type for the agent (Fixed or Free)"
+                                                "description": "Pricing type for the agent (Free)"
+                                            }
+                                        },
+                                        "required": [
+                                            "pricingType"
+                                        ]
+                                    },
+                                    {
+                                        "type": "object",
+                                        "properties": {
+                                            "pricingType": {
+                                                "type": "string",
+                                                "enum": [
+                                                    "Dynamic"
+                                                ],
+                                                "description": "Pricing type for the agent (Dynamic)"
                                             }
                                         },
                                         "required": [
@@ -1999,6 +2034,21 @@
                                         "required": [
                                             "pricingType"
                                         ]
+                                    },
+                                    {
+                                        "type": "object",
+                                        "properties": {
+                                            "pricingType": {
+                                                "type": "string",
+                                                "enum": [
+                                                    "Dynamic"
+                                                ],
+                                                "description": "Pricing type for the agent (Dynamic). Amounts are provided per payment/purchase request"
+                                            }
+                                        },
+                                        "required": [
+                                            "pricingType"
+                                        ]
                                     }
                                 ],
                                 "description": "Pricing information for the agent"
@@ -2221,7 +2271,7 @@
                                         "enum": [
                                             "Fixed"
                                         ],
-                                        "description": "Pricing type for the agent "
+                                        "description": "Pricing type for the agent"
                                     },
                                     "Pricing": {
                                         "type": "array",
@@ -2260,7 +2310,22 @@
                                         "enum": [
                                             "Free"
                                         ],
-                                        "description": "Pricing type for the agent "
+                                        "description": "Pricing type for the agent"
+                                    }
+                                },
+                                "required": [
+                                    "pricingType"
+                                ]
+                            },
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "pricingType": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Dynamic"
+                                        ],
+                                        "description": "Pricing type for the agent. Amounts are provided per payment/purchase request"
                                     }
                                 },
                                 "required": [
@@ -5771,6 +5836,7 @@
                                                     "id": "cuid_v2_auto_generated",
                                                     "blockchainIdentifier": "blockchain_identifier",
                                                     "agentIdentifier": "agent_identifier",
+                                                    "pricingType": "Fixed",
                                                     "createdAt": "1970-01-20T20:00:36.260Z",
                                                     "updatedAt": "1970-01-20T20:00:36.260Z",
                                                     "submitResultTime": "0",
@@ -6028,6 +6094,15 @@
                                                     "type": "string",
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being paid"
+                                                },
+                                                "pricingType": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Fixed",
+                                                        "Free",
+                                                        "Dynamic"
+                                                    ],
+                                                    "description": "Pricing type of the agent (Fixed, Free, or Dynamic)"
                                                 },
                                                 "lastCheckedAt": {
                                                     "type": "string",
@@ -6417,6 +6492,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
                                                 "submitResultTime",
@@ -6459,6 +6535,7 @@
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
                                             "agentIdentifier": "agent_identifier",
+                                            "pricingType": "Fixed",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
                                             "submitResultTime": "0",
@@ -6655,6 +6732,7 @@
                                                     "id": "cuid_v2_auto_generated",
                                                     "blockchainIdentifier": "blockchain_identifier",
                                                     "agentIdentifier": "agent_identifier",
+                                                    "pricingType": "Fixed",
                                                     "createdAt": "1970-01-20T20:00:36.260Z",
                                                     "updatedAt": "1970-01-20T20:00:36.260Z",
                                                     "submitResultTime": "0",
@@ -6854,6 +6932,7 @@
                                                     "id": "cuid_v2_auto_generated",
                                                     "blockchainIdentifier": "blockchain_identifier",
                                                     "agentIdentifier": "agent_identifier",
+                                                    "pricingType": "Fixed",
                                                     "createdAt": "1970-01-20T20:00:36.260Z",
                                                     "updatedAt": "1970-01-20T20:00:36.260Z",
                                                     "submitResultTime": "0",
@@ -7213,6 +7292,7 @@
                                                     "id": "cuid_v2_auto_generated",
                                                     "blockchainIdentifier": "blockchain_identifier",
                                                     "agentIdentifier": "agent_identifier",
+                                                    "pricingType": "Fixed",
                                                     "createdAt": "1970-01-20T20:00:36.260Z",
                                                     "updatedAt": "1970-01-20T20:00:36.260Z",
                                                     "submitResultTime": "0",
@@ -7363,6 +7443,15 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being paid"
                                                 },
+                                                "pricingType": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Fixed",
+                                                        "Free",
+                                                        "Dynamic"
+                                                    ],
+                                                    "description": "Pricing type of the agent (Fixed, Free, or Dynamic)"
+                                                },
                                                 "lastCheckedAt": {
                                                     "type": "string",
                                                     "nullable": true,
@@ -7751,6 +7840,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
                                                 "submitResultTime",
@@ -7793,6 +7883,7 @@
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
                                             "agentIdentifier": "agent_identifier",
+                                            "pricingType": "Fixed",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
                                             "submitResultTime": "0",
@@ -7939,6 +8030,15 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being paid"
                                                 },
+                                                "pricingType": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Fixed",
+                                                        "Free",
+                                                        "Dynamic"
+                                                    ],
+                                                    "description": "Pricing type of the agent (Fixed, Free, or Dynamic)"
+                                                },
                                                 "lastCheckedAt": {
                                                     "type": "string",
                                                     "nullable": true,
@@ -8327,6 +8427,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
                                                 "submitResultTime",
@@ -8369,6 +8470,7 @@
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
                                             "agentIdentifier": "agent_identifier",
+                                            "pricingType": "Fixed",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
                                             "submitResultTime": "0",
@@ -8537,6 +8639,15 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being paid"
                                                 },
+                                                "pricingType": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Fixed",
+                                                        "Free",
+                                                        "Dynamic"
+                                                    ],
+                                                    "description": "Pricing type of the agent (Fixed, Free, or Dynamic)"
+                                                },
                                                 "lastCheckedAt": {
                                                     "type": "string",
                                                     "nullable": true,
@@ -8925,6 +9036,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
                                                 "submitResultTime",
@@ -9149,6 +9261,15 @@
                                                     "type": "string",
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being purchased"
+                                                },
+                                                "pricingType": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Fixed",
+                                                        "Free",
+                                                        "Dynamic"
+                                                    ],
+                                                    "description": "Pricing type of the agent (Fixed, Free, or Dynamic)"
                                                 },
                                                 "lastCheckedAt": {
                                                     "type": "string",
@@ -9522,6 +9643,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
                                                 "submitResultTime",
@@ -11741,6 +11863,15 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being purchased"
                                                 },
+                                                "pricingType": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Fixed",
+                                                        "Free",
+                                                        "Dynamic"
+                                                    ],
+                                                    "description": "Pricing type of the agent (Fixed, Free, or Dynamic)"
+                                                },
                                                 "lastCheckedAt": {
                                                     "type": "string",
                                                     "nullable": true,
@@ -12113,6 +12244,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
                                                 "submitResultTime",
@@ -12155,6 +12287,7 @@
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
                                             "agentIdentifier": "agent_identifier",
+                                            "pricingType": "Fixed",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
                                             "lastCheckedAt": null,
@@ -12259,6 +12392,15 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being purchased"
                                                 },
+                                                "pricingType": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Fixed",
+                                                        "Free",
+                                                        "Dynamic"
+                                                    ],
+                                                    "description": "Pricing type of the agent (Fixed, Free, or Dynamic)"
+                                                },
                                                 "lastCheckedAt": {
                                                     "type": "string",
                                                     "nullable": true,
@@ -12631,6 +12773,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
                                                 "submitResultTime",
@@ -12677,6 +12820,7 @@
                                         "id": "cuid_v2_auto_generated",
                                         "blockchainIdentifier": "blockchain_identifier",
                                         "agentIdentifier": "agent_identifier",
+                                        "pricingType": "Fixed",
                                         "createdAt": "1970-01-20T20:00:36.260Z",
                                         "updatedAt": "1970-01-20T20:00:36.260Z",
                                         "lastCheckedAt": null,
@@ -13249,6 +13393,15 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being purchased"
                                                 },
+                                                "pricingType": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Fixed",
+                                                        "Free",
+                                                        "Dynamic"
+                                                    ],
+                                                    "description": "Pricing type of the agent (Fixed, Free, or Dynamic)"
+                                                },
                                                 "lastCheckedAt": {
                                                     "type": "string",
                                                     "nullable": true,
@@ -13621,6 +13774,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
                                                 "submitResultTime",
@@ -13663,6 +13817,7 @@
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
                                             "agentIdentifier": "agent_identifier",
+                                            "pricingType": "Fixed",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
                                             "lastCheckedAt": null,
@@ -13808,6 +13963,15 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being purchased"
                                                 },
+                                                "pricingType": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Fixed",
+                                                        "Free",
+                                                        "Dynamic"
+                                                    ],
+                                                    "description": "Pricing type of the agent (Fixed, Free, or Dynamic)"
+                                                },
                                                 "lastCheckedAt": {
                                                     "type": "string",
                                                     "nullable": true,
@@ -14180,6 +14344,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
                                                 "submitResultTime",
@@ -14222,6 +14387,7 @@
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
                                             "agentIdentifier": "agent_identifier",
+                                            "pricingType": "Fixed",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
                                             "lastCheckedAt": null,
@@ -15131,7 +15297,7 @@
                                                         "enum": [
                                                             "Fixed"
                                                         ],
-                                                        "description": "Pricing type for the agent "
+                                                        "description": "Pricing type for the agent"
                                                     },
                                                     "Pricing": {
                                                         "type": "array",
@@ -15172,7 +15338,22 @@
                                                         "enum": [
                                                             "Free"
                                                         ],
-                                                        "description": "Pricing type for the agent "
+                                                        "description": "Pricing type for the agent"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "pricingType"
+                                                ]
+                                            },
+                                            {
+                                                "type": "object",
+                                                "properties": {
+                                                    "pricingType": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "Dynamic"
+                                                        ],
+                                                        "description": "Pricing type for the agent. Amounts are provided per payment/purchase request"
                                                     }
                                                 },
                                                 "required": [

@@ -27,8 +27,12 @@ function validateRegistrationPricing(request: {
 		FixedPricing: { Amounts: Array<{ unit: string; amount: bigint }> } | null;
 	};
 }): void {
-	if (request.Pricing.pricingType != PricingType.Fixed && request.Pricing.pricingType != PricingType.Free) {
-		throw new Error('Other than fixed and free pricing is not supported yet');
+	if (
+		request.Pricing.pricingType != PricingType.Fixed &&
+		request.Pricing.pricingType != PricingType.Free &&
+		request.Pricing.pricingType != PricingType.Dynamic
+	) {
+		throw new Error('Unsupported pricing type: ' + String(request.Pricing.pricingType));
 	}
 
 	if (
@@ -38,8 +42,8 @@ function validateRegistrationPricing(request: {
 		throw new Error('No fixed pricing found, this is likely a bug');
 	}
 
-	if (request.Pricing.pricingType == PricingType.Free && request.Pricing.FixedPricing != null) {
-		throw new Error('Free pricing requires no fixed pricing to be set');
+	if (request.Pricing.pricingType != PricingType.Fixed && request.Pricing.FixedPricing != null) {
+		throw new Error('Non-fixed pricing requires no fixed pricing to be set');
 	}
 }
 
@@ -116,7 +120,7 @@ function buildAgentMetadata(request: {
 							})) ?? [],
 					}
 				: {
-						pricingType: PricingType.Free,
+						pricingType: request.Pricing.pricingType,
 					},
 		image: stringToMetadata(DEFAULTS.DEFAULT_IMAGE),
 		metadata_version: request.metadataVersion.toString(),
