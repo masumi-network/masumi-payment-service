@@ -1,4 +1,4 @@
-import { Network } from '@/generated/prisma/client';
+import { Network, TransactionStatus } from '@/generated/prisma/client';
 import { z } from '@/utils/zod-openapi';
 import { lowBalanceRuleSchema, lowBalanceSummarySchema } from './low-balance.schemas';
 
@@ -69,3 +69,51 @@ export const patchWalletSchemaInput = z.object({
 });
 
 export const patchWalletSchemaOutput = getWalletSchemaOutput;
+
+export const postWalletFundSchemaInput = z.object({
+	fromWalletAddress: z.string().min(1).max(250).describe('The Cardano address of the hot wallet to send funds from'),
+	toAddress: z.string().min(1).max(250).describe('The Cardano address to send funds to'),
+	lovelaceAmount: z
+		.string()
+		.min(1)
+		.describe('Amount of lovelace to transfer (minimum 2000000 = 2 ADA)')
+		.transform((s) => BigInt(s)),
+});
+
+const fundTransferSchema = z
+	.object({
+		id: z.string().describe('Unique identifier of the fund transfer'),
+		status: z.nativeEnum(TransactionStatus).describe('Current status of the fund transfer'),
+		txHash: z.string().nullable().describe('Cardano transaction hash. Null until submitted to blockchain'),
+		toAddress: z.string().describe('Destination Cardano address'),
+		lovelaceAmount: z.string().describe('Amount transferred in lovelace'),
+		createdAt: z.date().describe('Timestamp when the transfer was requested'),
+		updatedAt: z.date().describe('Timestamp when the transfer was last updated'),
+		lastCheckedAt: z.date().nullable().describe('Timestamp when the blockchain was last polled for confirmation'),
+		errorNote: z.string().nullable().describe('Error message if the transfer failed'),
+	})
+	.openapi('WalletFundTransfer');
+
+export const postWalletFundSchemaOutput = fundTransferSchema;
+
+export const getWalletFundSchemaInput = z
+	.object({
+		id: z.string().min(1).max(250).optional().describe('Query a specific fund transfer by id'),
+		hotWalletId: z.string().min(1).max(250).optional().describe('Query all fund transfers for a wallet by internal id'),
+		walletAddress: z.string().min(1).max(250).optional().describe('Query all fund transfers for a wallet by its Cardano address'),
+		cursorId: z.string().min(1).max(250).optional().describe('Cursor for pagination'),
+		limit: z
+			.string()
+			.default('20')
+			.transform((s) => Math.min(Math.max(Number(s), 1), 100))
+			.describe('Number of results to return (1-100, default 20)'),
+	})
+	.refine((data) => data.id != null || data.hotWalletId != null || data.walletAddress != null, {
+		message: 'Either id, hotWalletId, or walletAddress must be provided',
+	});
+
+export const getWalletFundSchemaOutput = z
+	.object({
+		transfers: z.array(fundTransferSchema).describe('List of fund transfers'),
+	})
+	.openapi('WalletFundTransferList');

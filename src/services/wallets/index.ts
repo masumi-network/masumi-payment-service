@@ -1,4 +1,5 @@
 export { walletLowBalanceMonitorService } from './low-balance/service';
+export { processFundTransfers } from './fund-transfer/service';
 export {
 	getNetworkDefaultLowBalanceRules,
 	projectBalanceMapFromUnsignedTx,

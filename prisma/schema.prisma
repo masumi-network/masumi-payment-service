@@ -79,6 +79,7 @@ model HotWallet {
   collectionAddress        String?
   pendingTransactionId     String?             @unique
   pendingSwapTransactionId String?             @unique
+  pendingFundTransferId    String?             @unique
   paymentSourceId          String
   lockedAt                 DateTime?
   note                     String?
@@ -86,7 +87,9 @@ model HotWallet {
   PaymentSource            PaymentSource       @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
   PendingTransaction       Transaction?        @relation(fields: [pendingTransactionId], references: [id])
   PendingSwapTransaction   SwapTransaction?    @relation(fields: [pendingSwapTransactionId], references: [id])
+  PendingFundTransfer      WalletFundTransfer? @relation("PendingFundTransfer", fields: [pendingFundTransferId], references: [id])
   SwapTransactionHistory   SwapTransaction[]   @relation("SwapTransactionHistory")
+  FundTransferHistory      WalletFundTransfer[] @relation("FundTransferHistory")
   Secret                   WalletSecret        @relation(fields: [secretId], references: [id])
   PaymentRequest           PaymentRequest[]
   PurchaseRequest          PurchaseRequest[]
@@ -165,6 +168,21 @@ model SwapTransaction {
   hotWalletId      String?
   BlocksWallet     HotWallet?
   HotWallet        HotWallet?        @relation("SwapTransactionHistory", fields: [hotWalletId], references: [id])
+}
+
+model WalletFundTransfer {
+  id             String            @id @default(cuid())
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  hotWalletId    String
+  toAddress      String
+  lovelaceAmount BigInt
+  txHash         String?
+  status         TransactionStatus @default(Pending)
+  lastCheckedAt  DateTime?
+  errorNote      String?
+  PendingForWallet HotWallet?      @relation("PendingFundTransfer")
+  HotWallet      HotWallet         @relation("FundTransferHistory", fields: [hotWalletId], references: [id])
 }
 
 model WalletSecret {
