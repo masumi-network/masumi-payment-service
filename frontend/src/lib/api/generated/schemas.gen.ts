@@ -2280,7 +2280,7 @@ export const RegistryEntrySchema = {
                             enum: [
                                 'Fixed'
                             ],
-                            description: 'Pricing type for the agent'
+                            description: 'Pricing type for the agent '
                         },
                         Pricing: {
                             type: 'array',
@@ -2319,7 +2319,7 @@ export const RegistryEntrySchema = {
                             enum: [
                                 'Free'
                             ],
-                            description: 'Pricing type for the agent'
+                            description: 'Pricing type for the agent '
                         }
                     },
                     required: [
@@ -2614,6 +2614,21 @@ export const A2ARegistryEntrySchema = {
                                 'Free'
                             ],
                             description: 'Pricing type for the agent '
+                        }
+                    },
+                    required: [
+                        'pricingType'
+                    ]
+                },
+                {
+                    type: 'object',
+                    properties: {
+                        pricingType: {
+                            type: 'string',
+                            enum: [
+                                'Dynamic'
+                            ],
+                            description: 'Pricing type for the agent. Amounts are provided per payment/purchase request'
                         }
                     },
                     required: [

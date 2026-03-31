@@ -2293,7 +2293,7 @@
                                         "enum": [
                                             "Fixed"
                                         ],
-                                        "description": "Pricing type for the agent"
+                                        "description": "Pricing type for the agent "
                                     },
                                     "Pricing": {
                                         "type": "array",
@@ -2332,7 +2332,7 @@
                                         "enum": [
                                             "Free"
                                         ],
-                                        "description": "Pricing type for the agent"
+                                        "description": "Pricing type for the agent "
                                     }
                                 },
                                 "required": [
@@ -2626,6 +2626,21 @@
                                             "Free"
                                         ],
                                         "description": "Pricing type for the agent "
+                                    }
+                                },
+                                "required": [
+                                    "pricingType"
+                                ]
+                            },
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "pricingType": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Dynamic"
+                                        ],
+                                        "description": "Pricing type for the agent. Amounts are provided per payment/purchase request"
                                     }
                                 },
                                 "required": [

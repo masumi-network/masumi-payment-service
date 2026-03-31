@@ -1430,6 +1430,11 @@ export type A2aRegistryEntry = {
          * Pricing type for the agent
          */
         pricingType: 'Free';
+    } | {
+        /**
+         * Pricing type for the agent. Amounts are provided per payment/purchase request
+         */
+        pricingType: 'Dynamic';
     };
     /**
      * Smart contract wallet managing this agent registration
