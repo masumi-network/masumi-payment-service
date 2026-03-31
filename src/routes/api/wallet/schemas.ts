@@ -100,7 +100,12 @@ export const getWalletFundSchemaInput = z
 	.object({
 		id: z.string().min(1).max(250).optional().describe('Query a specific fund transfer by id'),
 		hotWalletId: z.string().min(1).max(250).optional().describe('Query all fund transfers for a wallet by internal id'),
-		walletAddress: z.string().min(1).max(250).optional().describe('Query all fund transfers for a wallet by its Cardano address'),
+		walletAddress: z
+			.string()
+			.min(1)
+			.max(250)
+			.optional()
+			.describe('Query all fund transfers for a wallet by its Cardano address'),
 		cursorId: z.string().min(1).max(250).optional().describe('Cursor for pagination'),
 		limit: z
 			.string()

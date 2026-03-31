@@ -5903,11 +5903,23 @@
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 250,
-                            "description": "Query all fund transfers for a wallet"
+                            "description": "Query all fund transfers for a wallet by internal id"
                         },
                         "required": false,
-                        "description": "Query all fund transfers for a wallet",
+                        "description": "Query all fund transfers for a wallet by internal id",
                         "name": "hotWalletId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 250,
+                            "description": "Query all fund transfers for a wallet by its Cardano address"
+                        },
+                        "required": false,
+                        "description": "Query all fund transfers for a wallet by its Cardano address",
+                        "name": "walletAddress",
                         "in": "query"
                     },
                     {
