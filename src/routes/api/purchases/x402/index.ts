@@ -166,6 +166,23 @@ function serializeX402PurchaseResponse(
 	};
 }
 
+function serializeExistingX402PurchaseConflictResponse(
+	purchaseRequest: PurchaseRequestResponseRecord,
+	agentIdentifier: string,
+	unsignedTxCbor: string | undefined,
+	overrides?: {
+		collateralReturnLovelace?: bigint;
+	},
+) {
+	const baseResponse = serializeX402PurchaseResponse(purchaseRequest, agentIdentifier, unsignedTxCbor ?? '', overrides);
+	if (unsignedTxCbor == null) {
+		const { unsignedTxCbor: _unsignedTxCbor, ...responseWithoutUnsignedTx } = baseResponse;
+		return responseWithoutUnsignedTx;
+	}
+
+	return baseResponse;
+}
+
 async function throwExistingX402PurchaseError({
 	existingPurchaseRequest,
 	input,
@@ -178,7 +195,7 @@ async function throwExistingX402PurchaseError({
 		PaymentSourceConfig: { rpcProviderApiKey: string };
 	};
 }): Promise<never> {
-	let unsignedTxCbor = '';
+	let unsignedTxCbor: string | undefined;
 	let collateralReturnLovelaceOverride: bigint | undefined;
 	const canRebuildUnsignedTx =
 		existingPurchaseRequest.NextAction.requestedAction === PurchasingAction.ExternalFundsLockingInitiated &&
@@ -213,7 +230,7 @@ async function throwExistingX402PurchaseError({
 	throw new HttpExistsError(
 		'Purchase exists',
 		existingPurchaseRequest.id,
-		serializeX402PurchaseResponse(existingPurchaseRequest, input.agentIdentifier, unsignedTxCbor, {
+		serializeExistingX402PurchaseConflictResponse(existingPurchaseRequest, input.agentIdentifier, unsignedTxCbor, {
 			collateralReturnLovelace: collateralReturnLovelaceOverride,
 		}),
 	);
