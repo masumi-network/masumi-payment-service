@@ -17,9 +17,13 @@ export const allowedObjectSchema = z.record(
 export class HttpExistsError extends Error {
 	id: string;
 	object: any;
+	status: number;
+	statusCode: number;
 	constructor(message: string, id: string, object: allowedObject) {
 		super(message);
 		this.id = id;
 		this.object = object;
+		this.status = 409;
+		this.statusCode = 409;
 	}
 }

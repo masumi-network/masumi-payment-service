@@ -16,7 +16,11 @@ import { validateHexString } from '@/utils/validator/hex';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { HttpExistsError } from '@/utils/errors/http-exists-error';
 import { recordBusinessEndpointError } from '@/utils/metrics';
-import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
+import {
+	normalizePurchaseUnit,
+	transformPurchaseGetAmounts,
+	transformPurchaseGetTimestamps,
+} from '@/utils/shared/transformers';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
@@ -41,10 +45,6 @@ export {
 	queryPurchaseRequestSchemaInput,
 	queryPurchaseRequestSchemaOutput,
 };
-
-function normalizePurchaseUnit(unit: string) {
-	return unit.toLowerCase() === 'lovelace' ? '' : unit;
-}
 
 export const queryPurchaseRequestGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',

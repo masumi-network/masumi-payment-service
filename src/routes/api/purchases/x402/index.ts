@@ -17,7 +17,11 @@ import { validateHexString } from '@/utils/validator/hex';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { HttpExistsError } from '@/utils/errors/http-exists-error';
 import { recordBusinessEndpointError } from '@/utils/metrics';
-import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
+import {
+	normalizePurchaseUnit,
+	transformPurchaseGetAmounts,
+	transformPurchaseGetTimestamps,
+} from '@/utils/shared/transformers';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { connectPreviousAction, createNextPurchaseAction } from '@/services/shared';
 import { buildX402FundsLockingTransaction } from '@/services/purchases/x402-build/service';
@@ -25,10 +29,6 @@ import { createX402PurchaseSchemaInput, createX402PurchaseSchemaOutput } from '.
 import { CONSTANTS } from '@/utils/config';
 
 export { createX402PurchaseSchemaInput, createX402PurchaseSchemaOutput };
-
-function normalizePurchaseUnit(unit: string) {
-	return unit.toLowerCase() === 'lovelace' ? '' : unit;
-}
 
 const purchaseRequestResponseInclude = {
 	SellerWallet: { select: { id: true, walletVkey: true } },
@@ -81,6 +81,19 @@ const purchaseRequestResponseInclude = {
 type PurchaseRequestResponseRecord = Prisma.PurchaseRequestGetPayload<{
 	include: typeof purchaseRequestResponseInclude;
 }>;
+
+type RecordedBusinessMetricError = Error & { businessEndpointErrorRecorded?: boolean };
+
+function createRecordedBusinessHttpError(
+	statusCode: number,
+	message: string,
+	attributes: Record<string, string>,
+): Error {
+	recordBusinessEndpointError('/api/v1/purchase/x402', 'POST', statusCode, message, attributes);
+	const error = createHttpError(statusCode, message) as RecordedBusinessMetricError;
+	error.businessEndpointErrorRecorded = true;
+	return error;
+}
 
 async function getCoinsPerUtxoSize(blockchainProvider: BlockfrostProvider) {
 	let coinsPerUtxoSize: number = CONSTANTS.FALLBACK_COINS_PER_UTXO_SIZE;
@@ -181,28 +194,18 @@ export const createX402PurchasePost = payAuthenticatedEndpointFactory.build({
 
 			const inputHash = input.inputHash;
 			if (validateHexString(inputHash) == false) {
-				recordBusinessEndpointError('/api/v1/purchase/x402', 'POST', 400, 'Input hash is not a valid hex string', {
+				throw createRecordedBusinessHttpError(400, 'Input hash is not a valid hex string', {
 					network: input.network,
 					field: 'inputHash',
 					validation_type: 'invalid_hex_string',
 				});
-				throw createHttpError(400, 'Input hash is not a valid hex string');
 			}
 
 			if (paymentSource == null) {
-				recordBusinessEndpointError(
-					'/api/v1/purchase/x402',
-					'POST',
-					404,
-					'No payment source found for agent identifiers policy id',
-					{
-						network: input.network,
-						policy_id: policyId,
-						agent_identifier: input.agentIdentifier,
-						step: 'payment_source_lookup',
-					},
-				);
-				throw createHttpError(404, 'No payment source found for agent identifiers policy id');
+				throw createRecordedBusinessHttpError(404, 'No payment source found for agent identifiers policy id', {
+					network: input.network,
+					step: 'payment_source_lookup',
+				});
 			}
 
 			// Idempotency: return existing purchase if already created
@@ -249,13 +252,11 @@ export const createX402PurchasePost = payAuthenticatedEndpointFactory.build({
 				_count: true,
 			});
 			if (wallets._count === 0) {
-				recordBusinessEndpointError('/api/v1/purchase/x402', 'POST', 404, 'No valid purchasing wallets found', {
+				throw createRecordedBusinessHttpError(404, 'No valid purchasing wallets found', {
 					network: input.network,
-					payment_source_id: paymentSource.id,
 					wallet_type: 'selling',
 					step: 'wallet_lookup',
 				});
-				throw createHttpError(404, 'No valid purchasing wallets found');
 			}
 
 			const additionalExternalDisputeUnlockTime = BigInt(1000 * 60 * 15);
@@ -265,36 +266,22 @@ export const createX402PurchasePost = payAuthenticatedEndpointFactory.build({
 			const externalDisputeUnlockTime = BigInt(input.externalDisputeUnlockTime);
 
 			if (payByTime > submitResultTime - BigInt(1000 * 60 * 5)) {
-				recordBusinessEndpointError(
-					'/api/v1/purchase/x402',
-					'POST',
-					400,
-					'Pay by time must be before submit result time (min. 5 minutes)',
-					{
-						network: input.network,
-						field: 'payByTime',
-						validation_type: 'invalid_time_constraint',
-						pay_by_time: payByTime.toString(),
-						submit_result_time: submitResultTime.toString(),
-					},
-				);
-				throw createHttpError(400, 'Pay by time must be before submit result time (min. 5 minutes)');
+				throw createRecordedBusinessHttpError(400, 'Pay by time must be before submit result time (min. 5 minutes)', {
+					network: input.network,
+					field: 'payByTime',
+					validation_type: 'invalid_time_constraint',
+					pay_by_time: payByTime.toString(),
+					submit_result_time: submitResultTime.toString(),
+				});
 			}
 			if (payByTime < BigInt(Date.now() - 1000 * 60 * 5)) {
-				recordBusinessEndpointError(
-					'/api/v1/purchase/x402',
-					'POST',
-					400,
-					'Pay by time must be in the future (max. 5 minutes)',
-					{
-						network: input.network,
-						field: 'payByTime',
-						validation_type: 'time_in_past',
-						pay_by_time: payByTime.toString(),
-						current_time: Date.now().toString(),
-					},
-				);
-				throw createHttpError(400, 'Pay by time must be in the future (max. 5 minutes)');
+				throw createRecordedBusinessHttpError(400, 'Pay by time must be in the future (max. 5 minutes)', {
+					network: input.network,
+					field: 'payByTime',
+					validation_type: 'time_in_past',
+					pay_by_time: payByTime.toString(),
+					current_time: Date.now().toString(),
+				});
 			}
 			if (externalDisputeUnlockTime < unlockTime + additionalExternalDisputeUnlockTime) {
 				throw createHttpError(
@@ -512,17 +499,21 @@ export const createX402PurchasePost = payAuthenticatedEndpointFactory.build({
 			);
 		} catch (error: unknown) {
 			const errorInstance = error instanceof Error ? error : new Error(String(error));
+			const wasBusinessMetricAlreadyRecorded =
+				(errorInstance as RecordedBusinessMetricError).businessEndpointErrorRecorded === true;
 			const statusCode =
 				(errorInstance as { statusCode?: number; status?: number }).statusCode ||
 				(errorInstance as { statusCode?: number; status?: number }).status ||
 				500;
-			recordBusinessEndpointError('/api/v1/purchase/x402', 'POST', statusCode, errorInstance, {
-				network: input.network,
-				user_id: ctx.id,
-				agent_identifier: input.agentIdentifier,
-				duration: Date.now() - startTime,
-				step: 'x402_purchase_processing',
-			});
+			if (!wasBusinessMetricAlreadyRecorded) {
+				recordBusinessEndpointError('/api/v1/purchase/x402', 'POST', statusCode, errorInstance, {
+					network: input.network,
+					user_id: ctx.id,
+					agent_identifier: input.agentIdentifier,
+					duration: Date.now() - startTime,
+					step: 'x402_purchase_processing',
+				});
+			}
 			throw error;
 		}
 	},
