@@ -1,5 +1,5 @@
 import { z } from '@/utils/zod-openapi';
-import { HotWalletType, PricingType, PurchasingAction, PurchaseErrorType } from '@/generated/prisma/client';
+import { HotWalletType, PricingType, PurchasingAction } from '@/generated/prisma/client';
 import type { Prisma } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
