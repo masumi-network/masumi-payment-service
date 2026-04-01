@@ -41,6 +41,11 @@ export {
 	queryPurchaseRequestSchemaInput,
 	queryPurchaseRequestSchemaOutput,
 };
+
+function normalizePurchaseUnit(unit: string) {
+	return unit.toLowerCase() === 'lovelace' ? '' : unit;
+}
+
 export const queryPurchaseRequestGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: queryPurchaseRequestSchemaInput,
@@ -346,7 +351,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 			if (pricing.pricingType == PricingType.Fixed) {
 				const amounts = pricing.fixedPricing;
 				for (const amount of amounts) {
-					const unit = metadataToString(amount.unit)!.toLowerCase() == '' ? '' : metadataToString(amount.unit)!;
+					const unit = normalizePurchaseUnit(metadataToString(amount.unit)!);
 					if (agentIdentifierAmountsMap.has(unit)) {
 						agentIdentifierAmountsMap.set(unit, agentIdentifierAmountsMap.get(unit)! + BigInt(amount.amount));
 					} else {
@@ -357,10 +362,11 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 				if (input.Amounts != undefined) {
 					const inputAmountsMap = new Map<string, bigint>();
 					for (const amount of input.Amounts) {
-						if (inputAmountsMap.has(amount.unit)) {
-							inputAmountsMap.set(amount.unit, inputAmountsMap.get(amount.unit)! + BigInt(amount.amount));
+						const unit = normalizePurchaseUnit(amount.unit);
+						if (inputAmountsMap.has(unit)) {
+							inputAmountsMap.set(unit, inputAmountsMap.get(unit)! + BigInt(amount.amount));
 						} else {
-							inputAmountsMap.set(amount.unit, BigInt(amount.amount));
+							inputAmountsMap.set(unit, BigInt(amount.amount));
 						}
 					}
 					if (inputAmountsMap.size != agentIdentifierAmountsMap.size) {
@@ -382,7 +388,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 					}
 				}
 				for (const amount of input.Amounts) {
-					const unit = amount.unit.toLowerCase() == 'lovelace' ? '' : amount.unit;
+					const unit = normalizePurchaseUnit(amount.unit);
 					if (agentIdentifierAmountsMap.has(unit)) {
 						agentIdentifierAmountsMap.set(unit, agentIdentifierAmountsMap.get(unit)! + BigInt(amount.amount));
 					} else {

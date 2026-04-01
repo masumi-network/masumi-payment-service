@@ -7,6 +7,7 @@ import {
 	deleteAPIKeyEndpointDelete,
 } from './api-key';
 import { createPurchaseInitPost, queryPurchaseCountGet, queryPurchaseRequestGet } from './purchases';
+import { createX402PurchasePost } from './purchases/x402';
 import { postPurchaseSpending } from './purchases/spending';
 import { paymentInitPost, queryPaymentCountGet, queryPaymentEntryGet } from './payments';
 import { getPaymentIncome } from './payments/income';
@@ -80,6 +81,9 @@ export const apiRouter: Routing = {
 				'onchain-state-or-result': {
 					get: queryPurchaseDiffOnChainStateOrResultGet,
 				},
+			},
+			x402: {
+				post: createX402PurchasePost,
 			},
 			'request-refund': {
 				post: requestPurchaseRefundPost,
