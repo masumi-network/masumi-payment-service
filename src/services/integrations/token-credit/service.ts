@@ -1,7 +1,7 @@
 import { creditTokenRepository } from '@/repositories/creditTokens';
 import { InsufficientFundsError } from '@/utils/errors/insufficient-funds-error';
 import { logger } from '@/utils/logger';
-import { Network, PricingType } from '@/generated/prisma/client';
+import { Network, PricingType, PurchasingAction } from '@/generated/prisma/client';
 import createHttpError from 'http-errors';
 export async function handlePurchaseCreditInit({
 	id,
@@ -19,6 +19,10 @@ export async function handlePurchaseCreditInit({
 	unlockTime,
 	inputHash,
 	pricingType,
+	initialNextAction,
+	collateralReturnLovelace,
+	buyerWalletAddress,
+	buyerWalletVkey,
 }: {
 	id: string;
 	walletScopeIds: string[] | null;
@@ -35,6 +39,10 @@ export async function handlePurchaseCreditInit({
 	unlockTime: bigint;
 	inputHash: string;
 	pricingType: PricingType;
+	initialNextAction?: PurchasingAction;
+	collateralReturnLovelace?: bigint;
+	buyerWalletAddress?: string;
+	buyerWalletVkey?: string;
 }) {
 	let remainingAttempts = 5;
 	while (remainingAttempts > 0) {
@@ -55,6 +63,10 @@ export async function handlePurchaseCreditInit({
 				unlockTime,
 				inputHash,
 				pricingType,
+				initialNextAction,
+				collateralReturnLovelace,
+				buyerWalletAddress,
+				buyerWalletVkey,
 			});
 		} catch (error) {
 			if (error instanceof InsufficientFundsError) {
