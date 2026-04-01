@@ -103,6 +103,9 @@ function serializeX402PurchaseResponse(
 	purchaseRequest: PurchaseRequestResponseRecord,
 	agentIdentifier: string,
 	unsignedTxCbor: string,
+	overrides?: {
+		collateralReturnLovelace?: bigint;
+	},
 ) {
 	const timestamps = transformPurchaseGetTimestamps(purchaseRequest);
 	const amounts = transformPurchaseGetAmounts(purchaseRequest);
@@ -126,7 +129,7 @@ function serializeX402PurchaseResponse(
 		onChainStateOrResultLastChangedAt: purchaseRequest.onChainStateOrResultLastChangedAt,
 		requestedById: purchaseRequest.requestedById,
 		onChainState: purchaseRequest.onChainState,
-		collateralReturnLovelace: timestamps.collateralReturnLovelace,
+		collateralReturnLovelace: overrides?.collateralReturnLovelace?.toString() ?? timestamps.collateralReturnLovelace,
 		cooldownTime: timestamps.cooldownTime,
 		cooldownTimeOtherParty: timestamps.cooldownTimeOtherParty,
 		inputHash: purchaseRequest.inputHash,
@@ -161,6 +164,59 @@ function serializeX402PurchaseResponse(
 		metadata: purchaseRequest.metadata,
 		unsignedTxCbor,
 	};
+}
+
+async function throwExistingX402PurchaseError({
+	existingPurchaseRequest,
+	input,
+	paymentSource,
+}: {
+	existingPurchaseRequest: PurchaseRequestResponseRecord;
+	input: z.infer<typeof createX402PurchaseSchemaInput>;
+	paymentSource: {
+		smartContractAddress: string;
+		PaymentSourceConfig: { rpcProviderApiKey: string };
+	};
+}): Promise<never> {
+	let unsignedTxCbor = '';
+	let collateralReturnLovelaceOverride: bigint | undefined;
+	const canRebuildUnsignedTx =
+		existingPurchaseRequest.NextAction.requestedAction === PurchasingAction.ExternalFundsLockingInitiated &&
+		existingPurchaseRequest.buyerWalletAddress != null &&
+		existingPurchaseRequest.buyerWalletAddress === input.buyerAddress &&
+		existingPurchaseRequest.CurrentTransaction == null;
+
+	if (canRebuildUnsignedTx) {
+		try {
+			const blockchainProvider = new BlockfrostProvider(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
+			const coinsPerUtxoSize = await getCoinsPerUtxoSize(blockchainProvider);
+
+			const rebuiltTransaction = await buildX402FundsLockingTransaction({
+				purchaseRequestId: existingPurchaseRequest.id,
+				buyerAddress: input.buyerAddress,
+				blockchainProvider,
+				network: input.network,
+				scriptAddress: paymentSource.smartContractAddress,
+				coinsPerUtxoSize,
+				persistState: false,
+			});
+			unsignedTxCbor = rebuiltTransaction.unsignedTxCbor;
+			collateralReturnLovelaceOverride = rebuiltTransaction.collateralReturnLovelace;
+		} catch (error) {
+			logger.warn('Unable to rebuild unsigned x402 tx for existing purchase', {
+				error,
+				purchaseRequestId: existingPurchaseRequest.id,
+			});
+		}
+	}
+
+	throw new HttpExistsError(
+		'Purchase exists',
+		existingPurchaseRequest.id,
+		serializeX402PurchaseResponse(existingPurchaseRequest, input.agentIdentifier, unsignedTxCbor, {
+			collateralReturnLovelace: collateralReturnLovelaceOverride,
+		}),
+	);
 }
 
 export const createX402PurchasePost = payAuthenticatedEndpointFactory.build({
@@ -206,34 +262,11 @@ export const createX402PurchasePost = payAuthenticatedEndpointFactory.build({
 				include: purchaseRequestResponseInclude,
 			});
 			if (existingPurchaseRequest != null) {
-				let unsignedTxCbor = '';
-				const canRebuildUnsignedTx =
-					existingPurchaseRequest.NextAction.requestedAction === PurchasingAction.ExternalFundsLockingInitiated &&
-					existingPurchaseRequest.buyerWalletAddress != null &&
-					existingPurchaseRequest.buyerWalletAddress === input.buyerAddress &&
-					existingPurchaseRequest.CurrentTransaction == null;
-
-				if (canRebuildUnsignedTx) {
-					const blockchainProvider = new BlockfrostProvider(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
-					const coinsPerUtxoSize = await getCoinsPerUtxoSize(blockchainProvider);
-
-					const rebuiltTransaction = await buildX402FundsLockingTransaction({
-						purchaseRequestId: existingPurchaseRequest.id,
-						buyerAddress: input.buyerAddress,
-						blockchainProvider,
-						network: input.network,
-						scriptAddress: paymentSource.smartContractAddress,
-						coinsPerUtxoSize,
-						persistState: false,
-					});
-					unsignedTxCbor = rebuiltTransaction.unsignedTxCbor;
-				}
-
-				throw new HttpExistsError(
-					'Purchase exists',
-					existingPurchaseRequest.id,
-					serializeX402PurchaseResponse(existingPurchaseRequest, input.agentIdentifier, unsignedTxCbor),
-				);
+				await throwExistingX402PurchaseError({
+					existingPurchaseRequest,
+					input,
+					paymentSource,
+				});
 			}
 
 			const wallets = await prisma.hotWallet.aggregate({

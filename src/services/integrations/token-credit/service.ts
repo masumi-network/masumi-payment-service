@@ -3,6 +3,7 @@ import { InsufficientFundsError } from '@/utils/errors/insufficient-funds-error'
 import { logger } from '@/utils/logger';
 import { Network, PricingType, PurchasingAction } from '@/generated/prisma/client';
 import createHttpError from 'http-errors';
+
 export async function handlePurchaseCreditInit({
 	id,
 	walletScopeIds,
