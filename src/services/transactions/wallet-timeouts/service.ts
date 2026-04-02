@@ -172,6 +172,7 @@ export async function updateWalletTransactionHash() {
 						requestedAction: {
 							in: [
 								PurchasingAction.FundsLockingInitiated,
+								PurchasingAction.ExternalFundsLockingInitiated,
 								PurchasingAction.WithdrawRefundInitiated,
 								PurchasingAction.SetRefundRequestedInitiated,
 								PurchasingAction.UnSetRefundRequestedInitiated,
@@ -202,9 +203,23 @@ export async function updateWalletTransactionHash() {
 						},
 					],
 				},
-				include: { SmartContractWallet: { where: { deletedAt: null } } },
+				include: { SmartContractWallet: { where: { deletedAt: null } }, NextAction: true },
 			});
 			for (const purchaseRequest of result) {
+				// x402: no hot wallet — buyer timed out, move to WaitingForManualAction
+				if (purchaseRequest.NextAction.requestedAction === PurchasingAction.ExternalFundsLockingInitiated) {
+					await prisma.purchaseRequest.update({
+						where: { id: purchaseRequest.id },
+						data: {
+							...connectPreviousAction(purchaseRequest.nextActionId),
+							...createNextPurchaseAction(PurchasingAction.WaitingForManualAction, {
+								errorNote: 'x402 purchase timed out: buyer did not sign or submit the transaction in time',
+								errorType: PurchaseErrorType.Unknown,
+							}),
+						},
+					});
+					continue;
+				}
 				if (purchaseRequest.currentTransactionId == null) {
 					if (
 						purchaseRequest.SmartContractWallet != null &&

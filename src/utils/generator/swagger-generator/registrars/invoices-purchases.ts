@@ -25,6 +25,7 @@ import {
 	queryPurchaseRequestSchemaInput,
 	queryPurchaseRequestSchemaOutput,
 } from '@/routes/api/purchases/schemas';
+import { createX402PurchaseSchemaInput, createX402PurchaseSchemaOutput } from '@/routes/api/purchases/x402';
 import {
 	requestPurchaseRefundSchemaInput,
 	requestPurchaseRefundSchemaOutput,
@@ -814,6 +815,85 @@ export function registerInvoiceAndPurchasePaths({ registry, apiKeyAuth }: Swagge
 							id: 'cuid_v2_auto_generated',
 							object: purchaseResponseSchemaExample,
 						},
+					},
+				},
+			},
+			500: {
+				description: 'Internal Server Error',
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'post',
+		path: '/purchase/x402',
+		description:
+			'Creates a purchase using the x402 payment protocol. Returns an unsigned Cardano transaction CBOR that the buyer must sign with their external wallet and submit to the network.',
+		summary: 'Create a new x402 purchase request and get an unsigned transaction. (+PAY access required)',
+		tags: ['purchase'],
+		request: {
+			body: {
+				description: '',
+				content: {
+					'application/json': {
+						schema: createX402PurchaseSchemaInput.openapi({
+							example: {
+								identifierFromPurchaser: 'aabbaabb11221122aabb',
+								network: Network.Preprod,
+								sellerVkey: 'seller_vkey',
+								blockchainIdentifier: 'blockchain_identifier',
+								payByTime: (1713626260).toString(),
+								submitResultTime: (1713636260).toString(),
+								unlockTime: (1713636260).toString(),
+								externalDisputeUnlockTime: (1713636260).toString(),
+								agentIdentifier: 'agent_identifier',
+								inputHash: '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
+								buyerAddress: 'addr_test1qp...',
+							},
+						}),
+					},
+				},
+			},
+		},
+		security: [{ [apiKeyAuth.name]: [] }],
+		responses: {
+			200: {
+				description: 'Purchase request created with unsigned transaction CBOR',
+				content: {
+					'application/json': {
+						schema: z
+							.object({
+								data: createX402PurchaseSchemaOutput,
+								status: z.string(),
+							})
+							.openapi({
+								example: {
+									status: 'Success',
+									data: {
+										...purchaseResponseSchemaExample,
+										unsignedTxCbor: '84a500818258...',
+									},
+								},
+							}),
+					},
+				},
+			},
+			400: {
+				description: 'Bad Request (possible parameters missing or invalid)',
+			},
+			401: {
+				description: 'Unauthorized',
+			},
+			409: {
+				description: 'Conflict (purchase request already exists)',
+				content: {
+					'application/json': {
+						schema: z.object({
+							status: z.string(),
+							error: z.object({ message: z.string() }),
+							id: z.string(),
+							object: createX402PurchaseSchemaOutput,
+						}),
 					},
 				},
 			},

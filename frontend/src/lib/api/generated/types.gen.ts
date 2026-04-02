@@ -634,7 +634,7 @@ export type Purchase = {
         /**
          * Next action required for this purchase
          */
-        requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'FundsLockingRequested' | 'FundsLockingInitiated' | 'SetRefundRequestedRequested' | 'SetRefundRequestedInitiated' | 'UnSetRefundRequestedRequested' | 'UnSetRefundRequestedInitiated' | 'WithdrawRefundRequested' | 'WithdrawRefundInitiated';
+        requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'FundsLockingRequested' | 'FundsLockingInitiated' | 'ExternalFundsLockingInitiated' | 'SetRefundRequestedRequested' | 'SetRefundRequestedInitiated' | 'UnSetRefundRequestedRequested' | 'UnSetRefundRequestedInitiated' | 'WithdrawRefundRequested' | 'WithdrawRefundInitiated';
         /**
          * Type of error that occurred, if any
          */
@@ -663,7 +663,7 @@ export type Purchase = {
         /**
          * Next action required for this purchase
          */
-        requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'FundsLockingRequested' | 'FundsLockingInitiated' | 'SetRefundRequestedRequested' | 'SetRefundRequestedInitiated' | 'UnSetRefundRequestedRequested' | 'UnSetRefundRequestedInitiated' | 'WithdrawRefundRequested' | 'WithdrawRefundInitiated';
+        requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'FundsLockingRequested' | 'FundsLockingInitiated' | 'ExternalFundsLockingInitiated' | 'SetRefundRequestedRequested' | 'SetRefundRequestedInitiated' | 'UnSetRefundRequestedRequested' | 'UnSetRefundRequestedInitiated' | 'WithdrawRefundRequested' | 'WithdrawRefundInitiated';
         /**
          * Type of error that occurred, if any
          */
@@ -4747,7 +4747,7 @@ export type PostPurchaseErrorStateRecoveryResponses = {
                 /**
                  * Next action required for this purchase
                  */
-                requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'FundsLockingRequested' | 'FundsLockingInitiated' | 'SetRefundRequestedRequested' | 'SetRefundRequestedInitiated' | 'UnSetRefundRequestedRequested' | 'UnSetRefundRequestedInitiated' | 'WithdrawRefundRequested' | 'WithdrawRefundInitiated';
+                requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'FundsLockingRequested' | 'FundsLockingInitiated' | 'ExternalFundsLockingInitiated' | 'SetRefundRequestedRequested' | 'SetRefundRequestedInitiated' | 'UnSetRefundRequestedRequested' | 'UnSetRefundRequestedInitiated' | 'WithdrawRefundRequested' | 'WithdrawRefundInitiated';
                 /**
                  * Type of error that occurred, if any
                  */
@@ -5802,7 +5802,7 @@ export type PostPurchaseErrors = {
                 /**
                  * Next action required for this purchase
                  */
-                requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'FundsLockingRequested' | 'FundsLockingInitiated' | 'SetRefundRequestedRequested' | 'SetRefundRequestedInitiated' | 'UnSetRefundRequestedRequested' | 'UnSetRefundRequestedInitiated' | 'WithdrawRefundRequested' | 'WithdrawRefundInitiated';
+                requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'FundsLockingRequested' | 'FundsLockingInitiated' | 'ExternalFundsLockingInitiated' | 'SetRefundRequestedRequested' | 'SetRefundRequestedInitiated' | 'UnSetRefundRequestedRequested' | 'UnSetRefundRequestedInitiated' | 'WithdrawRefundRequested' | 'WithdrawRefundInitiated';
                 /**
                  * Type of error that occurred, if any
                  */
@@ -6028,7 +6028,7 @@ export type PostPurchaseResponses = {
                 /**
                  * Next action required for this purchase
                  */
-                requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'FundsLockingRequested' | 'FundsLockingInitiated' | 'SetRefundRequestedRequested' | 'SetRefundRequestedInitiated' | 'UnSetRefundRequestedRequested' | 'UnSetRefundRequestedInitiated' | 'WithdrawRefundRequested' | 'WithdrawRefundInitiated';
+                requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'FundsLockingRequested' | 'FundsLockingInitiated' | 'ExternalFundsLockingInitiated' | 'SetRefundRequestedRequested' | 'SetRefundRequestedInitiated' | 'UnSetRefundRequestedRequested' | 'UnSetRefundRequestedInitiated' | 'WithdrawRefundRequested' | 'WithdrawRefundInitiated';
                 /**
                  * Type of error that occurred, if any
                  */
@@ -6329,6 +6329,545 @@ export type GetPurchaseDiffOnchainStateOrResultResponses = {
 
 export type GetPurchaseDiffOnchainStateOrResultResponse = GetPurchaseDiffOnchainStateOrResultResponses[keyof GetPurchaseDiffOnchainStateOrResultResponses];
 
+export type PostPurchaseX402Data = {
+    body?: {
+        /**
+         * The identifier of the purchase. Is provided by the seller
+         */
+        blockchainIdentifier: string;
+        /**
+         * The network the transaction will be made on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The hash of the input data of the purchase, should be sha256 hash of the input data, therefore needs to be in hex string format
+         */
+        inputHash: string;
+        /**
+         * The verification key of the seller
+         */
+        sellerVkey: string;
+        /**
+         * The identifier of the agent that is being purchased
+         */
+        agentIdentifier: string;
+        /**
+         * The amounts to be paid for the purchase
+         */
+        Amounts?: Array<{
+            /**
+             * Amount of the asset in smallest unit (e.g., lovelace for ADA)
+             */
+            amount: string;
+            /**
+             * Asset policy id + asset name concatenated. Empty string for ADA/lovelace
+             */
+            unit: string;
+        }>;
+        /**
+         * The time after which the purchase will be unlocked. In unix time (number)
+         */
+        unlockTime: string;
+        /**
+         * The time after which the purchase will be unlocked for external dispute. In unix time (number)
+         */
+        externalDisputeUnlockTime: string;
+        /**
+         * The time by which the result has to be submitted. In unix time (number)
+         */
+        submitResultTime: string;
+        /**
+         * The time after which the purchase has to be submitted to the smart contract
+         */
+        payByTime: string;
+        /**
+         * Metadata to be stored with the purchase request
+         */
+        metadata?: string;
+        /**
+         * The nonce of the purchaser. It must be in hex format
+         */
+        identifierFromPurchaser: string;
+        /**
+         * The buyer's external Cardano wallet address (bech32). UTXOs will be fetched from this address to build the unsigned transaction.
+         */
+        buyerAddress: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/purchase/x402';
+};
+
+export type PostPurchaseX402Errors = {
+    /**
+     * Bad Request (possible parameters missing or invalid)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Conflict (purchase request already exists)
+     */
+    409: {
+        status: string;
+        error: {
+            message: string;
+        };
+        id: string;
+        object: {
+            /**
+             * Unique identifier for the purchase
+             */
+            id: string;
+            /**
+             * Timestamp when the purchase was created
+             */
+            createdAt: Date;
+            /**
+             * Timestamp when the purchase was last updated
+             */
+            updatedAt: Date;
+            /**
+             * Unique blockchain identifier for the purchase
+             */
+            blockchainIdentifier: string;
+            /**
+             * Identifier of the agent that is being purchased
+             */
+            agentIdentifier: string | null;
+            /**
+             * Pricing type of the agent (Fixed, Free, or Dynamic)
+             */
+            pricingType: 'Fixed' | 'Free' | 'Dynamic';
+            /**
+             * Timestamp when the purchase was last checked on-chain. Null if never checked
+             */
+            lastCheckedAt: Date | null;
+            /**
+             * Unix timestamp (in milliseconds) by which the buyer must submit the payment transaction. Null if not set
+             */
+            payByTime: string | null;
+            /**
+             * Unix timestamp (in milliseconds) by which the seller must submit the result
+             */
+            submitResultTime: string;
+            /**
+             * Unix timestamp (in milliseconds) after which funds can be unlocked if no disputes
+             */
+            unlockTime: string;
+            /**
+             * Unix timestamp (in milliseconds) after which external dispute resolution can occur
+             */
+            externalDisputeUnlockTime: string;
+            /**
+             * Total Cardano transaction fees paid by the buyer in ADA (sum of all confirmed transactions initiated by buyer)
+             */
+            totalBuyerCardanoFees: number;
+            /**
+             * Total Cardano transaction fees paid by the seller in ADA (sum of all confirmed transactions initiated by seller)
+             */
+            totalSellerCardanoFees: number;
+            /**
+             * Timestamp when the next action or on-chain state or result was last changed
+             */
+            nextActionOrOnChainStateOrResultLastChangedAt: Date;
+            /**
+             * Timestamp when the next action was last changed
+             */
+            nextActionLastChangedAt: Date;
+            /**
+             * Timestamp when the on-chain state or result was last changed
+             */
+            onChainStateOrResultLastChangedAt: Date;
+            /**
+             * ID of the API key that created this purchase
+             */
+            requestedById: string;
+            /**
+             * Current state of the purchase on the blockchain. Null if not yet on-chain
+             */
+            onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+            /**
+             * Amount of collateral to return in lovelace. Null if no collateral
+             */
+            collateralReturnLovelace: string | null;
+            /**
+             * Cooldown period in milliseconds for the buyer to dispute
+             */
+            cooldownTime: number;
+            /**
+             * Cooldown period in milliseconds for the seller to dispute
+             */
+            cooldownTimeOtherParty: number;
+            /**
+             * SHA256 hash of the input data for the purchase (hex string)
+             */
+            inputHash: string;
+            /**
+             * SHA256 hash of the result submitted by the seller (hex string)
+             */
+            resultHash: string | null;
+            /**
+             * Next action required for this purchase
+             */
+            NextAction: {
+                /**
+                 * Next action required for this purchase
+                 */
+                requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'FundsLockingRequested' | 'FundsLockingInitiated' | 'ExternalFundsLockingInitiated' | 'SetRefundRequestedRequested' | 'SetRefundRequestedInitiated' | 'UnSetRefundRequestedRequested' | 'UnSetRefundRequestedInitiated' | 'WithdrawRefundRequested' | 'WithdrawRefundInitiated';
+                /**
+                 * Type of error that occurred, if any
+                 */
+                errorType: 'NetworkError' | 'InsufficientFunds' | 'Unknown' | null;
+                /**
+                 * Additional details about the error, if any
+                 */
+                errorNote: string | null;
+            };
+            /**
+             * Current active transaction for this purchase. Null if no transaction in progress
+             */
+            CurrentTransaction: {
+                /**
+                 * Unique identifier for the transaction
+                 */
+                id: string;
+                /**
+                 * Timestamp when the transaction was created
+                 */
+                createdAt: Date;
+                /**
+                 * Timestamp when the transaction was last updated
+                 */
+                updatedAt: Date;
+                /**
+                 * Cardano transaction hash
+                 */
+                txHash: string | null;
+                /**
+                 * Current status of the transaction
+                 */
+                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
+                /**
+                 * Fees of the transaction
+                 */
+                fees: string | null;
+                /**
+                 * Block height of the transaction
+                 */
+                blockHeight: number | null;
+                /**
+                 * Block time of the transaction
+                 */
+                blockTime: number | null;
+                /**
+                 * Previous on-chain state before this transaction
+                 */
+                previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+                /**
+                 * New on-chain state of this transaction
+                 */
+                newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+                /**
+                 * Number of block confirmations for this transaction
+                 */
+                confirmations: number | null;
+            } | null;
+            PaidFunds: Array<{
+                amount: string;
+                unit: string;
+            }>;
+            WithdrawnForSeller: Array<{
+                amount: string;
+                unit: string;
+            }>;
+            WithdrawnForBuyer: Array<{
+                amount: string;
+                unit: string;
+            }>;
+            PaymentSource: {
+                id: string;
+                network: 'Preprod' | 'Mainnet';
+                smartContractAddress: string;
+                policyId: string | null;
+            };
+            /**
+             * Seller wallet information. Null if not set
+             */
+            SellerWallet: {
+                /**
+                 * Unique identifier for the seller wallet
+                 */
+                id: string;
+                /**
+                 * Payment key hash of the seller wallet
+                 */
+                walletVkey: string;
+            } | null;
+            /**
+             * Smart contract wallet (seller wallet) managing this purchase. Null if not set
+             */
+            SmartContractWallet: {
+                /**
+                 * Unique identifier for the smart contract wallet
+                 */
+                id: string;
+                /**
+                 * Payment key hash of the smart contract wallet
+                 */
+                walletVkey: string;
+                /**
+                 * Cardano address of the smart contract wallet
+                 */
+                walletAddress: string;
+            } | null;
+            /**
+             * Optional metadata stored with the purchase for additional context. Null if not provided
+             */
+            metadata: string | null;
+            /**
+             * Hex-encoded unsigned transaction CBOR. Sign with your Cardano wallet and submit to the network.
+             */
+            unsignedTxCbor: string;
+        };
+    };
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type PostPurchaseX402Error = PostPurchaseX402Errors[keyof PostPurchaseX402Errors];
+
+export type PostPurchaseX402Responses = {
+    /**
+     * Purchase request created with unsigned transaction CBOR
+     */
+    200: {
+        data: {
+            /**
+             * Unique identifier for the purchase
+             */
+            id: string;
+            /**
+             * Timestamp when the purchase was created
+             */
+            createdAt: Date;
+            /**
+             * Timestamp when the purchase was last updated
+             */
+            updatedAt: Date;
+            /**
+             * Unique blockchain identifier for the purchase
+             */
+            blockchainIdentifier: string;
+            /**
+             * Identifier of the agent that is being purchased
+             */
+            agentIdentifier: string | null;
+            /**
+             * Pricing type of the agent (Fixed, Free, or Dynamic)
+             */
+            pricingType: 'Fixed' | 'Free' | 'Dynamic';
+            /**
+             * Timestamp when the purchase was last checked on-chain. Null if never checked
+             */
+            lastCheckedAt: Date | null;
+            /**
+             * Unix timestamp (in milliseconds) by which the buyer must submit the payment transaction. Null if not set
+             */
+            payByTime: string | null;
+            /**
+             * Unix timestamp (in milliseconds) by which the seller must submit the result
+             */
+            submitResultTime: string;
+            /**
+             * Unix timestamp (in milliseconds) after which funds can be unlocked if no disputes
+             */
+            unlockTime: string;
+            /**
+             * Unix timestamp (in milliseconds) after which external dispute resolution can occur
+             */
+            externalDisputeUnlockTime: string;
+            /**
+             * Total Cardano transaction fees paid by the buyer in ADA (sum of all confirmed transactions initiated by buyer)
+             */
+            totalBuyerCardanoFees: number;
+            /**
+             * Total Cardano transaction fees paid by the seller in ADA (sum of all confirmed transactions initiated by seller)
+             */
+            totalSellerCardanoFees: number;
+            /**
+             * Timestamp when the next action or on-chain state or result was last changed
+             */
+            nextActionOrOnChainStateOrResultLastChangedAt: Date;
+            /**
+             * Timestamp when the next action was last changed
+             */
+            nextActionLastChangedAt: Date;
+            /**
+             * Timestamp when the on-chain state or result was last changed
+             */
+            onChainStateOrResultLastChangedAt: Date;
+            /**
+             * ID of the API key that created this purchase
+             */
+            requestedById: string;
+            /**
+             * Current state of the purchase on the blockchain. Null if not yet on-chain
+             */
+            onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+            /**
+             * Amount of collateral to return in lovelace. Null if no collateral
+             */
+            collateralReturnLovelace: string | null;
+            /**
+             * Cooldown period in milliseconds for the buyer to dispute
+             */
+            cooldownTime: number;
+            /**
+             * Cooldown period in milliseconds for the seller to dispute
+             */
+            cooldownTimeOtherParty: number;
+            /**
+             * SHA256 hash of the input data for the purchase (hex string)
+             */
+            inputHash: string;
+            /**
+             * SHA256 hash of the result submitted by the seller (hex string)
+             */
+            resultHash: string | null;
+            /**
+             * Next action required for this purchase
+             */
+            NextAction: {
+                /**
+                 * Next action required for this purchase
+                 */
+                requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'FundsLockingRequested' | 'FundsLockingInitiated' | 'ExternalFundsLockingInitiated' | 'SetRefundRequestedRequested' | 'SetRefundRequestedInitiated' | 'UnSetRefundRequestedRequested' | 'UnSetRefundRequestedInitiated' | 'WithdrawRefundRequested' | 'WithdrawRefundInitiated';
+                /**
+                 * Type of error that occurred, if any
+                 */
+                errorType: 'NetworkError' | 'InsufficientFunds' | 'Unknown' | null;
+                /**
+                 * Additional details about the error, if any
+                 */
+                errorNote: string | null;
+            };
+            /**
+             * Current active transaction for this purchase. Null if no transaction in progress
+             */
+            CurrentTransaction: {
+                /**
+                 * Unique identifier for the transaction
+                 */
+                id: string;
+                /**
+                 * Timestamp when the transaction was created
+                 */
+                createdAt: Date;
+                /**
+                 * Timestamp when the transaction was last updated
+                 */
+                updatedAt: Date;
+                /**
+                 * Cardano transaction hash
+                 */
+                txHash: string | null;
+                /**
+                 * Current status of the transaction
+                 */
+                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
+                /**
+                 * Fees of the transaction
+                 */
+                fees: string | null;
+                /**
+                 * Block height of the transaction
+                 */
+                blockHeight: number | null;
+                /**
+                 * Block time of the transaction
+                 */
+                blockTime: number | null;
+                /**
+                 * Previous on-chain state before this transaction
+                 */
+                previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+                /**
+                 * New on-chain state of this transaction
+                 */
+                newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+                /**
+                 * Number of block confirmations for this transaction
+                 */
+                confirmations: number | null;
+            } | null;
+            PaidFunds: Array<{
+                amount: string;
+                unit: string;
+            }>;
+            WithdrawnForSeller: Array<{
+                amount: string;
+                unit: string;
+            }>;
+            WithdrawnForBuyer: Array<{
+                amount: string;
+                unit: string;
+            }>;
+            PaymentSource: {
+                id: string;
+                network: 'Preprod' | 'Mainnet';
+                smartContractAddress: string;
+                policyId: string | null;
+            };
+            /**
+             * Seller wallet information. Null if not set
+             */
+            SellerWallet: {
+                /**
+                 * Unique identifier for the seller wallet
+                 */
+                id: string;
+                /**
+                 * Payment key hash of the seller wallet
+                 */
+                walletVkey: string;
+            } | null;
+            /**
+             * Smart contract wallet (seller wallet) managing this purchase. Null if not set
+             */
+            SmartContractWallet: {
+                /**
+                 * Unique identifier for the smart contract wallet
+                 */
+                id: string;
+                /**
+                 * Payment key hash of the smart contract wallet
+                 */
+                walletVkey: string;
+                /**
+                 * Cardano address of the smart contract wallet
+                 */
+                walletAddress: string;
+            } | null;
+            /**
+             * Optional metadata stored with the purchase for additional context. Null if not provided
+             */
+            metadata: string | null;
+            /**
+             * Hex-encoded unsigned transaction CBOR. Sign with your Cardano wallet and submit to the network.
+             */
+            unsignedTxCbor: string;
+        };
+        status: string;
+    };
+};
+
+export type PostPurchaseX402Response = PostPurchaseX402Responses[keyof PostPurchaseX402Responses];
+
 export type PostPurchaseRequestRefundData = {
     body?: {
         /**
@@ -6473,7 +7012,7 @@ export type PostPurchaseRequestRefundResponses = {
                 /**
                  * Next action required for this purchase
                  */
-                requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'FundsLockingRequested' | 'FundsLockingInitiated' | 'SetRefundRequestedRequested' | 'SetRefundRequestedInitiated' | 'UnSetRefundRequestedRequested' | 'UnSetRefundRequestedInitiated' | 'WithdrawRefundRequested' | 'WithdrawRefundInitiated';
+                requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'FundsLockingRequested' | 'FundsLockingInitiated' | 'ExternalFundsLockingInitiated' | 'SetRefundRequestedRequested' | 'SetRefundRequestedInitiated' | 'UnSetRefundRequestedRequested' | 'UnSetRefundRequestedInitiated' | 'WithdrawRefundRequested' | 'WithdrawRefundInitiated';
                 /**
                  * Type of error that occurred, if any
                  */
@@ -6735,7 +7274,7 @@ export type PostPurchaseCancelRefundRequestResponses = {
                 /**
                  * Next action required for this purchase
                  */
-                requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'FundsLockingRequested' | 'FundsLockingInitiated' | 'SetRefundRequestedRequested' | 'SetRefundRequestedInitiated' | 'UnSetRefundRequestedRequested' | 'UnSetRefundRequestedInitiated' | 'WithdrawRefundRequested' | 'WithdrawRefundInitiated';
+                requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'FundsLockingRequested' | 'FundsLockingInitiated' | 'ExternalFundsLockingInitiated' | 'SetRefundRequestedRequested' | 'SetRefundRequestedInitiated' | 'UnSetRefundRequestedRequested' | 'UnSetRefundRequestedInitiated' | 'WithdrawRefundRequested' | 'WithdrawRefundInitiated';
                 /**
                  * Type of error that occurred, if any
                  */
