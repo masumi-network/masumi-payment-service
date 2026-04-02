@@ -1,6 +1,6 @@
 import { prisma } from '@/utils/db';
 import { logger } from '@/utils/logger';
-import { CustomHydraHead, HydraProvider, HydraHeadEvent, HydraNodeEvent } from '@/lib/hydra';
+import { CustomHydraHead, HydraProvider, HydraHeadEvent, HydraNodeEvent, StatusChangeData } from '@/lib/hydra';
 import { HydraHeadStatus, Prisma, TransactionStatus } from '@/generated/prisma/client';
 import { convertNewPaymentActionAndError, convertNewPurchasingActionAndError } from '@/utils/logic/state-transitions';
 import { CONSTANTS } from '@/utils/config';
@@ -39,15 +39,6 @@ export class HydraConnectionManager {
 		for (const head of enabledHeads) {
 			if (!head.LocalParticipant) {
 				logger.warn(`[HydraConnectionManager] Head ${head.id} has no local participant, skipping`);
-				continue;
-			}
-
-			const isReachable = await this.probeNode(head.LocalParticipant.nodeHttpUrl);
-			if (!isReachable) {
-				logger.warn(
-					`[HydraConnectionManager] Head ${head.id} local node unreachable` +
-						` at ${head.LocalParticipant.nodeHttpUrl}`,
-				);
 				continue;
 			}
 
@@ -165,15 +156,32 @@ export class HydraConnectionManager {
 	}
 
 	private setupEventHandlers(hydraHeadId: string, head: CustomHydraHead): void {
-		head.on(HydraHeadEvent.StatusChange, (status: HydraHeadStatus) => {
+		head.on(HydraHeadEvent.StatusChange, (data: StatusChangeData) => {
 			void (async () => {
-				logger.info(`[HydraConnectionManager] Head ${hydraHeadId} status changed to ${status}`);
+				const { status, headId, contestationDeadline, snapshotNumber } = data;
+				logger.info(`[HydraConnectionManager] Head ${hydraHeadId} status changed to ${status}`, {
+					headId,
+					contestationDeadline,
+					snapshotNumber,
+				});
 
 				try {
 					const updateData: HydraHeadUpdateInput = {
 						status,
 						latestActivityAt: new Date(),
 					};
+
+					if (headId) {
+						updateData.headId = headId;
+					}
+
+					if (contestationDeadline) {
+						updateData.contestationDeadline = new Date(contestationDeadline);
+					}
+
+					if (snapshotNumber) {
+						updateData.latestSnapshotNumber = BigInt(snapshotNumber);
+					}
 
 					if (status === HydraHeadStatus.Open) {
 						updateData.openedAt = new Date();

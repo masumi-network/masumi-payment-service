@@ -844,7 +844,7 @@ model HydraHead {
   hydraRelationId String
   HydraRelation   HydraRelation @relation(fields: [hydraRelationId], references: [id], onDelete: Cascade)
 
-  /// Hydra protocol head ID (assigned by Hydra node after Init)
+  /// Hydra head identifier (assigned after Init)
   headId String? @unique
 
   /// Current status of the Hydra head

@@ -1,3 +1,5 @@
+import { HydraHeadStatus } from '@/generated/prisma/client';
+
 export enum MessageTag {
 	Greetings = 'Greetings',
 	Init = 'Init',
@@ -44,6 +46,13 @@ export enum HydraHeadEvent {
 export enum HydraNodeEvent {
 	StatusChange = 'StatusChange',
 	TxConfirmed = 'TxConfirmed',
+}
+
+export interface StatusChangeData {
+	status: HydraHeadStatus;
+	headId?: string;
+	snapshotNumber?: number;
+	contestationDeadline?: string;
 }
 
 export enum HydraTransactionType {

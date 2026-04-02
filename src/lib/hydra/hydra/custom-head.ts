@@ -1,8 +1,14 @@
 import type { UTxO } from '@meshsdk/core';
 import { HydraHead } from './head';
 import { HydraNode } from './node';
-import { HydraTransaction, HydraTransactionType, HydraHeadEvent, HydraNodeEvent, HydraNodeConfig } from './types';
-import { HydraHeadStatus } from '@/generated/prisma/client';
+import {
+	HydraTransaction,
+	HydraTransactionType,
+	HydraHeadEvent,
+	HydraNodeEvent,
+	HydraNodeConfig,
+	StatusChangeData,
+} from './types';
 
 export class CustomHydraHead extends HydraHead<HydraNode> {
 	constructor(nodeConfigs: HydraNodeConfig[]) {
@@ -23,9 +29,9 @@ export class CustomHydraHead extends HydraHead<HydraNode> {
 	}
 
 	protected setupStatusChangeHandler(): void {
-		this.mainNode.on(HydraNodeEvent.StatusChange, (status: HydraHeadStatus) => {
-			this._status = status;
-			this.emit(HydraHeadEvent.StatusChange, this._status);
+		this.mainNode.on(HydraNodeEvent.StatusChange, (data: StatusChangeData) => {
+			this._status = data.status;
+			this.emit(HydraHeadEvent.StatusChange, data);
 		});
 	}
 

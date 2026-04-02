@@ -6,6 +6,10 @@ import { HydraHeadStatus } from '@/generated/prisma/client';
 export const messageSchema = z.looseObject({
 	tag: z.string(),
 	headStatus: z.string().optional(),
+	headId: z.string().optional(),
+	hydraHeadId: z.string().nullable().optional(),
+	snapshotNumber: z.number().optional(),
+	contestationDeadline: z.string().optional(),
 });
 
 export const hydraHeadStatusSchema = z.enum(Object.values(HydraHeadStatus));

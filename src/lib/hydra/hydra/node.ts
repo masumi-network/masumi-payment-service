@@ -9,7 +9,7 @@ import { castProtocol, Protocol, resolveTxHash, UTxO } from '@meshsdk/core';
 import { mapHydraUTxOToUTxO, mapUTxOToHydraUTxO } from './codec';
 import { Connection } from './connection';
 import { hydraHeadStatusSchema, messageSchema, snapshotConfirmedMessageSchema } from './schemas';
-import { HydraNodeEvent, HydraTransaction, HydraUTxO } from './types';
+import { HydraNodeEvent, HydraTransaction, HydraUTxO, StatusChangeData } from './types';
 import { jsonToString } from '@/utils/converter/json-to-string';
 import { HydraHeadStatus } from '@/generated/prisma/client';
 
@@ -59,10 +59,10 @@ export class HydraNode extends EventEmitter {
 	}
 
 	private processStatus(rawMessage: string) {
-		const newStatus = extractStatusFromRawMessage(rawMessage);
-		if (!!newStatus && newStatus !== this._status) {
-			this._status = newStatus;
-			this.emit(HydraNodeEvent.StatusChange, this._status);
+		const changeData = extractStatusChangeData(rawMessage);
+		if (changeData && changeData.status !== this._status) {
+			this._status = changeData.status;
+			this.emit(HydraNodeEvent.StatusChange, changeData);
 		}
 	}
 
@@ -341,7 +341,7 @@ function handleWsResponse(rawMessage: string, command: string, reject: (reason?:
 	}
 }
 
-function extractStatusFromRawMessage(rawMessage: string): HydraHeadStatus | null {
+function extractStatusChangeData(rawMessage: string): StatusChangeData | null {
 	try {
 		const message = JSON.parse(rawMessage);
 		const parsedMessage = messageSchema.parse(message);
@@ -370,7 +370,14 @@ function extractStatusFromRawMessage(rawMessage: string): HydraHeadStatus | null
 				break;
 		}
 
-		return newStatus;
+		if (!newStatus) return null;
+
+		return {
+			status: newStatus,
+			headId: parsedMessage.headId ?? parsedMessage.hydraHeadId ?? undefined,
+			snapshotNumber: parsedMessage.snapshotNumber,
+			contestationDeadline: parsedMessage.contestationDeadline,
+		};
 	} catch (error) {
 		console.error('[HydraNode] Error extracting status from message', error, rawMessage);
 		return null;
