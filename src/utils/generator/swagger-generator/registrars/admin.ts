@@ -18,6 +18,10 @@ import {
 	getWalletSchemaOutput,
 	patchWalletSchemaInput,
 	patchWalletSchemaOutput,
+	postWalletFundSchemaInput,
+	postWalletFundSchemaOutput,
+	getWalletFundSchemaInput,
+	getWalletFundSchemaOutput,
 } from '@/routes/api/wallet/schemas';
 import {
 	deleteWalletLowBalanceRuleSchemaInput,
@@ -64,6 +68,9 @@ import {
 	updateWalletBodyExample,
 	walletExample,
 	walletLowBalanceRuleExample,
+	fundTransferExample,
+	postWalletFundBodyExample,
+	getWalletFundQueryExample,
 } from '@/routes/api/wallet/examples';
 import { successResponse, type SwaggerRegistrarContext } from '../shared';
 
@@ -759,6 +766,56 @@ export function registerAdminPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 			},
 			500: {
 				description: 'Internal Server Error',
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'post',
+		path: '/wallet/fund',
+		description:
+			'Requests an asynchronous transfer of lovelace from a hot wallet to a target Cardano address. The wallet is locked immediately and the transfer is processed in the background. Poll GET /wallet/fund to check status.',
+		summary: 'Request a fund transfer from a wallet. (admin access required)',
+		tags: ['wallet'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			body: {
+				description: 'Fund transfer request',
+				content: {
+					'application/json': {
+						schema: postWalletFundSchemaInput.openapi({ example: postWalletFundBodyExample }),
+					},
+				},
+			},
+		},
+		responses: {
+			200: successResponse('Fund transfer requested', postWalletFundSchemaOutput, fundTransferExample),
+			400: {
+				description: 'Bad Request (lovelaceAmount below 2 ADA minimum)',
+			},
+			409: {
+				description: 'Conflict (wallet not found or currently locked by another operation)',
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'get',
+		path: '/wallet/fund',
+		description:
+			'Query the status of a fund transfer by id, or list all fund transfers for a wallet. Status values: Pending (queued), Pending with txHash (submitted to blockchain), Confirmed (on-chain), FailedViaManualReset (submission error), FailedViaTimeout (no confirmation within timeout).',
+		summary: 'Get fund transfer status or history. (admin access required)',
+		tags: ['wallet'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			query: getWalletFundSchemaInput.openapi({ example: getWalletFundQueryExample }),
+		},
+		responses: {
+			200: successResponse('Fund transfer list', getWalletFundSchemaOutput, {
+				transfers: [fundTransferExample],
+			}),
+			404: {
+				description: 'Fund transfer not found',
 			},
 		},
 	});
