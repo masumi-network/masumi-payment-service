@@ -3,7 +3,7 @@ import createHttpError from 'http-errors';
 import { prisma } from '@/utils/db';
 import { z } from '@/utils/zod-openapi';
 import { ApiKeyStatus, Network } from '@/generated/prisma/enums';
-import { generateSHA256Hash } from '@/utils/crypto';
+import { generateApiKeySecureHash } from '@/utils/crypto/api-key-hash';
 import { RequiredPermissionFlags, hasPermission, getPermissionName } from '@/utils/permissions';
 
 /**
@@ -52,7 +52,7 @@ export const authMiddleware = (required: RequiredPermissionFlags) =>
 
 				const apiKey = await prisma.apiKey.findUnique({
 					where: {
-						tokenHash: generateSHA256Hash(sentKey),
+						tokenHashSecure: await generateApiKeySecureHash(sentKey),
 					},
 					include: {
 						WalletScopes: { select: { hotWalletId: true } },
