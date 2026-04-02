@@ -424,10 +424,7 @@ export async function updateWalletTransactionHash() {
 		const lockedHotWallets = await prisma.hotWallet.findMany({
 			where: {
 				PendingTransaction: {
-					//if the transaction has been checked in the last 30 seconds, we skip it
-					lastCheckedAt: {
-						lte: new Date(Date.now() - 1000 * 60 * 1),
-					},
+					OR: [{ lastCheckedAt: null }, { lastCheckedAt: { lte: new Date(Date.now() - 1000 * 60 * 1) } }],
 				},
 				deletedAt: null,
 				OR: [

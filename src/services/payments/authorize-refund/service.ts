@@ -13,7 +13,17 @@ import { decodeV1ContractDatum, newCooldownTime } from '@/utils/converter/string
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
-import { sortAndLimitUtxos } from '@/utils/utxo';
+import {
+	sortAndLimitUtxos,
+	getLovelaceFromUtxo,
+	executeSingleUtxoSplit,
+	MIN_LOVELACE_FOR_SPLIT,
+	MIN_CHANGE_LOVELACE,
+} from '@/utils/utxo';
+import { getBlockfrostInstance } from '@/utils/blockfrost';
+import { generateWalletExtended } from '@/utils/generator/wallet-generator';
+import { errorToString } from '@/utils/converter/error-string-convert';
+import { SERVICE_CONSTANTS } from '@/utils/config';
 import { Mutex, tryAcquire, MutexInterface } from 'async-mutex';
 import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import {
@@ -170,7 +180,88 @@ export async function authorizeRefundV1() {
 
 						const { invalidBefore, invalidAfter } = createTxWindow(network);
 
-						const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
+						// Collateral must be a single UTXO with ≥5 ADA as required by the Cardano protocol.
+						const collateralMinLovelace = parseInt(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount, 10);
+						let currentUtxos = utxos;
+						let splitAttempts = 0;
+						const maxSplitAttempts = 3;
+						while (true) {
+							let limitedUtxos;
+							try {
+								limitedUtxos = sortAndLimitUtxos(
+									currentUtxos,
+									8_000_000,
+									collateralMinLovelace,
+									2, // collateral and inputs must be disjoint
+								);
+							} catch (utxoErr) {
+								logger.error('AuthorizeRefund sortAndLimitUtxos failed', {
+									requestId: request.id,
+									utxoCount: currentUtxos.length,
+									error: errorToString(utxoErr),
+								});
+								throw utxoErr;
+							}
+							if (limitedUtxos.length >= 2) {
+								break;
+							}
+							if (splitAttempts >= maxSplitAttempts) {
+								throw new Error(
+									`AuthorizeRefund requires at least 2 UTxOs (one for collateral ≥${collateralMinLovelace / 1_000_000} ADA, one for inputs). ` +
+										`Gave up after ${maxSplitAttempts} split attempt(s). Please add more funds.`,
+								);
+							}
+							const singleUtxo = currentUtxos.find((u) => getLovelaceFromUtxo(u) >= MIN_LOVELACE_FOR_SPLIT);
+							const singleUtxoLovelace = singleUtxo != null ? getLovelaceFromUtxo(singleUtxo) : 0;
+							if (singleUtxo != null && singleUtxoLovelace >= MIN_LOVELACE_FOR_SPLIT) {
+								splitAttempts++;
+								logger.info('AuthorizeRefund: splitting single UTXO for collateral/input disjointness', {
+									requestId: request.id,
+									lovelace: singleUtxoLovelace,
+									attempt: splitAttempts,
+								});
+								const estimatedFeeBuffer = 500_000;
+								const estimatedChange = singleUtxoLovelace - collateralMinLovelace - estimatedFeeBuffer;
+								if (estimatedChange < MIN_CHANGE_LOVELACE) {
+									throw new Error(
+										`Wallet balance too low to split: UTXO has ${singleUtxoLovelace} lovelace but splitting would leave ` +
+											`only ~${estimatedChange} lovelace as change (minimum ${MIN_CHANGE_LOVELACE} required). ` +
+											`Please add at least ${collateralMinLovelace / 1_000_000} ADA more to the wallet.`,
+									);
+								}
+								const blockfrost = getBlockfrostInstance(
+									paymentContract.network,
+									paymentContract.PaymentSourceConfig.rpcProviderApiKey,
+								);
+								await executeSingleUtxoSplit({
+									wallet,
+									blockchainProvider,
+									address,
+									network,
+									singleUtxo,
+									blockfrost,
+									splitOutputLovelace: collateralMinLovelace,
+								});
+								const refreshed = await generateWalletExtended(
+									paymentContract.network,
+									paymentContract.PaymentSourceConfig.rpcProviderApiKey,
+									request.SmartContractWallet!.Secret.encryptedMnemonic,
+								);
+								currentUtxos = refreshed.utxos;
+								continue;
+							}
+							throw new Error(
+								`AuthorizeRefund requires at least 2 UTxOs (one for collateral ≥${collateralMinLovelace / 1_000_000} ADA, one for inputs). ` +
+									'No single UTXO is large enough to split. Please add more funds.',
+							);
+						}
+
+						const limitedFilteredUtxos = sortAndLimitUtxos(currentUtxos, 8_000_000, collateralMinLovelace, 2);
+						const collateralUtxo = limitedFilteredUtxos[0];
+						const inputUtxos = limitedFilteredUtxos.slice(1);
+						if (collateralUtxo == null || inputUtxos.length === 0) {
+							throw new Error('Collateral or input UTXOs not found (expected at least 2 UTxOs)');
+						}
 
 						const unsignedTx = await generateMasumiSmartContractInteractionTransactionAutomaticFees(
 							'AuthorizeRefund',
@@ -179,8 +270,8 @@ export async function authorizeRefundV1() {
 							script,
 							address,
 							utxo,
-							limitedFilteredUtxos[0],
-							limitedFilteredUtxos,
+							collateralUtxo,
+							inputUtxos,
 							datum.value,
 							invalidBefore,
 							invalidAfter,
@@ -203,7 +294,7 @@ export async function authorizeRefundV1() {
 						});
 						//submit the transaction to the blockchain
 						const newTxHash = await wallet.submitTx(signedTx);
-						await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
+						await walletSession.evaluateProjectedBalance(unsignedTx, inputUtxos);
 						await prisma.paymentRequest.update({
 							where: { id: request.id },
 							data: updateCurrentTransactionHash(newTxHash),

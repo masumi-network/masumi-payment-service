@@ -18,6 +18,7 @@ import { lockAndQueryPurchases } from '@/utils/db/lock-and-query-purchases';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { sortAndLimitUtxos } from '@/utils/utxo';
+import { SERVICE_CONSTANTS } from '@/utils/config';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractWithdrawTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import {
@@ -138,7 +139,9 @@ async function processSingleRefundCollection(
 
 	const { invalidBefore, invalidAfter } = createTxWindow(network);
 
-	const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
+	// Collateral must be a single UTXO with ≥5 ADA as required by the Cardano protocol.
+	const collateralMinLovelace = parseInt(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount, 10);
+	const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000, collateralMinLovelace);
 	const collateralUtxo = limitedFilteredUtxos[0];
 	if (collateralUtxo == null) {
 		throw new Error('Collateral UTXO not found');

@@ -11,7 +11,16 @@ import { stringToMetadata, cleanMetadata } from '@/utils/converter/metadata-stri
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
-import { sortUtxosByLovelaceDesc } from '@/utils/utxo';
+import {
+	sortAndLimitUtxos,
+	getLovelaceFromUtxo,
+	MIN_LOVELACE_FOR_SPLIT,
+	executeSingleUtxoSplit,
+	MIN_CHANGE_LOVELACE,
+} from '@/utils/utxo';
+import { getBlockfrostInstance } from '@/utils/blockfrost';
+import { generateWalletExtended } from '@/utils/generator/wallet-generator';
+import { errorToString } from '@/utils/converter/error-string-convert';
 import {
 	createMeshProvider,
 	createPendingTransaction,
@@ -20,6 +29,22 @@ import {
 } from '@/services/shared';
 
 const mutex = new Mutex();
+
+/**
+ * Maximum number of UTXO-split attempts per registration.
+ * Prevents an infinite loop if the split keeps producing insufficient UTXOs.
+ */
+const MAX_SPLIT_ATTEMPTS = 3;
+
+function isLovelaceOnlyUtxo(utxo: UTxO): boolean {
+	return utxo.output.amount.every((a) => a.unit === 'lovelace' || a.unit === '');
+}
+
+/**
+ * Minimum lovelace per UTXO required for collateral selection.
+ * Cardano protocol requires collateral to cover at least 5 ADA (collateralAmount).
+ */
+const MIN_COLLATERAL_UTXO_LOVELACE = parseInt(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount, 10);
 
 function validateRegistrationPricing(request: {
 	Pricing: {
@@ -168,6 +193,10 @@ export async function registerAgentV1() {
 						}),
 					],
 					operations: registryRequests.map((request) => async () => {
+						logger.info('[register] start', {
+							requestId: request.id,
+							walletId: request.SmartContractWallet.id,
+						});
 						validateRegistrationPricing(request);
 						const walletSession = await loadHotWalletSession({
 							network: paymentSource.network,
@@ -180,15 +209,122 @@ export async function registerAgentV1() {
 						if (utxos.length === 0) {
 							throw new Error('No UTXOs found for the wallet');
 						}
+
 						const { script, policyId } = await getRegistryScriptFromNetworkHandlerV1(paymentSource);
+						let currentUtxos = utxos;
 
-						const limitedFilteredUtxos = sortUtxosByLovelaceDesc(utxos);
+						// Ensure 2+ UTXOs where the first qualifies as collateral (≥5 ADA).
+						// Collateral and inputs must be disjoint, so we need at least 2 UTxOs.
+						// Auto-split a large UTXO if possible, but cap attempts to avoid infinite loops.
+						let splitAttempts = 0;
+						while (true) {
+							// Use collateral-grade minimum (5 ADA) so the selected collateral UTXO
+							// actually satisfies the Cardano protocol's collateral requirement.
+							let limitedUtxos;
+							try {
+								limitedUtxos = sortAndLimitUtxos(
+									currentUtxos,
+									8_000_000,
+									MIN_COLLATERAL_UTXO_LOVELACE,
+									2, // min 2 UTxOs: collateral and inputs must be disjoint
+								);
+							} catch (utxoErr) {
+								logger.error('[register] sortAndLimitUtxos failed', {
+									requestId: request.id,
+									utxoCount: currentUtxos.length,
+									error: errorToString(utxoErr),
+								});
+								throw utxoErr;
+							}
+							logger.info('[register] utxos limited', {
+								requestId: request.id,
+								limitedCount: limitedUtxos.length,
+							});
 
-						const firstUtxo = limitedFilteredUtxos[0];
-						const collateralUtxo = limitedFilteredUtxos[0];
+							if (limitedUtxos.length >= 2) {
+								break;
+							}
+
+							// Guard against infinite split loops.
+							if (splitAttempts >= MAX_SPLIT_ATTEMPTS) {
+								throw new Error(
+									`Registration requires at least 2 UTxOs (one for collateral ≥${MIN_COLLATERAL_UTXO_LOVELACE / 1_000_000} ADA, one for inputs). ` +
+										`Gave up after ${MAX_SPLIT_ATTEMPTS} split attempt(s). Please add more funds.`,
+								);
+							}
+
+							// Need 2 UTXOs but only have 1 (or filtered to 1). Attempt split if feasible.
+							// The UTXO to split must be large enough to produce one collateral-grade
+							// output (≥5 ADA) plus a fee-covered change output.
+							const singleUtxo = currentUtxos.find((u) => getLovelaceFromUtxo(u) >= MIN_LOVELACE_FOR_SPLIT);
+							const singleUtxoLovelace = singleUtxo != null ? getLovelaceFromUtxo(singleUtxo) : 0;
+							if (singleUtxo != null && singleUtxoLovelace >= MIN_LOVELACE_FOR_SPLIT) {
+								splitAttempts++;
+								logger.info('[register] splitting single UTXO for collateral/input disjointness', {
+									requestId: request.id,
+									lovelace: singleUtxoLovelace,
+									hasTokens: !isLovelaceOnlyUtxo(singleUtxo),
+									attempt: splitAttempts,
+								});
+								// Split one collateral-grade output (5 ADA); change goes back to wallet.
+								// This ensures the first post-split UTXO satisfies the 5-ADA collateral
+								// requirement, while the change covers the registration inputs.
+								const splitOutputLovelace = MIN_COLLATERAL_UTXO_LOVELACE;
+
+								// Estimate available change after the split output and a fee buffer.
+								// If the change would be below the min UTxO threshold (~1.5 ADA),
+								// abort early instead of producing an invalid 0-lovelace output.
+								const estimatedFeeBuffer = 500_000; // ~0.5 ADA conservative fee buffer
+								const estimatedChange = singleUtxoLovelace - splitOutputLovelace - estimatedFeeBuffer;
+								if (estimatedChange < MIN_CHANGE_LOVELACE) {
+									throw new Error(
+										`Wallet balance too low to split: UTXO has ${singleUtxoLovelace} lovelace but splitting would leave ` +
+											`only ~${estimatedChange} lovelace as change (minimum ${MIN_CHANGE_LOVELACE} required). ` +
+											`Please add at least ${MIN_COLLATERAL_UTXO_LOVELACE / 1_000_000} ADA more to the wallet.`,
+									);
+								}
+
+								const blockfrost = getBlockfrostInstance(
+									paymentSource.network,
+									paymentSource.PaymentSourceConfig.rpcProviderApiKey,
+								);
+								await executeSingleUtxoSplit({
+									wallet,
+									blockchainProvider,
+									address,
+									network,
+									singleUtxo,
+									blockfrost,
+									splitOutputLovelace,
+								});
+								const refreshed = await generateWalletExtended(
+									paymentSource.network,
+									paymentSource.PaymentSourceConfig.rpcProviderApiKey,
+									request.SmartContractWallet.Secret.encryptedMnemonic,
+								);
+								currentUtxos = refreshed.utxos;
+								continue;
+							}
+
+							throw new Error(
+								`Registration requires at least 2 UTxOs (one for collateral ≥${MIN_COLLATERAL_UTXO_LOVELACE / 1_000_000} ADA, one for inputs). ` +
+									'No single UTXO is large enough to split. Please add more funds or send in two separate transactions.',
+							);
+						}
+
+						const limitedUtxos = sortAndLimitUtxos(currentUtxos, 8_000_000, MIN_COLLATERAL_UTXO_LOVELACE, 2);
+						const collateralUtxo = limitedUtxos[0];
+						const inputUtxos = limitedUtxos.slice(1);
+						const firstUtxo = inputUtxos[0];
+						if (firstUtxo == null) {
+							throw new Error('Expected at least one input UTxO (internal error)');
+						}
+						const remainingInputUtxos = inputUtxos.slice(1);
 
 						const assetName = generateAssetName(firstUtxo);
 						const metadata = buildAgentMetadata(request);
+
+						logger.info('[register] building evaluation tx', { requestId: request.id });
 						const evaluationTx = await generateRegisterAgentTransaction(
 							blockchainProvider,
 							network,
@@ -198,13 +334,15 @@ export async function registerAgentV1() {
 							assetName,
 							firstUtxo,
 							collateralUtxo,
-							limitedFilteredUtxos,
+							remainingInputUtxos,
 							metadata,
 						);
+						logger.info('[register] evaluating tx', { requestId: request.id });
 						const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
 							budget: { mem: number; steps: number };
 						}>;
 
+						logger.info('[register] building final tx', { requestId: request.id });
 						const unsignedTx = await generateRegisterAgentTransaction(
 							blockchainProvider,
 							network,
@@ -214,13 +352,15 @@ export async function registerAgentV1() {
 							assetName,
 							firstUtxo,
 							collateralUtxo,
-							limitedFilteredUtxos,
+							remainingInputUtxos,
 							metadata,
 							estimatedFee[0].budget,
 						);
 
+						logger.info('[register] signing tx', { requestId: request.id });
 						const signedTx = await wallet.signTx(unsignedTx, true);
 
+						logger.info('[register] updating to RegistrationInitiated', { requestId: request.id });
 						await prisma.registryRequest.update({
 							where: { id: request.id },
 							data: {
@@ -228,9 +368,9 @@ export async function registerAgentV1() {
 								...createPendingTransaction(request.SmartContractWallet.id),
 							},
 						});
-						//submit the transaction to the blockchain
+						logger.info('[register] submitting tx to chain', { requestId: request.id });
 						const newTxHash = await wallet.submitTx(signedTx);
-						await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
+						await walletSession.evaluateProjectedBalance(unsignedTx, limitedUtxos);
 						await prisma.registryRequest.update({
 							where: { id: request.id },
 							data: {
@@ -253,8 +393,11 @@ export async function registerAgentV1() {
 					const request = registryRequests[index];
 					if (result.success === false || result.result !== true) {
 						const error = result.error;
-						logger.error(`Error registering agent ${request.id}`, {
+						const errStr = errorToString(error);
+						logger.error(`[register] FAILED requestId=${request.id} error="${errStr}"`, {
+							requestId: request.id,
 							error: error,
+							errorString: errStr,
 						});
 						await prisma.registryRequest.update({
 							where: { id: request.id },
@@ -320,9 +463,7 @@ async function generateRegisterAgentTransaction(
 			},
 			version: '1',
 		})
-		.txIn(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
 		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
-		.setTotalCollateral(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount)
 		.txOut(walletAddress, [
 			{
 				unit: policyId + assetName,
@@ -330,11 +471,18 @@ async function generateRegisterAgentTransaction(
 			},
 			{
 				unit: SERVICE_CONSTANTS.CARDANO.NATIVE_TOKEN,
-				quantity: SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount,
+				quantity: SERVICE_CONSTANTS.SMART_CONTRACT.minNftOutputLovelace,
 			},
 		]);
 	for (const utxo of utxos) {
 		txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
+	}
+	const collateralLovelace = BigInt(
+		collateralUtxo.output.amount.find((a) => a.unit === 'lovelace' || a.unit === '')?.quantity ?? '0',
+	);
+	const minCollateralReturnBigInt = BigInt(SERVICE_CONSTANTS.SMART_CONTRACT.minNftOutputLovelace);
+	if (collateralLovelace > minCollateralReturnBigInt) {
+		txBuilder.setTotalCollateral((collateralLovelace - minCollateralReturnBigInt).toString());
 	}
 	return await txBuilder
 		.requiredSignerHash(deserializedAddress.pubKeyHash)
