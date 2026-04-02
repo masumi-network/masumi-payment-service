@@ -421,6 +421,117 @@ export async function updateWalletTransactionHash() {
 		});
 	}
 	try {
+		await prisma.$transaction(async (prisma) => {
+			const a2aResult = await prisma.a2ARegistryRequest.findMany({
+				where: {
+					state: {
+						in: [RegistrationState.RegistrationInitiated, RegistrationState.DeregistrationInitiated],
+					},
+					SmartContractWallet: { deletedAt: null },
+					OR: [
+						{
+							updatedAt: {
+								lt: new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL),
+							},
+							CurrentTransaction: null,
+						},
+						{
+							CurrentTransaction: {
+								updatedAt: {
+									lt: new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL),
+								},
+							},
+						},
+					],
+				},
+				include: { SmartContractWallet: true },
+			});
+
+			for (const req of a2aResult) {
+				if (req.currentTransactionId == null) {
+					if (
+						req.SmartContractWallet != null &&
+						req.SmartContractWallet.pendingTransactionId == null &&
+						req.SmartContractWallet.lockedAt &&
+						new Date(req.SmartContractWallet.lockedAt) < new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
+					)
+						unlockedSellingWalletIds.push(req.SmartContractWallet?.id);
+
+					await prisma.a2ARegistryRequest.update({
+						where: { id: req.id },
+						data: {
+							SmartContractWallet:
+								req.SmartContractWallet == null
+									? undefined
+									: {
+											update: {
+												lockedAt:
+													req.SmartContractWallet.pendingTransactionId == null &&
+													req.SmartContractWallet.lockedAt &&
+													new Date(req.SmartContractWallet.lockedAt) <
+														new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
+														? null
+														: undefined,
+											},
+										},
+							state:
+								req.state == RegistrationState.RegistrationInitiated
+									? RegistrationState.RegistrationFailed
+									: RegistrationState.DeregistrationFailed,
+							error: 'Timeout, force unlocked',
+						},
+					});
+				} else {
+					if (
+						(req.SmartContractWallet?.pendingTransactionId != null &&
+							req.SmartContractWallet?.pendingTransactionId == req.currentTransactionId) ||
+						(req.SmartContractWallet?.lockedAt &&
+							new Date(req.SmartContractWallet.lockedAt) < new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
+					)
+						unlockedSellingWalletIds.push(req.SmartContractWallet?.id);
+
+					await prisma.a2ARegistryRequest.update({
+						where: { id: req.id },
+						data: {
+							SmartContractWallet:
+								req.SmartContractWallet == null
+									? undefined
+									: {
+											update: {
+												lockedAt:
+													(req.SmartContractWallet?.pendingTransactionId != null &&
+														req.SmartContractWallet?.pendingTransactionId == req.currentTransactionId) ||
+													(req.SmartContractWallet?.lockedAt &&
+														new Date(req.SmartContractWallet.lockedAt) <
+															new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
+														? null
+														: undefined,
+												pendingTransactionId:
+													(req.SmartContractWallet?.pendingTransactionId != null &&
+														req.SmartContractWallet?.pendingTransactionId == req.currentTransactionId) ||
+													(req.SmartContractWallet?.lockedAt &&
+														new Date(req.SmartContractWallet.lockedAt) <
+															new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
+														? null
+														: undefined,
+											},
+										},
+							CurrentTransaction: {
+								update: { status: TransactionStatus.FailedViaTimeout },
+							},
+							state:
+								req.state == RegistrationState.RegistrationInitiated
+									? RegistrationState.RegistrationFailed
+									: RegistrationState.DeregistrationFailed,
+						},
+					});
+				}
+			}
+		});
+	} catch (error) {
+		logger.error('Error updating timed out A2A registry requests', { error: error });
+	}
+	try {
 		const lockedHotWallets = await prisma.hotWallet.findMany({
 			where: {
 				PendingTransaction: {

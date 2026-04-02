@@ -4,7 +4,6 @@ import { z } from '@/utils/zod-openapi';
 import { HotWalletType, PaymentType, PricingType, RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
-import { DEFAULTS } from '@/utils/config';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { recordBusinessEndpointError } from '@/utils/metrics';
@@ -24,6 +23,7 @@ import {
 } from './schemas';
 import { getRegistryEntriesForQuery } from './queries';
 import { serializeRegistryEntriesResponse } from './serializers';
+import { mapRegistryRequestToOutput, mapA2ARegistryRequestToOutput } from '@/routes/api/registry/utils';
 
 export {
 	deleteAgentRegistrationSchemaInput,
@@ -160,7 +160,6 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 					authorOrganization: input.Author.organization,
 					state: RegistrationState.RegistrationRequested,
 					agentIdentifier: null,
-					metadataVersion: DEFAULTS.DEFAULT_METADATA_VERSION,
 					ExampleOutputs: {
 						createMany: {
 							data: input.ExampleOutputs.map((exampleOutput) => ({
@@ -235,44 +234,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 				},
 			});
 
-			return {
-				...result,
-				Capability: {
-					name: result.capabilityName,
-					version: result.capabilityVersion,
-				},
-				Author: {
-					name: result.authorName,
-					contactEmail: result.authorContactEmail,
-					contactOther: result.authorContactOther,
-					organization: result.authorOrganization,
-				},
-				Legal: {
-					privacyPolicy: result.privacyPolicy,
-					terms: result.terms,
-					other: result.other,
-				},
-				AgentPricing:
-					result.Pricing.pricingType == PricingType.Fixed
-						? {
-								pricingType: PricingType.Fixed,
-								Pricing:
-									result.Pricing.FixedPricing?.Amounts.map((price) => ({
-										unit: price.unit,
-										amount: price.amount.toString(),
-									})) ?? [],
-							}
-						: {
-								pricingType: result.Pricing.pricingType,
-							},
-				Tags: result.tags,
-				CurrentTransaction: result.CurrentTransaction
-					? {
-							...result.CurrentTransaction,
-							fees: result.CurrentTransaction.fees?.toString() ?? null,
-						}
-					: null,
-			};
+			return mapRegistryRequestToOutput(result);
 		} catch (error: unknown) {
 			// Record the business-specific error with context
 			const errorInstance = error instanceof Error ? error : new Error(String(error));
@@ -300,125 +262,125 @@ export const deleteAgentRegistration = adminAuthenticatedEndpointFactory.build({
 	handler: async ({ input }) => {
 		const startTime = Date.now();
 		try {
-			const registryRequest = await prisma.registryRequest.findUnique({
-				where: {
-					id: input.id,
-				},
-				include: {
-					PaymentSource: {
-						select: {
-							id: true,
-							network: true,
-							policyId: true,
-							smartContractAddress: true,
-						},
-					},
-				},
-			});
-
-			if (!registryRequest) {
-				recordBusinessEndpointError('/api/v1/registry', 'DELETE', 404, 'Agent Registration not found', {
-					registry_id: input.id,
-					operation: 'delete_agent_registration',
-					step: 'registry_lookup',
-				});
-				throw createHttpError(404, 'Agent Registration not found');
-			}
-
 			const validStatesForDeletion: RegistrationState[] = [
 				RegistrationState.RegistrationFailed,
 				RegistrationState.DeregistrationConfirmed,
 			];
 
-			if (!validStatesForDeletion.includes(registryRequest.state)) {
-				recordBusinessEndpointError(
-					'/api/v1/registry',
-					'DELETE',
-					400,
-					`Agent registration cannot be deleted in its current state: ${registryRequest.state}`,
-					{
-						registry_id: input.id,
-						operation: 'delete_agent_registration',
-						step: 'state_validation',
-						current_state: registryRequest.state,
-						valid_states: validStatesForDeletion.join(', '),
-					},
-				);
-				throw createHttpError(
-					400,
-					`Agent registration cannot be deleted in its current state: ${registryRequest.state}`,
-				);
-			}
-
-			const item = await prisma.registryRequest.delete({
-				where: {
-					id: registryRequest.id,
-				},
-				include: {
-					Pricing: {
-						include: {
-							FixedPricing: {
-								include: { Amounts: { select: { unit: true, amount: true } } },
-							},
-						},
-					},
-					SmartContractWallet: {
-						select: { walletVkey: true, walletAddress: true },
-					},
-					ExampleOutputs: {
-						select: { name: true, url: true, mimeType: true },
-					},
-					CurrentTransaction: {
-						select: {
-							txHash: true,
-							status: true,
-							confirmations: true,
-							fees: true,
-							blockHeight: true,
-							blockTime: true,
-						},
-					},
-				},
+			const registryRequest = await prisma.registryRequest.findUnique({
+				where: { id: input.id },
 			});
 
-			return {
-				...item,
-				Capability: {
-					name: item.capabilityName,
-					version: item.capabilityVersion,
-				},
-				Author: {
-					name: item.authorName,
-					contactEmail: item.authorContactEmail,
-					contactOther: item.authorContactOther,
-					organization: item.authorOrganization,
-				},
-				Legal: {
-					privacyPolicy: item.privacyPolicy,
-					terms: item.terms,
-					other: item.other,
-				},
-				AgentPricing:
-					item.Pricing.pricingType == PricingType.Fixed
-						? {
-								pricingType: PricingType.Fixed,
-								Pricing:
-									item.Pricing.FixedPricing?.Amounts.map((price) => ({
-										unit: price.unit,
-										amount: price.amount.toString(),
-									})) ?? [],
-							}
-						: {
-								pricingType: item.Pricing.pricingType,
+			if (registryRequest) {
+				if (!validStatesForDeletion.includes(registryRequest.state)) {
+					recordBusinessEndpointError(
+						'/api/v1/registry',
+						'DELETE',
+						400,
+						`Agent registration cannot be deleted in its current state: ${registryRequest.state}`,
+						{
+							registry_id: input.id,
+							operation: 'delete_agent_registration',
+							step: 'state_validation',
+							current_state: registryRequest.state,
+							valid_states: validStatesForDeletion.join(', '),
+						},
+					);
+					throw createHttpError(
+						400,
+						`Agent registration cannot be deleted in its current state: ${registryRequest.state}`,
+					);
+				}
+
+				const item = await prisma.registryRequest.delete({
+					where: { id: registryRequest.id },
+					include: {
+						Pricing: {
+							include: {
+								FixedPricing: {
+									include: { Amounts: { select: { unit: true, amount: true } } },
+								},
 							},
-				Tags: item.tags,
-				CurrentTransaction: item.CurrentTransaction
-					? {
-							...item.CurrentTransaction,
-							fees: item.CurrentTransaction.fees?.toString() ?? null,
-						}
-					: null,
-			};
+						},
+						SmartContractWallet: {
+							select: { walletVkey: true, walletAddress: true },
+						},
+						ExampleOutputs: {
+							select: { name: true, url: true, mimeType: true },
+						},
+						CurrentTransaction: {
+							select: {
+								txHash: true,
+								status: true,
+								confirmations: true,
+								fees: true,
+								blockHeight: true,
+								blockTime: true,
+							},
+						},
+					},
+				});
+
+				return mapRegistryRequestToOutput(item);
+			}
+
+			const a2aRequest = await prisma.a2ARegistryRequest.findUnique({
+				where: { id: input.id },
+			});
+
+			if (a2aRequest) {
+				if (!validStatesForDeletion.includes(a2aRequest.state)) {
+					recordBusinessEndpointError(
+						'/api/v1/registry',
+						'DELETE',
+						400,
+						`Agent registration cannot be deleted in its current state: ${a2aRequest.state}`,
+						{
+							registry_id: input.id,
+							operation: 'delete_agent_registration',
+							step: 'state_validation',
+							current_state: a2aRequest.state,
+							valid_states: validStatesForDeletion.join(', '),
+						},
+					);
+					throw createHttpError(400, `Agent registration cannot be deleted in its current state: ${a2aRequest.state}`);
+				}
+
+				const item = await prisma.a2ARegistryRequest.delete({
+					where: { id: a2aRequest.id },
+					include: {
+						Pricing: {
+							include: {
+								FixedPricing: {
+									include: { Amounts: { select: { unit: true, amount: true } } },
+								},
+							},
+						},
+						SmartContractWallet: {
+							select: { walletVkey: true, walletAddress: true },
+						},
+						CurrentTransaction: {
+							select: {
+								txHash: true,
+								status: true,
+								confirmations: true,
+								fees: true,
+								blockHeight: true,
+								blockTime: true,
+							},
+						},
+					},
+				});
+
+				return mapA2ARegistryRequestToOutput(item);
+			}
+
+			recordBusinessEndpointError('/api/v1/registry', 'DELETE', 404, 'Agent Registration not found', {
+				registry_id: input.id,
+				operation: 'delete_agent_registration',
+				step: 'registry_lookup',
+			});
+			throw createHttpError(404, 'Agent Registration not found');
 		} catch (error: unknown) {
 			// Record the business-specific error with context
 			const errorInstance = error instanceof Error ? error : new Error(String(error));

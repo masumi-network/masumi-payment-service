@@ -1,6 +1,6 @@
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { z } from '@/utils/zod-openapi';
-import { HotWalletType, Network, PricingType, RegistrationState } from '@/generated/prisma/client';
+import { HotWalletType, Network, RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
@@ -8,9 +8,38 @@ import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contrac
 import { DEFAULTS } from '@/utils/config';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { extractAssetName } from '@/utils/converter/agent-identifier';
-import { registryRequestOutputSchema } from '@/routes/api/registry';
+import { a2aRegistryRequestOutputSchema, registryRequestOutputSchema } from '@/routes/api/registry/schemas';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
+import { mapA2ARegistryRequestToOutput, mapRegistryRequestToOutput } from '@/routes/api/registry/utils';
+
+const a2aInclude = {
+	Pricing: {
+		include: {
+			FixedPricing: {
+				include: { Amounts: { select: { unit: true, amount: true } } },
+			},
+		},
+	},
+	SmartContractWallet: {
+		select: { walletVkey: true, walletAddress: true },
+	},
+	CurrentTransaction: {
+		select: {
+			txHash: true,
+			status: true,
+			confirmations: true,
+			fees: true,
+			blockHeight: true,
+			blockTime: true,
+		},
+	},
+} as const;
+
+const standardInclude = {
+	...a2aInclude,
+	ExampleOutputs: { select: { name: true, url: true, mimeType: true } },
+} as const;
 
 export const unregisterAgentSchemaInput = z.object({
 	agentIdentifier: z
@@ -26,7 +55,7 @@ export const unregisterAgentSchemaInput = z.object({
 		.describe('The smart contract address of the payment contract to which the registration belongs'),
 });
 
-export const unregisterAgentSchemaOutput = registryRequestOutputSchema;
+export const unregisterAgentSchemaOutput = registryRequestOutputSchema.or(a2aRegistryRequestOutputSchema);
 
 export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 	method: 'post',
@@ -80,86 +109,44 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 			throw createHttpError(404, 'Registered Wallet not found');
 		}
 		assertHotWalletInScope(ctx.walletScopeIds, sellingWallet.id);
+
+		const fullIdentifier = policyId + assetName;
+
+		// Check standard registry first, then A2A
 		const registryRequest = await prisma.registryRequest.findUnique({
-			where: {
-				agentIdentifier: policyId + assetName,
-			},
-		});
-		if (registryRequest == null) {
-			throw createHttpError(404, 'Registration not found');
-		}
-		const result = await prisma.registryRequest.update({
-			where: {
-				id: registryRequest.id,
-				SmartContractWallet: {
-					deletedAt: null,
-				},
-			},
-			data: {
-				state: RegistrationState.DeregistrationRequested,
-			},
-			include: {
-				Pricing: {
-					include: {
-						FixedPricing: {
-							include: { Amounts: { select: { unit: true, amount: true } } },
-						},
-					},
-				},
-				SmartContractWallet: {
-					select: { walletVkey: true, walletAddress: true },
-				},
-				ExampleOutputs: { select: { name: true, url: true, mimeType: true } },
-				CurrentTransaction: {
-					select: {
-						txHash: true,
-						status: true,
-						confirmations: true,
-						fees: true,
-						blockHeight: true,
-						blockTime: true,
-					},
-				},
-			},
+			where: { agentIdentifier: fullIdentifier },
 		});
 
-		return {
-			...result,
-			Capability: {
-				name: result.capabilityName,
-				version: result.capabilityVersion,
-			},
-			Author: {
-				name: result.authorName,
-				contactEmail: result.authorContactEmail,
-				contactOther: result.authorContactOther,
-				organization: result.authorOrganization,
-			},
-			Legal: {
-				privacyPolicy: result.privacyPolicy,
-				terms: result.terms,
-				other: result.other,
-			},
-			AgentPricing:
-				result.Pricing.pricingType == PricingType.Fixed
-					? {
-							pricingType: PricingType.Fixed,
-							Pricing:
-								result.Pricing.FixedPricing?.Amounts.map((price) => ({
-									unit: price.unit,
-									amount: price.amount.toString(),
-								})) ?? [],
-						}
-					: {
-							pricingType: result.Pricing.pricingType,
-						},
-			Tags: result.tags,
-			CurrentTransaction: result.CurrentTransaction
-				? {
-						...result.CurrentTransaction,
-						fees: result.CurrentTransaction.fees?.toString() ?? null,
-					}
-				: null,
-		};
+		if (registryRequest != null) {
+			const result = await prisma.registryRequest.update({
+				where: {
+					id: registryRequest.id,
+					state: RegistrationState.RegistrationConfirmed,
+					SmartContractWallet: { deletedAt: null },
+				},
+				data: { state: RegistrationState.DeregistrationRequested },
+				include: standardInclude,
+			});
+			return mapRegistryRequestToOutput(result);
+		}
+
+		const a2aRequest = await prisma.a2ARegistryRequest.findUnique({
+			where: { agentIdentifier: fullIdentifier },
+		});
+
+		if (a2aRequest != null) {
+			const result = await prisma.a2ARegistryRequest.update({
+				where: {
+					id: a2aRequest.id,
+					state: RegistrationState.RegistrationConfirmed,
+					SmartContractWallet: { deletedAt: null },
+				},
+				data: { state: RegistrationState.DeregistrationRequested },
+				include: a2aInclude,
+			});
+			return mapA2ARegistryRequestToOutput(result);
+		}
+
+		throw createHttpError(404, 'Registration not found');
 	},
 });
