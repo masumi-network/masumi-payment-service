@@ -21,7 +21,7 @@ import { getDatumFromBlockchainIdentifier, SmartContractState } from '@/utils/ge
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
-import { CONFIG, CONSTANTS } from '@/utils/config';
+import { CONSTANTS } from '@/utils/config';
 import { resolveUsableHydraHeadForPurchase } from '@/utils/hydra/resolve-hydra-head';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { calculateMinUtxo, DUMMY_RESULT_HASH } from '@/utils/min-utxo';
@@ -221,7 +221,7 @@ export async function batchLatestPaymentEntriesV1() {
 	try {
 		const paymentContractsWithWalletLocked = await prisma.$transaction(
 			async (prisma) => {
-				const payByTime = Date.now() + CONFIG.PURCHASE_BATCH_MIN_REMAINING_MS;
+				const payByTime = new Date().getTime() + 1000 * 57;
 				const paymentContracts = await prisma.paymentSource.findMany({
 					where: {
 						deletedAt: null,

@@ -70,11 +70,6 @@ if (walletLockTimeoutInterval < 5) throw new Error('WALLET_LOCK_TIMEOUT_INTERVAL
 const checkHydraTxInterval = Number(process.env.CHECK_HYDRA_TX_INTERVAL ?? '10');
 if (checkHydraTxInterval < 5) throw new Error('CHECK_HYDRA_TX_INTERVAL must be at least 5 seconds');
 
-const purchaseLockMinLeadMs = Number(process.env.PURCHASE_LOCK_MIN_LEAD_MS ?? '150000');
-if (purchaseLockMinLeadMs < 60_000) throw new Error('PURCHASE_LOCK_MIN_LEAD_MS must be at least 60000');
-const purchaseBatchMinRemainingMs = Number(process.env.PURCHASE_BATCH_MIN_REMAINING_MS ?? '57000');
-if (purchaseBatchMinRemainingMs < 5_000) throw new Error('PURCHASE_BATCH_MIN_REMAINING_MS must be at least 5000');
-
 export type LowBalanceDefaultRule = {
 	assetUnit: string;
 	thresholdAmount: string;
@@ -190,8 +185,6 @@ export const CONFIG = {
 	AUTO_DECISION_INTERVAL: autoDecisionInterval,
 	WEBHOOK_DELIVERY_INTERVAL: webhookDeliveryInterval,
 	CHECK_HYDRA_TX_INTERVAL: checkHydraTxInterval,
-	PURCHASE_LOCK_MIN_LEAD_MS: purchaseLockMinLeadMs,
-	PURCHASE_BATCH_MIN_REMAINING_MS: purchaseBatchMinRemainingMs,
 	WEBHOOK_CLEANUP_INTERVAL: webhookCleanupInterval,
 	// OpenTelemetry configuration
 	OTEL_SERVICE_NAME: process.env.OTEL_SERVICE_NAME ?? 'masumi-payment-service',
