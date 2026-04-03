@@ -47,7 +47,7 @@ export class HydraNode extends EventEmitter {
 		this._wsUrl = config.wsUrl ?? config.httpUrl.replace('http://', 'ws://').replace('https://', 'wss://');
 		this._status = HydraHeadStatus.Disconnected;
 		this._connection = new Connection(this._wsUrl + '?history=no');
-		this._txCircularBuffer = new CircularBuffer(1000);
+		this._txCircularBuffer = new CircularBuffer(10000);
 	}
 
 	connect() {

@@ -1,13 +1,27 @@
 import { prisma } from '@/utils/db';
 import { logger } from '@/utils/logger';
 import { CustomHydraHead, HydraProvider, HydraHeadEvent, HydraNodeEvent, StatusChangeData } from '@/lib/hydra';
-import { HydraHeadStatus, Prisma, TransactionStatus } from '@/generated/prisma/client';
+import {
+	HydraHeadStatus,
+	Network,
+	OnChainState,
+	PaymentAction,
+	Prisma,
+	PurchasingAction,
+	TransactionLayer,
+	TransactionStatus,
+	WalletType,
+} from '@/generated/prisma/client';
 import { convertNewPaymentActionAndError, convertNewPurchasingActionAndError } from '@/utils/logic/state-transitions';
 import { CONSTANTS } from '@/utils/config';
 import { deriveExpectedOnChainState } from '@/services/hydra-tx-handler/derive-state';
 import { HydraHeadUpdateInput } from '@/generated/prisma/models';
 import { HydraNodeConfig } from '@/lib/hydra/hydra/types';
 import { HydraNode } from '@/lib/hydra/hydra/node';
+import { deserializeDatum } from '@meshsdk/core';
+import { decodeV1ContractDatum } from '@/utils/converter/string-datum-convert';
+import { SmartContractState } from '@/utils/generator/contract-generator';
+import { checkPaymentAmountsMatch } from '@/services/transactions/tx-sync/util';
 
 interface ManagedHead {
 	head: CustomHydraHead;
@@ -240,6 +254,7 @@ export class HydraConnectionManager {
 		});
 
 		if (!tx) {
+			await this.syncHydraDatumStateFromConfirmedTx(hydraHeadId, txId);
 			return;
 		}
 
@@ -338,6 +353,316 @@ export class HydraConnectionManager {
 				},
 			);
 		}
+	}
+
+	private async syncHydraDatumStateFromConfirmedTx(hydraHeadId: string, txId: string): Promise<void> {
+		try {
+			const provider = this.getProvider(hydraHeadId);
+			if (!provider) {
+				return;
+			}
+
+			const hydraHead = await prisma.hydraHead.findUnique({
+				where: { id: hydraHeadId },
+				include: {
+					HydraRelation: {
+						include: {
+							LocalHotWallet: {
+								include: {
+									PaymentSource: true,
+								},
+							},
+						},
+					},
+				},
+			});
+
+			if (!hydraHead) {
+				return;
+			}
+
+			const paymentSource = hydraHead.HydraRelation.LocalHotWallet.PaymentSource;
+			const network = paymentSource.network === Network.Mainnet ? 'mainnet' : 'preprod';
+			const utxos = await provider.fetchUTxOs(txId);
+
+			const contractOutputs = utxos.filter((utxo) => {
+				return utxo.output.address === paymentSource.smartContractAddress && utxo.output.plutusData != null;
+			});
+
+			for (const output of contractOutputs) {
+				const outputDatum = output.output.plutusData;
+				if (!outputDatum) {
+					continue;
+				}
+
+				const decodedDatum: unknown = deserializeDatum(outputDatum);
+				const decodedNewContract = decodeV1ContractDatum(decodedDatum, network);
+				const derivedOnChainState = this.deriveOnChainStateFromDatum(decodedNewContract);
+				if (!decodedNewContract || !derivedOnChainState) {
+					continue;
+				}
+
+				await this.applyDatumStateToLocalRequests({
+					hydraHeadId,
+					txId,
+					paymentSourceId: paymentSource.id,
+					blockchainIdentifier: decodedNewContract.blockchainIdentifier,
+					newOnChainState: derivedOnChainState,
+					resultHash: decodedNewContract.resultHash,
+					collateralReturnLovelace: decodedNewContract.collateralReturnLovelace,
+					buyerWalletAddress: decodedNewContract.buyerAddress,
+					buyerWalletVkey: decodedNewContract.buyerVkey,
+					buyerCooldownTime: decodedNewContract.buyerCooldownTime,
+					sellerCooldownTime: decodedNewContract.sellerCooldownTime,
+					outputAmounts: output.output.amount,
+				});
+			}
+		} catch (error) {
+			logger.error('[HydraConnectionManager] Failed fallback L2 datum sync', {
+				hydraHeadId,
+				txId,
+				error,
+			});
+		}
+	}
+
+	private deriveOnChainStateFromDatum(
+		decodedNewContract: {
+			state: SmartContractState;
+			resultHash: string | null;
+		} | null,
+	): OnChainState | null {
+		if (!decodedNewContract) {
+			return null;
+		}
+
+		switch (decodedNewContract.state) {
+			case SmartContractState.FundsLocked:
+				return decodedNewContract.resultHash ? OnChainState.ResultSubmitted : OnChainState.FundsLocked;
+			case SmartContractState.ResultSubmitted:
+				return OnChainState.ResultSubmitted;
+			case SmartContractState.RefundRequested:
+				return decodedNewContract.resultHash ? OnChainState.Disputed : OnChainState.RefundRequested;
+			case SmartContractState.Disputed:
+				return OnChainState.Disputed;
+			default:
+				return null;
+		}
+	}
+
+	private async applyDatumStateToLocalRequests(params: {
+		hydraHeadId: string;
+		txId: string;
+		paymentSourceId: string;
+		blockchainIdentifier: string;
+		newOnChainState: OnChainState;
+		resultHash: string | null;
+		collateralReturnLovelace: bigint;
+		buyerWalletAddress: string;
+		buyerWalletVkey: string;
+		buyerCooldownTime: bigint;
+		sellerCooldownTime: bigint;
+		outputAmounts: Array<{ unit: string; quantity: string }>;
+	}): Promise<void> {
+		const {
+			hydraHeadId,
+			txId,
+			paymentSourceId,
+			blockchainIdentifier,
+			newOnChainState,
+			resultHash,
+			collateralReturnLovelace,
+			buyerWalletAddress,
+			buyerWalletVkey,
+			buyerCooldownTime,
+			sellerCooldownTime,
+			outputAmounts,
+		} = params;
+
+		await prisma.$transaction(
+			async (prisma) => {
+				const purchaseRequest = await prisma.purchaseRequest.findUnique({
+					where: {
+						blockchainIdentifier,
+						paymentSourceId,
+					},
+					include: {
+						NextAction: true,
+						PaidFunds: true,
+						CurrentTransaction: { include: { BlocksWallet: true } },
+					},
+				});
+
+				if (purchaseRequest && purchaseRequest.NextAction.requestedAction !== PurchasingAction.None) {
+					const newAction = convertNewPurchasingActionAndError(
+						purchaseRequest.NextAction.requestedAction,
+						newOnChainState,
+					);
+
+					await prisma.purchaseRequest.update({
+						where: { id: purchaseRequest.id },
+						data: {
+							layer: TransactionLayer.L2,
+							onChainState: newOnChainState,
+							resultHash,
+							buyerCoolDownTime: buyerCooldownTime,
+							sellerCoolDownTime: sellerCooldownTime,
+							ActionHistory: { connect: { id: purchaseRequest.nextActionId } },
+							NextAction: {
+								create: {
+									requestedAction: newAction.action,
+									errorNote: newAction.errorNote,
+									errorType: newAction.errorType,
+								},
+							},
+							CurrentTransaction: purchaseRequest.currentTransactionId
+								? {
+										update: {
+											txHash: txId,
+											status: TransactionStatus.Confirmed,
+											layer: TransactionLayer.L2,
+											HydraHead: { connect: { id: hydraHeadId } },
+											previousOnChainState: purchaseRequest.onChainState,
+											newOnChainState,
+										},
+									}
+								: {
+										create: {
+											txHash: txId,
+											status: TransactionStatus.Confirmed,
+											layer: TransactionLayer.L2,
+											HydraHead: { connect: { id: hydraHeadId } },
+											previousOnChainState: null,
+											newOnChainState,
+										},
+									},
+						},
+					});
+
+					if (purchaseRequest.CurrentTransaction?.BlocksWallet) {
+						await prisma.transaction.update({
+							where: { id: purchaseRequest.currentTransactionId! },
+							data: { BlocksWallet: { disconnect: true } },
+						});
+						await prisma.hotWallet.update({
+							where: {
+								id: purchaseRequest.CurrentTransaction.BlocksWallet.id,
+								deletedAt: null,
+							},
+							data: { lockedAt: null },
+						});
+					}
+				}
+
+				const paymentRequest = await prisma.paymentRequest.findUnique({
+					where: {
+						blockchainIdentifier,
+						paymentSourceId,
+					},
+					include: {
+						NextAction: true,
+						RequestedFunds: true,
+						CurrentTransaction: { include: { BlocksWallet: true } },
+					},
+				});
+
+				if (paymentRequest && paymentRequest.NextAction.requestedAction !== PaymentAction.None) {
+					const amountsMatch = checkPaymentAmountsMatch(
+						paymentRequest.RequestedFunds.map((amount) => ({
+							unit: amount.unit,
+							amount: amount.amount,
+						})),
+						outputAmounts.map((amount) => ({ ...amount })),
+						collateralReturnLovelace,
+					);
+					const newState =
+						newOnChainState === OnChainState.FundsLocked
+							? amountsMatch
+								? OnChainState.FundsLocked
+								: OnChainState.FundsOrDatumInvalid
+							: newOnChainState;
+					const newAction = convertNewPaymentActionAndError(paymentRequest.NextAction.requestedAction, newState);
+
+					await prisma.paymentRequest.update({
+						where: { id: paymentRequest.id },
+						data: {
+							layer: TransactionLayer.L2,
+							onChainState: newState,
+							resultHash,
+							collateralReturnLovelace,
+							buyerCoolDownTime: buyerCooldownTime,
+							sellerCoolDownTime: sellerCooldownTime,
+							ActionHistory: { connect: { id: paymentRequest.nextActionId } },
+							NextAction: {
+								create: {
+									requestedAction: newAction.action,
+									errorNote: newAction.errorNote,
+									errorType: newAction.errorType,
+								},
+							},
+							BuyerWallet: {
+								connectOrCreate: {
+									where: {
+										paymentSourceId_walletVkey_walletAddress_type: {
+											paymentSourceId,
+											walletVkey: buyerWalletVkey,
+											walletAddress: buyerWalletAddress,
+											type: WalletType.Buyer,
+										},
+									},
+									create: {
+										walletVkey: buyerWalletVkey,
+										walletAddress: buyerWalletAddress,
+										type: WalletType.Buyer,
+										PaymentSource: { connect: { id: paymentSourceId } },
+									},
+								},
+							},
+							CurrentTransaction: paymentRequest.currentTransactionId
+								? {
+										update: {
+											txHash: txId,
+											status: TransactionStatus.Confirmed,
+											layer: TransactionLayer.L2,
+											HydraHead: { connect: { id: hydraHeadId } },
+											previousOnChainState: paymentRequest.onChainState,
+											newOnChainState: newState,
+										},
+									}
+								: {
+										create: {
+											txHash: txId,
+											status: TransactionStatus.Confirmed,
+											layer: TransactionLayer.L2,
+											HydraHead: { connect: { id: hydraHeadId } },
+											previousOnChainState: null,
+											newOnChainState: newState,
+										},
+									},
+						},
+					});
+
+					if (paymentRequest.CurrentTransaction?.BlocksWallet) {
+						await prisma.transaction.update({
+							where: { id: paymentRequest.currentTransactionId! },
+							data: { BlocksWallet: { disconnect: true } },
+						});
+						await prisma.hotWallet.update({
+							where: {
+								id: paymentRequest.CurrentTransaction.BlocksWallet.id,
+								deletedAt: null,
+							},
+							data: { lockedAt: null },
+						});
+					}
+				}
+			},
+			{
+				isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+				timeout: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
+				maxWait: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
+			},
+		);
 	}
 }
 

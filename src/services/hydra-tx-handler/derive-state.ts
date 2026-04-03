@@ -1,7 +1,7 @@
 import { OnChainState, PaymentAction, PurchasingAction } from '@/generated/prisma/client';
 
 export function deriveExpectedOnChainState(
-	action: string,
+	action: PaymentAction | PurchasingAction,
 	currentOnChainState: OnChainState | null,
 ): OnChainState | null {
 	switch (action) {
