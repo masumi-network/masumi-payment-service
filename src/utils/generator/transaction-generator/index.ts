@@ -45,6 +45,9 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 	invalidAfter: number,
 	hydraContext?: HydraContext,
 ) {
+	const isL2 = !!hydraContext;
+	const provider = hydraContext?.hydraProvider ?? blockchainProvider;
+
 	let coinsPerUtxoSize: number = CONSTANTS.FALLBACK_COINS_PER_UTXO_SIZE;
 	try {
 		const protocolParams = await blockchainProvider.fetchProtocolParameters();
@@ -63,9 +66,28 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 		});
 	}
 
+	if (isL2) {
+		return await generateMasumiSmartContractInteractionTransactionCustomFee(
+			type,
+			provider,
+			network,
+			script,
+			walletAddress,
+			smartContractUtxo,
+			collateralUtxo,
+			walletUtxos,
+			newInlineDatum,
+			invalidBefore,
+			invalidAfter,
+			undefined,
+			coinsPerUtxoSize,
+			true,
+		);
+	}
+
 	const evaluationTx = await generateMasumiSmartContractInteractionTransactionCustomFee(
 		type,
-		hydraContext?.hydraProvider ?? blockchainProvider,
+		blockchainProvider,
 		network,
 		script,
 		walletAddress,
@@ -77,6 +99,7 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 		invalidAfter,
 		undefined,
 		coinsPerUtxoSize,
+		false,
 	);
 
 	const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
@@ -97,6 +120,7 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 		invalidAfter,
 		estimatedFee[0].budget,
 		coinsPerUtxoSize,
+		false,
 	);
 }
 
@@ -124,9 +148,11 @@ async function generateMasumiSmartContractInteractionTransactionCustomFee(
 	},
 
 	coinsPerUtxoSize: number = CONSTANTS.FALLBACK_COINS_PER_UTXO_SIZE,
+	isHydra = false,
 ) {
 	const txBuilder = new MeshTxBuilder({
 		fetcher: blockchainProvider,
+		isHydra,
 	});
 	const redeemerData = generateRedeemerData(type);
 	const smartContractAddress: unknown = resolvePlutusScriptAddress(
@@ -295,6 +321,8 @@ export async function generateMasumiSmartContractWithdrawTransactionAutomaticFee
 			collateralReturn,
 			invalidBefore,
 			invalidAfter,
+			undefined,
+			true,
 		);
 	}
 
@@ -373,9 +401,11 @@ async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 		mem: 7e6,
 		steps: 3e9,
 	},
+	isHydra = false,
 ) {
 	const txBuilder = new MeshTxBuilder({
 		fetcher: blockchainProvider,
+		isHydra,
 	});
 	const redeemerData = generateRedeemerData(type);
 

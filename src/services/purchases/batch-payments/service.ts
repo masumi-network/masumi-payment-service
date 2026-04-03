@@ -92,6 +92,7 @@ async function executeSpecificBatchPayment(
 	const unsignedTx = new Transaction({
 		initiator: wallet,
 		fetcher,
+		isHydra: isL2,
 	}).setMetadata(674, {
 		msg: ['Masumi', 'PaymentBatched'],
 	});
