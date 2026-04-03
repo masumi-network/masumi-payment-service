@@ -258,6 +258,11 @@ export default function Overview() {
                                 Free
                               </span>
                             )}
+                            {agent.AgentPricing && agent.AgentPricing.pricingType == 'Dynamic' && (
+                              <span className="text-xs font-normal text-muted-foreground">
+                                Dynamic
+                              </span>
+                            )}
                             {agent.AgentPricing &&
                             agent.AgentPricing.pricingType == 'Fixed' &&
                             agent.AgentPricing.Pricing?.[0] ? (

@@ -1073,66 +1073,76 @@ function AddAiAgentScreen({
     }, 'Amount must be a valid number >= 0'),
   });
 
-  const agentSchema = z.object({
-    apiUrl: z
-      .string()
-      .url('API URL must be a valid URL')
-      .min(1, 'API URL is required')
-      .refine((val) => val.startsWith('http://') || val.startsWith('https://'), {
-        message: 'API URL must start with http:// or https://',
-      }),
-    name: z.string().min(1, 'Name is required'),
-    description: z
-      .string()
-      .min(1, 'Description is required')
-      .max(250, 'Description must be less than 250 characters'),
-    prices: z.array(priceSchema).min(1, 'At least one price is required'),
-    tags: z.array(z.string().min(1)).min(1, 'At least one tag is required'),
-    isFree: z.boolean().optional(),
-    // Additional Fields
-    authorName: z
-      .string()
-      .max(250, 'Author name must be less than 250 characters')
-      .optional()
-      .or(z.literal('')),
-    authorEmail: z
-      .string()
-      .email('Author email must be a valid email')
-      .max(250, 'Author email must be less than 250 characters')
-      .optional()
-      .or(z.literal('')),
-    organization: z
-      .string()
-      .max(250, 'Organization must be less than 250 characters')
-      .optional()
-      .or(z.literal('')),
-    contactOther: z
-      .string()
-      .max(250, 'Contact other must be less than 250 characters')
-      .optional()
-      .or(z.literal('')),
-    termsOfUseUrl: z
-      .string()
-      .url('Terms of use URL must be a valid URL')
-      .optional()
-      .or(z.literal('')),
-    privacyPolicyUrl: z
-      .string()
-      .url('Privacy policy URL must be a valid URL')
-      .optional()
-      .or(z.literal('')),
-    otherUrl: z.string().url('Other URL must be a valid URL').optional().or(z.literal('')),
-    capabilityName: z
-      .string()
-      .max(250, 'Capability name must be less than 250 characters')
-      .optional()
-      .or(z.literal('')),
-    capabilityVersion: z
-      .string()
-      .max(50, 'Capability version must be less than 50 characters')
-      .optional()
-      .or(z.literal('')),
-  });
+  const agentSchema = z
+    .object({
+      apiUrl: z
+        .string()
+        .url('API URL must be a valid URL')
+        .min(1, 'API URL is required')
+        .refine((val) => val.startsWith('http://') || val.startsWith('https://'), {
+          message: 'API URL must start with http:// or https://',
+        }),
+      name: z.string().min(1, 'Name is required'),
+      description: z
+        .string()
+        .min(1, 'Description is required')
+        .max(250, 'Description must be less than 250 characters'),
+      prices: z.array(priceSchema),
+      tags: z.array(z.string().min(1)).min(1, 'At least one tag is required'),
+      pricingType: z.enum(['Fixed', 'Free', 'Dynamic']),
+      // Additional Fields
+      authorName: z
+        .string()
+        .max(250, 'Author name must be less than 250 characters')
+        .optional()
+        .or(z.literal('')),
+      authorEmail: z
+        .string()
+        .email('Author email must be a valid email')
+        .max(250, 'Author email must be less than 250 characters')
+        .optional()
+        .or(z.literal('')),
+      organization: z
+        .string()
+        .max(250, 'Organization must be less than 250 characters')
+        .optional()
+        .or(z.literal('')),
+      contactOther: z
+        .string()
+        .max(250, 'Contact other must be less than 250 characters')
+        .optional()
+        .or(z.literal('')),
+      termsOfUseUrl: z
+        .string()
+        .url('Terms of use URL must be a valid URL')
+        .optional()
+        .or(z.literal('')),
+      privacyPolicyUrl: z
+        .string()
+        .url('Privacy policy URL must be a valid URL')
+        .optional()
+        .or(z.literal('')),
+      otherUrl: z.string().url('Other URL must be a valid URL').optional().or(z.literal('')),
+      capabilityName: z
+        .string()
+        .max(250, 'Capability name must be less than 250 characters')
+        .optional()
+        .or(z.literal('')),
+      capabilityVersion: z
+        .string()
+        .max(50, 'Capability version must be less than 50 characters')
+        .optional()
+        .or(z.literal('')),
+    })
+    .superRefine((data, ctx) => {
+      if (data.pricingType === 'Fixed' && data.prices.length === 0) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['prices'],
+          message: 'At least one price is required for fixed pricing',
+        });
+      }
+    });
 
   type AgentFormValues = z.infer<typeof agentSchema>;
 
@@ -1151,7 +1161,7 @@ function AddAiAgentScreen({
       description: '',
       prices: [{ unit: 'lovelace', amount: '' }],
       tags: [],
-      isFree: false,
+      pricingType: 'Fixed',
       authorName: '',
       authorEmail: '',
       organization: '',
@@ -1232,20 +1242,24 @@ function AddAiAgentScreen({
             data.capabilityName && data.capabilityVersion
               ? { name: data.capabilityName, version: data.capabilityVersion }
               : { name: 'Custom Agent', version: '1.0.0' },
-          AgentPricing: data.isFree
-            ? {
-                pricingType: 'Free',
-              }
-            : {
-                pricingType: 'Fixed',
-                Pricing: data.prices.map((price) => ({
-                  unit:
-                    price.unit === 'lovelace'
-                      ? 'lovelace'
-                      : getActiveStablecoinConfig(network).fullAssetId,
-                  amount: (parseFloat(price.amount) * 1000000).toString(),
-                })),
-              },
+          AgentPricing: (() => {
+            if (data.pricingType === 'Free') {
+              return { pricingType: 'Free' as const };
+            }
+            if (data.pricingType === 'Dynamic') {
+              return { pricingType: 'Dynamic' as const };
+            }
+            return {
+              pricingType: 'Fixed' as const,
+              Pricing: data.prices.map((price) => ({
+                unit:
+                  price.unit === 'lovelace'
+                    ? 'lovelace'
+                    : getActiveStablecoinConfig(network).fullAssetId,
+                amount: (parseFloat(price.amount) * 1000000).toString(),
+              })),
+            };
+          })(),
           Author: {
             name: data.authorName || 'Setup User',
             contactEmail: data.authorEmail || '',
@@ -1434,6 +1448,34 @@ function AddAiAgentScreen({
           <CardContent className="space-y-5">
             <div className="space-y-3">
               <Label className="text-sm">
+                Pricing Type <span className="text-destructive">*</span>
+              </Label>
+              <Select
+                value={watch('pricingType')}
+                onValueChange={(val) => {
+                  setValue('pricingType', val as 'Fixed' | 'Free' | 'Dynamic');
+                  if (val !== 'Fixed') {
+                    setValue('prices', [{ unit: 'lovelace', amount: '0.00' }]);
+                  }
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select pricing type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Fixed">Fixed - Price per Agent</SelectItem>
+                  <SelectItem value="Dynamic">Dynamic - Price set per payment</SelectItem>
+                  <SelectItem value="Free">Free - No cost for interactions</SelectItem>
+                </SelectContent>
+              </Select>
+              {watch('pricingType') === 'Dynamic' && (
+                <p className="text-xs text-muted-foreground">
+                  The price will be determined per payment/purchase request by the agent.
+                </p>
+              )}
+            </div>
+            <div className="space-y-3">
+              <Label className="text-sm">
                 Pricing <span className="text-destructive">*</span>
               </Label>
               <div className="space-y-3">
@@ -1445,6 +1487,7 @@ function AddAiAgentScreen({
                       type="number"
                       step="0.01"
                       min={0}
+                      disabled={watch('pricingType') !== 'Fixed'}
                       className={cn(
                         'flex-1',
                         errors.prices?.[index]?.amount && 'border-destructive',
@@ -1452,6 +1495,7 @@ function AddAiAgentScreen({
                     />
                     <Select
                       value={watch(`prices.${index}.unit`)}
+                      disabled={watch('pricingType') !== 'Fixed'}
                       onValueChange={(value) =>
                         setValue(`prices.${index}.unit`, value as 'lovelace' | 'USDCx' | 'tUSDM')
                       }
@@ -1483,6 +1527,7 @@ function AddAiAgentScreen({
                   variant="outline"
                   size="sm"
                   className="gap-1.5"
+                  disabled={watch('pricingType') !== 'Fixed'}
                   onClick={() => appendPrice({ unit: 'lovelace', amount: '' })}
                 >
                   <span className="text-lg leading-none">+</span> Add price option

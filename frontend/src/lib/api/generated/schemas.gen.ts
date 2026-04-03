@@ -341,6 +341,15 @@ export const PaymentSchema = {
             nullable: true,
             description: 'Identifier of the agent that is being paid'
         },
+        pricingType: {
+            type: 'string',
+            enum: [
+                'Fixed',
+                'Free',
+                'Dynamic'
+            ],
+            description: 'Pricing type of the agent (Fixed, Free, or Dynamic)'
+        },
         lastCheckedAt: {
             type: 'string',
             nullable: true,
@@ -910,6 +919,7 @@ export const PaymentSchema = {
         'updatedAt',
         'blockchainIdentifier',
         'agentIdentifier',
+        'pricingType',
         'lastCheckedAt',
         'payByTime',
         'submitResultTime',
@@ -966,6 +976,15 @@ export const PurchaseSchema = {
             type: 'string',
             nullable: true,
             description: 'Identifier of the agent that is being purchased'
+        },
+        pricingType: {
+            type: 'string',
+            enum: [
+                'Fixed',
+                'Free',
+                'Dynamic'
+            ],
+            description: 'Pricing type of the agent (Fixed, Free, or Dynamic)'
         },
         lastCheckedAt: {
             type: 'string',
@@ -1511,6 +1530,7 @@ export const PurchaseSchema = {
         'updatedAt',
         'blockchainIdentifier',
         'agentIdentifier',
+        'pricingType',
         'lastCheckedAt',
         'payByTime',
         'submitResultTime',
@@ -1739,7 +1759,22 @@ export const AgentMetadataSchema = {
                                     enum: [
                                         'Free'
                                     ],
-                                    description: 'Pricing type for the agent (Fixed or Free)'
+                                    description: 'Pricing type for the agent (Free)'
+                                }
+                            },
+                            required: [
+                                'pricingType'
+                            ]
+                        },
+                        {
+                            type: 'object',
+                            properties: {
+                                pricingType: {
+                                    type: 'string',
+                                    enum: [
+                                        'Dynamic'
+                                    ],
+                                    description: 'Pricing type for the agent (Dynamic)'
                                 }
                             },
                             required: [
@@ -1985,6 +2020,21 @@ export const AgentIdentifierMetadataSchema = {
                             required: [
                                 'pricingType'
                             ]
+                        },
+                        {
+                            type: 'object',
+                            properties: {
+                                pricingType: {
+                                    type: 'string',
+                                    enum: [
+                                        'Dynamic'
+                                    ],
+                                    description: 'Pricing type for the agent (Dynamic). Amounts are provided per payment/purchase request'
+                                }
+                            },
+                            required: [
+                                'pricingType'
+                            ]
                         }
                     ],
                     description: 'Pricing information for the agent'
@@ -2208,7 +2258,7 @@ export const RegistryEntrySchema = {
                             enum: [
                                 'Fixed'
                             ],
-                            description: 'Pricing type for the agent '
+                            description: 'Pricing type for the agent'
                         },
                         Pricing: {
                             type: 'array',
@@ -2247,7 +2297,22 @@ export const RegistryEntrySchema = {
                             enum: [
                                 'Free'
                             ],
-                            description: 'Pricing type for the agent '
+                            description: 'Pricing type for the agent'
+                        }
+                    },
+                    required: [
+                        'pricingType'
+                    ]
+                },
+                {
+                    type: 'object',
+                    properties: {
+                        pricingType: {
+                            type: 'string',
+                            enum: [
+                                'Dynamic'
+                            ],
+                            description: 'Pricing type for the agent. Amounts are provided per payment/purchase request'
                         }
                     },
                     required: [

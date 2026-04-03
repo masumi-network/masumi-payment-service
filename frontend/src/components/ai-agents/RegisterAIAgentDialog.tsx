@@ -54,78 +54,88 @@ const exampleOutputSchema = z.object({
 
 const createAgentSchema = (network: 'Mainnet' | 'Preprod') => {
   const priceSchema = createPriceSchema(network);
-  return z.object({
-    apiUrl: z
-      .string()
-      .url('API URL must be a valid URL')
-      .min(1, 'API URL is required')
-      .refine((val) => val.startsWith('http://') || val.startsWith('https://'), {
-        message: 'API URL must start with http:// or https://',
-      }),
-    name: z.string().min(1, 'Name is required'),
-    description: z
-      .string()
-      .min(1, 'Description is required')
-      .max(250, 'Description must be less than 250 characters'),
-    selectedWallet: z.string().min(1, 'Wallet is required'),
-    prices: z.array(priceSchema).min(1, 'At least one price is required'),
-    tags: z.array(z.string().min(1)).min(1, 'At least one tag is required'),
-    isFree: z.boolean().optional(),
-    // Additional Fields
-    authorName: z
-      .string()
-      .max(250, 'Author name must be less than 250 characters')
-      .optional()
-      .or(z.literal('')),
-    authorEmail: z
-      .string()
-      .email('Author email must be a valid email')
-      .max(250, 'Author email must be less than 250 characters')
-      .optional()
-      .or(z.literal('')),
-    organization: z
-      .string()
-      .max(250, 'Organization must be less than 250 characters')
-      .optional()
-      .or(z.literal('')),
-    contactOther: z
-      .string()
-      .max(250, 'Contact other must be less than 250 characters')
-      .optional()
-      .or(z.literal('')),
+  return z
+    .object({
+      apiUrl: z
+        .string()
+        .url('API URL must be a valid URL')
+        .min(1, 'API URL is required')
+        .refine((val) => val.startsWith('http://') || val.startsWith('https://'), {
+          message: 'API URL must start with http:// or https://',
+        }),
+      name: z.string().min(1, 'Name is required'),
+      description: z
+        .string()
+        .min(1, 'Description is required')
+        .max(250, 'Description must be less than 250 characters'),
+      selectedWallet: z.string().min(1, 'Wallet is required'),
+      prices: z.array(priceSchema),
+      tags: z.array(z.string().min(1)).min(1, 'At least one tag is required'),
+      pricingType: z.enum(['Fixed', 'Free', 'Dynamic']),
+      // Additional Fields
+      authorName: z
+        .string()
+        .max(250, 'Author name must be less than 250 characters')
+        .optional()
+        .or(z.literal('')),
+      authorEmail: z
+        .string()
+        .email('Author email must be a valid email')
+        .max(250, 'Author email must be less than 250 characters')
+        .optional()
+        .or(z.literal('')),
+      organization: z
+        .string()
+        .max(250, 'Organization must be less than 250 characters')
+        .optional()
+        .or(z.literal('')),
+      contactOther: z
+        .string()
+        .max(250, 'Contact other must be less than 250 characters')
+        .optional()
+        .or(z.literal('')),
 
-    termsOfUseUrl: z
-      .string()
-      .url('Terms of use URL must be a valid URL')
-      .max(250, 'Terms of use URL must be less than 250 characters')
-      .optional()
-      .or(z.literal('')),
-    privacyPolicyUrl: z
-      .string()
-      .url('Privacy policy URL must be a valid URL')
-      .max(250, 'Privacy policy URL must be less than 250 characters')
-      .optional()
-      .or(z.literal('')),
-    otherUrl: z
-      .string()
-      .url('Other URL must be a valid URL')
-      .max(250, 'Other URL must be less than 250 characters')
-      .optional()
-      .or(z.literal('')),
+      termsOfUseUrl: z
+        .string()
+        .url('Terms of use URL must be a valid URL')
+        .max(250, 'Terms of use URL must be less than 250 characters')
+        .optional()
+        .or(z.literal('')),
+      privacyPolicyUrl: z
+        .string()
+        .url('Privacy policy URL must be a valid URL')
+        .max(250, 'Privacy policy URL must be less than 250 characters')
+        .optional()
+        .or(z.literal('')),
+      otherUrl: z
+        .string()
+        .url('Other URL must be a valid URL')
+        .max(250, 'Other URL must be less than 250 characters')
+        .optional()
+        .or(z.literal('')),
 
-    capabilityName: z
-      .string()
-      .max(250, 'Capability name must be less than 250 characters')
-      .optional()
-      .or(z.literal('')),
-    capabilityVersion: z
-      .string()
-      .max(250, 'Capability version must be less than 250 characters')
-      .optional()
-      .or(z.literal('')),
+      capabilityName: z
+        .string()
+        .max(250, 'Capability name must be less than 250 characters')
+        .optional()
+        .or(z.literal('')),
+      capabilityVersion: z
+        .string()
+        .max(250, 'Capability version must be less than 250 characters')
+        .optional()
+        .or(z.literal('')),
 
-    exampleOutputs: z.array(exampleOutputSchema).optional(),
-  });
+      exampleOutputs: z.array(exampleOutputSchema).optional(),
+    })
+    .superRefine((data, ctx) => {
+      if (data.pricingType === 'Fixed' && data.prices.length === 0) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['prices'],
+          message: 'At least one price is required for fixed pricing',
+        });
+      }
+    });
 };
 
 type AgentFormValues = z.infer<ReturnType<typeof createAgentSchema>>;
@@ -157,7 +167,7 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
       selectedWallet: '',
       prices: [{ unit: 'lovelace', amount: '' }],
       tags: [],
-      isFree: false,
+      pricingType: 'Fixed',
       authorName: '',
       authorEmail: '',
       organization: '',
@@ -283,17 +293,16 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
             Tags: data.tags,
             Capability: capability,
             AgentPricing: (() => {
-              const isFreeAgent = data.isFree;
+              if (data.pricingType === 'Free') {
+                return { pricingType: 'Free' as const };
+              }
 
-              if (isFreeAgent) {
-                return {
-                  pricingType: 'Free',
-                  Pricing: [],
-                };
+              if (data.pricingType === 'Dynamic') {
+                return { pricingType: 'Dynamic' as const };
               }
 
               return {
-                pricingType: 'Fixed',
+                pricingType: 'Fixed' as const,
                 Pricing: data.prices.map((price) => {
                   const unit =
                     price.unit === stablecoinUnit
@@ -453,29 +462,40 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
               <p className="text-sm text-red-500">{errors.selectedWallet.message}</p>
             )}
           </div>
-          {/* Free Agent Toggle */}
-          <div className="space-y-4">
-            <div className="flex items-center space-x-2">
-              <Controller
-                control={control}
-                name="isFree"
-                render={({ field }) => (
-                  <input
-                    type="checkbox"
-                    id="isFree"
-                    checked={field.value || false}
-                    onChange={(e) => {
-                      field.onChange(e.target.checked);
+          {/* Pricing Type */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">
+              Pricing Type <span className="text-red-500">*</span>
+            </label>
+            <Controller
+              control={control}
+              name="pricingType"
+              render={({ field }) => (
+                <Select
+                  value={field.value}
+                  onValueChange={(val) => {
+                    field.onChange(val);
+                    if (val !== 'Fixed') {
                       setValue('prices', [{ unit: 'lovelace', amount: '0.00' }]);
-                    }}
-                    className="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded"
-                  />
-                )}
-              />
-              <label htmlFor="isFree" className="text-sm font-medium">
-                This is a free agent (no cost for interactions)
-              </label>
-            </div>
+                    }
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select pricing type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Fixed">Fixed - Price per Agent</SelectItem>
+                    <SelectItem value="Dynamic">Dynamic - Price set per payment</SelectItem>
+                    <SelectItem value="Free">Free - No cost for interactions</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            />
+            {watch('pricingType') === 'Dynamic' && (
+              <p className="text-xs text-muted-foreground">
+                The price will be determined per payment/purchase request by the agent.
+              </p>
+            )}
           </div>
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -486,7 +506,7 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
                 type="button"
                 variant="outline"
                 size="sm"
-                disabled={watch('isFree')}
+                disabled={watch('pricingType') !== 'Fixed'}
                 onClick={() => appendPrice({ unit: 'lovelace', amount: '' })}
               >
                 Add Price
@@ -502,7 +522,7 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
                       <Select
                         value={field.value}
                         onValueChange={field.onChange}
-                        disabled={watch('isFree')}
+                        disabled={watch('pricingType') !== 'Fixed'}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Select token" />
@@ -522,7 +542,7 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
                     type="number"
                     placeholder="0.00"
                     onWheel={(e) => e.currentTarget.blur()}
-                    disabled={watch('isFree')}
+                    disabled={watch('pricingType') !== 'Fixed'}
                     value={watch(`prices.${index}.amount`) || ''}
                     {...register(`prices.${index}.amount` as const)}
                     min="0"

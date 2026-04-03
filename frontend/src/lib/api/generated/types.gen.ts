@@ -217,6 +217,10 @@ export type Payment = {
      */
     agentIdentifier: string | null;
     /**
+     * Pricing type of the agent (Fixed, Free, or Dynamic)
+     */
+    pricingType: 'Fixed' | 'Free' | 'Dynamic';
+    /**
      * Timestamp when the payment was last checked on-chain. Null if never checked
      */
     lastCheckedAt: Date | null;
@@ -551,6 +555,10 @@ export type Purchase = {
      * Identifier of the agent that is being purchased
      */
     agentIdentifier: string | null;
+    /**
+     * Pricing type of the agent (Fixed, Free, or Dynamic)
+     */
+    pricingType: 'Fixed' | 'Free' | 'Dynamic';
     /**
      * Timestamp when the purchase was last checked on-chain. Null if never checked
      */
@@ -941,9 +949,14 @@ export type AgentMetadata = {
             }>;
         } | {
             /**
-             * Pricing type for the agent (Fixed or Free)
+             * Pricing type for the agent (Free)
              */
             pricingType: 'Free';
+        } | {
+            /**
+             * Pricing type for the agent (Dynamic)
+             */
+            pricingType: 'Dynamic';
         };
         /**
          * URL to the agent image/logo
@@ -1083,6 +1096,11 @@ export type AgentIdentifierMetadata = {
              * Pricing type for the agent (Free)
              */
             pricingType: 'Free';
+        } | {
+            /**
+             * Pricing type for the agent (Dynamic). Amounts are provided per payment/purchase request
+             */
+            pricingType: 'Dynamic';
         };
         /**
          * URL to the agent image/logo
@@ -1234,6 +1252,11 @@ export type RegistryEntry = {
          * Pricing type for the agent
          */
         pricingType: 'Free';
+    } | {
+        /**
+         * Pricing type for the agent. Amounts are provided per payment/purchase request
+         */
+        pricingType: 'Dynamic';
     };
     /**
      * Smart contract wallet managing this agent registration
@@ -3154,6 +3177,10 @@ export type PostPaymentResponses = {
              */
             agentIdentifier: string | null;
             /**
+             * Pricing type of the agent (Fixed, Free, or Dynamic)
+             */
+            pricingType: 'Fixed' | 'Free' | 'Dynamic';
+            /**
              * Timestamp when the payment was last checked on-chain. Null if never checked
              */
             lastCheckedAt: Date | null;
@@ -3705,6 +3732,10 @@ export type PostPaymentSubmitResultResponses = {
              */
             agentIdentifier: string | null;
             /**
+             * Pricing type of the agent (Fixed, Free, or Dynamic)
+             */
+            pricingType: 'Fixed' | 'Free' | 'Dynamic';
+            /**
              * Timestamp when the payment was last checked on-chain. Null if never checked
              */
             lastCheckedAt: Date | null;
@@ -4002,6 +4033,10 @@ export type PostPaymentAuthorizeRefundResponses = {
              * Identifier of the agent that is being paid
              */
             agentIdentifier: string | null;
+            /**
+             * Pricing type of the agent (Fixed, Free, or Dynamic)
+             */
+            pricingType: 'Fixed' | 'Free' | 'Dynamic';
             /**
              * Timestamp when the payment was last checked on-chain. Null if never checked
              */
@@ -4317,6 +4352,10 @@ export type PostPaymentErrorStateRecoveryResponses = {
              */
             agentIdentifier: string | null;
             /**
+             * Pricing type of the agent (Fixed, Free, or Dynamic)
+             */
+            pricingType: 'Fixed' | 'Free' | 'Dynamic';
+            /**
              * Timestamp when the payment was last checked on-chain. Null if never checked
              */
             lastCheckedAt: Date | null;
@@ -4629,6 +4668,10 @@ export type PostPurchaseErrorStateRecoveryResponses = {
              * Identifier of the agent that is being purchased
              */
             agentIdentifier: string | null;
+            /**
+             * Pricing type of the agent (Fixed, Free, or Dynamic)
+             */
+            pricingType: 'Fixed' | 'Free' | 'Dynamic';
             /**
              * Timestamp when the purchase was last checked on-chain. Null if never checked
              */
@@ -5681,6 +5724,10 @@ export type PostPurchaseErrors = {
              */
             agentIdentifier: string | null;
             /**
+             * Pricing type of the agent (Fixed, Free, or Dynamic)
+             */
+            pricingType: 'Fixed' | 'Free' | 'Dynamic';
+            /**
              * Timestamp when the purchase was last checked on-chain. Null if never checked
              */
             lastCheckedAt: Date | null;
@@ -5902,6 +5949,10 @@ export type PostPurchaseResponses = {
              * Identifier of the agent that is being purchased
              */
             agentIdentifier: string | null;
+            /**
+             * Pricing type of the agent (Fixed, Free, or Dynamic)
+             */
+            pricingType: 'Fixed' | 'Free' | 'Dynamic';
             /**
              * Timestamp when the purchase was last checked on-chain. Null if never checked
              */
@@ -6344,6 +6395,10 @@ export type PostPurchaseRequestRefundResponses = {
              */
             agentIdentifier: string | null;
             /**
+             * Pricing type of the agent (Fixed, Free, or Dynamic)
+             */
+            pricingType: 'Fixed' | 'Free' | 'Dynamic';
+            /**
              * Timestamp when the purchase was last checked on-chain. Null if never checked
              */
             lastCheckedAt: Date | null;
@@ -6601,6 +6656,10 @@ export type PostPurchaseCancelRefundRequestResponses = {
              * Identifier of the agent that is being purchased
              */
             agentIdentifier: string | null;
+            /**
+             * Pricing type of the agent (Fixed, Free, or Dynamic)
+             */
+            pricingType: 'Fixed' | 'Free' | 'Dynamic';
             /**
              * Timestamp when the purchase was last checked on-chain. Null if never checked
              */
@@ -7175,6 +7234,11 @@ export type PostRegistryData = {
              * Pricing type for the agent
              */
             pricingType: 'Free';
+        } | {
+            /**
+             * Pricing type for the agent. Amounts are provided per payment/purchase request
+             */
+            pricingType: 'Dynamic';
         };
         /**
          * Legal information about the agent

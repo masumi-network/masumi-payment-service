@@ -151,7 +151,7 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 								})) ?? [],
 						}
 					: {
-							pricingType: PricingType.Free,
+							pricingType: result.Pricing.pricingType,
 						},
 			Tags: result.tags,
 			CurrentTransaction: result.CurrentTransaction

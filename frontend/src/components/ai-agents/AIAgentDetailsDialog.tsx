@@ -318,6 +318,12 @@ export function AIAgentDetailsDialog({
                               <span className="font-medium">Free</span>
                             </div>
                           )}
+                          {agent.AgentPricing?.pricingType == 'Dynamic' && (
+                            <div className="text-sm text-muted-foreground">
+                              <span className="font-medium">Dynamic</span>
+                              <span className="ml-1 text-xs">(price set per request)</span>
+                            </div>
+                          )}
                           {agent.AgentPricing &&
                             agent.AgentPricing?.pricingType == 'Fixed' &&
                             agent.AgentPricing?.Pricing?.map((price, index, arr) => (

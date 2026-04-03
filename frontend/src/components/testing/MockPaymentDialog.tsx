@@ -1,6 +1,6 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { postPayment, PostPaymentResponse } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
@@ -53,11 +53,20 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
     },
   });
 
-  const paidAgents = agents.filter(
-    (agent) =>
-      agent.state === 'RegistrationConfirmed' &&
-      agent.agentIdentifier !== null &&
-      agent.AgentPricing?.pricingType !== 'Free',
+  const paidAgents = useMemo(
+    () =>
+      agents
+        .filter(
+          (agent) =>
+            agent.state === 'RegistrationConfirmed' &&
+            agent.agentIdentifier !== null &&
+            agent.AgentPricing?.pricingType !== 'Free',
+        )
+        .map((agent) => ({
+          ...agent,
+          pricingType: agent.AgentPricing?.pricingType,
+        })),
+    [agents],
   );
 
   const { inputData, setInputData, inputDataError, resetInputData } = useInputDataHash(
@@ -82,6 +91,28 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
         setError(null);
 
         const times = calculateDefaultTimes();
+        const selectedAgent = paidAgents.find((a) => a.agentIdentifier === data.agentIdentifier);
+        const isDynamic = selectedAgent?.pricingType === 'Dynamic';
+
+        if (isDynamic && !data.requestedFundsAmount) {
+          setError('Amount is required for dynamic pricing agents');
+          toast.error('Amount is required for dynamic pricing agents');
+          return;
+        }
+
+        const requestedFunds =
+          isDynamic && data.requestedFundsAmount
+            ? [
+                {
+                  amount: data.requestedFundsAmount,
+                  unit:
+                    data.requestedFundsUnit === 'lovelace' || !data.requestedFundsUnit
+                      ? ''
+                      : data.requestedFundsUnit,
+                },
+              ]
+            : undefined;
+
         const requestBody = {
           network: network,
           agentIdentifier: data.agentIdentifier,
@@ -92,6 +123,7 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
           unlockTime: times.unlockTime,
           externalDisputeUnlockTime: times.externalDisputeUnlockTime,
           metadata: data.metadata || undefined,
+          ...(requestedFunds ? { RequestedFunds: requestedFunds } : {}),
         };
 
         const baseUrl = process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL || '';
@@ -122,7 +154,7 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
         setIsLoading(false);
       }
     },
-    [apiClient, apiKey, network],
+    [apiClient, apiKey, network, paidAgents],
   );
 
   const handleClose = () => {

@@ -167,14 +167,33 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 		const pricing = parsedMetadata.agentPricing;
 		if (pricing.pricingType == PricingType.Fixed && input.RequestedFunds != null) {
 			throw createHttpError(400, 'For fixed pricing, RequestedFunds must be null');
-		} else if (pricing.pricingType != PricingType.Fixed) {
-			throw createHttpError(400, 'Non fixed price not supported yet');
+		} else if (
+			pricing.pricingType == PricingType.Dynamic &&
+			(input.RequestedFunds == null || input.RequestedFunds.length == 0)
+		) {
+			throw createHttpError(400, 'For dynamic pricing, RequestedFunds must be provided');
+		} else if (pricing.pricingType != PricingType.Fixed && pricing.pricingType != PricingType.Dynamic) {
+			throw createHttpError(400, 'Pricing type not supported for payments');
 		}
 
-		const amounts = pricing.fixedPricing.map((amount) => ({
-			amount: amount.amount,
-			unit: metadataToString(amount.unit)?.toLowerCase() == 'lovelace' ? '' : metadataToString(amount.unit)!,
-		}));
+		if (pricing.pricingType == PricingType.Dynamic && input.RequestedFunds) {
+			for (const fund of input.RequestedFunds) {
+				if (BigInt(fund.amount) <= 0n) {
+					throw createHttpError(400, 'RequestedFunds amounts must be positive');
+				}
+			}
+		}
+
+		const amounts =
+			pricing.pricingType == PricingType.Fixed
+				? pricing.fixedPricing.map((amount) => ({
+						amount: amount.amount,
+						unit: metadataToString(amount.unit)?.toLowerCase() == 'lovelace' ? '' : metadataToString(amount.unit)!,
+					}))
+				: input.RequestedFunds!.map((fund) => ({
+						amount: fund.amount,
+						unit: fund.unit.toLowerCase() == 'lovelace' ? '' : fund.unit,
+					}));
 
 		const vKey = resolvePaymentKeyHash(assetInWallet[0].address);
 
@@ -202,8 +221,7 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 			agentIdentifier: input.agentIdentifier,
 			purchaserIdentifier: input.identifierFromPurchaser,
 			sellerIdentifier: sellerId,
-			//RequestedFunds: is null for fixed pricing
-			RequestedFunds: null,
+			RequestedFunds: pricing.pricingType == PricingType.Dynamic ? amounts : null,
 			payByTime: input.payByTime.getTime().toString(),
 			submitResultTime: input.submitResultTime.getTime().toString(),
 			unlockTime: unlockTime.toString(),
@@ -236,6 +254,7 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 			data: {
 				totalBuyerCardanoFees: BigInt(0),
 				totalSellerCardanoFees: BigInt(0),
+				pricingType: pricing.pricingType,
 				blockchainIdentifier: compressedEncodedBlockchainIdentifier,
 				PaymentSource: { connect: { id: specifiedPaymentContract.id } },
 				RequestedFunds: {

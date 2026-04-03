@@ -85,14 +85,17 @@ export const paymentFormSchema = z.object({
     .max(26, 'Maximum 26 characters')
     .regex(/^[0-9a-fA-F]+$/, 'Must be valid hex'),
   metadata: z.string().optional(),
+  requestedFundsAmount: z.string().optional(),
+  requestedFundsUnit: z.string().optional(),
 });
 
 export type PaymentFormValues = z.infer<typeof paymentFormSchema>;
 
-interface PaidAgent {
+export interface PaidAgent {
   id: string;
   name: string;
   agentIdentifier: string | null;
+  pricingType?: string;
 }
 
 interface PaymentFormFieldsProps {
@@ -170,6 +173,9 @@ export function PaymentFormFields({
   inputDataError: string | null;
 }) {
   const [isSpinning, setIsSpinning] = useState(false);
+  const selectedAgentId = _watch('agentIdentifier');
+  const selectedAgent = paidAgents.find((a) => a.agentIdentifier === selectedAgentId);
+  const isDynamicPricing = selectedAgent?.pricingType === 'Dynamic';
 
   const handleGenerateIdentifier = () => {
     setIsSpinning(true);
@@ -188,7 +194,14 @@ export function PaymentFormFields({
           control={control}
           name="agentIdentifier"
           render={({ field }) => (
-            <Select value={field.value} onValueChange={field.onChange}>
+            <Select
+              value={field.value}
+              onValueChange={(val) => {
+                field.onChange(val);
+                setValue('requestedFundsAmount', '', { shouldDirty: false });
+                setValue('requestedFundsUnit', '', { shouldDirty: false });
+              }}
+            >
               <SelectTrigger
                 disabled={isLoadingAgents || paidAgents.length === 0}
                 className={`transition-colors duration-200 ${errors.agentIdentifier ? 'border-red-500' : ''}`}
@@ -326,6 +339,37 @@ export function PaymentFormFields({
           className="resize-none"
         />
       </div>
+
+      {/* Simulate Dynamic Price */}
+      {isDynamicPricing && (
+        <Card className="animate-fade-in-up opacity-0 animate-stagger-5 border-dashed">
+          <CardContent className="p-4 space-y-3">
+            <div className="space-y-1">
+              <Label className="text-sm font-medium">
+                Simulate Dynamic Price <span className="text-red-500">*</span>
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                This agent uses dynamic pricing — in production the agent determines the price per
+                request. Enter the amount in the smallest unit (e.g., lovelace for ADA where 1 ADA =
+                1000000 lovelace).
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <Input
+                  type="text"
+                  placeholder="Amount in smallest unit (e.g., 2000000)"
+                  onWheel={(e) => e.currentTarget.blur()}
+                  {...register('requestedFundsAmount')}
+                />
+              </div>
+              <div className="w-[160px]">
+                <Input placeholder="Unit (empty for ADA)" {...register('requestedFundsUnit')} />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </>
   );
 }
