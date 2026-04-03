@@ -112,6 +112,9 @@ async function confirmPaymentTransaction(
 
 	await prisma.$transaction(
 		async (prisma) => {
+			const freshTx = await prisma.transaction.findUnique({ where: { id: tx.id } });
+			if (freshTx?.status !== TransactionStatus.Pending) return;
+
 			await prisma.transaction.update({
 				where: { id: tx.id },
 				data: {
@@ -176,6 +179,9 @@ async function confirmPurchaseTransaction(
 
 	await prisma.$transaction(
 		async (prisma) => {
+			const freshTx = await prisma.transaction.findUnique({ where: { id: tx.id } });
+			if (freshTx?.status !== TransactionStatus.Pending) return;
+
 			await prisma.transaction.update({
 				where: { id: tx.id },
 				data: {

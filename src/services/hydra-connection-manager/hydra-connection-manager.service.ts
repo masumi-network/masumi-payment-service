@@ -41,6 +41,7 @@ export interface HydraHeadWithLocalParticipant {
 export class HydraConnectionManager {
 	private _heads: Map<string, ManagedHead> = new Map();
 	private _reconnectTimers: Map<string, number> = new Map();
+	private _processingTxIds: Set<string> = new Set();
 
 	async initialize(): Promise<void> {
 		const enabledHeads = await prisma.hydraHead.findMany({
@@ -235,6 +236,21 @@ export class HydraConnectionManager {
 	}
 
 	private async handleTxConfirmed(hydraHeadId: string, txId: string): Promise<void> {
+		const dedupeKey = `${hydraHeadId}:${txId}`;
+		if (this._processingTxIds.has(dedupeKey)) {
+			logger.debug(`[HydraConnectionManager] Skipping duplicate TxConfirmed for ${txId}`);
+			return;
+		}
+		this._processingTxIds.add(dedupeKey);
+
+		try {
+			await this._handleTxConfirmedInner(hydraHeadId, txId);
+		} finally {
+			this._processingTxIds.delete(dedupeKey);
+		}
+	}
+
+	private async _handleTxConfirmedInner(hydraHeadId: string, txId: string): Promise<void> {
 		const tx = await prisma.transaction.findFirst({
 			where: {
 				txHash: txId,
