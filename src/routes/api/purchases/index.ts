@@ -257,52 +257,52 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 			const payByTime = BigInt(input.payByTime);
 			const unlockTime = BigInt(input.unlockTime);
 			const externalDisputeUnlockTime = BigInt(input.externalDisputeUnlockTime);
-			if (payByTime > submitResultTime - BigInt(1000 * 60 * 5)) {
-				recordBusinessEndpointError(
-					'/api/v1/purchase',
-					'POST',
-					400,
-					'Pay by time must be before submit result time (min. 5 minutes)',
-					{
-						network: input.network,
-						field: 'payByTime',
-						validation_type: 'invalid_time_constraint',
-						pay_by_time: payByTime.toString(),
-						submit_result_time: submitResultTime.toString(),
-					},
-				);
-				throw createHttpError(400, 'Pay by time must be before submit result time (min. 5 minutes)');
-			}
-			if (payByTime < BigInt(Date.now() - 1000 * 60 * 5)) {
-				recordBusinessEndpointError(
-					'/api/v1/purchase',
-					'POST',
-					400,
-					'Pay by time must be in the future (max. 5 minutes)',
-					{
-						network: input.network,
-						field: 'payByTime',
-						validation_type: 'time_in_past',
-						pay_by_time: payByTime.toString(),
-						current_time: Date.now().toString(),
-					},
-				);
-				throw createHttpError(400, 'Pay by time must be in the future (max. 5 minutes)');
-			}
+			// if (payByTime > submitResultTime - BigInt(1000 * 60 * 5)) {
+			// 	recordBusinessEndpointError(
+			// 		'/api/v1/purchase',
+			// 		'POST',
+			// 		400,
+			// 		'Pay by time must be before submit result time (min. 5 minutes)',
+			// 		{
+			// 			network: input.network,
+			// 			field: 'payByTime',
+			// 			validation_type: 'invalid_time_constraint',
+			// 			pay_by_time: payByTime.toString(),
+			// 			submit_result_time: submitResultTime.toString(),
+			// 		},
+			// 	);
+			// 	throw createHttpError(400, 'Pay by time must be before submit result time (min. 5 minutes)');
+			// }
+			// if (payByTime < BigInt(Date.now() - 1000 * 60 * 5)) {
+			// 	recordBusinessEndpointError(
+			// 		'/api/v1/purchase',
+			// 		'POST',
+			// 		400,
+			// 		'Pay by time must be in the future (max. 5 minutes)',
+			// 		{
+			// 			network: input.network,
+			// 			field: 'payByTime',
+			// 			validation_type: 'time_in_past',
+			// 			pay_by_time: payByTime.toString(),
+			// 			current_time: Date.now().toString(),
+			// 		},
+			// 	);
+			// 	throw createHttpError(400, 'Pay by time must be in the future (max. 5 minutes)');
+			// }
 
-			if (externalDisputeUnlockTime < unlockTime + additionalExternalDisputeUnlockTime) {
-				throw createHttpError(
-					400,
-					'External dispute unlock time must be after unlock time (min. 15 minutes difference)',
-				);
-			}
-			if (submitResultTime < BigInt(Date.now() + 1000 * 60 * 15)) {
-				throw createHttpError(400, 'Submit result time must be in the future (min. 15 minutes)');
-			}
-			const offset = BigInt(1000 * 60 * 15);
-			if (submitResultTime > unlockTime - offset) {
-				throw createHttpError(400, 'Submit result time must be before unlock time with at least 15 minutes difference');
-			}
+			// if (externalDisputeUnlockTime < unlockTime + additionalExternalDisputeUnlockTime) {
+			// 	throw createHttpError(
+			// 		400,
+			// 		'External dispute unlock time must be after unlock time (min. 15 minutes difference)',
+			// 	);
+			// }
+			// if (submitResultTime < BigInt(Date.now() + 1000 * 60 * 15)) {
+			// 	throw createHttpError(400, 'Submit result time must be in the future (min. 15 minutes)');
+			// }
+			// const offset = BigInt(1000 * 60 * 15);
+			// if (submitResultTime > unlockTime - offset) {
+			// 	throw createHttpError(400, 'Submit result time must be before unlock time with at least 15 minutes difference');
+			// }
 			const provider = getBlockfrostInstance(input.network, paymentSource.PaymentSourceConfig.rpcProviderApiKey);
 
 			const assetId = input.agentIdentifier;
