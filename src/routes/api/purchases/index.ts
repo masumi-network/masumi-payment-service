@@ -18,7 +18,6 @@ import { HttpExistsError } from '@/utils/errors/http-exists-error';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
-import { CONFIG } from '@/utils/config';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import {
@@ -258,26 +257,6 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 			const payByTime = BigInt(input.payByTime);
 			const unlockTime = BigInt(input.unlockTime);
 			const externalDisputeUnlockTime = BigInt(input.externalDisputeUnlockTime);
-			// Require enough remaining time to survive up to one scheduler interval delay.
-			const minPayByRemainingMs = BigInt(CONFIG.PURCHASE_BATCH_MIN_REMAINING_MS + CONFIG.BATCH_PAYMENT_INTERVAL * 1000);
-			const minPayByTime = BigInt(Date.now()) + minPayByRemainingMs;
-			if (payByTime < minPayByTime) {
-				recordBusinessEndpointError(
-					'/api/v1/purchase',
-					'POST',
-					400,
-					'Pay by time must allow enough remaining time for batching',
-					{
-						network: input.network,
-						field: 'payByTime',
-						validation_type: 'insufficient_batch_remaining_time',
-						pay_by_time: payByTime.toString(),
-						minimum_required_pay_by_time: minPayByTime.toString(),
-						required_remaining_ms: minPayByRemainingMs.toString(),
-					},
-				);
-				throw createHttpError(400, `Pay by time must be at least ${minPayByRemainingMs.toString()}ms in the future`);
-			}
 			if (payByTime > submitResultTime - BigInt(1000 * 60 * 5)) {
 				recordBusinessEndpointError(
 					'/api/v1/purchase',

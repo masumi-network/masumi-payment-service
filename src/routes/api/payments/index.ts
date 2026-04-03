@@ -20,6 +20,7 @@ import { validateHexString } from '@/utils/validator/hex';
 import { transformPaymentGetAmounts, transformPaymentGetTimestamps } from '@/utils/shared/transformers';
 import { extractPolicyId } from '@/utils/converter/agent-identifier';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
+import { CONFIG } from '@/utils/config';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { buildWalletScopeFilter, assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 import {
@@ -131,12 +132,13 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 
 		//require at least 3 hours between unlock time and the submit result time
 		const additionalExternalDisputeUnlockTime = BigInt(1000 * 60 * 15);
+		const minPayByLeadMs = BigInt(CONFIG.PURCHASE_LOCK_MIN_LEAD_MS);
 
+		if (payByTime < BigInt(Date.now()) + minPayByLeadMs) {
+			throw createHttpError(400, `Pay by time must be at least ${CONFIG.PURCHASE_LOCK_MIN_LEAD_MS}ms in the future`);
+		}
 		if (payByTime > submitResultTime - BigInt(1000 * 60 * 5)) {
 			throw createHttpError(400, 'Pay by time must be before submit result time (min. 5 minutes)');
-		}
-		if (payByTime < BigInt(Date.now() - 1000 * 60 * 5)) {
-			throw createHttpError(400, 'Pay by time must be in the future (max. 5 minutes)');
 		}
 
 		if (externalDisputeUnlockTime < BigInt(unlockTime) + additionalExternalDisputeUnlockTime) {
