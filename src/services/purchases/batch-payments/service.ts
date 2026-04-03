@@ -221,7 +221,7 @@ export async function batchLatestPaymentEntriesV1() {
 	try {
 		const paymentContractsWithWalletLocked = await prisma.$transaction(
 			async (prisma) => {
-				const payByTime = new Date().getTime() + 1000 * 57;
+				// const payByTime = new Date().getTime() + 1000 * 57;
 				const paymentContracts = await prisma.paymentSource.findMany({
 					where: {
 						deletedAt: null,
@@ -242,7 +242,7 @@ export async function batchLatestPaymentEntriesV1() {
 								},
 								CurrentTransaction: { is: null },
 								onChainState: null,
-								payByTime: { gte: payByTime },
+								// payByTime: { gte: payByTime },
 							},
 							include: {
 								PaidFunds: true,
