@@ -428,6 +428,7 @@ export async function updateWalletTransactionHash() {
 					lastCheckedAt: {
 						lte: new Date(Date.now() - 1000 * 60 * 1),
 					},
+					layer: 'L1',
 				},
 				deletedAt: null,
 				OR: [

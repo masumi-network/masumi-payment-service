@@ -15,6 +15,7 @@ import { Network as PrismaNetwork } from '@/generated/prisma/client';
 import { logger } from '@/utils/logger';
 import { calculateMinUtxo, getLovelaceFromAmounts, getNativeTokenCount, calculateTopUpAmount } from '@/utils/min-utxo';
 import { CONSTANTS } from '@/utils/config';
+import { HydraContext } from '@/utils/hydra';
 
 function convertMeshNetworkToPrismaNetwork(network: Network): PrismaNetwork {
 	switch (network) {
@@ -42,7 +43,11 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 	newInlineDatum: Data,
 	invalidBefore: number,
 	invalidAfter: number,
+	hydraContext?: HydraContext,
 ) {
+	const isL2 = !!hydraContext;
+	const provider = hydraContext?.hydraProvider ?? blockchainProvider;
+
 	let coinsPerUtxoSize: number = CONSTANTS.FALLBACK_COINS_PER_UTXO_SIZE;
 	try {
 		const protocolParams = await blockchainProvider.fetchProtocolParameters();
@@ -61,6 +66,25 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 		});
 	}
 
+	if (isL2) {
+		return await generateMasumiSmartContractInteractionTransactionCustomFee(
+			type,
+			provider,
+			network,
+			script,
+			walletAddress,
+			smartContractUtxo,
+			collateralUtxo,
+			walletUtxos,
+			newInlineDatum,
+			invalidBefore,
+			invalidAfter,
+			undefined,
+			coinsPerUtxoSize,
+			true,
+		);
+	}
+
 	const evaluationTx = await generateMasumiSmartContractInteractionTransactionCustomFee(
 		type,
 		blockchainProvider,
@@ -75,6 +99,7 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 		invalidAfter,
 		undefined,
 		coinsPerUtxoSize,
+		false,
 	);
 
 	const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
@@ -95,6 +120,7 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 		invalidAfter,
 		estimatedFee[0].budget,
 		coinsPerUtxoSize,
+		false,
 	);
 }
 
@@ -122,9 +148,11 @@ async function generateMasumiSmartContractInteractionTransactionCustomFee(
 	},
 
 	coinsPerUtxoSize: number = CONSTANTS.FALLBACK_COINS_PER_UTXO_SIZE,
+	isHydra = false,
 ) {
 	const txBuilder = new MeshTxBuilder({
 		fetcher: blockchainProvider,
+		isHydra,
 	});
 	const redeemerData = generateRedeemerData(type);
 	const smartContractAddress: unknown = resolvePlutusScriptAddress(
@@ -276,7 +304,28 @@ export async function generateMasumiSmartContractWithdrawTransactionAutomaticFee
 	} | null,
 	invalidBefore: number,
 	invalidAfter: number,
+	hydraContext?: HydraContext,
 ) {
+	if (hydraContext) {
+		return await generateMasumiSmartContractWithdrawTransactionCustomFee(
+			type,
+			hydraContext.hydraProvider,
+			network,
+			script,
+			walletAddress,
+			smartContractUtxo,
+			collateralUtxo,
+			walletUtxos,
+			collection,
+			fee,
+			collateralReturn,
+			invalidBefore,
+			invalidAfter,
+			undefined,
+			true,
+		);
+	}
+
 	const evaluationTx = await generateMasumiSmartContractWithdrawTransactionCustomFee(
 		type,
 		blockchainProvider,
@@ -352,9 +401,11 @@ async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 		mem: 7e6,
 		steps: 3e9,
 	},
+	isHydra = false,
 ) {
 	const txBuilder = new MeshTxBuilder({
 		fetcher: blockchainProvider,
+		isHydra,
 	});
 	const redeemerData = generateRedeemerData(type);
 

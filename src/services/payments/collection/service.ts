@@ -15,6 +15,8 @@ import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractWithdrawTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import { CONSTANTS } from '@/utils/config';
+import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
+import type { HydraContext } from '@/utils/hydra/create-l2-providers';
 import {
 	connectPreviousAction,
 	createMeshProvider,
@@ -63,11 +65,22 @@ async function processSinglePaymentCollection(
 	}
 	if (request.SmartContractWallet == null) throw new Error('Smart contract wallet not found');
 
+	const isL2 = request.layer === 'L2';
+	let hydraContext: HydraContext | undefined;
+
+	if (isL2 && request.CurrentTransaction?.hydraHeadId) {
+		const provider = getHydraConnectionManager().getProvider(request.CurrentTransaction.hydraHeadId);
+		if (provider) {
+			hydraContext = { hydraProvider: provider, hydraHeadId: request.CurrentTransaction.hydraHeadId };
+		}
+	}
+
 	const walletSession = await loadHotWalletSession({
 		network: paymentContract.network,
 		rpcProviderApiKey: paymentContract.PaymentSourceConfig.rpcProviderApiKey,
 		encryptedMnemonic: request.SmartContractWallet.Secret.encryptedMnemonic,
 		hotWalletId: request.SmartContractWallet.id,
+		hydraContext,
 	});
 	const { wallet, utxos, address } = walletSession;
 
@@ -83,7 +96,9 @@ async function processSinglePaymentCollection(
 		throw new Error('Transaction hash not found');
 	}
 
-	const utxoByHash = await blockchainProvider.fetchUTxOs(txHash);
+	const utxoByHash = hydraContext
+		? await hydraContext.hydraProvider.fetchUTxOs(txHash)
+		: await blockchainProvider.fetchUTxOs(txHash);
 
 	const utxo = utxoByHash.find((utxo) => {
 		if (utxo.input.txHash != txHash) {
@@ -231,6 +246,7 @@ async function processSinglePaymentCollection(
 		},
 		invalidBefore,
 		invalidAfter,
+		hydraContext,
 	);
 
 	const signedTx = await wallet.signTx(unsignedTx);

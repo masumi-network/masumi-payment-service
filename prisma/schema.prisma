@@ -8,17 +8,17 @@ datasource db {
 }
 
 model ApiKey {
-  id                    String              @id @default(cuid())
-  createdAt             DateTime            @default(now())
-  updatedAt             DateTime            @updatedAt
-  token                 String              @unique
-  tokenHash             String              @unique
-  status                ApiKeyStatus
+  id        String       @id @default(cuid())
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  token     String       @unique
+  tokenHash String       @unique
+  status    ApiKeyStatus
 
   // Flag-based permissions (must be set explicitly on create)
-  canRead               Boolean
-  canPay                Boolean
-  canAdmin              Boolean
+  canRead  Boolean
+  canPay   Boolean
+  canAdmin Boolean
 
   networkLimit          Network[]
   usageLimited          Boolean             @default(false)
@@ -69,31 +69,33 @@ model UnitValue {
 }
 
 model HotWallet {
-  id                       String              @id @default(cuid())
-  createdAt                DateTime            @default(now())
-  updatedAt                DateTime            @updatedAt
-  walletVkey               String              @unique
+  id                       String                    @id @default(cuid())
+  createdAt                DateTime                  @default(now())
+  updatedAt                DateTime                  @updatedAt
+  walletVkey               String                    @unique
   walletAddress            String
   type                     HotWalletType
   secretId                 String
   collectionAddress        String?
-  pendingTransactionId     String?             @unique
-  pendingSwapTransactionId String?             @unique
+  pendingTransactionId     String?                   @unique
+  pendingSwapTransactionId String?                   @unique
   paymentSourceId          String
   lockedAt                 DateTime?
   note                     String?
   deletedAt                DateTime?
-  PaymentSource            PaymentSource       @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
-  PendingTransaction       Transaction?        @relation(fields: [pendingTransactionId], references: [id])
-  PendingSwapTransaction   SwapTransaction?    @relation(fields: [pendingSwapTransactionId], references: [id])
-  SwapTransactionHistory   SwapTransaction[]   @relation("SwapTransactionHistory")
-  Secret                   WalletSecret        @relation(fields: [secretId], references: [id])
+  PaymentSource            PaymentSource             @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
+  PendingTransaction       Transaction?              @relation(fields: [pendingTransactionId], references: [id])
+  PendingSwapTransaction   SwapTransaction?          @relation(fields: [pendingSwapTransactionId], references: [id])
+  SwapTransactionHistory   SwapTransaction[]         @relation("SwapTransactionHistory")
+  Secret                   WalletSecret              @relation(fields: [secretId], references: [id])
   PaymentRequest           PaymentRequest[]
   PurchaseRequest          PurchaseRequest[]
   RegistryRequest          RegistryRequest[]
   apiKeyWalletScopes       ApiKeyWalletScope[]
-  LimitedPurchaseRequests  PurchaseRequest[]   @relation("HotWalletLimit")
+  LimitedPurchaseRequests  PurchaseRequest[]         @relation("HotWalletLimit")
   LowBalanceRules          HotWalletLowBalanceRule[]
+  hydraRelations           HydraRelation[]
+  hydraLocalParticipants   HydraLocalParticipant[]
 }
 
 model HotWalletLowBalanceRule {
@@ -136,12 +138,23 @@ model Transaction {
   purchaseRequestHistoryId String?
   previousOnChainState     OnChainState?
   newOnChainState          OnChainState?
-  BlocksWallet             HotWallet?
-  PaymentRequestCurrent    PaymentRequest?   @relation("CurrentPaymentTransaction")
-  PurchaseRequestCurrent   PurchaseRequest?  @relation("CurrentPurchaseTransaction")
-  RegistryRequest          RegistryRequest[]
-  PaymentRequestHistory    PaymentRequest?   @relation("PaymentTransactionHistory", fields: [paymentRequestHistoryId], references: [id])
-  PurchaseRequestHistory   PurchaseRequest?  @relation("PurchaseTransactionHistory", fields: [purchaseRequestHistoryId], references: [id])
+
+  /// Which blockchain layer this transaction was submitted to
+  layer TransactionLayer @default(L1)
+
+  /// If submitted to L2, which Hydra head processed it
+  hydraHeadId String?
+  HydraHead   HydraHead? @relation(fields: [hydraHeadId], references: [id])
+
+  BlocksWallet           HotWallet?
+  PaymentRequestCurrent  PaymentRequest?   @relation("CurrentPaymentTransaction")
+  PurchaseRequestCurrent PurchaseRequest?  @relation("CurrentPurchaseTransaction")
+  RegistryRequest        RegistryRequest[]
+  PaymentRequestHistory  PaymentRequest?   @relation("PaymentTransactionHistory", fields: [paymentRequestHistoryId], references: [id])
+  PurchaseRequestHistory PurchaseRequest?  @relation("PurchaseTransactionHistory", fields: [purchaseRequestHistoryId], references: [id])
+
+  @@index([layer])
+  @@index([hydraHeadId])
 }
 
 model SwapTransaction {
@@ -176,17 +189,19 @@ model WalletSecret {
 }
 
 model WalletBase {
-  id              String            @id @default(cuid())
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
-  walletVkey      String
-  note            String?
-  type            WalletType
-  paymentSourceId String
-  walletAddress   String            @default("")
-  PaymentRequest  PaymentRequest[]
-  PurchaseRequest PurchaseRequest[]
-  PaymentSource   PaymentSource     @relation(fields: [paymentSourceId], references: [id])
+  id                      String                   @id @default(cuid())
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  walletVkey              String
+  note                    String?
+  type                    WalletType
+  paymentSourceId         String
+  walletAddress           String                   @default("")
+  PaymentRequest          PaymentRequest[]
+  PurchaseRequest         PurchaseRequest[]
+  PaymentSource           PaymentSource            @relation(fields: [paymentSourceId], references: [id])
+  HydraRelations          HydraRelation[]
+  HydraRemoteParticipants HydraRemoteParticipant[]
 
   @@unique([paymentSourceId, walletVkey, walletAddress, type])
 }
@@ -299,6 +314,9 @@ model PaymentRequest {
   invoiceBase                                   InvoiceBase?        @relation(fields: [invoiceBaseId], references: [id])
   invoiceBaseId                                 String?
 
+  /// Which blockchain layer this request targets
+  layer TransactionLayer @default(L1)
+
   @@index([nextActionLastChangedAt])
   @@index([nextActionLastChangedAt, id])
   @@index([onChainStateOrResultLastChangedAt])
@@ -308,6 +326,7 @@ model PaymentRequest {
   @@index([paymentSourceId, createdAt])
   @@index([paymentSourceId, onChainState])
   @@index([paymentSourceId, payByTime])
+  @@index([layer])
 }
 
 model PaymentActionData {
@@ -367,6 +386,9 @@ model PurchaseRequest {
   PaidFunds                                     UnitValue[]
   WithdrawnForSeller                            UnitValue[]          @relation("SellerWithdrawnPurchaseRequest")
 
+  /// Which blockchain layer this request targets
+  layer TransactionLayer @default(L1)
+
   @@index([nextActionLastChangedAt])
   @@index([nextActionLastChangedAt, id])
   @@index([onChainStateOrResultLastChangedAt])
@@ -376,6 +398,7 @@ model PurchaseRequest {
   @@index([paymentSourceId, createdAt])
   @@index([paymentSourceId, onChainState])
   @@index([paymentSourceId, payByTime])
+  @@index([layer])
 }
 
 model PurchaseActionData {
@@ -506,6 +529,11 @@ enum TransactionStatus {
   FailedViaTimeout
   FailedViaManualReset
   RolledBack
+}
+
+enum TransactionLayer {
+  L1
+  L2
 }
 
 enum SwapStatus {
@@ -749,4 +777,246 @@ enum WebhookDeliveryStatus {
   Failed
   Retrying
   Cancelled
+}
+
+// ============================================================
+// HYDRA L2 MODELS
+// ============================================================
+
+enum HydraHeadStatus {
+  Disconnected
+  Connected
+  Connecting
+  Idle
+  Initializing
+  Open
+  Closed
+  FanoutPossible
+  Final
+}
+
+enum HydraErrorType {
+  /// When well-formed client input was not processable.
+  CommandFailed
+  /// Something went wrong while posting Hydra Layer1 transaction.
+  PostTxOnChainFailed
+  /// Transaction is invalid inside the Hydra Head.
+  TxInvalid
+  /// Client input was invalid.
+  InvalidInput
+}
+
+/// Persistent relation between a local wallet and a remote counterparty for Hydra L2.
+/// Each agent runs their own server, so this is stored from the local agent's perspective.
+/// The local side is a HotWallet (we have the secret), the remote side is a WalletBase (public info only).
+/// Each relation can have multiple HydraHead records over time (one closes, a new one opens).
+model HydraRelation {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Cardano network this relation operates on
+  network Network
+
+  /// The local wallet we control (HotWallet with secret key)
+  localHotWalletId String
+  LocalHotWallet   HotWallet @relation(fields: [localHotWalletId], references: [id], onDelete: Restrict)
+
+  /// The remote counterparty's wallet (public info only)
+  remoteWalletId String
+  RemoteWallet   WalletBase @relation(fields: [remoteWalletId], references: [id], onDelete: Restrict)
+
+  /// Individual head sessions within this relation (1:N)
+  Heads HydraHead[]
+
+  /// One relation per wallet pair per network
+  @@unique([network, localHotWalletId, remoteWalletId])
+  @@index([network])
+  @@index([localHotWalletId])
+}
+
+/// A single Hydra head instance within a participant relation.
+/// Each head is one "session" — it goes through Idle → Open → Closed → Final.
+/// A relation can have many heads over its lifetime, but typically only one is Open.
+model HydraHead {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// The participant relation this head belongs to
+  hydraRelationId String
+  HydraRelation   HydraRelation @relation(fields: [hydraRelationId], references: [id], onDelete: Cascade)
+
+  /// Hydra head identifier (assigned after Init)
+  headId String? @unique
+
+  /// Current status of the Hydra head
+  status HydraHeadStatus @default(Idle)
+
+  /// Contestation period in seconds (configured on the Hydra node)
+  contestationPeriod BigInt @default(86400)
+
+  /// Lifecycle timestamps
+  openedAt    DateTime?
+  closedAt    DateTime?
+  finalizedAt DateTime?
+
+  /// Deadline after which fanout is possible (set when head is closed)
+  contestationDeadline DateTime?
+
+  /// Latest activity timestamp for idle detection / auto-close
+  latestActivityAt DateTime?
+
+  /// Latest confirmed snapshot number (monotonically increasing while head is open)
+  latestSnapshotNumber BigInt @default(0)
+
+  /// L1 transaction hashes for head lifecycle events
+  initTxHash   String?
+  closeTxHash  String?
+  fanoutTxHash String?
+
+  /// Errors that have occurred during the head's lifecycle
+  Errors HydraHeadError[]
+
+  /// The local participant in this head (this server's wallet + node)
+  LocalParticipant HydraLocalParticipant?
+
+  /// Remote participants in this head (counterparties, public info only)
+  RemoteParticipants HydraRemoteParticipant[]
+
+  /// Transactions submitted through this head (L2)
+  Transactions Transaction[]
+
+  /// Is enabled
+  isEnabled Boolean @default(true)
+
+  @@index([status])
+  @@index([hydraRelationId, status])
+  @@index([hydraRelationId, status, isEnabled])
+}
+
+/// The local participant — this server's wallet and Hydra node config.
+/// Can exist before any head (hydraHeadId is nullable).
+/// Once assigned to a head, the @unique constraint ensures one local participant per head.
+/// Has full key material for signing transactions.
+model HydraLocalParticipant {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Which head this participant belongs to (nullable — can be created before a head exists)
+  hydraHeadId String?    @unique
+  HydraHead   HydraHead? @relation(fields: [hydraHeadId], references: [id], onDelete: Cascade)
+
+  /// The HotWallet this participant operates with (has secret mnemonic)
+  walletId String
+  Wallet   HotWallet @relation(fields: [walletId], references: [id], onDelete: Restrict)
+
+  /// WebSocket URL for this participant's Hydra node (e.g. ws://127.0.0.1:4001)
+  nodeUrl String
+
+  /// HTTP URL for this participant's Hydra node (e.g. http://127.0.0.1:4001)
+  nodeHttpUrl String
+
+  /// Whether this participant has committed funds to the head
+  hasCommitted Boolean @default(false)
+
+  /// L1 commit transaction hash (set after this participant commits to the head)
+  commitTxHash String?
+
+  /// Encrypted Hydra signing key (1:1)
+  hydraSecretKeyId String         @unique
+  HydraSecretKey   HydraSecretKey @relation(fields: [hydraSecretKeyId], references: [id], onDelete: Restrict)
+
+  @@index([walletId])
+}
+
+/// A remote participant — a counterparty whose public info we know.
+/// Can exist before any head (hydraHeadId is nullable).
+/// No secret key material — we only observe their actions via the Hydra protocol.
+model HydraRemoteParticipant {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Which head this participant belongs to (nullable — can be created before a head exists)
+  hydraHeadId String?
+  HydraHead   HydraHead? @relation(fields: [hydraHeadId], references: [id], onDelete: Cascade)
+
+  /// The counterparty's wallet (public info only — vkey, address)
+  walletId String
+  Wallet   WalletBase @relation(fields: [walletId], references: [id], onDelete: Restrict)
+
+  /// WebSocket URL for this participant's Hydra node
+  nodeUrl String
+
+  /// HTTP URL for this participant's Hydra node
+  nodeHttpUrl String
+
+  /// Whether this participant has committed funds (observed from Hydra protocol)
+  hasCommitted Boolean @default(false)
+
+  /// Commit transaction hash (observed from Hydra protocol)
+  commitTxHash String?
+
+  /// Hydra verification key (1:1)
+  hydraVerificationKeyId String               @unique
+  HydraVerificationKey   HydraVerificationKey @relation(fields: [hydraVerificationKeyId], references: [id], onDelete: Restrict)
+
+  /// Same wallet cannot join the same head twice
+  @@unique([hydraHeadId, walletId])
+  @@index([walletId])
+}
+
+/// An error that has occurred during a Hydra head's lifecycle.
+model HydraHeadError {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  /// Which head this error belongs to
+  hydraHeadId String
+  HydraHead   HydraHead @relation(fields: [hydraHeadId], references: [id], onDelete: Cascade)
+
+  /// The type of error
+  errorType    HydraErrorType
+  errorMessage String
+
+  /// The status of the head when the error occurred
+  headStatus HydraHeadStatus
+
+  /// The client input that caused the error
+  clientInput String?
+
+  /// The transaction hash that caused the error
+  txHash  String?
+  errorAt DateTime
+
+  @@index([hydraHeadId])
+  @@index([hydraHeadId, errorAt])
+}
+
+/// Encrypted Hydra signing key for the local participant (1:1 with HydraLocalParticipant).
+/// Fund and node wallet keys are not needed here — those come from the HotWallet.
+model HydraSecretKey {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Encrypted Hydra signing key (cborHex of the signing key)
+  hydraSK String
+
+  HydraLocalParticipant HydraLocalParticipant?
+}
+
+/// Hydra verification key for a remote participant (1:1 with HydraRemoteParticipant).
+/// Public key material only — used to verify the remote counterparty's identity.
+model HydraVerificationKey {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Hydra verification key (cborHex of the verification key)
+  hydraVK String
+
+  HydraRemoteParticipant HydraRemoteParticipant?
 }

@@ -13,6 +13,7 @@ import { DEFAULTS } from '@/utils/config';
 import { requestLogger } from '@/utils/middleware/request-logger';
 import { blockchainStateMonitorService } from '@/services/monitoring';
 import fs from 'fs';
+import { getHydraConnectionManager } from './services/hydra-connection-manager/hydra-connection-manager.service';
 
 const __dirname = path.resolve();
 
@@ -34,6 +35,10 @@ async function initialize() {
 		logger.warn('*****************************************************************');
 	}
 	await initJobs();
+
+	// Reconnect to any enabled Hydra heads that are reachable
+	await getHydraConnectionManager().initialize();
+	logger.info('Hydra connection manager initialized', { component: 'hydra' });
 
 	// Start blockchain state monitoring
 	await blockchainStateMonitorService.startMonitoring(30000); // Monitor every 30 seconds

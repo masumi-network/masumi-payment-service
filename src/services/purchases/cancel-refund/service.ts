@@ -1,4 +1,4 @@
-import { OnChainState, PurchaseErrorType, PurchasingAction } from '@/generated/prisma/client';
+import { OnChainState, PurchaseErrorType, PurchasingAction, TransactionLayer } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import { deserializeDatum, UTxO } from '@meshsdk/core';
 import { logger } from '@/utils/logger';
@@ -16,6 +16,8 @@ import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
+import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
+import type { HydraContext } from '@/utils/hydra/create-l2-providers';
 import {
 	connectPreviousAction,
 	createMeshProvider,
@@ -138,6 +140,16 @@ export async function cancelRefundsV1() {
 					operations: purchaseRequests.map((request) => async () => {
 						validatePurchaseRequestFields(request);
 
+						const isL2 = request.layer === 'L2';
+						let hydraContext: HydraContext | undefined;
+
+						if (isL2 && request.CurrentTransaction?.hydraHeadId) {
+							const provider = getHydraConnectionManager().getProvider(request.CurrentTransaction.hydraHeadId);
+							if (provider) {
+								hydraContext = { hydraProvider: provider, hydraHeadId: request.CurrentTransaction.hydraHeadId };
+							}
+						}
+
 						const purchasingWallet = request.SmartContractWallet!;
 						const encryptedSecret = purchasingWallet.Secret.encryptedMnemonic;
 
@@ -146,6 +158,7 @@ export async function cancelRefundsV1() {
 							rpcProviderApiKey: paymentContract.PaymentSourceConfig.rpcProviderApiKey,
 							encryptedMnemonic: encryptedSecret,
 							hotWalletId: purchasingWallet.id,
+							hydraContext,
 						});
 						const { wallet, utxos, address } = walletSession;
 						if (utxos.length === 0) {
@@ -158,7 +171,9 @@ export async function cancelRefundsV1() {
 						if (txHash == null) {
 							throw new Error('Transaction hash not found');
 						}
-						const utxoByHash = await blockchainProvider.fetchUTxOs(txHash);
+						const utxoByHash = hydraContext
+							? await hydraContext.hydraProvider.fetchUTxOs(txHash)
+							: await blockchainProvider.fetchUTxOs(txHash);
 
 						const utxo = utxoByHash.find((utxo) => {
 							if (utxo.input.txHash != txHash) {
@@ -224,6 +239,7 @@ export async function cancelRefundsV1() {
 							datum.value,
 							invalidBefore,
 							invalidAfter,
+							hydraContext,
 						);
 
 						const signedTx = await wallet.signTx(unsignedTx);
@@ -233,7 +249,10 @@ export async function cancelRefundsV1() {
 							data: {
 								...connectPreviousAction(request.nextActionId),
 								...createNextPurchaseAction(PurchasingAction.UnSetRefundRequestedInitiated),
-								...createPendingTransaction(purchasingWallet.id),
+								...createPendingTransaction(
+									purchasingWallet.id,
+									hydraContext ? { layer: TransactionLayer.L2, hydraHeadId: hydraContext.hydraHeadId } : undefined,
+								),
 								TransactionHistory: {
 									connect: {
 										id: request.CurrentTransaction!.id,
