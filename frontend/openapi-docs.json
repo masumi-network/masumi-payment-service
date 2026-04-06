@@ -1102,6 +1102,7 @@
                                     "WaitingForExternalAction",
                                     "FundsLockingRequested",
                                     "FundsLockingInitiated",
+                                    "ExternalFundsLockingInitiated",
                                     "SetRefundRequestedRequested",
                                     "SetRefundRequestedInitiated",
                                     "UnSetRefundRequestedRequested",
@@ -1164,6 +1165,7 @@
                                         "WaitingForExternalAction",
                                         "FundsLockingRequested",
                                         "FundsLockingInitiated",
+                                        "ExternalFundsLockingInitiated",
                                         "SetRefundRequestedRequested",
                                         "SetRefundRequestedInitiated",
                                         "UnSetRefundRequestedRequested",
@@ -3728,8 +3730,7 @@
                                                                 "type": "string",
                                                                 "enum": [
                                                                     "Selling",
-                                                                    "Purchasing",
-                                                                    "Funding"
+                                                                    "Purchasing"
                                                                 ],
                                                                 "description": "Hot wallet type"
                                                             },
@@ -3934,8 +3935,7 @@
                                                     "type": "string",
                                                     "enum": [
                                                         "Selling",
-                                                        "Purchasing",
-                                                        "Funding"
+                                                        "Purchasing"
                                                     ],
                                                     "description": "Hot wallet type"
                                                 },
@@ -4126,8 +4126,7 @@
                                                     "type": "string",
                                                     "enum": [
                                                         "Selling",
-                                                        "Purchasing",
-                                                        "Funding"
+                                                        "Purchasing"
                                                     ],
                                                     "description": "Hot wallet type"
                                                 },
@@ -9374,6 +9373,7 @@
                                                                 "WaitingForExternalAction",
                                                                 "FundsLockingRequested",
                                                                 "FundsLockingInitiated",
+                                                                "ExternalFundsLockingInitiated",
                                                                 "SetRefundRequestedRequested",
                                                                 "SetRefundRequestedInitiated",
                                                                 "UnSetRefundRequestedRequested",
@@ -11975,6 +11975,7 @@
                                                                 "WaitingForExternalAction",
                                                                 "FundsLockingRequested",
                                                                 "FundsLockingInitiated",
+                                                                "ExternalFundsLockingInitiated",
                                                                 "SetRefundRequestedRequested",
                                                                 "SetRefundRequestedInitiated",
                                                                 "UnSetRefundRequestedRequested",
@@ -12504,6 +12505,7 @@
                                                                 "WaitingForExternalAction",
                                                                 "FundsLockingRequested",
                                                                 "FundsLockingInitiated",
+                                                                "ExternalFundsLockingInitiated",
                                                                 "SetRefundRequestedRequested",
                                                                 "SetRefundRequestedInitiated",
                                                                 "UnSetRefundRequestedRequested",
@@ -13617,6 +13619,7 @@
                                                                 "WaitingForExternalAction",
                                                                 "FundsLockingRequested",
                                                                 "FundsLockingInitiated",
+                                                                "ExternalFundsLockingInitiated",
                                                                 "SetRefundRequestedRequested",
                                                                 "SetRefundRequestedInitiated",
                                                                 "UnSetRefundRequestedRequested",
@@ -14187,6 +14190,7 @@
                                                                 "WaitingForExternalAction",
                                                                 "FundsLockingRequested",
                                                                 "FundsLockingInitiated",
+                                                                "ExternalFundsLockingInitiated",
                                                                 "SetRefundRequestedRequested",
                                                                 "SetRefundRequestedInitiated",
                                                                 "UnSetRefundRequestedRequested",
@@ -18816,8 +18820,7 @@
                                                                         "PAYMENT_ON_CHAIN_STATUS_CHANGED",
                                                                         "PURCHASE_ON_ERROR",
                                                                         "PAYMENT_ON_ERROR",
-                                                                        "WALLET_LOW_BALANCE",
-                                                                        "FUND_DISTRIBUTION_SENT"
+                                                                        "WALLET_LOW_BALANCE"
                                                                     ]
                                                                 }
                                                             },
@@ -18974,8 +18977,7 @@
                                                 "PAYMENT_ON_CHAIN_STATUS_CHANGED",
                                                 "PURCHASE_ON_ERROR",
                                                 "PAYMENT_ON_ERROR",
-                                                "WALLET_LOW_BALANCE",
-                                                "FUND_DISTRIBUTION_SENT"
+                                                "WALLET_LOW_BALANCE"
                                             ]
                                         },
                                         "minItems": 1,
@@ -19041,8 +19043,7 @@
                                                             "PAYMENT_ON_CHAIN_STATUS_CHANGED",
                                                             "PURCHASE_ON_ERROR",
                                                             "PAYMENT_ON_ERROR",
-                                                            "WALLET_LOW_BALANCE",
-                                                            "FUND_DISTRIBUTION_SENT"
+                                                            "WALLET_LOW_BALANCE"
                                                         ]
                                                     }
                                                 },
