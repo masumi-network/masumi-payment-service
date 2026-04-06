@@ -95,6 +95,9 @@ model HotWallet {
   apiKeyWalletScopes       ApiKeyWalletScope[]
   LimitedPurchaseRequests  PurchaseRequest[]         @relation("HotWalletLimit")
   LowBalanceRules          HotWalletLowBalanceRule[]
+  FundDistributionConfig   FundDistributionConfig?
+  FundDistributionsSent    FundDistributionRequest[] @relation("FundDistributionSource")
+  FundDistributionsReceived FundDistributionRequest[] @relation("FundDistributionTarget")
 }
 
 model HotWalletLowBalanceRule {
@@ -453,6 +456,40 @@ model PaymentSourceConfig {
   PaymentSource     PaymentSource?
 }
 
+model FundDistributionConfig {
+  id                String    @id @default(cuid())
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  hotWalletId       String    @unique
+  HotWallet         HotWallet @relation(fields: [hotWalletId], references: [id], onDelete: Cascade)
+  enabled           Boolean   @default(true)
+  warningThreshold  BigInt
+  criticalThreshold BigInt
+  topupAmount       BigInt
+  batchWindowMs     Int       @default(300000)
+}
+
+model FundDistributionRequest {
+  id             String                   @id @default(cuid())
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+  fundWalletId   String
+  FundWallet     HotWallet                @relation("FundDistributionSource", fields: [fundWalletId], references: [id])
+  targetWalletId String
+  TargetWallet   HotWallet                @relation("FundDistributionTarget", fields: [targetWalletId], references: [id])
+  priority       FundDistributionPriority
+  amount         BigInt
+  status         FundDistributionStatus   @default(Pending)
+  txHash         String?
+  error          String?
+  batchId        String?
+
+  @@index([fundWalletId, status])
+  @@index([status, priority, createdAt])
+  @@index([fundWalletId, targetWalletId, status])
+  @@index([status, updatedAt])
+}
+
 enum ApiKeyStatus {
   Active
   Revoked
@@ -461,6 +498,7 @@ enum ApiKeyStatus {
 enum HotWalletType {
   Selling
   Purchasing
+  Funding
 }
 
 enum WalletType {
@@ -742,6 +780,19 @@ enum WebhookEventType {
   PURCHASE_ON_ERROR
   PAYMENT_ON_ERROR
   WALLET_LOW_BALANCE
+  FUND_DISTRIBUTION_SENT
+}
+
+enum FundDistributionPriority {
+  Warning
+  Critical
+}
+
+enum FundDistributionStatus {
+  Pending
+  Submitted
+  Confirmed
+  Failed
 }
 
 enum WebhookDeliveryStatus {

@@ -10,6 +10,7 @@ import { logWarn } from '@/utils/logs';
 import { recordWalletLowBalanceAlert } from '@/utils/metrics';
 import { generateWalletExtended } from '@/utils/generator/wallet-generator';
 import { webhookEventsService } from '@/services/webhooks';
+import { fundDistributionService } from '@/services/wallets/fund-distribution';
 
 type BalanceMap = Map<string, bigint>;
 
@@ -726,6 +727,22 @@ export class WalletLowBalanceMonitorService {
 			currentAmount: alert.currentAmount,
 			checkedAt: alert.checkedAt.toISOString(),
 		});
+
+		if (alert.wallet.type !== HotWalletType.Funding && alert.assetUnit === 'lovelace') {
+			try {
+				await fundDistributionService.requestTopup({
+					targetWalletId: alert.wallet.id,
+					currentBalance: BigInt(alert.currentAmount),
+					paymentSourceId: alert.wallet.PaymentSource.id,
+				});
+			} catch (error) {
+				logger.warn('Failed to request fund distribution topup', {
+					component: 'wallet_low_balance_monitor',
+					wallet_id: alert.wallet.id,
+					error: error instanceof Error ? error.message : String(error),
+				});
+			}
+		}
 	}
 
 	getSerializedRules(rules: WalletLowBalanceRuleRecord[]) {

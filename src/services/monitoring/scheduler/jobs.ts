@@ -8,7 +8,7 @@ import {
 import { batchLatestPaymentEntriesV1, collectRefundV1, requestRefundsV1, cancelRefundsV1 } from '@/services/purchases';
 import { registerAgentV1, deRegisterAgentV1, checkRegistryTransactions } from '@/services/registry';
 import { checkLatestTransactions, updateWalletTransactionHash } from '@/services/transactions';
-import { walletLowBalanceMonitorService } from '@/services/wallets';
+import { walletLowBalanceMonitorService, fundDistributionService } from '@/services/wallets';
 import { webhookQueueService } from '@/services/webhooks';
 import type { JobDefinition } from '@/services/shared';
 
@@ -116,6 +116,13 @@ export const scheduledJobs: JobDefinition[] = [
 		startMessage: 'Starting low balance monitoring',
 		finishMessage: 'Finished low balance monitoring',
 		run: () => walletLowBalanceMonitorService.runScheduledMonitoringCycle(),
+	},
+	{
+		initialDelayMs: 55000,
+		intervalMs: CONFIG.FUND_DISTRIBUTION_CHECK_INTERVAL * 1000,
+		startMessage: 'Starting fund distribution processing',
+		finishMessage: 'Finished fund distribution processing',
+		run: () => fundDistributionService.processDistributionCycle(),
 	},
 	{
 		initialDelayMs: 50000,
