@@ -55,7 +55,7 @@ export const buildX402TxPost = readAuthenticatedEndpointFactory.build({
 		if (payment.SmartContractWallet == null) {
 			throw createHttpError(500, 'No smart contract wallet set for payment request');
 		}
-		if (BigInt(payment.payByTime) <= BigInt(Date.now())) {
+		if (payment.payByTime == null || BigInt(payment.payByTime) <= BigInt(Date.now())) {
 			throw createHttpError(400, 'Payment has expired');
 		}
 
@@ -66,7 +66,7 @@ export const buildX402TxPost = readAuthenticatedEndpointFactory.build({
 			purchaseRequestData: {
 				blockchainIdentifier: payment.blockchainIdentifier,
 				inputHash: payment.inputHash,
-				payByTime: BigInt(payment.payByTime),
+				payByTime: BigInt(payment.payByTime!),
 				submitResultTime: BigInt(payment.submitResultTime),
 				unlockTime: BigInt(payment.unlockTime),
 				externalDisputeUnlockTime: BigInt(payment.externalDisputeUnlockTime),
