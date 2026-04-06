@@ -66,7 +66,7 @@ export const buildX402TxPost = readAuthenticatedEndpointFactory.build({
 			purchaseRequestData: {
 				blockchainIdentifier: payment.blockchainIdentifier,
 				inputHash: payment.inputHash,
-				payByTime: BigInt(payment.payByTime!),
+				payByTime: BigInt(payment.payByTime),
 				submitResultTime: BigInt(payment.submitResultTime),
 				unlockTime: BigInt(payment.unlockTime),
 				externalDisputeUnlockTime: BigInt(payment.externalDisputeUnlockTime),
