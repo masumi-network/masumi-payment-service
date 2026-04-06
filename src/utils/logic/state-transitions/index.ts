@@ -110,47 +110,6 @@ export function convertNewPurchasingActionAndError(
 					);
 			}
 			break;
-		case PurchasingAction.ExternalFundsLockingInitiated:
-			switch (newState) {
-				case OnChainState.FundsLocked:
-					return generatePurchasingActionAndErrorResult(PurchasingAction.WaitingForExternalAction);
-				case OnChainState.Disputed:
-					return generatePurchasingActionAndErrorResult(
-						PurchasingAction.WaitingForManualAction,
-						ERROR_MESSAGES.INVALID_STATE_EXTERNAL,
-					);
-				case OnChainState.DisputedWithdrawn:
-					return generatePurchasingActionAndErrorResult(
-						PurchasingAction.WaitingForManualAction,
-						ERROR_MESSAGES.INVALID_STATE_EXTERNAL,
-					);
-				case OnChainState.FundsOrDatumInvalid:
-					return generatePurchasingActionAndErrorResult(
-						PurchasingAction.WaitingForManualAction,
-						ERROR_MESSAGES.AMOUNT_MISMATCH_END,
-					);
-				case OnChainState.RefundRequested:
-					return generatePurchasingActionAndErrorResult(
-						PurchasingAction.WaitingForManualAction,
-						ERROR_MESSAGES.INVALID_STATE_EXTERNAL,
-					);
-				case OnChainState.RefundWithdrawn:
-					return generatePurchasingActionAndErrorResult(
-						PurchasingAction.WaitingForManualAction,
-						ERROR_MESSAGES.INVALID_STATE_EXTERNAL,
-					);
-				case OnChainState.ResultSubmitted:
-					return generatePurchasingActionAndErrorResult(
-						PurchasingAction.WaitingForManualAction,
-						ERROR_MESSAGES.INVALID_STATE_EXTERNAL,
-					);
-				case OnChainState.Withdrawn:
-					return generatePurchasingActionAndErrorResult(
-						PurchasingAction.WaitingForManualAction,
-						ERROR_MESSAGES.INVALID_STATE_EXTERNAL,
-					);
-			}
-			break;
 		case PurchasingAction.FundsLockingRequested:
 			switch (newState) {
 				case OnChainState.Disputed:

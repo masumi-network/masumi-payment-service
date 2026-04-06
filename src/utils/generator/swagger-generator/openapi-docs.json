@@ -1102,7 +1102,6 @@
                                     "WaitingForExternalAction",
                                     "FundsLockingRequested",
                                     "FundsLockingInitiated",
-                                    "ExternalFundsLockingInitiated",
                                     "SetRefundRequestedRequested",
                                     "SetRefundRequestedInitiated",
                                     "UnSetRefundRequestedRequested",
@@ -1165,7 +1164,6 @@
                                         "WaitingForExternalAction",
                                         "FundsLockingRequested",
                                         "FundsLockingInitiated",
-                                        "ExternalFundsLockingInitiated",
                                         "SetRefundRequestedRequested",
                                         "SetRefundRequestedInitiated",
                                         "UnSetRefundRequestedRequested",
@@ -3730,7 +3728,8 @@
                                                                 "type": "string",
                                                                 "enum": [
                                                                     "Selling",
-                                                                    "Purchasing"
+                                                                    "Purchasing",
+                                                                    "Funding"
                                                                 ],
                                                                 "description": "Hot wallet type"
                                                             },
@@ -3935,7 +3934,8 @@
                                                     "type": "string",
                                                     "enum": [
                                                         "Selling",
-                                                        "Purchasing"
+                                                        "Purchasing",
+                                                        "Funding"
                                                     ],
                                                     "description": "Hot wallet type"
                                                 },
@@ -4126,7 +4126,8 @@
                                                     "type": "string",
                                                     "enum": [
                                                         "Selling",
-                                                        "Purchasing"
+                                                        "Purchasing",
+                                                        "Funding"
                                                     ],
                                                     "description": "Hot wallet type"
                                                 },
@@ -9373,7 +9374,6 @@
                                                                 "WaitingForExternalAction",
                                                                 "FundsLockingRequested",
                                                                 "FundsLockingInitiated",
-                                                                "ExternalFundsLockingInitiated",
                                                                 "SetRefundRequestedRequested",
                                                                 "SetRefundRequestedInitiated",
                                                                 "UnSetRefundRequestedRequested",
@@ -11975,7 +11975,6 @@
                                                                 "WaitingForExternalAction",
                                                                 "FundsLockingRequested",
                                                                 "FundsLockingInitiated",
-                                                                "ExternalFundsLockingInitiated",
                                                                 "SetRefundRequestedRequested",
                                                                 "SetRefundRequestedInitiated",
                                                                 "UnSetRefundRequestedRequested",
@@ -12505,7 +12504,6 @@
                                                                 "WaitingForExternalAction",
                                                                 "FundsLockingRequested",
                                                                 "FundsLockingInitiated",
-                                                                "ExternalFundsLockingInitiated",
                                                                 "SetRefundRequestedRequested",
                                                                 "SetRefundRequestedInitiated",
                                                                 "UnSetRefundRequestedRequested",
@@ -13319,12 +13317,12 @@
                 }
             }
         },
-        "/purchase/x402": {
+        "/payment/x402": {
             "post": {
-                "description": "Creates a purchase using the x402 payment protocol. Returns an unsigned Cardano transaction CBOR that the buyer must sign with their external wallet and submit to the network.",
-                "summary": "Create a new x402 purchase request and get an unsigned transaction. (+PAY access required)",
+                "description": "Builds an unsigned Cardano funds-locking transaction for an existing payment request. The seller calls this on behalf of the buyer (x402 protocol). No state is saved — the returned CBOR must be signed by the buyer and submitted to the network.",
+                "summary": "Build an unsigned x402 funds-locking transaction for a payment. (+READ access required)",
                 "tags": [
-                    "purchase"
+                    "payment"
                 ],
                 "security": [
                     {
@@ -13338,116 +13336,34 @@
                             "schema": {
                                 "type": "object",
                                 "properties": {
-                                    "blockchainIdentifier": {
-                                        "type": "string",
-                                        "maxLength": 8000,
-                                        "description": "The identifier of the purchase. Is provided by the seller"
-                                    },
                                     "network": {
                                         "type": "string",
                                         "enum": [
                                             "Preprod",
                                             "Mainnet"
                                         ],
-                                        "description": "The network the transaction will be made on"
+                                        "description": "The Cardano network"
                                     },
-                                    "inputHash": {
+                                    "blockchainIdentifier": {
                                         "type": "string",
-                                        "maxLength": 250,
-                                        "description": "The hash of the input data of the purchase, should be sha256 hash of the input data, therefore needs to be in hex string format"
-                                    },
-                                    "sellerVkey": {
-                                        "type": "string",
-                                        "maxLength": 250,
-                                        "description": "The verification key of the seller"
-                                    },
-                                    "agentIdentifier": {
-                                        "type": "string",
-                                        "minLength": 57,
-                                        "maxLength": 250,
-                                        "description": "The identifier of the agent that is being purchased"
-                                    },
-                                    "Amounts": {
-                                        "type": "array",
-                                        "items": {
-                                            "type": "object",
-                                            "properties": {
-                                                "amount": {
-                                                    "type": "string",
-                                                    "maxLength": 25,
-                                                    "description": "Amount of the asset in smallest unit (e.g., lovelace for ADA)"
-                                                },
-                                                "unit": {
-                                                    "type": "string",
-                                                    "maxLength": 150,
-                                                    "description": "Asset policy id + asset name concatenated. Empty string for ADA/lovelace"
-                                                }
-                                            },
-                                            "required": [
-                                                "amount",
-                                                "unit"
-                                            ]
-                                        },
-                                        "maxItems": 7,
-                                        "description": "The amounts to be paid for the purchase"
-                                    },
-                                    "unlockTime": {
-                                        "type": "string",
-                                        "description": "The time after which the purchase will be unlocked. In unix time (number)"
-                                    },
-                                    "externalDisputeUnlockTime": {
-                                        "type": "string",
-                                        "description": "The time after which the purchase will be unlocked for external dispute. In unix time (number)"
-                                    },
-                                    "submitResultTime": {
-                                        "type": "string",
-                                        "description": "The time by which the result has to be submitted. In unix time (number)"
-                                    },
-                                    "payByTime": {
-                                        "type": "string",
-                                        "description": "The time after which the purchase has to be submitted to the smart contract"
-                                    },
-                                    "metadata": {
-                                        "type": "string",
-                                        "description": "Metadata to be stored with the purchase request"
-                                    },
-                                    "identifierFromPurchaser": {
-                                        "type": "string",
-                                        "minLength": 14,
-                                        "maxLength": 26,
-                                        "description": "The nonce of the purchaser. It must be in hex format"
+                                        "minLength": 1,
+                                        "description": "The blockchainIdentifier from the PaymentRequest"
                                     },
                                     "buyerAddress": {
                                         "type": "string",
                                         "minLength": 40,
                                         "maxLength": 200,
-                                        "description": "The buyer's external Cardano wallet address (bech32). UTXOs will be fetched from this address to build the unsigned transaction."
+                                        "description": "The buyer's bech32 Cardano wallet address. UTxOs fetched from this address to build the unsigned tx."
                                     }
                                 },
                                 "required": [
-                                    "blockchainIdentifier",
                                     "network",
-                                    "inputHash",
-                                    "sellerVkey",
-                                    "agentIdentifier",
-                                    "unlockTime",
-                                    "externalDisputeUnlockTime",
-                                    "submitResultTime",
-                                    "payByTime",
-                                    "identifierFromPurchaser",
+                                    "blockchainIdentifier",
                                     "buyerAddress"
                                 ],
                                 "example": {
-                                    "identifierFromPurchaser": "aabbaabb11221122aabb",
                                     "network": "Preprod",
-                                    "sellerVkey": "seller_vkey",
                                     "blockchainIdentifier": "blockchain_identifier",
-                                    "payByTime": "1713626260",
-                                    "submitResultTime": "1713636260",
-                                    "unlockTime": "1713636260",
-                                    "externalDisputeUnlockTime": "1713636260",
-                                    "agentIdentifier": "agent_identifier",
-                                    "inputHash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
                                     "buyerAddress": "addr_test1qp..."
                                 }
                             }
@@ -13456,7 +13372,7 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "Purchase request created with unsigned transaction CBOR",
+                        "description": "Unsigned transaction CBOR ready for buyer to sign and submit",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -13465,443 +13381,18 @@
                                         "data": {
                                             "type": "object",
                                             "properties": {
-                                                "id": {
+                                                "unsignedTxCbor": {
                                                     "type": "string",
-                                                    "description": "Unique identifier for the purchase"
-                                                },
-                                                "createdAt": {
-                                                    "type": "string",
-                                                    "format": "date-time",
-                                                    "description": "Timestamp when the purchase was created"
-                                                },
-                                                "updatedAt": {
-                                                    "type": "string",
-                                                    "format": "date-time",
-                                                    "description": "Timestamp when the purchase was last updated"
-                                                },
-                                                "blockchainIdentifier": {
-                                                    "type": "string",
-                                                    "description": "Unique blockchain identifier for the purchase"
-                                                },
-                                                "agentIdentifier": {
-                                                    "type": "string",
-                                                    "nullable": true,
-                                                    "description": "Identifier of the agent that is being purchased"
-                                                },
-                                                "pricingType": {
-                                                    "type": "string",
-                                                    "enum": [
-                                                        "Fixed",
-                                                        "Free",
-                                                        "Dynamic"
-                                                    ],
-                                                    "description": "Pricing type of the agent (Fixed, Free, or Dynamic)"
-                                                },
-                                                "lastCheckedAt": {
-                                                    "type": "string",
-                                                    "nullable": true,
-                                                    "format": "date-time",
-                                                    "description": "Timestamp when the purchase was last checked on-chain. Null if never checked"
-                                                },
-                                                "payByTime": {
-                                                    "type": "string",
-                                                    "nullable": true,
-                                                    "description": "Unix timestamp (in milliseconds) by which the buyer must submit the payment transaction. Null if not set"
-                                                },
-                                                "submitResultTime": {
-                                                    "type": "string",
-                                                    "description": "Unix timestamp (in milliseconds) by which the seller must submit the result"
-                                                },
-                                                "unlockTime": {
-                                                    "type": "string",
-                                                    "description": "Unix timestamp (in milliseconds) after which funds can be unlocked if no disputes"
-                                                },
-                                                "externalDisputeUnlockTime": {
-                                                    "type": "string",
-                                                    "description": "Unix timestamp (in milliseconds) after which external dispute resolution can occur"
-                                                },
-                                                "totalBuyerCardanoFees": {
-                                                    "type": "number",
-                                                    "description": "Total Cardano transaction fees paid by the buyer in ADA (sum of all confirmed transactions initiated by buyer)"
-                                                },
-                                                "totalSellerCardanoFees": {
-                                                    "type": "number",
-                                                    "description": "Total Cardano transaction fees paid by the seller in ADA (sum of all confirmed transactions initiated by seller)"
-                                                },
-                                                "nextActionOrOnChainStateOrResultLastChangedAt": {
-                                                    "type": "string",
-                                                    "format": "date-time",
-                                                    "description": "Timestamp when the next action or on-chain state or result was last changed"
-                                                },
-                                                "nextActionLastChangedAt": {
-                                                    "type": "string",
-                                                    "format": "date-time",
-                                                    "description": "Timestamp when the next action was last changed"
-                                                },
-                                                "onChainStateOrResultLastChangedAt": {
-                                                    "type": "string",
-                                                    "format": "date-time",
-                                                    "description": "Timestamp when the on-chain state or result was last changed"
-                                                },
-                                                "requestedById": {
-                                                    "type": "string",
-                                                    "description": "ID of the API key that created this purchase"
-                                                },
-                                                "onChainState": {
-                                                    "type": "string",
-                                                    "nullable": true,
-                                                    "enum": [
-                                                        "FundsLocked",
-                                                        "FundsOrDatumInvalid",
-                                                        "ResultSubmitted",
-                                                        "RefundRequested",
-                                                        "Disputed",
-                                                        "Withdrawn",
-                                                        "RefundWithdrawn",
-                                                        "DisputedWithdrawn",
-                                                        null
-                                                    ],
-                                                    "description": "Current state of the purchase on the blockchain. Null if not yet on-chain"
+                                                    "description": "Hex-encoded unsigned transaction CBOR. Sign with buyer wallet and submit."
                                                 },
                                                 "collateralReturnLovelace": {
                                                     "type": "string",
-                                                    "nullable": true,
-                                                    "description": "Amount of collateral to return in lovelace. Null if no collateral"
-                                                },
-                                                "cooldownTime": {
-                                                    "type": "number",
-                                                    "description": "Cooldown period in milliseconds for the buyer to dispute"
-                                                },
-                                                "cooldownTimeOtherParty": {
-                                                    "type": "number",
-                                                    "description": "Cooldown period in milliseconds for the seller to dispute"
-                                                },
-                                                "inputHash": {
-                                                    "type": "string",
-                                                    "description": "SHA256 hash of the input data for the purchase (hex string)"
-                                                },
-                                                "resultHash": {
-                                                    "type": "string",
-                                                    "nullable": true,
-                                                    "description": "SHA256 hash of the result submitted by the seller (hex string)"
-                                                },
-                                                "NextAction": {
-                                                    "type": "object",
-                                                    "properties": {
-                                                        "requestedAction": {
-                                                            "type": "string",
-                                                            "enum": [
-                                                                "None",
-                                                                "Ignore",
-                                                                "WaitingForManualAction",
-                                                                "WaitingForExternalAction",
-                                                                "FundsLockingRequested",
-                                                                "FundsLockingInitiated",
-                                                                "ExternalFundsLockingInitiated",
-                                                                "SetRefundRequestedRequested",
-                                                                "SetRefundRequestedInitiated",
-                                                                "UnSetRefundRequestedRequested",
-                                                                "UnSetRefundRequestedInitiated",
-                                                                "WithdrawRefundRequested",
-                                                                "WithdrawRefundInitiated"
-                                                            ],
-                                                            "description": "Next action required for this purchase"
-                                                        },
-                                                        "errorType": {
-                                                            "type": "string",
-                                                            "nullable": true,
-                                                            "enum": [
-                                                                "NetworkError",
-                                                                "InsufficientFunds",
-                                                                "Unknown",
-                                                                null
-                                                            ],
-                                                            "description": "Type of error that occurred, if any"
-                                                        },
-                                                        "errorNote": {
-                                                            "type": "string",
-                                                            "nullable": true,
-                                                            "description": "Additional details about the error, if any"
-                                                        }
-                                                    },
-                                                    "required": [
-                                                        "requestedAction",
-                                                        "errorType",
-                                                        "errorNote"
-                                                    ],
-                                                    "description": "Next action required for this purchase"
-                                                },
-                                                "CurrentTransaction": {
-                                                    "type": "object",
-                                                    "nullable": true,
-                                                    "properties": {
-                                                        "id": {
-                                                            "type": "string",
-                                                            "description": "Unique identifier for the transaction"
-                                                        },
-                                                        "createdAt": {
-                                                            "type": "string",
-                                                            "format": "date-time",
-                                                            "description": "Timestamp when the transaction was created"
-                                                        },
-                                                        "updatedAt": {
-                                                            "type": "string",
-                                                            "format": "date-time",
-                                                            "description": "Timestamp when the transaction was last updated"
-                                                        },
-                                                        "txHash": {
-                                                            "type": "string",
-                                                            "nullable": true,
-                                                            "description": "Cardano transaction hash"
-                                                        },
-                                                        "status": {
-                                                            "type": "string",
-                                                            "enum": [
-                                                                "Pending",
-                                                                "Confirmed",
-                                                                "FailedViaTimeout",
-                                                                "FailedViaManualReset",
-                                                                "RolledBack"
-                                                            ],
-                                                            "description": "Current status of the transaction"
-                                                        },
-                                                        "fees": {
-                                                            "type": "string",
-                                                            "nullable": true,
-                                                            "description": "Fees of the transaction"
-                                                        },
-                                                        "blockHeight": {
-                                                            "type": "number",
-                                                            "nullable": true,
-                                                            "description": "Block height of the transaction"
-                                                        },
-                                                        "blockTime": {
-                                                            "type": "number",
-                                                            "nullable": true,
-                                                            "description": "Block time of the transaction"
-                                                        },
-                                                        "previousOnChainState": {
-                                                            "type": "string",
-                                                            "nullable": true,
-                                                            "enum": [
-                                                                "FundsLocked",
-                                                                "FundsOrDatumInvalid",
-                                                                "ResultSubmitted",
-                                                                "RefundRequested",
-                                                                "Disputed",
-                                                                "Withdrawn",
-                                                                "RefundWithdrawn",
-                                                                "DisputedWithdrawn",
-                                                                null
-                                                            ],
-                                                            "description": "Previous on-chain state before this transaction"
-                                                        },
-                                                        "newOnChainState": {
-                                                            "type": "string",
-                                                            "nullable": true,
-                                                            "enum": [
-                                                                "FundsLocked",
-                                                                "FundsOrDatumInvalid",
-                                                                "ResultSubmitted",
-                                                                "RefundRequested",
-                                                                "Disputed",
-                                                                "Withdrawn",
-                                                                "RefundWithdrawn",
-                                                                "DisputedWithdrawn",
-                                                                null
-                                                            ],
-                                                            "description": "New on-chain state of this transaction"
-                                                        },
-                                                        "confirmations": {
-                                                            "type": "number",
-                                                            "nullable": true,
-                                                            "description": "Number of block confirmations for this transaction"
-                                                        }
-                                                    },
-                                                    "required": [
-                                                        "id",
-                                                        "createdAt",
-                                                        "updatedAt",
-                                                        "txHash",
-                                                        "status",
-                                                        "fees",
-                                                        "blockHeight",
-                                                        "blockTime",
-                                                        "previousOnChainState",
-                                                        "newOnChainState",
-                                                        "confirmations"
-                                                    ],
-                                                    "description": "Current active transaction for this purchase. Null if no transaction in progress"
-                                                },
-                                                "PaidFunds": {
-                                                    "type": "array",
-                                                    "items": {
-                                                        "type": "object",
-                                                        "properties": {
-                                                            "amount": {
-                                                                "type": "string"
-                                                            },
-                                                            "unit": {
-                                                                "type": "string"
-                                                            }
-                                                        },
-                                                        "required": [
-                                                            "amount",
-                                                            "unit"
-                                                        ]
-                                                    }
-                                                },
-                                                "WithdrawnForSeller": {
-                                                    "type": "array",
-                                                    "items": {
-                                                        "type": "object",
-                                                        "properties": {
-                                                            "amount": {
-                                                                "type": "string"
-                                                            },
-                                                            "unit": {
-                                                                "type": "string"
-                                                            }
-                                                        },
-                                                        "required": [
-                                                            "amount",
-                                                            "unit"
-                                                        ]
-                                                    }
-                                                },
-                                                "WithdrawnForBuyer": {
-                                                    "type": "array",
-                                                    "items": {
-                                                        "type": "object",
-                                                        "properties": {
-                                                            "amount": {
-                                                                "type": "string"
-                                                            },
-                                                            "unit": {
-                                                                "type": "string"
-                                                            }
-                                                        },
-                                                        "required": [
-                                                            "amount",
-                                                            "unit"
-                                                        ]
-                                                    }
-                                                },
-                                                "PaymentSource": {
-                                                    "type": "object",
-                                                    "properties": {
-                                                        "id": {
-                                                            "type": "string"
-                                                        },
-                                                        "network": {
-                                                            "type": "string",
-                                                            "enum": [
-                                                                "Preprod",
-                                                                "Mainnet"
-                                                            ]
-                                                        },
-                                                        "smartContractAddress": {
-                                                            "type": "string"
-                                                        },
-                                                        "policyId": {
-                                                            "type": "string",
-                                                            "nullable": true
-                                                        }
-                                                    },
-                                                    "required": [
-                                                        "id",
-                                                        "network",
-                                                        "smartContractAddress",
-                                                        "policyId"
-                                                    ]
-                                                },
-                                                "SellerWallet": {
-                                                    "type": "object",
-                                                    "nullable": true,
-                                                    "properties": {
-                                                        "id": {
-                                                            "type": "string",
-                                                            "description": "Unique identifier for the seller wallet"
-                                                        },
-                                                        "walletVkey": {
-                                                            "type": "string",
-                                                            "description": "Payment key hash of the seller wallet"
-                                                        }
-                                                    },
-                                                    "required": [
-                                                        "id",
-                                                        "walletVkey"
-                                                    ],
-                                                    "description": "Seller wallet information. Null if not set"
-                                                },
-                                                "SmartContractWallet": {
-                                                    "type": "object",
-                                                    "nullable": true,
-                                                    "properties": {
-                                                        "id": {
-                                                            "type": "string",
-                                                            "description": "Unique identifier for the smart contract wallet"
-                                                        },
-                                                        "walletVkey": {
-                                                            "type": "string",
-                                                            "description": "Payment key hash of the smart contract wallet"
-                                                        },
-                                                        "walletAddress": {
-                                                            "type": "string",
-                                                            "description": "Cardano address of the smart contract wallet"
-                                                        }
-                                                    },
-                                                    "required": [
-                                                        "id",
-                                                        "walletVkey",
-                                                        "walletAddress"
-                                                    ],
-                                                    "description": "Smart contract wallet (seller wallet) managing this purchase. Null if not set"
-                                                },
-                                                "metadata": {
-                                                    "type": "string",
-                                                    "nullable": true,
-                                                    "description": "Optional metadata stored with the purchase for additional context. Null if not provided"
-                                                },
-                                                "unsignedTxCbor": {
-                                                    "type": "string",
-                                                    "description": "Hex-encoded unsigned transaction CBOR. Sign with your Cardano wallet and submit to the network."
+                                                    "description": "Extra lovelace included for min-UTXO. Buyer receives this back as change after result submission."
                                                 }
                                             },
                                             "required": [
-                                                "id",
-                                                "createdAt",
-                                                "updatedAt",
-                                                "blockchainIdentifier",
-                                                "agentIdentifier",
-                                                "pricingType",
-                                                "lastCheckedAt",
-                                                "payByTime",
-                                                "submitResultTime",
-                                                "unlockTime",
-                                                "externalDisputeUnlockTime",
-                                                "totalBuyerCardanoFees",
-                                                "totalSellerCardanoFees",
-                                                "nextActionOrOnChainStateOrResultLastChangedAt",
-                                                "nextActionLastChangedAt",
-                                                "onChainStateOrResultLastChangedAt",
-                                                "requestedById",
-                                                "onChainState",
-                                                "collateralReturnLovelace",
-                                                "cooldownTime",
-                                                "cooldownTimeOtherParty",
-                                                "inputHash",
-                                                "resultHash",
-                                                "NextAction",
-                                                "CurrentTransaction",
-                                                "PaidFunds",
-                                                "WithdrawnForSeller",
-                                                "WithdrawnForBuyer",
-                                                "PaymentSource",
-                                                "SellerWallet",
-                                                "SmartContractWallet",
-                                                "metadata",
-                                                "unsignedTxCbor"
+                                                "unsignedTxCbor",
+                                                "collateralReturnLovelace"
                                             ]
                                         },
                                         "status": {
@@ -13915,53 +13406,8 @@
                                     "example": {
                                         "status": "Success",
                                         "data": {
-                                            "id": "cuid_v2_auto_generated",
-                                            "blockchainIdentifier": "blockchain_identifier",
-                                            "agentIdentifier": "agent_identifier",
-                                            "pricingType": "Fixed",
-                                            "createdAt": "1970-01-20T20:00:36.260Z",
-                                            "updatedAt": "1970-01-20T20:00:36.260Z",
-                                            "lastCheckedAt": null,
-                                            "payByTime": null,
-                                            "submitResultTime": "0",
-                                            "unlockTime": "0",
-                                            "externalDisputeUnlockTime": "0",
-                                            "requestedById": "requester_id",
-                                            "onChainState": null,
-                                            "collateralReturnLovelace": null,
-                                            "cooldownTime": 0,
-                                            "cooldownTimeOtherParty": 0,
-                                            "inputHash": "input_hash",
-                                            "resultHash": null,
-                                            "NextAction": {
-                                                "requestedAction": "FundsLockingRequested",
-                                                "errorType": null,
-                                                "errorNote": null
-                                            },
-                                            "CurrentTransaction": null,
-                                            "PaidFunds": [
-                                                {
-                                                    "unit": "",
-                                                    "amount": "10000000"
-                                                }
-                                            ],
-                                            "PaymentSource": {
-                                                "id": "payment_source_id",
-                                                "policyId": "policy_id",
-                                                "network": "Preprod",
-                                                "smartContractAddress": "address"
-                                            },
-                                            "SellerWallet": null,
-                                            "SmartContractWallet": null,
-                                            "metadata": null,
-                                            "WithdrawnForSeller": [],
-                                            "WithdrawnForBuyer": [],
-                                            "totalBuyerCardanoFees": 0,
-                                            "totalSellerCardanoFees": 0,
-                                            "nextActionOrOnChainStateOrResultLastChangedAt": "1970-01-20T20:00:36.260Z",
-                                            "nextActionLastChangedAt": "1970-01-20T20:00:36.260Z",
-                                            "onChainStateOrResultLastChangedAt": "1970-01-20T20:00:36.260Z",
-                                            "unsignedTxCbor": "84a500818258..."
+                                            "unsignedTxCbor": "84a500818258...",
+                                            "collateralReturnLovelace": "1500000"
                                         }
                                     }
                                 }
@@ -13969,487 +13415,13 @@
                         }
                     },
                     "400": {
-                        "description": "Bad Request (possible parameters missing or invalid)"
+                        "description": "Bad Request (invalid buyer address, expired payment, or insufficient buyer funds)"
                     },
                     "401": {
                         "description": "Unauthorized"
                     },
-                    "409": {
-                        "description": "Conflict (purchase request already exists)",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "status": {
-                                            "type": "string"
-                                        },
-                                        "error": {
-                                            "type": "object",
-                                            "properties": {
-                                                "message": {
-                                                    "type": "string"
-                                                }
-                                            },
-                                            "required": [
-                                                "message"
-                                            ]
-                                        },
-                                        "id": {
-                                            "type": "string"
-                                        },
-                                        "object": {
-                                            "type": "object",
-                                            "properties": {
-                                                "id": {
-                                                    "type": "string",
-                                                    "description": "Unique identifier for the purchase"
-                                                },
-                                                "createdAt": {
-                                                    "type": "string",
-                                                    "format": "date-time",
-                                                    "description": "Timestamp when the purchase was created"
-                                                },
-                                                "updatedAt": {
-                                                    "type": "string",
-                                                    "format": "date-time",
-                                                    "description": "Timestamp when the purchase was last updated"
-                                                },
-                                                "blockchainIdentifier": {
-                                                    "type": "string",
-                                                    "description": "Unique blockchain identifier for the purchase"
-                                                },
-                                                "agentIdentifier": {
-                                                    "type": "string",
-                                                    "nullable": true,
-                                                    "description": "Identifier of the agent that is being purchased"
-                                                },
-                                                "pricingType": {
-                                                    "type": "string",
-                                                    "enum": [
-                                                        "Fixed",
-                                                        "Free",
-                                                        "Dynamic"
-                                                    ],
-                                                    "description": "Pricing type of the agent (Fixed, Free, or Dynamic)"
-                                                },
-                                                "lastCheckedAt": {
-                                                    "type": "string",
-                                                    "nullable": true,
-                                                    "format": "date-time",
-                                                    "description": "Timestamp when the purchase was last checked on-chain. Null if never checked"
-                                                },
-                                                "payByTime": {
-                                                    "type": "string",
-                                                    "nullable": true,
-                                                    "description": "Unix timestamp (in milliseconds) by which the buyer must submit the payment transaction. Null if not set"
-                                                },
-                                                "submitResultTime": {
-                                                    "type": "string",
-                                                    "description": "Unix timestamp (in milliseconds) by which the seller must submit the result"
-                                                },
-                                                "unlockTime": {
-                                                    "type": "string",
-                                                    "description": "Unix timestamp (in milliseconds) after which funds can be unlocked if no disputes"
-                                                },
-                                                "externalDisputeUnlockTime": {
-                                                    "type": "string",
-                                                    "description": "Unix timestamp (in milliseconds) after which external dispute resolution can occur"
-                                                },
-                                                "totalBuyerCardanoFees": {
-                                                    "type": "number",
-                                                    "description": "Total Cardano transaction fees paid by the buyer in ADA (sum of all confirmed transactions initiated by buyer)"
-                                                },
-                                                "totalSellerCardanoFees": {
-                                                    "type": "number",
-                                                    "description": "Total Cardano transaction fees paid by the seller in ADA (sum of all confirmed transactions initiated by seller)"
-                                                },
-                                                "nextActionOrOnChainStateOrResultLastChangedAt": {
-                                                    "type": "string",
-                                                    "format": "date-time",
-                                                    "description": "Timestamp when the next action or on-chain state or result was last changed"
-                                                },
-                                                "nextActionLastChangedAt": {
-                                                    "type": "string",
-                                                    "format": "date-time",
-                                                    "description": "Timestamp when the next action was last changed"
-                                                },
-                                                "onChainStateOrResultLastChangedAt": {
-                                                    "type": "string",
-                                                    "format": "date-time",
-                                                    "description": "Timestamp when the on-chain state or result was last changed"
-                                                },
-                                                "requestedById": {
-                                                    "type": "string",
-                                                    "description": "ID of the API key that created this purchase"
-                                                },
-                                                "onChainState": {
-                                                    "type": "string",
-                                                    "nullable": true,
-                                                    "enum": [
-                                                        "FundsLocked",
-                                                        "FundsOrDatumInvalid",
-                                                        "ResultSubmitted",
-                                                        "RefundRequested",
-                                                        "Disputed",
-                                                        "Withdrawn",
-                                                        "RefundWithdrawn",
-                                                        "DisputedWithdrawn",
-                                                        null
-                                                    ],
-                                                    "description": "Current state of the purchase on the blockchain. Null if not yet on-chain"
-                                                },
-                                                "collateralReturnLovelace": {
-                                                    "type": "string",
-                                                    "nullable": true,
-                                                    "description": "Amount of collateral to return in lovelace. Null if no collateral"
-                                                },
-                                                "cooldownTime": {
-                                                    "type": "number",
-                                                    "description": "Cooldown period in milliseconds for the buyer to dispute"
-                                                },
-                                                "cooldownTimeOtherParty": {
-                                                    "type": "number",
-                                                    "description": "Cooldown period in milliseconds for the seller to dispute"
-                                                },
-                                                "inputHash": {
-                                                    "type": "string",
-                                                    "description": "SHA256 hash of the input data for the purchase (hex string)"
-                                                },
-                                                "resultHash": {
-                                                    "type": "string",
-                                                    "nullable": true,
-                                                    "description": "SHA256 hash of the result submitted by the seller (hex string)"
-                                                },
-                                                "NextAction": {
-                                                    "type": "object",
-                                                    "properties": {
-                                                        "requestedAction": {
-                                                            "type": "string",
-                                                            "enum": [
-                                                                "None",
-                                                                "Ignore",
-                                                                "WaitingForManualAction",
-                                                                "WaitingForExternalAction",
-                                                                "FundsLockingRequested",
-                                                                "FundsLockingInitiated",
-                                                                "ExternalFundsLockingInitiated",
-                                                                "SetRefundRequestedRequested",
-                                                                "SetRefundRequestedInitiated",
-                                                                "UnSetRefundRequestedRequested",
-                                                                "UnSetRefundRequestedInitiated",
-                                                                "WithdrawRefundRequested",
-                                                                "WithdrawRefundInitiated"
-                                                            ],
-                                                            "description": "Next action required for this purchase"
-                                                        },
-                                                        "errorType": {
-                                                            "type": "string",
-                                                            "nullable": true,
-                                                            "enum": [
-                                                                "NetworkError",
-                                                                "InsufficientFunds",
-                                                                "Unknown",
-                                                                null
-                                                            ],
-                                                            "description": "Type of error that occurred, if any"
-                                                        },
-                                                        "errorNote": {
-                                                            "type": "string",
-                                                            "nullable": true,
-                                                            "description": "Additional details about the error, if any"
-                                                        }
-                                                    },
-                                                    "required": [
-                                                        "requestedAction",
-                                                        "errorType",
-                                                        "errorNote"
-                                                    ],
-                                                    "description": "Next action required for this purchase"
-                                                },
-                                                "CurrentTransaction": {
-                                                    "type": "object",
-                                                    "nullable": true,
-                                                    "properties": {
-                                                        "id": {
-                                                            "type": "string",
-                                                            "description": "Unique identifier for the transaction"
-                                                        },
-                                                        "createdAt": {
-                                                            "type": "string",
-                                                            "format": "date-time",
-                                                            "description": "Timestamp when the transaction was created"
-                                                        },
-                                                        "updatedAt": {
-                                                            "type": "string",
-                                                            "format": "date-time",
-                                                            "description": "Timestamp when the transaction was last updated"
-                                                        },
-                                                        "txHash": {
-                                                            "type": "string",
-                                                            "nullable": true,
-                                                            "description": "Cardano transaction hash"
-                                                        },
-                                                        "status": {
-                                                            "type": "string",
-                                                            "enum": [
-                                                                "Pending",
-                                                                "Confirmed",
-                                                                "FailedViaTimeout",
-                                                                "FailedViaManualReset",
-                                                                "RolledBack"
-                                                            ],
-                                                            "description": "Current status of the transaction"
-                                                        },
-                                                        "fees": {
-                                                            "type": "string",
-                                                            "nullable": true,
-                                                            "description": "Fees of the transaction"
-                                                        },
-                                                        "blockHeight": {
-                                                            "type": "number",
-                                                            "nullable": true,
-                                                            "description": "Block height of the transaction"
-                                                        },
-                                                        "blockTime": {
-                                                            "type": "number",
-                                                            "nullable": true,
-                                                            "description": "Block time of the transaction"
-                                                        },
-                                                        "previousOnChainState": {
-                                                            "type": "string",
-                                                            "nullable": true,
-                                                            "enum": [
-                                                                "FundsLocked",
-                                                                "FundsOrDatumInvalid",
-                                                                "ResultSubmitted",
-                                                                "RefundRequested",
-                                                                "Disputed",
-                                                                "Withdrawn",
-                                                                "RefundWithdrawn",
-                                                                "DisputedWithdrawn",
-                                                                null
-                                                            ],
-                                                            "description": "Previous on-chain state before this transaction"
-                                                        },
-                                                        "newOnChainState": {
-                                                            "type": "string",
-                                                            "nullable": true,
-                                                            "enum": [
-                                                                "FundsLocked",
-                                                                "FundsOrDatumInvalid",
-                                                                "ResultSubmitted",
-                                                                "RefundRequested",
-                                                                "Disputed",
-                                                                "Withdrawn",
-                                                                "RefundWithdrawn",
-                                                                "DisputedWithdrawn",
-                                                                null
-                                                            ],
-                                                            "description": "New on-chain state of this transaction"
-                                                        },
-                                                        "confirmations": {
-                                                            "type": "number",
-                                                            "nullable": true,
-                                                            "description": "Number of block confirmations for this transaction"
-                                                        }
-                                                    },
-                                                    "required": [
-                                                        "id",
-                                                        "createdAt",
-                                                        "updatedAt",
-                                                        "txHash",
-                                                        "status",
-                                                        "fees",
-                                                        "blockHeight",
-                                                        "blockTime",
-                                                        "previousOnChainState",
-                                                        "newOnChainState",
-                                                        "confirmations"
-                                                    ],
-                                                    "description": "Current active transaction for this purchase. Null if no transaction in progress"
-                                                },
-                                                "PaidFunds": {
-                                                    "type": "array",
-                                                    "items": {
-                                                        "type": "object",
-                                                        "properties": {
-                                                            "amount": {
-                                                                "type": "string"
-                                                            },
-                                                            "unit": {
-                                                                "type": "string"
-                                                            }
-                                                        },
-                                                        "required": [
-                                                            "amount",
-                                                            "unit"
-                                                        ]
-                                                    }
-                                                },
-                                                "WithdrawnForSeller": {
-                                                    "type": "array",
-                                                    "items": {
-                                                        "type": "object",
-                                                        "properties": {
-                                                            "amount": {
-                                                                "type": "string"
-                                                            },
-                                                            "unit": {
-                                                                "type": "string"
-                                                            }
-                                                        },
-                                                        "required": [
-                                                            "amount",
-                                                            "unit"
-                                                        ]
-                                                    }
-                                                },
-                                                "WithdrawnForBuyer": {
-                                                    "type": "array",
-                                                    "items": {
-                                                        "type": "object",
-                                                        "properties": {
-                                                            "amount": {
-                                                                "type": "string"
-                                                            },
-                                                            "unit": {
-                                                                "type": "string"
-                                                            }
-                                                        },
-                                                        "required": [
-                                                            "amount",
-                                                            "unit"
-                                                        ]
-                                                    }
-                                                },
-                                                "PaymentSource": {
-                                                    "type": "object",
-                                                    "properties": {
-                                                        "id": {
-                                                            "type": "string"
-                                                        },
-                                                        "network": {
-                                                            "type": "string",
-                                                            "enum": [
-                                                                "Preprod",
-                                                                "Mainnet"
-                                                            ]
-                                                        },
-                                                        "smartContractAddress": {
-                                                            "type": "string"
-                                                        },
-                                                        "policyId": {
-                                                            "type": "string",
-                                                            "nullable": true
-                                                        }
-                                                    },
-                                                    "required": [
-                                                        "id",
-                                                        "network",
-                                                        "smartContractAddress",
-                                                        "policyId"
-                                                    ]
-                                                },
-                                                "SellerWallet": {
-                                                    "type": "object",
-                                                    "nullable": true,
-                                                    "properties": {
-                                                        "id": {
-                                                            "type": "string",
-                                                            "description": "Unique identifier for the seller wallet"
-                                                        },
-                                                        "walletVkey": {
-                                                            "type": "string",
-                                                            "description": "Payment key hash of the seller wallet"
-                                                        }
-                                                    },
-                                                    "required": [
-                                                        "id",
-                                                        "walletVkey"
-                                                    ],
-                                                    "description": "Seller wallet information. Null if not set"
-                                                },
-                                                "SmartContractWallet": {
-                                                    "type": "object",
-                                                    "nullable": true,
-                                                    "properties": {
-                                                        "id": {
-                                                            "type": "string",
-                                                            "description": "Unique identifier for the smart contract wallet"
-                                                        },
-                                                        "walletVkey": {
-                                                            "type": "string",
-                                                            "description": "Payment key hash of the smart contract wallet"
-                                                        },
-                                                        "walletAddress": {
-                                                            "type": "string",
-                                                            "description": "Cardano address of the smart contract wallet"
-                                                        }
-                                                    },
-                                                    "required": [
-                                                        "id",
-                                                        "walletVkey",
-                                                        "walletAddress"
-                                                    ],
-                                                    "description": "Smart contract wallet (seller wallet) managing this purchase. Null if not set"
-                                                },
-                                                "metadata": {
-                                                    "type": "string",
-                                                    "nullable": true,
-                                                    "description": "Optional metadata stored with the purchase for additional context. Null if not provided"
-                                                },
-                                                "unsignedTxCbor": {
-                                                    "type": "string",
-                                                    "description": "Hex-encoded unsigned transaction CBOR. Sign with your Cardano wallet and submit to the network."
-                                                }
-                                            },
-                                            "required": [
-                                                "id",
-                                                "createdAt",
-                                                "updatedAt",
-                                                "blockchainIdentifier",
-                                                "agentIdentifier",
-                                                "pricingType",
-                                                "lastCheckedAt",
-                                                "payByTime",
-                                                "submitResultTime",
-                                                "unlockTime",
-                                                "externalDisputeUnlockTime",
-                                                "totalBuyerCardanoFees",
-                                                "totalSellerCardanoFees",
-                                                "nextActionOrOnChainStateOrResultLastChangedAt",
-                                                "nextActionLastChangedAt",
-                                                "onChainStateOrResultLastChangedAt",
-                                                "requestedById",
-                                                "onChainState",
-                                                "collateralReturnLovelace",
-                                                "cooldownTime",
-                                                "cooldownTimeOtherParty",
-                                                "inputHash",
-                                                "resultHash",
-                                                "NextAction",
-                                                "CurrentTransaction",
-                                                "PaidFunds",
-                                                "WithdrawnForSeller",
-                                                "WithdrawnForBuyer",
-                                                "PaymentSource",
-                                                "SellerWallet",
-                                                "SmartContractWallet",
-                                                "metadata",
-                                                "unsignedTxCbor"
-                                            ]
-                                        }
-                                    },
-                                    "required": [
-                                        "status",
-                                        "error",
-                                        "id",
-                                        "object"
-                                    ]
-                                }
-                            }
-                        }
+                    "404": {
+                        "description": "Payment not found or not in a buildable state"
                     },
                     "500": {
                         "description": "Internal Server Error"
@@ -14645,7 +13617,6 @@
                                                                 "WaitingForExternalAction",
                                                                 "FundsLockingRequested",
                                                                 "FundsLockingInitiated",
-                                                                "ExternalFundsLockingInitiated",
                                                                 "SetRefundRequestedRequested",
                                                                 "SetRefundRequestedInitiated",
                                                                 "UnSetRefundRequestedRequested",
@@ -15216,7 +14187,6 @@
                                                                 "WaitingForExternalAction",
                                                                 "FundsLockingRequested",
                                                                 "FundsLockingInitiated",
-                                                                "ExternalFundsLockingInitiated",
                                                                 "SetRefundRequestedRequested",
                                                                 "SetRefundRequestedInitiated",
                                                                 "UnSetRefundRequestedRequested",
@@ -19846,7 +18816,8 @@
                                                                         "PAYMENT_ON_CHAIN_STATUS_CHANGED",
                                                                         "PURCHASE_ON_ERROR",
                                                                         "PAYMENT_ON_ERROR",
-                                                                        "WALLET_LOW_BALANCE"
+                                                                        "WALLET_LOW_BALANCE",
+                                                                        "FUND_DISTRIBUTION_SENT"
                                                                     ]
                                                                 }
                                                             },
@@ -20003,7 +18974,8 @@
                                                 "PAYMENT_ON_CHAIN_STATUS_CHANGED",
                                                 "PURCHASE_ON_ERROR",
                                                 "PAYMENT_ON_ERROR",
-                                                "WALLET_LOW_BALANCE"
+                                                "WALLET_LOW_BALANCE",
+                                                "FUND_DISTRIBUTION_SENT"
                                             ]
                                         },
                                         "minItems": 1,
@@ -20069,7 +19041,8 @@
                                                             "PAYMENT_ON_CHAIN_STATUS_CHANGED",
                                                             "PURCHASE_ON_ERROR",
                                                             "PAYMENT_ON_ERROR",
-                                                            "WALLET_LOW_BALANCE"
+                                                            "WALLET_LOW_BALANCE",
+                                                            "FUND_DISTRIBUTION_SENT"
                                                         ]
                                                     }
                                                 },

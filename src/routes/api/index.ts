@@ -7,9 +7,9 @@ import {
 	deleteAPIKeyEndpointDelete,
 } from './api-key';
 import { createPurchaseInitPost, queryPurchaseCountGet, queryPurchaseRequestGet } from './purchases';
-import { createX402PurchasePost } from './purchases/x402';
 import { postPurchaseSpending } from './purchases/spending';
 import { paymentInitPost, queryPaymentCountGet, queryPaymentEntryGet } from './payments';
+import { buildX402TxPost } from './payments/x402';
 import { getPaymentIncome } from './payments/income';
 import { deleteAgentRegistration, queryRegistryCountGet, queryRegistryRequestGet, registerAgentPost } from './registry';
 import {
@@ -82,9 +82,6 @@ export const apiRouter: Routing = {
 					get: queryPurchaseDiffOnChainStateOrResultGet,
 				},
 			},
-			x402: {
-				post: createX402PurchasePost,
-			},
 			'request-refund': {
 				post: requestPurchaseRefundPost,
 			},
@@ -107,6 +104,9 @@ export const apiRouter: Routing = {
 		payment: {
 			get: queryPaymentEntryGet,
 			post: paymentInitPost,
+			x402: {
+				post: buildX402TxPost,
+			},
 			diff: {
 				get: queryPaymentDiffCombinedGet,
 				'next-action': {

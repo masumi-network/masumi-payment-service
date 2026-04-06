@@ -25,7 +25,7 @@ import {
 	queryPurchaseRequestSchemaInput,
 	queryPurchaseRequestSchemaOutput,
 } from '@/routes/api/purchases/schemas';
-import { createX402PurchaseSchemaInput, createX402PurchaseSchemaOutput } from '@/routes/api/purchases/x402';
+import { buildX402TxSchemaInput, buildX402TxSchemaOutput } from '@/routes/api/payments/x402/schemas';
 import {
 	requestPurchaseRefundSchemaInput,
 	requestPurchaseRefundSchemaOutput,
@@ -826,28 +826,20 @@ export function registerInvoiceAndPurchasePaths({ registry, apiKeyAuth }: Swagge
 
 	registry.registerPath({
 		method: 'post',
-		path: '/purchase/x402',
+		path: '/payment/x402',
 		description:
-			'Creates a purchase using the x402 payment protocol. Returns an unsigned Cardano transaction CBOR that the buyer must sign with their external wallet and submit to the network.',
-		summary: 'Create a new x402 purchase request and get an unsigned transaction. (+PAY access required)',
-		tags: ['purchase'],
+			'Builds an unsigned Cardano funds-locking transaction for an existing payment request. The seller calls this on behalf of the buyer (x402 protocol). No state is saved — the returned CBOR must be signed by the buyer and submitted to the network.',
+		summary: 'Build an unsigned x402 funds-locking transaction for a payment. (+READ access required)',
+		tags: ['payment'],
 		request: {
 			body: {
 				description: '',
 				content: {
 					'application/json': {
-						schema: createX402PurchaseSchemaInput.openapi({
+						schema: buildX402TxSchemaInput.openapi({
 							example: {
-								identifierFromPurchaser: 'aabbaabb11221122aabb',
 								network: Network.Preprod,
-								sellerVkey: 'seller_vkey',
 								blockchainIdentifier: 'blockchain_identifier',
-								payByTime: (1713626260).toString(),
-								submitResultTime: (1713636260).toString(),
-								unlockTime: (1713636260).toString(),
-								externalDisputeUnlockTime: (1713636260).toString(),
-								agentIdentifier: 'agent_identifier',
-								inputHash: '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
 								buyerAddress: 'addr_test1qp...',
 							},
 						}),
@@ -858,20 +850,20 @@ export function registerInvoiceAndPurchasePaths({ registry, apiKeyAuth }: Swagge
 		security: [{ [apiKeyAuth.name]: [] }],
 		responses: {
 			200: {
-				description: 'Purchase request created with unsigned transaction CBOR',
+				description: 'Unsigned transaction CBOR ready for buyer to sign and submit',
 				content: {
 					'application/json': {
 						schema: z
 							.object({
-								data: createX402PurchaseSchemaOutput,
+								data: buildX402TxSchemaOutput,
 								status: z.string(),
 							})
 							.openapi({
 								example: {
 									status: 'Success',
 									data: {
-										...purchaseResponseSchemaExample,
 										unsignedTxCbor: '84a500818258...',
+										collateralReturnLovelace: '1500000',
 									},
 								},
 							}),
@@ -879,23 +871,13 @@ export function registerInvoiceAndPurchasePaths({ registry, apiKeyAuth }: Swagge
 				},
 			},
 			400: {
-				description: 'Bad Request (possible parameters missing or invalid)',
+				description: 'Bad Request (invalid buyer address, expired payment, or insufficient buyer funds)',
 			},
 			401: {
 				description: 'Unauthorized',
 			},
-			409: {
-				description: 'Conflict (purchase request already exists)',
-				content: {
-					'application/json': {
-						schema: z.object({
-							status: z.string(),
-							error: z.object({ message: z.string() }),
-							id: z.string(),
-							object: createX402PurchaseSchemaOutput,
-						}),
-					},
-				},
+			404: {
+				description: 'Payment not found or not in a buildable state',
 			},
 			500: {
 				description: 'Internal Server Error',

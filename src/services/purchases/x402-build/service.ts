@@ -8,13 +8,11 @@ import {
 } from '@meshsdk/core';
 import { Address, Datum, toPlutusData, toValue, TransactionOutput } from '@meshsdk/core-cst';
 import createHttpError from 'http-errors';
-import { Network, PurchasingAction } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { Network } from '@/generated/prisma/client';
 import { getDatumFromBlockchainIdentifier, SmartContractState } from '@/utils/generator/contract-generator';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { calculateMinUtxo, DUMMY_RESULT_HASH, getNativeTokenCount } from '@/utils/min-utxo';
 import { CONSTANTS } from '@/utils/config';
-import { connectPreviousAction, createNextPurchaseAction } from '@/services/shared';
 import { logger } from '@/utils/logger';
 
 interface X402PurchaseBuildData {
@@ -26,64 +24,24 @@ interface X402PurchaseBuildData {
 	externalDisputeUnlockTime: bigint;
 	sellerAddress: string;
 	paidFunds: Array<{ unit: string; amount: bigint }>;
-	nextActionId?: string;
 }
 
 export async function buildX402FundsLockingTransaction({
-	purchaseRequestId,
 	purchaseRequestData,
 	buyerAddress,
 	blockchainProvider,
 	network,
 	scriptAddress,
 	coinsPerUtxoSize,
-	persistState = true,
 }: {
-	purchaseRequestId?: string;
-	purchaseRequestData?: X402PurchaseBuildData;
+	purchaseRequestData: X402PurchaseBuildData;
 	buyerAddress: string;
 	blockchainProvider: BlockfrostProvider;
 	network: Network;
 	scriptAddress: string;
 	coinsPerUtxoSize: number;
-	persistState?: boolean;
 }): Promise<{ unsignedTxCbor: string; collateralReturnLovelace: bigint; buyerWalletVkey: string }> {
-	const persistedPurchaseRequest =
-		purchaseRequestData == null
-			? await prisma.purchaseRequest.findUnique({
-					where: { id: purchaseRequestId },
-					include: { PaidFunds: true, SellerWallet: true, NextAction: true },
-				})
-			: null;
-	if (purchaseRequestData == null && persistedPurchaseRequest == null) {
-		throw createHttpError(404, 'Purchase request not found');
-	}
-
-	const buildData: X402PurchaseBuildData =
-		purchaseRequestData ??
-		(() => {
-			if (persistedPurchaseRequest == null) {
-				throw createHttpError(500, 'Purchase request data is missing');
-			}
-			if (persistedPurchaseRequest.payByTime == null) {
-				throw createHttpError(400, 'payByTime is required');
-			}
-
-			return {
-				blockchainIdentifier: persistedPurchaseRequest.blockchainIdentifier,
-				inputHash: persistedPurchaseRequest.inputHash,
-				payByTime: persistedPurchaseRequest.payByTime,
-				submitResultTime: persistedPurchaseRequest.submitResultTime,
-				unlockTime: persistedPurchaseRequest.unlockTime,
-				externalDisputeUnlockTime: persistedPurchaseRequest.externalDisputeUnlockTime,
-				sellerAddress: persistedPurchaseRequest.SellerWallet.walletAddress,
-				paidFunds: persistedPurchaseRequest.PaidFunds.map((fund) => ({
-					unit: fund.unit,
-					amount: fund.amount,
-				})),
-				nextActionId: persistedPurchaseRequest.nextActionId,
-			};
-		})();
+	const buildData = purchaseRequestData;
 
 	// Step 1: Estimate min UTXO via dummy datum (same algorithm as batch-payments service)
 	const tmpDatum = getDatumFromBlockchainIdentifier({
@@ -219,27 +177,10 @@ export async function buildX402FundsLockingTransaction({
 		.metadataValue(674, { msg: ['Masumi', 'PaymentX402'] })
 		.complete();
 
-	// Step 6: Compute buyer vkey and transition purchase state
+	// Step 6: Compute buyer vkey
 	const buyerWalletVkey = resolvePaymentKeyHash(buyerAddress);
 
-	if (persistState) {
-		if (purchaseRequestId == null || buildData.nextActionId == null) {
-			throw createHttpError(500, 'Purchase request persistence requires purchaseRequestId and nextActionId');
-		}
-		await prisma.purchaseRequest.update({
-			where: { id: purchaseRequestId },
-			data: {
-				...connectPreviousAction(buildData.nextActionId),
-				...createNextPurchaseAction(PurchasingAction.ExternalFundsLockingInitiated),
-				collateralReturnLovelace,
-				buyerWalletAddress: buyerAddress,
-				buyerWalletVkey,
-			},
-		});
-	}
-
 	logger.info('Built x402 unsigned funds-locking transaction', {
-		purchaseRequestId,
 		buyerAddress,
 		collateralReturnLovelace: collateralReturnLovelace.toString(),
 	});

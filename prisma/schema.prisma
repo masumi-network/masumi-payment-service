@@ -353,8 +353,6 @@ model PurchaseRequest {
   currentTransactionId                          String?              @unique
   collateralReturnLovelace                      BigInt?
   payByTime                                     BigInt?
-  buyerWalletAddress                            String?
-  buyerWalletVkey                               String?
   CurrentTransaction                            Transaction?         @relation("CurrentPurchaseTransaction", fields: [currentTransactionId], references: [id])
   NextAction                                    PurchaseActionData   @relation("NextAction", fields: [nextActionId], references: [id])
   ActionHistory                                 PurchaseActionData[] @relation("PurchaseActionHistory")

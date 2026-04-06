@@ -556,7 +556,7 @@ async function updateInitialPurchaseTransaction(
 					paymentSourceId: paymentContract.id,
 					NextAction: {
 						requestedAction: {
-							in: [PurchasingAction.FundsLockingInitiated, PurchasingAction.ExternalFundsLockingInitiated],
+							in: [PurchasingAction.FundsLockingInitiated],
 						},
 					},
 				},
@@ -574,31 +574,27 @@ async function updateInitialPurchaseTransaction(
 				return;
 			}
 			if (dbEntry.SmartContractWallet == null) {
-				if (dbEntry.NextAction.requestedAction !== PurchasingAction.ExternalFundsLockingInitiated) {
-					logger.error('No smart contract wallet set for purchase request in db', {
-						purchaseRequest: dbEntry,
-					});
-					await prisma.purchaseRequest.update({
-						where: { id: dbEntry.id },
-						data: {
-							ActionHistory: {
-								connect: {
-									id: dbEntry.nextActionId,
-								},
-							},
-							NextAction: {
-								create: {
-									requestedAction: PurchasingAction.WaitingForManualAction,
-									errorNote:
-										'No smart contract wallet set for purchase request in db. This is likely an internal error.',
-									errorType: PurchaseErrorType.Unknown,
-								},
+				logger.error('No smart contract wallet set for purchase request in db', {
+					purchaseRequest: dbEntry,
+				});
+				await prisma.purchaseRequest.update({
+					where: { id: dbEntry.id },
+					data: {
+						ActionHistory: {
+							connect: {
+								id: dbEntry.nextActionId,
 							},
 						},
-					});
-					return;
-				}
-				// x402: no hot wallet expected — external buyer signs and submits
+						NextAction: {
+							create: {
+								requestedAction: PurchasingAction.WaitingForManualAction,
+								errorNote: 'No smart contract wallet set for purchase request in db. This is likely an internal error.',
+								errorType: PurchaseErrorType.Unknown,
+							},
+						},
+					},
+				});
+				return;
 			}
 
 			if (dbEntry.SellerWallet == null) {
@@ -694,39 +690,8 @@ async function updateInitialPurchaseTransaction(
 				return;
 			}
 
-			const isX402Purchase = dbEntry.NextAction.requestedAction === PurchasingAction.ExternalFundsLockingInitiated;
-			const expectedBuyerVkey = isX402Purchase ? dbEntry.buyerWalletVkey : dbEntry.SmartContractWallet?.walletVkey;
-			const expectedBuyerAddress = isX402Purchase
-				? dbEntry.buyerWalletAddress
-				: dbEntry.SmartContractWallet?.walletAddress;
-			const isMissingX402BuyerIdentity = isX402Purchase && (expectedBuyerVkey == null || expectedBuyerAddress == null);
-			if (isMissingX402BuyerIdentity) {
-				logger.error('X402 purchase is missing buyer identity in db. Manual resolution required.', {
-					purchaseRequest: dbEntry,
-					buyer: decodedNewContract.buyerVkey,
-					buyerAddress: decodedNewContract.buyerAddress,
-					buyerDb: expectedBuyerVkey,
-					buyerDbAddress: expectedBuyerAddress,
-				});
-				await prisma.purchaseRequest.update({
-					where: { id: dbEntry.id },
-					data: {
-						ActionHistory: {
-							connect: {
-								id: dbEntry.nextActionId,
-							},
-						},
-						NextAction: {
-							create: {
-								requestedAction: PurchasingAction.WaitingForManualAction,
-								errorNote: 'Missing x402 buyer identity in db. Manual resolution required.',
-								errorType: PurchaseErrorType.Unknown,
-							},
-						},
-					},
-				});
-				return;
-			}
+			const expectedBuyerVkey = dbEntry.SmartContractWallet?.walletVkey;
+			const expectedBuyerAddress = dbEntry.SmartContractWallet?.walletAddress;
 			const isBuyerVkeyMismatch = expectedBuyerVkey != null && decodedNewContract.buyerVkey !== expectedBuyerVkey;
 			const isBuyerAddressMismatch =
 				expectedBuyerAddress != null && decodedNewContract.buyerAddress !== expectedBuyerAddress;
