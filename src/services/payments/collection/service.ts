@@ -14,7 +14,7 @@ import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractWithdrawTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
-import { CONSTANTS } from '@/utils/config';
+import { CONSTANTS, SERVICE_CONSTANTS } from '@/utils/config';
 import {
 	connectPreviousAction,
 	createMeshProvider,
@@ -198,7 +198,11 @@ async function processSinglePaymentCollection(
 		collectionAddress = request.SmartContractWallet.walletAddress;
 	}
 
-	const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
+	// Collateral must be a single UTXO with ≥5 ADA as required by the Cardano protocol.
+	// Using minSellingWalletUtxoLovelace (2 ADA) here would allow selecting a UTXO
+	// that doesn't meet the collateral threshold, causing submission failures.
+	const collateralMinLovelace = parseInt(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount, 10);
+	const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000, collateralMinLovelace);
 	const collateralUtxo = limitedFilteredUtxos[0];
 	if (collateralUtxo == null) {
 		throw new Error('Collateral UTXO not found');

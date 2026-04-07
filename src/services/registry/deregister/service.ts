@@ -125,13 +125,26 @@ export async function deRegisterAgentV1() {
 
 						const tokenUtxo = findTokenUtxo(utxos, request.agentIdentifier);
 
-						const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
+						// Collateral must be a single UTXO with ≥5 ADA as required by the Cardano protocol.
+						// Using minSellingWalletUtxoLovelace (2 ADA) here would allow selecting a UTXO
+						// that doesn't meet the collateral threshold, causing submission failures.
+						const collateralMinLovelace = parseInt(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount, 10);
+						const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8_000_000, collateralMinLovelace);
 						const collateralUtxo = limitedFilteredUtxos[0];
 						if (collateralUtxo == null) {
 							throw new Error('Collateral UTXO not found');
 						}
 
 						const assetName = extractAssetName(request.agentIdentifier);
+
+						const extraInputUtxos = limitedFilteredUtxos.filter(
+							(u) =>
+								!(
+									u.input.txHash === collateralUtxo.input.txHash &&
+									u.input.outputIndex === collateralUtxo.input.outputIndex
+								) &&
+								!(u.input.txHash === tokenUtxo.input.txHash && u.input.outputIndex === tokenUtxo.input.outputIndex),
+						);
 
 						const unsignedTx = await generateDeregisterAgentTransactionAutomaticFees(
 							blockchainProvider,
@@ -142,7 +155,7 @@ export async function deRegisterAgentV1() {
 							assetName,
 							tokenUtxo,
 							collateralUtxo,
-							limitedFilteredUtxos,
+							extraInputUtxos,
 						);
 
 						const signedTx = await wallet.signTx(unsignedTx);
@@ -255,9 +268,7 @@ async function generateDeregisterAgentTransaction(
 		.mint('-1', policyId, assetName)
 		.mintingScript(script.code)
 		.mintRedeemerValue({ alternative: 1, fields: [] }, 'Mesh', exUnits)
-		.txIn(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
-		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
-		.setTotalCollateral('3000000');
+		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex);
 	for (const utxo of utxos) {
 		txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
 	}

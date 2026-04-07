@@ -12,7 +12,17 @@ import { convertNetwork } from '@/utils/converter/network-convert';
 import { decodeV1ContractDatum, DecodedV1ContractDatum, newCooldownTime } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
-import { sortAndLimitUtxos } from '@/utils/utxo';
+import {
+	sortAndLimitUtxos,
+	getLovelaceFromUtxo,
+	executeSingleUtxoSplit,
+	MIN_LOVELACE_FOR_SPLIT,
+	MIN_CHANGE_LOVELACE,
+} from '@/utils/utxo';
+import { SERVICE_CONSTANTS } from '@/utils/config';
+import { getBlockfrostInstance } from '@/utils/blockfrost';
+import { generateWalletExtended } from '@/utils/generator/wallet-generator';
+import { errorToString } from '@/utils/converter/error-string-convert';
 import { delayErrorResolver } from 'advanced-retry';
 import { advancedRetryAll } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
@@ -226,7 +236,89 @@ async function processSinglePaymentRequest(
 		constrainAfterMs: Number(decodedContract.resultTime),
 	});
 
-	const limitedUtxos = sortAndLimitUtxos(utxos, 8000000);
+	// Collateral requires a single UTXO with ≥5 ADA per the Cardano protocol.
+	const collateralMinLovelace = parseInt(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount, 10);
+	let currentUtxos = utxos;
+	let splitAttempts = 0;
+	const maxSplitAttempts = 3;
+	while (true) {
+		let limitedUtxos;
+		try {
+			limitedUtxos = sortAndLimitUtxos(
+				currentUtxos,
+				8_000_000,
+				collateralMinLovelace,
+				2, // collateral and inputs must be disjoint
+			);
+		} catch (utxoErr) {
+			logger.error('SubmitResult sortAndLimitUtxos failed', {
+				requestId: request.id,
+				utxoCount: currentUtxos.length,
+				error: errorToString(utxoErr),
+			});
+			throw utxoErr;
+		}
+		if (limitedUtxos.length >= 2) {
+			break;
+		}
+		if (splitAttempts >= maxSplitAttempts) {
+			throw new Error(
+				`SubmitResult requires at least 2 UTxOs (one for collateral ≥${collateralMinLovelace / 1_000_000} ADA, one for inputs). ` +
+					`Gave up after ${maxSplitAttempts} split attempt(s). Please add more funds.`,
+			);
+		}
+		const singleUtxo = currentUtxos.find((u) => getLovelaceFromUtxo(u) >= MIN_LOVELACE_FOR_SPLIT);
+		const singleUtxoLovelace = singleUtxo != null ? getLovelaceFromUtxo(singleUtxo) : 0;
+		if (singleUtxo != null && singleUtxoLovelace >= MIN_LOVELACE_FOR_SPLIT) {
+			splitAttempts++;
+			logger.info('SubmitResult: splitting single UTXO for collateral/input disjointness', {
+				requestId: request.id,
+				lovelace: singleUtxoLovelace,
+				attempt: splitAttempts,
+			});
+			const estimatedFeeBuffer = 500_000;
+			const estimatedChange = singleUtxoLovelace - collateralMinLovelace - estimatedFeeBuffer;
+			if (estimatedChange < MIN_CHANGE_LOVELACE) {
+				throw new Error(
+					`Wallet balance too low to split: UTXO has ${singleUtxoLovelace} lovelace but splitting would leave ` +
+						`only ~${estimatedChange} lovelace as change (minimum ${MIN_CHANGE_LOVELACE} required). ` +
+						`Please add at least ${collateralMinLovelace / 1_000_000} ADA more to the wallet.`,
+				);
+			}
+			const blockfrost = getBlockfrostInstance(
+				paymentContract.network,
+				paymentContract.PaymentSourceConfig.rpcProviderApiKey,
+			);
+			await executeSingleUtxoSplit({
+				wallet,
+				blockchainProvider,
+				address,
+				network,
+				singleUtxo,
+				blockfrost,
+				// Split out a collateral-grade output (5 ADA); change covers inputs.
+				splitOutputLovelace: collateralMinLovelace,
+			});
+			const refreshed = await generateWalletExtended(
+				paymentContract.network,
+				paymentContract.PaymentSourceConfig.rpcProviderApiKey,
+				request.SmartContractWallet!.Secret.encryptedMnemonic,
+			);
+			currentUtxos = refreshed.utxos;
+			continue;
+		}
+		throw new Error(
+			`SubmitResult requires at least 2 UTxOs (one for collateral ≥${collateralMinLovelace / 1_000_000} ADA, one for inputs). ` +
+				'No single UTXO is large enough to split. Please add more funds.',
+		);
+	}
+
+	const limitedUtxos = sortAndLimitUtxos(currentUtxos, 8_000_000, collateralMinLovelace, 2);
+	const collateralUtxo = limitedUtxos[0];
+	const inputUtxos = limitedUtxos.slice(1);
+	if (collateralUtxo == null || inputUtxos.length === 0) {
+		throw new Error('Collateral or input UTXOs not found (expected at least 2 UTxOs)');
+	}
 
 	const unsignedTx = await generateMasumiSmartContractInteractionTransactionAutomaticFees(
 		'SubmitResult',
@@ -235,8 +327,8 @@ async function processSinglePaymentRequest(
 		script,
 		address,
 		utxo,
-		limitedUtxos[0],
-		limitedUtxos,
+		collateralUtxo,
+		inputUtxos,
 		datum.value,
 		invalidBefore,
 		invalidAfter,
