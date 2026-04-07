@@ -556,7 +556,7 @@ async function updateInitialPurchaseTransaction(
 					paymentSourceId: paymentContract.id,
 					NextAction: {
 						requestedAction: {
-							in: [PurchasingAction.FundsLockingInitiated, PurchasingAction.ExternalFundsLockingInitiated],
+							in: [PurchasingAction.FundsLockingInitiated],
 						},
 					},
 				},

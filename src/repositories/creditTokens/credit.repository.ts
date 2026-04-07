@@ -18,7 +18,6 @@ async function handlePurchaseCreditInit({
 	externalDisputeUnlockTime,
 	inputHash,
 	pricingType,
-	initialNextAction,
 	collateralReturnLovelace,
 }: {
 	id: string;
@@ -36,7 +35,6 @@ async function handlePurchaseCreditInit({
 	externalDisputeUnlockTime: bigint;
 	inputHash: string;
 	pricingType: PricingType;
-	initialNextAction?: PurchasingAction;
 	collateralReturnLovelace?: bigint;
 }) {
 	return await prisma.$transaction(
@@ -164,7 +162,7 @@ async function handlePurchaseCreditInit({
 					inputHash: inputHash,
 					NextAction: {
 						create: {
-							requestedAction: initialNextAction ?? PurchasingAction.FundsLockingRequested,
+							requestedAction: PurchasingAction.FundsLockingRequested,
 						},
 					},
 					externalDisputeUnlockTime: externalDisputeUnlockTime,
