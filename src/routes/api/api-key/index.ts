@@ -178,7 +178,8 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 	handler: async ({ input }: { input: z.infer<typeof updateAPIKeySchemaInput> }) => {
 		// Compute encryption and hash outside the transaction (async PBKDF2 must not block the transaction)
 		const newEncryptedToken = input.token !== undefined ? encrypt(input.token) : undefined;
-		const newTokenHashSecure = input.token !== undefined ? await generateApiKeySecureHash(input.token) : undefined;
+		const newTokenHash = input.token !== undefined ? await generateApiKeySecureHash(input.token) : undefined;
+		const newMaskedToken = input.token !== undefined ? '*****' + input.token.slice(-4) : undefined;
 
 		const apiKey = await prisma.$transaction(
 			async (prisma) => {
@@ -262,9 +263,8 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 						...(input.token !== undefined
 							? {
 									encryptedToken: newEncryptedToken,
-									tokenHashSecure: newTokenHashSecure,
-									token: null,
-									tokenHash: null,
+									tokenHash: newTokenHash,
+									token: newMaskedToken,
 								}
 							: {}),
 						usageLimited: input.usageLimited,
