@@ -52,7 +52,7 @@ export const authMiddleware = (required: RequiredPermissionFlags) =>
 
 				const apiKey = await prisma.apiKey.findUnique({
 					where: {
-						tokenHashSecure: await generateApiKeySecureHash(sentKey),
+						tokenHash: await generateApiKeySecureHash(sentKey),
 					},
 					include: {
 						WalletScopes: { select: { hotWalletId: true } },

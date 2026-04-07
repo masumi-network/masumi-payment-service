@@ -57,21 +57,12 @@ export const mapApiKeyOutput = <
 		encryptedToken: string | null;
 		token: string | null;
 		tokenHash: string | null;
-		tokenHashSecure: string | null;
 	},
 >(
 	data: T,
 ) => {
 	// Explicitly destructure all sensitive/internal fields so they never reach the API response
-	const {
-		networkLimit,
-		RemainingUsageCredits,
-		encryptedToken,
-		token: _token,
-		tokenHash: _tokenHash,
-		tokenHashSecure: _tokenHashSecure,
-		...rest
-	} = data;
+	const { networkLimit, RemainingUsageCredits, encryptedToken, token: _token, tokenHash: _tokenHash, ...rest } = data;
 	return {
 		...rest,
 		token: decryptTokenSafe(encryptedToken),
@@ -139,7 +130,8 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 		const result = await prisma.apiKey.create({
 			data: {
 				encryptedToken: encrypt(apiKey),
-				tokenHashSecure: await generateApiKeySecureHash(apiKey),
+				tokenHash: await generateApiKeySecureHash(apiKey),
+				token: '*****' + apiKey.slice(-4),
 				status: ApiKeyStatus.Active,
 				canRead: canRead,
 				canPay: canPay,

@@ -25,7 +25,7 @@ async function initialize() {
 
 	const defaultAdminHash = await generateApiKeySecureHash(DEFAULTS.DEFAULT_ADMIN_KEY);
 	const defaultKeyRow = await prisma.apiKey.findFirst({
-		where: { tokenHashSecure: defaultAdminHash },
+		where: { tokenHash: defaultAdminHash },
 		select: { id: true },
 	});
 	if (defaultKeyRow !== null) {

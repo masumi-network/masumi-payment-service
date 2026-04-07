@@ -12,7 +12,7 @@ import { logger } from '@/utils/logger';
  */
 export async function migrateApiKeyEncryption(): Promise<void> {
 	const keysToMigrate = await prisma.apiKey.findMany({
-		where: { token: { not: null } },
+		where: { encryptedToken: null },
 		select: { id: true, token: true },
 	});
 
@@ -28,9 +28,8 @@ export async function migrateApiKeyEncryption(): Promise<void> {
 			where: { id: key.id },
 			data: {
 				encryptedToken: encrypt(key.token),
-				tokenHashSecure: await generateApiKeySecureHash(key.token),
-				token: null,
-				tokenHash: null,
+				tokenHash: await generateApiKeySecureHash(key.token),
+				token: '*****' + key.token.slice(-4),
 			},
 		});
 	}
