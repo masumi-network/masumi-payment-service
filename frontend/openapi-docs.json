@@ -4443,11 +4443,11 @@
                         "schema": {
                             "type": "string",
                             "maxLength": 550,
-                            "description": "Used to paginate through the API keys"
+                            "description": "Used to paginate through the API keys (provide the id of the last returned key)"
                         },
                         "required": false,
-                        "description": "Used to paginate through the API keys",
-                        "name": "cursorToken",
+                        "description": "Used to paginate through the API keys (provide the id of the last returned key)",
+                        "name": "cursorId",
                         "in": "query"
                     }
                 ],
@@ -18857,7 +18857,8 @@
                                                                         "type": "string"
                                                                     },
                                                                     "apiKeyToken": {
-                                                                        "type": "string"
+                                                                        "type": "string",
+                                                                        "nullable": true
                                                                     }
                                                                 },
                                                                 "required": [

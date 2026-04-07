@@ -24,7 +24,7 @@ export const apiKeyExample = {
 
 export const listAPIKeysQueryExample = {
 	take: 10,
-	cursorToken: 'identifier',
+	cursorId: 'cm9abc123def456ghi789',
 };
 
 export const addAPIKeyBodyExample = {
