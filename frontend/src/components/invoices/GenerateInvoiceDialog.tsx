@@ -122,8 +122,28 @@ const formSchema = z
   .superRefine((value, ctx) => {
     const reverseCharge = value.reverseCharge ?? false;
     const vatRate = value.vatRate ?? 0;
+    const sellerName = value.seller.name?.trim() ?? '';
+    const sellerCompanyName = value.seller.companyName?.trim() ?? '';
     const sellerVat = value.seller.vatNumber?.trim() ?? '';
+    const buyerName = value.buyer.name?.trim() ?? '';
+    const buyerCompanyName = value.buyer.companyName?.trim() ?? '';
     const buyerVat = value.buyer.vatNumber?.trim() ?? '';
+
+    if (sellerName.length === 0 && sellerCompanyName.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['seller', 'companyName'],
+        message: 'Enter either a seller name or seller company name.',
+      });
+    }
+
+    if (buyerName.length === 0 && buyerCompanyName.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['buyer', 'companyName'],
+        message: 'Enter either a buyer name or buyer company name.',
+      });
+    }
 
     if ((vatRate > 0 || reverseCharge) && sellerVat.length === 0) {
       ctx.addIssue({
@@ -228,6 +248,9 @@ function AddressFields({
       <div>
         <Label htmlFor={`${prefix}.name`}>Name</Label>
         <Input id={`${prefix}.name`} {...register(`${prefix}.name`)} placeholder="Name" />
+        {fieldErrors.name && (
+          <p className="text-xs text-destructive mt-1">{fieldErrors.name.message}</p>
+        )}
       </div>
       <div>
         <Label htmlFor={`${prefix}.companyName`}>Company Name</Label>
@@ -236,6 +259,9 @@ function AddressFields({
           {...register(`${prefix}.companyName`)}
           placeholder="Company"
         />
+        {fieldErrors.companyName && (
+          <p className="text-xs text-destructive mt-1">{fieldErrors.companyName.message}</p>
+        )}
       </div>
       <div>
         <Label htmlFor={`${prefix}.vatNumber`}>VAT Number</Label>
