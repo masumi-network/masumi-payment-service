@@ -97,10 +97,10 @@ describe('authMiddleware', () => {
 	});
 
 	// -------------------------------------------------------------------------
-	// DB lookup — uses tokenHashSecure
+	// DB lookup — uses tokenHash
 	// -------------------------------------------------------------------------
 
-	it('looks up the API key by tokenHashSecure, not tokenHash', async () => {
+	it('looks up the API key by tokenHash', async () => {
 		mockFindUnique.mockResolvedValue(makeApiKey());
 
 		await testMiddleware({
@@ -111,12 +111,11 @@ describe('authMiddleware', () => {
 		// Extract the first call's first argument (the Prisma query object)
 		const firstCallArgs = mockFindUnique.mock.calls[0] as [{ where: Record<string, unknown> }];
 		const queryArg = firstCallArgs[0];
-		expect(queryArg.where).toHaveProperty('tokenHashSecure');
-		expect(queryArg.where).not.toHaveProperty('tokenHash');
+		expect(queryArg.where).toHaveProperty('tokenHash');
 		expect(queryArg.where).not.toHaveProperty('token');
 	});
 
-	it('computes the tokenHashSecure from the incoming token header value', async () => {
+	it('computes the tokenHash from the incoming token header value', async () => {
 		const sentToken = 'masumi-payment-admin-testtoken';
 		const expectedHash = await generateApiKeySecureHash(sentToken);
 
@@ -129,7 +128,7 @@ describe('authMiddleware', () => {
 
 		const firstCallArgs = mockFindUnique.mock.calls[0] as [{ where: Record<string, unknown> }];
 		const queryArg = firstCallArgs[0];
-		expect(queryArg.where).toEqual({ tokenHashSecure: expectedHash });
+		expect(queryArg.where).toEqual({ tokenHash: expectedHash });
 	});
 
 	// -------------------------------------------------------------------------
