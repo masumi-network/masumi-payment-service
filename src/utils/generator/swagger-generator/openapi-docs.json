@@ -13314,6 +13314,118 @@
                 }
             }
         },
+        "/payment/x402": {
+            "post": {
+                "description": "Builds an unsigned Cardano funds-locking transaction for an existing payment request. The seller calls this on behalf of the buyer (x402 protocol). No state is saved — the returned CBOR must be signed by the buyer and submitted to the network.",
+                "summary": "Build an unsigned x402 funds-locking transaction for a payment. (+READ access required)",
+                "tags": [
+                    "payment"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "network": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Preprod",
+                                            "Mainnet"
+                                        ],
+                                        "description": "The Cardano network"
+                                    },
+                                    "blockchainIdentifier": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "The blockchainIdentifier from the PaymentRequest"
+                                    },
+                                    "buyerAddress": {
+                                        "type": "string",
+                                        "minLength": 40,
+                                        "maxLength": 200,
+                                        "description": "The buyer's bech32 Cardano wallet address. UTxOs fetched from this address to build the unsigned tx."
+                                    }
+                                },
+                                "required": [
+                                    "network",
+                                    "blockchainIdentifier",
+                                    "buyerAddress"
+                                ],
+                                "example": {
+                                    "network": "Preprod",
+                                    "blockchainIdentifier": "blockchain_identifier",
+                                    "buyerAddress": "addr_test1qp..."
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Unsigned transaction CBOR ready for buyer to sign and submit",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "unsignedTxCbor": {
+                                                    "type": "string",
+                                                    "description": "Hex-encoded unsigned transaction CBOR. Sign with buyer wallet and submit."
+                                                },
+                                                "collateralReturnLovelace": {
+                                                    "type": "string",
+                                                    "description": "Extra lovelace included for min-UTXO. Buyer receives this back as change after result submission."
+                                                }
+                                            },
+                                            "required": [
+                                                "unsignedTxCbor",
+                                                "collateralReturnLovelace"
+                                            ]
+                                        },
+                                        "status": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "status"
+                                    ],
+                                    "example": {
+                                        "status": "Success",
+                                        "data": {
+                                            "unsignedTxCbor": "84a500818258...",
+                                            "collateralReturnLovelace": "1500000"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (invalid buyer address, expired payment, or insufficient buyer funds)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Payment not found or not in a buildable state"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
         "/purchase/request-refund": {
             "post": {
                 "description": "Requests a refund for a completed purchase. This will collect the refund after the refund time.",
