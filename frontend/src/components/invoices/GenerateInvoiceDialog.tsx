@@ -144,6 +144,63 @@ const formSchema = z
 
 type FormValues = z.infer<typeof formSchema>;
 
+function normalizeInvoiceLocale(
+  value: string | null | undefined,
+  options?: { allowGenericEnglish?: boolean },
+): (typeof languages)[number] | undefined {
+  if (!value) return undefined;
+
+  const normalized = value.trim().toLowerCase().replace(/_/g, '-');
+
+  if (normalized === 'de' || normalized.startsWith('de-')) {
+    return 'de';
+  }
+  if (normalized === 'en-us' || normalized.startsWith('en-us')) {
+    return 'en-us';
+  }
+  if (
+    normalized === 'en-gb' ||
+    normalized === 'en-uk' ||
+    normalized.startsWith('en-gb') ||
+    normalized.startsWith('en-uk')
+  ) {
+    return 'en-gb';
+  }
+  if (normalized === 'en') {
+    return options?.allowGenericEnglish ? 'en-gb' : undefined;
+  }
+
+  return undefined;
+}
+
+function findFirstValidationError(
+  errors: FieldErrors<FormValues>,
+  path = '',
+): { path: string; message: string } | null {
+  for (const [key, value] of Object.entries(errors)) {
+    if (!value) continue;
+
+    const nextPath = path ? `${path}.${key}` : key;
+
+    if (
+      typeof value === 'object' &&
+      value !== null &&
+      'message' in value &&
+      typeof value.message === 'string' &&
+      value.message.length > 0
+    ) {
+      return { path: nextPath, message: value.message };
+    }
+
+    if (typeof value === 'object' && value !== null) {
+      const nested = findFirstValidationError(value as FieldErrors<FormValues>, nextPath);
+      if (nested) return nested;
+    }
+  }
+
+  return null;
+}
+
 interface GenerateInvoiceDialogProps {
   open: boolean;
   onClose: () => void;
@@ -248,6 +305,9 @@ function AddressFields({
           placeholder="email@example.com"
           type="email"
         />
+        {fieldErrors.email && (
+          <p className="text-xs text-destructive mt-1">{fieldErrors.email.message}</p>
+        )}
       </div>
       <div>
         <Label htmlFor={`${prefix}.phone`}>Phone</Label>
@@ -532,6 +592,21 @@ export function GenerateInvoiceDialog({
   const buildDefaults = useCallback((): FormValues => {
     const inv = sourceInvoice;
     if (inv) {
+      const normalizedLanguage = normalizeInvoiceLocale(inv.language);
+      const normalizedLocalizationFormat = normalizeInvoiceLocale(inv.localizationFormat, {
+        allowGenericEnglish: true,
+      });
+
+      if (
+        (inv.language && !normalizedLanguage && inv.language.toLowerCase() !== 'en') ||
+        (inv.localizationFormat && !normalizedLocalizationFormat)
+      ) {
+        console.warn('Normalized unsupported invoice locale values for regenerate dialog', {
+          language: inv.language,
+          localizationFormat: inv.localizationFormat,
+        });
+      }
+
       return {
         buyerWalletVkey: prefillBuyerWalletVkey || '',
         month: prefillMonth || '',
@@ -567,8 +642,8 @@ export function GenerateInvoiceDialog({
         invoice: {
           title: inv.invoiceTitle || undefined,
           description: inv.invoiceDescription || undefined,
-          language: (inv.language as (typeof languages)[number]) || undefined,
-          localizationFormat: (inv.localizationFormat as (typeof languages)[number]) || undefined,
+          language: normalizedLanguage,
+          localizationFormat: normalizedLocalizationFormat,
         },
       };
     }
@@ -623,7 +698,7 @@ export function GenerateInvoiceDialog({
   // Apply address data to form fields
   const applyAddress = useCallback(
     (prefix: 'seller' | 'buyer', data: SellerTemplateData) => {
-      const opts = { shouldDirty: true } as const;
+      const opts = { shouldDirty: true, shouldValidate: true } as const;
       setValue(`${prefix}.name`, data.name, opts);
       setValue(`${prefix}.companyName`, data.companyName, opts);
       setValue(`${prefix}.vatNumber`, data.vatNumber, opts);
@@ -842,6 +917,21 @@ export function GenerateInvoiceDialog({
     }
   };
 
+  const onInvalidSubmit = useCallback((formErrors: FieldErrors<FormValues>) => {
+    if (formErrors.invoice) {
+      setOptionsOpen(true);
+    }
+
+    const firstError = findFirstValidationError(formErrors);
+    const message = firstError
+      ? `Please fix ${firstError.path}: ${firstError.message}`
+      : 'Please fix the highlighted form fields.';
+
+    console.warn('Generate invoice form validation failed', formErrors);
+    setSubmitError(message);
+    toast.error(message);
+  }, []);
+
   return (
     <Dialog
       open={open}
@@ -857,7 +947,7 @@ export function GenerateInvoiceDialog({
           <DialogTitle>Generate Invoice</DialogTitle>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <form onSubmit={handleSubmit(onSubmit, onInvalidSubmit)} className="space-y-4">
           {/* Core Fields */}
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -895,7 +985,10 @@ export function GenerateInvoiceDialog({
               <Select
                 value={invoiceCurrency}
                 onValueChange={(val) =>
-                  setValue('invoiceCurrency', val as (typeof currencies)[number])
+                  setValue('invoiceCurrency', val as (typeof currencies)[number], {
+                    shouldDirty: true,
+                    shouldValidate: true,
+                  })
                 }
               >
                 <SelectTrigger>
@@ -909,6 +1002,9 @@ export function GenerateInvoiceDialog({
                   ))}
                 </SelectContent>
               </Select>
+              {errors.invoiceCurrency && (
+                <p className="text-xs text-destructive mt-1">{errors.invoiceCurrency.message}</p>
+              )}
             </div>
             <div>
               <Label htmlFor="vatRate">VAT Rate (decimal)</Label>
@@ -929,14 +1025,24 @@ export function GenerateInvoiceDialog({
               <div className="flex items-center gap-2">
                 <Switch
                   checked={reverseCharge || false}
-                  onCheckedChange={(checked) => setValue('reverseCharge', checked)}
+                  onCheckedChange={(checked) =>
+                    setValue('reverseCharge', checked, {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    })
+                  }
                 />
                 <Label>Reverse Charge</Label>
               </div>
               <div className="flex items-center gap-2">
                 <Switch
                   checked={forceRegenerate || false}
-                  onCheckedChange={(checked) => setValue('forceRegenerate', checked)}
+                  onCheckedChange={(checked) =>
+                    setValue('forceRegenerate', checked, {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    })
+                  }
                 />
                 <Label>Force Regenerate</Label>
               </div>
@@ -1048,7 +1154,10 @@ export function GenerateInvoiceDialog({
                   <Select
                     value={watch('invoice.language') || ''}
                     onValueChange={(val) =>
-                      setValue('invoice.language', val as (typeof languages)[number])
+                      setValue('invoice.language', val as (typeof languages)[number], {
+                        shouldDirty: true,
+                        shouldValidate: true,
+                      })
                     }
                   >
                     <SelectTrigger>
@@ -1068,7 +1177,10 @@ export function GenerateInvoiceDialog({
                   <Select
                     value={watch('invoice.localizationFormat') || ''}
                     onValueChange={(val) =>
-                      setValue('invoice.localizationFormat', val as (typeof languages)[number])
+                      setValue('invoice.localizationFormat', val as (typeof languages)[number], {
+                        shouldDirty: true,
+                        shouldValidate: true,
+                      })
                     }
                   >
                     <SelectTrigger>
