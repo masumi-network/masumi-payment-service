@@ -241,7 +241,8 @@ export async function requestRefundsV1() {
 	try {
 		const paymentContractsWithWalletLocked = await lockAndQueryPurchases({
 			purchasingAction: PurchasingAction.SetRefundRequestedRequested,
-			unlockTime: { gte: Date.now() - 1000 * 60 * 1 },
+			// unlockTime: { gte: Date.now() - 1000 * 60 * 1 },
+			unlockTime: { gte: Date.now() },
 			maxBatchSize: 1,
 		});
 

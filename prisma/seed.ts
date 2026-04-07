@@ -122,8 +122,12 @@ export const seed = async (prisma: PrismaClient) => {
 
 	const feeWalletAddressPreprod = DEFAULTS.FEE_WALLET_PREPROD;
 	const feePermillePreprod = DEFAULTS.FEE_PERMILLE_PREPROD;
-	const cooldownTimePreprod = DEFAULTS.COOLDOWN_TIME_PREPROD;
-	const cooldownTimeMainnet = DEFAULTS.COOLDOWN_TIME_MAINNET;
+	const cooldownTimePreprod = process.env.COOLDOWN_TIME_PREPROD
+		? Number(process.env.COOLDOWN_TIME_PREPROD)
+		: DEFAULTS.COOLDOWN_TIME_PREPROD;
+	const cooldownTimeMainnet = process.env.COOLDOWN_TIME_MAINNET
+		? Number(process.env.COOLDOWN_TIME_MAINNET)
+		: DEFAULTS.COOLDOWN_TIME_MAINNET;
 
 	if (encryptionKey != null && blockfrostApiKeyPreprod != null && blockfrostApiKeyPreprod != '') {
 		const fee = feePermillePreprod;

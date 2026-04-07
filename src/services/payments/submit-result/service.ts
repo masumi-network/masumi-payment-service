@@ -329,7 +329,8 @@ export async function submitResultV1() {
 		const paymentContractsWithWalletLocked = await lockAndQueryPayments({
 			paymentStatus: PaymentAction.SubmitResultRequested,
 			submitResultTime: {
-				gte: Date.now() + 1000 * 60 * 1,
+				// gte: Date.now() + 1000 * 60 * 1,
+				gte: Date.now(),
 			},
 			requestedResultHash: { not: null },
 			maxBatchSize: 1,
