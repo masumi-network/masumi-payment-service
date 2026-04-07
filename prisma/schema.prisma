@@ -8,12 +8,13 @@ datasource db {
 }
 
 model ApiKey {
-  id        String       @id @default(cuid())
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
-  token     String       @unique
-  tokenHash String       @unique
-  status    ApiKeyStatus
+  id             String       @id @default(cuid())
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  token          String
+  tokenHash      String       @unique
+  encryptedToken String?
+  status         ApiKeyStatus
 
   // Flag-based permissions (must be set explicitly on create)
   canRead  Boolean

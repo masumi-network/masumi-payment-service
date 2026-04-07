@@ -3,8 +3,10 @@ import { ApiKeyStatus, Network } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import { createId } from '@paralleldrive/cuid2';
 import createHttpError from 'http-errors';
-import { generateSHA256Hash } from '@/utils/crypto';
+import { generateApiKeySecureHash } from '@/utils/crypto/api-key-hash';
+import { encrypt, decrypt } from '@/utils/security/encryption';
 import { CONSTANTS } from '@/utils/config';
+import { logger } from '@/utils/logger';
 import { transformBigIntAmounts } from '@/utils/shared/transformers';
 import { z } from '@/utils/zod-openapi';
 import {
@@ -32,6 +34,18 @@ export {
 	updateAPIKeySchemaOutput,
 };
 
+const decryptTokenSafe = (encryptedToken: string | null): string => {
+	if (!encryptedToken) return '';
+	try {
+		return decrypt(encryptedToken);
+	} catch (e) {
+		logger.error('Failed to decrypt API key token — encryptedToken may be corrupted or ENCRYPTION_KEY changed', {
+			error: e,
+		});
+		return '';
+	}
+};
+
 export const mapApiKeyOutput = <
 	T extends {
 		canRead: boolean;
@@ -40,13 +54,18 @@ export const mapApiKeyOutput = <
 		networkLimit: Network[];
 		RemainingUsageCredits: Array<{ amount: bigint; unit: string }>;
 		WalletScopes: Array<{ hotWalletId: string }>;
+		encryptedToken: string | null;
+		token: string | null;
+		tokenHash: string | null;
 	},
 >(
 	data: T,
 ) => {
-	const { networkLimit, RemainingUsageCredits, ...rest } = data;
+	// Explicitly destructure all sensitive/internal fields so they never reach the API response
+	const { networkLimit, RemainingUsageCredits, encryptedToken, token: _token, tokenHash: _tokenHash, ...rest } = data;
 	return {
 		...rest,
+		token: decryptTokenSafe(encryptedToken),
 		permission: computePermissionFromFlags(data.canRead, data.canPay, data.canAdmin),
 		NetworkLimit: networkLimit,
 		RemainingUsageCredits: transformBigIntAmounts(RemainingUsageCredits),
@@ -59,7 +78,7 @@ export const queryAPIKeyEndpointGet = adminAuthenticatedEndpointFactory.build({
 	output: getAPIKeySchemaOutput,
 	handler: async ({ input }: { input: z.infer<typeof getAPIKeySchemaInput> }) => {
 		const result = await prisma.apiKey.findMany({
-			cursor: input.cursorToken ? { token: input.cursorToken } : undefined,
+			cursor: input.cursorId ? { id: input.cursorId } : undefined,
 			take: input.take,
 			include: {
 				RemainingUsageCredits: { select: { amount: true, unit: true } },
@@ -110,8 +129,9 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 		const apiKey = 'masumi-payment-' + (isAdmin ? 'admin-' : '') + createId();
 		const result = await prisma.apiKey.create({
 			data: {
-				token: apiKey,
-				tokenHash: generateSHA256Hash(apiKey),
+				encryptedToken: encrypt(apiKey),
+				tokenHash: await generateApiKeySecureHash(apiKey),
+				token: '*****' + apiKey.slice(-4),
 				status: ApiKeyStatus.Active,
 				canRead: canRead,
 				canPay: canPay,
@@ -156,6 +176,11 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 	input: updateAPIKeySchemaInput,
 	output: updateAPIKeySchemaOutput,
 	handler: async ({ input }: { input: z.infer<typeof updateAPIKeySchemaInput> }) => {
+		// Compute encryption and hash outside the transaction (async PBKDF2 must not block the transaction)
+		const newEncryptedToken = input.token !== undefined ? encrypt(input.token) : undefined;
+		const newTokenHash = input.token !== undefined ? await generateApiKeySecureHash(input.token) : undefined;
+		const newMaskedToken = input.token !== undefined ? '*****' + input.token.slice(-4) : undefined;
+
 		const apiKey = await prisma.$transaction(
 			async (prisma) => {
 				const apiKey = await prisma.apiKey.findUnique({
@@ -235,8 +260,13 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 				const result = await prisma.apiKey.update({
 					where: { id: input.id },
 					data: {
-						token: input.token,
-						tokenHash: input.token ? generateSHA256Hash(input.token) : undefined,
+						...(input.token !== undefined
+							? {
+									encryptedToken: newEncryptedToken,
+									tokenHash: newTokenHash,
+									token: newMaskedToken,
+								}
+							: {}),
 						usageLimited: input.usageLimited,
 						status: input.status,
 						networkLimit: input.NetworkLimit,

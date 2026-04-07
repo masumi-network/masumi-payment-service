@@ -42,7 +42,7 @@ export const listWebhooksSchemaOutput = z.object({
 			CreatedBy: z
 				.object({
 					apiKeyId: z.string(),
-					apiKeyToken: z.string(),
+					apiKeyToken: z.string().nullable(),
 				})
 				.nullable(),
 		}),
