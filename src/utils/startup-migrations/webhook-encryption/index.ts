@@ -1,10 +1,6 @@
 import { prisma } from '@/utils/db';
 import { logger } from '@/utils/logger';
-import {
-	encryptWebhookAuthToken,
-	encryptWebhookUrl,
-	generateWebhookUrlHash,
-} from '@/utils/security/webhook-secrets';
+import { encryptWebhookAuthToken, encryptWebhookUrl, generateWebhookUrlHash } from '@/utils/security/webhook-secrets';
 
 /**
  * One-time startup migration: encrypts webhook URLs/auth tokens for rows that do not yet have a urlHash.

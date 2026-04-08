@@ -89,10 +89,7 @@ export const registerWebhookPost = payAuthenticatedEndpointFactory.build({
 			data: {
 				url: encryptWebhookUrl(input.url),
 				urlHash,
-				authToken:
-					input.format === WebhookFormat.EXTENDED
-						? encryptWebhookAuthToken(input.authToken)
-						: null,
+				authToken: input.format === WebhookFormat.EXTENDED ? encryptWebhookAuthToken(input.authToken) : null,
 				format: input.format,
 				events: input.Events,
 				name: input.name,
@@ -175,10 +172,7 @@ export const patchWebhookPatch = payAuthenticatedEndpointFactory.build({
 			data: {
 				url: encryptWebhookUrl(input.url),
 				urlHash,
-				authToken:
-					input.format === WebhookFormat.EXTENDED
-						? encryptWebhookAuthToken(input.authToken)
-						: null,
+				authToken: input.format === WebhookFormat.EXTENDED ? encryptWebhookAuthToken(input.authToken) : null,
 				format: input.format,
 				events: input.Events,
 				name: input.name ?? null,

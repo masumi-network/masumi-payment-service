@@ -4,10 +4,7 @@ import type { StoredWebhookPayload, WebhookSendPayload, WebhookTestPayload } fro
 import { prisma } from '@/utils/db';
 import { logger } from '@/utils/logger';
 import { getOwnPlainObject, getOwnString, isPlainObject } from '@/utils/object-properties';
-import {
-	decryptWebhookAuthTokenSafe,
-	decryptWebhookUrlForDelivery,
-} from '@/utils/security/webhook-secrets';
+import { decryptWebhookAuthTokenSafe, decryptWebhookUrlForDelivery } from '@/utils/security/webhook-secrets';
 
 interface WebhookDeliveryResult {
 	success: boolean;
@@ -173,12 +170,7 @@ class WebhookSenderService {
 			},
 		};
 
-		const result = await this.sendWebhook(
-			decryptedUrl,
-			webhook.format,
-			decryptedAuthToken,
-			payload,
-		);
+		const result = await this.sendWebhook(decryptedUrl, webhook.format, decryptedAuthToken, payload);
 
 		if (result.success) {
 			await this.updateWebhookSuccessTracking(webhook.id);

@@ -30,7 +30,9 @@ jest.unstable_mockModule('@/utils/logger', () => ({
 }));
 
 jest.unstable_mockModule('@/utils/security/webhook-secrets', () => ({
-	decryptWebhookUrlForDelivery: jest.fn((url: string) => (url === 'broken-url' ? null : url.startsWith('enc:') ? url.slice(4) : url)),
+	decryptWebhookUrlForDelivery: jest.fn((url: string) =>
+		url === 'broken-url' ? null : url.startsWith('enc:') ? url.slice(4) : url,
+	),
 	decryptWebhookAuthTokenSafe: jest.fn((authToken: string | null) => {
 		if (authToken == null) {
 			return null;
@@ -426,9 +428,7 @@ describe('webhookSenderService.processWebhookDelivery', () => {
 				isActive: true,
 			},
 		});
-		mockWebhookDeliveryUpdate
-			.mockResolvedValueOnce({ attempts: 1 })
-			.mockResolvedValueOnce(undefined);
+		mockWebhookDeliveryUpdate.mockResolvedValueOnce({ attempts: 1 }).mockResolvedValueOnce(undefined);
 
 		await webhookSenderService.processWebhookDelivery('delivery-1');
 
