@@ -16,6 +16,7 @@ import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 import { mapA2ARegistryRequestToOutput } from '@/routes/api/registry/utils';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
+import { logger } from '@/utils/logger';
 
 export const registerA2AAgentSchemaInput = z.object({
 	network: z.nativeEnum(Network).describe('The Cardano network used to register the agent on'),
@@ -86,9 +87,14 @@ export const registerA2AAgentPost = payAuthenticatedEndpointFactory.build({
 			}
 			assertHotWalletInScope(ctx.walletScopeIds, sellingWallet.id);
 
-			// Fetch and validate the Agent Card unless explicitly skipped
+			// Fetch and validate the Agent Card unless explicitly skipped (admin-only bypass)
 			let agentCard: AgentCard | null = null;
-			if (!input.skipAgentCardValidation) {
+			if (input.skipAgentCardValidation) {
+				if (!ctx.canAdmin) {
+					throw createHttpError(403, 'skipAgentCardValidation requires admin permissions');
+				}
+				logger.warn('Agent card validation skipped by admin', { agentCardUrl: input.agentCardUrl });
+			} else {
 				agentCard = await fetchAndValidateAgentCard(input.agentCardUrl, input.a2aProtocolVersions);
 			}
 

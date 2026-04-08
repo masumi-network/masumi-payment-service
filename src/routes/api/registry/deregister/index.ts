@@ -118,12 +118,11 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 		});
 
 		if (registryRequest != null) {
+			if (registryRequest.state !== RegistrationState.RegistrationConfirmed) {
+				throw createHttpError(409, `Cannot deregister agent in current state: ${registryRequest.state}`);
+			}
 			const result = await prisma.registryRequest.update({
-				where: {
-					id: registryRequest.id,
-					state: RegistrationState.RegistrationConfirmed,
-					SmartContractWallet: { deletedAt: null },
-				},
+				where: { id: registryRequest.id, SmartContractWallet: { deletedAt: null } },
 				data: { state: RegistrationState.DeregistrationRequested },
 				include: standardInclude,
 			});
@@ -135,12 +134,11 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 		});
 
 		if (a2aRequest != null) {
+			if (a2aRequest.state !== RegistrationState.RegistrationConfirmed) {
+				throw createHttpError(409, `Cannot deregister agent in current state: ${a2aRequest.state}`);
+			}
 			const result = await prisma.a2ARegistryRequest.update({
-				where: {
-					id: a2aRequest.id,
-					state: RegistrationState.RegistrationConfirmed,
-					SmartContractWallet: { deletedAt: null },
-				},
+				where: { id: a2aRequest.id, SmartContractWallet: { deletedAt: null } },
 				data: { state: RegistrationState.DeregistrationRequested },
 				include: a2aInclude,
 			});

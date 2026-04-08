@@ -1,9 +1,8 @@
-import { RegistrationState, TransactionStatus } from '@/generated/prisma/client';
+import { RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import { BlockfrostProvider, IFetcher, LanguageVersion, MeshTxBuilder, Network, UTxO } from '@meshsdk/core';
 import { logger } from '@/utils/logger';
 import { convertNetwork } from '@/utils/converter/network-convert';
-import { generateWalletExtended } from '@/utils/generator/wallet-generator';
 import {
 	lockAndQueryA2ARegistryRequests,
 	lockAndQueryRegistryRequests,
@@ -169,11 +168,13 @@ export async function deRegisterAgentV1() {
 					errorResolvers: [delayErrorResolver({ configuration: SERVICE_CONSTANTS.RETRY })],
 					operation: async () => {
 						validateDeregistrationRequest(deregistrationRequest);
-						const { wallet, utxos, address } = await generateWalletExtended(
-							paymentSource.network,
-							paymentSource.PaymentSourceConfig.rpcProviderApiKey,
-							deregistrationRequest.SmartContractWallet.Secret.encryptedMnemonic,
-						);
+						const walletSession = await loadHotWalletSession({
+							network: paymentSource.network,
+							rpcProviderApiKey: paymentSource.PaymentSourceConfig.rpcProviderApiKey,
+							encryptedMnemonic: deregistrationRequest.SmartContractWallet.Secret.encryptedMnemonic,
+							hotWalletId: deregistrationRequest.SmartContractWallet.id,
+						});
+						const { wallet, utxos, address } = walletSession;
 						if (utxos.length === 0) throw new Error('No UTXOs found for the wallet');
 						const { script, policyId } = await getRegistryScriptFromNetworkHandlerV1(paymentSource);
 						if (!deregistrationRequest.agentIdentifier)
@@ -199,19 +200,14 @@ export async function deRegisterAgentV1() {
 							where: { id: deregistrationRequest.id },
 							data: {
 								state: RegistrationState.DeregistrationInitiated,
-								CurrentTransaction: {
-									create: {
-										txHash: null,
-										status: TransactionStatus.Pending,
-										BlocksWallet: { connect: { id: deregistrationRequest.SmartContractWallet.id } },
-									},
-								},
+								...createPendingTransaction(deregistrationRequest.SmartContractWallet.id),
 							},
 						});
 						const newTxHash = await wallet.submitTx(signedTx);
+						await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
 						await prisma.a2ARegistryRequest.update({
 							where: { id: deregistrationRequest.id },
-							data: { CurrentTransaction: { update: { txHash: newTxHash } } },
+							data: updateCurrentTransactionHash(newTxHash),
 						});
 						logger.debug(`A2A deregistration tx: ${newTxHash}`);
 						return true;

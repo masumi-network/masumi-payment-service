@@ -154,7 +154,7 @@ export function mapA2ARegistryRequestToOutput(item: A2ARegistryRequestWithInclud
 								amount: p.amount.toString(),
 							})) ?? [],
 					}
-				: { pricingType: PricingType.Free },
+				: { pricingType: item.Pricing.pricingType },
 		SmartContractWallet: item.SmartContractWallet,
 		CurrentTransaction: item.CurrentTransaction
 			? {

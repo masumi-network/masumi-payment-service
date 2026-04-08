@@ -3,6 +3,7 @@ import createHttpError from 'http-errors';
 import { logger } from '@/utils/logger';
 import { timedFetch } from '@/utils/timed-fetch';
 import net from 'net';
+import { promises as dns } from 'dns';
 
 function isPrivateIpv4(parts: number[]): boolean {
 	const [a, b] = parts;
@@ -38,7 +39,7 @@ function isPrivateIp(ip: string): boolean {
 	return isPrivateIpv4(parts);
 }
 
-function assertPublicHttpsUrl(rawUrl: string): void {
+async function assertPublicHttpsUrl(rawUrl: string): Promise<void> {
 	let parsed: URL;
 	try {
 		parsed = new URL(rawUrl);
@@ -52,8 +53,29 @@ function assertPublicHttpsUrl(rawUrl: string): void {
 	if (host === 'localhost' || host.endsWith('.localhost')) {
 		throw createHttpError(400, 'Agent card URL must not point to a private or internal host');
 	}
-	if (net.isIP(host) !== 0 && isPrivateIp(host)) {
-		throw createHttpError(400, 'Agent card URL must not point to a private or internal host');
+	// If the hostname is a literal IP, check it directly
+	if (net.isIP(host) !== 0) {
+		// Strip IPv6 zone IDs (e.g. fe80::1%eth0) before checking
+		const bare = host.replace(/%.*$/, '');
+		if (isPrivateIp(bare)) {
+			throw createHttpError(400, 'Agent card URL must not point to a private or internal host');
+		}
+		return;
+	}
+	// Resolve DNS and validate every returned address to prevent SSRF via
+	// internal hostnames (e.g. metadata.google.internal) and DNS rebinding
+	const [ipv4s, ipv6s] = await Promise.all([
+		dns.resolve4(host).catch(() => [] as string[]),
+		dns.resolve6(host).catch(() => [] as string[]),
+	]);
+	const allAddresses = [...ipv4s, ...ipv6s];
+	if (allAddresses.length === 0) {
+		throw createHttpError(400, 'Agent card URL hostname could not be resolved');
+	}
+	for (const ip of allAddresses) {
+		if (isPrivateIp(ip)) {
+			throw createHttpError(400, 'Agent card URL must not point to a private or internal host');
+		}
 	}
 }
 
@@ -120,17 +142,14 @@ export async function fetchAndValidateAgentCard(
 	agentCardUrl: string,
 	a2aProtocolVersions: string[],
 ): Promise<AgentCard> {
-	assertPublicHttpsUrl(agentCardUrl);
+	await assertPublicHttpsUrl(agentCardUrl);
 
 	let response: Response;
 	try {
 		response = await timedFetch(agentCardUrl);
 	} catch (error) {
 		logger.error('Failed to fetch agent card', { url: agentCardUrl, error });
-		throw createHttpError(
-			400,
-			`Failed to fetch agent card from ${agentCardUrl}: ${error instanceof Error ? error.message : 'Unknown error'}`,
-		);
+		throw createHttpError(400, 'Failed to fetch agent card: network error');
 	}
 
 	if (!response.ok) {
