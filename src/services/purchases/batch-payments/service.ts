@@ -14,9 +14,8 @@ import { getDatumFromBlockchainIdentifier, SmartContractState } from '@/utils/ge
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
-import cbor from 'cbor';
-import { Address, Datum, toPlutusData, toValue, TransactionOutput } from '@meshsdk/core-cst';
 import { CONSTANTS } from '@/utils/config';
+import { calculateMinUtxo, DUMMY_RESULT_HASH } from '@/utils/min-utxo';
 import { toBalanceMapFromMeshUtxos, walletLowBalanceMonitorService } from '@/services/wallets';
 import {
 	connectPreviousAction,
@@ -412,70 +411,35 @@ export async function batchLatestPaymentEntriesV1() {
 							}
 							const originalPaidFundsArray = paymentRequest.PaidFunds.map((f) => ({ ...f }));
 							const sellerAddress = paymentRequest.SellerWallet.walletAddress;
-							const buyerAddress = potentialAddresses[0];
-							const tmpDatum = getDatumFromBlockchainIdentifier({
-								buyerAddress: buyerAddress,
-								sellerAddress: sellerAddress,
-								blockchainIdentifier: paymentRequest.blockchainIdentifier,
-								inputHash: paymentRequest.inputHash,
-								resultHash: 'd4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35',
-								payByTime: BigInt(Date.now()),
-								collateralReturnLovelace: 1000000000n,
-								resultTime: BigInt(paymentRequest.submitResultTime),
-								unlockTime: BigInt(paymentRequest.unlockTime),
-								externalDisputeUnlockTime: BigInt(paymentRequest.externalDisputeUnlockTime),
-								newCooldownTimeSeller: BigInt(0),
-								newCooldownTimeBuyer: BigInt(Date.now()),
-								state: SmartContractState.FundsLocked,
-							});
-
-							const cborEncodedDatum = cbor.encode(tmpDatum.value);
-
-							const defaultOverheadSize = 160;
-							const bufferSizeCooldownTime = 15;
-							const bufferSizePerUnit = 50;
-							const bufferSizeTxOutputHash = 50;
 
 							const otherUnits = paymentRequest.PaidFunds.filter(
 								(amount) => amount.unit.toLowerCase() != '' && amount.unit.toLowerCase() != 'lovelace',
 							).length;
 
-							const totalLength =
-								cborEncodedDatum.byteLength +
-								defaultOverheadSize +
-								bufferSizeTxOutputHash +
-								bufferSizeCooldownTime +
-								bufferSizePerUnit * otherUnits;
-							let overestimatedMinUtxoCost = BigInt(Math.ceil(protocolParameter.coinsPerUtxoSize * totalLength));
+							const resultSubmittedEstimateDatum = getDatumFromBlockchainIdentifier({
+								buyerAddress: sellerAddress,
+								sellerAddress: sellerAddress,
+								blockchainIdentifier: paymentRequest.blockchainIdentifier,
+								inputHash: paymentRequest.inputHash,
+								payByTime: paymentRequest.payByTime!,
+								collateralReturnLovelace: 0n,
+								resultHash: DUMMY_RESULT_HASH,
+								resultTime: BigInt(paymentRequest.submitResultTime),
+								unlockTime: BigInt(paymentRequest.unlockTime),
+								externalDisputeUnlockTime: BigInt(paymentRequest.externalDisputeUnlockTime),
+								newCooldownTimeSeller: BigInt(0),
+								newCooldownTimeBuyer: BigInt(0),
+								state: SmartContractState.ResultSubmitted,
+							});
 
-							const lovelaceAmount =
-								paymentRequest.PaidFunds.find((amount) => amount.unit == '' || amount.unit == 'lovelace')?.amount ?? 0;
-							const dummyOutput = new TransactionOutput(
-								Address.fromBech32(walletData.scriptAddress),
-								toValue([
-									...paymentRequest.PaidFunds.filter((amount) => amount.unit != '' && amount.unit != 'lovelace').map(
-										(amount) => ({
-											unit: amount.unit,
-											quantity: amount.amount.toString(),
-										}),
-									),
-									{
-										unit: 'lovelace',
-										quantity:
-											lovelaceAmount > overestimatedMinUtxoCost
-												? lovelaceAmount.toString()
-												: overestimatedMinUtxoCost.toString(),
-									},
-								]),
-							);
-							dummyOutput.setDatum(Datum.newInlineData(toPlutusData(tmpDatum.value)));
-							const dummyCbor: unknown = dummyOutput.toCbor();
-							if (typeof dummyCbor !== 'string') {
-								throw new TypeError('Expected dummyOutput.toCbor() to return a string, got: ' + typeof dummyCbor);
-							}
-							overestimatedMinUtxoCost =
-								BigInt(defaultOverheadSize + bufferSizeCooldownTime + Math.ceil(dummyCbor.length / 2)) *
-								BigInt(protocolParameter.coinsPerUtxoSize);
+							const minUtxoResult = calculateMinUtxo({
+								datum: resultSubmittedEstimateDatum.value,
+								nativeTokenCount: otherUnits,
+								coinsPerUtxoSize: protocolParameter.coinsPerUtxoSize,
+								includeBuffers: true,
+							});
+
+							let overestimatedMinUtxoCost = minUtxoResult.minUtxoLovelace;
 
 							//set min ada required;
 							const lovelaceRequired = paymentRequest.PaidFunds.findIndex((amount) => amount.unit.toLowerCase() === '');

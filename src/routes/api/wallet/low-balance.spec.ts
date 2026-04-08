@@ -3,7 +3,6 @@ import type { Mock } from 'jest-mock';
 import { testEndpoint } from 'express-zod-api';
 import { ApiKeyStatus, HotWalletType, Network } from '@/generated/prisma/client';
 import { LowBalanceStatus } from '@/generated/prisma/enums';
-import { generateSHA256Hash } from '@/utils/crypto';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -33,6 +32,7 @@ jest.unstable_mockModule('@/utils/db', () => ({
 
 jest.unstable_mockModule('@/utils/config', () => ({
 	CONFIG: {
+		ENCRYPTION_KEY: '12345678901234567890',
 		LOW_BALANCE_DEFAULT_RULES_MAINNET: [],
 		LOW_BALANCE_DEFAULT_RULES_PREPROD: [],
 	},
@@ -80,8 +80,9 @@ describe('getWalletLowBalanceRulesEndpointGet', () => {
 		canPay: flags.canPay,
 		canAdmin: flags.canAdmin,
 		status: ApiKeyStatus.Active,
-		tokenHash: generateSHA256Hash('valid'),
-		token: 'valid',
+		token: null,
+		tokenHash: null,
+		tokenHashSecure: 'pbkdf2-placeholder',
 		usageLimited: !flags.canAdmin,
 		networkLimit: flags.canAdmin ? [] : [Network.Preprod],
 		walletScopeEnabled: false,

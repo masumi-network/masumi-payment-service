@@ -25,6 +25,7 @@ import {
 	queryPurchaseRequestSchemaInput,
 	queryPurchaseRequestSchemaOutput,
 } from '@/routes/api/purchases/schemas';
+import { buildX402TxSchemaInput, buildX402TxSchemaOutput } from '@/routes/api/payments/x402/schemas';
 import {
 	requestPurchaseRefundSchemaInput,
 	requestPurchaseRefundSchemaOutput,
@@ -816,6 +817,67 @@ export function registerInvoiceAndPurchasePaths({ registry, apiKeyAuth }: Swagge
 						},
 					},
 				},
+			},
+			500: {
+				description: 'Internal Server Error',
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'post',
+		path: '/payment/x402',
+		description:
+			'Builds an unsigned Cardano funds-locking transaction for an existing payment request. The seller calls this on behalf of the buyer (x402 protocol). No state is saved — the returned CBOR must be signed by the buyer and submitted to the network.',
+		summary: 'Build an unsigned x402 funds-locking transaction for a payment. (+READ access required)',
+		tags: ['payment'],
+		request: {
+			body: {
+				description: '',
+				content: {
+					'application/json': {
+						schema: buildX402TxSchemaInput.openapi({
+							example: {
+								network: Network.Preprod,
+								blockchainIdentifier: 'blockchain_identifier',
+								buyerAddress: 'addr_test1qp...',
+							},
+						}),
+					},
+				},
+			},
+		},
+		security: [{ [apiKeyAuth.name]: [] }],
+		responses: {
+			200: {
+				description: 'Unsigned transaction CBOR ready for buyer to sign and submit',
+				content: {
+					'application/json': {
+						schema: z
+							.object({
+								data: buildX402TxSchemaOutput,
+								status: z.string(),
+							})
+							.openapi({
+								example: {
+									status: 'Success',
+									data: {
+										unsignedTxCbor: '84a500818258...',
+										collateralReturnLovelace: '1500000',
+									},
+								},
+							}),
+					},
+				},
+			},
+			400: {
+				description: 'Bad Request (invalid buyer address, expired payment, or insufficient buyer funds)',
+			},
+			401: {
+				description: 'Unauthorized',
+			},
+			404: {
+				description: 'Payment not found or not in a buildable state',
 			},
 			500: {
 				description: 'Internal Server Error',
