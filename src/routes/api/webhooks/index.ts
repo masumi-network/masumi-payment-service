@@ -1,17 +1,23 @@
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
-import { Network } from '@/generated/prisma/client';
+import { Network, WebhookFormat } from '@/generated/prisma/client';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { decrypt } from '@/utils/security/encryption';
 import { logger } from '@/utils/logger';
+import { CONFIG } from '@/utils/config';
+import { webhookSenderService } from '@/services/webhooks/sender.service';
 import {
 	deleteWebhookSchemaInput,
 	deleteWebhookSchemaOutput,
 	listWebhooksSchemaInput,
 	listWebhooksSchemaOutput,
+	patchWebhookSchemaInput,
+	patchWebhookSchemaOutput,
 	registerWebhookSchemaInput,
 	registerWebhookSchemaOutput,
+	testWebhookSchemaInput,
+	testWebhookSchemaOutput,
 } from './schemas';
 
 export {
@@ -19,8 +25,12 @@ export {
 	deleteWebhookSchemaOutput,
 	listWebhooksSchemaInput,
 	listWebhooksSchemaOutput,
+	patchWebhookSchemaInput,
+	patchWebhookSchemaOutput,
 	registerWebhookSchemaInput,
 	registerWebhookSchemaOutput,
+	testWebhookSchemaInput,
+	testWebhookSchemaOutput,
 };
 
 const decryptApiKeyTokenSafe = (encryptedToken: string | null): string | null => {
@@ -58,6 +68,7 @@ export const registerWebhookPost = payAuthenticatedEndpointFactory.build({
 			where: {
 				url: input.url,
 				paymentSourceId: input.paymentSourceId,
+				format: input.format,
 			},
 		});
 
@@ -69,7 +80,8 @@ export const registerWebhookPost = payAuthenticatedEndpointFactory.build({
 		const webhook = await prisma.webhookEndpoint.create({
 			data: {
 				url: input.url,
-				authToken: input.authToken,
+				authToken: input.format === WebhookFormat.EXTENDED ? input.authToken : null,
+				format: input.format,
 				events: input.Events,
 				name: input.name,
 				paymentSourceId: input.paymentSourceId,
@@ -81,11 +93,90 @@ export const registerWebhookPost = payAuthenticatedEndpointFactory.build({
 		return {
 			id: webhook.id,
 			url: webhook.url,
+			format: webhook.format,
 			Events: webhook.events,
 			name: webhook.name,
 			isActive: webhook.isActive,
 			createdAt: webhook.createdAt,
 			paymentSourceId: webhook.paymentSourceId,
+		};
+	},
+});
+
+export const patchWebhookPatch = payAuthenticatedEndpointFactory.build({
+	method: 'patch',
+	input: patchWebhookSchemaInput,
+	output: patchWebhookSchemaOutput,
+	handler: async ({ input, ctx }) => {
+		const webhook = await prisma.webhookEndpoint.findUnique({
+			where: { id: input.webhookId },
+			include: {
+				PaymentSource: {
+					select: {
+						id: true,
+						network: true,
+						deletedAt: true,
+					},
+				},
+			},
+		});
+
+		if (!webhook) {
+			throw createHttpError(404, 'Webhook not found');
+		}
+
+		const isCreator = webhook.createdByApiKeyId === ctx.id;
+		const isAdmin = ctx.canAdmin;
+
+		if (!isCreator && !isAdmin) {
+			throw createHttpError(403, 'Unauthorized: Only the creator or an admin can update this webhook');
+		}
+
+		if (webhook.paymentSourceId && webhook.PaymentSource) {
+			if (webhook.PaymentSource.deletedAt != null) {
+				throw createHttpError(404, 'Payment source not found');
+			}
+			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, webhook.PaymentSource.network);
+		} else {
+			for (const network of Object.values(Network)) {
+				await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, network);
+			}
+		}
+
+		const existingWebhook = await prisma.webhookEndpoint.findFirst({
+			where: {
+				id: { not: input.webhookId },
+				url: input.url,
+				paymentSourceId: webhook.paymentSourceId,
+				format: input.format,
+			},
+		});
+
+		if (existingWebhook) {
+			throw createHttpError(409, 'Webhook URL already registered for this payment source');
+		}
+
+		const updatedWebhook = await prisma.webhookEndpoint.update({
+			where: { id: input.webhookId },
+			data: {
+				url: input.url,
+				authToken: input.format === WebhookFormat.EXTENDED ? input.authToken : null,
+				format: input.format,
+				events: input.Events,
+				name: input.name ?? null,
+			},
+		});
+
+		return {
+			id: updatedWebhook.id,
+			url: updatedWebhook.url,
+			format: updatedWebhook.format,
+			Events: updatedWebhook.events,
+			name: updatedWebhook.name,
+			isActive: updatedWebhook.isActive,
+			createdAt: updatedWebhook.createdAt,
+			updatedAt: updatedWebhook.updatedAt,
+			paymentSourceId: updatedWebhook.paymentSourceId,
 		};
 	},
 });
@@ -122,6 +213,7 @@ export const listWebhooksGet = payAuthenticatedEndpointFactory.build({
 			Webhooks: webhooks.map((webhook) => ({
 				id: webhook.id,
 				url: webhook.url,
+				format: webhook.format,
 				Events: webhook.events,
 				name: webhook.name,
 				isActive: webhook.isActive,
@@ -180,6 +272,66 @@ export const deleteWebhookDelete = payAuthenticatedEndpointFactory.build({
 			url: webhook.url,
 			name: webhook.name,
 			deletedAt: new Date(),
+		};
+	},
+});
+
+export const testWebhookPost = payAuthenticatedEndpointFactory.build({
+	method: 'post',
+	input: testWebhookSchemaInput,
+	output: testWebhookSchemaOutput,
+	handler: async ({ input, ctx }) => {
+		const webhook = await prisma.webhookEndpoint.findUnique({
+			where: { id: input.webhookId },
+			include: {
+				PaymentSource: {
+					select: {
+						id: true,
+						network: true,
+						deletedAt: true,
+					},
+				},
+			},
+		});
+
+		if (!webhook) {
+			throw createHttpError(404, 'Webhook not found');
+		}
+
+		const isCreator = webhook.createdByApiKeyId === ctx.id;
+		const isAdmin = ctx.canAdmin;
+
+		if (!isCreator && !isAdmin) {
+			throw createHttpError(403, 'Unauthorized: Only the creator or an admin can test this webhook');
+		}
+
+		if (webhook.paymentSourceId && webhook.PaymentSource) {
+			if (webhook.PaymentSource.deletedAt != null) {
+				throw createHttpError(404, 'Payment source not found');
+			}
+
+			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, webhook.PaymentSource.network);
+		}
+
+		const result = await webhookSenderService.sendTestWebhook(
+			{
+				id: webhook.id,
+				url: webhook.url,
+				format: webhook.format,
+				authToken: webhook.authToken,
+				name: webhook.name,
+				paymentSourceId: webhook.paymentSourceId,
+			},
+			ctx.id,
+			CONFIG.OTEL_SERVICE_NAME,
+		);
+
+		return {
+			webhookId: webhook.id,
+			success: result.success,
+			responseCode: result.responseCode ?? null,
+			errorMessage: result.errorMessage ?? null,
+			durationMs: result.durationMs,
 		};
 	},
 });

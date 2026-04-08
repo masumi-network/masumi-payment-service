@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { queryPurchaseRequestSchemaOutput } from '@/routes/api/purchases';
 import { queryPaymentsSchemaOutput } from '@/routes/api/payments';
 import type { Jsonified } from '@/utils/json-value';
+import { WEBHOOK_TEST_EVENT_TYPE } from './webhook-constants';
 
 // Extract individual purchase/payment item schemas from existing API schemas
 const purchaseItemSchema = queryPurchaseRequestSchemaOutput.shape.Purchases.element;
@@ -16,6 +17,7 @@ const createWebhookPayloadSchema = <T extends z.ZodLiteral<WebhookEventType>, TD
 ) =>
 	z.object({
 		event_type: eventType.describe('The type of webhook event that occurred'),
+		service_name: z.string().describe('OpenTelemetry service name for the emitting Masumi service'),
 		timestamp: z.string().datetime().describe('ISO 8601 timestamp when the webhook was triggered'),
 		webhook_id: z.string().describe('Unique identifier for this webhook delivery'),
 		data: dataSchema.describe(description),
@@ -79,3 +81,20 @@ export type WebhookPayloadByEvent<T extends WebhookEventType> = Extract<WebhookP
 export type WebhookPayloadDataByEvent<T extends WebhookEventType> = WebhookPayloadByEvent<T>['data'];
 export type StoredWebhookPayload = Jsonified<WebhookPayload>;
 export type StoredWebhookPayloadByEvent<T extends WebhookEventType> = Extract<StoredWebhookPayload, { event_type: T }>;
+
+export const webhookTestPayloadSchema = z.object({
+	event_type: z.literal(WEBHOOK_TEST_EVENT_TYPE),
+	service_name: z.string(),
+	timestamp: z.string().datetime(),
+	webhook_id: z.string(),
+	data: z.object({
+		message: z.string(),
+		webhookName: z.string().nullable(),
+		webhookFormat: z.string(),
+		paymentSourceId: z.string().nullable(),
+		triggeredByApiKeyId: z.string(),
+	}),
+});
+
+export type WebhookTestPayload = z.infer<typeof webhookTestPayloadSchema>;
+export type WebhookSendPayload = StoredWebhookPayload | WebhookTestPayload;

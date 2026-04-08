@@ -46,7 +46,7 @@ import { paymentErrorStateRecoveryPost } from './payments/error-state-recovery';
 import { purchaseErrorStateRecoveryPost } from './purchases/error-state-recovery';
 import { queryRegistryDiffGet } from './registry/diff';
 import { queryAgentByIdentifierGet } from './registry/agent-identifier';
-import { registerWebhookPost, listWebhooksGet, deleteWebhookDelete } from './webhooks';
+import { registerWebhookPost, listWebhooksGet, deleteWebhookDelete, patchWebhookPatch, testWebhookPost } from './webhooks';
 import {
 	queryPaymentDiffCombinedGet,
 	queryPaymentDiffNextActionGet,
@@ -233,7 +233,11 @@ export const apiRouter: Routing = {
 		webhooks: {
 			get: listWebhooksGet,
 			post: registerWebhookPost,
+			patch: patchWebhookPatch,
 			delete: deleteWebhookDelete,
+			test: {
+				post: testWebhookPost,
+			},
 		},
 		monitoring: {
 			get: getMonitoringStatus,

@@ -149,6 +149,13 @@ export function MainLayout({ children }: MainLayoutProps) {
           group: 1,
         },
         {
+          href: '/webhooks',
+          name: 'Webhooks',
+          icon: <Bell className="h-4 w-4" />,
+          badge: null,
+          group: 1,
+        },
+        {
           href: '/developers',
           name: 'Developers',
           icon: <Code className="h-4 w-4 text-violet-500" />,
@@ -197,6 +204,13 @@ export function MainLayout({ children }: MainLayoutProps) {
         href: '/api-keys',
         name: 'API keys',
         icon: <Key className="h-4 w-4" />,
+        badge: null,
+        group: 1,
+      },
+      {
+        href: '/webhooks',
+        name: 'Webhooks',
+        icon: <Bell className="h-4 w-4" />,
         badge: null,
         group: 1,
       },

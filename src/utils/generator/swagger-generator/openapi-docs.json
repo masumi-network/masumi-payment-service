@@ -18804,6 +18804,15 @@
                                                             "url": {
                                                                 "type": "string"
                                                             },
+                                                            "format": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "EXTENDED",
+                                                                    "SLACK",
+                                                                    "GOOGLE_CHAT",
+                                                                    "DISCORD"
+                                                                ]
+                                                            },
                                                             "Events": {
                                                                 "type": "array",
                                                                 "items": {
@@ -18870,6 +18879,7 @@
                                                         "required": [
                                                             "id",
                                                             "url",
+                                                            "format",
                                                             "Events",
                                                             "name",
                                                             "isActive",
@@ -18958,9 +18968,21 @@
                                     },
                                     "authToken": {
                                         "type": "string",
+                                        "nullable": true,
                                         "minLength": 10,
                                         "maxLength": 200,
-                                        "description": "Authentication token for webhook requests"
+                                        "description": "Authentication token for extended webhook requests. Required when format is EXTENDED"
+                                    },
+                                    "format": {
+                                        "type": "string",
+                                        "enum": [
+                                            "EXTENDED",
+                                            "SLACK",
+                                            "GOOGLE_CHAT",
+                                            "DISCORD"
+                                        ],
+                                        "default": "EXTENDED",
+                                        "description": "Webhook delivery format. Defaults to EXTENDED"
                                     },
                                     "Events": {
                                         "type": "array",
@@ -18991,7 +19013,6 @@
                                 },
                                 "required": [
                                     "url",
-                                    "authToken",
                                     "Events"
                                 ],
                                 "example": {
@@ -19028,6 +19049,15 @@
                                                 "url": {
                                                     "type": "string"
                                                 },
+                                                "format": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "EXTENDED",
+                                                        "SLACK",
+                                                        "GOOGLE_CHAT",
+                                                        "DISCORD"
+                                                    ]
+                                                },
                                                 "Events": {
                                                     "type": "array",
                                                     "items": {
@@ -19060,6 +19090,7 @@
                                             "required": [
                                                 "id",
                                                 "url",
+                                                "format",
                                                 "Events",
                                                 "name",
                                                 "isActive",
@@ -19099,6 +19130,214 @@
                     },
                     "404": {
                         "description": "Payment source not found"
+                    },
+                    "409": {
+                        "description": "Webhook URL already registered for this payment source"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            },
+            "patch": {
+                "description": "Update an existing webhook endpoint",
+                "summary": "Update an existing webhook endpoint. Only the creator or admin can update a webhook. (pay-authenticated access required)",
+                "tags": [
+                    "webhooks"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Webhook update details",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "webhookId": {
+                                        "type": "string",
+                                        "description": "The ID of the webhook to update"
+                                    },
+                                    "url": {
+                                        "type": "string",
+                                        "maxLength": 500,
+                                        "format": "uri",
+                                        "description": "The webhook URL to receive notifications"
+                                    },
+                                    "authToken": {
+                                        "type": "string",
+                                        "nullable": true,
+                                        "minLength": 10,
+                                        "maxLength": 200,
+                                        "description": "Authentication token for extended webhook requests. Required when format is EXTENDED"
+                                    },
+                                    "format": {
+                                        "type": "string",
+                                        "enum": [
+                                            "EXTENDED",
+                                            "SLACK",
+                                            "GOOGLE_CHAT",
+                                            "DISCORD"
+                                        ],
+                                        "description": "Webhook delivery format"
+                                    },
+                                    "Events": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "enum": [
+                                                "PURCHASE_ON_CHAIN_STATUS_CHANGED",
+                                                "PAYMENT_ON_CHAIN_STATUS_CHANGED",
+                                                "PURCHASE_ON_ERROR",
+                                                "PAYMENT_ON_ERROR",
+                                                "WALLET_LOW_BALANCE"
+                                            ]
+                                        },
+                                        "minItems": 1,
+                                        "maxItems": 10,
+                                        "description": "Array of event types to subscribe to"
+                                    },
+                                    "name": {
+                                        "type": "string",
+                                        "nullable": true,
+                                        "maxLength": 100,
+                                        "description": "Human-readable name for the webhook"
+                                    }
+                                },
+                                "required": [
+                                    "webhookId",
+                                    "url",
+                                    "format",
+                                    "Events"
+                                ],
+                                "example": {
+                                    "webhookId": "webhook_endpoint_id",
+                                    "url": "https://hooks.slack.com/services/example/path",
+                                    "format": "SLACK",
+                                    "Events": [
+                                        "PAYMENT_ON_CHAIN_STATUS_CHANGED",
+                                        "PURCHASE_ON_ERROR"
+                                    ],
+                                    "name": "Ops Slack Alerts"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Webhook endpoint updated successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "url": {
+                                                    "type": "string"
+                                                },
+                                                "format": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "EXTENDED",
+                                                        "SLACK",
+                                                        "GOOGLE_CHAT",
+                                                        "DISCORD"
+                                                    ]
+                                                },
+                                                "Events": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "PURCHASE_ON_CHAIN_STATUS_CHANGED",
+                                                            "PAYMENT_ON_CHAIN_STATUS_CHANGED",
+                                                            "PURCHASE_ON_ERROR",
+                                                            "PAYMENT_ON_ERROR",
+                                                            "WALLET_LOW_BALANCE"
+                                                        ]
+                                                    }
+                                                },
+                                                "name": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "isActive": {
+                                                    "type": "boolean"
+                                                },
+                                                "createdAt": {
+                                                    "type": "string",
+                                                    "format": "date-time"
+                                                },
+                                                "updatedAt": {
+                                                    "type": "string",
+                                                    "format": "date-time"
+                                                },
+                                                "paymentSourceId": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "url",
+                                                "format",
+                                                "Events",
+                                                "name",
+                                                "isActive",
+                                                "createdAt",
+                                                "updatedAt",
+                                                "paymentSourceId"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "Success",
+                                        "data": {
+                                            "id": "webhook_endpoint_id",
+                                            "url": "https://hooks.slack.com/services/example/path",
+                                            "format": "SLACK",
+                                            "name": "Ops Slack Alerts",
+                                            "Events": [
+                                                "PAYMENT_ON_CHAIN_STATUS_CHANGED",
+                                                "PURCHASE_ON_ERROR"
+                                            ],
+                                            "isActive": true,
+                                            "createdAt": "1970-01-20T20:00:36.260Z",
+                                            "updatedAt": "1970-01-20T20:00:36.360Z",
+                                            "paymentSourceId": "payment_source_id"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (invalid webhook URL or configuration)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "403": {
+                        "description": "Forbidden: only the creator or an admin can update the webhook"
+                    },
+                    "404": {
+                        "description": "Webhook or payment source not found"
                     },
                     "409": {
                         "description": "Webhook URL already registered for this payment source"
@@ -19203,6 +19442,114 @@
                     },
                     "404": {
                         "description": "Webhook endpoint not found"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/webhooks/test": {
+            "post": {
+                "description": "Send a test webhook delivery",
+                "summary": "Send a test webhook delivery using the webhook format currently configured. Only the creator or admin can trigger a test. (pay-authenticated access required)",
+                "tags": [
+                    "webhooks"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Webhook test request",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "webhookId": {
+                                        "type": "string",
+                                        "description": "The ID of the webhook to send a test delivery to"
+                                    }
+                                },
+                                "required": [
+                                    "webhookId"
+                                ],
+                                "example": {
+                                    "webhookId": "webhook_endpoint_id"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Webhook test delivery result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "webhookId": {
+                                                    "type": "string"
+                                                },
+                                                "success": {
+                                                    "type": "boolean"
+                                                },
+                                                "responseCode": {
+                                                    "type": "number",
+                                                    "nullable": true
+                                                },
+                                                "errorMessage": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "durationMs": {
+                                                    "type": "number"
+                                                }
+                                            },
+                                            "required": [
+                                                "webhookId",
+                                                "success",
+                                                "responseCode",
+                                                "errorMessage",
+                                                "durationMs"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "Success",
+                                        "data": {
+                                            "webhookId": "webhook_endpoint_id",
+                                            "success": true,
+                                            "responseCode": 200,
+                                            "errorMessage": null,
+                                            "durationMs": 184
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "403": {
+                        "description": "Forbidden: only the creator or an admin can test the webhook"
+                    },
+                    "404": {
+                        "description": "Webhook or payment source not found"
                     },
                     "500": {
                         "description": "Internal Server Error"
