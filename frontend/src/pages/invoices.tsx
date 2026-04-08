@@ -136,6 +136,7 @@ export default function Invoices() {
   const {
     invoices,
     isLoading: isLoadingInvoices,
+    isRefetching: isRefetchingInvoices,
     isError: isInvoicesError,
     error: invoicesError,
     hasMore: hasMoreInvoices,
@@ -147,6 +148,7 @@ export default function Invoices() {
   const {
     payments: uninvoicedPayments,
     isLoading: isLoadingUninvoiced,
+    isRefetching: isRefetchingUninvoiced,
     isError: isUninvoicedError,
     error: uninvoicedError,
     hasMore: hasMoreUninvoiced,
@@ -258,7 +260,8 @@ export default function Invoices() {
     return selectedMonth === current;
   }, [selectedMonth]);
 
-  const isLoading = activeTab === 'Generated Invoices' ? isLoadingInvoices : isLoadingUninvoiced;
+  const isRefreshing =
+    activeTab === 'Generated Invoices' ? isRefetchingInvoices : isRefetchingUninvoiced;
 
   return (
     <MainLayout>
@@ -275,7 +278,7 @@ export default function Invoices() {
                 View and generate monthly invoices for buyer wallets.
               </p>
             </div>
-            <RefreshButton onRefresh={handleRefresh} isRefreshing={isLoading} />
+            <RefreshButton onRefresh={handleRefresh} isRefreshing={isRefreshing} />
           </div>
 
           <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 px-4 py-3 text-sm">

@@ -43,6 +43,6 @@ export function useWebhooks() {
   return {
     ...query,
     webhooks,
-    isLoading: query.isLoading || query.isRefetching,
+    isLoading: query.isLoading,
   };
 }
