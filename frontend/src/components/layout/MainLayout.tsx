@@ -43,6 +43,16 @@ interface MainLayoutProps {
   children: React.ReactNode;
 }
 
+type NavItem = {
+  href: string;
+  name: string;
+  icon: React.ReactNode;
+  badge: string | null;
+  group: number;
+  notificationDot?: boolean;
+  notificationLabel?: string;
+};
+
 export function MainLayout({ children }: MainLayoutProps) {
   const router = useRouter();
   const { theme, setThemePreference, isChangingTheme } = useTheme();
@@ -61,7 +71,14 @@ export function MainLayout({ children }: MainLayoutProps) {
   const sideBarWidth = 280;
   const sideBarWidthCollapsed = 96;
   const [isMac, setIsMac] = useState(false);
-  const { network, setNetwork, isChangingNetwork, isSetupMode, setupWizardStep } = useAppContext();
+  const {
+    network,
+    setNetwork,
+    isChangingNetwork,
+    isSetupMode,
+    setupWizardStep,
+    selectedPaymentSource,
+  } = useAppContext();
   const [showNetworkSwitchConfirm, setShowNetworkSwitchConfirm] = useState(false);
   const [pendingNetwork, setPendingNetwork] = useState<'Preprod' | 'Mainnet' | null>(null);
   const isFirstNavMount = !hasAnimatedNav;
@@ -129,8 +146,24 @@ export function MainLayout({ children }: MainLayoutProps) {
     () => paymentSources.some((ps) => ps.network === network),
     [paymentSources, network],
   );
+  const walletAlertCount = useMemo(() => {
+    if (!selectedPaymentSource) return 0;
 
-  const navItems = useMemo(() => {
+    return [
+      ...selectedPaymentSource.PurchasingWallets,
+      ...selectedPaymentSource.SellingWallets,
+    ].filter((wallet) => wallet.LowBalanceSummary?.isLow).length;
+  }, [selectedPaymentSource]);
+  const walletAlertLabel = useMemo(() => {
+    if (walletAlertCount === 0) return undefined;
+
+    return walletAlertCount === 1
+      ? '1 wallet has an active low-balance alert'
+      : `${walletAlertCount} wallets have active low-balance alerts`;
+  }, [walletAlertCount]);
+  const notificationCount = newTransactionsCount + walletAlertCount;
+
+  const navItems = useMemo<NavItem[]>(() => {
     // While in setup mode, show only the setup sidebar
     if (isSetupMode || !hasPaymentSources) {
       return [
@@ -164,6 +197,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         },
       ];
     }
+
     return [
       {
         href: '/',
@@ -185,6 +219,8 @@ export function MainLayout({ children }: MainLayoutProps) {
         icon: <Wallet className="h-4 w-4" />,
         badge: null,
         group: 0,
+        notificationDot: walletAlertCount > 0,
+        notificationLabel: walletAlertLabel,
       },
       {
         href: '/transactions',
@@ -220,9 +256,9 @@ export function MainLayout({ children }: MainLayoutProps) {
         icon: <Code className="h-4 w-4 text-violet-500" />,
         badge: null,
         group: 1,
-      },
-    ];
-  }, [isSetupMode, hasPaymentSources, newTransactionsCount]);
+        },
+      ];
+  }, [isSetupMode, hasPaymentSources, newTransactionsCount, walletAlertCount, walletAlertLabel]);
 
   const handleNetworkChange = (newNetwork: 'Preprod' | 'Mainnet') => {
     if (newNetwork === network) return;
@@ -374,7 +410,13 @@ export function MainLayout({ children }: MainLayoutProps) {
                         ),
                     collapsed && !isHovered ? 'h-10 w-10 justify-center' : 'px-3 h-10 gap-3',
                   )}
-                  title={collapsed && !isHovered ? item.name : undefined}
+                  title={
+                    collapsed && !isHovered
+                      ? item.notificationDot && item.notificationLabel
+                        ? `${item.name} • ${item.notificationLabel}`
+                        : item.name
+                      : undefined
+                  }
                 >
                   {item.icon}
                   {!(collapsed && !isHovered) && <span className="truncate">{item.name}</span>}
@@ -386,6 +428,17 @@ export function MainLayout({ children }: MainLayoutProps) {
                       {item.badge}
                     </span>
                   )}
+                  {!(collapsed && !isHovered) && !item.badge && item.notificationDot && (
+                    <>
+                      <span
+                        aria-hidden="true"
+                        className="ml-auto h-2.5 w-2.5 rounded-full bg-amber-500 shadow-[0_0_0_4px_rgba(245,158,11,0.16)] animate-pop-in"
+                      />
+                      {item.notificationLabel && (
+                        <span className="sr-only">{item.notificationLabel}</span>
+                      )}
+                    </>
+                  )}
                   {collapsed && !isHovered && item.badge && (
                     <span
                       key={item.badge}
@@ -393,6 +446,17 @@ export function MainLayout({ children }: MainLayoutProps) {
                     >
                       {item.badge}
                     </span>
+                  )}
+                  {collapsed && !isHovered && !item.badge && item.notificationDot && (
+                    <>
+                      <span
+                        aria-hidden="true"
+                        className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-amber-500 shadow-[0_0_0_3px_rgba(245,158,11,0.16)] animate-pop-in"
+                      />
+                      {item.notificationLabel && (
+                        <span className="sr-only">{item.notificationLabel}</span>
+                      )}
+                    </>
                   )}
                 </Link>
               </div>
@@ -510,18 +574,18 @@ export function MainLayout({ children }: MainLayoutProps) {
                   </Link>
                 </Button>
                 <Button
-                  variant={newTransactionsCount ? 'default' : 'outline'}
+                  variant={notificationCount ? 'default' : 'outline'}
                   size="sm"
                   className={cn(
                     'h-8 px-3 flex items-center gap-2',
-                    newTransactionsCount
+                    notificationCount
                       ? 'bg-red-500 text-white hover:bg-red-600 dark:bg-red-500 dark:text-white dark:hover:bg-red-600'
                       : '',
                   )}
                   onClick={() => setIsNotificationsOpen(true)}
                 >
                   <Bell className="h-4 w-4" />
-                  {formatCount(newTransactionsCount)}
+                  {formatCount(notificationCount)}
                 </Button>
               </div>
             </div>

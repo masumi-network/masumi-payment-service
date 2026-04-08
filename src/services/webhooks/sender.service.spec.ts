@@ -248,9 +248,8 @@ describe('webhookSenderService.sendWebhook', () => {
 				'📬 Wallet address: addr_test1...',
 				'🏦 Payment source: payment-source-4',
 				'🌐 Network: Preprod',
-				'🪙 Asset: lovelace',
-				'💰 Current amount: 4500000',
-				'🎯 Threshold: 5000000',
+				'🎯 Threshold: 5 ADA',
+				'💰 New balance: 4.5 ADA',
 				'🕒 Checked at: 2026-04-08T12:59:00.000Z',
 				'⏱️ Event time: 2026-04-08T13:00:00.000Z',
 			].join('\n'),
@@ -357,9 +356,9 @@ describe('webhookSenderService.sendTestWebhook', () => {
 		expect(slackBody.text).toContain('🛰️ Service: masumi-test-service');
 		expect(slackBody.text).toContain('💬 Message: This is a test webhook delivery from Masumi.');
 		expect(slackBody.text).toContain('🔔 Webhook: Slack alerts');
-		expect(slackBody.text).toContain('📦 Format: Slack');
 		expect(slackBody.text).toContain('🏦 Payment source: payment-source-2');
-		expect(slackBody.text).toContain('👤 Triggered by API key: api-key-9');
+		expect(slackBody.text).not.toContain('📦 Format:');
+		expect(slackBody.text).not.toContain('👤 Triggered by API key:');
 		expect(slackBody.text).toMatch(/🕒 Sent at: /);
 	});
 });

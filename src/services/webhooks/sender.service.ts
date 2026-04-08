@@ -19,12 +19,13 @@ class WebhookSenderService {
 	private static readonly REQUEST_TIMEOUT = 10000;
 	private static readonly USER_AGENT = 'Masumi-Webhook/1.0';
 	private static readonly EVENT_TYPES = new Set<string>(Object.values(WebhookEventType));
-	private static readonly FORMAT_LABELS: Record<WebhookFormat, string> = {
-		[WebhookFormat.EXTENDED]: 'Extended',
-		[WebhookFormat.SLACK]: 'Slack',
-		[WebhookFormat.GOOGLE_CHAT]: 'Google Chat',
-		[WebhookFormat.DISCORD]: 'Discord',
-	};
+	private static readonly LOVELACE_DECIMALS = 1_000_000n;
+	private static readonly MAINNET_USDCX_UNIT =
+		'1f3aec8bfe7ea4fe14c5f121e2a92e301afe414147860d557cac7e345553444378';
+	private static readonly MAINNET_USDM_UNIT =
+		'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad0014df105553444d';
+	private static readonly PREPROD_USDM_UNIT =
+		'16a55b2a349361ff88c03788f93e1e966e5d689605d044fef722ddde0014df10745553444d';
 
 	/**
 	 * Send a webhook to a specific URL
@@ -412,9 +413,7 @@ class WebhookSenderService {
 			lines.push('');
 			this.appendDetailLine(lines, '💬', 'Message', payload.data.message);
 			this.appendDetailLine(lines, '🔔', 'Webhook', payload.data.webhookName);
-			this.appendDetailLine(lines, '📦', 'Format', this.formatWebhookFormat(payload.data.webhookFormat));
 			this.appendDetailLine(lines, '🏦', 'Payment source', payload.data.paymentSourceId);
-			this.appendDetailLine(lines, '👤', 'Triggered by API key', payload.data.triggeredByApiKeyId);
 			this.appendDetailLine(lines, '🕒', 'Sent at', payload.timestamp);
 			return lines.join('\n');
 		}
@@ -425,9 +424,18 @@ class WebhookSenderService {
 			this.appendDetailLine(lines, '📬', 'Wallet address', payload.data.walletAddress);
 			this.appendDetailLine(lines, '🏦', 'Payment source', payload.data.paymentSourceId);
 			this.appendDetailLine(lines, '🌐', 'Network', payload.data.network);
-			this.appendDetailLine(lines, '🪙', 'Asset', payload.data.assetUnit);
-			this.appendDetailLine(lines, '💰', 'Current amount', payload.data.currentAmount);
-			this.appendDetailLine(lines, '🎯', 'Threshold', payload.data.thresholdAmount);
+			this.appendDetailLine(
+				lines,
+				'🎯',
+				'Threshold',
+				this.formatBalanceForDisplay(payload.data.thresholdAmount, payload.data.assetUnit),
+			);
+			this.appendDetailLine(
+				lines,
+				'💰',
+				'New balance',
+				this.formatBalanceForDisplay(payload.data.currentAmount, payload.data.assetUnit),
+			);
 			this.appendDetailLine(lines, '🕒', 'Checked at', payload.data.checkedAt);
 			this.appendDetailLine(lines, '⏱️', 'Event time', payload.timestamp);
 			return lines.join('\n');
@@ -477,12 +485,71 @@ class WebhookSenderService {
 		}
 	}
 
-	private formatWebhookFormat(value: string): string {
-		if (value in WebhookSenderService.FORMAT_LABELS) {
-			return WebhookSenderService.FORMAT_LABELS[value as WebhookFormat];
+	private formatBalanceForDisplay(rawAmount: string, assetUnit: string): string {
+		const assetLabel = this.getAssetLabel(assetUnit);
+		if (!this.usesSixDecimals(assetUnit)) {
+			return `${rawAmount} ${assetLabel}`;
 		}
 
-		return value;
+		return `${this.formatSixDecimalAmount(rawAmount)} ${assetLabel}`;
+	}
+
+	private usesSixDecimals(assetUnit: string): boolean {
+		return (
+			assetUnit === 'lovelace' ||
+			assetUnit === WebhookSenderService.MAINNET_USDCX_UNIT ||
+			assetUnit === WebhookSenderService.MAINNET_USDM_UNIT ||
+			assetUnit === WebhookSenderService.PREPROD_USDM_UNIT
+		);
+	}
+
+	private getAssetLabel(assetUnit: string): string {
+		switch (assetUnit) {
+			case '':
+			case 'lovelace':
+				return 'ADA';
+			case WebhookSenderService.MAINNET_USDCX_UNIT:
+				return 'USDCx';
+			case WebhookSenderService.MAINNET_USDM_UNIT:
+				return 'USDM';
+			case WebhookSenderService.PREPROD_USDM_UNIT:
+				return 'tUSDM';
+			default:
+				return this.decodeAssetName(assetUnit) ?? assetUnit;
+		}
+	}
+
+	private decodeAssetName(assetUnit: string): string | null {
+		if (assetUnit.length <= 56) {
+			return null;
+		}
+
+		const assetNameHex = assetUnit.slice(56);
+		if (assetNameHex.length === 0 || assetNameHex.length % 2 !== 0 || !/^[0-9a-fA-F]+$/.test(assetNameHex)) {
+			return null;
+		}
+
+		try {
+			const decoded = Buffer.from(assetNameHex, 'hex').toString('utf8').replace(/\0/g, '').trim();
+			if (decoded.length === 0) {
+				return null;
+			}
+
+			return /^[\x20-\x7E]+$/.test(decoded) ? decoded : null;
+		} catch {
+			return null;
+		}
+	}
+
+	private formatSixDecimalAmount(rawAmount: string): string {
+		const amount = BigInt(rawAmount);
+		const whole = amount / WebhookSenderService.LOVELACE_DECIMALS;
+		const fraction = (amount % WebhookSenderService.LOVELACE_DECIMALS)
+			.toString()
+			.padStart(6, '0')
+			.replace(/0+$/, '');
+
+		return fraction.length > 0 ? `${whole}.${fraction}` : whole.toString();
 	}
 
 	/**
