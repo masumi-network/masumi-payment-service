@@ -202,7 +202,7 @@ export async function updateWalletTransactionHash() {
 						},
 					],
 				},
-				include: { SmartContractWallet: { where: { deletedAt: null } } },
+				include: { SmartContractWallet: { where: { deletedAt: null } }, NextAction: true },
 			});
 			for (const purchaseRequest of result) {
 				if (purchaseRequest.currentTransactionId == null) {

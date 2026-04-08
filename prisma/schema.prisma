@@ -8,17 +8,18 @@ datasource db {
 }
 
 model ApiKey {
-  id                    String              @id @default(cuid())
-  createdAt             DateTime            @default(now())
-  updatedAt             DateTime            @updatedAt
-  token                 String              @unique
-  tokenHash             String              @unique
-  status                ApiKeyStatus
+  id             String       @id @default(cuid())
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  token          String
+  tokenHash      String       @unique
+  encryptedToken String?
+  status         ApiKeyStatus
 
   // Flag-based permissions (must be set explicitly on create)
-  canRead               Boolean
-  canPay                Boolean
-  canAdmin              Boolean
+  canRead  Boolean
+  canPay   Boolean
+  canAdmin Boolean
 
   networkLimit          Network[]
   usageLimited          Boolean             @default(false)
@@ -69,33 +70,33 @@ model UnitValue {
 }
 
 model HotWallet {
-  id                       String              @id @default(cuid())
-  createdAt                DateTime            @default(now())
-  updatedAt                DateTime            @updatedAt
-  walletVkey               String              @unique
+  id                       String                    @id @default(cuid())
+  createdAt                DateTime                  @default(now())
+  updatedAt                DateTime                  @updatedAt
+  walletVkey               String                    @unique
   walletAddress            String
   type                     HotWalletType
   secretId                 String
   collectionAddress        String?
-  pendingTransactionId     String?             @unique
-  pendingSwapTransactionId String?             @unique
-  pendingFundTransferId    String?             @unique
+  pendingTransactionId     String?                   @unique
+  pendingSwapTransactionId String?                   @unique
+  pendingFundTransferId    String?                   @unique
   paymentSourceId          String
   lockedAt                 DateTime?
   note                     String?
   deletedAt                DateTime?
-  PaymentSource            PaymentSource       @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
-  PendingTransaction       Transaction?        @relation(fields: [pendingTransactionId], references: [id])
-  PendingSwapTransaction   SwapTransaction?    @relation(fields: [pendingSwapTransactionId], references: [id])
-  PendingFundTransfer      WalletFundTransfer? @relation("PendingFundTransfer", fields: [pendingFundTransferId], references: [id])
-  SwapTransactionHistory   SwapTransaction[]   @relation("SwapTransactionHistory")
-  FundTransferHistory      WalletFundTransfer[] @relation("FundTransferHistory")
-  Secret                   WalletSecret        @relation(fields: [secretId], references: [id])
+  PaymentSource            PaymentSource             @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
+  PendingTransaction       Transaction?              @relation(fields: [pendingTransactionId], references: [id])
+  PendingSwapTransaction   SwapTransaction?          @relation(fields: [pendingSwapTransactionId], references: [id])
+  PendingFundTransfer      WalletFundTransfer?       @relation("PendingFundTransfer", fields: [pendingFundTransferId], references: [id])
+  SwapTransactionHistory   SwapTransaction[]         @relation("SwapTransactionHistory")
+  FundTransferHistory      WalletFundTransfer[]      @relation("FundTransferHistory")
+  Secret                   WalletSecret              @relation(fields: [secretId], references: [id])
   PaymentRequest           PaymentRequest[]
   PurchaseRequest          PurchaseRequest[]
   RegistryRequest          RegistryRequest[]
   apiKeyWalletScopes       ApiKeyWalletScope[]
-  LimitedPurchaseRequests  PurchaseRequest[]   @relation("HotWalletLimit")
+  LimitedPurchaseRequests  PurchaseRequest[]         @relation("HotWalletLimit")
   LowBalanceRules          HotWalletLowBalanceRule[]
 }
 

@@ -2426,9 +2426,9 @@ export type GetApiKeyData = {
          */
         take?: number;
         /**
-         * Used to paginate through the API keys
+         * Used to paginate through the API keys (provide the id of the last returned key)
          */
-        cursorToken?: string;
+        cursorId?: string;
     };
     url: '/api-key';
 };
@@ -6468,6 +6468,66 @@ export type GetPurchaseDiffOnchainStateOrResultResponses = {
 
 export type GetPurchaseDiffOnchainStateOrResultResponse = GetPurchaseDiffOnchainStateOrResultResponses[keyof GetPurchaseDiffOnchainStateOrResultResponses];
 
+export type PostPaymentX402Data = {
+    body?: {
+        /**
+         * The Cardano network
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The blockchainIdentifier from the PaymentRequest
+         */
+        blockchainIdentifier: string;
+        /**
+         * The buyer's bech32 Cardano wallet address. UTxOs fetched from this address to build the unsigned tx.
+         */
+        buyerAddress: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/payment/x402';
+};
+
+export type PostPaymentX402Errors = {
+    /**
+     * Bad Request (invalid buyer address, expired payment, or insufficient buyer funds)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Payment not found or not in a buildable state
+     */
+    404: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type PostPaymentX402Responses = {
+    /**
+     * Unsigned transaction CBOR ready for buyer to sign and submit
+     */
+    200: {
+        data: {
+            /**
+             * Hex-encoded unsigned transaction CBOR. Sign with buyer wallet and submit.
+             */
+            unsignedTxCbor: string;
+            /**
+             * Extra lovelace included for min-UTXO. Buyer receives this back as change after result submission.
+             */
+            collateralReturnLovelace: string;
+        };
+        status: string;
+    };
+};
+
+export type PostPaymentX402Response = PostPaymentX402Responses[keyof PostPaymentX402Responses];
+
 export type PostPurchaseRequestRefundData = {
     body?: {
         /**
@@ -8378,7 +8438,7 @@ export type GetWebhooksResponses = {
                 disabledAt: Date | null;
                 CreatedBy: {
                     apiKeyId: string;
-                    apiKeyToken: string;
+                    apiKeyToken: string | null;
                 } | null;
             }>;
         };
