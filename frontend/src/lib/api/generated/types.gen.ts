@@ -8472,6 +8472,58 @@ export type PostWebhooksResponses = {
 
 export type PostWebhooksResponse = PostWebhooksResponses[keyof PostWebhooksResponses];
 
+export type PostWebhooksTestData = {
+    /**
+     * Webhook test request
+     */
+    body?: {
+        /**
+         * The ID of the webhook to send a test delivery to
+         */
+        webhookId: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/webhooks/test';
+};
+
+export type PostWebhooksTestErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden: only the creator or an admin can test the webhook
+     */
+    403: unknown;
+    /**
+     * Webhook or payment source not found
+     */
+    404: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type PostWebhooksTestResponses = {
+    /**
+     * Webhook test delivery result
+     */
+    200: {
+        status: string;
+        data: {
+            webhookId: string;
+            success: boolean;
+            responseCode: number | null;
+            errorMessage: string | null;
+            durationMs: number;
+        };
+    };
+};
+
+export type PostWebhooksTestResponse = PostWebhooksTestResponses[keyof PostWebhooksTestResponses];
+
 export type GetMonitoringData = {
     body?: never;
     path?: never;

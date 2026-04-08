@@ -19,6 +19,12 @@ class WebhookSenderService {
 	private static readonly REQUEST_TIMEOUT = 10000;
 	private static readonly USER_AGENT = 'Masumi-Webhook/1.0';
 	private static readonly EVENT_TYPES = new Set<string>(Object.values(WebhookEventType));
+	private static readonly FORMAT_LABELS: Record<WebhookFormat, string> = {
+		[WebhookFormat.EXTENDED]: 'Extended',
+		[WebhookFormat.SLACK]: 'Slack',
+		[WebhookFormat.GOOGLE_CHAT]: 'Google Chat',
+		[WebhookFormat.DISCORD]: 'Discord',
+	};
 
 	/**
 	 * Send a webhook to a specific URL
@@ -399,50 +405,97 @@ class WebhookSenderService {
 	}
 
 	private buildCompactSummary(payload: WebhookSendPayload): string {
-		const lines = [`[${payload.service_name}] ${payload.event_type}`];
+		const eventPresentation = this.getEventPresentation(payload.event_type);
+		const lines = [
+			`${eventPresentation.emoji} ${eventPresentation.title}`,
+			`🛰️ Service: ${payload.service_name}`,
+		];
 
 		if (payload.event_type === WEBHOOK_TEST_EVENT_TYPE) {
-			this.appendLine(lines, 'message', payload.data.message);
-			this.appendLine(lines, 'webhookName', payload.data.webhookName);
-			this.appendLine(lines, 'webhookFormat', payload.data.webhookFormat);
-			this.appendLine(lines, 'paymentSourceId', payload.data.paymentSourceId);
-			this.appendLine(lines, 'triggeredByApiKeyId', payload.data.triggeredByApiKeyId);
-			this.appendLine(lines, 'timestamp', payload.timestamp);
+			lines.push('');
+			this.appendDetailLine(lines, '💬', 'Message', payload.data.message);
+			this.appendDetailLine(lines, '🔔', 'Webhook', payload.data.webhookName);
+			this.appendDetailLine(
+				lines,
+				'📦',
+				'Format',
+				this.formatWebhookFormat(payload.data.webhookFormat),
+			);
+			this.appendDetailLine(lines, '🏦', 'Payment source', payload.data.paymentSourceId);
+			this.appendDetailLine(lines, '👤', 'Triggered by API key', payload.data.triggeredByApiKeyId);
+			this.appendDetailLine(lines, '🕒', 'Sent at', payload.timestamp);
 			return lines.join('\n');
 		}
 
 		if (payload.event_type === WebhookEventType.WALLET_LOW_BALANCE) {
-			this.appendLine(lines, 'walletId', payload.data.walletId);
-			this.appendLine(lines, 'walletAddress', payload.data.walletAddress);
-			this.appendLine(lines, 'paymentSourceId', payload.data.paymentSourceId);
-			this.appendLine(lines, 'network', payload.data.network);
-			this.appendLine(lines, 'assetUnit', payload.data.assetUnit);
-			this.appendLine(lines, 'currentAmount', payload.data.currentAmount);
-			this.appendLine(lines, 'thresholdAmount', payload.data.thresholdAmount);
-			this.appendLine(lines, 'checkedAt', payload.data.checkedAt);
-			this.appendLine(lines, 'timestamp', payload.timestamp);
+			lines.push('');
+			this.appendDetailLine(lines, '👛', 'Wallet ID', payload.data.walletId);
+			this.appendDetailLine(lines, '📬', 'Wallet address', payload.data.walletAddress);
+			this.appendDetailLine(lines, '🏦', 'Payment source', payload.data.paymentSourceId);
+			this.appendDetailLine(lines, '🌐', 'Network', payload.data.network);
+			this.appendDetailLine(lines, '🪙', 'Asset', payload.data.assetUnit);
+			this.appendDetailLine(lines, '💰', 'Current amount', payload.data.currentAmount);
+			this.appendDetailLine(lines, '🎯', 'Threshold', payload.data.thresholdAmount);
+			this.appendDetailLine(lines, '🕒', 'Checked at', payload.data.checkedAt);
+			this.appendDetailLine(lines, '⏱️', 'Event time', payload.timestamp);
 			return lines.join('\n');
 		}
 
-		this.appendLine(lines, 'id', payload.data.id);
-		this.appendLine(lines, 'blockchainIdentifier', payload.data.blockchainIdentifier);
-		this.appendLine(lines, 'paymentSourceId', payload.data.PaymentSource.id);
-		this.appendLine(lines, 'network', payload.data.PaymentSource.network);
-		this.appendLine(lines, 'onChainState', payload.data.onChainState);
-		this.appendLine(lines, 'nextAction', payload.data.NextAction.requestedAction);
-		this.appendLine(lines, 'errorType', payload.data.NextAction.errorType);
-		this.appendLine(lines, 'errorNote', payload.data.NextAction.errorNote);
-		this.appendLine(lines, 'timestamp', payload.timestamp);
+		lines.push('');
+		this.appendDetailLine(lines, '🏷️', 'ID', payload.data.id);
+		this.appendDetailLine(lines, '⛓️', 'Blockchain ID', payload.data.blockchainIdentifier);
+		this.appendDetailLine(lines, '🏦', 'Payment source', payload.data.PaymentSource.id);
+		this.appendDetailLine(lines, '🌐', 'Network', payload.data.PaymentSource.network);
+		this.appendDetailLine(lines, '📍', 'On-chain state', payload.data.onChainState);
+		this.appendDetailLine(lines, '➡️', 'Next action', payload.data.NextAction.requestedAction);
+		this.appendDetailLine(lines, '⚠️', 'Error type', payload.data.NextAction.errorType);
+		this.appendDetailLine(lines, '📝', 'Error note', payload.data.NextAction.errorNote);
+		this.appendDetailLine(lines, '⏱️', 'Event time', payload.timestamp);
 
 		return lines.join('\n');
 	}
 
-	private appendLine(lines: string[], key: string, value: string | null | undefined): void {
+	private appendDetailLine(
+		lines: string[],
+		emoji: string,
+		label: string,
+		value: string | null | undefined,
+	): void {
 		if (value == null || value === '') {
 			return;
 		}
 
-		lines.push(`${key}: ${value}`);
+		lines.push(`${emoji} ${label}: ${value}`);
+	}
+
+	private getEventPresentation(eventType: WebhookSendPayload['event_type']): {
+		emoji: string;
+		title: string;
+	} {
+		switch (eventType) {
+			case WebhookEventType.PAYMENT_ON_CHAIN_STATUS_CHANGED:
+				return { emoji: '💸', title: 'Payment status updated' };
+			case WebhookEventType.PURCHASE_ON_CHAIN_STATUS_CHANGED:
+				return { emoji: '🛒', title: 'Purchase status updated' };
+			case WebhookEventType.PAYMENT_ON_ERROR:
+				return { emoji: '🚨', title: 'Payment error' };
+			case WebhookEventType.PURCHASE_ON_ERROR:
+				return { emoji: '🚨', title: 'Purchase error' };
+			case WebhookEventType.WALLET_LOW_BALANCE:
+				return { emoji: '🪫', title: 'Wallet balance low' };
+			case WEBHOOK_TEST_EVENT_TYPE:
+				return { emoji: '🧪', title: 'Test webhook delivery' };
+			default:
+				return { emoji: '🔔', title: eventType };
+		}
+	}
+
+	private formatWebhookFormat(value: string): string {
+		if (value in WebhookSenderService.FORMAT_LABELS) {
+			return WebhookSenderService.FORMAT_LABELS[value as WebhookFormat];
+		}
+
+		return value;
 	}
 
 	/**

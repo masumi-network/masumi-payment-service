@@ -55,8 +55,9 @@ export default function WebhooksPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFormatTab, setActiveFormatTab] =
     useState<(typeof formatTabs)[number]['name']>('All');
-  const [activeEventFilter, setActiveEventFilter] =
-    useState<typeof allEventsFilterValue | WebhookEvent>(allEventsFilterValue);
+  const [activeEventFilter, setActiveEventFilter] = useState<
+    typeof allEventsFilterValue | WebhookEvent
+  >(allEventsFilterValue);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [webhookToEdit, setWebhookToEdit] = useState<WebhookRecord | null>(null);
   const [webhookToDelete, setWebhookToDelete] = useState<WebhookRecord | null>(null);
@@ -77,7 +78,9 @@ export default function WebhooksPage() {
 
         return {
           name: tab.name,
-          count: format ? webhooks.filter((webhook) => webhook.format === format).length : webhooks.length,
+          count: format
+            ? webhooks.filter((webhook) => webhook.format === format).length
+            : webhooks.length,
         };
       }),
     [webhooks],
@@ -103,7 +106,10 @@ export default function WebhooksPage() {
         return false;
       }
 
-      if (activeEventFilter !== allEventsFilterValue && !webhook.Events.includes(activeEventFilter)) {
+      if (
+        activeEventFilter !== allEventsFilterValue &&
+        !webhook.Events.includes(activeEventFilter)
+      ) {
         return false;
       }
 
@@ -257,10 +263,14 @@ export default function WebhooksPage() {
               <th className="p-4 text-left text-sm font-medium text-muted-foreground">Events</th>
               <th className="p-4 text-left text-sm font-medium text-muted-foreground">URL</th>
               <th className="p-4 text-left text-sm font-medium text-muted-foreground">Status</th>
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Last success</th>
+              <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                Last success
+              </th>
               <th className="p-4 text-left text-sm font-medium text-muted-foreground">Failures</th>
               <th className="p-4 text-left text-sm font-medium text-muted-foreground">Updated</th>
-              <th className="p-4 pr-6 text-right text-sm font-medium text-muted-foreground">Actions</th>
+              <th className="p-4 pr-6 text-right text-sm font-medium text-muted-foreground">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -411,7 +421,9 @@ export default function WebhooksPage() {
               <Tabs
                 tabs={tabs}
                 activeTab={activeFormatTab}
-                onTabChange={(tab) => setActiveFormatTab(tab as (typeof formatTabs)[number]['name'])}
+                onTabChange={(tab) =>
+                  setActiveFormatTab(tab as (typeof formatTabs)[number]['name'])
+                }
               />
 
               <div className="space-y-4">
@@ -436,7 +448,9 @@ export default function WebhooksPage() {
                         variant={isActive ? 'secondary' : 'outline'}
                         size="sm2"
                         onClick={() =>
-                          setActiveEventFilter(option.value as typeof allEventsFilterValue | WebhookEvent)
+                          setActiveEventFilter(
+                            option.value as typeof allEventsFilterValue | WebhookEvent,
+                          )
                         }
                       >
                         {option.label}

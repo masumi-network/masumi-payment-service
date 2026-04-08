@@ -85,7 +85,8 @@ const formatGuidance: Record<
   SLACK: {
     title: 'Slack incoming webhook',
     description: 'Paste the full Slack incoming webhook URL for the target channel.',
-    detail: 'No extra auth field is needed here. Masumi will format the message for Slack automatically.',
+    detail:
+      'No extra auth field is needed here. Masumi will format the message for Slack automatically.',
   },
   GOOGLE_CHAT: {
     title: 'Google Chat webhook',
@@ -210,7 +211,9 @@ export function WebhookDialog({
       },
       {
         onSuccess: () => {
-          toast.success(mode === 'create' ? 'Webhook created successfully' : 'Webhook updated successfully');
+          toast.success(
+            mode === 'create' ? 'Webhook created successfully' : 'Webhook updated successfully',
+          );
           onSuccess();
           onClose();
         },
@@ -330,7 +333,8 @@ export function WebhookDialog({
                 disabled={isSubmitting}
               />
               <p className="text-xs text-muted-foreground">
-                Masumi will send this value as a Bearer token so your endpoint can verify the request.
+                Masumi will send this value as a Bearer token so your endpoint can verify the
+                request.
               </p>
               {errors.authToken && (
                 <p className="text-xs text-destructive">{errors.authToken.message}</p>
@@ -400,7 +404,13 @@ export function WebhookDialog({
               Cancel
             </Button>
             <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? (mode === 'create' ? 'Creating...' : 'Saving...') : mode === 'create' ? 'Create webhook' : 'Save changes'}
+              {isSubmitting
+                ? mode === 'create'
+                  ? 'Creating...'
+                  : 'Saving...'
+                : mode === 'create'
+                  ? 'Create webhook'
+                  : 'Save changes'}
             </Button>
           </DialogFooter>
         </form>
