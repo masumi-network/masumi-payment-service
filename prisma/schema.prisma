@@ -694,6 +694,7 @@ model WebhookEndpoint {
   updatedAt DateTime @updatedAt
 
   url       String
+  urlHash   String?
   authToken String?
   format    WebhookFormat @default(EXTENDED)
   events    WebhookEventType[]
@@ -712,6 +713,8 @@ model WebhookEndpoint {
   disabledAt          DateTime?
 
   WebhookDeliveries WebhookDelivery[]
+
+  @@index([urlHash, paymentSourceId, format])
 }
 
 model WebhookDelivery {

@@ -37,6 +37,18 @@ jest.unstable_mockModule('@/utils/security/encryption', () => ({
 	decrypt: jest.fn(() => 'decrypted-token'),
 }));
 
+jest.unstable_mockModule('@/utils/security/webhook-secrets', () => ({
+	generateWebhookUrlHash: jest.fn((url: string) => `hash:${url}`),
+	encryptWebhookUrl: jest.fn((url: string) => `enc:${url}`),
+	encryptWebhookAuthToken: jest.fn((authToken: string | null | undefined) =>
+		authToken == null ? null : `enc:${authToken}`,
+	),
+	decryptWebhookUrlSafe: jest.fn((url: string) => (url.startsWith('enc:') ? url.slice(4) : url)),
+	decryptWebhookAuthTokenSafe: jest.fn((authToken: string | null) =>
+		authToken != null && authToken.startsWith('enc:') ? authToken.slice(4) : authToken,
+	),
+}));
+
 jest.unstable_mockModule('@/utils/logger', () => ({
 	logger: {
 		info: jest.fn(),
@@ -141,15 +153,16 @@ describe('webhook endpoints', () => {
 		expect(responseMock.statusCode).toBe(200);
 		expect(mockFindExistingWebhook).toHaveBeenCalledWith({
 			where: {
-				url: 'https://example.com/webhooks/masumi',
+				urlHash: 'hash:https://example.com/webhooks/masumi',
 				paymentSourceId: undefined,
 				format: WebhookFormat.EXTENDED,
 			},
 		});
 		expect(mockCreateWebhook).toHaveBeenCalledWith({
 			data: expect.objectContaining({
-				url: 'https://example.com/webhooks/masumi',
-				authToken: 'extended-secret',
+				url: 'enc:https://example.com/webhooks/masumi',
+				urlHash: 'hash:https://example.com/webhooks/masumi',
+				authToken: 'enc:extended-secret',
 				format: WebhookFormat.EXTENDED,
 			}),
 		});
@@ -198,7 +211,8 @@ describe('webhook endpoints', () => {
 		expect(responseMock.statusCode).toBe(200);
 		expect(mockCreateWebhook).toHaveBeenCalledWith({
 			data: expect.objectContaining({
-				url: 'https://hooks.slack.com/services/abc/def/ghi',
+				url: 'enc:https://hooks.slack.com/services/abc/def/ghi',
+				urlHash: 'hash:https://hooks.slack.com/services/abc/def/ghi',
 				authToken: null,
 				format: WebhookFormat.SLACK,
 			}),
@@ -219,7 +233,7 @@ describe('webhook endpoints', () => {
 		mockListWebhooks.mockResolvedValue([
 			{
 				id: 'webhook-3',
-				url: 'https://discord.com/api/webhooks/id/token',
+				url: 'enc:https://discord.com/api/webhooks/id/token',
 				format: WebhookFormat.DISCORD,
 				events: ['PURCHASE_ON_ERROR'],
 				name: 'Discord webhook',
@@ -326,7 +340,7 @@ describe('webhook endpoints', () => {
 		expect(mockFindExistingWebhook).toHaveBeenCalledWith({
 			where: {
 				id: { not: 'webhook-3' },
-				url: 'https://example.com/new',
+				urlHash: 'hash:https://example.com/new',
 				paymentSourceId: 'payment-source-1',
 				format: WebhookFormat.EXTENDED,
 			},
@@ -334,8 +348,9 @@ describe('webhook endpoints', () => {
 		expect(mockUpdateWebhook).toHaveBeenCalledWith({
 			where: { id: 'webhook-3' },
 			data: {
-				url: 'https://example.com/new',
-				authToken: 'new-secret',
+				url: 'enc:https://example.com/new',
+				urlHash: 'hash:https://example.com/new',
+				authToken: 'enc:new-secret',
 				format: WebhookFormat.EXTENDED,
 				events: ['PAYMENT_ON_ERROR', 'WALLET_LOW_BALANCE'],
 				name: 'Webhook updated',
@@ -414,7 +429,8 @@ describe('webhook endpoints', () => {
 		expect(mockUpdateWebhook).toHaveBeenCalledWith({
 			where: { id: 'webhook-4' },
 			data: {
-				url: 'https://hooks.slack.com/services/new',
+				url: 'enc:https://hooks.slack.com/services/new',
+				urlHash: 'hash:https://hooks.slack.com/services/new',
 				authToken: null,
 				format: WebhookFormat.SLACK,
 				events: ['PAYMENT_ON_ERROR'],
@@ -471,7 +487,7 @@ describe('webhook endpoints', () => {
 	it('allows the creator to send a test webhook and returns the delivery result', async () => {
 		mockFindWebhookById.mockResolvedValue({
 			id: 'webhook-test-1',
-			url: 'https://hooks.slack.com/services/test',
+			url: 'enc:https://hooks.slack.com/services/test',
 			format: WebhookFormat.SLACK,
 			authToken: null,
 			name: 'Slack alerts',
@@ -499,7 +515,7 @@ describe('webhook endpoints', () => {
 		expect(mockSendTestWebhook).toHaveBeenCalledWith(
 			{
 				id: 'webhook-test-1',
-				url: 'https://hooks.slack.com/services/test',
+				url: 'enc:https://hooks.slack.com/services/test',
 				format: WebhookFormat.SLACK,
 				authToken: null,
 				name: 'Slack alerts',
@@ -523,7 +539,7 @@ describe('webhook endpoints', () => {
 	it('returns a failed test delivery result without throwing when the upstream webhook fails', async () => {
 		mockFindWebhookById.mockResolvedValue({
 			id: 'webhook-test-2',
-			url: 'https://discord.com/api/webhooks/test/token',
+			url: 'enc:https://discord.com/api/webhooks/test/token',
 			format: WebhookFormat.DISCORD,
 			authToken: null,
 			name: 'Discord alerts',
@@ -569,9 +585,9 @@ describe('webhook endpoints', () => {
 	it('rejects test sends when the caller is not the creator or an admin', async () => {
 		mockFindWebhookById.mockResolvedValue({
 			id: 'webhook-test-3',
-			url: 'https://example.com/webhook',
+			url: 'enc:https://example.com/webhook',
 			format: WebhookFormat.EXTENDED,
-			authToken: 'extended-secret',
+			authToken: 'enc:extended-secret',
 			name: 'External relay',
 			paymentSourceId: null,
 			createdByApiKeyId: 'another-api-key',

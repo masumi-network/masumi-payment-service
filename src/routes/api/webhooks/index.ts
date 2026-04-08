@@ -4,6 +4,12 @@ import createHttpError from 'http-errors';
 import { Network, WebhookFormat } from '@/generated/prisma/client';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { decrypt } from '@/utils/security/encryption';
+import {
+	decryptWebhookUrlSafe,
+	encryptWebhookAuthToken,
+	encryptWebhookUrl,
+	generateWebhookUrlHash,
+} from '@/utils/security/webhook-secrets';
 import { logger } from '@/utils/logger';
 import { CONFIG } from '@/utils/config';
 import { webhookSenderService } from '@/services/webhooks/sender.service';
@@ -48,6 +54,8 @@ export const registerWebhookPost = payAuthenticatedEndpointFactory.build({
 	input: registerWebhookSchemaInput,
 	output: registerWebhookSchemaOutput,
 	handler: async ({ input, ctx }) => {
+		const urlHash = generateWebhookUrlHash(input.url);
+
 		if (input.paymentSourceId) {
 			const paymentSource = await prisma.paymentSource.findUnique({
 				where: { id: input.paymentSourceId, deletedAt: null },
@@ -66,7 +74,7 @@ export const registerWebhookPost = payAuthenticatedEndpointFactory.build({
 		// Checking if webhook URL already exist for this payment source
 		const existingWebhook = await prisma.webhookEndpoint.findFirst({
 			where: {
-				url: input.url,
+				urlHash,
 				paymentSourceId: input.paymentSourceId,
 				format: input.format,
 			},
@@ -79,8 +87,12 @@ export const registerWebhookPost = payAuthenticatedEndpointFactory.build({
 		// Create webhook endpoint with creator tracking
 		const webhook = await prisma.webhookEndpoint.create({
 			data: {
-				url: input.url,
-				authToken: input.format === WebhookFormat.EXTENDED ? input.authToken : null,
+				url: encryptWebhookUrl(input.url),
+				urlHash,
+				authToken:
+					input.format === WebhookFormat.EXTENDED
+						? encryptWebhookAuthToken(input.authToken)
+						: null,
 				format: input.format,
 				events: input.Events,
 				name: input.name,
@@ -92,7 +104,7 @@ export const registerWebhookPost = payAuthenticatedEndpointFactory.build({
 
 		return {
 			id: webhook.id,
-			url: webhook.url,
+			url: input.url,
 			format: webhook.format,
 			Events: webhook.events,
 			name: webhook.name,
@@ -108,6 +120,8 @@ export const patchWebhookPatch = payAuthenticatedEndpointFactory.build({
 	input: patchWebhookSchemaInput,
 	output: patchWebhookSchemaOutput,
 	handler: async ({ input, ctx }) => {
+		const urlHash = generateWebhookUrlHash(input.url);
+
 		const webhook = await prisma.webhookEndpoint.findUnique({
 			where: { id: input.webhookId },
 			include: {
@@ -146,7 +160,7 @@ export const patchWebhookPatch = payAuthenticatedEndpointFactory.build({
 		const existingWebhook = await prisma.webhookEndpoint.findFirst({
 			where: {
 				id: { not: input.webhookId },
-				url: input.url,
+				urlHash,
 				paymentSourceId: webhook.paymentSourceId,
 				format: input.format,
 			},
@@ -159,8 +173,12 @@ export const patchWebhookPatch = payAuthenticatedEndpointFactory.build({
 		const updatedWebhook = await prisma.webhookEndpoint.update({
 			where: { id: input.webhookId },
 			data: {
-				url: input.url,
-				authToken: input.format === WebhookFormat.EXTENDED ? input.authToken : null,
+				url: encryptWebhookUrl(input.url),
+				urlHash,
+				authToken:
+					input.format === WebhookFormat.EXTENDED
+						? encryptWebhookAuthToken(input.authToken)
+						: null,
 				format: input.format,
 				events: input.Events,
 				name: input.name ?? null,
@@ -169,7 +187,7 @@ export const patchWebhookPatch = payAuthenticatedEndpointFactory.build({
 
 		return {
 			id: updatedWebhook.id,
-			url: updatedWebhook.url,
+			url: input.url,
 			format: updatedWebhook.format,
 			Events: updatedWebhook.events,
 			name: updatedWebhook.name,
@@ -212,7 +230,7 @@ export const listWebhooksGet = payAuthenticatedEndpointFactory.build({
 		return {
 			Webhooks: webhooks.map((webhook) => ({
 				id: webhook.id,
-				url: webhook.url,
+				url: decryptWebhookUrlSafe(webhook.url),
 				format: webhook.format,
 				Events: webhook.events,
 				name: webhook.name,
@@ -269,7 +287,7 @@ export const deleteWebhookDelete = payAuthenticatedEndpointFactory.build({
 
 		return {
 			id: webhook.id,
-			url: webhook.url,
+			url: decryptWebhookUrlSafe(webhook.url),
 			name: webhook.name,
 			deletedAt: new Date(),
 		};

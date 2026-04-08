@@ -79,7 +79,12 @@ export const webhookPayloadSchema = z.discriminatedUnion('event_type', [
 export type WebhookPayload = z.infer<typeof webhookPayloadSchema>;
 export type WebhookPayloadByEvent<T extends WebhookEventType> = Extract<WebhookPayload, { event_type: T }>;
 export type WebhookPayloadDataByEvent<T extends WebhookEventType> = WebhookPayloadByEvent<T>['data'];
-export type StoredWebhookPayload = Jsonified<WebhookPayload>;
+
+type LegacyCompatibleStoredWebhookPayload<T> = T extends { service_name: infer TServiceName }
+	? Omit<T, 'service_name'> & { service_name?: TServiceName }
+	: T;
+
+export type StoredWebhookPayload = LegacyCompatibleStoredWebhookPayload<Jsonified<WebhookPayload>>;
 export type StoredWebhookPayloadByEvent<T extends WebhookEventType> = Extract<StoredWebhookPayload, { event_type: T }>;
 
 export const webhookTestPayloadSchema = z.object({

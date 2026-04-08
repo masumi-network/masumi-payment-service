@@ -29,6 +29,21 @@ jest.unstable_mockModule('@/utils/logger', () => ({
 	},
 }));
 
+jest.unstable_mockModule('@/utils/security/webhook-secrets', () => ({
+	decryptWebhookUrlForDelivery: jest.fn((url: string) => (url === 'broken-url' ? null : url.startsWith('enc:') ? url.slice(4) : url)),
+	decryptWebhookAuthTokenSafe: jest.fn((authToken: string | null) => {
+		if (authToken == null) {
+			return null;
+		}
+
+		if (authToken === 'broken-auth') {
+			return null;
+		}
+
+		return authToken.startsWith('enc:') ? authToken.slice(4) : authToken;
+	}),
+}));
+
 const { webhookSenderService } = await import('./sender.service');
 
 describe('webhookSenderService.sendWebhook', () => {
@@ -360,5 +375,82 @@ describe('webhookSenderService.sendTestWebhook', () => {
 		expect(slackBody.text).not.toContain('📦 Format:');
 		expect(slackBody.text).not.toContain('👤 Triggered by API key:');
 		expect(slackBody.text).toMatch(/🕒 Sent at: /);
+	});
+});
+
+describe('webhookSenderService.processWebhookDelivery', () => {
+	beforeEach(() => {
+		jest.clearAllMocks();
+		mockWebhookEndpointFindUnique.mockResolvedValue({
+			id: 'webhook-legacy',
+			consecutiveFailures: 0,
+		});
+		mockWebhookEndpointUpdate.mockResolvedValue(undefined);
+		mockWebhookDeliveryUpdate.mockResolvedValue(undefined);
+		global.fetch = jest.fn(
+			async () =>
+				({
+					ok: true,
+					status: 200,
+					statusText: 'OK',
+				}) as Response,
+		) as typeof fetch;
+	});
+
+	it('processes legacy queued deliveries that do not include service_name', async () => {
+		mockWebhookDeliveryFindUnique.mockResolvedValue({
+			id: 'delivery-1',
+			webhookEndpointId: 'webhook-legacy',
+			attempts: 0,
+			maxAttempts: 3,
+			payload: {
+				event_type: WebhookEventType.WALLET_LOW_BALANCE,
+				timestamp: '2026-04-08T13:00:00.000Z',
+				webhook_id: 'webhook-legacy',
+				data: {
+					walletId: 'wallet-legacy',
+					walletAddress: 'addr_test1legacy',
+					paymentSourceId: 'payment-source-legacy',
+					network: 'Preprod',
+					assetUnit: 'lovelace',
+					currentAmount: '4500000',
+					thresholdAmount: '5000000',
+					checkedAt: '2026-04-08T12:59:00.000Z',
+				},
+			},
+			WebhookEndpoint: {
+				id: 'webhook-legacy',
+				url: 'https://hooks.slack.com/services/legacy',
+				format: WebhookFormat.SLACK,
+				authToken: null,
+				isActive: true,
+			},
+		});
+		mockWebhookDeliveryUpdate
+			.mockResolvedValueOnce({ attempts: 1 })
+			.mockResolvedValueOnce(undefined);
+
+		await webhookSenderService.processWebhookDelivery('delivery-1');
+
+		expect(global.fetch).toHaveBeenCalledWith(
+			'https://hooks.slack.com/services/legacy',
+			expect.objectContaining({
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'User-Agent': 'Masumi-Webhook/1.0',
+				},
+			}),
+		);
+		const slackBody = JSON.parse(((global.fetch as jest.Mock).mock.calls[0][1] as { body: string }).body);
+		expect(slackBody.text).toContain('🪫 Wallet balance low');
+		expect(slackBody.text).not.toContain('🛰️ Service:');
+		expect(mockWebhookEndpointUpdate).toHaveBeenCalledWith({
+			where: { id: 'webhook-legacy' },
+			data: {
+				lastSuccessAt: expect.any(Date),
+				consecutiveFailures: 0,
+			},
+		});
 	});
 });

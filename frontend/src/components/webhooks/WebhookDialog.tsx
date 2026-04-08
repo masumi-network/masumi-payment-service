@@ -49,7 +49,7 @@ interface WebhookDialogProps {
 
 const webhookFormSchema = z
   .object({
-    name: z.string().max(120, 'Name must be 120 characters or fewer'),
+    name: z.string().max(100, 'Name must be 100 characters or fewer'),
     format: z.enum(WEBHOOK_FORMATS),
     url: z.string().trim().url('Enter a valid webhook URL'),
     authToken: z.string(),

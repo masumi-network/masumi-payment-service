@@ -4,6 +4,10 @@ import type { StoredWebhookPayload, WebhookSendPayload, WebhookTestPayload } fro
 import { prisma } from '@/utils/db';
 import { logger } from '@/utils/logger';
 import { getOwnPlainObject, getOwnString, isPlainObject } from '@/utils/object-properties';
+import {
+	decryptWebhookAuthTokenSafe,
+	decryptWebhookUrlForDelivery,
+} from '@/utils/security/webhook-secrets';
 
 interface WebhookDeliveryResult {
 	success: boolean;
@@ -134,6 +138,27 @@ class WebhookSenderService {
 		triggeredByApiKeyId: string,
 		serviceName: string,
 	): Promise<WebhookDeliveryResult> {
+		const decryptedUrl = decryptWebhookUrlForDelivery(webhook.url);
+		if (decryptedUrl == null) {
+			return {
+				success: false,
+				errorMessage: 'Webhook URL decryption failed',
+				durationMs: 0,
+			};
+		}
+
+		const decryptedAuthToken = decryptWebhookAuthTokenSafe(webhook.authToken);
+		if (webhook.format === WebhookFormat.EXTENDED && decryptedAuthToken == null) {
+			return {
+				success: false,
+				errorMessage:
+					webhook.authToken == null
+						? 'Extended webhook endpoints require an auth token'
+						: 'Webhook auth token decryption failed',
+				durationMs: 0,
+			};
+		}
+
 		const payload: WebhookTestPayload = {
 			event_type: WEBHOOK_TEST_EVENT_TYPE,
 			service_name: serviceName,
@@ -148,7 +173,12 @@ class WebhookSenderService {
 			},
 		};
 
-		const result = await this.sendWebhook(webhook.url, webhook.format, webhook.authToken, payload);
+		const result = await this.sendWebhook(
+			decryptedUrl,
+			webhook.format,
+			decryptedAuthToken,
+			payload,
+		);
 
 		if (result.success) {
 			await this.updateWebhookSuccessTracking(webhook.id);
@@ -231,10 +261,39 @@ class WebhookSenderService {
 			return;
 		}
 
+		const decryptedUrl = decryptWebhookUrlForDelivery(delivery.WebhookEndpoint.url);
+		if (decryptedUrl == null) {
+			await prisma.webhookDelivery.update({
+				where: { id: deliveryId },
+				data: {
+					status: WebhookDeliveryStatus.Failed as WebhookDeliveryStatus,
+					errorMessage: 'Webhook URL decryption failed',
+				},
+			});
+			await this.updateWebhookFailureTracking(delivery.webhookEndpointId);
+			return;
+		}
+
+		const decryptedAuthToken = decryptWebhookAuthTokenSafe(delivery.WebhookEndpoint.authToken);
+		if (delivery.WebhookEndpoint.format === WebhookFormat.EXTENDED && decryptedAuthToken == null) {
+			await prisma.webhookDelivery.update({
+				where: { id: deliveryId },
+				data: {
+					status: WebhookDeliveryStatus.Failed as WebhookDeliveryStatus,
+					errorMessage:
+						delivery.WebhookEndpoint.authToken == null
+							? 'Extended webhook endpoints require an auth token'
+							: 'Webhook auth token decryption failed',
+				},
+			});
+			await this.updateWebhookFailureTracking(delivery.webhookEndpointId);
+			return;
+		}
+
 		const result = await this.sendWebhook(
-			delivery.WebhookEndpoint.url,
+			decryptedUrl,
 			delivery.WebhookEndpoint.format,
-			delivery.WebhookEndpoint.authToken,
+			decryptedAuthToken,
 			delivery.payload,
 		);
 
@@ -331,7 +390,6 @@ class WebhookSenderService {
 		}
 
 		const eventType = getOwnString(value, 'event_type');
-		const serviceName = getOwnString(value, 'service_name');
 		const timestamp = getOwnString(value, 'timestamp');
 		const webhookId = getOwnString(value, 'webhook_id');
 		const data = getOwnPlainObject(value, 'data');
@@ -339,7 +397,6 @@ class WebhookSenderService {
 		return (
 			eventType !== undefined &&
 			WebhookSenderService.EVENT_TYPES.has(eventType) &&
-			serviceName !== undefined &&
 			timestamp !== undefined &&
 			webhookId !== undefined &&
 			data !== undefined
@@ -406,7 +463,10 @@ class WebhookSenderService {
 
 	private buildCompactSummary(payload: WebhookSendPayload): string {
 		const eventPresentation = this.getEventPresentation(payload.event_type);
-		const lines = [`${eventPresentation.emoji} ${eventPresentation.title}`, `🛰️ Service: ${payload.service_name}`];
+		const lines = [`${eventPresentation.emoji} ${eventPresentation.title}`];
+		if (payload.service_name) {
+			lines.push(`🛰️ Service: ${payload.service_name}`);
+		}
 
 		if (payload.event_type === WEBHOOK_TEST_EVENT_TYPE) {
 			lines.push('');
