@@ -4,8 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { deleteWebhooks } from '@/lib/api/generated';
-import { testWebhook } from '@/lib/api/webhooks';
+import { deleteWebhooks, postWebhooksTest } from '@/lib/api/generated';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { Badge } from '@/components/ui/badge';
@@ -169,8 +168,11 @@ export default function WebhooksPage() {
 
     await handleApiCall(
       () =>
-        testWebhook(apiClient, {
-          webhookId: webhook.id,
+        postWebhooksTest({
+          client: apiClient,
+          body: {
+            webhookId: webhook.id,
+          },
         }),
       {
         onSuccess: (response) => {

@@ -4,8 +4,7 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'react-toastify';
 import { Info, CheckCheck } from 'lucide-react';
-import { postWebhooks } from '@/lib/api/generated';
-import { patchWebhook } from '@/lib/api/webhooks';
+import { patchWebhooks, postWebhooks } from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { extractApiErrorMessage } from '@/lib/api-error';
 import { handleApiCall } from '@/lib/utils';
@@ -204,9 +203,12 @@ export function WebhookDialog({
           });
         }
 
-        return patchWebhook(apiClient, {
-          webhookId: webhook!.id,
-          ...payload,
+        return patchWebhooks({
+          client: apiClient,
+          body: {
+            webhookId: webhook!.id,
+            ...payload,
+          },
         });
       },
       {
