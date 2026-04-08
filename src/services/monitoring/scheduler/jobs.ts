@@ -119,7 +119,7 @@ export const scheduledJobs: JobDefinition[] = [
 	},
 	{
 		initialDelayMs: 55000,
-		intervalMs: CONFIG.FUND_DISTRIBUTION_CHECK_INTERVAL * 1000,
+		intervalMs: 30 * 1000,
 		startMessage: 'Starting fund distribution processing',
 		finishMessage: 'Finished fund distribution processing',
 		run: () => fundDistributionService.processDistributionCycle(),

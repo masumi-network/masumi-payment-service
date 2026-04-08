@@ -7,7 +7,7 @@ import {
 	TransactionStatus,
 } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
-import { CONFIG, CONSTANTS } from '@/utils/config';
+import { CONSTANTS } from '@/utils/config';
 import { logger } from '@/utils/logger';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { Mutex } from 'async-mutex';
@@ -66,6 +66,7 @@ async function getFundWalletForPaymentSource(paymentSourceId: string): Promise<F
 
 	if (
 		!fundWallet ||
+		!fundWallet.Secret ||
 		!fundWallet.FundDistributionConfig ||
 		!fundWallet.PaymentSource.PaymentSourceConfig?.rpcProviderApiKey
 	) {
@@ -286,8 +287,6 @@ export class FundDistributionService {
 		currentBalance: bigint;
 		paymentSourceId: string;
 	}): Promise<void> {
-		if (!CONFIG.FUND_DISTRIBUTION_ENABLED) return;
-
 		const { targetWalletId, currentBalance, paymentSourceId } = params;
 
 		const fundWallet = await getFundWalletForPaymentSource(paymentSourceId);
@@ -380,8 +379,6 @@ export class FundDistributionService {
 	}
 
 	async processDistributionCycle(): Promise<void> {
-		if (!CONFIG.FUND_DISTRIBUTION_ENABLED) return;
-
 		await withJobLock(mutex, 'fund_distribution_cycle', async () => {
 			// Phase A: Scan for Low-status wallets with no pending/submitted distribution request
 			await this.scanAndCreateMissingRequests();
@@ -516,7 +513,9 @@ export class FundDistributionService {
 
 		const now = Date.now();
 		for (const [fundWalletId, requests] of byFundWallet) {
-			const batchWindowMs = requests[0]?.FundWallet.FundDistributionConfig?.batchWindowMs ?? 300000;
+			const batchWindowMs =
+				requests[0]?.FundWallet.FundDistributionConfig?.batchWindowMs ??
+				CONSTANTS.FUND_DISTRIBUTION_DEFAULT_BATCH_WINDOW_MS;
 			const oldestCreatedAt = requests[0]?.createdAt.getTime() ?? now;
 
 			if (now - oldestCreatedAt < batchWindowMs) continue;
@@ -593,6 +592,9 @@ export class FundDistributionService {
 				byTxHash.set(req.txHash, group);
 			}
 
+			// Track whether any tx is still pending indexing — if so, keep the wallet locked
+			let hasUnresolved = false;
+
 			for (const [txHash, txRequests] of byTxHash) {
 				try {
 					const txInfo = await provider.fetchTxInfo(txHash);
@@ -622,6 +624,7 @@ export class FundDistributionService {
 								component: 'fund_distribution',
 								tx_hash: txHash,
 							});
+							hasUnresolved = true;
 						}
 					}
 				} catch (error) {
@@ -631,22 +634,31 @@ export class FundDistributionService {
 						request_ids: txRequests.map((r) => r.id),
 						error: interpretBlockchainError(error),
 					});
+					hasUnresolved = true;
 				}
 			}
 
-			// Unlock the fund wallet after processing all its submitted requests
-			await prisma.hotWallet.update({
-				where: { id: fundWalletId },
-				data: {
-					lockedAt: null,
-					PendingTransaction: { disconnect: true },
-				},
-			});
+			// Only unlock the fund wallet when all submitted txes have reached a terminal state.
+			// If any tx is still pending indexing, keep the lock to prevent duplicate distributions.
+			if (!hasUnresolved) {
+				await prisma.hotWallet.update({
+					where: { id: fundWalletId },
+					data: {
+						lockedAt: null,
+						PendingTransaction: { disconnect: true },
+					},
+				});
 
-			logger.info('Fund wallet unlocked after distribution confirmation', {
-				component: 'fund_distribution',
-				fund_wallet_id: fundWalletId,
-			});
+				logger.info('Fund wallet unlocked after distribution confirmation', {
+					component: 'fund_distribution',
+					fund_wallet_id: fundWalletId,
+				});
+			} else {
+				logger.debug('Fund wallet kept locked — unresolved txes still pending confirmation', {
+					component: 'fund_distribution',
+					fund_wallet_id: fundWalletId,
+				});
+			}
 		}
 	}
 
@@ -676,7 +688,11 @@ export class FundDistributionService {
 			},
 		});
 
-		if (!wallet?.FundDistributionConfig?.enabled || !wallet.PaymentSource.PaymentSourceConfig?.rpcProviderApiKey) {
+		if (
+			!wallet?.Secret ||
+			!wallet.FundDistributionConfig?.enabled ||
+			!wallet.PaymentSource.PaymentSourceConfig?.rpcProviderApiKey
+		) {
 			return null;
 		}
 

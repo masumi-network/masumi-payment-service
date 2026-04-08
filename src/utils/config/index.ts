@@ -154,11 +154,6 @@ function parseLowBalanceDefaultRules(
 const lowBalanceCheckInterval = Number(process.env.LOW_BALANCE_CHECK_INTERVAL ?? '60');
 if (lowBalanceCheckInterval < 5) throw new Error('LOW_BALANCE_CHECK_INTERVAL must be at least 5 seconds');
 
-const fundDistributionCheckInterval = Number(process.env.FUND_DISTRIBUTION_CHECK_INTERVAL ?? '30');
-if (fundDistributionCheckInterval < 5) throw new Error('FUND_DISTRIBUTION_CHECK_INTERVAL must be at least 5 seconds');
-
-const fundDistributionEnabled = process.env.FUND_DISTRIBUTION_ENABLED?.toLowerCase() !== 'false';
-
 const lowBalanceDefaultRulesMainnet = parseLowBalanceDefaultRules('LOW_BALANCE_DEFAULT_RULES_MAINNET');
 const lowBalanceDefaultRulesPreprod = parseLowBalanceDefaultRules('LOW_BALANCE_DEFAULT_RULES_PREPROD');
 
@@ -199,8 +194,6 @@ export const CONFIG = {
 	IS_COINGECKO_DEMO: process.env.IS_COINGECKO_DEMO?.toLowerCase() === 'true',
 	LOW_BALANCE_DEFAULT_RULES_MAINNET: lowBalanceDefaultRulesMainnet,
 	LOW_BALANCE_DEFAULT_RULES_PREPROD: lowBalanceDefaultRulesPreprod,
-	FUND_DISTRIBUTION_CHECK_INTERVAL: fundDistributionCheckInterval,
-	FUND_DISTRIBUTION_ENABLED: fundDistributionEnabled,
 	// Prisma span filtering: only export outlier (slow) queries and cap volume
 	OTEL_PRISMA_OUTLIER_THRESHOLD_MS: Number(process.env.OTEL_PRISMA_OUTLIER_THRESHOLD_MS ?? '100'),
 	OTEL_PRISMA_MAX_SPANS_PER_MINUTE: Number(process.env.OTEL_PRISMA_MAX_SPANS_PER_MINUTE ?? '60'),
@@ -213,6 +206,8 @@ export const CONSTANTS = {
 	MIN_COLLATERAL_LOVELACE: 1435230n,
 	MIN_TX_FEE_BUFFER_LOVELACE: 2000000n,
 	FUND_DISTRIBUTION_TX_CONFIRMATION_TIMEOUT_MS: 30 * 60 * 1000, // 30 minutes
+	FUND_DISTRIBUTION_DEFAULT_BATCH_WINDOW_MS: 5 * 60 * 1000, // 5 minutes
+	FUND_DISTRIBUTION_CHECK_INTERVAL_S: 30, // seconds between distribution cycles
 	MAX_DEFAULT_SMART_CONTRACT_HISTORY_LEVELS: 10,
 
 	FALLBACK_COINS_PER_UTXO_SIZE: 4310,

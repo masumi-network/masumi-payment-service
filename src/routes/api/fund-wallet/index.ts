@@ -2,12 +2,11 @@ import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-a
 import { logger } from '@/utils/logger';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
-import { HotWalletType } from '@/generated/prisma/client';
+import { HotWalletType, FundDistributionStatus } from '@/generated/prisma/client';
 import { encrypt } from '@/utils/security/encryption';
-import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
+import { resolvePaymentKeyHash } from '@meshsdk/core';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
 import { walletLowBalanceMonitorService, serializeLowBalanceSummary } from '@/services/wallets';
-import { FundDistributionStatus } from '@/generated/prisma/client';
 import {
 	deleteFundWalletSchemaInput,
 	deleteFundWalletSchemaOutput,
@@ -159,7 +158,11 @@ export const postFundWalletEndpointPost = adminAuthenticatedEndpointFactory.buil
 
 		const mnemonicWords = input.walletMnemonic.trim().split(/\s+/);
 		const offlineWallet = generateOfflineWallet(paymentSource.network, mnemonicWords);
-		const address = (await offlineWallet.getUnusedAddresses())[0];
+		const unusedAddresses = await offlineWallet.getUnusedAddresses();
+		const address = unusedAddresses[0];
+		if (!address) {
+			throw createHttpError(400, 'Could not derive address from provided mnemonic');
+		}
 		const vKey = resolvePaymentKeyHash(address);
 		const encryptedMnemonic = encrypt(input.walletMnemonic);
 
