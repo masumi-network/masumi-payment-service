@@ -62,6 +62,12 @@ const webhookFormSchema = z
         message: 'Auth token is required for extended webhooks',
         path: ['authToken'],
       });
+    } else if (value.format === 'EXTENDED' && value.authToken.trim().length < 10) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Auth token must be at least 10 characters',
+        path: ['authToken'],
+      });
     }
   });
 
