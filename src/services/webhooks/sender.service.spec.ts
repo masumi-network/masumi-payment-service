@@ -126,20 +126,25 @@ describe('webhookSenderService.sendWebhook', () => {
 					'Content-Type': 'application/json',
 					'User-Agent': 'Masumi-Webhook/1.0',
 				},
-				body: JSON.stringify({
-					text: [
-						'[masumi-test-service] PAYMENT_ON_CHAIN_STATUS_CHANGED',
-						'id: payment-2',
-						'blockchainIdentifier: blockchain-2',
-						'paymentSourceId: payment-source-2',
-						'network: Mainnet',
-						'onChainState: Settled',
-						'nextAction: None',
-						'timestamp: 2026-04-08T11:00:00.000Z',
-					].join('\n'),
-				}),
 			}),
 		);
+		const slackBody = JSON.parse(
+			((global.fetch as jest.Mock).mock.calls[0][1] as { body: string }).body,
+		);
+		expect(slackBody).toEqual({
+			text: [
+				'💸 Payment status updated',
+				'🛰️ Service: masumi-test-service',
+				'',
+				'🏷️ ID: payment-2',
+				'⛓️ Blockchain ID: blockchain-2',
+				'🏦 Payment source: payment-source-2',
+				'🌐 Network: Mainnet',
+				'📍 On-chain state: Settled',
+				'➡️ Next action: None',
+				'⏱️ Event time: 2026-04-08T11:00:00.000Z',
+			].join('\n'),
+		});
 	});
 
 	it('sends google chat payloads as compact summaries without auth headers', async () => {
@@ -179,22 +184,27 @@ describe('webhookSenderService.sendWebhook', () => {
 					'Content-Type': 'application/json; charset=UTF-8',
 					'User-Agent': 'Masumi-Webhook/1.0',
 				},
-				body: JSON.stringify({
-					text: [
-						'[masumi-test-service] PURCHASE_ON_ERROR',
-						'id: purchase-1',
-						'blockchainIdentifier: purchase-chain-1',
-						'paymentSourceId: payment-source-3',
-						'network: Preprod',
-						'onChainState: Disputed',
-						'nextAction: SubmitEvidence',
-						'errorType: VALIDATION_ERROR',
-						'errorNote: Result hash mismatch',
-						'timestamp: 2026-04-08T12:00:00.000Z',
-					].join('\n'),
-				}),
 			}),
 		);
+		const googleChatBody = JSON.parse(
+			((global.fetch as jest.Mock).mock.calls[0][1] as { body: string }).body,
+		);
+		expect(googleChatBody).toEqual({
+			text: [
+				'🚨 Purchase error',
+				'🛰️ Service: masumi-test-service',
+				'',
+				'🏷️ ID: purchase-1',
+				'⛓️ Blockchain ID: purchase-chain-1',
+				'🏦 Payment source: payment-source-3',
+				'🌐 Network: Preprod',
+				'📍 On-chain state: Disputed',
+				'➡️ Next action: SubmitEvidence',
+				'⚠️ Error type: VALIDATION_ERROR',
+				'📝 Error note: Result hash mismatch',
+				'⏱️ Event time: 2026-04-08T12:00:00.000Z',
+			].join('\n'),
+		});
 	});
 
 	it('sends discord payloads as compact summaries without auth headers', async () => {
@@ -230,22 +240,27 @@ describe('webhookSenderService.sendWebhook', () => {
 					'Content-Type': 'application/json',
 					'User-Agent': 'Masumi-Webhook/1.0',
 				},
-				body: JSON.stringify({
-					content: [
-						'[masumi-test-service] WALLET_LOW_BALANCE',
-						'walletId: wallet-1',
-						'walletAddress: addr_test1...',
-						'paymentSourceId: payment-source-4',
-						'network: Preprod',
-						'assetUnit: lovelace',
-						'currentAmount: 4500000',
-						'thresholdAmount: 5000000',
-						'checkedAt: 2026-04-08T12:59:00.000Z',
-						'timestamp: 2026-04-08T13:00:00.000Z',
-					].join('\n'),
-				}),
 			}),
 		);
+		const discordBody = JSON.parse(
+			((global.fetch as jest.Mock).mock.calls[0][1] as { body: string }).body,
+		);
+		expect(discordBody).toEqual({
+			content: [
+				'🪫 Wallet balance low',
+				'🛰️ Service: masumi-test-service',
+				'',
+				'👛 Wallet ID: wallet-1',
+				'📬 Wallet address: addr_test1...',
+				'🏦 Payment source: payment-source-4',
+				'🌐 Network: Preprod',
+				'🪙 Asset: lovelace',
+				'💰 Current amount: 4500000',
+				'🎯 Threshold: 5000000',
+				'🕒 Checked at: 2026-04-08T12:59:00.000Z',
+				'⏱️ Event time: 2026-04-08T13:00:00.000Z',
+			].join('\n'),
+		});
 	});
 });
 
@@ -344,12 +359,13 @@ describe('webhookSenderService.sendTestWebhook', () => {
 		);
 		const slackRequest = (global.fetch as jest.Mock).mock.calls[0][1] as { body: string };
 		const slackBody = JSON.parse(slackRequest.body);
-		expect(slackBody.text).toContain('[masumi-test-service] WEBHOOK_TEST');
-		expect(slackBody.text).toContain('message: This is a test webhook delivery from Masumi.');
-		expect(slackBody.text).toContain('webhookName: Slack alerts');
-		expect(slackBody.text).toContain(`webhookFormat: ${WebhookFormat.SLACK}`);
-		expect(slackBody.text).toContain('paymentSourceId: payment-source-2');
-		expect(slackBody.text).toContain('triggeredByApiKeyId: api-key-9');
-		expect(slackBody.text).toMatch(/timestamp: /);
+		expect(slackBody.text).toContain('🧪 Test webhook delivery');
+		expect(slackBody.text).toContain('🛰️ Service: masumi-test-service');
+		expect(slackBody.text).toContain('💬 Message: This is a test webhook delivery from Masumi.');
+		expect(slackBody.text).toContain('🔔 Webhook: Slack alerts');
+		expect(slackBody.text).toContain('📦 Format: Slack');
+		expect(slackBody.text).toContain('🏦 Payment source: payment-source-2');
+		expect(slackBody.text).toContain('👤 Triggered by API key: api-key-9');
+		expect(slackBody.text).toMatch(/🕒 Sent at: /);
 	});
 });
