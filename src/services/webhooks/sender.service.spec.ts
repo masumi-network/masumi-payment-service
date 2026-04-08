@@ -128,9 +128,7 @@ describe('webhookSenderService.sendWebhook', () => {
 				},
 			}),
 		);
-		const slackBody = JSON.parse(
-			((global.fetch as jest.Mock).mock.calls[0][1] as { body: string }).body,
-		);
+		const slackBody = JSON.parse(((global.fetch as jest.Mock).mock.calls[0][1] as { body: string }).body);
 		expect(slackBody).toEqual({
 			text: [
 				'💸 Payment status updated',
@@ -186,9 +184,7 @@ describe('webhookSenderService.sendWebhook', () => {
 				},
 			}),
 		);
-		const googleChatBody = JSON.parse(
-			((global.fetch as jest.Mock).mock.calls[0][1] as { body: string }).body,
-		);
+		const googleChatBody = JSON.parse(((global.fetch as jest.Mock).mock.calls[0][1] as { body: string }).body);
 		expect(googleChatBody).toEqual({
 			text: [
 				'🚨 Purchase error',
@@ -242,9 +238,7 @@ describe('webhookSenderService.sendWebhook', () => {
 				},
 			}),
 		);
-		const discordBody = JSON.parse(
-			((global.fetch as jest.Mock).mock.calls[0][1] as { body: string }).body,
-		);
+		const discordBody = JSON.parse(((global.fetch as jest.Mock).mock.calls[0][1] as { body: string }).body);
 		expect(discordBody).toEqual({
 			content: [
 				'🪫 Wallet balance low',

@@ -406,21 +406,13 @@ class WebhookSenderService {
 
 	private buildCompactSummary(payload: WebhookSendPayload): string {
 		const eventPresentation = this.getEventPresentation(payload.event_type);
-		const lines = [
-			`${eventPresentation.emoji} ${eventPresentation.title}`,
-			`🛰️ Service: ${payload.service_name}`,
-		];
+		const lines = [`${eventPresentation.emoji} ${eventPresentation.title}`, `🛰️ Service: ${payload.service_name}`];
 
 		if (payload.event_type === WEBHOOK_TEST_EVENT_TYPE) {
 			lines.push('');
 			this.appendDetailLine(lines, '💬', 'Message', payload.data.message);
 			this.appendDetailLine(lines, '🔔', 'Webhook', payload.data.webhookName);
-			this.appendDetailLine(
-				lines,
-				'📦',
-				'Format',
-				this.formatWebhookFormat(payload.data.webhookFormat),
-			);
+			this.appendDetailLine(lines, '📦', 'Format', this.formatWebhookFormat(payload.data.webhookFormat));
 			this.appendDetailLine(lines, '🏦', 'Payment source', payload.data.paymentSourceId);
 			this.appendDetailLine(lines, '👤', 'Triggered by API key', payload.data.triggeredByApiKeyId);
 			this.appendDetailLine(lines, '🕒', 'Sent at', payload.timestamp);
@@ -455,12 +447,7 @@ class WebhookSenderService {
 		return lines.join('\n');
 	}
 
-	private appendDetailLine(
-		lines: string[],
-		emoji: string,
-		label: string,
-		value: string | null | undefined,
-	): void {
+	private appendDetailLine(lines: string[], emoji: string, label: string, value: string | null | undefined): void {
 		if (value == null || value === '') {
 			return;
 		}
