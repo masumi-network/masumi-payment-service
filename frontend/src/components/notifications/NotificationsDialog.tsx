@@ -147,7 +147,9 @@ export function NotificationsDialog({ open, onClose }: NotificationsDialogProps)
                         })}
                       </p>
                     </div>
-                    <span className="text-xs text-muted-foreground">{transaction.onChainState}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {transaction.onChainState}
+                    </span>
                   </div>
                 ))}
               </div>

@@ -20,8 +20,7 @@ class WebhookSenderService {
 	private static readonly USER_AGENT = 'Masumi-Webhook/1.0';
 	private static readonly EVENT_TYPES = new Set<string>(Object.values(WebhookEventType));
 	private static readonly LOVELACE_DECIMALS = 1_000_000n;
-	private static readonly MAINNET_USDCX_UNIT =
-		'1f3aec8bfe7ea4fe14c5f121e2a92e301afe414147860d557cac7e345553444378';
+	private static readonly MAINNET_USDCX_UNIT = '1f3aec8bfe7ea4fe14c5f121e2a92e301afe414147860d557cac7e345553444378';
 	private static readonly MAINNET_USDM_UNIT =
 		'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad0014df105553444d';
 	private static readonly PREPROD_USDM_UNIT =
@@ -544,10 +543,7 @@ class WebhookSenderService {
 	private formatSixDecimalAmount(rawAmount: string): string {
 		const amount = BigInt(rawAmount);
 		const whole = amount / WebhookSenderService.LOVELACE_DECIMALS;
-		const fraction = (amount % WebhookSenderService.LOVELACE_DECIMALS)
-			.toString()
-			.padStart(6, '0')
-			.replace(/0+$/, '');
+		const fraction = (amount % WebhookSenderService.LOVELACE_DECIMALS).toString().padStart(6, '0').replace(/0+$/, '');
 
 		return fraction.length > 0 ? `${whole}.${fraction}` : whole.toString();
 	}

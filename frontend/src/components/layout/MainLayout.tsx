@@ -256,8 +256,8 @@ export function MainLayout({ children }: MainLayoutProps) {
         icon: <Code className="h-4 w-4 text-violet-500" />,
         badge: null,
         group: 1,
-        },
-      ];
+      },
+    ];
   }, [isSetupMode, hasPaymentSources, newTransactionsCount, walletAlertCount, walletAlertLabel]);
 
   const handleNetworkChange = (newNetwork: 'Preprod' | 'Mainnet') => {
