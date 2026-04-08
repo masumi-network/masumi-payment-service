@@ -46,6 +46,13 @@ jest.unstable_mockModule('@/utils/logger', () => ({
 	},
 }));
 
+jest.unstable_mockModule('@/utils/config', () => ({
+	CONFIG: {
+		ENCRYPTION_KEY: '12345678901234567890',
+		OTEL_SERVICE_NAME: 'masumi-test-service',
+	},
+}));
+
 jest.unstable_mockModule('@/services/webhooks/sender.service', () => ({
 	webhookSenderService: {
 		sendTestWebhook: mockSendTestWebhook,
