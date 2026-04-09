@@ -69,18 +69,24 @@ async function processSingleFundTransfer(transfer: PendingFundTransfer): Promise
 
 	logger.info(`FundTransfer ${transfer.id} submitted`, { txHash });
 
-	await walletLowBalanceMonitorService.evaluateProjectedHotWalletById({
-		hotWalletId: wallet.id,
-		walletAddress: address,
-		walletUtxos: utxos,
-		unsignedTx,
-		checkSource: 'submission',
-	});
-
 	await prisma.walletFundTransfer.update({
 		where: { id: transfer.id },
 		data: { txHash },
 	});
+
+	try {
+		await walletLowBalanceMonitorService.evaluateProjectedHotWalletById({
+			hotWalletId: wallet.id,
+			walletAddress: address,
+			walletUtxos: utxos,
+			unsignedTx,
+			checkSource: 'submission',
+		});
+	} catch (monitorError) {
+		logger.error(
+			`FundTransfer ${transfer.id}: low balance check failed (tx already recorded): ${errorToString(monitorError)}`,
+		);
+	}
 }
 
 export async function processFundTransfers() {
