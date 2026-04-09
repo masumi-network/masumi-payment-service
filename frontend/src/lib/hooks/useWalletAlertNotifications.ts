@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { type PaymentSource } from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
 
@@ -95,50 +95,21 @@ export function useWalletAlertNotifications() {
   const paymentSourceId = selectedPaymentSource?.id ?? null;
   const [acknowledgementsBySourceId, setAcknowledgementsBySourceId] =
     useState<WalletAlertAcknowledgements>(() => readAcknowledgements());
-  const observedPaymentSourceIdsRef = useRef<Set<string>>(new Set());
-  const previousLowWalletIdsBySourceIdRef = useRef<Record<string, Set<string>>>({});
 
   const walletAlerts = useMemo(
     () => buildWalletAlerts(selectedPaymentSource),
     [selectedPaymentSource],
   );
 
-  const acknowledgedByWalletId = paymentSourceId
-    ? acknowledgementsBySourceId[paymentSourceId] ?? {}
-    : {};
+  const unacknowledgedWalletAlerts = useMemo(() => {
+    const acknowledgedByWalletId = paymentSourceId
+      ? (acknowledgementsBySourceId[paymentSourceId] ?? {})
+      : {};
 
-  const unacknowledgedWalletAlerts = useMemo(
-    () => {
-      const hasObservedCurrentSource = paymentSourceId
-        ? observedPaymentSourceIdsRef.current.has(paymentSourceId)
-        : false;
-      const previousLowWalletIds = paymentSourceId
-        ? previousLowWalletIdsBySourceIdRef.current[paymentSourceId] ?? new Set<string>()
-        : new Set<string>();
-
-      return (
-      walletAlerts.filter(
-        (walletAlert) =>
-          (!hasObservedCurrentSource || previousLowWalletIds.has(walletAlert.id)) &&
-          acknowledgedByWalletId[walletAlert.id] === walletAlert.alertSignature
-            ? false
-            : true,
-      )
-      );
-    },
-    [acknowledgedByWalletId, paymentSourceId, walletAlerts],
-  );
-
-  useEffect(() => {
-    if (!paymentSourceId) {
-      return;
-    }
-
-    observedPaymentSourceIdsRef.current.add(paymentSourceId);
-    previousLowWalletIdsBySourceIdRef.current[paymentSourceId] = new Set(
-      walletAlerts.map((walletAlert) => walletAlert.id),
+    return walletAlerts.filter(
+      (walletAlert) => acknowledgedByWalletId[walletAlert.id] !== walletAlert.alertSignature,
     );
-  }, [paymentSourceId, walletAlerts]);
+  }, [acknowledgementsBySourceId, paymentSourceId, walletAlerts]);
 
   const acknowledgeWalletAlerts = useCallback(
     (walletAlertsToAcknowledge: WalletAlertNotification[] = walletAlerts) => {
