@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { type PaymentSource } from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
 
@@ -93,29 +93,40 @@ export function clearStoredWalletAlertAcknowledgements() {
 export function useWalletAlertNotifications() {
   const { selectedPaymentSource } = useAppContext();
   const paymentSourceId = selectedPaymentSource?.id ?? null;
-  const [acknowledgedByWalletId, setAcknowledgedByWalletId] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    if (!paymentSourceId) {
-      setAcknowledgedByWalletId({});
-      return;
-    }
-
-    const stored = readAcknowledgements();
-    setAcknowledgedByWalletId(stored[paymentSourceId] ?? {});
-  }, [paymentSourceId]);
+  const [acknowledgementsBySourceId, setAcknowledgementsBySourceId] =
+    useState<WalletAlertAcknowledgements>(() => readAcknowledgements());
+  const observedPaymentSourceIdsRef = useRef<Set<string>>(new Set());
+  const previousLowWalletIdsBySourceIdRef = useRef<Record<string, Set<string>>>({});
 
   const walletAlerts = useMemo(
     () => buildWalletAlerts(selectedPaymentSource),
     [selectedPaymentSource],
   );
 
+  const acknowledgedByWalletId = paymentSourceId
+    ? acknowledgementsBySourceId[paymentSourceId] ?? {}
+    : {};
+
   const unacknowledgedWalletAlerts = useMemo(
-    () =>
+    () => {
+      const hasObservedCurrentSource = paymentSourceId
+        ? observedPaymentSourceIdsRef.current.has(paymentSourceId)
+        : false;
+      const previousLowWalletIds = paymentSourceId
+        ? previousLowWalletIdsBySourceIdRef.current[paymentSourceId] ?? new Set<string>()
+        : new Set<string>();
+
+      return (
       walletAlerts.filter(
-        (walletAlert) => acknowledgedByWalletId[walletAlert.id] !== walletAlert.alertSignature,
-      ),
-    [acknowledgedByWalletId, walletAlerts],
+        (walletAlert) =>
+          (!hasObservedCurrentSource || previousLowWalletIds.has(walletAlert.id)) &&
+          acknowledgedByWalletId[walletAlert.id] === walletAlert.alertSignature
+            ? false
+            : true,
+      )
+      );
+    },
+    [acknowledgedByWalletId, paymentSourceId, walletAlerts],
   );
 
   useEffect(() => {
@@ -123,27 +134,11 @@ export function useWalletAlertNotifications() {
       return;
     }
 
-    const activeWalletIds = new Set(walletAlerts.map((walletAlert) => walletAlert.id));
-    const nextAcknowledgedByWalletId = Object.fromEntries(
-      Object.entries(acknowledgedByWalletId).filter(([walletId]) => activeWalletIds.has(walletId)),
+    observedPaymentSourceIdsRef.current.add(paymentSourceId);
+    previousLowWalletIdsBySourceIdRef.current[paymentSourceId] = new Set(
+      walletAlerts.map((walletAlert) => walletAlert.id),
     );
-
-    if (
-      Object.keys(nextAcknowledgedByWalletId).length ===
-        Object.keys(acknowledgedByWalletId).length &&
-      Object.entries(nextAcknowledgedByWalletId).every(
-        ([walletId, signature]) => acknowledgedByWalletId[walletId] === signature,
-      )
-    ) {
-      return;
-    }
-
-    setAcknowledgedByWalletId(nextAcknowledgedByWalletId);
-
-    const stored = readAcknowledgements();
-    stored[paymentSourceId] = nextAcknowledgedByWalletId;
-    writeAcknowledgements(stored);
-  }, [acknowledgedByWalletId, paymentSourceId, walletAlerts]);
+  }, [paymentSourceId, walletAlerts]);
 
   const acknowledgeWalletAlerts = useCallback(
     (walletAlertsToAcknowledge: WalletAlertNotification[] = walletAlerts) => {
@@ -151,19 +146,25 @@ export function useWalletAlertNotifications() {
         return;
       }
 
-      const nextAcknowledgedByWalletId = { ...acknowledgedByWalletId };
+      setAcknowledgementsBySourceId((currentAcknowledgementsBySourceId) => {
+        const nextAcknowledgedByWalletId = {
+          ...(currentAcknowledgementsBySourceId[paymentSourceId] ?? {}),
+        };
 
-      for (const walletAlert of walletAlertsToAcknowledge) {
-        nextAcknowledgedByWalletId[walletAlert.id] = walletAlert.alertSignature;
-      }
+        for (const walletAlert of walletAlertsToAcknowledge) {
+          nextAcknowledgedByWalletId[walletAlert.id] = walletAlert.alertSignature;
+        }
 
-      setAcknowledgedByWalletId(nextAcknowledgedByWalletId);
+        const nextAcknowledgementsBySourceId = {
+          ...currentAcknowledgementsBySourceId,
+          [paymentSourceId]: nextAcknowledgedByWalletId,
+        };
 
-      const stored = readAcknowledgements();
-      stored[paymentSourceId] = nextAcknowledgedByWalletId;
-      writeAcknowledgements(stored);
+        writeAcknowledgements(nextAcknowledgementsBySourceId);
+        return nextAcknowledgementsBySourceId;
+      });
     },
-    [acknowledgedByWalletId, paymentSourceId, walletAlerts],
+    [paymentSourceId, walletAlerts],
   );
 
   return {
