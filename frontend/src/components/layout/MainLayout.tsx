@@ -72,13 +72,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   const sideBarWidth = 280;
   const sideBarWidthCollapsed = 96;
   const [isMac, setIsMac] = useState(false);
-  const {
-    network,
-    setNetwork,
-    isChangingNetwork,
-    isSetupMode,
-    setupWizardStep,
-  } = useAppContext();
+  const { network, setNetwork, isChangingNetwork, isSetupMode, setupWizardStep } = useAppContext();
   const [showNetworkSwitchConfirm, setShowNetworkSwitchConfirm] = useState(false);
   const [pendingNetwork, setPendingNetwork] = useState<'Preprod' | 'Mainnet' | null>(null);
   const isFirstNavMount = !hasAnimatedNav;

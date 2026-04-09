@@ -94,12 +94,9 @@ export function NotificationsDialog({
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {wallet.lastCheckedAt
-                          ? `Last checked ${formatDistanceToNow(
-                              new Date(wallet.lastCheckedAt),
-                              {
-                                addSuffix: true,
-                              },
-                            )}`
+                          ? `Last checked ${formatDistanceToNow(new Date(wallet.lastCheckedAt), {
+                              addSuffix: true,
+                            })}`
                           : 'Awaiting latest wallet balance check'}
                       </p>
                     </div>
