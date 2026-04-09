@@ -3,19 +3,24 @@ import { Button } from '@/components/ui/button';
 import { useTransactions } from '@/lib/hooks/useTransactions';
 import { formatDistanceToNow } from 'date-fns';
 import { useRouter } from 'next/router';
-import { useAppContext } from '@/lib/contexts/AppContext';
 import { shortenAddress } from '@/lib/utils';
 import { AlertTriangle } from 'lucide-react';
-import { useMemo } from 'react';
+import { type WalletAlertNotification } from '@/lib/hooks/useWalletAlertNotifications';
 
 interface NotificationsDialogProps {
   open: boolean;
   onClose: () => void;
+  walletAlerts: WalletAlertNotification[];
+  onAcknowledgeWalletAlerts: (walletAlerts?: WalletAlertNotification[]) => void;
 }
 
-export function NotificationsDialog({ open, onClose }: NotificationsDialogProps) {
+export function NotificationsDialog({
+  open,
+  onClose,
+  walletAlerts,
+  onAcknowledgeWalletAlerts,
+}: NotificationsDialogProps) {
   const { transactions, newTransactionsCount, markAllAsRead } = useTransactions();
-  const { selectedPaymentSource } = useAppContext();
   const router = useRouter();
 
   const handleViewTransactions = () => {
@@ -25,32 +30,10 @@ export function NotificationsDialog({ open, onClose }: NotificationsDialogProps)
   };
 
   const handleViewWallets = () => {
+    onAcknowledgeWalletAlerts(walletAlerts);
     onClose();
     router.push('/wallets');
   };
-
-  const walletAlerts = useMemo(() => {
-    if (!selectedPaymentSource) {
-      return [];
-    }
-
-    return [
-      ...selectedPaymentSource.PurchasingWallets.map((wallet) => ({
-        ...wallet,
-        type: 'Purchasing' as const,
-      })),
-      ...selectedPaymentSource.SellingWallets.map((wallet) => ({
-        ...wallet,
-        type: 'Selling' as const,
-      })),
-    ]
-      .filter((wallet) => wallet.LowBalanceSummary?.isLow)
-      .sort((a, b) => {
-        const aTime = walletDateValue(a.LowBalanceSummary?.lastCheckedAt);
-        const bTime = walletDateValue(b.LowBalanceSummary?.lastCheckedAt);
-        return bTime - aTime;
-      });
-  }, [selectedPaymentSource]);
 
   const newTransactions = transactions
     .slice(0, newTransactionsCount)
@@ -72,9 +55,18 @@ export function NotificationsDialog({ open, onClose }: NotificationsDialogProps)
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     Wallet alerts
                   </p>
-                  <Button variant="ghost" size="sm" onClick={handleViewWallets}>
-                    View wallets
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onAcknowledgeWalletAlerts(walletAlerts)}
+                    >
+                      Mark seen
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={handleViewWallets}>
+                      View wallets
+                    </Button>
+                  </div>
                 </div>
                 {walletAlerts.map((wallet, index) => (
                   <div
@@ -96,14 +88,14 @@ export function NotificationsDialog({ open, onClose }: NotificationsDialogProps)
                         {shortenAddress(wallet.walletAddress)}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {wallet.LowBalanceSummary.lowRuleCount === 1
+                        {wallet.lowRuleCount === 1
                           ? '1 threshold is currently below its configured limit'
-                          : `${wallet.LowBalanceSummary.lowRuleCount} thresholds are currently below their configured limits`}
+                          : `${wallet.lowRuleCount} thresholds are currently below their configured limits`}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {wallet.LowBalanceSummary.lastCheckedAt
+                        {wallet.lastCheckedAt
                           ? `Last checked ${formatDistanceToNow(
-                              new Date(wallet.LowBalanceSummary.lastCheckedAt),
+                              new Date(wallet.lastCheckedAt),
                               {
                                 addSuffix: true,
                               },
@@ -163,12 +155,4 @@ export function NotificationsDialog({ open, onClose }: NotificationsDialogProps)
       </DialogContent>
     </Dialog>
   );
-}
-
-function walletDateValue(date: Date | null | undefined) {
-  if (!date) {
-    return 0;
-  }
-
-  return new Date(date).getTime();
 }

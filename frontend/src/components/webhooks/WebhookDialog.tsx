@@ -52,7 +52,7 @@ const webhookFormSchema = z
     name: z.string().max(100, 'Name must be 100 characters or fewer'),
     format: z.enum(WEBHOOK_FORMATS),
     url: z.string().trim().url('Enter a valid webhook URL'),
-    authToken: z.string(),
+    authToken: z.string().max(200, 'Auth token must be 200 characters or fewer'),
     Events: z.array(z.enum(WEBHOOK_EVENTS)).min(1, 'Select at least one event'),
   })
   .superRefine((value, ctx) => {

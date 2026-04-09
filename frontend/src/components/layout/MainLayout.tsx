@@ -24,6 +24,7 @@ import { useTheme } from '@/lib/contexts/ThemeContext';
 import { useSidebar } from '@/lib/contexts/SidebarContext';
 import { cn } from '@/lib/utils';
 import { useTransactions } from '@/lib/hooks/useTransactions';
+import { useWalletAlertNotifications } from '@/lib/hooks/useWalletAlertNotifications';
 import { NotificationsDialog } from '@/components/notifications/NotificationsDialog';
 import { SearchDialog } from '@/components/search/SearchDialog';
 import {
@@ -77,7 +78,6 @@ export function MainLayout({ children }: MainLayoutProps) {
     isChangingNetwork,
     isSetupMode,
     setupWizardStep,
-    selectedPaymentSource,
   } = useAppContext();
   const [showNetworkSwitchConfirm, setShowNetworkSwitchConfirm] = useState(false);
   const [pendingNetwork, setPendingNetwork] = useState<'Preprod' | 'Mainnet' | null>(null);
@@ -146,22 +146,20 @@ export function MainLayout({ children }: MainLayoutProps) {
     () => paymentSources.some((ps) => ps.network === network),
     [paymentSources, network],
   );
-  const walletAlertCount = useMemo(() => {
-    if (!selectedPaymentSource) return 0;
-
-    return [
-      ...selectedPaymentSource.PurchasingWallets,
-      ...selectedPaymentSource.SellingWallets,
-    ].filter((wallet) => wallet.LowBalanceSummary?.isLow).length;
-  }, [selectedPaymentSource]);
+  const {
+    activeWalletAlertCount,
+    unacknowledgedWalletAlertCount,
+    unacknowledgedWalletAlerts,
+    acknowledgeWalletAlerts,
+  } = useWalletAlertNotifications();
   const walletAlertLabel = useMemo(() => {
-    if (walletAlertCount === 0) return undefined;
+    if (activeWalletAlertCount === 0) return undefined;
 
-    return walletAlertCount === 1
+    return activeWalletAlertCount === 1
       ? '1 wallet has an active low-balance alert'
-      : `${walletAlertCount} wallets have active low-balance alerts`;
-  }, [walletAlertCount]);
-  const notificationCount = newTransactionsCount + walletAlertCount;
+      : `${activeWalletAlertCount} wallets have active low-balance alerts`;
+  }, [activeWalletAlertCount]);
+  const notificationCount = newTransactionsCount + unacknowledgedWalletAlertCount;
 
   const navItems = useMemo<NavItem[]>(() => {
     // While in setup mode, show only the setup sidebar
@@ -219,7 +217,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         icon: <Wallet className="h-4 w-4" />,
         badge: null,
         group: 0,
-        notificationDot: walletAlertCount > 0,
+        notificationDot: activeWalletAlertCount > 0,
         notificationLabel: walletAlertLabel,
       },
       {
@@ -258,7 +256,13 @@ export function MainLayout({ children }: MainLayoutProps) {
         group: 1,
       },
     ];
-  }, [isSetupMode, hasPaymentSources, newTransactionsCount, walletAlertCount, walletAlertLabel]);
+  }, [
+    isSetupMode,
+    hasPaymentSources,
+    newTransactionsCount,
+    activeWalletAlertCount,
+    walletAlertLabel,
+  ]);
 
   const handleNetworkChange = (newNetwork: 'Preprod' | 'Mainnet') => {
     if (newNetwork === network) return;
@@ -633,6 +637,8 @@ export function MainLayout({ children }: MainLayoutProps) {
         <NotificationsDialog
           open={isNotificationsOpen}
           onClose={() => setIsNotificationsOpen(false)}
+          walletAlerts={unacknowledgedWalletAlerts}
+          onAcknowledgeWalletAlerts={acknowledgeWalletAlerts}
         />
       )}
     </div>

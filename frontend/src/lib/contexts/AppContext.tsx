@@ -184,6 +184,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem('masumi_last_transactions_visit');
     localStorage.removeItem('masumi_new_transactions_count');
     localStorage.removeItem('masumi_network');
+    localStorage.removeItem('masumi_acknowledged_wallet_alerts');
   }, [setIsSetupMode, setNetwork]);
 
   return (
