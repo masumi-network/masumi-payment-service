@@ -29,6 +29,7 @@ const searchableItems: SearchableItem[] = [
     href: '/payment-sources',
   },
   { id: 'api-keys', title: 'API Keys', type: 'page', href: '/api-keys' },
+  { id: 'webhooks', title: 'Webhooks', type: 'page', href: '/webhooks' },
   { id: 'settings', title: 'Settings', type: 'page', href: '/settings' },
 
   {
@@ -62,6 +63,14 @@ const searchableItems: SearchableItem[] = [
     href: '/api-keys?action=add_api_key',
     elementId: 'add-api-key-button',
     keywords: ['create api key', 'new api key'],
+  },
+  {
+    id: 'add-webhook',
+    title: 'Add Webhook',
+    type: 'action',
+    href: '/webhooks?action=add_webhook',
+    elementId: 'add-webhook-button',
+    keywords: ['create webhook', 'new webhook', 'slack alert', 'discord alert'],
   },
   {
     id: 'toggle-theme',

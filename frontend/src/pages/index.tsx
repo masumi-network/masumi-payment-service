@@ -14,7 +14,7 @@ import {
   PlusCircle,
 } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
-import { shortenAddress } from '@/lib/utils';
+import { cn, shortenAddress } from '@/lib/utils';
 import { useState, useMemo } from 'react';
 import { RegistryEntry } from '@/lib/api/generated';
 import { useAgents } from '@/lib/queries/useAgents';
@@ -366,12 +366,37 @@ export default function Overview() {
                             walletsList.map((wallet, index) => (
                               <tr
                                 key={wallet.id}
-                                className="border-b last:border-0 cursor-pointer hover:bg-muted/10 animate-fade-in opacity-0 transition-[background-color,opacity] duration-150"
+                                className={cn(
+                                  'border-b last:border-0 cursor-pointer animate-fade-in opacity-0 transition-[background-color,opacity] duration-150',
+                                  wallet.LowBalanceSummary?.isLow
+                                    ? 'bg-amber-500/5 hover:bg-amber-500/10'
+                                    : 'hover:bg-muted/10',
+                                )}
                                 style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
                                 onClick={() => setSelectedWalletForDetails(wallet)}
                               >
                                 <td className="py-3 px-2">
-                                  <WalletTypeBadge type={wallet.type} />
+                                  <div className="flex items-center gap-2">
+                                    <WalletTypeBadge type={wallet.type} />
+                                    {wallet.LowBalanceSummary?.isLow && (
+                                      <>
+                                        <span
+                                          aria-hidden="true"
+                                          className="h-2.5 w-2.5 shrink-0 rounded-full bg-amber-500 shadow-[0_0_0_4px_rgba(245,158,11,0.16)]"
+                                          title={
+                                            wallet.LowBalanceSummary.lowRuleCount === 1
+                                              ? '1 low-balance alert'
+                                              : `${wallet.LowBalanceSummary.lowRuleCount} low-balance alerts`
+                                          }
+                                        />
+                                        <span className="sr-only">
+                                          {wallet.LowBalanceSummary.lowRuleCount === 1
+                                            ? '1 low-balance alert'
+                                            : `${wallet.LowBalanceSummary.lowRuleCount} low-balance alerts`}
+                                        </span>
+                                      </>
+                                    )}
+                                  </div>
                                 </td>
                                 <td className="py-3 px-2 max-w-25">
                                   <div className="text-sm font-medium truncate">

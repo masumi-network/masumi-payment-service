@@ -35,8 +35,12 @@ import {
 	deleteWebhookSchemaOutput,
 	listWebhooksSchemaInput,
 	listWebhooksSchemaOutput,
+	patchWebhookSchemaInput,
+	patchWebhookSchemaOutput,
 	registerWebhookSchemaInput,
 	registerWebhookSchemaOutput,
+	testWebhookSchemaInput,
+	testWebhookSchemaOutput,
 } from '@/routes/api/webhooks/schemas';
 import {
 	createPaymentSourceExtendedBodyExample,
@@ -1269,6 +1273,77 @@ export function registerRegistrySupportPaths({ registry, apiKeyAuth }: SwaggerRe
 	});
 
 	registry.registerPath({
+		method: 'patch',
+		path: '/webhooks',
+		description: 'Update an existing webhook endpoint',
+		summary:
+			'Update an existing webhook endpoint. Only the creator or admin can update a webhook. (pay-authenticated access required)',
+		tags: ['webhooks'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			body: {
+				description: 'Webhook update details',
+				content: {
+					'application/json': {
+						schema: patchWebhookSchemaInput.openapi({
+							example: {
+								webhookId: 'webhook_endpoint_id',
+								url: 'https://hooks.slack.com/services/example/path',
+								format: 'SLACK',
+								Events: ['PAYMENT_ON_CHAIN_STATUS_CHANGED', 'PURCHASE_ON_ERROR'],
+								name: 'Ops Slack Alerts',
+							},
+						}),
+					},
+				},
+			},
+		},
+		responses: {
+			200: {
+				description: 'Webhook endpoint updated successfully',
+				content: {
+					'application/json': {
+						schema: z.object({ status: z.string(), data: patchWebhookSchemaOutput }).openapi({
+							example: {
+								status: 'Success',
+								data: {
+									id: 'webhook_endpoint_id',
+									url: 'https://hooks.slack.com/services/example/path',
+									format: 'SLACK',
+									name: 'Ops Slack Alerts',
+									Events: ['PAYMENT_ON_CHAIN_STATUS_CHANGED', 'PURCHASE_ON_ERROR'],
+									isActive: true,
+									createdAt: new Date(1713636260),
+									updatedAt: new Date(1713636360),
+									paymentSourceId: 'payment_source_id',
+								},
+							},
+						}),
+					},
+				},
+			},
+			400: {
+				description: 'Bad Request (invalid webhook URL or configuration)',
+			},
+			401: {
+				description: 'Unauthorized',
+			},
+			403: {
+				description: 'Forbidden: only the creator or an admin can update the webhook',
+			},
+			404: {
+				description: 'Webhook or payment source not found',
+			},
+			409: {
+				description: 'Webhook URL already registered for this payment source',
+			},
+			500: {
+				description: 'Internal Server Error',
+			},
+		},
+	});
+
+	registry.registerPath({
 		method: 'delete',
 		path: '/webhooks',
 		description: 'Delete a webhook endpoint',
@@ -1317,6 +1392,63 @@ export function registerRegistrySupportPaths({ registry, apiKeyAuth }: SwaggerRe
 			},
 			404: {
 				description: 'Webhook endpoint not found',
+			},
+			500: {
+				description: 'Internal Server Error',
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'post',
+		path: '/webhooks/test',
+		description: 'Send a test webhook delivery',
+		summary:
+			'Send a test webhook delivery using the webhook format currently configured. Only the creator or admin can trigger a test. (pay-authenticated access required)',
+		tags: ['webhooks'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			body: {
+				description: 'Webhook test request',
+				content: {
+					'application/json': {
+						schema: testWebhookSchemaInput.openapi({
+							example: {
+								webhookId: 'webhook_endpoint_id',
+							},
+						}),
+					},
+				},
+			},
+		},
+		responses: {
+			200: {
+				description: 'Webhook test delivery result',
+				content: {
+					'application/json': {
+						schema: z.object({ status: z.string(), data: testWebhookSchemaOutput }).openapi({
+							example: {
+								status: 'Success',
+								data: {
+									webhookId: 'webhook_endpoint_id',
+									success: true,
+									responseCode: 200,
+									errorMessage: null,
+									durationMs: 184,
+								},
+							},
+						}),
+					},
+				},
+			},
+			401: {
+				description: 'Unauthorized',
+			},
+			403: {
+				description: 'Forbidden: only the creator or an admin can test the webhook',
+			},
+			404: {
+				description: 'Webhook or payment source not found',
 			},
 			500: {
 				description: 'Internal Server Error',
