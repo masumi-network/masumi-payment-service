@@ -10069,7 +10069,7 @@
                                             "signature": "ed25519_signature",
                                             "key": "ed25519_key",
                                             "walletAddress": "addr1...",
-                                            "signatureData": "{\"action\":\"VerifyAndPublishAgent\",\"validUntil\":1736352000000,\"hash\":\"...\"}"
+                                            "signatureData": "{\"action\":\"VerifyAndPublishAgent\",\"validUntil\":1736352000000,\"data\":{\"publicKey\":\"...\",\"walletVkey\":\"...\"}}"
                                         }
                                     }
                                 }
