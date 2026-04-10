@@ -118,6 +118,7 @@ export const resolvePaymentRequestPost = readAuthenticatedEndpointFactory.build(
 									createdAt: true,
 									updatedAt: true,
 									requestedAction: true,
+									submittedTxHash: true,
 									errorType: true,
 									errorNote: true,
 									resultHash: true,

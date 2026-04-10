@@ -241,7 +241,6 @@ interface PurchaseOnChainStatusChangedPayload {
 			network: string;
 			smartContractAddress: string;
 			policyId: string;
-			paymentType: string;
 			feeRatePermille: number;
 			cooldownTime: number;
 		};
@@ -288,7 +287,6 @@ interface PurchaseOnChainStatusChangedPayload {
 			"id": "cmejif0l60004uc3rea61s1mz",
 			"network": "Preprod",
 			"smartContractAddress": "addr_test_1755666353849",
-			"paymentType": "Web3CardanoV1",
 			"feeRatePermille": 25
 		},
 		"SellerWallet": {
@@ -330,7 +328,6 @@ interface PaymentOnChainStatusChangedPayload {
 			network: string;
 			smartContractAddress: string;
 			policyId: string;
-			paymentType: string;
 			feeRatePermille: number;
 			cooldownTime: number;
 		};
@@ -377,7 +374,6 @@ interface PaymentOnChainStatusChangedPayload {
 			"id": "cmejif0l60004uc3rea61s1mz",
 			"network": "Preprod",
 			"smartContractAddress": "addr_test_1755666353849",
-			"paymentType": "Web3CardanoV1",
 			"feeRatePermille": 25
 		},
 		"BuyerWallet": {

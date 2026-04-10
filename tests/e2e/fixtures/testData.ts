@@ -224,7 +224,6 @@ export function generateTestPaymentData(
 		inputHash,
 		network,
 		agentIdentifier,
-		paymentType: 'Web3CardanoV1', // Valid payment type from API
 		payByTime: timing.payByTime.toISOString(),
 		submitResultTime: timing.submitResultTime.toISOString(),
 		unlockTime: timing.unlockTime?.toISOString(),

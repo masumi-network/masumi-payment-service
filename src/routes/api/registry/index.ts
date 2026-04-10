@@ -1,7 +1,7 @@
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import { z } from '@/utils/zod-openapi';
-import { HotWalletType, PaymentType, PricingType, RegistrationState } from '@/generated/prisma/client';
+import { HotWalletType, PricingType, RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { DEFAULTS } from '@/utils/config';
@@ -153,8 +153,6 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 					terms: input.Legal?.terms,
 					privacyPolicy: input.Legal?.privacyPolicy,
 					authorName: input.Author.name,
-					paymentType:
-						input.AgentPricing.pricingType == PricingType.Free ? PaymentType.Web3CardanoV1 : PaymentType.None,
 					authorContactEmail: input.Author.contactEmail,
 					authorContactOther: input.Author.contactOther,
 					authorOrganization: input.Author.organization,

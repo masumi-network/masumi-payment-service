@@ -219,7 +219,6 @@ model RegistryRequest {
   registrationStateLastChangedAt DateTime          @default(now())
   currentTransactionId           String?
   error                          String?
-  paymentType                    PaymentType       @default(Web3CardanoV1)
   ExampleOutputs                 ExampleOutput[]
   Pricing                        AgentPricing      @relation(fields: [agentPricingId], references: [id])
   CurrentTransaction             Transaction?      @relation(fields: [currentTransactionId], references: [id])
@@ -496,11 +495,6 @@ enum PurchaseErrorType {
   Unknown
 }
 
-enum PaymentType {
-  Web3CardanoV1
-  None
-}
-
 enum TransactionStatus {
   Pending
   Confirmed
@@ -696,7 +690,7 @@ model WebhookEndpoint {
   url       String
   urlHash   String?
   authToken String?
-  format    WebhookFormat @default(EXTENDED)
+  format    WebhookFormat      @default(EXTENDED)
   events    WebhookEventType[]
   name      String?
 
