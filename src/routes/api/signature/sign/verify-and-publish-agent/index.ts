@@ -79,7 +79,7 @@ export const postVerifyAndPublishAgentSignatureEndpoint = payAuthenticatedEndpoi
 
 			const message = stringify({
 				action: input.action,
-				validUntil: Date.now() + 1000 * 60 * 60,
+				validUntil: Date.now() + 1000 * 60 * 3,
 				data: {
 					publicKey: input.publicKey,
 					walletVkey: registryRequest.SmartContractWallet.walletVkey,
