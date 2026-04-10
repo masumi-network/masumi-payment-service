@@ -39,6 +39,7 @@ import { resolvePurchaseRequestPost } from './purchases/resolve-blockchain-ident
 import { unregisterAgentPost } from './registry/deregister';
 import { revealDataEndpointPost } from './signature/verify/reveal-data';
 import { postMonthlySignatureEndpoint } from './signature/sign/create-invoice/monthly';
+import { postVerifyAndPublishAgentSignatureEndpoint } from './signature/sign/verify-and-publish-agent';
 import { getMonthlyInvoiceListEndpoint, postGenerateMonthlyInvoiceEndpoint } from './invoice/monthly';
 import { postInternalGenerateMonthlyInvoiceEndpoint } from './invoice/monthly/internal';
 import { getMissingInvoicePaymentsEndpoint as getMissingPaymentsEndpoint } from './invoice/monthly/missing';
@@ -233,6 +234,9 @@ export const apiRouter: Routing = {
 					monthly: {
 						post: postMonthlySignatureEndpoint,
 					},
+				},
+				verifyAndPublishAgent: {
+					post: postVerifyAndPublishAgentSignatureEndpoint,
 				},
 			},
 		},

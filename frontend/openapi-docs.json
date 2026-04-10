@@ -9971,6 +9971,114 @@
                 }
             }
         },
+        "/signature/sign/verifyAndPublishAgent": {
+            "post": {
+                "description": "Provides a signed message from the registered agent wallet to authorize wallet verification for agent publishing. (+PAY access required)",
+                "summary": "Get a signed message to verify and publish an agent. (+PAY access required)",
+                "tags": [
+                    "signature"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "publicKey": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 1000,
+                                        "description": "The public key to sign for publishing the agent"
+                                    },
+                                    "agentIdentifier": {
+                                        "type": "string",
+                                        "minLength": 57,
+                                        "maxLength": 250,
+                                        "description": "Full agent identifier (policy ID + asset name in hex)"
+                                    },
+                                    "action": {
+                                        "type": "string",
+                                        "enum": [
+                                            "VerifyAndPublishAgent"
+                                        ],
+                                        "description": "The action to perform for agent publish verification"
+                                    }
+                                },
+                                "required": [
+                                    "publicKey",
+                                    "agentIdentifier",
+                                    "action"
+                                ],
+                                "example": {
+                                    "action": "VerifyAndPublishAgent",
+                                    "publicKey": "ed25519_pk1example",
+                                    "agentIdentifier": "policyidassetnamehex"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Agent publish signature generated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "signature": {
+                                                    "type": "string"
+                                                },
+                                                "key": {
+                                                    "type": "string"
+                                                },
+                                                "walletAddress": {
+                                                    "type": "string"
+                                                },
+                                                "signatureData": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "signature",
+                                                "key",
+                                                "walletAddress",
+                                                "signatureData"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "Success",
+                                        "data": {
+                                            "signature": "ed25519_signature",
+                                            "key": "ed25519_key",
+                                            "walletAddress": "addr1...",
+                                            "signatureData": "{\"action\":\"VerifyAndPublishAgent\",\"validUntil\":1736352000000,\"hash\":\"...\"}"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/invoice/monthly": {
             "post": {
                 "description": "Generates an invoice PDF aggregating all payment requests for a buyer wallet within a month, using the end-of-month conversion rate. (+PAY access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.",

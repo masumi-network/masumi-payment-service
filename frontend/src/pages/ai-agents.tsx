@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { Plus, Trash2, ExternalLink } from 'lucide-react';
+import { Plus, Trash2, ExternalLink, ShieldCheck } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useCallback, useMemo } from 'react';
 
@@ -24,6 +24,7 @@ import { FaRegClock } from 'react-icons/fa';
 import { Tabs } from '@/components/ui/tabs';
 import { Pagination } from '@/components/ui/pagination';
 import { AIAgentDetailsDialog } from '@/components/ai-agents/AIAgentDetailsDialog';
+import { VerifyAndPublishAgentDialog } from '@/components/ai-agents/VerifyAndPublishAgentDialog';
 import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/WalletDetailsDialog';
 import { CopyButton } from '@/components/ui/copy-button';
 import { TESTUSDM_CONFIG, getUsdmConfig, getUsdcxConfig } from '@/lib/constants/defaultWallets';
@@ -142,6 +143,9 @@ export default function AIAgentsPage() {
     [paymentSources, network],
   );
   const [selectedAgentForDetails, setSelectedAgentForDetails] = useState<AIAgent | null>(null);
+  const [selectedAgentForVerification, setSelectedAgentForVerification] = useState<AIAgent | null>(
+    null,
+  );
   const [initialDialogTab, setInitialDialogTab] = useState<'Details' | 'Earnings'>('Details');
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
     useState<WalletWithBalance | null>(null);
@@ -479,6 +483,18 @@ export default function AIAgentsPage() {
                                 size="sm"
                                 onClick={(e) => {
                                   e.stopPropagation();
+                                  setSelectedAgentForVerification(agent);
+                                }}
+                                className="text-primary hover:text-primary hover:bg-primary/10"
+                                title="Verify and Publish"
+                              >
+                                <ShieldCheck className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   setInitialDialogTab('Earnings');
                                   handleAgentClick(agent);
                                 }}
@@ -559,6 +575,12 @@ export default function AIAgentsPage() {
               }, 2000);
             }}
             initialTab={initialDialogTab}
+          />
+
+          <VerifyAndPublishAgentDialog
+            agent={selectedAgentForVerification}
+            open={!!selectedAgentForVerification}
+            onClose={() => setSelectedAgentForVerification(null)}
           />
 
           <ConfirmDialog

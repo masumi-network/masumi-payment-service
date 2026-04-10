@@ -4943,6 +4943,43 @@ export type PostSignatureSignCreateInvoiceMonthlyResponses = {
 
 export type PostSignatureSignCreateInvoiceMonthlyResponse = PostSignatureSignCreateInvoiceMonthlyResponses[keyof PostSignatureSignCreateInvoiceMonthlyResponses];
 
+export type PostSignatureSignVerifyAndPublishAgentData = {
+    body?: {
+        /**
+         * The public key to sign for publishing the agent
+         */
+        publicKey: string;
+        /**
+         * Full agent identifier (policy ID + asset name in hex)
+         */
+        agentIdentifier: string;
+        /**
+         * The action to perform for agent publish verification
+         */
+        action: 'VerifyAndPublishAgent';
+    };
+    path?: never;
+    query?: never;
+    url: '/signature/sign/verifyAndPublishAgent';
+};
+
+export type PostSignatureSignVerifyAndPublishAgentResponses = {
+    /**
+     * Agent publish signature generated
+     */
+    200: {
+        status: string;
+        data: {
+            signature: string;
+            key: string;
+            walletAddress: string;
+            signatureData: string;
+        };
+    };
+};
+
+export type PostSignatureSignVerifyAndPublishAgentResponse = PostSignatureSignVerifyAndPublishAgentResponses[keyof PostSignatureSignVerifyAndPublishAgentResponses];
+
 export type GetInvoiceMonthlyData = {
     body?: never;
     path?: never;
