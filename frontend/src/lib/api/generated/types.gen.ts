@@ -1271,6 +1271,19 @@ export type RegistryEntry = {
          */
         walletAddress: string;
     };
+    /**
+     * Managed wallet that receives the registry NFT. Null when the minting wallet receives it
+     */
+    RecipientWallet: {
+        /**
+         * Payment key hash of the managed recipient wallet
+         */
+        walletVkey: string;
+        /**
+         * Cardano address of the managed recipient wallet
+         */
+        walletAddress: string;
+    } | null;
     CurrentTransaction: {
         /**
          * Cardano transaction hash
@@ -7228,7 +7241,7 @@ export type GetRegistryData = {
          */
         filterStatus?: 'Registered' | 'Deregistered' | 'Pending' | 'Failed';
         /**
-         * Search query to filter by name, description, tags, wallet address, state, or price
+         * Search query to filter by name, description, tags, minting or recipient wallet address, state, or price
          */
         searchQuery?: string;
     };
@@ -7259,6 +7272,10 @@ export type PostRegistryData = {
          * The payment key of a specific wallet used for the registration
          */
         sellingWalletVkey: string;
+        /**
+         * Optional managed hot wallet address on the same payment source that should receive the minted registry NFT. If omitted, the minting wallet receives it.
+         */
+        recipientWalletAddress?: string;
         /**
          * List of example outputs from the agent
          */

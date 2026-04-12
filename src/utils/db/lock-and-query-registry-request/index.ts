@@ -8,6 +8,8 @@ export async function lockAndQueryRegistryRequests({
 	state: RegistrationState;
 	maxBatchSize: number;
 }) {
+	const locksSellingWallet = state === RegistrationState.RegistrationRequested;
+
 	return await prisma.$transaction(
 		async (prisma) => {
 			const paymentSources = await prisma.paymentSource.findMany({
@@ -22,7 +24,7 @@ export async function lockAndQueryRegistryRequests({
 							Secret: true,
 						},
 						where: {
-							type: HotWalletType.Selling,
+							...(locksSellingWallet ? { type: HotWalletType.Selling } : {}),
 							PendingTransaction: null,
 							lockedAt: null,
 							deletedAt: null,
@@ -41,15 +43,47 @@ export async function lockAndQueryRegistryRequests({
 					const potentialRegistryRequests = await prisma.registryRequest.findMany({
 						where: {
 							state: state,
-							SmartContractWallet: {
-								id: hotWallet.id,
-								deletedAt: null,
-								PendingTransaction: { is: null },
-								lockedAt: null,
-							},
+							...(locksSellingWallet
+								? {
+										SmartContractWallet: {
+											id: hotWallet.id,
+											deletedAt: null,
+											PendingTransaction: { is: null },
+											lockedAt: null,
+										},
+									}
+								: {
+										OR: [
+											{
+												DeregistrationHotWallet: {
+													is: {
+														id: hotWallet.id,
+														deletedAt: null,
+														PendingTransaction: { is: null },
+														lockedAt: null,
+													},
+												},
+											},
+											{
+												deregistrationHotWalletId: null,
+												SmartContractWallet: {
+													id: hotWallet.id,
+													deletedAt: null,
+													PendingTransaction: { is: null },
+													lockedAt: null,
+												},
+											},
+										],
+									}),
 						},
 						include: {
 							SmartContractWallet: {
+								include: {
+									Secret: true,
+								},
+							},
+							RecipientWallet: true,
+							DeregistrationHotWallet: {
 								include: {
 									Secret: true,
 								},
@@ -70,8 +104,12 @@ export async function lockAndQueryRegistryRequests({
 							data: { lockedAt: new Date() },
 						});
 						potentialRegistryRequests.forEach((registryRequest) => {
-							registryRequest.SmartContractWallet.pendingTransactionId = hotWalletResult.pendingTransactionId;
-							registryRequest.SmartContractWallet.lockedAt = hotWalletResult.lockedAt;
+							const walletToLock =
+								locksSellingWallet || registryRequest.DeregistrationHotWallet == null
+									? registryRequest.SmartContractWallet
+									: registryRequest.DeregistrationHotWallet;
+							walletToLock.pendingTransactionId = hotWalletResult.pendingTransactionId;
+							walletToLock.lockedAt = hotWalletResult.lockedAt;
 						});
 						registryRequests.push(...potentialRegistryRequests);
 					}

@@ -114,6 +114,41 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 			}
 			assertHotWalletInScope(ctx.walletScopeIds, sellingWallet.id);
 
+			const recipientWalletAddress = input.recipientWalletAddress?.trim();
+			let recipientWallet: { id: string; walletVkey: string; walletAddress: string } | null = null;
+			if (recipientWalletAddress && recipientWalletAddress !== sellingWallet.walletAddress) {
+				recipientWallet = await prisma.hotWallet.findFirst({
+					where: {
+						walletAddress: recipientWalletAddress,
+						paymentSourceId: sellingWallet.paymentSourceId,
+						deletedAt: null,
+					},
+					select: {
+						id: true,
+						walletVkey: true,
+						walletAddress: true,
+					},
+				});
+
+				if (recipientWallet == null) {
+					recordBusinessEndpointError(
+						'/api/v1/registry',
+						'POST',
+						404,
+						'Recipient wallet not found on the same payment source',
+						{
+							network: input.network,
+							operation: 'register_agent',
+							step: 'recipient_wallet_lookup',
+							recipient_wallet_address: recipientWalletAddress,
+						},
+					);
+					throw createHttpError(404, 'Recipient wallet not found on the same payment source');
+				}
+
+				assertHotWalletInScope(ctx.walletScopeIds, recipientWallet.id);
+			}
+
 			// Validate pricing assets exist on-chain
 			if (input.AgentPricing.pricingType === PricingType.Fixed) {
 				const blockfrost = getBlockfrostInstance(
@@ -175,6 +210,14 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 							id: sellingWallet.id,
 						},
 					},
+					RecipientWallet:
+						recipientWallet != null
+							? {
+									connect: {
+										id: recipientWallet.id,
+									},
+								}
+							: undefined,
 					PaymentSource: {
 						connect: {
 							id: sellingWallet.paymentSourceId,
@@ -213,6 +256,9 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 						},
 					},
 					SmartContractWallet: {
+						select: { walletVkey: true, walletAddress: true },
+					},
+					RecipientWallet: {
 						select: { walletVkey: true, walletAddress: true },
 					},
 					ExampleOutputs: {
@@ -266,6 +312,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 								pricingType: result.Pricing.pricingType,
 							},
 				Tags: result.tags,
+				RecipientWallet: result.RecipientWallet,
 				CurrentTransaction: result.CurrentTransaction
 					? {
 							...result.CurrentTransaction,
@@ -365,6 +412,9 @@ export const deleteAgentRegistration = adminAuthenticatedEndpointFactory.build({
 					SmartContractWallet: {
 						select: { walletVkey: true, walletAddress: true },
 					},
+					RecipientWallet: {
+						select: { walletVkey: true, walletAddress: true },
+					},
 					ExampleOutputs: {
 						select: { name: true, url: true, mimeType: true },
 					},
@@ -412,6 +462,7 @@ export const deleteAgentRegistration = adminAuthenticatedEndpointFactory.build({
 								pricingType: item.Pricing.pricingType,
 							},
 				Tags: item.tags,
+				RecipientWallet: item.RecipientWallet,
 				CurrentTransaction: item.CurrentTransaction
 					? {
 							...item.CurrentTransaction,

@@ -83,6 +83,16 @@ export async function getRegistryEntriesForQuery(
 									},
 								},
 							},
+							{
+								RecipientWallet: {
+									is: {
+										walletAddress: {
+											contains: searchLower,
+											mode: 'insensitive' as const,
+										},
+									},
+								},
+							},
 							...(matchingStates && matchingStates.length > 0 ? [{ state: { in: matchingStates } }] : []),
 							...('free'.startsWith(searchLower) ? [{ Pricing: { pricingType: PricingType.Free } }] : []),
 							...('dynamic'.startsWith(searchLower) ? [{ Pricing: { pricingType: PricingType.Dynamic } }] : []),
@@ -108,6 +118,9 @@ export async function getRegistryEntriesForQuery(
 		cursor: input.cursorId ? { id: input.cursorId } : undefined,
 		include: {
 			SmartContractWallet: {
+				select: { walletVkey: true, walletAddress: true },
+			},
+			RecipientWallet: {
 				select: { walletVkey: true, walletAddress: true },
 			},
 			CurrentTransaction: {

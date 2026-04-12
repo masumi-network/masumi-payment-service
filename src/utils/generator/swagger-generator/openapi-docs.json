@@ -2353,6 +2353,25 @@
                         ],
                         "description": "Smart contract wallet managing this agent registration"
                     },
+                    "RecipientWallet": {
+                        "type": "object",
+                        "nullable": true,
+                        "properties": {
+                            "walletVkey": {
+                                "type": "string",
+                                "description": "Payment key hash of the managed recipient wallet"
+                            },
+                            "walletAddress": {
+                                "type": "string",
+                                "description": "Cardano address of the managed recipient wallet"
+                            }
+                        },
+                        "required": [
+                            "walletVkey",
+                            "walletAddress"
+                        ],
+                        "description": "Managed wallet that receives the registry NFT. Null when the minting wallet receives it"
+                    },
                     "CurrentTransaction": {
                         "type": "object",
                         "nullable": true,
@@ -2422,6 +2441,7 @@
                     "agentIdentifier",
                     "AgentPricing",
                     "SmartContractWallet",
+                    "RecipientWallet",
                     "CurrentTransaction"
                 ]
             },
@@ -15304,10 +15324,10 @@
                     {
                         "schema": {
                             "type": "string",
-                            "description": "Search query to filter by name, description, tags, wallet address, state, or price"
+                            "description": "Search query to filter by name, description, tags, minting or recipient wallet address, state, or price"
                         },
                         "required": false,
-                        "description": "Search query to filter by name, description, tags, wallet address, state, or price",
+                        "description": "Search query to filter by name, description, tags, minting or recipient wallet address, state, or price",
                         "name": "searchQuery",
                         "in": "query"
                     }
@@ -15390,6 +15410,10 @@
                                                         "walletVkey": "wallet_vkey",
                                                         "walletAddress": "wallet_address"
                                                     },
+                                                    "RecipientWallet": {
+                                                        "walletVkey": "recipient_wallet_vkey",
+                                                        "walletAddress": "recipient_wallet_address"
+                                                    },
                                                     "CurrentTransaction": null
                                                 }
                                             ]
@@ -15431,6 +15455,11 @@
                                         "type": "string",
                                         "maxLength": 250,
                                         "description": "The payment key of a specific wallet used for the registration"
+                                    },
+                                    "recipientWalletAddress": {
+                                        "type": "string",
+                                        "maxLength": 250,
+                                        "description": "Optional managed hot wallet address on the same payment source that should receive the minted registry NFT. If omitted, the minting wallet receives it."
                                     },
                                     "ExampleOutputs": {
                                         "type": "array",
@@ -15674,6 +15703,7 @@
                                         "other": "Other Legal Information URL"
                                     },
                                     "sellingWalletVkey": "wallet_vkey",
+                                    "recipientWalletAddress": "recipient_wallet_address",
                                     "Capability": {
                                         "name": "Capability Name",
                                         "version": "1.0.0"
@@ -15763,6 +15793,7 @@
                                                 "walletVkey": "wallet_vkey",
                                                 "walletAddress": "wallet_address"
                                             },
+                                            "RecipientWallet": null,
                                             "CurrentTransaction": null
                                         }
                                     }
@@ -15877,6 +15908,7 @@
                                                 "walletVkey": "wallet_vkey",
                                                 "walletAddress": "wallet_address"
                                             },
+                                            "RecipientWallet": null,
                                             "CurrentTransaction": null
                                         }
                                     }
@@ -16219,6 +16251,7 @@
                                                 "walletVkey": "wallet_vkey",
                                                 "walletAddress": "wallet_address"
                                             },
+                                            "RecipientWallet": null,
                                             "CurrentTransaction": null
                                         }
                                     }

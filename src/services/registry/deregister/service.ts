@@ -36,12 +36,30 @@ function findTokenUtxo(utxos: UTxO[], agentIdentifier: string): UTxO {
 	return tokenUtxo;
 }
 
+function resolveDeregistrationWallet(request: {
+	SmartContractWallet: {
+		id: string;
+		Secret: { encryptedMnemonic: string };
+	};
+	DeregistrationHotWallet: {
+		id: string;
+		Secret: { encryptedMnemonic: string };
+	} | null;
+}) {
+	return request.DeregistrationHotWallet ?? request.SmartContractWallet;
+}
+
 async function handlePotentialDeregistrationFailure(
 	result: RetryResult<boolean>,
-	registryRequest: { id: string },
+	registryRequest: {
+		id: string;
+		SmartContractWallet: { id: string };
+		DeregistrationHotWallet: { id: string } | null;
+	},
 ): Promise<void> {
 	if (result.success !== true || result.result !== true) {
 		const error = result.error;
+		const walletToUnlock = registryRequest.DeregistrationHotWallet ?? registryRequest.SmartContractWallet;
 		logger.error(`Error deregistering agent ${registryRequest.id}`, {
 			error: error,
 		});
@@ -50,12 +68,11 @@ async function handlePotentialDeregistrationFailure(
 			data: {
 				state: RegistrationState.DeregistrationFailed,
 				error: interpretBlockchainError(error),
-				SmartContractWallet: {
-					update: {
-						lockedAt: null,
-					},
-				},
 			},
+		});
+		await prisma.hotWallet.update({
+			where: { id: walletToUnlock.id, deletedAt: null },
+			data: { lockedAt: null },
 		});
 	}
 }
@@ -106,11 +123,12 @@ export async function deRegisterAgentV1() {
 					operation: async () => {
 						const request = deregistrationRequest;
 						validateDeregistrationRequest(request);
+						const deregistrationWallet = resolveDeregistrationWallet(request);
 						const walletSession = await loadHotWalletSession({
 							network: paymentSource.network,
 							rpcProviderApiKey: paymentSource.PaymentSourceConfig.rpcProviderApiKey,
-							encryptedMnemonic: request.SmartContractWallet.Secret.encryptedMnemonic,
-							hotWalletId: request.SmartContractWallet.id,
+							encryptedMnemonic: deregistrationWallet.Secret.encryptedMnemonic,
+							hotWalletId: deregistrationWallet.id,
 						});
 						const { wallet, utxos, address } = walletSession;
 
@@ -151,7 +169,7 @@ export async function deRegisterAgentV1() {
 							where: { id: request.id },
 							data: {
 								state: RegistrationState.DeregistrationInitiated,
-								...createPendingTransaction(request.SmartContractWallet.id),
+								...createPendingTransaction(deregistrationWallet.id),
 							},
 						});
 

@@ -21,7 +21,9 @@ export const queryRegistryRequestSchemaInput = z.object({
 	searchQuery: z
 		.string()
 		.optional()
-		.describe('Search query to filter by name, description, tags, wallet address, state, or price'),
+		.describe(
+			'Search query to filter by name, description, tags, minting or recipient wallet address, state, or price',
+		),
 });
 
 export const registryRequestOutputSchema = z
@@ -114,6 +116,13 @@ export const registryRequestOutputSchema = z
 				walletAddress: z.string().describe('Cardano address of the smart contract wallet'),
 			})
 			.describe('Smart contract wallet managing this agent registration'),
+		RecipientWallet: z
+			.object({
+				walletVkey: z.string().describe('Payment key hash of the managed recipient wallet'),
+				walletAddress: z.string().describe('Cardano address of the managed recipient wallet'),
+			})
+			.nullable()
+			.describe('Managed wallet that receives the registry NFT. Null when the minting wallet receives it'),
 		CurrentTransaction: z
 			.object({
 				txHash: z.string().nullable().describe('Cardano transaction hash'),
@@ -150,6 +159,13 @@ export const queryRegistryCountSchemaOutput = z.object({
 export const registerAgentSchemaInput = z.object({
 	network: z.nativeEnum(Network).describe('The Cardano network used to register the agent on'),
 	sellingWalletVkey: z.string().max(250).describe('The payment key of a specific wallet used for the registration'),
+	recipientWalletAddress: z
+		.string()
+		.max(250)
+		.optional()
+		.describe(
+			'Optional managed hot wallet address on the same payment source that should receive the minted registry NFT. If omitted, the minting wallet receives it.',
+		),
 	ExampleOutputs: z
 		.array(
 			z.object({

@@ -293,6 +293,10 @@ export function registerRegistrySupportPaths({ registry, apiKeyAuth }: SwaggerRe
 													walletVkey: 'wallet_vkey',
 													walletAddress: 'wallet_address',
 												},
+												RecipientWallet: {
+													walletVkey: 'recipient_wallet_vkey',
+													walletAddress: 'recipient_wallet_address',
+												},
 												CurrentTransaction: null,
 											},
 										],
@@ -385,6 +389,7 @@ export function registerRegistrySupportPaths({ registry, apiKeyAuth }: SwaggerRe
 									other: 'Other Legal Information URL',
 								},
 								sellingWalletVkey: 'wallet_vkey',
+								recipientWalletAddress: 'recipient_wallet_address',
 								Capability: { name: 'Capability Name', version: '1.0.0' },
 								AgentPricing: {
 									pricingType: PricingType.Fixed,

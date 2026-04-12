@@ -186,6 +186,7 @@ export async function registerAgentV1() {
 
 						const firstUtxo = limitedFilteredUtxos[0];
 						const collateralUtxo = limitedFilteredUtxos[0];
+						const recipientWalletAddress = resolveRecipientWalletAddress(request);
 
 						const assetName = generateAssetName(firstUtxo);
 						const metadata = buildAgentMetadata(request);
@@ -194,6 +195,7 @@ export async function registerAgentV1() {
 							network,
 							script,
 							address,
+							recipientWalletAddress,
 							policyId,
 							assetName,
 							firstUtxo,
@@ -210,6 +212,7 @@ export async function registerAgentV1() {
 							network,
 							script,
 							address,
+							recipientWalletAddress,
 							policyId,
 							assetName,
 							firstUtxo,
@@ -284,6 +287,13 @@ type AgentMetadata = {
 	[key: string]: string | string[] | AgentMetadata | AgentMetadata[] | undefined;
 };
 
+function resolveRecipientWalletAddress(request: {
+	SmartContractWallet: { walletAddress: string };
+	RecipientWallet: { walletAddress: string } | null;
+}) {
+	return request.RecipientWallet?.walletAddress ?? request.SmartContractWallet.walletAddress;
+}
+
 async function generateRegisterAgentTransaction(
 	blockchainProvider: IFetcher,
 	network: Network,
@@ -291,7 +301,8 @@ async function generateRegisterAgentTransaction(
 		version: LanguageVersion;
 		code: string;
 	},
-	walletAddress: string,
+	mintingWalletAddress: string,
+	recipientWalletAddress: string,
 	policyId: string,
 	assetName: string,
 	firstUtxo: UTxO,
@@ -306,7 +317,7 @@ async function generateRegisterAgentTransaction(
 	const txBuilder = new MeshTxBuilder({
 		fetcher: blockchainProvider,
 	});
-	const deserializedAddress = txBuilder.serializer.deserializer.key.deserializeAddress(walletAddress);
+	const deserializedAddress = txBuilder.serializer.deserializer.key.deserializeAddress(mintingWalletAddress);
 	//setup minting data separately as the minting function does not work well with hex encoded strings without some magic
 	txBuilder
 		.txIn(firstUtxo.input.txHash, firstUtxo.input.outputIndex)
@@ -323,7 +334,7 @@ async function generateRegisterAgentTransaction(
 		.txIn(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
 		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
 		.setTotalCollateral(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount)
-		.txOut(walletAddress, [
+		.txOut(recipientWalletAddress, [
 			{
 				unit: policyId + assetName,
 				quantity: SERVICE_CONSTANTS.SMART_CONTRACT.mintQuantity,
@@ -342,6 +353,6 @@ async function generateRegisterAgentTransaction(
 		.metadataValue(SERVICE_CONSTANTS.METADATA.masumiLabel, {
 			msg: ['Masumi', 'RegisterAgent'],
 		})
-		.changeAddress(walletAddress)
+		.changeAddress(mintingWalletAddress)
 		.complete();
 }

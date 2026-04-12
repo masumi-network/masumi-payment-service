@@ -509,7 +509,7 @@ export function AIAgentDetailsDialog({
                         </div>
                         <div className="flex items-center justify-between py-2">
                           <span className="text-sm text-muted-foreground">
-                            Linked Wallet Address
+                            Minting Wallet Address
                           </span>
                           <WalletLink
                             address={agent.SmartContractWallet.walletAddress}
@@ -521,6 +521,22 @@ export function AIAgentDetailsDialog({
                             }
                           />
                         </div>
+                        {agent.RecipientWallet && (
+                          <div className="flex items-center justify-between py-2 border-t">
+                            <span className="text-sm text-muted-foreground">
+                              Recipient Wallet Address
+                            </span>
+                            <WalletLink
+                              address={agent.RecipientWallet.walletAddress}
+                              vkey={agent.RecipientWallet.walletVkey}
+                              network={network}
+                              shorten={4}
+                              onInternalClick={() =>
+                                handleWalletClick(agent.RecipientWallet!.walletVkey)
+                              }
+                            />
+                          </div>
+                        )}
                       </div>
                     </div>
 

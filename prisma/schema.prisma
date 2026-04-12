@@ -91,7 +91,9 @@ model HotWallet {
   Secret                   WalletSecret              @relation(fields: [secretId], references: [id])
   PaymentRequest           PaymentRequest[]
   PurchaseRequest          PurchaseRequest[]
-  RegistryRequest          RegistryRequest[]
+  RegistryRequest          RegistryRequest[]         @relation("RegistryRequestMintingWallet")
+  RecipientRegistryRequest RegistryRequest[]         @relation("RegistryRequestRecipientWallet")
+  DeregistrationRequests   RegistryRequest[]         @relation("RegistryRequestDeregistrationWallet")
   apiKeyWalletScopes       ApiKeyWalletScope[]
   LimitedPurchaseRequests  PurchaseRequest[]         @relation("HotWalletLimit")
   LowBalanceRules          HotWalletLowBalanceRule[]
@@ -199,6 +201,8 @@ model RegistryRequest {
   lastCheckedAt                  DateTime?
   paymentSourceId                String
   smartContractWalletId          String
+  recipientHotWalletId           String?
+  deregistrationHotWalletId      String?
   name                           String
   apiBaseUrl                     String
   capabilityName                 String?
@@ -224,7 +228,12 @@ model RegistryRequest {
   Pricing                        AgentPricing      @relation(fields: [agentPricingId], references: [id])
   CurrentTransaction             Transaction?      @relation(fields: [currentTransactionId], references: [id])
   PaymentSource                  PaymentSource     @relation(fields: [paymentSourceId], references: [id])
-  SmartContractWallet            HotWallet         @relation(fields: [smartContractWalletId], references: [id])
+  SmartContractWallet            HotWallet         @relation("RegistryRequestMintingWallet", fields: [smartContractWalletId], references: [id])
+  RecipientWallet                HotWallet?        @relation("RegistryRequestRecipientWallet", fields: [recipientHotWalletId], references: [id])
+  DeregistrationHotWallet        HotWallet?        @relation("RegistryRequestDeregistrationWallet", fields: [deregistrationHotWalletId], references: [id])
+
+  @@index([recipientHotWalletId])
+  @@index([deregistrationHotWalletId])
 }
 
 model ExampleOutput {

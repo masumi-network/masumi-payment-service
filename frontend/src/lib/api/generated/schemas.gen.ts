@@ -2340,6 +2340,25 @@ export const RegistryEntrySchema = {
             ],
             description: 'Smart contract wallet managing this agent registration'
         },
+        RecipientWallet: {
+            type: 'object',
+            nullable: true,
+            properties: {
+                walletVkey: {
+                    type: 'string',
+                    description: 'Payment key hash of the managed recipient wallet'
+                },
+                walletAddress: {
+                    type: 'string',
+                    description: 'Cardano address of the managed recipient wallet'
+                }
+            },
+            required: [
+                'walletVkey',
+                'walletAddress'
+            ],
+            description: 'Managed wallet that receives the registry NFT. Null when the minting wallet receives it'
+        },
         CurrentTransaction: {
             type: 'object',
             nullable: true,
@@ -2409,6 +2428,7 @@ export const RegistryEntrySchema = {
         'agentIdentifier',
         'AgentPricing',
         'SmartContractWallet',
+        'RecipientWallet',
         'CurrentTransaction'
     ]
 } as const;

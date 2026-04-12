@@ -110,6 +110,10 @@ describe('route serializers', () => {
 					Amounts: [{ unit: 'lovelace', amount: BigInt(1_000_000) }],
 				},
 			},
+			RecipientWallet: {
+				walletVkey: 'recipient-vkey',
+				walletAddress: 'recipient-address',
+			},
 			CurrentTransaction: {
 				txHash: 'tx-1',
 				status: TransactionStatus.Pending,
@@ -126,6 +130,10 @@ describe('route serializers', () => {
 		expect(serialized.AgentPricing).toEqual({
 			pricingType: PricingType.Fixed,
 			Pricing: [{ unit: 'lovelace', amount: '1000000' }],
+		});
+		expect(serialized.RecipientWallet).toEqual({
+			walletVkey: 'recipient-vkey',
+			walletAddress: 'recipient-address',
 		});
 		expect(serialized.CurrentTransaction?.fees).toBe('777');
 	});

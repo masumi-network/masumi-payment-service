@@ -84,6 +84,9 @@ export const queryRegistryDiffGet = readAuthenticatedEndpointFactory.build({
 				SmartContractWallet: {
 					select: { walletVkey: true, walletAddress: true },
 				},
+				RecipientWallet: {
+					select: { walletVkey: true, walletAddress: true },
+				},
 				CurrentTransaction: {
 					select: {
 						txHash: true,
@@ -147,6 +150,7 @@ export const queryRegistryDiffGet = readAuthenticatedEndpointFactory.build({
 								pricingType: item.Pricing.pricingType,
 							},
 				Tags: item.tags,
+				RecipientWallet: item.RecipientWallet,
 				CurrentTransaction: item.CurrentTransaction
 					? {
 							...item.CurrentTransaction,

@@ -9,7 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Badge } from '../ui/badge';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { PaymentSourceExtended, postRegistry, SellingWallet } from '@/lib/api/generated';
@@ -69,6 +69,7 @@ const createAgentSchema = (network: 'Mainnet' | 'Preprod') => {
         .min(1, 'Description is required')
         .max(250, 'Description must be less than 250 characters'),
       selectedWallet: z.string().min(1, 'Wallet is required'),
+      recipientWalletAddress: z.string().optional().or(z.literal('')),
       prices: z.array(priceSchema),
       tags: z.array(z.string().min(1)).min(1, 'At least one tag is required'),
       pricingType: z.enum(['Fixed', 'Free', 'Dynamic']),
@@ -165,6 +166,7 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
       name: '',
       description: '',
       selectedWallet: '',
+      recipientWalletAddress: '',
       prices: [{ unit: 'lovelace', amount: '' }],
       tags: [],
       pricingType: 'Fixed',
@@ -208,6 +210,8 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
   }, [paymentSources, network]);
 
   const tags = watch('tags');
+  const selectedWalletVkey = watch('selectedWallet');
+  const selectedRecipientWalletAddress = watch('recipientWalletAddress');
   const [tagInput, setTagInput] = useState('');
   useEffect(() => {
     setSellingWallets(
@@ -232,6 +236,41 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
       reset();
     }
   }, [open, reset]);
+
+  const selectedWallet = useMemo(
+    () => sellingWallets.find((wallet) => wallet.wallet.walletVkey === selectedWalletVkey),
+    [sellingWallets, selectedWalletVkey],
+  );
+  const selectedPaymentSource = useMemo(
+    () =>
+      currentNetworkPaymentSources.find((paymentSource) =>
+        paymentSource.SellingWallets?.some((wallet) => wallet.walletVkey === selectedWalletVkey),
+      ),
+    [currentNetworkPaymentSources, selectedWalletVkey],
+  );
+  const recipientWalletOptions = useMemo(
+    () =>
+      selectedPaymentSource
+        ? [
+            ...(selectedPaymentSource.SellingWallets ?? []),
+            ...(selectedPaymentSource.PurchasingWallets ?? []),
+          ].filter((wallet) => wallet.walletAddress !== selectedWallet?.wallet.walletAddress)
+        : [],
+    [selectedPaymentSource, selectedWallet?.wallet.walletAddress],
+  );
+
+  useEffect(() => {
+    if (!selectedRecipientWalletAddress) {
+      return;
+    }
+
+    const isRecipientStillAvailable = recipientWalletOptions.some(
+      (wallet) => wallet.walletAddress === selectedRecipientWalletAddress,
+    );
+    if (!isRecipientStillAvailable) {
+      setValue('recipientWalletAddress', '');
+    }
+  }, [recipientWalletOptions, selectedRecipientWalletAddress, setValue]);
 
   const onSubmit = useCallback(
     async (data: AgentFormValues) => {
@@ -287,6 +326,7 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
           body: {
             network: network,
             sellingWalletVkey: selectedWalletVkey,
+            recipientWalletAddress: data.recipientWalletAddress || undefined,
             name: data.name,
             description: data.description,
             apiBaseUrl: data.apiUrl,
@@ -460,6 +500,52 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
             />
             {errors.selectedWallet && (
               <p className="text-sm text-red-500">{errors.selectedWallet.message}</p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Recipient wallet</label>
+            <Controller
+              control={control}
+              name="recipientWalletAddress"
+              render={({ field }) => (
+                <Select
+                  value={field.value || '__default'}
+                  onValueChange={(value) => field.onChange(value === '__default' ? '' : value)}
+                >
+                  <SelectTrigger
+                    disabled={isLoadingWallets || !selectedPaymentSource}
+                    className={isLoadingWallets ? 'opacity-50 cursor-not-allowed' : ''}
+                  >
+                    <SelectValue
+                      placeholder={
+                        !selectedPaymentSource
+                          ? 'Select a linked wallet first'
+                          : 'Use linked wallet (default)'
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__default">Use linked wallet (default)</SelectItem>
+                    {recipientWalletOptions.map((wallet) => (
+                      <SelectItem key={wallet.id} value={wallet.walletAddress}>
+                        {wallet.note
+                          ? `${wallet.note} (${shortenAddress(wallet.walletAddress)})`
+                          : shortenAddress(wallet.walletAddress)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+            <p className="text-xs text-muted-foreground">
+              Optional. The selected linked wallet still mints and pays fees, while the registry NFT
+              is delivered to another managed wallet on the same payment source.
+            </p>
+            {selectedPaymentSource && recipientWalletOptions.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                No other managed wallets are available on this payment source.
+              </p>
             )}
           </div>
           {/* Pricing Type */}
