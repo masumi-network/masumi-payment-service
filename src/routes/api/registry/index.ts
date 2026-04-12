@@ -4,7 +4,7 @@ import { z } from '@/utils/zod-openapi';
 import { HotWalletType, PaymentType, PricingType, RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
-import { DEFAULTS } from '@/utils/config';
+import { DEFAULTS, SERVICE_CONSTANTS } from '@/utils/config';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { recordBusinessEndpointError } from '@/utils/metrics';
@@ -37,6 +37,20 @@ export {
 	registerAgentSchemaOutput,
 	registryRequestOutputSchema,
 };
+
+const minimumRegistryFundingLovelace = BigInt(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount);
+
+function normalizeSendFundingLovelace(sendFundingLovelace?: string): bigint | undefined {
+	if (sendFundingLovelace == null) {
+		return undefined;
+	}
+
+	const requestedFundingLovelace = BigInt(sendFundingLovelace);
+	return requestedFundingLovelace > minimumRegistryFundingLovelace
+		? requestedFundingLovelace
+		: minimumRegistryFundingLovelace;
+}
+
 export const queryRegistryRequestGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: queryRegistryRequestSchemaInput,
@@ -115,6 +129,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 			assertHotWalletInScope(ctx.walletScopeIds, sellingWallet.id);
 
 			const recipientWalletAddress = input.recipientWalletAddress?.trim();
+			const sendFundingLovelace = normalizeSendFundingLovelace(input.sendFundingLovelace);
 			let recipientWallet: { id: string; walletVkey: string; walletAddress: string } | null = null;
 			if (recipientWalletAddress && recipientWalletAddress !== sellingWallet.walletAddress) {
 				recipientWallet = await prisma.hotWallet.findFirst({
@@ -193,6 +208,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 					authorContactEmail: input.Author.contactEmail,
 					authorContactOther: input.Author.contactOther,
 					authorOrganization: input.Author.organization,
+					sendFundingLovelace,
 					state: RegistrationState.RegistrationRequested,
 					agentIdentifier: null,
 					metadataVersion: DEFAULTS.DEFAULT_METADATA_VERSION,
@@ -311,6 +327,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 						: {
 								pricingType: result.Pricing.pricingType,
 							},
+				sendFundingLovelace: result.sendFundingLovelace?.toString() ?? null,
 				Tags: result.tags,
 				RecipientWallet: result.RecipientWallet,
 				CurrentTransaction: result.CurrentTransaction
@@ -461,6 +478,7 @@ export const deleteAgentRegistration = adminAuthenticatedEndpointFactory.build({
 						: {
 								pricingType: item.Pricing.pricingType,
 							},
+				sendFundingLovelace: item.sendFundingLovelace?.toString() ?? null,
 				Tags: item.tags,
 				RecipientWallet: item.RecipientWallet,
 				CurrentTransaction: item.CurrentTransaction

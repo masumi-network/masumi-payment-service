@@ -155,6 +155,7 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 					: {
 							pricingType: result.Pricing.pricingType,
 						},
+			sendFundingLovelace: result.sendFundingLovelace?.toString() ?? null,
 			Tags: result.tags,
 			RecipientWallet: result.RecipientWallet,
 			CurrentTransaction: result.CurrentTransaction

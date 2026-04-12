@@ -203,6 +203,7 @@ model RegistryRequest {
   smartContractWalletId          String
   recipientHotWalletId           String?
   deregistrationHotWalletId      String?
+  sendFundingLovelace            BigInt?
   name                           String
   apiBaseUrl                     String
   capabilityName                 String?

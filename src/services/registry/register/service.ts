@@ -20,6 +20,7 @@ import {
 } from '@/services/shared';
 
 const mutex = new Mutex();
+const minimumRegistryFundingLovelace = BigInt(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount);
 
 function validateRegistrationPricing(request: {
 	Pricing: {
@@ -187,6 +188,7 @@ export async function registerAgentV1() {
 						const firstUtxo = limitedFilteredUtxos[0];
 						const collateralUtxo = limitedFilteredUtxos[0];
 						const recipientWalletAddress = resolveRecipientWalletAddress(request);
+						const fundingLovelace = resolveRegistryFundingLovelace(request);
 
 						const assetName = generateAssetName(firstUtxo);
 						const metadata = buildAgentMetadata(request);
@@ -196,6 +198,7 @@ export async function registerAgentV1() {
 							script,
 							address,
 							recipientWalletAddress,
+							fundingLovelace,
 							policyId,
 							assetName,
 							firstUtxo,
@@ -213,6 +216,7 @@ export async function registerAgentV1() {
 							script,
 							address,
 							recipientWalletAddress,
+							fundingLovelace,
 							policyId,
 							assetName,
 							firstUtxo,
@@ -294,6 +298,14 @@ function resolveRecipientWalletAddress(request: {
 	return request.RecipientWallet?.walletAddress ?? request.SmartContractWallet.walletAddress;
 }
 
+export function resolveRegistryFundingLovelace(request: { sendFundingLovelace: bigint | null }) {
+	if (request.sendFundingLovelace == null || request.sendFundingLovelace < minimumRegistryFundingLovelace) {
+		return minimumRegistryFundingLovelace.toString();
+	}
+
+	return request.sendFundingLovelace.toString();
+}
+
 async function generateRegisterAgentTransaction(
 	blockchainProvider: IFetcher,
 	network: Network,
@@ -303,6 +315,7 @@ async function generateRegisterAgentTransaction(
 	},
 	mintingWalletAddress: string,
 	recipientWalletAddress: string,
+	fundingLovelace: string,
 	policyId: string,
 	assetName: string,
 	firstUtxo: UTxO,
@@ -341,7 +354,7 @@ async function generateRegisterAgentTransaction(
 			},
 			{
 				unit: SERVICE_CONSTANTS.CARDANO.NATIVE_TOKEN,
-				quantity: SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount,
+				quantity: fundingLovelace,
 			},
 		]);
 	for (const utxo of utxos) {

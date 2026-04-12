@@ -35,6 +35,11 @@ jest.unstable_mockModule('@/utils/config', () => ({
 	DEFAULTS: {
 		DEFAULT_METADATA_VERSION: 1,
 	},
+	SERVICE_CONSTANTS: {
+		SMART_CONTRACT: {
+			collateralAmount: '5000000',
+		},
+	},
 }));
 
 jest.unstable_mockModule('@/utils/logger', () => ({
@@ -102,7 +107,10 @@ function buildSellingWallet() {
 	};
 }
 
-function buildRegistryRequestResponse(recipientWallet: { walletVkey: string; walletAddress: string } | null) {
+function buildRegistryRequestResponse(
+	recipientWallet: { walletVkey: string; walletAddress: string } | null,
+	sendFundingLovelace: bigint | null = null,
+) {
 	return {
 		id: 'registry-request-1',
 		error: null,
@@ -129,6 +137,7 @@ function buildRegistryRequestResponse(recipientWallet: { walletVkey: string; wal
 			pricingType: PricingType.Free,
 			FixedPricing: null,
 		},
+		sendFundingLovelace,
 		SmartContractWallet: {
 			walletVkey: 'selling-wallet-vkey',
 			walletAddress: 'addr_test1sellingwallet',
@@ -178,7 +187,9 @@ describe('registerAgentPost', () => {
 		expect(responseMock.statusCode).toBe(200);
 		expect(mockFindRecipientWallet).not.toHaveBeenCalled();
 		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.RecipientWallet).toBeUndefined();
+		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.sendFundingLovelace).toBeUndefined();
 		expect(responseMock._getJSONData().data.RecipientWallet).toBeNull();
+		expect(responseMock._getJSONData().data.sendFundingLovelace).toBeNull();
 	});
 
 	it('stores a managed recipient wallet override when provided', async () => {
@@ -244,6 +255,42 @@ describe('registerAgentPost', () => {
 			walletVkey: 'recipient-wallet-vkey',
 			walletAddress: 'addr_test1recipientwallet',
 		});
+	});
+
+	it('stores a normalized send funding lovelace override when provided', async () => {
+		mockCreateRegistryRequest.mockResolvedValue(buildRegistryRequestResponse(null, BigInt(5_000_000)));
+
+		const { responseMock } = await testEndpoint({
+			endpoint: registerAgentPost,
+			requestProps: {
+				method: 'POST',
+				headers: { token: 'valid' },
+				body: {
+					network: Network.Preprod,
+					sellingWalletVkey: 'selling-wallet-vkey',
+					sendFundingLovelace: '2000000',
+					name: 'Test Agent',
+					description: 'Agent description',
+					apiBaseUrl: 'https://example.com/agent',
+					Tags: ['demo'],
+					Capability: {
+						name: 'demo',
+						version: '1.0.0',
+					},
+					AgentPricing: {
+						pricingType: PricingType.Free,
+					},
+					Author: {
+						name: 'Author',
+					},
+					ExampleOutputs: [],
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(200);
+		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.sendFundingLovelace).toBe(BigInt(5_000_000));
+		expect(responseMock._getJSONData().data.sendFundingLovelace).toBe('5000000');
 	});
 
 	it('rejects recipient wallets outside the caller scope', async () => {

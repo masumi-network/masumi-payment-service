@@ -110,6 +110,7 @@ describe('route serializers', () => {
 					Amounts: [{ unit: 'lovelace', amount: BigInt(1_000_000) }],
 				},
 			},
+			sendFundingLovelace: BigInt(7_500_000),
 			RecipientWallet: {
 				walletVkey: 'recipient-vkey',
 				walletAddress: 'recipient-address',
@@ -135,6 +136,7 @@ describe('route serializers', () => {
 			walletVkey: 'recipient-vkey',
 			walletAddress: 'recipient-address',
 		});
+		expect(serialized.sendFundingLovelace).toBe('7500000');
 		expect(serialized.CurrentTransaction?.fees).toBe('777');
 	});
 

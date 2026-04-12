@@ -65,6 +65,7 @@ import {
 } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { extractApiErrorMessage } from '@/lib/api-error';
+import { REGISTRY_LIMITS } from '@/lib/registry-validation';
 
 function formatNetworkDisplay(networkType: string): string {
   return networkType?.toUpperCase() === 'MAINNET' ? 'Mainnet' : 'Preprod';
@@ -1067,10 +1068,13 @@ function AddAiAgentScreen({
     unit: z.enum(['lovelace', stablecoinUnit] as const, {
       error: () => 'Token is required',
     }),
-    amount: z.string().refine((val) => {
-      if (val === '0' || val === '0.0' || val === '0.00') return true;
-      return !isNaN(parseFloat(val)) && parseFloat(val) >= 0;
-    }, 'Amount must be a valid number >= 0'),
+    amount: z
+      .string()
+      .max(REGISTRY_LIMITS.lovelaceAmount, 'Amount must be less than 25 characters')
+      .refine((val) => {
+        if (val === '0' || val === '0.0' || val === '0.00') return true;
+        return !isNaN(parseFloat(val)) && parseFloat(val) >= 0;
+      }, 'Amount must be a valid number >= 0'),
   });
 
   const agentSchema = z
@@ -1078,59 +1082,78 @@ function AddAiAgentScreen({
       apiUrl: z
         .string()
         .url('API URL must be a valid URL')
+        .max(REGISTRY_LIMITS.apiBaseUrl, 'API URL must be less than 250 characters')
         .min(1, 'API URL is required')
         .refine((val) => val.startsWith('http://') || val.startsWith('https://'), {
           message: 'API URL must start with http:// or https://',
         }),
-      name: z.string().min(1, 'Name is required'),
+      name: z
+        .string()
+        .min(1, 'Name is required')
+        .max(REGISTRY_LIMITS.agentName, 'Name must be less than 250 characters'),
       description: z
         .string()
         .min(1, 'Description is required')
-        .max(250, 'Description must be less than 250 characters'),
-      prices: z.array(priceSchema),
-      tags: z.array(z.string().min(1)).min(1, 'At least one tag is required'),
+        .max(REGISTRY_LIMITS.description, 'Description must be less than 250 characters'),
+      prices: z
+        .array(priceSchema)
+        .max(REGISTRY_LIMITS.pricingOptionCount, 'You can add at most 5 prices'),
+      tags: z
+        .array(z.string().min(1).max(REGISTRY_LIMITS.tag, 'Tags must be less than 63 characters'))
+        .min(1, 'At least one tag is required')
+        .max(REGISTRY_LIMITS.tagCount, 'You can add at most 15 tags'),
       pricingType: z.enum(['Fixed', 'Free', 'Dynamic']),
       // Additional Fields
       authorName: z
         .string()
-        .max(250, 'Author name must be less than 250 characters')
+        .max(REGISTRY_LIMITS.authorName, 'Author name must be less than 250 characters')
         .optional()
         .or(z.literal('')),
       authorEmail: z
         .string()
         .email('Author email must be a valid email')
-        .max(250, 'Author email must be less than 250 characters')
+        .max(REGISTRY_LIMITS.authorContact, 'Author email must be less than 250 characters')
         .optional()
         .or(z.literal('')),
       organization: z
         .string()
-        .max(250, 'Organization must be less than 250 characters')
+        .max(REGISTRY_LIMITS.authorContact, 'Organization must be less than 250 characters')
         .optional()
         .or(z.literal('')),
       contactOther: z
         .string()
-        .max(250, 'Contact other must be less than 250 characters')
+        .max(REGISTRY_LIMITS.authorContact, 'Contact other must be less than 250 characters')
         .optional()
         .or(z.literal('')),
       termsOfUseUrl: z
         .string()
         .url('Terms of use URL must be a valid URL')
+        .max(REGISTRY_LIMITS.legalUrl, 'Terms of use URL must be less than 250 characters')
         .optional()
         .or(z.literal('')),
       privacyPolicyUrl: z
         .string()
         .url('Privacy policy URL must be a valid URL')
+        .max(REGISTRY_LIMITS.legalUrl, 'Privacy policy URL must be less than 250 characters')
         .optional()
         .or(z.literal('')),
-      otherUrl: z.string().url('Other URL must be a valid URL').optional().or(z.literal('')),
+      otherUrl: z
+        .string()
+        .url('Other URL must be a valid URL')
+        .max(REGISTRY_LIMITS.legalUrl, 'Other URL must be less than 250 characters')
+        .optional()
+        .or(z.literal('')),
       capabilityName: z
         .string()
-        .max(250, 'Capability name must be less than 250 characters')
+        .max(REGISTRY_LIMITS.capabilityName, 'Capability name must be less than 250 characters')
         .optional()
         .or(z.literal('')),
       capabilityVersion: z
         .string()
-        .max(50, 'Capability version must be less than 50 characters')
+        .max(
+          REGISTRY_LIMITS.capabilityVersion,
+          'Capability version must be less than 250 characters',
+        )
         .optional()
         .or(z.literal('')),
     })
@@ -1293,6 +1316,10 @@ function AddAiAgentScreen({
 
   const handleAddTag = () => {
     const tag = tagInput.trim();
+    if (tags.length >= REGISTRY_LIMITS.tagCount) {
+      return;
+    }
+
     if (tag && !tags.includes(tag)) {
       setValue('tags', [...tags, tag]);
     }
@@ -1405,9 +1432,9 @@ function AddAiAgentScreen({
                 <Wallet className="h-5 w-5 text-orange-600" />
               </div>
               <div>
-                <CardTitle className="text-base">Linked wallet</CardTitle>
+                <CardTitle className="text-base">Minting wallet</CardTitle>
                 <CardDescription className="mt-0.5">
-                  Payments will be sent to this selling wallet
+                  This selling wallet signs the mint transaction and pays the fees
                 </CardDescription>
               </div>
             </div>
@@ -1416,7 +1443,7 @@ function AddAiAgentScreen({
             <div className="flex items-center justify-between rounded-lg border-2 border-orange-500/20 bg-orange-500/5 px-4 py-3 transition-all hover:bg-orange-500/10">
               <div className="flex items-center gap-3 min-w-0">
                 <Badge className="shrink-0 bg-orange-600 hover:bg-orange-600 gap-1">
-                  <Wallet className="h-3 w-3" /> Selling
+                  <Wallet className="h-3 w-3" /> Minting
                 </Badge>
                 {sellingWallet?.address ? (
                   <WalletLink address={sellingWallet.address} network={network} shorten={10} />
@@ -1527,7 +1554,10 @@ function AddAiAgentScreen({
                   variant="outline"
                   size="sm"
                   className="gap-1.5"
-                  disabled={watch('pricingType') !== 'Fixed'}
+                  disabled={
+                    watch('pricingType') !== 'Fixed' ||
+                    priceFields.length >= REGISTRY_LIMITS.pricingOptionCount
+                  }
                   onClick={() => appendPrice({ unit: 'lovelace', amount: '' })}
                 >
                   <span className="text-lg leading-none">+</span> Add price option
@@ -1546,6 +1576,7 @@ function AddAiAgentScreen({
                 <Input
                   placeholder="Type a tag and press Enter"
                   value={tagInput}
+                  maxLength={REGISTRY_LIMITS.tag}
                   onChange={(e) => setTagInput(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
@@ -1555,7 +1586,12 @@ function AddAiAgentScreen({
                   }}
                   className={errors.tags ? 'border-destructive' : ''}
                 />
-                <Button type="button" variant="outline" onClick={handleAddTag}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={tags.length >= REGISTRY_LIMITS.tagCount}
+                  onClick={handleAddTag}
+                >
                   Add
                 </Button>
               </div>

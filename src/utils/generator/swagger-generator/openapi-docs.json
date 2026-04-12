@@ -2335,6 +2335,11 @@
                         ],
                         "description": "Pricing information for the agent"
                     },
+                    "sendFundingLovelace": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Effective lovelace amount explicitly configured for the NFT output. Null means the default minimum NFT funding is used."
+                    },
                     "SmartContractWallet": {
                         "type": "object",
                         "properties": {
@@ -2440,6 +2445,7 @@
                     "ExampleOutputs",
                     "agentIdentifier",
                     "AgentPricing",
+                    "sendFundingLovelace",
                     "SmartContractWallet",
                     "RecipientWallet",
                     "CurrentTransaction"
@@ -15461,6 +15467,12 @@
                                         "maxLength": 250,
                                         "description": "Optional managed hot wallet address on the same payment source that should receive the minted registry NFT. If omitted, the minting wallet receives it."
                                     },
+                                    "sendFundingLovelace": {
+                                        "type": "string",
+                                        "maxLength": 25,
+                                        "pattern": "^\\d+$",
+                                        "description": "Optional lovelace amount to include with the minted NFT output. If provided below the minimum NFT funding, the current minimum is still used."
+                                    },
                                     "ExampleOutputs": {
                                         "type": "array",
                                         "items": {
@@ -15704,6 +15716,7 @@
                                     },
                                     "sellingWalletVkey": "wallet_vkey",
                                     "recipientWalletAddress": "recipient_wallet_address",
+                                    "sendFundingLovelace": "7500000",
                                     "Capability": {
                                         "name": "Capability Name",
                                         "version": "1.0.0"
@@ -15789,6 +15802,7 @@
                                                     }
                                                 ]
                                             },
+                                            "sendFundingLovelace": null,
                                             "SmartContractWallet": {
                                                 "walletVkey": "wallet_vkey",
                                                 "walletAddress": "wallet_address"
@@ -15904,6 +15918,7 @@
                                                     }
                                                 ]
                                             },
+                                            "sendFundingLovelace": null,
                                             "SmartContractWallet": {
                                                 "walletVkey": "wallet_vkey",
                                                 "walletAddress": "wallet_address"
@@ -16247,6 +16262,7 @@
                                                     }
                                                 ]
                                             },
+                                            "sendFundingLovelace": null,
                                             "SmartContractWallet": {
                                                 "walletVkey": "wallet_vkey",
                                                 "walletAddress": "wallet_address"

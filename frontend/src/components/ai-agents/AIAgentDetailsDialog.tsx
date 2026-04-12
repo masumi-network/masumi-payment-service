@@ -89,6 +89,17 @@ export function AIAgentDetailsDialog({
     () => paymentSources.filter((paymentSource) => paymentSource.network === network),
     [paymentSources, network],
   );
+  const holdingWallet = useMemo(
+    () => (agent ? (agent.RecipientWallet ?? agent.SmartContractWallet) : null),
+    [agent],
+  );
+  const usesCombinedWallet = useMemo(
+    () =>
+      agent != null &&
+      holdingWallet != null &&
+      holdingWallet.walletVkey === agent.SmartContractWallet.walletVkey,
+    [agent, holdingWallet],
+  );
 
   // Update activeTab when initialTab changes (when dialog opens with different tab)
   useEffect(() => {
@@ -507,34 +518,59 @@ export function AIAgentDetailsDialog({
                             <CopyButton value={agent.agentIdentifier || ''} />
                           </div>
                         </div>
-                        <div className="flex items-center justify-between py-2">
-                          <span className="text-sm text-muted-foreground">
-                            Minting Wallet Address
-                          </span>
-                          <WalletLink
-                            address={agent.SmartContractWallet.walletAddress}
-                            vkey={agent.SmartContractWallet.walletVkey}
-                            network={network}
-                            shorten={4}
-                            onInternalClick={() =>
-                              handleWalletClick(agent.SmartContractWallet.walletVkey)
-                            }
-                          />
-                        </div>
-                        {agent.RecipientWallet && (
-                          <div className="flex items-center justify-between py-2 border-t">
+                        {usesCombinedWallet && holdingWallet ? (
+                          <div className="flex items-center justify-between py-2">
                             <span className="text-sm text-muted-foreground">
-                              Recipient Wallet Address
+                              Minting & Holding Wallet
                             </span>
                             <WalletLink
-                              address={agent.RecipientWallet.walletAddress}
-                              vkey={agent.RecipientWallet.walletVkey}
+                              address={holdingWallet.walletAddress}
+                              vkey={holdingWallet.walletVkey}
                               network={network}
                               shorten={4}
-                              onInternalClick={() =>
-                                handleWalletClick(agent.RecipientWallet!.walletVkey)
-                              }
+                              onInternalClick={() => handleWalletClick(holdingWallet.walletVkey)}
                             />
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex items-center justify-between py-2">
+                              <span className="text-sm text-muted-foreground">Minting Wallet</span>
+                              <WalletLink
+                                address={agent.SmartContractWallet.walletAddress}
+                                vkey={agent.SmartContractWallet.walletVkey}
+                                network={network}
+                                shorten={4}
+                                onInternalClick={() =>
+                                  handleWalletClick(agent.SmartContractWallet.walletVkey)
+                                }
+                              />
+                            </div>
+                            {holdingWallet && (
+                              <div className="flex items-center justify-between py-2 border-t">
+                                <span className="text-sm text-muted-foreground">
+                                  Holding Wallet
+                                </span>
+                                <WalletLink
+                                  address={holdingWallet.walletAddress}
+                                  vkey={holdingWallet.walletVkey}
+                                  network={network}
+                                  shorten={4}
+                                  onInternalClick={() =>
+                                    handleWalletClick(holdingWallet.walletVkey)
+                                  }
+                                />
+                              </div>
+                            )}
+                          </>
+                        )}
+                        {agent.sendFundingLovelace && (
+                          <div className="flex items-center justify-between py-2 border-t">
+                            <span className="text-sm text-muted-foreground">
+                              Holding Wallet Funding Override
+                            </span>
+                            <span className="font-mono text-sm">
+                              {formatPrice(agent.sendFundingLovelace)} ADA
+                            </span>
                           </div>
                         )}
                       </div>

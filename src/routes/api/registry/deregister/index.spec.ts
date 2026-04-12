@@ -36,6 +36,11 @@ jest.unstable_mockModule('@/utils/config', () => ({
 		PAYMENT_SMART_CONTRACT_ADDRESS_MAINNET: 'addr1default',
 		PAYMENT_SMART_CONTRACT_ADDRESS_PREPROD: 'addr_test1default',
 	},
+	SERVICE_CONSTANTS: {
+		SMART_CONTRACT: {
+			collateralAmount: '5000000',
+		},
+	},
 }));
 
 jest.unstable_mockModule('@/utils/logger', () => ({
@@ -122,6 +127,7 @@ function buildRegistryUpdateResponse() {
 			pricingType: PricingType.Free,
 			FixedPricing: null,
 		},
+		sendFundingLovelace: BigInt(7_500_000),
 		SmartContractWallet: {
 			walletVkey: 'selling-wallet-vkey',
 			walletAddress: 'addr_test1sellingwallet',
@@ -198,6 +204,7 @@ describe('unregisterAgentPost', () => {
 			walletVkey: 'recipient-wallet-vkey',
 			walletAddress: 'addr_test1recipientwallet',
 		});
+		expect(responseMock._getJSONData().data.sendFundingLovelace).toBe('7500000');
 	});
 
 	it('returns 409 when the asset is no longer held by a managed wallet', async () => {

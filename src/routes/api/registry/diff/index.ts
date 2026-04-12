@@ -149,6 +149,7 @@ export const queryRegistryDiffGet = readAuthenticatedEndpointFactory.build({
 						: {
 								pricingType: item.Pricing.pricingType,
 							},
+				sendFundingLovelace: item.sendFundingLovelace?.toString() ?? null,
 				Tags: item.tags,
 				RecipientWallet: item.RecipientWallet,
 				CurrentTransaction: item.CurrentTransaction

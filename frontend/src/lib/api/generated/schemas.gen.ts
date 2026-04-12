@@ -2322,6 +2322,11 @@ export const RegistryEntrySchema = {
             ],
             description: 'Pricing information for the agent'
         },
+        sendFundingLovelace: {
+            type: 'string',
+            nullable: true,
+            description: 'Effective lovelace amount explicitly configured for the NFT output. Null means the default minimum NFT funding is used.'
+        },
         SmartContractWallet: {
             type: 'object',
             properties: {
@@ -2427,6 +2432,7 @@ export const RegistryEntrySchema = {
         'ExampleOutputs',
         'agentIdentifier',
         'AgentPricing',
+        'sendFundingLovelace',
         'SmartContractWallet',
         'RecipientWallet',
         'CurrentTransaction'

@@ -390,6 +390,7 @@ export function registerRegistrySupportPaths({ registry, apiKeyAuth }: SwaggerRe
 								},
 								sellingWalletVkey: 'wallet_vkey',
 								recipientWalletAddress: 'recipient_wallet_address',
+								sendFundingLovelace: '7500000',
 								Capability: { name: 'Capability Name', version: '1.0.0' },
 								AgentPricing: {
 									pricingType: PricingType.Fixed,

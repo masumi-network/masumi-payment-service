@@ -1259,6 +1259,10 @@ export type RegistryEntry = {
         pricingType: 'Dynamic';
     };
     /**
+     * Effective lovelace amount explicitly configured for the NFT output. Null means the default minimum NFT funding is used.
+     */
+    sendFundingLovelace: string | null;
+    /**
      * Smart contract wallet managing this agent registration
      */
     SmartContractWallet: {
@@ -7276,6 +7280,10 @@ export type PostRegistryData = {
          * Optional managed hot wallet address on the same payment source that should receive the minted registry NFT. If omitted, the minting wallet receives it.
          */
         recipientWalletAddress?: string;
+        /**
+         * Optional lovelace amount to include with the minted NFT output. If provided below the minimum NFT funding, the current minimum is still used.
+         */
+        sendFundingLovelace?: string;
         /**
          * List of example outputs from the agent
          */
