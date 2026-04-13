@@ -24,6 +24,7 @@ import { useTheme } from '@/lib/contexts/ThemeContext';
 import { useSidebar } from '@/lib/contexts/SidebarContext';
 import { cn } from '@/lib/utils';
 import { useTransactions } from '@/lib/hooks/useTransactions';
+import { useWalletAlertNotifications } from '@/lib/hooks/useWalletAlertNotifications';
 import { NotificationsDialog } from '@/components/notifications/NotificationsDialog';
 import { SearchDialog } from '@/components/search/SearchDialog';
 import {
@@ -42,6 +43,16 @@ import { NetworkSourceCard } from '@/components/layout/PaymentSourceSelector';
 interface MainLayoutProps {
   children: React.ReactNode;
 }
+
+type NavItem = {
+  href: string;
+  name: string;
+  icon: React.ReactNode;
+  badge: string | null;
+  group: number;
+  notificationDot?: boolean;
+  notificationLabel?: string;
+};
 
 export function MainLayout({ children }: MainLayoutProps) {
   const router = useRouter();
@@ -129,8 +140,22 @@ export function MainLayout({ children }: MainLayoutProps) {
     () => paymentSources.some((ps) => ps.network === network),
     [paymentSources, network],
   );
+  const {
+    activeWalletAlertCount,
+    unacknowledgedWalletAlertCount,
+    unacknowledgedWalletAlerts,
+    acknowledgeWalletAlerts,
+  } = useWalletAlertNotifications();
+  const walletAlertLabel = useMemo(() => {
+    if (activeWalletAlertCount === 0) return undefined;
 
-  const navItems = useMemo(() => {
+    return activeWalletAlertCount === 1
+      ? '1 wallet has an active low-balance alert'
+      : `${activeWalletAlertCount} wallets have active low-balance alerts`;
+  }, [activeWalletAlertCount]);
+  const notificationCount = newTransactionsCount + unacknowledgedWalletAlertCount;
+
+  const navItems = useMemo<NavItem[]>(() => {
     // While in setup mode, show only the setup sidebar
     if (isSetupMode || !hasPaymentSources) {
       return [
@@ -149,6 +174,13 @@ export function MainLayout({ children }: MainLayoutProps) {
           group: 1,
         },
         {
+          href: '/webhooks',
+          name: 'Webhooks',
+          icon: <Bell className="h-4 w-4" />,
+          badge: null,
+          group: 1,
+        },
+        {
           href: '/developers',
           name: 'Developers',
           icon: <Code className="h-4 w-4 text-violet-500" />,
@@ -157,6 +189,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         },
       ];
     }
+
     return [
       {
         href: '/',
@@ -178,6 +211,8 @@ export function MainLayout({ children }: MainLayoutProps) {
         icon: <Wallet className="h-4 w-4" />,
         badge: null,
         group: 0,
+        notificationDot: activeWalletAlertCount > 0,
+        notificationLabel: walletAlertLabel,
       },
       {
         href: '/transactions',
@@ -201,6 +236,13 @@ export function MainLayout({ children }: MainLayoutProps) {
         group: 1,
       },
       {
+        href: '/webhooks',
+        name: 'Webhooks',
+        icon: <Bell className="h-4 w-4" />,
+        badge: null,
+        group: 1,
+      },
+      {
         href: '/developers',
         name: 'Developers',
         icon: <Code className="h-4 w-4 text-violet-500" />,
@@ -208,7 +250,13 @@ export function MainLayout({ children }: MainLayoutProps) {
         group: 1,
       },
     ];
-  }, [isSetupMode, hasPaymentSources, newTransactionsCount]);
+  }, [
+    isSetupMode,
+    hasPaymentSources,
+    newTransactionsCount,
+    activeWalletAlertCount,
+    walletAlertLabel,
+  ]);
 
   const handleNetworkChange = (newNetwork: 'Preprod' | 'Mainnet') => {
     if (newNetwork === network) return;
@@ -360,7 +408,13 @@ export function MainLayout({ children }: MainLayoutProps) {
                         ),
                     collapsed && !isHovered ? 'h-10 w-10 justify-center' : 'px-3 h-10 gap-3',
                   )}
-                  title={collapsed && !isHovered ? item.name : undefined}
+                  title={
+                    collapsed && !isHovered
+                      ? item.notificationDot && item.notificationLabel
+                        ? `${item.name} • ${item.notificationLabel}`
+                        : item.name
+                      : undefined
+                  }
                 >
                   {item.icon}
                   {!(collapsed && !isHovered) && <span className="truncate">{item.name}</span>}
@@ -372,6 +426,17 @@ export function MainLayout({ children }: MainLayoutProps) {
                       {item.badge}
                     </span>
                   )}
+                  {!(collapsed && !isHovered) && !item.badge && item.notificationDot && (
+                    <>
+                      <span
+                        aria-hidden="true"
+                        className="ml-auto h-2.5 w-2.5 rounded-full bg-amber-500 shadow-[0_0_0_4px_rgba(245,158,11,0.16)] animate-pop-in"
+                      />
+                      {item.notificationLabel && (
+                        <span className="sr-only">{item.notificationLabel}</span>
+                      )}
+                    </>
+                  )}
                   {collapsed && !isHovered && item.badge && (
                     <span
                       key={item.badge}
@@ -379,6 +444,17 @@ export function MainLayout({ children }: MainLayoutProps) {
                     >
                       {item.badge}
                     </span>
+                  )}
+                  {collapsed && !isHovered && !item.badge && item.notificationDot && (
+                    <>
+                      <span
+                        aria-hidden="true"
+                        className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-amber-500 shadow-[0_0_0_3px_rgba(245,158,11,0.16)] animate-pop-in"
+                      />
+                      {item.notificationLabel && (
+                        <span className="sr-only">{item.notificationLabel}</span>
+                      )}
+                    </>
                   )}
                 </Link>
               </div>
@@ -496,18 +572,18 @@ export function MainLayout({ children }: MainLayoutProps) {
                   </Link>
                 </Button>
                 <Button
-                  variant={newTransactionsCount ? 'default' : 'outline'}
+                  variant={notificationCount ? 'default' : 'outline'}
                   size="sm"
                   className={cn(
                     'h-8 px-3 flex items-center gap-2',
-                    newTransactionsCount
+                    notificationCount
                       ? 'bg-red-500 text-white hover:bg-red-600 dark:bg-red-500 dark:text-white dark:hover:bg-red-600'
                       : '',
                   )}
                   onClick={() => setIsNotificationsOpen(true)}
                 >
                   <Bell className="h-4 w-4" />
-                  {formatCount(newTransactionsCount)}
+                  {formatCount(notificationCount)}
                 </Button>
               </div>
             </div>
@@ -555,6 +631,8 @@ export function MainLayout({ children }: MainLayoutProps) {
         <NotificationsDialog
           open={isNotificationsOpen}
           onClose={() => setIsNotificationsOpen(false)}
+          walletAlerts={unacknowledgedWalletAlerts}
+          onAcknowledgeWalletAlerts={acknowledgeWalletAlerts}
         />
       )}
     </div>

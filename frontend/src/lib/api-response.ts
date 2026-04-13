@@ -17,12 +17,7 @@ export function extractApiPayload<T>(
     return undefined;
   }
 
-  if (
-    typeof responseData === 'object' &&
-    responseData !== null &&
-    'data' in responseData &&
-    Object.keys(responseData).length === 1
-  ) {
+  if (typeof responseData === 'object' && responseData !== null && 'data' in responseData) {
     return (responseData as { data?: T }).data;
   }
 

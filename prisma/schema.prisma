@@ -712,7 +712,9 @@ model WebhookEndpoint {
   updatedAt DateTime @updatedAt
 
   url       String
-  authToken String
+  urlHash   String?
+  authToken String?
+  format    WebhookFormat @default(EXTENDED)
   events    WebhookEventType[]
   name      String?
 
@@ -729,6 +731,8 @@ model WebhookEndpoint {
   disabledAt          DateTime?
 
   WebhookDeliveries WebhookDelivery[]
+
+  @@index([urlHash, paymentSourceId, format])
 }
 
 model WebhookDelivery {
@@ -760,6 +764,13 @@ enum WebhookEventType {
   PURCHASE_ON_ERROR
   PAYMENT_ON_ERROR
   WALLET_LOW_BALANCE
+}
+
+enum WebhookFormat {
+  EXTENDED
+  SLACK
+  GOOGLE_CHAT
+  DISCORD
 }
 
 enum WebhookDeliveryStatus {
