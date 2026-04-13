@@ -3,6 +3,7 @@ import type { WebhookPayloadDataByEvent } from '@/types/webhook-payloads';
 import { prisma } from '@/utils/db';
 import { toPrismaInputJsonValue } from '@/utils/json-value';
 import { logger } from '@/utils/logger';
+import { CONFIG } from '@/utils/config';
 import { webhookSenderService } from './sender.service';
 import { buildEndpointWebhookPayload, buildWebhookPayload, mergeWebhookEndpointBatch } from './queue.helpers';
 
@@ -13,7 +14,7 @@ class WebhookQueueService {
 		entityId?: string,
 		paymentSourceId?: string,
 	): Promise<void> {
-		const webhookPayload = buildWebhookPayload(eventType, payload);
+		const webhookPayload = buildWebhookPayload(eventType, payload, undefined, CONFIG.OTEL_SERVICE_NAME);
 
 		const batchSize = 20;
 		let hasMore = true;

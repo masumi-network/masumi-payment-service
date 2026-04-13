@@ -10,9 +10,11 @@ export function buildWebhookPayload<TEventType extends WebhookEventType>(
 	eventType: TEventType,
 	payload: WebhookPayloadDataByEvent<TEventType>,
 	timestamp = new Date().toISOString(),
+	serviceName = 'masumi-payment-service',
 ): WebhookPayloadByEvent<TEventType> {
 	return {
 		event_type: eventType,
+		service_name: serviceName,
 		timestamp,
 		webhook_id: '',
 		data: payload,

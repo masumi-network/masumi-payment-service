@@ -205,6 +205,7 @@ All webhook payloads follow this base structure:
 ```typescript
 interface BaseWebhookPayload {
 	event_type: WebhookEventType;
+	service_name: string;
 	timestamp: string;
 	webhook_id: string;
 	data:
@@ -223,6 +224,7 @@ Triggered when a purchase's on-chain status changes (e.g., funds locked, etc.).
 ```typescript
 interface PurchaseOnChainStatusChangedPayload {
 	event_type: 'PURCHASE_ON_CHAIN_STATUS_CHANGED';
+	service_name: string;
 	timestamp: string;
 	webhook_id: string;
 	data: {
@@ -270,6 +272,7 @@ interface PurchaseOnChainStatusChangedPayload {
 ```json
 {
 	"event_type": "PURCHASE_ON_CHAIN_STATUS_CHANGED",
+	"service_name": "masumi-payment-service",
 	"timestamp": "2025-08-20T05:07:11.157Z",
 	"webhook_id": "cmejigo89000gucbqgmqphura",
 	"data": {
@@ -310,6 +313,7 @@ Triggered when a payment's on-chain status changes (e.g., funds locked, payment 
 ```typescript
 interface PaymentOnChainStatusChangedPayload {
 	event_type: 'PAYMENT_ON_CHAIN_STATUS_CHANGED';
+	service_name: string;
 	timestamp: string;
 	webhook_id: string;
 	data: {
@@ -357,6 +361,7 @@ interface PaymentOnChainStatusChangedPayload {
 ```json
 {
 	"event_type": "PAYMENT_ON_CHAIN_STATUS_CHANGED",
+	"service_name": "masumi-payment-service",
 	"timestamp": "2025-08-20T05:07:11.383Z",
 	"webhook_id": "cmejigo89000gucbqgmqphura",
 	"data": {
@@ -397,6 +402,7 @@ Triggered when a purchase encounters an error (e.g., transaction failure, valida
 ```typescript
 interface PurchaseOnErrorPayload {
 	event_type: 'PURCHASE_ON_ERROR';
+	service_name: string;
 	timestamp: string;
 	webhook_id: string;
 	data: {
@@ -412,6 +418,7 @@ interface PurchaseOnErrorPayload {
 ```json
 {
 	"event_type": "PURCHASE_ON_ERROR",
+	"service_name": "masumi-payment-service",
 	"timestamp": "2025-08-20T05:07:11.270Z",
 	"webhook_id": "cmejigo89000gucbqgmqphura",
 	"data": {
@@ -434,6 +441,7 @@ Triggered when a payment encounters an error (e.g., transaction failure, validat
 ```typescript
 interface PaymentOnErrorPayload {
 	event_type: 'PAYMENT_ON_ERROR';
+	service_name: string;
 	timestamp: string;
 	webhook_id: string;
 	data: {
@@ -449,6 +457,7 @@ interface PaymentOnErrorPayload {
 ```json
 {
 	"event_type": "PAYMENT_ON_ERROR",
+	"service_name": "masumi-payment-service",
 	"timestamp": "2025-08-20T05:07:11.497Z",
 	"webhook_id": "cmejigo89000gucbqgmqphura",
 	"data": {
@@ -464,6 +473,56 @@ interface PaymentOnErrorPayload {
 }
 ```
 
+### 5. WALLET_LOW_BALANCE
+
+Triggered when a monitored wallet drops below a configured threshold.
+
+```typescript
+interface WalletLowBalancePayload {
+	event_type: 'WALLET_LOW_BALANCE';
+	service_name: string;
+	timestamp: string;
+	webhook_id: string;
+	data: {
+		ruleId: string;
+		walletId: string;
+		walletAddress: string;
+		walletVkey: string;
+		walletType: string;
+		paymentSourceId: string;
+		network: string;
+		assetUnit: string;
+		thresholdAmount: string;
+		currentAmount: string;
+		checkedAt: string;
+	};
+}
+```
+
+**Example:**
+
+```json
+{
+	"event_type": "WALLET_LOW_BALANCE",
+	"service_name": "masumi-payment-service",
+	"timestamp": "2026-04-08T13:00:00.000Z",
+	"webhook_id": "cmejigo89000gucbqgmqphura",
+	"data": {
+		"ruleId": "rule-1",
+		"walletId": "wallet-1",
+		"walletAddress": "addr_test1...",
+		"walletVkey": "wallet-vkey",
+		"walletType": "Selling",
+		"paymentSourceId": "payment-source-1",
+		"network": "Preprod",
+		"assetUnit": "lovelace",
+		"thresholdAmount": "5000000",
+		"currentAmount": "4500000",
+		"checkedAt": "2026-04-08T12:59:00.000Z"
+	}
+}
+```
+
 ## Webhook Registration
 
 To register for webhook events, use the pay-authenticated endpoint (requires ReadAndPay permission):
@@ -475,14 +534,41 @@ curl -X POST https://masumi-api.com/api/v1/webhooks \
   -d '{
     "name": "My Service Webhook",
     "url": "https://myservice.com/webhooks/masumi",
+    "format": "EXTENDED",
     "authToken": "my-secret-token",
-    "events": [
+    "Events": [
       "PURCHASE_ON_CHAIN_STATUS_CHANGED",
       "PAYMENT_ON_CHAIN_STATUS_CHANGED",
       "PURCHASE_ON_ERROR",
       "PAYMENT_ON_ERROR"
     ],
     "paymentSourceId": "optional-payment-source-id"
+  }'
+```
+
+Supported `format` values:
+
+- `EXTENDED`: current Masumi JSON payload, includes `service_name`, requires `authToken`, and sends `Authorization: Bearer <authToken>` plus `X-Masumi-*` headers.
+- `SLACK`: sends a compact plaintext summary as `{ "text": "..." }` to the stored Slack webhook URL.
+- `GOOGLE_CHAT`: sends a compact plaintext summary as `{ "text": "..." }` to the stored Google Chat webhook URL.
+- `DISCORD`: sends a compact plaintext summary as `{ "content": "..." }` to the stored Discord webhook URL.
+
+`format` defaults to `EXTENDED` if omitted for backward compatibility.
+
+Example provider registration without `authToken`:
+
+```bash
+curl -X POST https://masumi-api.com/api/v1/webhooks \
+  -H "Content-Type: application/json" \
+  -H "token: <pay_api_key>" \
+  -d '{
+    "name": "Ops Slack Alerts",
+    "url": "https://hooks.slack.com/services/xxx/yyy/zzz",
+    "format": "SLACK",
+    "Events": [
+      "PAYMENT_ON_ERROR",
+      "WALLET_LOW_BALANCE"
+    ]
   }'
 ```
 
@@ -517,7 +603,8 @@ Your webhook endpoint should:
 1. **Return HTTP 200** for successful processing
 2. **Return HTTP 4xx/5xx** for errors (triggers retry)
 3. **Respond within 10 seconds** (timeout limit)
-4. **Validate the auth token** in the Authorization header
+4. **If using `EXTENDED`, validate the auth token** in the Authorization header
+5. **If using `SLACK`, `GOOGLE_CHAT`, or `DISCORD`, no Masumi auth header is sent**
 
 ## Retry Policy
 

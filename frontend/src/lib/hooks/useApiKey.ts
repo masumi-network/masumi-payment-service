@@ -67,7 +67,7 @@ export function useApiKeys() {
     );
   }, [data]);
 
-  const isLoading = queryIsLoading || isRefetching;
+  const isLoading = queryIsLoading;
   const hasMore = Boolean(hasNextPage);
 
   const loadMore = useCallback(() => {

@@ -35,8 +35,12 @@ import {
 	deleteWebhookSchemaOutput,
 	listWebhooksSchemaInput,
 	listWebhooksSchemaOutput,
+	patchWebhookSchemaInput,
+	patchWebhookSchemaOutput,
 	registerWebhookSchemaInput,
 	registerWebhookSchemaOutput,
+	testWebhookSchemaInput,
+	testWebhookSchemaOutput,
 } from '@/routes/api/webhooks/schemas';
 import {
 	createPaymentSourceExtendedBodyExample,
@@ -1271,6 +1275,77 @@ export function registerRegistrySupportPaths({ registry, apiKeyAuth }: SwaggerRe
 	});
 
 	registry.registerPath({
+		method: 'patch',
+		path: '/webhooks',
+		description: 'Update an existing webhook endpoint',
+		summary:
+			'Update an existing webhook endpoint. Only the creator or admin can update a webhook. (pay-authenticated access required)',
+		tags: ['webhooks'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			body: {
+				description: 'Webhook update details',
+				content: {
+					'application/json': {
+						schema: patchWebhookSchemaInput.openapi({
+							example: {
+								webhookId: 'webhook_endpoint_id',
+								url: 'https://hooks.slack.com/services/example/path',
+								format: 'SLACK',
+								Events: ['PAYMENT_ON_CHAIN_STATUS_CHANGED', 'PURCHASE_ON_ERROR'],
+								name: 'Ops Slack Alerts',
+							},
+						}),
+					},
+				},
+			},
+		},
+		responses: {
+			200: {
+				description: 'Webhook endpoint updated successfully',
+				content: {
+					'application/json': {
+						schema: z.object({ status: z.string(), data: patchWebhookSchemaOutput }).openapi({
+							example: {
+								status: 'Success',
+								data: {
+									id: 'webhook_endpoint_id',
+									url: 'https://hooks.slack.com/services/example/path',
+									format: 'SLACK',
+									name: 'Ops Slack Alerts',
+									Events: ['PAYMENT_ON_CHAIN_STATUS_CHANGED', 'PURCHASE_ON_ERROR'],
+									isActive: true,
+									createdAt: new Date(1713636260),
+									updatedAt: new Date(1713636360),
+									paymentSourceId: 'payment_source_id',
+								},
+							},
+						}),
+					},
+				},
+			},
+			400: {
+				description: 'Bad Request (invalid webhook URL or configuration)',
+			},
+			401: {
+				description: 'Unauthorized',
+			},
+			403: {
+				description: 'Forbidden: only the creator or an admin can update the webhook',
+			},
+			404: {
+				description: 'Webhook or payment source not found',
+			},
+			409: {
+				description: 'Webhook URL already registered for this payment source',
+			},
+			500: {
+				description: 'Internal Server Error',
+			},
+		},
+	});
+
+	registry.registerPath({
 		method: 'delete',
 		path: '/webhooks',
 		description: 'Delete a webhook endpoint',
@@ -1328,28 +1403,20 @@ export function registerRegistrySupportPaths({ registry, apiKeyAuth }: SwaggerRe
 
 	registry.registerPath({
 		method: 'post',
-		path: '/registry/a2a',
-		description:
-			'Registers an A2A (Agent-to-Agent) agent in the Masumi Registry using MIP-002-A2A metadata (version 2). Fetches and validates the Agent Card unless skipAgentCardValidation is set.',
-		summary: 'Register an A2A agent in the Masumi Registry. (PAY access required)',
-		tags: ['registry'],
+		path: '/webhooks/test',
+		description: 'Send a test webhook delivery',
+		summary:
+			'Send a test webhook delivery using the webhook format currently configured. Only the creator or admin can trigger a test. (pay-authenticated access required)',
+		tags: ['webhooks'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {
 			body: {
-				description: '',
+				description: 'Webhook test request',
 				content: {
 					'application/json': {
-						schema: registerA2AAgentSchemaInput.openapi({
+						schema: testWebhookSchemaInput.openapi({
 							example: {
-								network: Network.Preprod,
-								sellingWalletVkey: 'wallet_vkey',
-								name: 'My A2A Agent',
-								apiBaseUrl: 'https://api.example.com',
-								agentCardUrl: 'https://api.example.com/.well-known/agent-card.json',
-								a2aProtocolVersions: ['0.2.5'],
-								description: 'An A2A-capable AI agent',
-								Tags: ['a2a', 'agent'],
-								skipAgentCardValidation: false,
+								webhookId: 'webhook_endpoint_id',
 							},
 						}),
 					},
@@ -1357,63 +1424,33 @@ export function registerRegistrySupportPaths({ registry, apiKeyAuth }: SwaggerRe
 			},
 		},
 		responses: {
-			200: successResponse('A2A agent registered', registerA2AAgentSchemaOutput, a2aRegistryEntryExample),
-			400: {
-				description: 'Bad Request (invalid input or Agent Card validation failed)',
-			},
-			401: {
-				description: 'Unauthorized',
-			},
-			404: {
-				description: 'Wallet not found',
-			},
-			500: {
-				description: 'Internal Server Error',
-			},
-		},
-	});
-
-	registry.registerPath({
-		method: 'get',
-		path: '/registry/a2a',
-		description: 'Gets the A2A agent metadata.',
-		summary: 'List every A2A agent recorded in the Masumi Registry. (READ access required)',
-		tags: ['registry'],
-		security: [{ [apiKeyAuth.name]: [] }],
-		request: {
-			query: queryRegistryRequestSchemaInput.openapi({
-				example: {
-					network: Network.Preprod,
-					cursorId: 'cursor_id',
-				},
-			}),
-		},
-		responses: {
 			200: {
-				description: 'A2A agent metadata',
+				description: 'Webhook test delivery result',
 				content: {
 					'application/json': {
-						schema: z
-							.object({
-								status: z.string(),
-								data: queryA2ARegistryRequestSchemaOutput,
-							})
-							.openapi({
-								example: {
-									status: 'Success',
-									data: {
-										Assets: [a2aRegistryEntryExample],
-									},
+						schema: z.object({ status: z.string(), data: testWebhookSchemaOutput }).openapi({
+							example: {
+								status: 'Success',
+								data: {
+									webhookId: 'webhook_endpoint_id',
+									success: true,
+									responseCode: 200,
+									errorMessage: null,
+									durationMs: 184,
 								},
-							}),
+							},
+						}),
 					},
 				},
 			},
-			400: {
-				description: 'Bad Request (possible parameters missing or invalid)',
-			},
 			401: {
 				description: 'Unauthorized',
+			},
+			403: {
+				description: 'Forbidden: only the creator or an admin can test the webhook',
+			},
+			404: {
+				description: 'Webhook or payment source not found',
 			},
 			500: {
 				description: 'Internal Server Error',
