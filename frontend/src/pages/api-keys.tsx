@@ -66,7 +66,7 @@ export default function ApiKeys() {
   const [keyToDelete, setKeyToDelete] = useState<ApiKey | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [activeTab, setActiveTab] = useState('All');
-  const { allApiKeys, isLoading, hasMore, loadMore, refetch } = useApiKey();
+  const { allApiKeys, isLoading, isRefetching, hasMore, loadMore, refetch } = useApiKey();
   const handledActionRef = useRef(false);
 
   const tabs = [
@@ -188,7 +188,7 @@ export default function ApiKeys() {
                 onRefresh={() => {
                   refetch();
                 }}
-                isRefreshing={isLoading}
+                isRefreshing={isRefetching}
               />
               <Button onClick={() => setIsAddDialogOpen(true)}>
                 <Plus className="h-4 w-4" />

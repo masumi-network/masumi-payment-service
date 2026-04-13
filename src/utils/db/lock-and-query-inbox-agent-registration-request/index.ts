@@ -1,0 +1,124 @@
+import { HotWalletType, RegistrationState } from '@/generated/prisma/client';
+import { prisma } from '../index.js';
+
+export async function lockAndQueryInboxAgentRegistrationRequests({
+	state,
+	maxBatchSize,
+}: {
+	state: RegistrationState;
+	maxBatchSize: number;
+}) {
+	const locksSellingWallet = state === RegistrationState.RegistrationRequested;
+
+	return await prisma.$transaction(
+		async (prisma) => {
+			const paymentSources = await prisma.paymentSource.findMany({
+				where: {
+					syncInProgress: false,
+					deletedAt: null,
+					disablePaymentAt: null,
+				},
+				include: {
+					HotWallets: {
+						include: {
+							Secret: true,
+						},
+						where: {
+							...(locksSellingWallet ? { type: HotWalletType.Selling } : {}),
+							PendingTransaction: null,
+							lockedAt: null,
+							deletedAt: null,
+						},
+					},
+					AdminWallets: true,
+					FeeReceiverNetworkWallet: true,
+					PaymentSourceConfig: true,
+				},
+			});
+
+			const newPaymentSources = [];
+			for (const paymentSource of paymentSources) {
+				const inboxAgentRegistrationRequests = [];
+				for (const hotWallet of paymentSource.HotWallets) {
+					const potentialInboxAgentRegistrationRequests = await prisma.inboxAgentRegistrationRequest.findMany({
+						where: {
+							state,
+							...(locksSellingWallet
+								? {
+										SmartContractWallet: {
+											id: hotWallet.id,
+											deletedAt: null,
+											PendingTransaction: { is: null },
+											lockedAt: null,
+										},
+									}
+								: {
+										OR: [
+											{
+												DeregistrationHotWallet: {
+													is: {
+														id: hotWallet.id,
+														deletedAt: null,
+														PendingTransaction: { is: null },
+														lockedAt: null,
+													},
+												},
+											},
+											{
+												deregistrationHotWalletId: null,
+												SmartContractWallet: {
+													id: hotWallet.id,
+													deletedAt: null,
+													PendingTransaction: { is: null },
+													lockedAt: null,
+												},
+											},
+										],
+									}),
+						},
+						include: {
+							SmartContractWallet: {
+								include: {
+									Secret: true,
+								},
+							},
+							RecipientWallet: true,
+							DeregistrationHotWallet: {
+								include: {
+									Secret: true,
+								},
+							},
+						},
+						orderBy: {
+							createdAt: 'asc',
+						},
+						take: maxBatchSize,
+					});
+					if (potentialInboxAgentRegistrationRequests.length > 0) {
+						const hotWalletResult = await prisma.hotWallet.update({
+							where: { id: hotWallet.id, deletedAt: null },
+							data: { lockedAt: new Date() },
+						});
+						potentialInboxAgentRegistrationRequests.forEach((request) => {
+							const walletToLock =
+								locksSellingWallet || request.DeregistrationHotWallet == null
+									? request.SmartContractWallet
+									: request.DeregistrationHotWallet;
+							walletToLock.pendingTransactionId = hotWalletResult.pendingTransactionId;
+							walletToLock.lockedAt = hotWalletResult.lockedAt;
+						});
+						inboxAgentRegistrationRequests.push(...potentialInboxAgentRegistrationRequests);
+					}
+				}
+				if (inboxAgentRegistrationRequests.length > 0) {
+					newPaymentSources.push({
+						...paymentSource,
+						InboxAgentRegistrationRequests: inboxAgentRegistrationRequests,
+					});
+				}
+			}
+			return newPaymentSources;
+		},
+		{ isolationLevel: 'Serializable', timeout: 1000000 },
+	);
+}
