@@ -28,6 +28,7 @@ import {
   getActiveStablecoinConfig,
   getActiveStablecoinSymbol,
 } from '@/lib/constants/defaultWallets';
+import { convertDecimalToBaseUnits } from '@/lib/convertDecimalToBaseUnits';
 
 interface UpdateApiKeyDialogProps {
   open: boolean;
@@ -165,13 +166,13 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
     if (data.credits.lovelace) {
       usageCredits.push({
         unit: 'lovelace',
-        amount: (parseFloat(data.credits.lovelace) * 1000000).toString(),
+        amount: convertDecimalToBaseUnits(data.credits.lovelace),
       });
     }
     if (data.credits.usdcx) {
       usageCredits.push({
         unit: getActiveStablecoinConfig(network).fullAssetId,
-        amount: (parseFloat(data.credits.usdcx) * 1000000).toString(),
+        amount: convertDecimalToBaseUnits(data.credits.usdcx),
       });
     }
 

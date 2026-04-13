@@ -66,6 +66,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { extractApiErrorMessage } from '@/lib/api-error';
 import { REGISTRY_LIMITS } from '@/lib/registry-validation';
+import { convertDecimalToBaseUnits } from '@/lib/convertDecimalToBaseUnits';
 
 function formatNetworkDisplay(networkType: string): string {
   return networkType?.toUpperCase() === 'MAINNET' ? 'Mainnet' : 'Preprod';
@@ -1279,7 +1280,7 @@ function AddAiAgentScreen({
                   price.unit === 'lovelace'
                     ? 'lovelace'
                     : getActiveStablecoinConfig(network).fullAssetId,
-                amount: (parseFloat(price.amount) * 1000000).toString(),
+                amount: convertDecimalToBaseUnits(price.amount),
               })),
             };
           })(),

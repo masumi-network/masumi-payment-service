@@ -24,6 +24,7 @@ import { Separator } from '@/components/ui/separator';
 import { useWallets } from '@/lib/queries/useWallets';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { REGISTRY_DECIMAL_ADA_AMOUNT_PATTERN, REGISTRY_LIMITS } from '@/lib/registry-validation';
+import { convertDecimalToBaseUnits } from '@/lib/convertDecimalToBaseUnits';
 
 interface RegisterAIAgentDialogProps {
   open: boolean;
@@ -62,14 +63,6 @@ const exampleOutputSchema = z.object({
     .max(REGISTRY_LIMITS.exampleOutputMimeType, 'MIME type must be less than 60 characters')
     .min(1, 'MIME type is required'),
 });
-
-function convertDecimalToBaseUnits(value: string, decimals: number = 6): string {
-  const [wholePart, fractionalPart = ''] = value.split('.');
-  const normalizedFractionalPart = fractionalPart.padEnd(decimals, '0').slice(0, decimals);
-  const scale = BigInt(10 ** decimals);
-
-  return (BigInt(wholePart || '0') * scale + BigInt(normalizedFractionalPart || '0')).toString();
-}
 
 const createAgentSchema = (network: 'Mainnet' | 'Preprod') => {
   const priceSchema = createPriceSchema(network);
