@@ -1,3 +1,0 @@
- ERR_PNPM_NO_SCRIPT  Missing script: prisma
-
-Command "prisma" not found. Did you mean "pnpm run prisma:seed"?
