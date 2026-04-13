@@ -12,6 +12,7 @@ import { paymentInitPost, queryPaymentCountGet, queryPaymentEntryGet } from './p
 import { buildX402TxPost } from './payments/x402';
 import { getPaymentIncome } from './payments/income';
 import { deleteAgentRegistration, queryRegistryCountGet, queryRegistryRequestGet, registerAgentPost } from './registry';
+import { queryA2ARegistryRequestGet, registerA2AAgentPost } from './registry/a2a';
 import {
 	paymentSourceExtendedEndpointDelete,
 	paymentSourceExtendedEndpointGet,
