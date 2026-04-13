@@ -206,6 +206,13 @@ export function MainLayout({ children }: MainLayoutProps) {
         group: 0,
       },
       {
+        href: '/inbox-agents',
+        name: 'Inbox Agents',
+        icon: <MessageSquare className="h-4 w-4" />,
+        badge: null,
+        group: 0,
+      },
+      {
         href: '/wallets',
         name: 'Wallets',
         icon: <Wallet className="h-4 w-4" />,

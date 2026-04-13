@@ -1259,6 +1259,10 @@ export type RegistryEntry = {
         pricingType: 'Dynamic';
     };
     /**
+     * Effective lovelace amount explicitly configured for the NFT output. Null means the default minimum NFT funding is used.
+     */
+    sendFundingLovelace: string | null;
+    /**
      * Smart contract wallet managing this agent registration
      */
     SmartContractWallet: {
@@ -1271,6 +1275,19 @@ export type RegistryEntry = {
          */
         walletAddress: string;
     };
+    /**
+     * Managed wallet that receives the registry NFT. Null when the minting wallet receives it
+     */
+    RecipientWallet: {
+        /**
+         * Payment key hash of the managed recipient wallet
+         */
+        walletVkey: string;
+        /**
+         * Cardano address of the managed recipient wallet
+         */
+        walletAddress: string;
+    } | null;
     CurrentTransaction: {
         /**
          * Cardano transaction hash
@@ -1683,6 +1700,181 @@ export type RpcProviderKey = {
      * The Cardano network this RPC provider key is for
      */
     network: 'Preprod' | 'Mainnet';
+};
+
+export type InboxAgentMetadata = {
+    /**
+     * Policy ID of the inbox registry NFT
+     */
+    policyId: string;
+    /**
+     * Asset name of the inbox registry NFT
+     */
+    assetName: string;
+    /**
+     * Full inbox agent identifier (policy ID + asset name)
+     */
+    agentIdentifier: string;
+    /**
+     * On-chain metadata for the inbox agent
+     */
+    Metadata: {
+        /**
+         * Name of the inbox agent
+         */
+        name: string;
+        /**
+         * Description of the inbox agent. Null if not provided
+         */
+        description?: string | null;
+        /**
+         * Canonical inbox agent slug
+         */
+        agentSlug: string;
+        /**
+         * Version of the metadata schema (currently only version 1 is supported)
+         */
+        metadataVersion: number;
+    };
+};
+
+export type InboxAgentIdentifierMetadata = {
+    /**
+     * Policy ID of the inbox registry NFT
+     */
+    policyId: string;
+    /**
+     * Asset name of the inbox registry NFT
+     */
+    assetName: string;
+    /**
+     * Full inbox agent identifier (policy ID + asset name)
+     */
+    agentIdentifier: string;
+    /**
+     * On-chain metadata for the inbox agent
+     */
+    Metadata: {
+        /**
+         * Name of the inbox agent
+         */
+        name: string;
+        /**
+         * Description of the inbox agent. Null if not provided
+         */
+        description?: string | null;
+        /**
+         * Canonical inbox agent slug
+         */
+        agentSlug: string;
+        /**
+         * Version of the metadata schema (currently only version 1 is supported)
+         */
+        metadataVersion: number;
+    };
+};
+
+export type RegistryInboxEntry = {
+    /**
+     * Error message if registration failed. Null if no error
+     */
+    error: string | null;
+    /**
+     * Unique identifier for the inbox registration request
+     */
+    id: string;
+    /**
+     * Name of the inbox agent
+     */
+    name: string;
+    /**
+     * Description of the inbox agent. Null if not provided
+     */
+    description: string | null;
+    /**
+     * Canonical slug registered for the inbox agent
+     */
+    agentSlug: string;
+    /**
+     * Current state of the inbox registration process
+     */
+    state: 'RegistrationRequested' | 'RegistrationInitiated' | 'RegistrationConfirmed' | 'RegistrationFailed' | 'DeregistrationRequested' | 'DeregistrationInitiated' | 'DeregistrationConfirmed' | 'DeregistrationFailed';
+    /**
+     * Timestamp when the inbox registration request was created
+     */
+    createdAt: Date;
+    /**
+     * Timestamp when the inbox registration request was last updated
+     */
+    updatedAt: Date;
+    /**
+     * Timestamp when the inbox registration was last checked. Null if never checked
+     */
+    lastCheckedAt: Date | null;
+    /**
+     * Full inbox agent identifier (policy ID + asset name). Null if not yet minted
+     */
+    agentIdentifier: string | null;
+    /**
+     * Version of the inbox metadata schema
+     */
+    metadataVersion: number;
+    /**
+     * Effective lovelace amount explicitly configured for the NFT output. Null means the default minimum NFT funding is used.
+     */
+    sendFundingLovelace: string | null;
+    /**
+     * Minting wallet managing this inbox registration
+     */
+    SmartContractWallet: {
+        /**
+         * Payment key hash of the minting wallet
+         */
+        walletVkey: string;
+        /**
+         * Cardano address of the minting wallet
+         */
+        walletAddress: string;
+    };
+    /**
+     * Managed wallet that receives the inbox registry NFT. Null when the minting wallet receives it
+     */
+    RecipientWallet: {
+        /**
+         * Payment key hash of the managed recipient wallet
+         */
+        walletVkey: string;
+        /**
+         * Cardano address of the managed recipient wallet
+         */
+        walletAddress: string;
+    } | null;
+    CurrentTransaction: {
+        /**
+         * Cardano transaction hash
+         */
+        txHash: string | null;
+        /**
+         * Current status of the transaction
+         */
+        status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
+        /**
+         * Number of block confirmations for this transaction. Null if not yet confirmed
+         */
+        confirmations: number | null;
+        /**
+         * Fees of the transaction
+         */
+        fees: string | null;
+        /**
+         * Block height of the transaction
+         */
+        blockHeight: number | null;
+        /**
+         * Block time of the transaction
+         */
+        blockTime: number | null;
+    } | null;
 };
 
 export type MonitoringStatus = {
@@ -4943,6 +5135,43 @@ export type PostSignatureSignCreateInvoiceMonthlyResponses = {
 
 export type PostSignatureSignCreateInvoiceMonthlyResponse = PostSignatureSignCreateInvoiceMonthlyResponses[keyof PostSignatureSignCreateInvoiceMonthlyResponses];
 
+export type PostSignatureSignVerifyAndPublishAgentData = {
+    body?: {
+        /**
+         * The public key to sign for publishing the agent
+         */
+        publicKey: string;
+        /**
+         * Full agent identifier (policy ID + asset name in hex)
+         */
+        agentIdentifier: string;
+        /**
+         * The action to perform for agent publish verification
+         */
+        action: 'VerifyAndPublishAgent';
+    };
+    path?: never;
+    query?: never;
+    url: '/signature/sign/verifyAndPublishAgent';
+};
+
+export type PostSignatureSignVerifyAndPublishAgentResponses = {
+    /**
+     * Agent publish signature generated
+     */
+    200: {
+        status: string;
+        data: {
+            signature: string;
+            key: string;
+            walletAddress: string;
+            signatureData: string;
+        };
+    };
+};
+
+export type PostSignatureSignVerifyAndPublishAgentResponse = PostSignatureSignVerifyAndPublishAgentResponses[keyof PostSignatureSignVerifyAndPublishAgentResponses];
+
 export type GetInvoiceMonthlyData = {
     body?: never;
     path?: never;
@@ -7191,7 +7420,7 @@ export type GetRegistryData = {
          */
         filterStatus?: 'Registered' | 'Deregistered' | 'Pending' | 'Failed';
         /**
-         * Search query to filter by name, description, tags, wallet address, state, or price
+         * Search query to filter by name, description, tags, minting or recipient wallet address, state, or price
          */
         searchQuery?: string;
     };
@@ -7222,6 +7451,14 @@ export type PostRegistryData = {
          * The payment key of a specific wallet used for the registration
          */
         sellingWalletVkey: string;
+        /**
+         * Optional managed hot wallet address on the same payment source that should receive the minted registry NFT. If omitted, the minting wallet receives it.
+         */
+        recipientWalletAddress?: string;
+        /**
+         * Optional lovelace amount to include with the minted NFT output. If provided below the minimum NFT funding, the current minimum is still used.
+         */
+        sendFundingLovelace?: string;
         /**
          * List of example outputs from the agent
          */
@@ -8523,6 +8760,334 @@ export type PostWebhooksTestResponses = {
 };
 
 export type PostWebhooksTestResponse = PostWebhooksTestResponses[keyof PostWebhooksTestResponses];
+
+export type GetInboxAgentsWalletData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The payment key of the wallet to be queried
+         */
+        walletVkey: string;
+        /**
+         * The Cardano network used to register the inbox agent on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The smart contract address of the payment source to which the registration belongs
+         */
+        smartContractAddress?: string;
+    };
+    url: '/inbox-agents/wallet';
+};
+
+export type GetInboxAgentsWalletResponses = {
+    /**
+     * Inbox agent metadata
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * List of inbox agent assets registered to this wallet
+             */
+            Assets: Array<InboxAgentMetadata>;
+        };
+    };
+};
+
+export type GetInboxAgentsWalletResponse = GetInboxAgentsWalletResponses[keyof GetInboxAgentsWalletResponses];
+
+export type GetInboxAgentsAgentIdentifierData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Full inbox agent identifier (policy ID + asset name in hex)
+         */
+        agentIdentifier: string;
+        /**
+         * The Cardano network (Preprod or Mainnet)
+         */
+        network: 'Preprod' | 'Mainnet';
+    };
+    url: '/inbox-agents/agent-identifier';
+};
+
+export type GetInboxAgentsAgentIdentifierErrors = {
+    /**
+     * Bad Request (agent identifier is not a valid hex string)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Agent identifier not found or network/policyId combination not supported
+     */
+    404: unknown;
+    /**
+     * Inbox agent metadata is invalid or malformed
+     */
+    422: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type GetInboxAgentsAgentIdentifierResponses = {
+    /**
+     * Inbox agent metadata retrieved successfully
+     */
+    200: {
+        status: 'success';
+        data: InboxAgentIdentifierMetadata;
+    };
+};
+
+export type GetInboxAgentsAgentIdentifierResponse = GetInboxAgentsAgentIdentifierResponses[keyof GetInboxAgentsAgentIdentifierResponses];
+
+export type DeleteInboxAgentsData = {
+    body?: {
+        /**
+         * The database ID of the inbox registration record to be deleted.
+         */
+        id: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/inbox-agents';
+};
+
+export type DeleteInboxAgentsResponses = {
+    /**
+     * Inbox agent registration deleted successfully
+     */
+    200: {
+        status: 'success';
+        data: RegistryInboxEntry;
+    };
+};
+
+export type DeleteInboxAgentsResponse = DeleteInboxAgentsResponses[keyof DeleteInboxAgentsResponses];
+
+export type GetInboxAgentsData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The number of inbox registry entries to return
+         */
+        limit?: number;
+        /**
+         * The cursor id to paginate through the results
+         */
+        cursorId?: string;
+        /**
+         * The Cardano network used to register the inbox agent on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The smart contract address of the payment source
+         */
+        filterSmartContractAddress?: string | null;
+        /**
+         * Filter by inbox registration status category
+         */
+        filterStatus?: 'Registered' | 'Deregistered' | 'Pending' | 'Failed';
+        /**
+         * Search query to filter by name, description, agent slug, minting or recipient wallet address, or state
+         */
+        searchQuery?: string;
+    };
+    url: '/inbox-agents';
+};
+
+export type GetInboxAgentsResponses = {
+    /**
+     * Inbox agent metadata
+     */
+    200: {
+        status: 'success';
+        data: {
+            Assets: Array<RegistryInboxEntry>;
+        };
+    };
+};
+
+export type GetInboxAgentsResponse = GetInboxAgentsResponses[keyof GetInboxAgentsResponses];
+
+export type PostInboxAgentsData = {
+    body?: {
+        /**
+         * The Cardano network used to register the inbox agent on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The payment key of a specific wallet used for the registration
+         */
+        sellingWalletVkey: string;
+        /**
+         * Optional managed hot wallet address on the same payment source that should receive the minted inbox registry NFT. If omitted, the minting wallet receives it.
+         */
+        recipientWalletAddress?: string;
+        /**
+         * Optional lovelace amount to include with the minted inbox registry NFT output. If provided below the minimum NFT funding, the current minimum is still used.
+         */
+        sendFundingLovelace?: string;
+        /**
+         * Display name of the inbox agent
+         */
+        name: string;
+        /**
+         * Optional description of the inbox agent
+         */
+        description?: string;
+        /**
+         * Canonical inbox slug. Must already be normalized and not reserved
+         */
+        agentSlug: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/inbox-agents';
+};
+
+export type PostInboxAgentsResponses = {
+    /**
+     * Inbox agent registered
+     */
+    200: {
+        status: 'success';
+        data: RegistryInboxEntry;
+    };
+};
+
+export type PostInboxAgentsResponse = PostInboxAgentsResponses[keyof PostInboxAgentsResponses];
+
+export type GetInboxAgentsDiffData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The number of inbox registry entries to return
+         */
+        limit?: number;
+        /**
+         * Pagination cursor (inbox registry request id). Used as tie-breaker when lastUpdate equals a state-change timestamp
+         */
+        cursorId?: string;
+        /**
+         * Return inbox registry entries whose registration state changed at/after this ISO timestamp
+         */
+        lastUpdate?: Date;
+        /**
+         * The Cardano network used to register the inbox agent on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The smart contract address of the payment source
+         */
+        filterSmartContractAddress?: string | null;
+    };
+    url: '/inbox-agents/diff';
+};
+
+export type GetInboxAgentsDiffErrors = {
+    /**
+     * Bad Request (possible parameters missing or invalid)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type GetInboxAgentsDiffResponses = {
+    /**
+     * Inbox agent metadata diff
+     */
+    200: {
+        status: 'success';
+        data: {
+            Assets: Array<RegistryInboxEntry>;
+        };
+    };
+};
+
+export type GetInboxAgentsDiffResponse = GetInboxAgentsDiffResponses[keyof GetInboxAgentsDiffResponses];
+
+export type PostInboxAgentsDeregisterData = {
+    body?: {
+        /**
+         * The identifier of the inbox registration (asset) to be deregistered
+         */
+        agentIdentifier: string;
+        /**
+         * The network the inbox registration was made on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The smart contract address of the payment contract to which the inbox registration belongs
+         */
+        smartContractAddress?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/inbox-agents/deregister';
+};
+
+export type PostInboxAgentsDeregisterResponses = {
+    /**
+     * Inbox agent deregistration requested
+     */
+    200: {
+        status: 'success';
+        data: RegistryInboxEntry;
+    };
+};
+
+export type PostInboxAgentsDeregisterResponse = PostInboxAgentsDeregisterResponses[keyof PostInboxAgentsDeregisterResponses];
+
+export type GetInboxAgentsCountData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The Cardano network used to register the inbox agent on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The smart contract address of the payment source
+         */
+        filterSmartContractAddress?: string | null;
+    };
+    url: '/inbox-agents/count';
+};
+
+export type GetInboxAgentsCountResponses = {
+    /**
+     * Count returned
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * Total number of inbox agents
+             */
+            total: number;
+        };
+    };
+};
+
+export type GetInboxAgentsCountResponse = GetInboxAgentsCountResponses[keyof GetInboxAgentsCountResponses];
 
 export type GetMonitoringData = {
     body?: never;

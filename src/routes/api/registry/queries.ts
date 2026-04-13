@@ -2,7 +2,7 @@ import { PricingType, RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import { AuthContext } from '@/utils/middleware/auth-middleware';
 import { parseAmountSearchRange } from '@/utils/shared/queries';
-import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
+import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { z } from '@/utils/zod-openapi';
 import { FilterStatus, queryRegistryRequestSchemaInput } from './schemas';
 
@@ -57,7 +57,7 @@ export async function getRegistryEntriesForQuery(
 				smartContractAddress: input.filterSmartContractAddress ?? undefined,
 			},
 			SmartContractWallet: { deletedAt: null },
-			...buildWalletScopeFilter(walletScopeIds),
+			...buildManagedHolderWalletScopeFilter(walletScopeIds),
 			...(stateFilter ? { state: { in: stateFilter } } : {}),
 			...(searchLower
 				? {
@@ -80,6 +80,16 @@ export async function getRegistryEntriesForQuery(
 									walletAddress: {
 										contains: searchLower,
 										mode: 'insensitive' as const,
+									},
+								},
+							},
+							{
+								RecipientWallet: {
+									is: {
+										walletAddress: {
+											contains: searchLower,
+											mode: 'insensitive' as const,
+										},
 									},
 								},
 							},
@@ -108,6 +118,9 @@ export async function getRegistryEntriesForQuery(
 		cursor: input.cursorId ? { id: input.cursorId } : undefined,
 		include: {
 			SmartContractWallet: {
+				select: { walletVkey: true, walletAddress: true },
+			},
+			RecipientWallet: {
 				select: { walletVkey: true, walletAddress: true },
 			},
 			CurrentTransaction: {

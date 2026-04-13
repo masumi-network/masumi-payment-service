@@ -32,6 +32,7 @@ export function serializeRegistryEntry(item: RegistryListRecord) {
 				: {
 						pricingType: item.Pricing.pricingType,
 					},
+		sendFundingLovelace: item.sendFundingLovelace?.toString() ?? null,
 		Tags: item.tags,
 		CurrentTransaction: item.CurrentTransaction
 			? {

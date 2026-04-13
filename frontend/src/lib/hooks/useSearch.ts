@@ -15,6 +15,7 @@ export interface SearchableItem {
 const searchableItems: SearchableItem[] = [
   { id: 'dashboard', title: 'Dashboard', type: 'page', href: '/' },
   { id: 'ai-agents', title: 'AI Agents', type: 'page', href: '/ai-agents' },
+  { id: 'inbox-agents', title: 'Inbox Agents', type: 'page', href: '/inbox-agents' },
   { id: 'wallets', title: 'Wallets', type: 'page', href: '/wallets' },
   {
     id: 'transactions',
@@ -39,6 +40,14 @@ const searchableItems: SearchableItem[] = [
     href: '/ai-agents?action=register_agent',
     elementId: 'add-ai-agent-button',
     keywords: ['create agent', 'new agent'],
+  },
+  {
+    id: 'add-inbox-agent',
+    title: 'Add Inbox Agent',
+    type: 'action',
+    href: '/inbox-agents?action=register_inbox_agent',
+    elementId: 'add-inbox-agent-button',
+    keywords: ['create inbox agent', 'new inbox agent', 'register inbox'],
   },
   {
     id: 'add-wallet',
