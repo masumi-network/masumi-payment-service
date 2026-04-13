@@ -9,6 +9,8 @@ const mockFindApiKey = jest.fn() as AnyMock;
 const mockFindSellingWallet = jest.fn() as AnyMock;
 const mockFindRecipientWallet = jest.fn() as AnyMock;
 const mockCreateInboxAgentRegistrationRequest = jest.fn() as AnyMock;
+const mockFindInboxAgentRegistrationRequests = jest.fn() as AnyMock;
+const mockCountInboxAgentRegistrationRequests = jest.fn() as AnyMock;
 
 jest.unstable_mockModule('@/utils/db', () => ({
 	prisma: {
@@ -21,7 +23,8 @@ jest.unstable_mockModule('@/utils/db', () => ({
 		},
 		inboxAgentRegistrationRequest: {
 			create: mockCreateInboxAgentRegistrationRequest,
-			count: jest.fn(),
+			count: mockCountInboxAgentRegistrationRequests,
+			findMany: mockFindInboxAgentRegistrationRequests,
 			findUnique: jest.fn(),
 			delete: jest.fn(),
 		},
@@ -57,7 +60,7 @@ jest.unstable_mockModule('@/utils/metrics', () => ({
 
 jest.unstable_mockModule('@/generated/prisma/client', async () => await import('@/generated/prisma/enums'));
 
-const { registerInboxAgentPost } = await import('./index');
+const { queryRegistryInboxRequestGet, queryRegistryInboxCountGet, registerInboxAgentPost } = await import('./index');
 
 function asApiKey(walletScopeIds: string[] | null = null) {
 	return {
@@ -122,6 +125,91 @@ describe('registerInboxAgentPost', () => {
 		mockFindSellingWallet.mockResolvedValue(buildSellingWallet());
 		mockFindRecipientWallet.mockResolvedValue(null);
 		mockCreateInboxAgentRegistrationRequest.mockResolvedValue(buildInboxRequestResponse(null));
+		mockFindInboxAgentRegistrationRequests.mockResolvedValue([]);
+		mockCountInboxAgentRegistrationRequests.mockResolvedValue(0);
+	});
+
+	it('scopes inbox registry list queries to the current managed holder wallet', async () => {
+		mockFindApiKey.mockResolvedValue(asApiKey(['holding-wallet-id']));
+
+		const { responseMock } = await testEndpoint({
+			endpoint: queryRegistryInboxRequestGet,
+			requestProps: {
+				method: 'GET',
+				headers: { token: 'valid' },
+				query: {
+					network: Network.Preprod,
+					limit: '10',
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(200);
+		expect(mockFindInboxAgentRegistrationRequests).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					AND: [
+						{
+							OR: [
+								{ deregistrationHotWalletId: { in: ['holding-wallet-id'] } },
+								{
+									deregistrationHotWalletId: null,
+									recipientHotWalletId: { in: ['holding-wallet-id'] },
+								},
+								{
+									deregistrationHotWalletId: null,
+									recipientHotWalletId: null,
+									smartContractWalletId: { in: ['holding-wallet-id'] },
+								},
+							],
+						},
+					],
+				}),
+			}),
+		);
+	});
+
+	it('scopes inbox registry counts to the current managed holder wallet', async () => {
+		mockFindApiKey.mockResolvedValue(asApiKey(['holding-wallet-id']));
+
+		const { responseMock } = await testEndpoint({
+			endpoint: queryRegistryInboxCountGet,
+			requestProps: {
+				method: 'GET',
+				headers: { token: 'valid' },
+				query: {
+					network: Network.Preprod,
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(200);
+		expect(mockCountInboxAgentRegistrationRequests).toHaveBeenCalledWith({
+			where: {
+				PaymentSource: {
+					network: Network.Preprod,
+					deletedAt: null,
+					smartContractAddress: undefined,
+				},
+				SmartContractWallet: { deletedAt: null },
+				AND: [
+					{
+						OR: [
+							{ deregistrationHotWalletId: { in: ['holding-wallet-id'] } },
+							{
+								deregistrationHotWalletId: null,
+								recipientHotWalletId: { in: ['holding-wallet-id'] },
+							},
+							{
+								deregistrationHotWalletId: null,
+								recipientHotWalletId: null,
+								smartContractWalletId: { in: ['holding-wallet-id'] },
+							},
+						],
+					},
+				],
+			},
+		});
 	});
 
 	it('keeps the current flow when no recipient wallet is provided', async () => {

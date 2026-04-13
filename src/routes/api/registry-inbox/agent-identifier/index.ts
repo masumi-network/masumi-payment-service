@@ -9,6 +9,7 @@ import { extractPolicyId, extractAssetName } from '@/utils/converter/agent-ident
 import { validateHexString } from '@/utils/validator/hex';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { parseInboxAgentRegistrationMetadata } from '@/services/registry-inbox/metadata';
+import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
 
 export const queryInboxAgentByIdentifierSchemaInput = z.object({
 	agentIdentifier: z.string().min(57).max(250).describe('Full inbox agent identifier (policy ID + asset name in hex)'),
@@ -71,6 +72,29 @@ export const queryInboxAgentByIdentifierGet = readAuthenticatedEndpointFactory.b
 		});
 		if (paymentSource == null) {
 			throw createHttpError(404, 'Network and policyId combination not supported');
+		}
+
+		if (ctx.walletScopeIds !== null) {
+			const ownedInboxRegistration = await prisma.inboxAgentRegistrationRequest.findFirst({
+				where: {
+					agentIdentifier: input.agentIdentifier,
+					PaymentSource: {
+						network: input.network,
+						deletedAt: null,
+					},
+					SmartContractWallet: {
+						deletedAt: null,
+					},
+					...buildManagedHolderWalletScopeFilter(ctx.walletScopeIds),
+				},
+				select: {
+					id: true,
+				},
+			});
+
+			if (ownedInboxRegistration == null) {
+				throw createHttpError(404, 'Agent not found');
+			}
 		}
 
 		const blockfrost = getBlockfrostInstance(input.network, paymentSource.PaymentSourceConfig.rpcProviderApiKey);

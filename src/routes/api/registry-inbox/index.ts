@@ -8,7 +8,7 @@ import { DEFAULTS, SERVICE_CONSTANTS } from '@/utils/config';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { recordBusinessEndpointError } from '@/utils/metrics';
-import { buildWalletScopeFilter, assertHotWalletInScope } from '@/utils/shared/wallet-scope';
+import { buildManagedHolderWalletScopeFilter, assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 import {
 	deleteInboxAgentRegistrationSchemaInput,
 	deleteInboxAgentRegistrationSchemaOutput,
@@ -103,7 +103,7 @@ export const queryRegistryInboxCountGet = readAuthenticatedEndpointFactory.build
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
 				},
 				SmartContractWallet: { deletedAt: null },
-				...buildWalletScopeFilter(ctx.walletScopeIds),
+				...buildManagedHolderWalletScopeFilter(ctx.walletScopeIds),
 			},
 		});
 

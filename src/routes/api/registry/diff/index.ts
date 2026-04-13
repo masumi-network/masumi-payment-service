@@ -5,7 +5,7 @@ import { Network, Prisma, PricingType } from '@/generated/prisma/client';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import createHttpError from 'http-errors';
 import { queryRegistryRequestSchemaOutput } from '@/routes/api/registry';
-import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
+import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 
 const registryDiffLastUpdateSchema = ez.dateIn();
@@ -49,7 +49,7 @@ function buildRegistryDiffWhere({
 			smartContractAddress: filterSmartContractAddress ?? undefined,
 		},
 		SmartContractWallet: { deletedAt: null },
-		...buildWalletScopeFilter(walletScopeIds),
+		...buildManagedHolderWalletScopeFilter(walletScopeIds),
 	};
 
 	return cursorId != null

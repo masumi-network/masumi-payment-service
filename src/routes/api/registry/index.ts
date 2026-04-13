@@ -9,7 +9,7 @@ import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/m
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 import { getBlockfrostInstance, validateAssetsOnChain } from '@/utils/blockfrost';
-import { buildWalletScopeFilter, assertHotWalletInScope } from '@/utils/shared/wallet-scope';
+import { buildManagedHolderWalletScopeFilter, assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 import {
 	deleteAgentRegistrationSchemaInput,
 	deleteAgentRegistrationSchemaOutput,
@@ -78,7 +78,7 @@ export const queryRegistryCountGet = readAuthenticatedEndpointFactory.build({
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
 				},
 				SmartContractWallet: { deletedAt: null },
-				...buildWalletScopeFilter(ctx.walletScopeIds),
+				...buildManagedHolderWalletScopeFilter(ctx.walletScopeIds),
 			},
 		});
 

@@ -1,7 +1,7 @@
 import { RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import { AuthContext } from '@/utils/middleware/auth-middleware';
-import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
+import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { z } from '@/utils/zod-openapi';
 import { FilterStatus, queryRegistryInboxRequestSchemaInput } from './schemas';
 
@@ -53,7 +53,7 @@ export async function getInboxRegistryEntriesForQuery(
 				smartContractAddress: input.filterSmartContractAddress ?? undefined,
 			},
 			SmartContractWallet: { deletedAt: null },
-			...buildWalletScopeFilter(walletScopeIds),
+			...buildManagedHolderWalletScopeFilter(walletScopeIds),
 			...(stateFilter ? { state: { in: stateFilter } } : {}),
 			...(searchLower
 				? {

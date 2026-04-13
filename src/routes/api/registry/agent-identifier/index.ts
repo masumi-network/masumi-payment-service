@@ -10,6 +10,7 @@ import { validateHexString } from '@/utils/validator/hex';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { metadataSchema } from '@/routes/api/registry/wallet';
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
+import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
 
 export const queryAgentByIdentifierSchemaInput = z.object({
 	agentIdentifier: z.string().min(57).max(250).describe('Full agent identifier (policy ID + asset name in hex)'),
@@ -163,6 +164,29 @@ export const queryAgentByIdentifierGet = readAuthenticatedEndpointFactory.build(
 		});
 		if (paymentSource == null) {
 			throw createHttpError(404, 'Network and policyId combination not supported');
+		}
+
+		if (ctx.walletScopeIds !== null) {
+			const ownedRegistryRequest = await prisma.registryRequest.findFirst({
+				where: {
+					agentIdentifier: input.agentIdentifier,
+					PaymentSource: {
+						network: input.network,
+						deletedAt: null,
+					},
+					SmartContractWallet: {
+						deletedAt: null,
+					},
+					...buildManagedHolderWalletScopeFilter(ctx.walletScopeIds),
+				},
+				select: {
+					id: true,
+				},
+			});
+
+			if (ownedRegistryRequest == null) {
+				throw createHttpError(404, 'Agent not found');
+			}
 		}
 
 		// Step 5: Get Blockfrost instance

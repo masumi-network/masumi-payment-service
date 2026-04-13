@@ -9,6 +9,8 @@ const mockFindApiKey = jest.fn() as AnyMock;
 const mockFindSellingWallet = jest.fn() as AnyMock;
 const mockFindRecipientWallet = jest.fn() as AnyMock;
 const mockCreateRegistryRequest = jest.fn() as AnyMock;
+const mockFindRegistryRequests = jest.fn() as AnyMock;
+const mockCountRegistryRequests = jest.fn() as AnyMock;
 
 jest.unstable_mockModule('@/utils/db', () => ({
 	prisma: {
@@ -21,7 +23,8 @@ jest.unstable_mockModule('@/utils/db', () => ({
 		},
 		registryRequest: {
 			create: mockCreateRegistryRequest,
-			count: jest.fn(),
+			count: mockCountRegistryRequests,
+			findMany: mockFindRegistryRequests,
 			findUnique: jest.fn(),
 			delete: jest.fn(),
 		},
@@ -75,7 +78,7 @@ jest.unstable_mockModule('@prisma/client', () => ({
 	},
 }));
 
-const { registerAgentPost } = await import('./index');
+const { queryRegistryRequestGet, queryRegistryCountGet, registerAgentPost } = await import('./index');
 
 function asApiKey(walletScopeIds: string[] | null = null) {
 	return {
@@ -154,6 +157,91 @@ describe('registerAgentPost', () => {
 		mockFindSellingWallet.mockResolvedValue(buildSellingWallet());
 		mockFindRecipientWallet.mockResolvedValue(null);
 		mockCreateRegistryRequest.mockResolvedValue(buildRegistryRequestResponse(null));
+		mockFindRegistryRequests.mockResolvedValue([]);
+		mockCountRegistryRequests.mockResolvedValue(0);
+	});
+
+	it('scopes registry list queries to the current managed holder wallet', async () => {
+		mockFindApiKey.mockResolvedValue(asApiKey(['holding-wallet-id']));
+
+		const { responseMock } = await testEndpoint({
+			endpoint: queryRegistryRequestGet,
+			requestProps: {
+				method: 'GET',
+				headers: { token: 'valid' },
+				query: {
+					network: Network.Preprod,
+					limit: '10',
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(200);
+		expect(mockFindRegistryRequests).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					AND: [
+						{
+							OR: [
+								{ deregistrationHotWalletId: { in: ['holding-wallet-id'] } },
+								{
+									deregistrationHotWalletId: null,
+									recipientHotWalletId: { in: ['holding-wallet-id'] },
+								},
+								{
+									deregistrationHotWalletId: null,
+									recipientHotWalletId: null,
+									smartContractWalletId: { in: ['holding-wallet-id'] },
+								},
+							],
+						},
+					],
+				}),
+			}),
+		);
+	});
+
+	it('scopes registry counts to the current managed holder wallet', async () => {
+		mockFindApiKey.mockResolvedValue(asApiKey(['holding-wallet-id']));
+
+		const { responseMock } = await testEndpoint({
+			endpoint: queryRegistryCountGet,
+			requestProps: {
+				method: 'GET',
+				headers: { token: 'valid' },
+				query: {
+					network: Network.Preprod,
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(200);
+		expect(mockCountRegistryRequests).toHaveBeenCalledWith({
+			where: {
+				PaymentSource: {
+					network: Network.Preprod,
+					deletedAt: null,
+					smartContractAddress: undefined,
+				},
+				SmartContractWallet: { deletedAt: null },
+				AND: [
+					{
+						OR: [
+							{ deregistrationHotWalletId: { in: ['holding-wallet-id'] } },
+							{
+								deregistrationHotWalletId: null,
+								recipientHotWalletId: { in: ['holding-wallet-id'] },
+							},
+							{
+								deregistrationHotWalletId: null,
+								recipientHotWalletId: null,
+								smartContractWalletId: { in: ['holding-wallet-id'] },
+							},
+						],
+					},
+				],
+			},
+		});
 	});
 
 	it('keeps the current flow when no recipient wallet is provided', async () => {

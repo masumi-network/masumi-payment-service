@@ -5,7 +5,7 @@ import { Network, Prisma } from '@/generated/prisma/client';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import createHttpError from 'http-errors';
 import { queryRegistryInboxRequestSchemaOutput } from '@/routes/api/registry-inbox';
-import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
+import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import { serializeInboxRegistryEntriesResponse } from '../serializers';
 
@@ -50,7 +50,7 @@ function buildRegistryInboxDiffWhere({
 			smartContractAddress: filterSmartContractAddress ?? undefined,
 		},
 		SmartContractWallet: { deletedAt: null },
-		...buildWalletScopeFilter(walletScopeIds),
+		...buildManagedHolderWalletScopeFilter(walletScopeIds),
 	};
 
 	return cursorId != null
