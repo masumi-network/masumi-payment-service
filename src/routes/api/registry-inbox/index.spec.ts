@@ -202,9 +202,7 @@ describe('registerInboxAgentPost', () => {
 	});
 
 	it('stores a normalized send funding lovelace override when provided', async () => {
-		mockCreateInboxAgentRegistrationRequest.mockResolvedValue(
-			buildInboxRequestResponse(null, BigInt(5_000_000)),
-		);
+		mockCreateInboxAgentRegistrationRequest.mockResolvedValue(buildInboxRequestResponse(null, BigInt(5_000_000)));
 
 		const { responseMock } = await testEndpoint({
 			endpoint: registerInboxAgentPost,
