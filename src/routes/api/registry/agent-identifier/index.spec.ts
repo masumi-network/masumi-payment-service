@@ -37,6 +37,23 @@ jest.unstable_mockModule('@/utils/blockfrost', () => ({
 	getBlockfrostInstance: mockGetBlockfrostInstance,
 }));
 
+jest.unstable_mockModule('@/utils/config', () => ({
+	CONFIG: {
+		DATABASE_URL: 'postgresql://test',
+		ENCRYPTION_KEY: '123456789012345678901',
+	},
+	DEFAULTS: {
+		PAYMENT_SMART_CONTRACT_ADDRESS_MAINNET: 'addr_main1test',
+		PAYMENT_SMART_CONTRACT_ADDRESS_PREPROD: 'addr_test1test',
+	},
+	CONSTANTS: {},
+	SERVICE_CONSTANTS: {
+		SMART_CONTRACT: {
+			collateralAmount: '5000000',
+		},
+	},
+}));
+
 jest.unstable_mockModule('@/utils/generator/contract-generator', () => ({
 	getRegistryScriptFromNetworkHandlerV1: jest.fn(),
 }));
