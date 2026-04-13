@@ -4,26 +4,13 @@ import { Network } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contract-generator';
-import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { DEFAULTS } from '@/utils/config';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { logger } from '@/utils/logger';
 import { extractAssetName } from '@/utils/converter/agent-identifier';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
-
-export const inboxMetadataSchema = z.object({
-	name: z
-		.string()
-		.min(1)
-		.or(z.array(z.string().min(1))),
-	description: z.string().or(z.array(z.string())).optional(),
-	agentslug: z
-		.string()
-		.min(1)
-		.or(z.array(z.string().min(1))),
-	metadata_version: z.coerce.number().int().min(1).max(1),
-});
+import { parseInboxAgentRegistrationMetadata } from '@/services/registry-inbox/metadata';
 
 export const queryInboxAgentFromWalletSchemaInput = z.object({
 	walletVkey: z.string().max(250).describe('The payment key of the wallet to be queried'),
@@ -134,8 +121,8 @@ export const queryInboxAgentFromWalletGet = readAuthenticatedEndpointFactory.bui
 		await Promise.all(
 			assets.map(async (asset) => {
 				const assetInfo = await blockfrost.assetsById(asset.unit);
-				const parsedMetadata = inboxMetadataSchema.safeParse(assetInfo.onchain_metadata);
-				if (!parsedMetadata.success) {
+				const parsedMetadata = parseInboxAgentRegistrationMetadata(assetInfo.onchain_metadata);
+				if (parsedMetadata == null) {
 					logger.debug('Skipping non-inbox registry metadata while querying inbox wallet assets', {
 						asset: asset.unit,
 					});
@@ -144,10 +131,10 @@ export const queryInboxAgentFromWalletGet = readAuthenticatedEndpointFactory.bui
 				detailedAssets.push({
 					unit: asset.unit,
 					Metadata: {
-						name: metadataToString(parsedMetadata.data.name)!,
-						description: metadataToString(parsedMetadata.data.description),
-						agentSlug: metadataToString(parsedMetadata.data.agentslug)!,
-						metadataVersion: parsedMetadata.data.metadata_version,
+						name: parsedMetadata.name,
+						description: parsedMetadata.description,
+						agentSlug: parsedMetadata.agentSlug,
+						metadataVersion: parsedMetadata.metadataVersion,
 					},
 				});
 			}),

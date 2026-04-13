@@ -103,6 +103,7 @@ describe('queryInboxAgentFromWalletGet', () => {
 		]);
 		mockAssetsById.mockResolvedValue({
 			onchain_metadata: {
+				type: 'MasumiInboxV1',
 				name: 'Inbox Agent',
 				description: 'Inbox description',
 				agentslug: 'inbox-agent',

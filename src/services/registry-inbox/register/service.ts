@@ -23,6 +23,7 @@ import {
 	resolveRegistryFundingLovelace,
 	resolveRegistryRecipientWalletAddress,
 } from '@/services/registry/shared';
+import { INBOX_AGENT_REGISTRATION_METADATA_TYPE } from '@/services/registry-inbox/metadata';
 
 const mutex = new Mutex();
 
@@ -33,6 +34,7 @@ function buildInboxAgentMetadata(request: {
 	metadataVersion: number;
 }): RegistryMetadata {
 	const metadata = {
+		type: INBOX_AGENT_REGISTRATION_METADATA_TYPE,
 		name: stringToMetadata(request.name),
 		description: stringToMetadata(request.description),
 		agentslug: stringToMetadata(request.agentSlug),

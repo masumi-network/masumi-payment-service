@@ -8,8 +8,7 @@ import { logger } from '@/utils/logger';
 import { extractPolicyId, extractAssetName } from '@/utils/converter/agent-identifier';
 import { validateHexString } from '@/utils/validator/hex';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
-import { inboxMetadataSchema } from '@/routes/api/registry-inbox/wallet';
-import { metadataToString } from '@/utils/converter/metadata-string-convert';
+import { parseInboxAgentRegistrationMetadata } from '@/services/registry-inbox/metadata';
 
 export const queryInboxAgentByIdentifierSchemaInput = z.object({
 	agentIdentifier: z.string().min(57).max(250).describe('Full inbox agent identifier (policy ID + asset name in hex)'),
@@ -100,10 +99,10 @@ export const queryInboxAgentByIdentifierGet = readAuthenticatedEndpointFactory.b
 			throw createHttpError(404, 'Inbox agent registry metadata not found');
 		}
 
-		const parsedMetadata = inboxMetadataSchema.safeParse(assetInfo.onchain_metadata);
-		if (!parsedMetadata.success) {
+		const parsedMetadata = parseInboxAgentRegistrationMetadata(assetInfo.onchain_metadata);
+		if (parsedMetadata == null) {
 			logger.error('Error parsing inbox agent metadata', {
-				error: parsedMetadata.error,
+				error: assetInfo.onchain_metadata,
 				agentIdentifier: input.agentIdentifier,
 			});
 			throw createHttpError(422, 'Inbox agent metadata is invalid or malformed');
@@ -114,10 +113,10 @@ export const queryInboxAgentByIdentifierGet = readAuthenticatedEndpointFactory.b
 			assetName: extractAssetName(input.agentIdentifier),
 			agentIdentifier: input.agentIdentifier,
 			Metadata: {
-				name: metadataToString(parsedMetadata.data.name)!,
-				description: metadataToString(parsedMetadata.data.description),
-				agentSlug: metadataToString(parsedMetadata.data.agentslug)!,
-				metadataVersion: parsedMetadata.data.metadata_version,
+				name: parsedMetadata.name,
+				description: parsedMetadata.description,
+				agentSlug: parsedMetadata.agentSlug,
+				metadataVersion: parsedMetadata.metadataVersion,
 			},
 		};
 	},
