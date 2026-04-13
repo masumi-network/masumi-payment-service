@@ -8288,6 +8288,7 @@ export type GetWebhooksResponses = {
             Webhooks: Array<{
                 id: string;
                 url: string;
+                format: 'EXTENDED' | 'SLACK' | 'GOOGLE_CHAT' | 'DISCORD';
                 Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT'>;
                 name: string | null;
                 isActive: boolean;
@@ -8308,6 +8309,90 @@ export type GetWebhooksResponses = {
 
 export type GetWebhooksResponse = GetWebhooksResponses[keyof GetWebhooksResponses];
 
+export type PatchWebhooksData = {
+    /**
+     * Webhook update details
+     */
+    body?: {
+        /**
+         * The ID of the webhook to update
+         */
+        webhookId: string;
+        /**
+         * The webhook URL to receive notifications
+         */
+        url: string;
+        /**
+         * Authentication token for extended webhook requests. Required when format is EXTENDED
+         */
+        authToken?: string | null;
+        /**
+         * Webhook delivery format
+         */
+        format: 'EXTENDED' | 'SLACK' | 'GOOGLE_CHAT' | 'DISCORD';
+        /**
+         * Array of event types to subscribe to
+         */
+        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE'>;
+        /**
+         * Human-readable name for the webhook
+         */
+        name?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/webhooks';
+};
+
+export type PatchWebhooksErrors = {
+    /**
+     * Bad Request (invalid webhook URL or configuration)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden: only the creator or an admin can update the webhook
+     */
+    403: unknown;
+    /**
+     * Webhook or payment source not found
+     */
+    404: unknown;
+    /**
+     * Webhook URL already registered for this payment source
+     */
+    409: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type PatchWebhooksResponses = {
+    /**
+     * Webhook endpoint updated successfully
+     */
+    200: {
+        status: string;
+        data: {
+            id: string;
+            url: string;
+            format: 'EXTENDED' | 'SLACK' | 'GOOGLE_CHAT' | 'DISCORD';
+            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE'>;
+            name: string | null;
+            isActive: boolean;
+            createdAt: Date;
+            updatedAt: Date;
+            paymentSourceId: string | null;
+        };
+    };
+};
+
+export type PatchWebhooksResponse = PatchWebhooksResponses[keyof PatchWebhooksResponses];
+
 export type PostWebhooksData = {
     /**
      * Webhook registration details
@@ -8318,9 +8403,13 @@ export type PostWebhooksData = {
          */
         url: string;
         /**
-         * Authentication token for webhook requests
+         * Authentication token for extended webhook requests. Required when format is EXTENDED
          */
-        authToken: string;
+        authToken?: string | null;
+        /**
+         * Webhook delivery format. Defaults to EXTENDED
+         */
+        format?: 'EXTENDED' | 'SLACK' | 'GOOGLE_CHAT' | 'DISCORD';
         /**
          * Array of event types to subscribe to
          */
@@ -8371,6 +8460,7 @@ export type PostWebhooksResponses = {
         data: {
             id: string;
             url: string;
+            format: 'EXTENDED' | 'SLACK' | 'GOOGLE_CHAT' | 'DISCORD';
             Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT'>;
             name: string | null;
             isActive: boolean;
@@ -8381,6 +8471,58 @@ export type PostWebhooksResponses = {
 };
 
 export type PostWebhooksResponse = PostWebhooksResponses[keyof PostWebhooksResponses];
+
+export type PostWebhooksTestData = {
+    /**
+     * Webhook test request
+     */
+    body?: {
+        /**
+         * The ID of the webhook to send a test delivery to
+         */
+        webhookId: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/webhooks/test';
+};
+
+export type PostWebhooksTestErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden: only the creator or an admin can test the webhook
+     */
+    403: unknown;
+    /**
+     * Webhook or payment source not found
+     */
+    404: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type PostWebhooksTestResponses = {
+    /**
+     * Webhook test delivery result
+     */
+    200: {
+        status: string;
+        data: {
+            webhookId: string;
+            success: boolean;
+            responseCode: number | null;
+            errorMessage: string | null;
+            durationMs: number;
+        };
+    };
+};
+
+export type PostWebhooksTestResponse = PostWebhooksTestResponses[keyof PostWebhooksTestResponses];
 
 export type GetMonitoringData = {
     body?: never;

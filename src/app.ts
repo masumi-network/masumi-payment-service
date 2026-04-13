@@ -13,6 +13,7 @@ import { DEFAULTS } from '@/utils/config';
 import { requestLogger } from '@/utils/middleware/request-logger';
 import { generateApiKeySecureHash } from '@/utils/crypto/api-key-hash';
 import { migrateApiKeyEncryption } from '@/utils/startup-migrations/api-key-encryption';
+import { migrateWebhookEncryption } from '@/utils/startup-migrations/webhook-encryption';
 import { blockchainStateMonitorService } from '@/services/monitoring';
 import fs from 'fs';
 
@@ -22,6 +23,7 @@ async function initialize() {
 	await initDB();
 
 	await migrateApiKeyEncryption();
+	await migrateWebhookEncryption();
 
 	const defaultAdminHash = await generateApiKeySecureHash(DEFAULTS.DEFAULT_ADMIN_KEY);
 	const defaultKeyRow = await prisma.apiKey.findFirst({

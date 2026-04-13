@@ -53,9 +53,10 @@ export function useUninvoicedPayments(month: string, buyerWalletVkey?: string) {
     return pages.flatMap((page) => page.payments);
   }, [query.data]);
 
-  const isLoading = query.isLoading || query.isRefetching;
+  const isLoading = query.isLoading;
   const hasMore = Boolean(query.hasNextPage);
   const isFetchingNextPage = query.isFetchingNextPage;
+  const isRefetching = query.isRefetching;
   const refetch = query.refetch;
 
   const loadMore = useCallback(() => {
@@ -72,6 +73,7 @@ export function useUninvoicedPayments(month: string, buyerWalletVkey?: string) {
     hasMore,
     loadMore,
     isFetchingNextPage,
+    isRefetching,
     refetch,
   };
 }

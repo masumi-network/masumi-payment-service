@@ -50,9 +50,10 @@ export function useInvoices(month: string) {
     return pages.flatMap((page) => page.invoices);
   }, [query.data]);
 
-  const isLoading = query.isLoading || query.isRefetching;
+  const isLoading = query.isLoading;
   const hasMore = Boolean(query.hasNextPage);
   const isFetchingNextPage = query.isFetchingNextPage;
+  const isRefetching = query.isRefetching;
   const refetch = query.refetch;
 
   const loadMore = useCallback(() => {
@@ -69,6 +70,7 @@ export function useInvoices(month: string) {
     hasMore,
     loadMore,
     isFetchingNextPage,
+    isRefetching,
     refetch,
   };
 }
