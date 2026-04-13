@@ -1,15 +1,16 @@
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import { z } from '@/utils/zod-openapi';
-import { HotWalletType, PaymentType, PricingType, RegistrationState } from '@/generated/prisma/client';
+import { PaymentType, PricingType, RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
-import { DEFAULTS, SERVICE_CONSTANTS } from '@/utils/config';
+import { DEFAULTS } from '@/utils/config';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 import { getBlockfrostInstance, validateAssetsOnChain } from '@/utils/blockfrost';
-import { buildManagedHolderWalletScopeFilter, assertHotWalletInScope } from '@/utils/shared/wallet-scope';
+import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
+import { normalizeRequestedRegistryFundingLovelace } from '@/services/registry/shared';
 import {
 	deleteAgentRegistrationSchemaInput,
 	deleteAgentRegistrationSchemaOutput,
@@ -24,6 +25,7 @@ import {
 } from './schemas';
 import { getRegistryEntriesForQuery } from './queries';
 import { serializeRegistryEntriesResponse } from './serializers';
+import { resolveScopedRecipientWalletOrThrow, resolveScopedSellingWalletOrThrow } from './shared';
 
 export {
 	deleteAgentRegistrationSchemaInput,
@@ -37,19 +39,6 @@ export {
 	registerAgentSchemaOutput,
 	registryRequestOutputSchema,
 };
-
-const minimumRegistryFundingLovelace = BigInt(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount);
-
-function normalizeSendFundingLovelace(sendFundingLovelace?: string): bigint | undefined {
-	if (sendFundingLovelace == null) {
-		return undefined;
-	}
-
-	const requestedFundingLovelace = BigInt(sendFundingLovelace);
-	return requestedFundingLovelace > minimumRegistryFundingLovelace
-		? requestedFundingLovelace
-		: minimumRegistryFundingLovelace;
-}
 
 export const queryRegistryRequestGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
@@ -97,72 +86,22 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 		try {
 			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
-			const sellingWallet = await prisma.hotWallet.findUnique({
-				where: {
-					walletVkey: input.sellingWalletVkey,
-					type: HotWalletType.Selling,
-					deletedAt: null,
-					PaymentSource: {
-						deletedAt: null,
-						network: input.network,
-					},
-				},
-				include: {
-					PaymentSource: {
-						include: {
-							PaymentSourceConfig: {
-								select: { rpcProviderApiKey: true },
-							},
-						},
-					},
-				},
+			const sellingWallet = await resolveScopedSellingWalletOrThrow({
+				network: input.network,
+				sellingWalletVkey: input.sellingWalletVkey,
+				walletScopeIds: ctx.walletScopeIds,
+				metricPath: '/api/v1/registry',
+				operation: 'register_agent',
 			});
-			if (sellingWallet == null) {
-				recordBusinessEndpointError('/api/v1/registry', 'POST', 404, 'Network and Address combination not supported', {
-					network: input.network,
-					operation: 'register_agent',
-					step: 'wallet_lookup',
-					wallet_vkey: input.sellingWalletVkey,
-				});
-				throw createHttpError(404, 'Network and Address combination not supported');
-			}
-			assertHotWalletInScope(ctx.walletScopeIds, sellingWallet.id);
-
-			const recipientWalletAddress = input.recipientWalletAddress?.trim();
-			const sendFundingLovelace = normalizeSendFundingLovelace(input.sendFundingLovelace);
-			let recipientWallet: { id: string; walletVkey: string; walletAddress: string } | null = null;
-			if (recipientWalletAddress && recipientWalletAddress !== sellingWallet.walletAddress) {
-				recipientWallet = await prisma.hotWallet.findFirst({
-					where: {
-						walletAddress: recipientWalletAddress,
-						paymentSourceId: sellingWallet.paymentSourceId,
-						deletedAt: null,
-					},
-					select: {
-						id: true,
-						walletVkey: true,
-						walletAddress: true,
-					},
-				});
-
-				if (recipientWallet == null) {
-					recordBusinessEndpointError(
-						'/api/v1/registry',
-						'POST',
-						404,
-						'Recipient wallet not found on the same payment source',
-						{
-							network: input.network,
-							operation: 'register_agent',
-							step: 'recipient_wallet_lookup',
-							recipient_wallet_address: recipientWalletAddress,
-						},
-					);
-					throw createHttpError(404, 'Recipient wallet not found on the same payment source');
-				}
-
-				assertHotWalletInScope(ctx.walletScopeIds, recipientWallet.id);
-			}
+			const recipientWallet = await resolveScopedRecipientWalletOrThrow({
+				network: input.network,
+				recipientWalletAddress: input.recipientWalletAddress,
+				sellingWallet,
+				walletScopeIds: ctx.walletScopeIds,
+				metricPath: '/api/v1/registry',
+				operation: 'register_agent',
+			});
+			const sendFundingLovelace = normalizeRequestedRegistryFundingLovelace(input.sendFundingLovelace);
 
 			// Validate pricing assets exist on-chain
 			if (input.AgentPricing.pricingType === PricingType.Fixed) {

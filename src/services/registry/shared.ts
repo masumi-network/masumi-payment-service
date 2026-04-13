@@ -8,6 +8,17 @@ export type RegistryMetadata = {
 
 const minimumRegistryFundingLovelace = BigInt(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount);
 
+export function normalizeRequestedRegistryFundingLovelace(sendFundingLovelace?: string): bigint | undefined {
+	if (sendFundingLovelace == null) {
+		return undefined;
+	}
+
+	const requestedFundingLovelace = BigInt(sendFundingLovelace);
+	return requestedFundingLovelace > minimumRegistryFundingLovelace
+		? requestedFundingLovelace
+		: minimumRegistryFundingLovelace;
+}
+
 export function generateRegistryAssetName(firstUtxo: UTxO): string {
 	const txId = firstUtxo.input.txHash;
 	const txIndex = firstUtxo.input.outputIndex;

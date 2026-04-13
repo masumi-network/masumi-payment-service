@@ -1,14 +1,15 @@
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import { z } from '@/utils/zod-openapi';
-import { HotWalletType, RegistrationState } from '@/generated/prisma/client';
+import { RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
-import { DEFAULTS, SERVICE_CONSTANTS } from '@/utils/config';
+import { DEFAULTS } from '@/utils/config';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { recordBusinessEndpointError } from '@/utils/metrics';
-import { buildManagedHolderWalletScopeFilter, assertHotWalletInScope } from '@/utils/shared/wallet-scope';
+import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
+import { normalizeRequestedRegistryFundingLovelace } from '@/services/registry/shared';
 import {
 	deleteInboxAgentRegistrationSchemaInput,
 	deleteInboxAgentRegistrationSchemaOutput,
@@ -24,6 +25,7 @@ import {
 import { getInboxRegistryEntriesForQuery } from './queries';
 import { serializeInboxRegistryEntriesResponse, serializeInboxRegistryEntry } from './serializers';
 import { isReservedInboxSlug, normalizeInboxSlug } from '@/utils/inbox-slug';
+import { resolveScopedRecipientWalletOrThrow, resolveScopedSellingWalletOrThrow } from '../registry/shared';
 
 export {
 	deleteInboxAgentRegistrationSchemaInput,
@@ -37,19 +39,6 @@ export {
 	registerInboxAgentSchemaOutput,
 	registryInboxRequestOutputSchema,
 };
-
-const minimumRegistryFundingLovelace = BigInt(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount);
-
-function normalizeSendFundingLovelace(sendFundingLovelace?: string): bigint | undefined {
-	if (sendFundingLovelace == null) {
-		return undefined;
-	}
-
-	const requestedFundingLovelace = BigInt(sendFundingLovelace);
-	return requestedFundingLovelace > minimumRegistryFundingLovelace
-		? requestedFundingLovelace
-		: minimumRegistryFundingLovelace;
-}
 
 function validateCanonicalInboxSlug(agentSlug: string) {
 	if (agentSlug.trim() !== agentSlug) {
@@ -122,79 +111,23 @@ export const registerInboxAgentPost = payAuthenticatedEndpointFactory.build({
 		try {
 			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
-			const sellingWallet = await prisma.hotWallet.findUnique({
-				where: {
-					walletVkey: input.sellingWalletVkey,
-					type: HotWalletType.Selling,
-					deletedAt: null,
-					PaymentSource: {
-						deletedAt: null,
-						network: input.network,
-					},
-				},
-				include: {
-					PaymentSource: {
-						include: {
-							PaymentSourceConfig: {
-								select: { rpcProviderApiKey: true },
-							},
-						},
-					},
-				},
+			const sellingWallet = await resolveScopedSellingWalletOrThrow({
+				network: input.network,
+				sellingWalletVkey: input.sellingWalletVkey,
+				walletScopeIds: ctx.walletScopeIds,
+				metricPath: '/api/v1/inbox-agents',
+				operation: 'register_inbox_agent',
 			});
-			if (sellingWallet == null) {
-				recordBusinessEndpointError(
-					'/api/v1/inbox-agents',
-					'POST',
-					404,
-					'Network and Address combination not supported',
-					{
-						network: input.network,
-						operation: 'register_inbox_agent',
-						step: 'wallet_lookup',
-						wallet_vkey: input.sellingWalletVkey,
-					},
-				);
-				throw createHttpError(404, 'Network and Address combination not supported');
-			}
-			assertHotWalletInScope(ctx.walletScopeIds, sellingWallet.id);
-
-			const recipientWalletAddress = input.recipientWalletAddress?.trim();
-			const sendFundingLovelace = normalizeSendFundingLovelace(input.sendFundingLovelace);
+			const sendFundingLovelace = normalizeRequestedRegistryFundingLovelace(input.sendFundingLovelace);
 			const normalizedAgentSlug = validateCanonicalInboxSlug(input.agentSlug);
-			let recipientWallet: { id: string; walletVkey: string; walletAddress: string } | null = null;
-			if (recipientWalletAddress && recipientWalletAddress !== sellingWallet.walletAddress) {
-				recipientWallet = await prisma.hotWallet.findFirst({
-					where: {
-						walletAddress: recipientWalletAddress,
-						paymentSourceId: sellingWallet.paymentSourceId,
-						deletedAt: null,
-					},
-					select: {
-						id: true,
-						walletVkey: true,
-						walletAddress: true,
-					},
-				});
-
-				if (recipientWallet == null) {
-					recordBusinessEndpointError(
-						'/api/v1/inbox-agents',
-						'POST',
-						404,
-						'Recipient wallet not found on the same payment source',
-						{
-							network: input.network,
-							operation: 'register_inbox_agent',
-							step: 'recipient_wallet_lookup',
-							recipient_wallet_address: recipientWalletAddress,
-						},
-					);
-					throw createHttpError(404, 'Recipient wallet not found on the same payment source');
-				}
-
-				assertHotWalletInScope(ctx.walletScopeIds, recipientWallet.id);
-			}
+			const recipientWallet = await resolveScopedRecipientWalletOrThrow({
+				network: input.network,
+				recipientWalletAddress: input.recipientWalletAddress,
+				sellingWallet,
+				walletScopeIds: ctx.walletScopeIds,
+				metricPath: '/api/v1/inbox-agents',
+				operation: 'register_inbox_agent',
+			});
 
 			const result = await prisma.inboxAgentRegistrationRequest.create({
 				data: {
