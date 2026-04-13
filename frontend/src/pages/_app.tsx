@@ -100,7 +100,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     // Pages accessible even without payment sources (shown in setup sidebar)
     const setupAccessiblePages = ['/api-keys', '/developers', '/settings'];
     if (apiKey && isHealthy && currentNetworkPaymentSources.length === 0) {
-      const protectedPages = ['/', '/ai-agents', '/wallets', '/transactions'];
+      const protectedPages = ['/', '/ai-agents', '/inbox-agents', '/wallets', '/transactions'];
       if (protectedPages.includes(router.pathname)) {
         router.replace('/setup?network=' + (network === 'Mainnet' ? 'Mainnet' : 'Preprod'));
       }

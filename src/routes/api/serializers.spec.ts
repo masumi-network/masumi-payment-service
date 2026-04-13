@@ -25,6 +25,7 @@ const { generateBlockchainIdentifier } = await import('@/utils/generator/blockch
 const { serializePaymentSourceEntry } = await import('./payment-source/serializers');
 const { serializePaymentListEntry } = await import('./payments/serializers');
 const { serializeRegistryEntry } = await import('./registry/serializers');
+const { serializeInboxRegistryEntry } = await import('./registry-inbox/serializers');
 const { serializeSwapTransaction } = await import('./swap/serializers');
 
 describe('route serializers', () => {
@@ -138,6 +139,25 @@ describe('route serializers', () => {
 		});
 		expect(serialized.sendFundingLovelace).toBe('7500000');
 		expect(serialized.CurrentTransaction?.fees).toBe('777');
+	});
+
+	it('serializes inbox registry transaction fields deterministically', () => {
+		const entry = {
+			sendFundingLovelace: BigInt(7_500_000),
+			CurrentTransaction: {
+				txHash: 'tx-1',
+				status: TransactionStatus.Pending,
+				confirmations: 2,
+				fees: BigInt(888),
+				blockHeight: 1,
+				blockTime: new Date('2026-01-01T00:00:00.000Z'),
+			},
+		} as unknown as Parameters<typeof serializeInboxRegistryEntry>[0];
+
+		const serialized = serializeInboxRegistryEntry(entry);
+
+		expect(serialized.sendFundingLovelace).toBe('7500000');
+		expect(serialized.CurrentTransaction?.fees).toBe('888');
 	});
 
 	it('serializes payment sources by wallet type', () => {

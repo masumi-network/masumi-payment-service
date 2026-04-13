@@ -1,8 +1,8 @@
-import { RegistrationState, PricingType } from '@/generated/prisma/client';
+import { RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import { logger } from '@/utils/logger';
 import { convertNetwork } from '@/utils/converter/network-convert';
-import { lockAndQueryRegistryRequests } from '@/utils/db/lock-and-query-registry-request';
+import { lockAndQueryInboxAgentRegistrationRequests } from '@/utils/db/lock-and-query-inbox-agent-registration-request';
 import { DEFAULTS, SERVICE_CONSTANTS } from '@/utils/config';
 import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contract-generator';
 import { stringToMetadata, cleanMetadata } from '@/utils/converter/metadata-string-convert';
@@ -22,136 +22,53 @@ import {
 	type RegistryMetadata,
 	resolveRegistryFundingLovelace,
 	resolveRegistryRecipientWalletAddress,
-} from '../shared';
+} from '@/services/registry/shared';
 
 const mutex = new Mutex();
 
-function validateRegistrationPricing(request: {
-	Pricing: {
-		pricingType: PricingType;
-		FixedPricing: { Amounts: Array<{ unit: string; amount: bigint }> } | null;
-	};
-}): void {
-	if (
-		request.Pricing.pricingType != PricingType.Fixed &&
-		request.Pricing.pricingType != PricingType.Free &&
-		request.Pricing.pricingType != PricingType.Dynamic
-	) {
-		throw new Error('Unsupported pricing type: ' + String(request.Pricing.pricingType));
-	}
-
-	if (
-		request.Pricing.pricingType == PricingType.Fixed &&
-		(request.Pricing.FixedPricing == null || request.Pricing.FixedPricing.Amounts.length == 0)
-	) {
-		throw new Error('No fixed pricing found, this is likely a bug');
-	}
-
-	if (request.Pricing.pricingType != PricingType.Fixed && request.Pricing.FixedPricing != null) {
-		throw new Error('Non-fixed pricing requires no fixed pricing to be set');
-	}
-}
-
-function buildAgentMetadata(request: {
+function buildInboxAgentMetadata(request: {
 	name: string;
 	description: string | null;
-	apiBaseUrl: string | null;
-	ExampleOutputs: Array<{ name: string; mimeType: string; url: string }>;
-	capabilityName?: string | null;
-	capabilityVersion?: string | null;
-	authorName: string | null;
-	authorContactEmail: string | null;
-	authorContactOther: string | null;
-	authorOrganization: string | null;
-	privacyPolicy: string | null;
-	terms: string | null;
-	other: string | null;
-	tags: string[];
-	Pricing: {
-		pricingType: PricingType;
-		FixedPricing?: {
-			Amounts: Array<{ unit: string; amount: bigint }>;
-		} | null;
-	};
+	agentSlug: string;
 	metadataVersion: number;
 }): RegistryMetadata {
 	const metadata = {
 		name: stringToMetadata(request.name),
 		description: stringToMetadata(request.description),
-		api_base_url: stringToMetadata(request.apiBaseUrl),
-		example_output: request.ExampleOutputs.map((exampleOutput) => ({
-			name: stringToMetadata(exampleOutput.name),
-			mime_type: stringToMetadata(exampleOutput.mimeType),
-			url: stringToMetadata(exampleOutput.url),
-		})),
-		capability:
-			request.capabilityName && request.capabilityVersion
-				? {
-						name: stringToMetadata(request.capabilityName),
-						version: stringToMetadata(request.capabilityVersion),
-					}
-				: undefined,
-		author: {
-			name: stringToMetadata(request.authorName),
-			contact_email: stringToMetadata(request.authorContactEmail),
-			contact_other: stringToMetadata(request.authorContactOther),
-			organization: stringToMetadata(request.authorOrganization),
-		},
-		legal: {
-			privacy_policy: stringToMetadata(request.privacyPolicy),
-			terms: stringToMetadata(request.terms),
-			other: stringToMetadata(request.other),
-		},
-		tags: request.tags,
-		agentPricing:
-			request.Pricing.pricingType == PricingType.Fixed
-				? {
-						pricingType: PricingType.Fixed,
-						fixedPricing:
-							request.Pricing.FixedPricing?.Amounts.map((pricing) => ({
-								unit: stringToMetadata(pricing.unit),
-								amount: pricing.amount.toString(),
-							})) ?? [],
-					}
-				: {
-						pricingType: request.Pricing.pricingType,
-					},
-		image: stringToMetadata(DEFAULTS.DEFAULT_IMAGE),
+		agentslug: stringToMetadata(request.agentSlug),
 		metadata_version: request.metadataVersion.toString(),
 	};
-	// Clean undefined values from metadata - MeshSDK cannot serialize undefined
+
 	return cleanMetadata(metadata) as RegistryMetadata;
 }
 
-export async function registerAgentV1() {
+export async function registerInboxAgentV1() {
 	let release: MutexInterface.Releaser | null;
 	try {
 		release = await tryAcquire(mutex).acquire();
 	} catch (e) {
-		logger.info('Mutex timeout when locking', { error: e });
+		logger.info('Mutex timeout when locking inbox registrations', { error: e });
 		return;
 	}
 
 	try {
-		//Submit a result for invalid tokens
-		const paymentSourcesWithWalletLocked = await lockAndQueryRegistryRequests({
+		const paymentSourcesWithWalletLocked = await lockAndQueryInboxAgentRegistrationRequests({
 			state: RegistrationState.RegistrationRequested,
 			maxBatchSize: 1,
 		});
 
 		await Promise.allSettled(
 			paymentSourcesWithWalletLocked.map(async (paymentSource) => {
-				if (paymentSource.RegistryRequest.length === 0) return;
+				if (paymentSource.InboxAgentRegistrationRequests.length === 0) return;
 
 				logger.info(
-					`Registering ${paymentSource.RegistryRequest.length} agents for payment source ${paymentSource.id}`,
+					`Registering ${paymentSource.InboxAgentRegistrationRequests.length} inbox agents for payment source ${paymentSource.id}`,
 				);
 
 				const network = convertNetwork(paymentSource.network);
+				const registrationRequests = paymentSource.InboxAgentRegistrationRequests;
 
-				const registryRequests = paymentSource.RegistryRequest;
-
-				if (registryRequests.length === 0) return;
+				if (registrationRequests.length === 0) return;
 
 				const blockchainProvider = createMeshProvider(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
 
@@ -161,8 +78,7 @@ export async function registerAgentV1() {
 							configuration: SERVICE_CONSTANTS.RETRY,
 						}),
 					],
-					operations: registryRequests.map((request) => async () => {
-						validateRegistrationPricing(request);
+					operations: registrationRequests.map((request) => async () => {
 						const walletSession = await loadHotWalletSession({
 							network: paymentSource.network,
 							rpcProviderApiKey: paymentSource.PaymentSourceConfig.rpcProviderApiKey,
@@ -177,14 +93,18 @@ export async function registerAgentV1() {
 						const { script, policyId } = await getRegistryScriptFromNetworkHandlerV1(paymentSource);
 
 						const limitedFilteredUtxos = sortUtxosByLovelaceDesc(utxos);
-
 						const firstUtxo = limitedFilteredUtxos[0];
 						const collateralUtxo = limitedFilteredUtxos[0];
 						const recipientWalletAddress = resolveRegistryRecipientWalletAddress(request);
 						const fundingLovelace = resolveRegistryFundingLovelace(request);
-
 						const assetName = generateRegistryAssetName(firstUtxo);
-						const metadata = buildAgentMetadata(request);
+						const metadata = buildInboxAgentMetadata({
+							name: request.name,
+							description: request.description,
+							agentSlug: request.agentSlug,
+							metadataVersion: request.metadataVersion ?? DEFAULTS.DEFAULT_METADATA_VERSION,
+						});
+
 						const evaluationTx = await generateRegistryMintTransaction(
 							blockchainProvider,
 							network,
@@ -221,17 +141,17 @@ export async function registerAgentV1() {
 
 						const signedTx = await wallet.signTx(unsignedTx, true);
 
-						await prisma.registryRequest.update({
+						await prisma.inboxAgentRegistrationRequest.update({
 							where: { id: request.id },
 							data: {
 								state: RegistrationState.RegistrationInitiated,
 								...createPendingTransaction(request.SmartContractWallet.id),
 							},
 						});
-						//submit the transaction to the blockchain
+
 						const newTxHash = await wallet.submitTx(signedTx);
 						await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
-						await prisma.registryRequest.update({
+						await prisma.inboxAgentRegistrationRequest.update({
 							where: { id: request.id },
 							data: {
 								agentIdentifier: policyId + assetName,
@@ -239,24 +159,23 @@ export async function registerAgentV1() {
 							},
 						});
 
-						logger.debug(`Created withdrawal transaction:
+						logger.debug(`Created inbox agent registration transaction:
                   Tx ID: ${newTxHash}
-                  View (after a bit) on https://${
-										network === 'preprod' ? 'preprod.' : ''
-									}cardanoscan.io/transaction/${newTxHash}
+                  View (after a bit) on https://${network === 'preprod' ? 'preprod.' : ''}cardanoscan.io/transaction/${newTxHash}
               `);
 						return true;
 					}),
 				});
+
 				let index = 0;
 				for (const result of results) {
-					const request = registryRequests[index];
+					const request = registrationRequests[index];
 					if (result.success === false || result.result !== true) {
 						const error = result.error;
-						logger.error(`Error registering agent ${request.id}`, {
-							error: error,
+						logger.error(`Error registering inbox agent ${request.id}`, {
+							error,
 						});
-						await prisma.registryRequest.update({
+						await prisma.inboxAgentRegistrationRequest.update({
 							where: { id: request.id },
 							data: {
 								state: RegistrationState.RegistrationFailed,
@@ -274,7 +193,7 @@ export async function registerAgentV1() {
 			}),
 		);
 	} catch (error) {
-		logger.error('Error submitting result', { error: error });
+		logger.error('Error registering inbox agent', { error });
 	} finally {
 		release();
 	}

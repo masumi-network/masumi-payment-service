@@ -13,6 +13,12 @@ import { buildX402TxPost } from './payments/x402';
 import { getPaymentIncome } from './payments/income';
 import { deleteAgentRegistration, queryRegistryCountGet, queryRegistryRequestGet, registerAgentPost } from './registry';
 import {
+	deleteInboxAgentRegistration,
+	queryRegistryInboxCountGet,
+	queryRegistryInboxRequestGet,
+	registerInboxAgentPost,
+} from './registry-inbox';
+import {
 	paymentSourceExtendedEndpointDelete,
 	paymentSourceExtendedEndpointGet,
 	paymentSourceExtendedEndpointPatch,
@@ -47,6 +53,10 @@ import { paymentErrorStateRecoveryPost } from './payments/error-state-recovery';
 import { purchaseErrorStateRecoveryPost } from './purchases/error-state-recovery';
 import { queryRegistryDiffGet } from './registry/diff';
 import { queryAgentByIdentifierGet } from './registry/agent-identifier';
+import { queryRegistryInboxDiffGet } from './registry-inbox/diff';
+import { queryInboxAgentByIdentifierGet } from './registry-inbox/agent-identifier';
+import { queryInboxAgentFromWalletGet } from './registry-inbox/wallet';
+import { unregisterInboxAgentPost } from './registry-inbox/deregister';
 import {
 	registerWebhookPost,
 	listWebhooksGet,
@@ -160,6 +170,26 @@ export const apiRouter: Routing = {
 			},
 			count: {
 				get: queryRegistryCountGet,
+			},
+		},
+		'inbox-agents': {
+			get: queryRegistryInboxRequestGet,
+			post: registerInboxAgentPost,
+			delete: deleteInboxAgentRegistration,
+			diff: {
+				get: queryRegistryInboxDiffGet,
+			},
+			wallet: {
+				get: queryInboxAgentFromWalletGet,
+			},
+			deregister: {
+				post: unregisterInboxAgentPost,
+			},
+			'agent-identifier': {
+				get: queryInboxAgentByIdentifierGet,
+			},
+			count: {
+				get: queryRegistryInboxCountGet,
 			},
 		},
 		'api-key-status': {
