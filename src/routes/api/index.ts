@@ -192,6 +192,26 @@ export const apiRouter: Routing = {
 				get: queryRegistryInboxCountGet,
 			},
 		},
+		'registry-inbox': {
+			get: queryRegistryInboxRequestGet,
+			post: registerInboxAgentPost,
+			delete: deleteInboxAgentRegistration,
+			diff: {
+				get: queryRegistryInboxDiffGet,
+			},
+			wallet: {
+				get: queryInboxAgentFromWalletGet,
+			},
+			deregister: {
+				post: unregisterInboxAgentPost,
+			},
+			'agent-identifier': {
+				get: queryInboxAgentByIdentifierGet,
+			},
+			count: {
+				get: queryRegistryInboxCountGet,
+			},
+		},
 		'api-key-status': {
 			get: queryAPIKeyStatusEndpointGet,
 		},
