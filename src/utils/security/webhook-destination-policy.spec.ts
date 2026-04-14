@@ -6,9 +6,8 @@ jest.unstable_mockModule('node:dns/promises', () => ({
 	lookup: mockLookup,
 }));
 
-const { assertWebhookDestinationAllowed, redactWebhookDestination, WebhookDestinationPolicyError } = await import(
-	'./webhook-destination-policy'
-);
+const { assertWebhookDestinationAllowed, redactWebhookDestination, WebhookDestinationPolicyError } =
+	await import('./webhook-destination-policy');
 
 describe('webhook destination policy', () => {
 	beforeEach(() => {
