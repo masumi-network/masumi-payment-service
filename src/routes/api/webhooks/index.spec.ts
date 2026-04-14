@@ -687,6 +687,8 @@ describe('webhook endpoints', () => {
 		mockFindApiKey.mockResolvedValue({
 			...asApiKey(),
 			id: 'api-key-rate-limit-mutation',
+			canAdmin: false,
+			networkLimit: [Network.Mainnet, Network.Preprod],
 		});
 		mockCreateWebhook.mockResolvedValue({
 			id: 'webhook-rate-limit',
@@ -745,6 +747,7 @@ describe('webhook endpoints', () => {
 		mockFindApiKey.mockResolvedValue({
 			...asApiKey(),
 			id: 'api-key-rate-limit-test',
+			canAdmin: false,
 		});
 		mockFindWebhookById.mockResolvedValue({
 			id: 'webhook-rate-limit-test',
@@ -795,6 +798,45 @@ describe('webhook endpoints', () => {
 			status: 'error',
 			error: { message: 'Too many requests' },
 		});
+	});
+
+	it('does not rate limit admin webhook tests', async () => {
+		mockFindApiKey.mockResolvedValue({
+			...asApiKey(),
+			id: 'api-key-admin-test',
+			canAdmin: true,
+		});
+		mockFindWebhookById.mockResolvedValue({
+			id: 'webhook-admin-test',
+			url: 'enc:https://hooks.slack.com/services/test',
+			format: WebhookFormat.SLACK,
+			authToken: null,
+			name: 'Slack alerts',
+			paymentSourceId: null,
+			createdByApiKeyId: 'someone-else',
+			PaymentSource: null,
+		});
+		mockSendTestWebhook.mockResolvedValue({
+			success: true,
+			responseCode: 200,
+			durationMs: 120,
+		});
+
+		for (let attempt = 0; attempt < 12; attempt += 1) {
+			const { responseMock } = await testEndpoint({
+				endpoint: testWebhookPost,
+				requestProps: {
+					method: 'POST',
+					ip: '198.18.0.12',
+					headers: { token: 'valid' },
+					body: {
+						webhookId: 'webhook-admin-test',
+					},
+				},
+			});
+
+			expect(responseMock.statusCode).toBe(200);
+		}
 	});
 
 	it('rejects test sends when the caller is not the creator or an admin', async () => {

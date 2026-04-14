@@ -8,6 +8,11 @@ type RateLimitCounter = {
 	resetAt: number;
 };
 
+type PendingRateLimitUpdate = {
+	blockedUntil: number | null;
+	nextCounter: RateLimitCounter | null;
+};
+
 type RateLimitOptions = {
 	maxRequests: number;
 	windowMs: number;
@@ -25,57 +30,67 @@ const cleanupExpiredEntries = (bucket: Map<string, RateLimitCounter>, now: numbe
 	}
 };
 
-const checkAndIncrement = (
+const prepareRateLimitUpdate = (
 	bucket: Map<string, RateLimitCounter>,
 	key: string,
 	now: number,
 	maxRequests: number,
 	windowMs: number,
-): number | null => {
+): PendingRateLimitUpdate => {
 	const current = bucket.get(key);
 	if (current == null || current.resetAt <= now) {
-		bucket.set(key, {
-			count: 1,
-			resetAt: now + windowMs,
-		});
-		return null;
+		return {
+			blockedUntil: null,
+			nextCounter: {
+				count: 1,
+				resetAt: now + windowMs,
+			},
+		};
 	}
 
 	if (current.count >= maxRequests) {
-		return current.resetAt;
+		return {
+			blockedUntil: current.resetAt,
+			nextCounter: null,
+		};
 	}
 
-	current.count += 1;
-	bucket.set(key, current);
-	return null;
+	return {
+		blockedUntil: null,
+		nextCounter: {
+			count: current.count + 1,
+			resetAt: current.resetAt,
+		},
+	};
 };
 
 export const createAuthenticatedRateLimitMiddleware = ({ maxRequests, windowMs }: RateLimitOptions) => {
 	const apiKeyBucket = createRateLimitBucket();
-	const ipBucket = createRateLimitBucket();
 
 	return new Middleware<AuthContext, Record<string, never>, string, typeof rateLimitInputSchema>({
 		input: rateLimitInputSchema,
-		handler: async ({ ctx, request, response }) => {
+		handler: async ({ ctx, response }) => {
+			if (ctx.canAdmin) {
+				return {};
+			}
+
 			const now = Date.now();
-			const sourceIp = request.ip || 'unknown';
 
 			if (apiKeyBucket.size > 2048) {
 				cleanupExpiredEntries(apiKeyBucket, now);
 			}
 
-			if (ipBucket.size > 2048) {
-				cleanupExpiredEntries(ipBucket, now);
-			}
-
-			const apiKeyResetAt = checkAndIncrement(apiKeyBucket, ctx.id, now, maxRequests, windowMs);
-			const ipResetAt = checkAndIncrement(ipBucket, sourceIp, now, maxRequests, windowMs);
-			const blockedUntil = Math.max(apiKeyResetAt ?? 0, ipResetAt ?? 0);
+			const apiKeyUpdate = prepareRateLimitUpdate(apiKeyBucket, ctx.id, now, maxRequests, windowMs);
+			const blockedUntil = apiKeyUpdate.blockedUntil ?? 0;
 
 			if (blockedUntil > 0) {
 				const retryAfterSeconds = Math.max(1, Math.ceil((blockedUntil - now) / 1000));
 				response.setHeader('Retry-After', String(retryAfterSeconds));
 				throw createHttpError(429, 'Too many requests');
+			}
+
+			if (apiKeyUpdate.nextCounter != null) {
+				apiKeyBucket.set(ctx.id, apiKeyUpdate.nextCounter);
 			}
 
 			return {};
