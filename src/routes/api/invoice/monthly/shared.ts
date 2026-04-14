@@ -83,22 +83,32 @@ export const invoiceGenerationBaseSchema = z.object({
 export const invoiceGenerationSchemaInput = invoiceGenerationBaseSchema
 	.refine(
 		(data) => {
-			if (data.Seller.companyName == null && data.Seller.name == null) {
+			const sellerCompanyName = data.Seller.companyName?.trim() ?? '';
+			const sellerName = data.Seller.name?.trim() ?? '';
+			if (sellerCompanyName.length === 0 && sellerName.length === 0) {
 				return false;
 			}
 			return true;
 		},
 		{
-			message: 'Company name or name is required',
+			message: 'Seller company name or seller name is required',
 			path: ['Seller', 'companyName'],
 		},
 	)
-	.refine((data) => {
-		if (data.Buyer.companyName == null && data.Buyer.name == null) {
-			return false;
-		}
-		return true;
-	});
+	.refine(
+		(data) => {
+			const buyerCompanyName = data.Buyer.companyName?.trim() ?? '';
+			const buyerName = data.Buyer.name?.trim() ?? '';
+			if (buyerCompanyName.length === 0 && buyerName.length === 0) {
+				return false;
+			}
+			return true;
+		},
+		{
+			message: 'Buyer company name or buyer name is required',
+			path: ['Buyer', 'companyName'],
+		},
+	);
 
 export const invoiceGenerationSchemaOutput = z.object({
 	invoice: z.string(),

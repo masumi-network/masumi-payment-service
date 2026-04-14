@@ -1,25 +1,17 @@
 import { z } from '@/utils/zod-openapi';
-import { HotWalletType, PricingType } from '@/generated/prisma/client';
+import { HotWalletType } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
-import { checkSignature, resolvePaymentKeyHash } from '@meshsdk/core';
-import { logger } from '@/utils/logger';
-import { metadataSchema } from '../registry/wallet';
-import { metadataToString } from '@/utils/converter/metadata-string-convert';
-import { handlePurchaseCreditInit } from '@/services/integrations';
-import stringify from 'canonical-json';
-import { getPublicKeyFromCoseKey } from '@/utils/converter/public-key-convert';
-import { generateSHA256Hash } from '@/utils/crypto';
 import { validateHexString } from '@/utils/validator/hex';
-import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { handlePurchaseCreditInit } from '@/services/integrations';
 import { HttpExistsError } from '@/utils/errors/http-exists-error';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
-import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
+import { resolvePurchaseCreationContext } from './shared';
 import {
 	createPurchaseInitSchemaInput,
 	createPurchaseInitSchemaOutput,
@@ -41,6 +33,7 @@ export {
 	queryPurchaseRequestSchemaInput,
 	queryPurchaseRequestSchemaOutput,
 };
+
 export const queryPurchaseRequestGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: queryPurchaseRequestSchemaInput,
@@ -251,228 +244,36 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 				});
 				throw createHttpError(404, 'No valid purchasing wallets found');
 			}
-			//require at least 3 hours between unlock time and the submit result time
-			const additionalExternalDisputeUnlockTime = BigInt(1000 * 60 * 15);
-			const submitResultTime = BigInt(input.submitResultTime);
-			const payByTime = BigInt(input.payByTime);
-			const unlockTime = BigInt(input.unlockTime);
-			const externalDisputeUnlockTime = BigInt(input.externalDisputeUnlockTime);
-			// if (payByTime > submitResultTime - BigInt(1000 * 60 * 5)) {
-			// 	recordBusinessEndpointError(
-			// 		'/api/v1/purchase',
-			// 		'POST',
-			// 		400,
-			// 		'Pay by time must be before submit result time (min. 5 minutes)',
-			// 		{
-			// 			network: input.network,
-			// 			field: 'payByTime',
-			// 			validation_type: 'invalid_time_constraint',
-			// 			pay_by_time: payByTime.toString(),
-			// 			submit_result_time: submitResultTime.toString(),
-			// 		},
-			// 	);
-			// 	throw createHttpError(400, 'Pay by time must be before submit result time (min. 5 minutes)');
-			// }
-			// if (payByTime < BigInt(Date.now() - 1000 * 60 * 5)) {
-			// 	recordBusinessEndpointError(
-			// 		'/api/v1/purchase',
-			// 		'POST',
-			// 		400,
-			// 		'Pay by time must be in the future (max. 5 minutes)',
-			// 		{
-			// 			network: input.network,
-			// 			field: 'payByTime',
-			// 			validation_type: 'time_in_past',
-			// 			pay_by_time: payByTime.toString(),
-			// 			current_time: Date.now().toString(),
-			// 		},
-			// 	);
-			// 	throw createHttpError(400, 'Pay by time must be in the future (max. 5 minutes)');
-			// }
-
-			// if (externalDisputeUnlockTime < unlockTime + additionalExternalDisputeUnlockTime) {
-			// 	throw createHttpError(
-			// 		400,
-			// 		'External dispute unlock time must be after unlock time (min. 15 minutes difference)',
-			// 	);
-			// }
-			// if (submitResultTime < BigInt(Date.now() + 1000 * 60 * 15)) {
-			// 	throw createHttpError(400, 'Submit result time must be in the future (min. 15 minutes)');
-			// }
-			// const offset = BigInt(1000 * 60 * 15);
-			// if (submitResultTime > unlockTime - offset) {
-			// 	throw createHttpError(400, 'Submit result time must be before unlock time with at least 15 minutes difference');
-			// }
-			const provider = getBlockfrostInstance(input.network, paymentSource.PaymentSourceConfig.rpcProviderApiKey);
-
-			const assetId = input.agentIdentifier;
-			const policyAsset = assetId.startsWith(policyId) ? assetId : policyId + assetId;
-			const assetInWallet = await provider.assetsAddresses(policyAsset, {
-				order: 'desc',
-				count: 1,
+			const {
+				externalDisputeUnlockTime,
+				payByTime,
+				pricingType,
+				requestedCost,
+				sellerAddress,
+				submitResultTime,
+				unlockTime,
+			} = await resolvePurchaseCreationContext({
+				input,
+				rpcProviderApiKey: paymentSource.PaymentSourceConfig.rpcProviderApiKey,
 			});
-
-			if (assetInWallet.length == 0) {
-				throw createHttpError(404, 'Agent identifier not found');
-			}
-			const addressOfAsset = assetInWallet[0].address;
-			if (addressOfAsset == null) {
-				throw createHttpError(404, 'Agent identifier not found');
-			}
-
-			const vKey = resolvePaymentKeyHash(addressOfAsset);
-			if (vKey != input.sellerVkey) {
-				throw createHttpError(400, 'Invalid seller vkey');
-			}
-
-			const assetInfo = await provider.assetsById(assetId);
-			if (!assetInfo.onchain_metadata) {
-				throw createHttpError(404, 'Agent identifier not found');
-			}
-			const parsedMetadata = metadataSchema.safeParse(assetInfo.onchain_metadata);
-
-			if (!parsedMetadata.success || !parsedMetadata.data) {
-				const error = parsedMetadata.error;
-				logger.error('Error parsing metadata', { error });
-				throw createHttpError(404, 'Agent identifier metadata invalid or unsupported');
-			}
-
-			const pricing = parsedMetadata.data.agentPricing;
-			if (pricing.pricingType != PricingType.Fixed && pricing.pricingType != PricingType.Dynamic) {
-				throw createHttpError(400, 'Agent identifier pricing type not supported');
-			}
-
-			const agentIdentifierAmountsMap = new Map<string, bigint>();
-			if (pricing.pricingType == PricingType.Fixed) {
-				const amounts = pricing.fixedPricing;
-				for (const amount of amounts) {
-					const unit = metadataToString(amount.unit)!.toLowerCase() == '' ? '' : metadataToString(amount.unit)!;
-					if (agentIdentifierAmountsMap.has(unit)) {
-						agentIdentifierAmountsMap.set(unit, agentIdentifierAmountsMap.get(unit)! + BigInt(amount.amount));
-					} else {
-						agentIdentifierAmountsMap.set(unit, BigInt(amount.amount));
-					}
-				}
-				// If Amounts are provided for fixed pricing, verify they match
-				if (input.Amounts != undefined) {
-					const inputAmountsMap = new Map<string, bigint>();
-					for (const amount of input.Amounts) {
-						if (inputAmountsMap.has(amount.unit)) {
-							inputAmountsMap.set(amount.unit, inputAmountsMap.get(amount.unit)! + BigInt(amount.amount));
-						} else {
-							inputAmountsMap.set(amount.unit, BigInt(amount.amount));
-						}
-					}
-					if (inputAmountsMap.size != agentIdentifierAmountsMap.size) {
-						throw createHttpError(400, 'Provided Amounts do not match the fixed pricing of the agent');
-					}
-					for (const [unit, amount] of agentIdentifierAmountsMap) {
-						if (inputAmountsMap.get(unit) != amount) {
-							throw createHttpError(400, 'Provided Amounts do not match the fixed pricing of the agent');
-						}
-					}
-				}
-			} else {
-				if (input.Amounts == undefined || input.Amounts.length == 0) {
-					throw createHttpError(400, 'For dynamic pricing, Amounts must be provided');
-				}
-				for (const fund of input.Amounts) {
-					if (BigInt(fund.amount) <= 0n) {
-						throw createHttpError(400, 'Amounts must be positive');
-					}
-				}
-				for (const amount of input.Amounts) {
-					const unit = amount.unit.toLowerCase() == 'lovelace' ? '' : amount.unit;
-					if (agentIdentifierAmountsMap.has(unit)) {
-						agentIdentifierAmountsMap.set(unit, agentIdentifierAmountsMap.get(unit)! + BigInt(amount.amount));
-					} else {
-						agentIdentifierAmountsMap.set(unit, BigInt(amount.amount));
-					}
-				}
-			}
-			const decoded = decodeBlockchainIdentifier(input.blockchainIdentifier);
-			if (decoded == null) {
-				throw createHttpError(400, 'Invalid blockchain identifier, format invalid');
-			}
-			const purchaserId = decoded.purchaserId;
-			const sellerId = decoded.sellerId;
-			const signature = decoded.signature;
-			const key = decoded.key;
-
-			if (purchaserId != input.identifierFromPurchaser) {
-				throw createHttpError(400, 'Invalid blockchain identifier, purchaser id mismatch');
-			}
-			if (validateHexString(purchaserId) == false) {
-				throw createHttpError(400, 'Purchaser identifier is not a valid hex string');
-			}
-			if (validateHexString(sellerId) == false) {
-				throw createHttpError(400, 'Seller identifier is not a valid hex string');
-			}
-			if (decoded.agentIdentifier != input.agentIdentifier) {
-				throw createHttpError(400, 'Invalid blockchain identifier, agent identifier mismatch');
-			}
-
-			const cosePublicKey = getPublicKeyFromCoseKey(key);
-			if (cosePublicKey == null) {
-				throw createHttpError(400, 'Invalid blockchain identifier, key not found');
-			}
-			const publicKeyHash = cosePublicKey.hash();
-			if (publicKeyHash.hex() != input.sellerVkey) {
-				throw createHttpError(400, 'Invalid blockchain identifier, key does not match');
-			}
-
-			const reconstructedBlockchainIdentifier = {
-				inputHash: input.inputHash,
-				agentIdentifier: input.agentIdentifier,
-				purchaserIdentifier: purchaserId,
-				sellerIdentifier: sellerId,
-				RequestedFunds:
-					pricing.pricingType == PricingType.Dynamic && input.Amounts
-						? input.Amounts.map((a) => ({
-								amount: a.amount,
-								unit: a.unit.toLowerCase() == 'lovelace' ? '' : a.unit,
-							}))
-						: null,
-				payByTime: input.payByTime,
-				submitResultTime: input.submitResultTime,
-				unlockTime: unlockTime.toString(),
-				externalDisputeUnlockTime: externalDisputeUnlockTime.toString(),
-				sellerAddress: addressOfAsset,
-			};
-
-			const hashedBlockchainIdentifier = generateSHA256Hash(stringify(reconstructedBlockchainIdentifier));
-
-			const identifierIsSignedCorrectly = await checkSignature(hashedBlockchainIdentifier, {
-				signature: signature,
-				key: key,
-			});
-			if (!identifierIsSignedCorrectly) {
-				throw createHttpError(400, 'Invalid blockchain identifier, signature invalid');
-			}
 			const smartContractAddress = paymentSource.smartContractAddress;
 
 			const initialPurchaseRequest = await handlePurchaseCreditInit({
 				id: ctx.id,
 				walletScopeIds: ctx.walletScopeIds,
-				cost: Array.from(agentIdentifierAmountsMap.entries()).map(([unit, amount]) => {
-					if (unit.toLowerCase() == 'lovelace') {
-						return { amount: amount, unit: '' };
-					} else {
-						return { amount: amount, unit: unit };
-					}
-				}),
+				cost: requestedCost,
 				metadata: input.metadata,
 				network: input.network,
 				blockchainIdentifier: input.blockchainIdentifier,
 				contractAddress: smartContractAddress,
 				sellerVkey: input.sellerVkey,
-				sellerAddress: addressOfAsset,
-				payByTime: payByTime,
-				submitResultTime: submitResultTime,
-				unlockTime: unlockTime,
-				externalDisputeUnlockTime: externalDisputeUnlockTime,
+				sellerAddress,
+				payByTime,
+				submitResultTime,
+				unlockTime,
+				externalDisputeUnlockTime,
 				inputHash: input.inputHash,
-				pricingType: pricing.pricingType,
+				pricingType,
 			});
 
 			return {

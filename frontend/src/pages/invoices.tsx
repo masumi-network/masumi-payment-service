@@ -21,6 +21,7 @@ import { useUninvoicedPayments, type UninvoicedPayment } from '@/lib/hooks/useUn
 import { InvoiceDetailsDialog } from '@/components/invoices/InvoiceDetailsDialog';
 import { GenerateInvoiceDialog } from '@/components/invoices/GenerateInvoiceDialog';
 import { extractApiErrorMessage } from '@/lib/api-error';
+import { toast } from 'react-toastify';
 
 function getPreviousMonth(): string {
   const now = new Date();
@@ -42,6 +43,16 @@ interface WalletGroup {
   payments: UninvoicedPayment[];
   totalFunds: Record<string, bigint>;
 }
+
+interface GeneratePrefillState {
+  buyerWalletVkey: string;
+  sellerWalletVkey?: string;
+  month: string;
+  forceRegenerate?: boolean;
+  sourceInvoice?: InvoiceSummary;
+}
+
+const EMPTY_GENERATE_PREFILL: GeneratePrefillState = { buyerWalletVkey: '', month: '' };
 
 function groupBySellerBuyer(payments: UninvoicedPayment[]): WalletGroup[] {
   const map = new Map<string, WalletGroup>();
@@ -111,13 +122,8 @@ export default function Invoices() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedInvoice, setSelectedInvoice] = useState<InvoiceSummary | null>(null);
   const [showGenerateDialog, setShowGenerateDialog] = useState(false);
-  const [generatePrefill, setGeneratePrefill] = useState<{
-    buyerWalletVkey: string;
-    sellerWalletVkey?: string;
-    month: string;
-    forceRegenerate?: boolean;
-    sourceInvoice?: InvoiceSummary;
-  }>({ buyerWalletVkey: '', month: '' });
+  const [generatePrefill, setGeneratePrefill] =
+    useState<GeneratePrefillState>(EMPTY_GENERATE_PREFILL);
   const [expandedWallets, setExpandedWallets] = useState<Set<string>>(new Set());
 
   // Clear expanded wallets when month changes (adjust state during render)
@@ -130,6 +136,7 @@ export default function Invoices() {
   const {
     invoices,
     isLoading: isLoadingInvoices,
+    isRefetching: isRefetchingInvoices,
     isError: isInvoicesError,
     error: invoicesError,
     hasMore: hasMoreInvoices,
@@ -141,6 +148,7 @@ export default function Invoices() {
   const {
     payments: uninvoicedPayments,
     isLoading: isLoadingUninvoiced,
+    isRefetching: isRefetchingUninvoiced,
     isError: isUninvoicedError,
     error: uninvoicedError,
     hasMore: hasMoreUninvoiced,
@@ -215,16 +223,23 @@ export default function Invoices() {
   }, [refetchInvoices, refetchUninvoiced]);
 
   const handleRegenerate = useCallback((invoice: InvoiceSummary) => {
-    if (!invoice.buyerWalletVkey) return;
+    if (!invoice.buyerWalletVkey) {
+      toast.error('This invoice is missing wallet metadata and cannot be regenerated.');
+      return;
+    }
+
     const month = `${invoice.invoiceYear}-${String(invoice.invoiceMonth).padStart(2, '0')}`;
     setGeneratePrefill({
       buyerWalletVkey: invoice.buyerWalletVkey,
       sellerWalletVkey: invoice.sellerWalletVkey ?? undefined,
       month,
+      forceRegenerate: true,
       sourceInvoice: invoice,
     });
     setSelectedInvoice(null);
-    setShowGenerateDialog(true);
+
+    // Let the details dialog finish closing before opening the next one.
+    window.setTimeout(() => setShowGenerateDialog(true), 0);
   }, []);
 
   const openGenerateFromGroup = useCallback(
@@ -245,7 +260,8 @@ export default function Invoices() {
     return selectedMonth === current;
   }, [selectedMonth]);
 
-  const isLoading = activeTab === 'Generated Invoices' ? isLoadingInvoices : isLoadingUninvoiced;
+  const isRefreshing =
+    activeTab === 'Generated Invoices' ? isRefetchingInvoices : isRefetchingUninvoiced;
 
   return (
     <MainLayout>
@@ -262,7 +278,7 @@ export default function Invoices() {
                 View and generate monthly invoices for buyer wallets.
               </p>
             </div>
-            <RefreshButton onRefresh={handleRefresh} isRefreshing={isLoading} />
+            <RefreshButton onRefresh={handleRefresh} isRefreshing={isRefreshing} />
           </div>
 
           <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 px-4 py-3 text-sm">

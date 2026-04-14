@@ -550,17 +550,20 @@ async function updateInitialPurchaseTransaction(
 				return;
 			}
 
-			const dbEntry = await prisma.purchaseRequest.findUnique({
+			const dbEntry = await prisma.purchaseRequest.findFirst({
 				where: {
 					blockchainIdentifier: decodedNewContract.blockchainIdentifier,
 					paymentSourceId: paymentContract.id,
 					NextAction: {
-						requestedAction: PurchasingAction.FundsLockingInitiated,
+						requestedAction: {
+							in: [PurchasingAction.FundsLockingInitiated],
+						},
 					},
 				},
 				include: {
 					SmartContractWallet: { where: { deletedAt: null } },
 					SellerWallet: true,
+					NextAction: true,
 					CurrentTransaction: {
 						include: { BlocksWallet: true },
 					},
@@ -687,16 +690,18 @@ async function updateInitialPurchaseTransaction(
 				return;
 			}
 
-			if (
-				decodedNewContract.buyerVkey != dbEntry.SmartContractWallet.walletVkey ||
-				decodedNewContract.buyerAddress != dbEntry.SmartContractWallet.walletAddress
-			) {
+			const expectedBuyerVkey = dbEntry.SmartContractWallet?.walletVkey;
+			const expectedBuyerAddress = dbEntry.SmartContractWallet?.walletAddress;
+			const isBuyerVkeyMismatch = expectedBuyerVkey != null && decodedNewContract.buyerVkey !== expectedBuyerVkey;
+			const isBuyerAddressMismatch =
+				expectedBuyerAddress != null && decodedNewContract.buyerAddress !== expectedBuyerAddress;
+			if (isBuyerVkeyMismatch || isBuyerAddressMismatch) {
 				logger.warn('Buyer does not match buyer in db. This likely is a spoofing attempt.', {
 					purchaseRequest: dbEntry,
 					buyer: decodedNewContract.buyerVkey,
 					buyerAddress: decodedNewContract.buyerAddress,
-					buyerDb: dbEntry.SmartContractWallet?.walletVkey,
-					buyerDbAddress: dbEntry.SmartContractWallet?.walletAddress,
+					buyerDb: expectedBuyerVkey,
+					buyerDbAddress: expectedBuyerAddress,
 				});
 				return;
 			}
@@ -809,7 +814,11 @@ async function updateInitialPurchaseTransaction(
 					resultHash: decodedNewContract.resultHash,
 				},
 			});
-			if (dbEntry.currentTransactionId != null && dbEntry.CurrentTransaction?.BlocksWallet != null) {
+			if (
+				dbEntry.currentTransactionId != null &&
+				dbEntry.CurrentTransaction?.BlocksWallet != null &&
+				dbEntry.SmartContractWallet != null
+			) {
 				await prisma.transaction.update({
 					where: {
 						id: dbEntry.currentTransactionId,

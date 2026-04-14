@@ -36,12 +36,14 @@ describe('webhook queue helpers', () => {
 				checkedAt: '2026-03-09T12:00:00.000Z',
 			},
 			'2026-03-09T12:00:00.000Z',
+			'masumi-test-service',
 		);
 		const endpointPayload = buildEndpointWebhookPayload(basePayload, 'endpoint-1');
 
 		expect(basePayload.webhook_id).toBe('');
 		expect(endpointPayload).toEqual({
 			event_type: WebhookEventType.WALLET_LOW_BALANCE,
+			service_name: 'masumi-test-service',
 			timestamp: '2026-03-09T12:00:00.000Z',
 			webhook_id: 'endpoint-1',
 			data: {

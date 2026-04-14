@@ -8,7 +8,7 @@
 
 @font-face {
   font-family: 'Inter';
-  src: url('/fonts/inter/InterVariable.ttf') format('truetype');
+  src: url('/admin/fonts/inter/InterVariable.ttf') format('truetype');
   font-weight: 100 900;
   font-display: swap;
   font-style: normal;

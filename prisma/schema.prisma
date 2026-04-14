@@ -8,12 +8,13 @@ datasource db {
 }
 
 model ApiKey {
-  id        String       @id @default(cuid())
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
-  token     String       @unique
-  tokenHash String       @unique
-  status    ApiKeyStatus
+  id             String       @id @default(cuid())
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  token          String
+  tokenHash      String       @unique
+  encryptedToken String?
+  status         ApiKeyStatus
 
   // Flag-based permissions (must be set explicitly on create)
   canRead  Boolean
@@ -69,33 +70,38 @@ model UnitValue {
 }
 
 model HotWallet {
-  id                       String                    @id @default(cuid())
-  createdAt                DateTime                  @default(now())
-  updatedAt                DateTime                  @updatedAt
-  walletVkey               String                    @unique
-  walletAddress            String
-  type                     HotWalletType
-  secretId                 String
-  collectionAddress        String?
-  pendingTransactionId     String?                   @unique
-  pendingSwapTransactionId String?                   @unique
-  paymentSourceId          String
-  lockedAt                 DateTime?
-  note                     String?
-  deletedAt                DateTime?
-  PaymentSource            PaymentSource             @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
-  PendingTransaction       Transaction?              @relation(fields: [pendingTransactionId], references: [id])
-  PendingSwapTransaction   SwapTransaction?          @relation(fields: [pendingSwapTransactionId], references: [id])
-  SwapTransactionHistory   SwapTransaction[]         @relation("SwapTransactionHistory")
-  Secret                   WalletSecret              @relation(fields: [secretId], references: [id])
-  PaymentRequest           PaymentRequest[]
-  PurchaseRequest          PurchaseRequest[]
-  RegistryRequest          RegistryRequest[]
-  apiKeyWalletScopes       ApiKeyWalletScope[]
-  LimitedPurchaseRequests  PurchaseRequest[]         @relation("HotWalletLimit")
-  LowBalanceRules          HotWalletLowBalanceRule[]
-  hydraRelations           HydraRelation[]
-  hydraLocalParticipants   HydraLocalParticipant[]
+  id                                      String                          @id @default(cuid())
+  createdAt                               DateTime                        @default(now())
+  updatedAt                               DateTime                        @updatedAt
+  walletVkey                              String                          @unique
+  walletAddress                           String
+  type                                    HotWalletType
+  secretId                                String
+  collectionAddress                       String?
+  pendingTransactionId                    String?                         @unique
+  pendingSwapTransactionId                String?                         @unique
+  paymentSourceId                         String
+  lockedAt                                DateTime?
+  note                                    String?
+  deletedAt                               DateTime?
+  PaymentSource                           PaymentSource                   @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
+  PendingTransaction                      Transaction?                    @relation(fields: [pendingTransactionId], references: [id])
+  PendingSwapTransaction                  SwapTransaction?                @relation(fields: [pendingSwapTransactionId], references: [id])
+  SwapTransactionHistory                  SwapTransaction[]               @relation("SwapTransactionHistory")
+  Secret                                  WalletSecret                    @relation(fields: [secretId], references: [id])
+  PaymentRequest                          PaymentRequest[]
+  PurchaseRequest                         PurchaseRequest[]
+  RegistryRequest                         RegistryRequest[]               @relation("RegistryRequestMintingWallet")
+  RecipientRegistryRequest                RegistryRequest[]               @relation("RegistryRequestRecipientWallet")
+  DeregistrationRequests                  RegistryRequest[]               @relation("RegistryRequestDeregistrationWallet")
+  InboxAgentRegistrationRequests          InboxAgentRegistrationRequest[] @relation("InboxAgentRegistrationRequestMintingWallet")
+  RecipientInboxAgentRegistrationRequests InboxAgentRegistrationRequest[] @relation("InboxAgentRegistrationRequestRecipientWallet")
+  InboxDeregistrationRequests             InboxAgentRegistrationRequest[] @relation("InboxAgentRegistrationRequestDeregistrationWallet")
+  apiKeyWalletScopes                      ApiKeyWalletScope[]
+  LimitedPurchaseRequests                 PurchaseRequest[]               @relation("HotWalletLimit")
+  LowBalanceRules                         HotWalletLowBalanceRule[]
+  hydraRelations                          HydraRelation[]
+  hydraLocalParticipants                  HydraLocalParticipant[]
 }
 
 model HotWalletLowBalanceRule {
@@ -118,26 +124,33 @@ model HotWalletLowBalanceRule {
 }
 
 model Transaction {
-  id                       String            @id @default(cuid())
-  createdAt                DateTime          @default(now())
-  updatedAt                DateTime          @updatedAt
-  txHash                   String?
-  status                   TransactionStatus
-  confirmations            Int?
-  lastCheckedAt            DateTime?
-  fees                     BigInt?
-  blockHeight              Int?
-  blockTime                Int?
-  outputAmount             String?           @db.Text
-  utxoCount                Int?
-  withdrawalCount          Int?
-  assetMintOrBurnCount     Int?
-  redeemerCount            Int?
-  validContract            Boolean?
-  paymentRequestHistoryId  String?
-  purchaseRequestHistoryId String?
-  previousOnChainState     OnChainState?
-  newOnChainState          OnChainState?
+  id                            String                          @id @default(cuid())
+  createdAt                     DateTime                        @default(now())
+  updatedAt                     DateTime                        @updatedAt
+  txHash                        String?
+  status                        TransactionStatus
+  confirmations                 Int?
+  lastCheckedAt                 DateTime?
+  fees                          BigInt?
+  blockHeight                   Int?
+  blockTime                     Int?
+  outputAmount                  String?                         @db.Text
+  utxoCount                     Int?
+  withdrawalCount               Int?
+  assetMintOrBurnCount          Int?
+  redeemerCount                 Int?
+  validContract                 Boolean?
+  paymentRequestHistoryId       String?
+  purchaseRequestHistoryId      String?
+  previousOnChainState          OnChainState?
+  newOnChainState               OnChainState?
+  BlocksWallet                  HotWallet?
+  PaymentRequestCurrent         PaymentRequest?                 @relation("CurrentPaymentTransaction")
+  PurchaseRequestCurrent        PurchaseRequest?                @relation("CurrentPurchaseTransaction")
+  RegistryRequest               RegistryRequest[]
+  InboxAgentRegistrationRequest InboxAgentRegistrationRequest[]
+  PaymentRequestHistory         PaymentRequest?                 @relation("PaymentTransactionHistory", fields: [paymentRequestHistoryId], references: [id])
+  PurchaseRequestHistory        PurchaseRequest?                @relation("PurchaseTransactionHistory", fields: [purchaseRequestHistoryId], references: [id])
 
   /// Which blockchain layer this transaction was submitted to
   layer TransactionLayer @default(L1)
@@ -145,13 +158,6 @@ model Transaction {
   /// If submitted to L2, which Hydra head processed it
   hydraHeadId String?
   HydraHead   HydraHead? @relation(fields: [hydraHeadId], references: [id])
-
-  BlocksWallet           HotWallet?
-  PaymentRequestCurrent  PaymentRequest?   @relation("CurrentPaymentTransaction")
-  PurchaseRequestCurrent PurchaseRequest?  @relation("CurrentPurchaseTransaction")
-  RegistryRequest        RegistryRequest[]
-  PaymentRequestHistory  PaymentRequest?   @relation("PaymentTransactionHistory", fields: [paymentRequestHistoryId], references: [id])
-  PurchaseRequestHistory PurchaseRequest?  @relation("PurchaseTransactionHistory", fields: [purchaseRequestHistoryId], references: [id])
 
   @@index([layer])
   @@index([hydraHeadId])
@@ -213,6 +219,9 @@ model RegistryRequest {
   lastCheckedAt                  DateTime?
   paymentSourceId                String
   smartContractWalletId          String
+  recipientHotWalletId           String?
+  deregistrationHotWalletId      String?
+  sendFundingLovelace            BigInt?
   name                           String
   apiBaseUrl                     String
   capabilityName                 String?
@@ -238,7 +247,41 @@ model RegistryRequest {
   Pricing                        AgentPricing      @relation(fields: [agentPricingId], references: [id])
   CurrentTransaction             Transaction?      @relation(fields: [currentTransactionId], references: [id])
   PaymentSource                  PaymentSource     @relation(fields: [paymentSourceId], references: [id])
-  SmartContractWallet            HotWallet         @relation(fields: [smartContractWalletId], references: [id])
+  SmartContractWallet            HotWallet         @relation("RegistryRequestMintingWallet", fields: [smartContractWalletId], references: [id])
+  RecipientWallet                HotWallet?        @relation("RegistryRequestRecipientWallet", fields: [recipientHotWalletId], references: [id])
+  DeregistrationHotWallet        HotWallet?        @relation("RegistryRequestDeregistrationWallet", fields: [deregistrationHotWalletId], references: [id])
+
+  @@index([recipientHotWalletId])
+  @@index([deregistrationHotWalletId])
+}
+
+model InboxAgentRegistrationRequest {
+  id                             String            @id @default(cuid())
+  createdAt                      DateTime          @default(now())
+  updatedAt                      DateTime          @updatedAt
+  lastCheckedAt                  DateTime?
+  paymentSourceId                String
+  smartContractWalletId          String
+  recipientHotWalletId           String?
+  deregistrationHotWalletId      String?
+  sendFundingLovelace            BigInt?
+  name                           String
+  description                    String?
+  agentSlug                      String
+  metadataVersion                Int
+  agentIdentifier                String?           @unique
+  state                          RegistrationState
+  registrationStateLastChangedAt DateTime          @default(now())
+  currentTransactionId           String?
+  error                          String?
+  CurrentTransaction             Transaction?      @relation(fields: [currentTransactionId], references: [id])
+  PaymentSource                  PaymentSource     @relation(fields: [paymentSourceId], references: [id])
+  SmartContractWallet            HotWallet         @relation("InboxAgentRegistrationRequestMintingWallet", fields: [smartContractWalletId], references: [id])
+  RecipientWallet                HotWallet?        @relation("InboxAgentRegistrationRequestRecipientWallet", fields: [recipientHotWalletId], references: [id])
+  DeregistrationHotWallet        HotWallet?        @relation("InboxAgentRegistrationRequestDeregistrationWallet", fields: [deregistrationHotWalletId], references: [id])
+
+  @@index([recipientHotWalletId])
+  @@index([deregistrationHotWalletId])
 }
 
 model ExampleOutput {
@@ -424,32 +467,33 @@ model PaymentSourceIdentifiers {
 }
 
 model PaymentSource {
-  id                       String                     @id @default(cuid())
-  createdAt                DateTime                   @default(now())
-  updatedAt                DateTime                   @updatedAt
-  network                  Network
-  lastCheckedAt            DateTime?
-  lastIdentifierChecked    String?
-  syncInProgress           Boolean                    @default(false)
-  smartContractAddress     String
-  adminWalletId            String
-  feeRatePermille          Int
-  cooldownTime             Int
-  paymentSourceConfigId    String                     @unique
-  deletedAt                DateTime?
-  policyId                 String?
-  disablePaymentAt         DateTime?
-  disableSyncAt            DateTime?
-  AdminWallets             AdminWallet[]              @relation("AdminWallets")
-  HotWallets               HotWallet[]
-  PaymentRequests          PaymentRequest[]           @relation("PaymentRequestPaymentSource")
-  FeeReceiverNetworkWallet AdminWallet                @relation("FeeReceiverNetworkWallet", fields: [adminWalletId], references: [id], onDelete: Cascade)
-  PaymentSourceConfig      PaymentSourceConfig        @relation(fields: [paymentSourceConfigId], references: [id])
-  PaymentSourceIdentifiers PaymentSourceIdentifiers[]
-  PurchaseRequests         PurchaseRequest[]          @relation("PurchaseRequestPaymentSource")
-  RegistryRequest          RegistryRequest[]
-  WalletBases              WalletBase[]
-  WebhookEndpoints         WebhookEndpoint[]
+  id                             String                          @id @default(cuid())
+  createdAt                      DateTime                        @default(now())
+  updatedAt                      DateTime                        @updatedAt
+  network                        Network
+  lastCheckedAt                  DateTime?
+  lastIdentifierChecked          String?
+  syncInProgress                 Boolean                         @default(false)
+  smartContractAddress           String
+  adminWalletId                  String
+  feeRatePermille                Int
+  cooldownTime                   Int
+  paymentSourceConfigId          String                          @unique
+  deletedAt                      DateTime?
+  policyId                       String?
+  disablePaymentAt               DateTime?
+  disableSyncAt                  DateTime?
+  AdminWallets                   AdminWallet[]                   @relation("AdminWallets")
+  HotWallets                     HotWallet[]
+  PaymentRequests                PaymentRequest[]                @relation("PaymentRequestPaymentSource")
+  FeeReceiverNetworkWallet       AdminWallet                     @relation("FeeReceiverNetworkWallet", fields: [adminWalletId], references: [id], onDelete: Cascade)
+  PaymentSourceConfig            PaymentSourceConfig             @relation(fields: [paymentSourceConfigId], references: [id])
+  PaymentSourceIdentifiers       PaymentSourceIdentifiers[]
+  PurchaseRequests               PurchaseRequest[]               @relation("PurchaseRequestPaymentSource")
+  RegistryRequest                RegistryRequest[]
+  InboxAgentRegistrationRequests InboxAgentRegistrationRequest[]
+  WalletBases                    WalletBase[]
+  WebhookEndpoints               WebhookEndpoint[]
 
   @@unique([network, smartContractAddress])
   @@unique([network, policyId])
@@ -721,7 +765,9 @@ model WebhookEndpoint {
   updatedAt DateTime @updatedAt
 
   url       String
-  authToken String
+  urlHash   String?
+  authToken String?
+  format    WebhookFormat      @default(EXTENDED)
   events    WebhookEventType[]
   name      String?
 
@@ -738,6 +784,8 @@ model WebhookEndpoint {
   disabledAt          DateTime?
 
   WebhookDeliveries WebhookDelivery[]
+
+  @@index([urlHash, paymentSourceId, format])
 }
 
 model WebhookDelivery {
@@ -769,6 +817,13 @@ enum WebhookEventType {
   PURCHASE_ON_ERROR
   PAYMENT_ON_ERROR
   WALLET_LOW_BALANCE
+}
+
+enum WebhookFormat {
+  EXTENDED
+  SLACK
+  GOOGLE_CHAT
+  DISCORD
 }
 
 enum WebhookDeliveryStatus {

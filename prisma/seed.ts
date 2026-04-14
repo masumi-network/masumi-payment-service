@@ -18,7 +18,7 @@ import { DEFAULTS } from './../src/utils/config';
 import { getRegistryScriptV1 } from './../src/utils/generator/contract-generator';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import paymentPlutus from '../smart-contracts/payment/plutus.json';
-import { generateSHA256Hash } from '../src/utils/crypto';
+import { generateApiKeySecureHash } from '../src/utils/crypto/api-key-hash';
 import { MeshWallet, PlutusScript } from '@meshsdk/core';
 
 import { Pool } from 'pg';
@@ -56,10 +56,12 @@ export const seed = async (prisma: PrismaClient) => {
 		throw Error('API-KEY is insecure');
 	}
 
+	const adminKeyHash = await generateApiKeySecureHash(adminKey);
 	await prisma.apiKey.upsert({
 		create: {
-			token: adminKey,
-			tokenHash: generateSHA256Hash(adminKey),
+			encryptedToken: encrypt(adminKey),
+			tokenHash: adminKeyHash,
+			token: '*****' + adminKey.slice(-4),
 			// Flag-based permissions (new system)
 			canRead: true,
 			canPay: true,
@@ -67,14 +69,14 @@ export const seed = async (prisma: PrismaClient) => {
 			status: ApiKeyStatus.Active,
 		},
 		update: {
-			token: adminKey,
-			tokenHash: generateSHA256Hash(adminKey),
+			encryptedToken: encrypt(adminKey),
+			token: '*****' + adminKey.slice(-4),
 			canRead: true,
 			canPay: true,
 			canAdmin: true,
 			status: ApiKeyStatus.Active,
 		},
-		where: { token: adminKey },
+		where: { tokenHash: adminKeyHash },
 	});
 	if (usedDefaultAdminKey) {
 		console.log('Seeded with DEFAULT_ADMIN_KEY');

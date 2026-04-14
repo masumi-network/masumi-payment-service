@@ -15,6 +15,7 @@ export interface SearchableItem {
 const searchableItems: SearchableItem[] = [
   { id: 'dashboard', title: 'Dashboard', type: 'page', href: '/' },
   { id: 'ai-agents', title: 'AI Agents', type: 'page', href: '/ai-agents' },
+  { id: 'inbox-agents', title: 'Inbox Agents', type: 'page', href: '/inbox-agents' },
   { id: 'wallets', title: 'Wallets', type: 'page', href: '/wallets' },
   {
     id: 'transactions',
@@ -29,6 +30,7 @@ const searchableItems: SearchableItem[] = [
     href: '/payment-sources',
   },
   { id: 'api-keys', title: 'API Keys', type: 'page', href: '/api-keys' },
+  { id: 'webhooks', title: 'Webhooks', type: 'page', href: '/webhooks' },
   { id: 'settings', title: 'Settings', type: 'page', href: '/settings' },
 
   {
@@ -38,6 +40,14 @@ const searchableItems: SearchableItem[] = [
     href: '/ai-agents?action=register_agent',
     elementId: 'add-ai-agent-button',
     keywords: ['create agent', 'new agent'],
+  },
+  {
+    id: 'add-inbox-agent',
+    title: 'Add Inbox Agent',
+    type: 'action',
+    href: '/inbox-agents?action=register_inbox_agent',
+    elementId: 'add-inbox-agent-button',
+    keywords: ['create inbox agent', 'new inbox agent', 'register inbox'],
   },
   {
     id: 'add-wallet',
@@ -62,6 +72,14 @@ const searchableItems: SearchableItem[] = [
     href: '/api-keys?action=add_api_key',
     elementId: 'add-api-key-button',
     keywords: ['create api key', 'new api key'],
+  },
+  {
+    id: 'add-webhook',
+    title: 'Add Webhook',
+    type: 'action',
+    href: '/webhooks?action=add_webhook',
+    elementId: 'add-webhook-button',
+    keywords: ['create webhook', 'new webhook', 'slack alert', 'discord alert'],
   },
   {
     id: 'toggle-theme',

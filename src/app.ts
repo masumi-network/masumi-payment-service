@@ -11,6 +11,9 @@ import path from 'path';
 import { requestTiming } from '@/utils/middleware/request-timing';
 import { DEFAULTS } from '@/utils/config';
 import { requestLogger } from '@/utils/middleware/request-logger';
+import { generateApiKeySecureHash } from '@/utils/crypto/api-key-hash';
+import { migrateApiKeyEncryption } from '@/utils/startup-migrations/api-key-encryption';
+import { migrateWebhookEncryption } from '@/utils/startup-migrations/webhook-encryption';
 import { blockchainStateMonitorService } from '@/services/monitoring';
 import fs from 'fs';
 import { getHydraConnectionManager } from './services/hydra-connection-manager/hydra-connection-manager.service';
@@ -19,13 +22,16 @@ const __dirname = path.resolve();
 
 async function initialize() {
 	await initDB();
-	const defaultKeyRows = await prisma.$queryRaw<Array<{ id: string }>>`
-		SELECT "id"
-		FROM "ApiKey"
-		WHERE "token" = ${DEFAULTS.DEFAULT_ADMIN_KEY}
-		LIMIT 1
-	`;
-	if (defaultKeyRows.length > 0) {
+
+	await migrateApiKeyEncryption();
+	await migrateWebhookEncryption();
+
+	const defaultAdminHash = await generateApiKeySecureHash(DEFAULTS.DEFAULT_ADMIN_KEY);
+	const defaultKeyRow = await prisma.apiKey.findFirst({
+		where: { tokenHash: defaultAdminHash },
+		select: { id: true },
+	});
+	if (defaultKeyRow !== null) {
 		logger.warn('*****************************************************************');
 		logger.warn(
 			'*  WARNING: The default insecure ADMIN_KEY "' + DEFAULTS.DEFAULT_ADMIN_KEY + '" is in use.           *',

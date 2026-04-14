@@ -13,14 +13,14 @@ export function useApiKeys() {
   const query = useInfiniteQuery({
     queryKey: ['api-keys'],
     queryFn: async ({ pageParam }) => {
-      const cursorToken = pageParam ?? undefined;
+      const cursorId = pageParam ?? undefined;
 
       const response = await handleApiCall(
         () =>
           getApiKey({
             client: apiClient,
             query: {
-              cursorToken,
+              cursorId,
               take: PAGE_SIZE,
             },
           }),
@@ -34,7 +34,7 @@ export function useApiKeys() {
 
       const apiKeys = response?.data?.data?.ApiKeys ?? [];
       const hasMore = apiKeys.length === PAGE_SIZE;
-      const nextCursor = hasMore ? (apiKeys[apiKeys.length - 1]?.token ?? undefined) : undefined;
+      const nextCursor = hasMore ? (apiKeys[apiKeys.length - 1]?.id ?? undefined) : undefined;
 
       return {
         apiKeys,
@@ -63,11 +63,11 @@ export function useApiKeys() {
     const pages = data?.pages ?? [];
     return flattenInclusiveCursorPages(
       pages.map((page) => page.apiKeys),
-      (key: ApiKey) => key.token ?? key.id,
+      (key: ApiKey) => key.id,
     );
   }, [data]);
 
-  const isLoading = queryIsLoading || isRefetching;
+  const isLoading = queryIsLoading;
   const hasMore = Boolean(hasNextPage);
 
   const loadMore = useCallback(() => {
