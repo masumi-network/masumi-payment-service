@@ -3,8 +3,14 @@
    Glassmorphism · Micro-Animations · Refined Spacing
    ══════════════════════════════════════════════════════════════════════ */
 
-/* Fonts — Inter for UI, JetBrains Mono for code */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+/* Fonts — load Inter locally so docs work under the app CSP */
+@font-face {
+	font-family: 'Inter';
+	src: url('/admin/fonts/inter/web/InterVariable.woff2') format('woff2');
+	font-style: normal;
+	font-weight: 100 900;
+	font-display: swap;
+}
 
 /* ─── Design Tokens ─── */
 :root {
