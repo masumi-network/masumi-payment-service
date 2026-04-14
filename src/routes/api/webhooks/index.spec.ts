@@ -13,6 +13,7 @@ const mockFindWebhookById = jest.fn() as AnyMock;
 const mockUpdateWebhook = jest.fn() as AnyMock;
 const mockFindPaymentSource = jest.fn() as AnyMock;
 const mockSendTestWebhook = jest.fn() as AnyMock;
+const mockAssertWebhookDestinationAllowed = jest.fn() as AnyMock;
 
 jest.unstable_mockModule('@/utils/db', () => ({
 	prisma: {
@@ -71,6 +72,13 @@ jest.unstable_mockModule('@/services/webhooks/sender.service', () => ({
 	},
 }));
 
+jest.unstable_mockModule('@/utils/security/webhook-destination-policy', () => ({
+	assertWebhookDestinationAllowed: mockAssertWebhookDestinationAllowed,
+	isWebhookDestinationPolicyError: jest.fn((error: unknown) => error instanceof Error && error.message === 'blocked'),
+	WEBHOOK_DESTINATION_NOT_ALLOWED_MESSAGE: 'Webhook destination is not allowed',
+	WEBHOOK_DELIVERY_BLOCKED_MESSAGE: 'Delivery blocked by policy',
+}));
+
 const { registerWebhookPost, listWebhooksGet, patchWebhookPatch, testWebhookPost } = await import('./index');
 
 describe('webhook endpoints', () => {
@@ -93,6 +101,7 @@ describe('webhook endpoints', () => {
 		jest.clearAllMocks();
 		mockFindApiKey.mockResolvedValue(asApiKey());
 		mockFindExistingWebhook.mockResolvedValue(null);
+		mockAssertWebhookDestinationAllowed.mockResolvedValue(undefined);
 		mockFindPaymentSource.mockResolvedValue({
 			id: 'payment-source-1',
 			network: Network.Preprod,
@@ -179,6 +188,31 @@ describe('webhook endpoints', () => {
 				paymentSourceId: null,
 			},
 		});
+	});
+
+	it('rejects registering a blocked webhook destination', async () => {
+		mockAssertWebhookDestinationAllowed.mockRejectedValue(new Error('blocked'));
+
+		const { responseMock } = await testEndpoint({
+			endpoint: registerWebhookPost,
+			requestProps: {
+				method: 'POST',
+				headers: { token: 'valid' },
+				body: {
+					url: 'http://127.0.0.1/webhooks/masumi',
+					authToken: 'extended-secret',
+					Events: ['PAYMENT_ON_ERROR'],
+					name: 'Blocked webhook',
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(400);
+		expect(responseMock._getJSONData()).toEqual({
+			status: 'error',
+			error: { message: 'Webhook destination is not allowed' },
+		});
+		expect(mockCreateWebhook).not.toHaveBeenCalled();
 	});
 
 	it('allows provider formats without authToken and stores null instead', async () => {
@@ -439,6 +473,32 @@ describe('webhook endpoints', () => {
 		});
 	});
 
+	it('rejects patching to a blocked webhook destination', async () => {
+		mockAssertWebhookDestinationAllowed.mockRejectedValue(new Error('blocked'));
+
+		const { responseMock } = await testEndpoint({
+			endpoint: patchWebhookPatch,
+			requestProps: {
+				method: 'PATCH',
+				headers: { token: 'valid' },
+				body: {
+					webhookId: 'webhook-4',
+					url: 'http://169.254.169.254/latest/meta-data',
+					format: WebhookFormat.SLACK,
+					Events: ['PAYMENT_ON_ERROR'],
+					name: 'Blocked webhook',
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(400);
+		expect(responseMock._getJSONData()).toEqual({
+			status: 'error',
+			error: { message: 'Webhook destination is not allowed' },
+		});
+		expect(mockUpdateWebhook).not.toHaveBeenCalled();
+	});
+
 	it('rejects patching when the caller is not the creator or an admin', async () => {
 		mockFindApiKey.mockResolvedValue({
 			...asApiKey(),
@@ -529,9 +589,9 @@ describe('webhook endpoints', () => {
 			data: {
 				webhookId: 'webhook-test-1',
 				success: true,
-				responseCode: 200,
+				responseCode: null,
 				errorMessage: null,
-				durationMs: 120,
+				durationMs: 0,
 			},
 		});
 	});
@@ -575,11 +635,208 @@ describe('webhook endpoints', () => {
 			data: {
 				webhookId: 'webhook-test-2',
 				success: false,
-				responseCode: 401,
-				errorMessage: 'HTTP 401: Unauthorized',
-				durationMs: 98,
+				responseCode: null,
+				errorMessage: 'Delivery failed',
+				durationMs: 0,
 			},
 		});
+	});
+
+	it('returns a coarse blocked-by-policy result for test deliveries', async () => {
+		mockFindWebhookById.mockResolvedValue({
+			id: 'webhook-test-4',
+			url: 'enc:http://127.0.0.1/webhook',
+			format: WebhookFormat.EXTENDED,
+			authToken: 'enc:extended-secret',
+			name: 'Blocked relay',
+			paymentSourceId: null,
+			createdByApiKeyId: 'api-key-1',
+			PaymentSource: null,
+		});
+		mockSendTestWebhook.mockResolvedValue({
+			success: false,
+			errorMessage: 'Delivery blocked by policy',
+			durationMs: 0,
+		});
+
+		const { responseMock } = await testEndpoint({
+			endpoint: testWebhookPost,
+			requestProps: {
+				method: 'POST',
+				headers: { token: 'valid' },
+				body: {
+					webhookId: 'webhook-test-4',
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(200);
+		expect(responseMock._getJSONData()).toEqual({
+			status: 'success',
+			data: {
+				webhookId: 'webhook-test-4',
+				success: false,
+				responseCode: null,
+				errorMessage: 'Delivery blocked by policy',
+				durationMs: 0,
+			},
+		});
+	});
+
+	it('rate limits webhook mutations after 30 requests per minute', async () => {
+		mockFindApiKey.mockResolvedValue({
+			...asApiKey(),
+			id: 'api-key-rate-limit-mutation',
+			canAdmin: false,
+			networkLimit: [Network.Mainnet, Network.Preprod],
+		});
+		mockCreateWebhook.mockResolvedValue({
+			id: 'webhook-rate-limit',
+			url: 'https://example.com/webhooks/masumi',
+			format: WebhookFormat.EXTENDED,
+			authToken: 'extended-secret',
+			events: ['PAYMENT_ON_ERROR'],
+			name: 'Rate limit webhook',
+			isActive: true,
+			createdAt: new Date('2026-04-08T10:00:00.000Z'),
+			paymentSourceId: null,
+		});
+
+		for (let attempt = 0; attempt < 30; attempt += 1) {
+			const { responseMock } = await testEndpoint({
+				endpoint: registerWebhookPost,
+				requestProps: {
+					method: 'POST',
+					ip: '198.18.0.10',
+					headers: { token: 'valid' },
+					body: {
+						url: 'https://example.com/webhooks/masumi',
+						authToken: 'extended-secret',
+						Events: ['PAYMENT_ON_ERROR'],
+						name: `Webhook ${attempt}`,
+					},
+				},
+			});
+
+			expect(responseMock.statusCode).toBe(200);
+		}
+
+		const { responseMock } = await testEndpoint({
+			endpoint: registerWebhookPost,
+			requestProps: {
+				method: 'POST',
+				ip: '198.18.0.10',
+				headers: { token: 'valid' },
+				body: {
+					url: 'https://example.com/webhooks/masumi',
+					authToken: 'extended-secret',
+					Events: ['PAYMENT_ON_ERROR'],
+					name: 'Webhook blocked',
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(429);
+		expect(responseMock._getJSONData()).toEqual({
+			status: 'error',
+			error: { message: 'Too many requests' },
+		});
+	});
+
+	it('rate limits webhook tests after 10 requests per minute', async () => {
+		mockFindApiKey.mockResolvedValue({
+			...asApiKey(),
+			id: 'api-key-rate-limit-test',
+			canAdmin: false,
+		});
+		mockFindWebhookById.mockResolvedValue({
+			id: 'webhook-rate-limit-test',
+			url: 'enc:https://hooks.slack.com/services/test',
+			format: WebhookFormat.SLACK,
+			authToken: null,
+			name: 'Slack alerts',
+			paymentSourceId: null,
+			createdByApiKeyId: 'api-key-rate-limit-test',
+			PaymentSource: null,
+		});
+		mockSendTestWebhook.mockResolvedValue({
+			success: true,
+			responseCode: 200,
+			durationMs: 120,
+		});
+
+		for (let attempt = 0; attempt < 10; attempt += 1) {
+			const { responseMock } = await testEndpoint({
+				endpoint: testWebhookPost,
+				requestProps: {
+					method: 'POST',
+					ip: '198.18.0.11',
+					headers: { token: 'valid' },
+					body: {
+						webhookId: 'webhook-rate-limit-test',
+					},
+				},
+			});
+
+			expect(responseMock.statusCode).toBe(200);
+		}
+
+		const { responseMock } = await testEndpoint({
+			endpoint: testWebhookPost,
+			requestProps: {
+				method: 'POST',
+				ip: '198.18.0.11',
+				headers: { token: 'valid' },
+				body: {
+					webhookId: 'webhook-rate-limit-test',
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(429);
+		expect(responseMock._getJSONData()).toEqual({
+			status: 'error',
+			error: { message: 'Too many requests' },
+		});
+	});
+
+	it('does not rate limit admin webhook tests', async () => {
+		mockFindApiKey.mockResolvedValue({
+			...asApiKey(),
+			id: 'api-key-admin-test',
+			canAdmin: true,
+		});
+		mockFindWebhookById.mockResolvedValue({
+			id: 'webhook-admin-test',
+			url: 'enc:https://hooks.slack.com/services/test',
+			format: WebhookFormat.SLACK,
+			authToken: null,
+			name: 'Slack alerts',
+			paymentSourceId: null,
+			createdByApiKeyId: 'someone-else',
+			PaymentSource: null,
+		});
+		mockSendTestWebhook.mockResolvedValue({
+			success: true,
+			responseCode: 200,
+			durationMs: 120,
+		});
+
+		for (let attempt = 0; attempt < 12; attempt += 1) {
+			const { responseMock } = await testEndpoint({
+				endpoint: testWebhookPost,
+				requestProps: {
+					method: 'POST',
+					ip: '198.18.0.12',
+					headers: { token: 'valid' },
+					body: {
+						webhookId: 'webhook-admin-test',
+					},
+				},
+			});
+
+			expect(responseMock.statusCode).toBe(200);
+		}
 	});
 
 	it('rejects test sends when the caller is not the creator or an admin', async () => {

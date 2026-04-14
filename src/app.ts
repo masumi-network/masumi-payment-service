@@ -16,6 +16,7 @@ import { migrateApiKeyEncryption } from '@/utils/startup-migrations/api-key-encr
 import { migrateWebhookEncryption } from '@/utils/startup-migrations/webhook-encryption';
 import { blockchainStateMonitorService } from '@/services/monitoring';
 import fs from 'fs';
+import helmet from 'helmet';
 
 const __dirname = path.resolve();
 
@@ -89,6 +90,24 @@ export async function startApp() {
 			// Add request logger middleware
 			app.use(requestTiming);
 			app.use(requestLogger);
+			app.use(
+				helmet({
+					contentSecurityPolicy: false,
+					crossOriginEmbedderPolicy: false,
+					crossOriginOpenerPolicy: { policy: 'same-origin' },
+					crossOriginResourcePolicy: { policy: 'same-origin' },
+					originAgentCluster: false,
+					referrerPolicy: { policy: 'no-referrer' },
+					strictTransportSecurity: false,
+					xContentTypeOptions: true,
+					xDnsPrefetchControl: false,
+					xDownloadOptions: false,
+					xFrameOptions: { action: 'deny' },
+					xPermittedCrossDomainPolicies: false,
+					xPoweredBy: true,
+					xXssProtection: false,
+				}),
+			);
 
 			const replacer = (_key: string, value: unknown): unknown => {
 				if (typeof value === 'bigint') {
@@ -124,7 +143,7 @@ export async function startApp() {
 					customfavIcon: '/assets/swagger_favicon.svg',
 					customCss: customCss,
 					swaggerOptions: {
-						persistAuthorization: true,
+						persistAuthorization: false,
 						tryItOutEnabled: true,
 						displayRequestDuration: true,
 						deepLinking: true,

@@ -8556,7 +8556,7 @@ export type PatchWebhooksData = {
          */
         webhookId: string;
         /**
-         * The webhook URL to receive notifications
+         * The webhook URL to receive notifications. Only public http and https destinations are allowed.
          */
         url: string;
         /**
@@ -8636,7 +8636,7 @@ export type PostWebhooksData = {
      */
     body?: {
         /**
-         * The webhook URL to receive notifications
+         * The webhook URL to receive notifications. Only public http and https destinations are allowed.
          */
         url: string;
         /**
@@ -8752,8 +8752,17 @@ export type PostWebhooksTestResponses = {
         data: {
             webhookId: string;
             success: boolean;
+            /**
+             * Always null for test deliveries to avoid exposing upstream response details.
+             */
             responseCode: number | null;
+            /**
+             * Null on success, otherwise a coarse delivery status message.
+             */
             errorMessage: string | null;
+            /**
+             * Always 0 for test deliveries to avoid exposing timing details.
+             */
             durationMs: number;
         };
     };
