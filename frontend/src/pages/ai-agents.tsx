@@ -45,12 +45,8 @@ import { findPaymentSourceWalletByVkey } from '@/lib/wallet-lookup';
 
 type AIAgent = RegistryEntry | A2aRegistryEntry;
 
-const getHoldingWallet = (agent: AIAgent) => agent.RecipientWallet ?? agent.SmartContractWallet;
-
-const usesCombinedWallet = (agent: AIAgent) =>
-  getHoldingWallet(agent).walletVkey === agent.SmartContractWallet.walletVkey;
-
-const getHoldingWallet = (agent: AIAgent) => agent.RecipientWallet ?? agent.SmartContractWallet;
+const getHoldingWallet = (agent: AIAgent) =>
+  'RecipientWallet' in agent ? (agent.RecipientWallet ?? agent.SmartContractWallet) : agent.SmartContractWallet;
 
 const usesCombinedWallet = (agent: AIAgent) =>
   getHoldingWallet(agent).walletVkey === agent.SmartContractWallet.walletVkey;
@@ -159,7 +155,7 @@ export default function AIAgentsPage() {
       // Backend uses hasSome (exact match against tag array), not partial
       if (agent.Tags?.some((tag) => tag.toLowerCase() === query)) return true;
       if (agent.SmartContractWallet?.walletAddress?.toLowerCase().includes(query)) return true;
-      if (agent.RecipientWallet?.walletAddress?.toLowerCase().includes(query)) return true;
+      if ('RecipientWallet' in agent && agent.RecipientWallet?.walletAddress?.toLowerCase().includes(query)) return true;
       if (agent.state?.toLowerCase().includes(query)) return true;
       if (agent.AgentPricing?.pricingType === 'Free' && 'free'.startsWith(query)) return true;
       if (agent.AgentPricing?.pricingType === 'Dynamic' && 'dynamic'.startsWith(query)) return true;
@@ -672,7 +668,7 @@ export default function AIAgentsPage() {
           />
 
           <VerifyAndPublishAgentDialog
-            agent={selectedAgentForVerification}
+            agent={selectedAgentForVerification && 'sendFundingLovelace' in selectedAgentForVerification ? selectedAgentForVerification : null}
             open={!!selectedAgentForVerification}
             onClose={() => setSelectedAgentForVerification(null)}
           />

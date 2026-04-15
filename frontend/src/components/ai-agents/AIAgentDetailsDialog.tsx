@@ -25,7 +25,6 @@ import { AgentEarningsOverview } from './AgentEarningsOverview';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { extractApiErrorMessage } from '@/lib/api-error';
 import { findPaymentSourceWalletByVkey } from '@/lib/wallet-lookup';
-import { useMemo } from 'react';
 import { VerifyAndPublishAgentDialog } from './VerifyAndPublishAgentDialog';
 
 type AIAgent = RegistryEntry | A2aRegistryEntry;
@@ -94,7 +93,12 @@ export function AIAgentDetailsDialog({
     [paymentSources, network],
   );
   const holdingWallet = useMemo(
-    () => (agent ? (agent.RecipientWallet ?? agent.SmartContractWallet) : null),
+    () =>
+      agent
+        ? 'RecipientWallet' in agent
+          ? (agent.RecipientWallet ?? agent.SmartContractWallet)
+          : agent.SmartContractWallet
+        : null,
     [agent],
   );
   const usesCombinedWallet = useMemo(
@@ -764,7 +768,7 @@ export function AIAgentDetailsDialog({
                             )}
                           </>
                         )}
-                        {agent.sendFundingLovelace && (
+                        {'sendFundingLovelace' in agent && agent.sendFundingLovelace && (
                           <div className="flex items-center justify-between py-2 border-t">
                             <span className="text-sm text-muted-foreground">
                               Holding Wallet Funding Override
@@ -840,7 +844,7 @@ export function AIAgentDetailsDialog({
         isChild
       />
       <VerifyAndPublishAgentDialog
-        agent={agent}
+        agent={agent && 'sendFundingLovelace' in agent ? agent : null}
         open={isVerifyDialogOpen}
         onClose={() => setIsVerifyDialogOpen(false)}
       />
