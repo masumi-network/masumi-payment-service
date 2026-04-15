@@ -20,12 +20,6 @@ import {
 	registerInboxAgentPost,
 } from './registry-inbox';
 import {
-	deleteInboxAgentRegistration,
-	queryRegistryInboxCountGet,
-	queryRegistryInboxRequestGet,
-	registerInboxAgentPost,
-} from './registry-inbox';
-import {
 	paymentSourceExtendedEndpointDelete,
 	paymentSourceExtendedEndpointGet,
 	paymentSourceExtendedEndpointPatch,
@@ -181,46 +175,6 @@ export const apiRouter: Routing = {
 			a2a: {
 				get: queryA2ARegistryRequestGet,
 				post: registerA2AAgentPost,
-			},
-		},
-		'inbox-agents': {
-			get: queryRegistryInboxRequestGet,
-			post: registerInboxAgentPost,
-			delete: deleteInboxAgentRegistration,
-			diff: {
-				get: queryRegistryInboxDiffGet,
-			},
-			wallet: {
-				get: queryInboxAgentFromWalletGet,
-			},
-			deregister: {
-				post: unregisterInboxAgentPost,
-			},
-			'agent-identifier': {
-				get: queryInboxAgentByIdentifierGet,
-			},
-			count: {
-				get: queryRegistryInboxCountGet,
-			},
-		},
-		'registry-inbox': {
-			get: queryRegistryInboxRequestGet,
-			post: registerInboxAgentPost,
-			delete: deleteInboxAgentRegistration,
-			diff: {
-				get: queryRegistryInboxDiffGet,
-			},
-			wallet: {
-				get: queryInboxAgentFromWalletGet,
-			},
-			deregister: {
-				post: unregisterInboxAgentPost,
-			},
-			'agent-identifier': {
-				get: queryInboxAgentByIdentifierGet,
-			},
-			count: {
-				get: queryRegistryInboxCountGet,
 			},
 		},
 		'inbox-agents': {
