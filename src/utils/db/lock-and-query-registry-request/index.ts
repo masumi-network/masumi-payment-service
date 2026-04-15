@@ -9,6 +9,8 @@ export async function lockAndQueryA2ARegistryRequests({
 	state: RegistrationState;
 	maxBatchSize: number;
 }) {
+	const locksSellingWallet = state === RegistrationState.RegistrationRequested;
+
 	return await prisma.$transaction(
 		async (prisma) => {
 			const paymentSources = await prisma.paymentSource.findMany({
@@ -23,7 +25,7 @@ export async function lockAndQueryA2ARegistryRequests({
 							Secret: true,
 						},
 						where: {
-							type: HotWalletType.Selling,
+							...(locksSellingWallet ? { type: HotWalletType.Selling } : {}),
 							PendingTransaction: null,
 							lockedAt: null,
 							deletedAt: null,
@@ -42,15 +44,47 @@ export async function lockAndQueryA2ARegistryRequests({
 					const potentialRequests = await prisma.a2ARegistryRequest.findMany({
 						where: {
 							state: state,
-							SmartContractWallet: {
-								id: hotWallet.id,
-								deletedAt: null,
-								PendingTransaction: { is: null },
-								lockedAt: null,
-							},
+							...(locksSellingWallet
+								? {
+										SmartContractWallet: {
+											id: hotWallet.id,
+											deletedAt: null,
+											PendingTransaction: { is: null },
+											lockedAt: null,
+										},
+									}
+								: {
+										OR: [
+											{
+												DeregistrationHotWallet: {
+													is: {
+														id: hotWallet.id,
+														deletedAt: null,
+														PendingTransaction: { is: null },
+														lockedAt: null,
+													},
+												},
+											},
+											{
+												deregistrationHotWalletId: null,
+												SmartContractWallet: {
+													id: hotWallet.id,
+													deletedAt: null,
+													PendingTransaction: { is: null },
+													lockedAt: null,
+												},
+											},
+										],
+									}),
 						},
 						include: {
 							SmartContractWallet: {
+								include: {
+									Secret: true,
+								},
+							},
+							RecipientWallet: true,
+							DeregistrationHotWallet: {
 								include: {
 									Secret: true,
 								},

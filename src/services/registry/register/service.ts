@@ -325,7 +325,7 @@ export async function registerAgentV1() {
 						const fundingLovelace = resolveRegistryFundingLovelace(request);
 
 						const assetName = generateRegistryAssetName(firstUtxo);
-						const metadata = buildAgentMetadata(request);
+						const metadata = buildAgentMetadata({ ...request, metadataVersion: DEFAULTS.DEFAULT_METADATA_VERSION });
 						const evaluationTx = await generateRegistryMintTransaction(
 							blockchainProvider,
 							network,

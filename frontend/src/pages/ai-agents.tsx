@@ -50,6 +50,11 @@ const getHoldingWallet = (agent: AIAgent) => agent.RecipientWallet ?? agent.Smar
 const usesCombinedWallet = (agent: AIAgent) =>
   getHoldingWallet(agent).walletVkey === agent.SmartContractWallet.walletVkey;
 
+const getHoldingWallet = (agent: AIAgent) => agent.RecipientWallet ?? agent.SmartContractWallet;
+
+const usesCombinedWallet = (agent: AIAgent) =>
+  getHoldingWallet(agent).walletVkey === agent.SmartContractWallet.walletVkey;
+
 const parseAgentStatus = (status: AIAgent['state']): string => {
   switch (status) {
     case 'RegistrationRequested':

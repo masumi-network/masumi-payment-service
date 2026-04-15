@@ -963,17 +963,9 @@ export type AgentMetadata = {
          */
         image: string;
         /**
-         * Version of the metadata schema (1=standard MIP-002, 2=MIP-002-A2A)
+         * Version of the metadata schema (currently only version 1 is supported)
          */
         metadataVersion: number;
-        /**
-         * Agent Card URL for A2A agents. Null for standard agents
-         */
-        agentCardUrl?: string | null;
-        /**
-         * A2A protocol versions. Empty for standard agents
-         */
-        a2aProtocolVersions?: Array<string>;
     };
 };
 
@@ -1007,9 +999,9 @@ export type AgentIdentifierMetadata = {
          */
         apiBaseUrl: string;
         /**
-         * List of example outputs from the agent. Empty for A2A agents
+         * List of example outputs from the agent
          */
-        ExampleOutputs?: Array<{
+        ExampleOutputs: Array<{
             /**
              * Name of the example output
              */
@@ -1041,9 +1033,9 @@ export type AgentIdentifierMetadata = {
             version?: string | null;
         } | null;
         /**
-         * Author information for the agent. Null for A2A agents
+         * Author information for the agent
          */
-        Author?: {
+        Author: {
             /**
              * Name of the agent author
              */
@@ -1060,7 +1052,7 @@ export type AgentIdentifierMetadata = {
              * Organization of the author. Null if not provided
              */
             organization?: string | null;
-        } | null;
+        };
         /**
          * Legal information about the agent. Null if not provided
          */
@@ -1079,9 +1071,9 @@ export type AgentIdentifierMetadata = {
             other?: string | null;
         } | null;
         /**
-         * Pricing information for the agent. Absent for A2A agents (pricing is off-chain)
+         * Pricing information for the agent
          */
-        AgentPricing?: {
+        AgentPricing: {
             /**
              * Pricing type for the agent (Fixed)
              */
@@ -1115,17 +1107,9 @@ export type AgentIdentifierMetadata = {
          */
         image: string;
         /**
-         * Version of the metadata schema (1=standard MIP-002, 2=MIP-002-A2A)
+         * Version of the metadata schema (currently only version 1 is supported)
          */
         metadataVersion: number;
-        /**
-         * Agent Card URL for A2A agents. Null for standard agents
-         */
-        agentCardUrl?: string | null;
-        /**
-         * A2A protocol versions. Empty for standard agents
-         */
-        a2aProtocolVersions?: Array<string>;
     };
 };
 
@@ -1304,168 +1288,6 @@ export type RegistryEntry = {
          */
         walletAddress: string;
     } | null;
-    CurrentTransaction: {
-        /**
-         * Cardano transaction hash
-         */
-        txHash: string | null;
-        /**
-         * Current status of the transaction
-         */
-        status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
-        /**
-         * Number of block confirmations for this transaction. Null if not yet confirmed
-         */
-        confirmations: number | null;
-        /**
-         * Fees of the transaction
-         */
-        fees: string | null;
-        /**
-         * Block height of the transaction
-         */
-        blockHeight: number | null;
-        /**
-         * Block time of the transaction
-         */
-        blockTime: number | null;
-    } | null;
-};
-
-export type A2aRegistryEntry = {
-    /**
-     * Error message if registration failed. Null if no error
-     */
-    error: string | null;
-    /**
-     * Unique identifier for the A2A registry request
-     */
-    id: string;
-    /**
-     * Name of the agent
-     */
-    name: string;
-    /**
-     * Description of the agent. Null if not provided
-     */
-    description: string | null;
-    /**
-     * Base URL of the agent API for interactions
-     */
-    apiBaseUrl: string;
-    /**
-     * URL to the Agent Card JSON
-     */
-    agentCardUrl: string;
-    /**
-     * A2A protocol versions supported by this agent
-     */
-    a2aProtocolVersions: Array<string>;
-    /**
-     * List of tags categorizing the agent
-     */
-    Tags: Array<string>;
-    /**
-     * Current state of the registration process
-     */
-    state: 'RegistrationRequested' | 'RegistrationInitiated' | 'RegistrationConfirmed' | 'RegistrationFailed' | 'DeregistrationRequested' | 'DeregistrationInitiated' | 'DeregistrationConfirmed' | 'DeregistrationFailed';
-    /**
-     * Timestamp when the registry request was created
-     */
-    createdAt: Date;
-    /**
-     * Timestamp when the registry request was last updated
-     */
-    updatedAt: Date;
-    /**
-     * Timestamp when the registry was last checked. Null if never checked
-     */
-    lastCheckedAt: Date | null;
-    /**
-     * Full agent identifier (policy ID + asset name). Null if not yet minted
-     */
-    agentIdentifier: string | null;
-    /**
-     * Agent version from Agent Card. Null if not fetched
-     */
-    a2aAgentVersion: string | null;
-    /**
-     * Default input MIME types from Agent Card
-     */
-    a2aDefaultInputModes: Array<string>;
-    /**
-     * Default output MIME types from Agent Card
-     */
-    a2aDefaultOutputModes: Array<string>;
-    /**
-     * Provider name from Agent Card. Null if not provided
-     */
-    a2aProviderName: string | null;
-    /**
-     * Provider URL from Agent Card. Null if not provided
-     */
-    a2aProviderUrl: string | null;
-    /**
-     * Documentation URL from Agent Card. Null if not provided
-     */
-    a2aDocumentationUrl: string | null;
-    /**
-     * Icon URL from Agent Card. Null if not provided
-     */
-    a2aIconUrl: string | null;
-    /**
-     * Streaming capability. Null if not fetched
-     */
-    a2aCapabilitiesStreaming: boolean | null;
-    /**
-     * Push notification capability. Null if not fetched
-     */
-    a2aCapabilitiesPushNotifications: boolean | null;
-    /**
-     * Pricing information for the agent
-     */
-    AgentPricing: {
-        /**
-         * Pricing type for the agent
-         */
-        pricingType: 'Fixed';
-        /**
-         * List of assets and amounts for fixed pricing
-         */
-        Pricing: Array<{
-            /**
-             * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
-             */
-            amount: string;
-            /**
-             * Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)
-             */
-            unit: string;
-        }>;
-    } | {
-        /**
-         * Pricing type for the agent
-         */
-        pricingType: 'Free';
-    } | {
-        /**
-         * Pricing type for the agent. Amounts are provided per payment/purchase request
-         */
-        pricingType: 'Dynamic';
-    };
-    /**
-     * Smart contract wallet managing this agent registration
-     */
-    SmartContractWallet: {
-        /**
-         * Payment key hash of the smart contract wallet
-         */
-        walletVkey: string;
-        /**
-         * Cardano address of the smart contract wallet
-         */
-        walletAddress: string;
-    };
     CurrentTransaction: {
         /**
          * Cardano transaction hash
@@ -7567,7 +7389,7 @@ export type DeleteRegistryResponses = {
      */
     200: {
         status: string;
-        data: RegistryEntry | A2aRegistryEntry;
+        data: RegistryEntry;
     };
 };
 
@@ -7854,7 +7676,7 @@ export type PostRegistryDeregisterResponses = {
      */
     200: {
         status: string;
-        data: RegistryEntry | A2aRegistryEntry;
+        data: RegistryEntry;
     };
 };
 
@@ -8947,142 +8769,6 @@ export type PostWebhooksTestResponses = {
 };
 
 export type PostWebhooksTestResponse = PostWebhooksTestResponses[keyof PostWebhooksTestResponses];
-
-export type GetRegistryA2aData = {
-    body?: never;
-    path?: never;
-    query: {
-        /**
-         * The number of registry entries to return
-         */
-        limit?: number;
-        /**
-         * The cursor id to paginate through the results
-         */
-        cursorId?: string;
-        /**
-         * The Cardano network used to register the agent on
-         */
-        network: 'Preprod' | 'Mainnet';
-        /**
-         * The smart contract address of the payment source
-         */
-        filterSmartContractAddress?: string | null;
-        /**
-         * Filter by registration status category
-         */
-        filterStatus?: 'Registered' | 'Deregistered' | 'Pending' | 'Failed';
-        /**
-         * Search query to filter by name, description, tags, minting or recipient wallet address, state, or price
-         */
-        searchQuery?: string;
-    };
-    url: '/registry/a2a';
-};
-
-export type GetRegistryA2aErrors = {
-    /**
-     * Bad Request (possible parameters missing or invalid)
-     */
-    400: unknown;
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Internal Server Error
-     */
-    500: unknown;
-};
-
-export type GetRegistryA2aResponses = {
-    /**
-     * A2A agent metadata
-     */
-    200: {
-        status: string;
-        data: {
-            Assets: Array<A2aRegistryEntry>;
-        };
-    };
-};
-
-export type GetRegistryA2aResponse = GetRegistryA2aResponses[keyof GetRegistryA2aResponses];
-
-export type PostRegistryA2aData = {
-    body?: {
-        /**
-         * The Cardano network used to register the agent on
-         */
-        network: 'Preprod' | 'Mainnet';
-        /**
-         * The payment key of a specific wallet used for the registration
-         */
-        sellingWalletVkey: string;
-        /**
-         * Name of the agent
-         */
-        name: string;
-        /**
-         * Base URL of the agent API for interactions
-         */
-        apiBaseUrl: string;
-        /**
-         * URL to the Agent Card JSON (typically /.well-known/agent-card.json)
-         */
-        agentCardUrl: string;
-        /**
-         * A2A protocol versions this agent supports
-         */
-        a2aProtocolVersions: Array<string>;
-        /**
-         * Description of the agent
-         */
-        description?: string;
-        /**
-         * Tags used in the registry metadata
-         */
-        Tags?: Array<string>;
-        /**
-         * Skip fetching and validating the Agent Card URL. Use with caution.
-         */
-        skipAgentCardValidation?: boolean;
-    };
-    path?: never;
-    query?: never;
-    url: '/registry/a2a';
-};
-
-export type PostRegistryA2aErrors = {
-    /**
-     * Bad Request (invalid input or Agent Card validation failed)
-     */
-    400: unknown;
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Wallet not found
-     */
-    404: unknown;
-    /**
-     * Internal Server Error
-     */
-    500: unknown;
-};
-
-export type PostRegistryA2aResponses = {
-    /**
-     * A2A agent registered
-     */
-    200: {
-        status: 'success';
-        data: A2aRegistryEntry;
-    };
-};
-
-export type PostRegistryA2aResponse = PostRegistryA2aResponses[keyof PostRegistryA2aResponses];
 
 export type GetInboxAgentsWalletData = {
     body?: never;
