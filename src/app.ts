@@ -92,7 +92,19 @@ export async function startApp() {
 			app.use(requestLogger);
 			app.use(
 				helmet({
-					contentSecurityPolicy: false,
+					contentSecurityPolicy: {
+						directives: {
+							defaultSrc: ["'self'"],
+							baseUri: ["'self'"],
+							connectSrc: ["'self'"],
+							fontSrc: ["'self'", 'data:'],
+							frameAncestors: ["'none'"],
+							imgSrc: ["'self'", 'data:'],
+							objectSrc: ["'none'"],
+							scriptSrc: ["'self'", "'unsafe-inline'"],
+							styleSrc: ["'self'", "'unsafe-inline'"],
+						},
+					},
 					crossOriginEmbedderPolicy: false,
 					crossOriginOpenerPolicy: { policy: 'same-origin' },
 					crossOriginResourcePolicy: { policy: 'same-origin' },
