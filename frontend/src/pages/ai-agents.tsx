@@ -10,7 +10,12 @@ import { Badge } from '@/components/ui/badge';
 
 import { cn, shortenAddress } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { deleteRegistry, RegistryEntry, postRegistryDeregister } from '@/lib/api/generated';
+import {
+  deleteRegistry,
+  RegistryEntry,
+  A2aRegistryEntry,
+  postRegistryDeregister,
+} from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { handleApiCall } from '@/lib/utils';
 import Head from 'next/head';
@@ -18,6 +23,7 @@ import { AIAgentTableSkeleton } from '@/components/skeletons/AIAgentTableSkeleto
 import { Spinner } from '@/components/ui/spinner';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAgents } from '@/lib/queries/useAgents';
+import { useA2AAgents } from '@/lib/queries/useA2AAgents';
 import formatBalance from '@/lib/formatBalance';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { FaRegClock } from 'react-icons/fa';
@@ -36,9 +42,13 @@ import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { parseAmountSearchRange } from '@/lib/parseAmountSearchRange';
 import { extractApiErrorMessage } from '@/lib/api-error';
 import { findPaymentSourceWalletByVkey } from '@/lib/wallet-lookup';
-type AIAgent = RegistryEntry;
 
-const getHoldingWallet = (agent: AIAgent) => agent.RecipientWallet ?? agent.SmartContractWallet;
+type AIAgent = RegistryEntry | A2aRegistryEntry;
+
+const getHoldingWallet = (agent: AIAgent) =>
+  'RecipientWallet' in agent
+    ? (agent.RecipientWallet ?? agent.SmartContractWallet)
+    : agent.SmartContractWallet;
 
 const usesCombinedWallet = (agent: AIAgent) =>
   getHoldingWallet(agent).walletVkey === agent.SmartContractWallet.walletVkey;
@@ -81,17 +91,43 @@ export default function AIAgentsPage() {
 
   // Use React Query for initial load (cached)
   const {
-    agents,
-    isLoading,
+    agents: standardAgents,
+    isLoading: isLoadingStandard,
     isFetching: isFetchingAgents,
     isPlaceholderData,
-    refetch,
+    refetch: refetchStandard,
     hasMore: hasMoreAgents,
     loadMore,
   } = useAgents({
     filterStatus,
     searchQuery: debouncedSearchQuery || undefined,
   });
+
+  const {
+    agents: a2aAgents,
+    isLoading: isLoadingA2A,
+    hasMore: hasMoreA2A,
+    loadMore: loadMoreA2A,
+    refetch: refetchA2A,
+  } = useA2AAgents({
+    filterStatus,
+    searchQuery: debouncedSearchQuery || undefined,
+  });
+
+  const agents = useMemo(
+    () =>
+      [...standardAgents, ...a2aAgents].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      ),
+    [standardAgents, a2aAgents],
+  );
+
+  const isLoading = isLoadingStandard || isLoadingA2A;
+
+  const refetch = useCallback(() => {
+    void refetchStandard();
+    void refetchA2A();
+  }, [refetchStandard, refetchA2A]);
 
   const queryClient = useQueryClient();
 
@@ -121,7 +157,11 @@ export default function AIAgentsPage() {
       // Backend uses hasSome (exact match against tag array), not partial
       if (agent.Tags?.some((tag) => tag.toLowerCase() === query)) return true;
       if (agent.SmartContractWallet?.walletAddress?.toLowerCase().includes(query)) return true;
-      if (agent.RecipientWallet?.walletAddress?.toLowerCase().includes(query)) return true;
+      if (
+        'RecipientWallet' in agent &&
+        agent.RecipientWallet?.walletAddress?.toLowerCase().includes(query)
+      )
+        return true;
       if (agent.state?.toLowerCase().includes(query)) return true;
       if (agent.AgentPricing?.pricingType === 'Free' && 'free'.startsWith(query)) return true;
       if (agent.AgentPricing?.pricingType === 'Dynamic' && 'dynamic'.startsWith(query)) return true;
@@ -215,7 +255,6 @@ export default function AIAgentsPage() {
             refetchAll();
           },
           onError: (error: unknown) => {
-            console.error('Error deleting agent:', error);
             toast.error(extractApiErrorMessage(error, 'Failed to delete AI agent'));
           },
           onFinally: () => {
@@ -247,7 +286,6 @@ export default function AIAgentsPage() {
             refetchAll();
           },
           onError: (error: unknown) => {
-            console.error('Error deregistering agent:', error);
             toast.error(extractApiErrorMessage(error, 'Failed to deregister AI agent'));
           },
           onFinally: () => {
@@ -268,7 +306,7 @@ export default function AIAgentsPage() {
   };
 
   const handleWalletClick = useCallback(
-    async (walletVkey: string) => {
+    (walletVkey: string) => {
       const filteredSources = currentNetworkPaymentSources.filter((source) =>
         selectedPaymentSourceId ? source.id === selectedPaymentSourceId : true,
       );
@@ -355,6 +393,9 @@ export default function AIAgentsPage() {
                       Name
                     </th>
                     <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                      Type
+                    </th>
+                    <th className="p-4 text-left text-sm font-medium text-muted-foreground">
                       Added
                     </th>
                     <th className="p-4 text-left text-sm font-medium text-muted-foreground">
@@ -381,7 +422,7 @@ export default function AIAgentsPage() {
                     <AIAgentTableSkeleton rows={5} />
                   ) : displayAgents.length === 0 ? (
                     <tr>
-                      <td colSpan={8}>
+                      <td colSpan={9}>
                         <EmptyState
                           icon={searchQuery ? 'search' : 'inbox'}
                           title={
@@ -591,9 +632,12 @@ export default function AIAgentsPage() {
             <div className="flex flex-col gap-4 items-center">
               {!(isLoading && !agents.length) && (
                 <Pagination
-                  hasMore={hasMoreAgents}
+                  hasMore={hasMoreAgents || hasMoreA2A}
                   isLoading={isFetchingAgents}
-                  onLoadMore={loadMore}
+                  onLoadMore={() => {
+                    void loadMore();
+                    void loadMoreA2A();
+                  }}
                 />
               )}
             </div>
@@ -630,7 +674,11 @@ export default function AIAgentsPage() {
           />
 
           <VerifyAndPublishAgentDialog
-            agent={selectedAgentForVerification}
+            agent={
+              selectedAgentForVerification && 'sendFundingLovelace' in selectedAgentForVerification
+                ? selectedAgentForVerification
+                : null
+            }
             open={!!selectedAgentForVerification}
             onClose={() => setSelectedAgentForVerification(null)}
           />
