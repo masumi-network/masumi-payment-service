@@ -24,6 +24,7 @@ import {
   getActiveStablecoinConfig,
   getActiveStablecoinSymbol,
 } from '@/lib/constants/defaultWallets';
+import { convertDecimalToBaseUnits } from '@/lib/convertDecimalToBaseUnits';
 
 interface AddApiKeyDialogProps {
   open: boolean;
@@ -199,7 +200,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                       ? [
                           {
                             unit: 'lovelace',
-                            amount: (parseFloat(data.credits.lovelace) * 1000000).toString(),
+                            amount: convertDecimalToBaseUnits(data.credits.lovelace),
                           },
                         ]
                       : []),
@@ -207,7 +208,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                       ? [
                           {
                             unit: getActiveStablecoinConfig(network).fullAssetId,
-                            amount: (parseFloat(data.credits.usdcx) * 1000000).toString(),
+                            amount: convertDecimalToBaseUnits(data.credits.usdcx),
                           },
                         ]
                       : []),

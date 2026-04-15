@@ -14,6 +14,12 @@ import { getPaymentIncome } from './payments/income';
 import { deleteAgentRegistration, queryRegistryCountGet, queryRegistryRequestGet, registerAgentPost } from './registry';
 import { queryA2ARegistryRequestGet, registerA2AAgentPost } from './registry/a2a';
 import {
+	deleteInboxAgentRegistration,
+	queryRegistryInboxCountGet,
+	queryRegistryInboxRequestGet,
+	registerInboxAgentPost,
+} from './registry-inbox';
+import {
 	paymentSourceExtendedEndpointDelete,
 	paymentSourceExtendedEndpointGet,
 	paymentSourceExtendedEndpointPatch,
@@ -40,6 +46,7 @@ import { resolvePurchaseRequestPost } from './purchases/resolve-blockchain-ident
 import { unregisterAgentPost } from './registry/deregister';
 import { revealDataEndpointPost } from './signature/verify/reveal-data';
 import { postMonthlySignatureEndpoint } from './signature/sign/create-invoice/monthly';
+import { postVerifyAndPublishAgentSignatureEndpoint } from './signature/sign/verify-and-publish-agent';
 import { getMonthlyInvoiceListEndpoint, postGenerateMonthlyInvoiceEndpoint } from './invoice/monthly';
 import { postInternalGenerateMonthlyInvoiceEndpoint } from './invoice/monthly/internal';
 import { getMissingInvoicePaymentsEndpoint as getMissingPaymentsEndpoint } from './invoice/monthly/missing';
@@ -47,6 +54,10 @@ import { paymentErrorStateRecoveryPost } from './payments/error-state-recovery';
 import { purchaseErrorStateRecoveryPost } from './purchases/error-state-recovery';
 import { queryRegistryDiffGet } from './registry/diff';
 import { queryAgentByIdentifierGet } from './registry/agent-identifier';
+import { queryRegistryInboxDiffGet } from './registry-inbox/diff';
+import { queryInboxAgentByIdentifierGet } from './registry-inbox/agent-identifier';
+import { queryInboxAgentFromWalletGet } from './registry-inbox/wallet';
+import { unregisterInboxAgentPost } from './registry-inbox/deregister';
 import {
 	registerWebhookPost,
 	listWebhooksGet,
@@ -166,6 +177,46 @@ export const apiRouter: Routing = {
 				post: registerA2AAgentPost,
 			},
 		},
+		'inbox-agents': {
+			get: queryRegistryInboxRequestGet,
+			post: registerInboxAgentPost,
+			delete: deleteInboxAgentRegistration,
+			diff: {
+				get: queryRegistryInboxDiffGet,
+			},
+			wallet: {
+				get: queryInboxAgentFromWalletGet,
+			},
+			deregister: {
+				post: unregisterInboxAgentPost,
+			},
+			'agent-identifier': {
+				get: queryInboxAgentByIdentifierGet,
+			},
+			count: {
+				get: queryRegistryInboxCountGet,
+			},
+		},
+		'registry-inbox': {
+			get: queryRegistryInboxRequestGet,
+			post: registerInboxAgentPost,
+			delete: deleteInboxAgentRegistration,
+			diff: {
+				get: queryRegistryInboxDiffGet,
+			},
+			wallet: {
+				get: queryInboxAgentFromWalletGet,
+			},
+			deregister: {
+				post: unregisterInboxAgentPost,
+			},
+			'agent-identifier': {
+				get: queryInboxAgentByIdentifierGet,
+			},
+			count: {
+				get: queryRegistryInboxCountGet,
+			},
+		},
 		'api-key-status': {
 			get: queryAPIKeyStatusEndpointGet,
 		},
@@ -238,6 +289,9 @@ export const apiRouter: Routing = {
 					monthly: {
 						post: postMonthlySignatureEndpoint,
 					},
+				},
+				verifyAndPublishAgent: {
+					post: postVerifyAndPublishAgentSignatureEndpoint,
 				},
 			},
 		},

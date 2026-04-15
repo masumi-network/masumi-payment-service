@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { Plus, Trash2, ExternalLink } from 'lucide-react';
+import { Plus, Trash2, ExternalLink, ShieldCheck } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useCallback, useMemo } from 'react';
 
@@ -30,6 +30,7 @@ import { FaRegClock } from 'react-icons/fa';
 import { Tabs } from '@/components/ui/tabs';
 import { Pagination } from '@/components/ui/pagination';
 import { AIAgentDetailsDialog } from '@/components/ai-agents/AIAgentDetailsDialog';
+import { VerifyAndPublishAgentDialog } from '@/components/ai-agents/VerifyAndPublishAgentDialog';
 import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/WalletDetailsDialog';
 import { CopyButton } from '@/components/ui/copy-button';
 import { TESTUSDM_CONFIG, getUsdmConfig, getUsdcxConfig } from '@/lib/constants/defaultWallets';
@@ -43,6 +44,11 @@ import { extractApiErrorMessage } from '@/lib/api-error';
 import { findPaymentSourceWalletByVkey } from '@/lib/wallet-lookup';
 
 type AIAgent = RegistryEntry | A2aRegistryEntry;
+
+const getHoldingWallet = (agent: AIAgent) => agent.RecipientWallet ?? agent.SmartContractWallet;
+
+const usesCombinedWallet = (agent: AIAgent) =>
+  getHoldingWallet(agent).walletVkey === agent.SmartContractWallet.walletVkey;
 
 const parseAgentStatus = (status: AIAgent['state']): string => {
   switch (status) {
@@ -148,6 +154,7 @@ export default function AIAgentsPage() {
       // Backend uses hasSome (exact match against tag array), not partial
       if (agent.Tags?.some((tag) => tag.toLowerCase() === query)) return true;
       if (agent.SmartContractWallet?.walletAddress?.toLowerCase().includes(query)) return true;
+      if (agent.RecipientWallet?.walletAddress?.toLowerCase().includes(query)) return true;
       if (agent.state?.toLowerCase().includes(query)) return true;
       if (agent.AgentPricing?.pricingType === 'Free' && 'free'.startsWith(query)) return true;
       if (agent.AgentPricing?.pricingType === 'Dynamic' && 'dynamic'.startsWith(query)) return true;
@@ -175,6 +182,9 @@ export default function AIAgentsPage() {
     [paymentSources, network],
   );
   const [selectedAgentForDetails, setSelectedAgentForDetails] = useState<AIAgent | null>(null);
+  const [selectedAgentForVerification, setSelectedAgentForVerification] = useState<AIAgent | null>(
+    null,
+  );
   const [initialDialogTab, setInitialDialogTab] = useState<'Details' | 'Earnings'>('Details');
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
     useState<WalletWithBalance | null>(null);
@@ -385,7 +395,7 @@ export default function AIAgentsPage() {
                       Agent ID
                     </th>
                     <th className="p-4 text-left text-sm font-medium text-muted-foreground">
-                      Linked wallet
+                      Wallets
                     </th>
                     <th className="p-4 text-left text-sm font-medium text-muted-foreground">
                       Price
@@ -422,138 +432,191 @@ export default function AIAgentsPage() {
                       </td>
                     </tr>
                   ) : (
-                    displayAgents.map((agent, index) => (
-                      <tr
-                        key={agent.id}
-                        className={cn(
-                          'border-b cursor-pointer hover:bg-muted/50 transition-[background-color,opacity] duration-150 opacity-0',
-                          agent.state === 'DeregistrationConfirmed'
-                            ? 'animate-fade-in-to-muted'
-                            : 'animate-fade-in',
-                        )}
-                        style={{
-                          animationDelay: `${Math.min(index, 9) * 40}ms`,
-                        }}
-                        onClick={() => handleAgentClick(agent)}
-                      >
-                        <td className="p-4 max-w-50 truncate pl-6">
-                          <div className="text-sm font-medium">{agent.name}</div>
-                          <div className="text-xs text-muted-foreground truncate">
-                            {agent.description}
-                          </div>
-                        </td>
-                        <td className="p-4">
-                          <Badge variant="outline" className="text-xs font-mono">
-                            {'agentCardUrl' in agent ? 'A2A' : 'Standard'}
-                          </Badge>
-                        </td>
-                        <td className="p-4 text-sm">{formatDate(agent.createdAt)}</td>
-                        <td className="p-4">
-                          {agent.agentIdentifier ? (
-                            <div className="text-xs font-mono truncate max-w-50 flex items-center gap-2">
-                              <span className="cursor-pointer hover:text-primary">
-                                {shortenAddress(agent.agentIdentifier)}
-                              </span>
-                              <CopyButton value={agent.agentIdentifier} />
+                    displayAgents.map((agent, index) => {
+                      const holdingWallet = getHoldingWallet(agent);
+                      const isCombinedWallet = usesCombinedWallet(agent);
+
+                      return (
+                        <tr
+                          key={agent.id}
+                          className={cn(
+                            'border-b cursor-pointer hover:bg-muted/50 transition-[background-color,opacity] duration-150 opacity-0',
+                            agent.state === 'DeregistrationConfirmed'
+                              ? 'animate-fade-in-to-muted'
+                              : 'animate-fade-in',
+                          )}
+                          style={{
+                            animationDelay: `${Math.min(index, 9) * 40}ms`,
+                          }}
+                          onClick={() => handleAgentClick(agent)}
+                        >
+                          <td className="p-4 max-w-50 truncate pl-6">
+                            <div className="text-sm font-medium">{agent.name}</div>
+                            <div className="text-xs text-muted-foreground truncate">
+                              {agent.description}
                             </div>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">—</span>
-                          )}
-                        </td>
-                        <td className="p-4">
-                          <div className="text-xs font-medium">Selling wallet</div>
-                          <div className="text-xs text-muted-foreground font-mono truncate max-w-50 flex items-center gap-2">
-                            <span
-                              className="cursor-pointer hover:text-primary"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleWalletClick(agent.SmartContractWallet.walletVkey);
-                              }}
-                            >
-                              {shortenAddress(agent.SmartContractWallet.walletAddress)}
-                            </span>
-                            <CopyButton value={agent.SmartContractWallet.walletAddress} />
-                          </div>
-                        </td>
-                        <td className="p-4 text-sm truncate max-w-25">
-                          {agent.AgentPricing && agent.AgentPricing.pricingType == 'Free' && (
-                            <div className="whitespace-nowrap">Free</div>
-                          )}
-                          {agent.AgentPricing && agent.AgentPricing.pricingType == 'Dynamic' && (
-                            <div className="whitespace-nowrap">Dynamic</div>
-                          )}
-                          {agent.AgentPricing &&
-                            agent.AgentPricing.pricingType == 'Fixed' &&
-                            agent.AgentPricing.Pricing?.map((price, index) => (
-                              <div key={index} className="whitespace-nowrap">
-                                {price.unit === 'lovelace' || !price.unit
-                                  ? `${formatPrice(price.amount)} ADA`
-                                  : `${formatPrice(price.amount)} ${price.unit === getUsdcxConfig(network).fullAssetId ? 'USDCx' : price.unit === getUsdmConfig(network).fullAssetId ? (network === 'Mainnet' ? 'USDM' : 'tUSDM') : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
+                          </td>
+                          <td className="p-4 text-sm">{formatDate(agent.createdAt)}</td>
+                          <td className="p-4">
+                            {agent.agentIdentifier ? (
+                              <div className="text-xs font-mono truncate max-w-50 flex items-center gap-2">
+                                <span className="cursor-pointer hover:text-primary">
+                                  {shortenAddress(agent.agentIdentifier)}
+                                </span>
+                                <CopyButton value={agent.agentIdentifier} />
                               </div>
-                            ))}
-                        </td>
-                        <td className="p-4">
-                          {agent.Tags.length > 0 && (
-                            <Badge variant="secondary" className="truncate">
-                              {agent.Tags.length} tags
-                            </Badge>
-                          )}
-                        </td>
-                        <td className="p-4">
-                          <Badge
-                            variant={getStatusBadgeVariant(agent.state)}
-                            className={cn(
-                              agent.state === 'RegistrationConfirmed' &&
-                                'bg-green-50 text-green-700 hover:bg-green-50/80',
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
                             )}
-                          >
-                            {parseAgentStatus(agent.state)}
-                          </Badge>
-                        </td>
-                        <td className="p-4 pr-8">
-                          {['RegistrationConfirmed'].includes(agent.state) ? (
-                            <div className="flex items-center gap-1">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setInitialDialogTab('Earnings');
-                                  handleAgentClick(agent);
-                                }}
-                                className="text-white hover:text-gray-200 hover:bg-gray-600"
-                                title="View Details & Earnings"
-                              >
-                                <ExternalLink className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeleteClick(agent);
-                                }}
-                                className="text-destructive hover:text-destructive hover:bg-destructive/10 group"
-                              >
-                                <Trash2 className="h-4 w-4 transition-transform duration-200 group-hover:scale-110" />
-                              </Button>
+                          </td>
+                          <td className="p-4">
+                            <div className="space-y-2">
+                              {isCombinedWallet ? (
+                                <div>
+                                  <div className="text-xs font-medium">
+                                    Minting & holding wallet
+                                  </div>
+                                  <div className="text-xs text-muted-foreground font-mono truncate max-w-50 flex items-center gap-2">
+                                    <span
+                                      className="cursor-pointer hover:text-primary"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleWalletClick(holdingWallet.walletVkey);
+                                      }}
+                                    >
+                                      {shortenAddress(holdingWallet.walletAddress)}
+                                    </span>
+                                    <CopyButton value={holdingWallet.walletAddress} />
+                                  </div>
+                                </div>
+                              ) : (
+                                <>
+                                  <div>
+                                    <div className="text-xs font-medium">Minting wallet</div>
+                                    <div className="text-xs text-muted-foreground font-mono truncate max-w-50 flex items-center gap-2">
+                                      <span
+                                        className="cursor-pointer hover:text-primary"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleWalletClick(agent.SmartContractWallet.walletVkey);
+                                        }}
+                                      >
+                                        {shortenAddress(agent.SmartContractWallet.walletAddress)}
+                                      </span>
+                                      <CopyButton value={agent.SmartContractWallet.walletAddress} />
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <div className="text-xs font-medium">Holding wallet</div>
+                                    <div className="text-xs text-muted-foreground font-mono truncate max-w-50 flex items-center gap-2">
+                                      <span
+                                        className="cursor-pointer hover:text-primary"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleWalletClick(holdingWallet.walletVkey);
+                                        }}
+                                      >
+                                        {shortenAddress(holdingWallet.walletAddress)}
+                                      </span>
+                                      <CopyButton value={holdingWallet.walletAddress} />
+                                    </div>
+                                  </div>
+                                </>
+                              )}
                             </div>
-                          ) : agent.state === 'RegistrationInitiated' ||
-                            agent.state === 'DeregistrationInitiated' ? (
-                            <div className="flex items-center justify-center w-8 h-8">
-                              <Spinner size={16} />
-                            </div>
-                          ) : (
-                            (agent.state === 'RegistrationRequested' ||
-                              agent.state === 'DeregistrationRequested') && (
-                              <div className="flex items-center justify-center w-8 h-8">
-                                <FaRegClock size={12} />
+                          </td>
+                          <td className="p-4 text-sm truncate max-w-25">
+                            {agent.AgentPricing && agent.AgentPricing.pricingType == 'Free' && (
+                              <div className="whitespace-nowrap">Free</div>
+                            )}
+                            {agent.AgentPricing && agent.AgentPricing.pricingType == 'Dynamic' && (
+                              <div className="whitespace-nowrap">Dynamic</div>
+                            )}
+                            {agent.AgentPricing &&
+                              agent.AgentPricing.pricingType == 'Fixed' &&
+                              agent.AgentPricing.Pricing?.map((price, index) => (
+                                <div key={index} className="whitespace-nowrap">
+                                  {price.unit === 'lovelace' || !price.unit
+                                    ? `${formatPrice(price.amount)} ADA`
+                                    : `${formatPrice(price.amount)} ${price.unit === getUsdcxConfig(network).fullAssetId ? 'USDCx' : price.unit === getUsdmConfig(network).fullAssetId ? (network === 'Mainnet' ? 'USDM' : 'tUSDM') : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
+                                </div>
+                              ))}
+                          </td>
+                          <td className="p-4">
+                            {agent.Tags.length > 0 && (
+                              <Badge variant="secondary" className="truncate">
+                                {agent.Tags.length} tags
+                              </Badge>
+                            )}
+                          </td>
+                          <td className="p-4">
+                            <Badge
+                              variant={getStatusBadgeVariant(agent.state)}
+                              className={cn(
+                                agent.state === 'RegistrationConfirmed' &&
+                                  'bg-green-50 text-green-700 hover:bg-green-50/80',
+                              )}
+                            >
+                              {parseAgentStatus(agent.state)}
+                            </Badge>
+                          </td>
+                          <td className="p-4 pr-8">
+                            {['RegistrationConfirmed'].includes(agent.state) ? (
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedAgentForVerification(agent);
+                                  }}
+                                  className="text-primary hover:text-primary hover:bg-primary/10"
+                                  title="Verify and Publish"
+                                >
+                                  <ShieldCheck className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setInitialDialogTab('Earnings');
+                                    handleAgentClick(agent);
+                                  }}
+                                  className="text-white hover:text-gray-200 hover:bg-gray-600"
+                                  title="View Details & Earnings"
+                                >
+                                  <ExternalLink className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteClick(agent);
+                                  }}
+                                  className="text-destructive hover:text-destructive hover:bg-destructive/10 group"
+                                >
+                                  <Trash2 className="h-4 w-4 transition-transform duration-200 group-hover:scale-110" />
+                                </Button>
                               </div>
-                            )
-                          )}
-                        </td>
-                      </tr>
-                    ))
+                            ) : agent.state === 'RegistrationInitiated' ||
+                              agent.state === 'DeregistrationInitiated' ? (
+                              <div className="flex items-center justify-center w-8 h-8">
+                                <Spinner size={16} />
+                              </div>
+                            ) : (
+                              (agent.state === 'RegistrationRequested' ||
+                                agent.state === 'DeregistrationRequested') && (
+                                <div className="flex items-center justify-center w-8 h-8">
+                                  <FaRegClock size={12} />
+                                </div>
+                              )
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -601,6 +664,12 @@ export default function AIAgentsPage() {
               }, 2000);
             }}
             initialTab={initialDialogTab}
+          />
+
+          <VerifyAndPublishAgentDialog
+            agent={selectedAgentForVerification}
+            open={!!selectedAgentForVerification}
+            onClose={() => setSelectedAgentForVerification(null)}
           />
 
           <ConfirmDialog

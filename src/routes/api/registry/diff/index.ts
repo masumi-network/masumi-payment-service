@@ -3,10 +3,11 @@ import { ez } from 'express-zod-api';
 import { prisma } from '@/utils/db';
 import { Network, Prisma } from '@/generated/prisma/client';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import createHttpError from 'http-errors';
 import { queryRegistryRequestSchemaOutput } from '@/routes/api/registry';
-import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
+import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
-import { mapRegistryRequestToOutput } from '@/routes/api/registry/utils';
+import { serializeRegistryEntriesResponse } from '../serializers';
 
 const registryDiffLastUpdateSchema = ez.dateIn();
 
@@ -49,7 +50,7 @@ function buildRegistryDiffWhere({
 			smartContractAddress: filterSmartContractAddress ?? undefined,
 		},
 		SmartContractWallet: { deletedAt: null },
-		...buildWalletScopeFilter(walletScopeIds),
+		...buildManagedHolderWalletScopeFilter(walletScopeIds),
 	};
 
 	return cursorId != null
@@ -84,6 +85,9 @@ export const queryRegistryDiffGet = readAuthenticatedEndpointFactory.build({
 				SmartContractWallet: {
 					select: { walletVkey: true, walletAddress: true },
 				},
+				RecipientWallet: {
+					select: { walletVkey: true, walletAddress: true },
+				},
 				CurrentTransaction: {
 					select: {
 						txHash: true,
@@ -111,8 +115,10 @@ export const queryRegistryDiffGet = readAuthenticatedEndpointFactory.build({
 			},
 		});
 
-		return {
-			Assets: result.map((item) => mapRegistryRequestToOutput(item)),
-		};
+		if (result == null) {
+			throw createHttpError(404, 'Registry entry not found');
+		}
+
+		return serializeRegistryEntriesResponse(result);
 	},
 });

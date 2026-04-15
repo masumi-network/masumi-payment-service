@@ -14,7 +14,7 @@ import {
 } from '@/lib/api/generated';
 
 import { Separator } from '@/components/ui/separator';
-import { Link2, Trash2 } from 'lucide-react';
+import { Link2, ShieldCheck, Trash2 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { ConfirmDialog } from '../ui/confirm-dialog';
@@ -25,6 +25,8 @@ import { AgentEarningsOverview } from './AgentEarningsOverview';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { extractApiErrorMessage } from '@/lib/api-error';
 import { findPaymentSourceWalletByVkey } from '@/lib/wallet-lookup';
+import { useMemo } from 'react';
+import { VerifyAndPublishAgentDialog } from './VerifyAndPublishAgentDialog';
 
 type AIAgent = RegistryEntry | A2aRegistryEntry;
 
@@ -81,6 +83,8 @@ export function AIAgentDetailsDialog({
   const { apiClient, selectedPaymentSourceId, network } = useAppContext();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isPurchaseDialogOpen] = useState(false);
+  const [isVerifyDialogOpen, setIsVerifyDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(initialTab);
   const { paymentSources } = usePaymentSourceExtendedAll();
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
@@ -88,6 +92,17 @@ export function AIAgentDetailsDialog({
   const currentNetworkPaymentSources = useMemo(
     () => paymentSources.filter((paymentSource) => paymentSource.network === network),
     [paymentSources, network],
+  );
+  const holdingWallet = useMemo(
+    () => (agent ? (agent.RecipientWallet ?? agent.SmartContractWallet) : null),
+    [agent],
+  );
+  const usesCombinedWallet = useMemo(
+    () =>
+      agent != null &&
+      holdingWallet != null &&
+      holdingWallet.walletVkey === agent.SmartContractWallet.walletVkey,
+    [agent, holdingWallet],
   );
 
   useEffect(() => {
@@ -206,7 +221,7 @@ export function AIAgentDetailsDialog({
       <Dialog open={!!agent && !isDeleteDialogOpen} onOpenChange={onClose}>
         <DialogContent
           className="max-w-[600px] max-h-[90vh] px-0 pb-0 flex flex-col"
-          isPushedBack={!!selectedWalletForDetails}
+          isPushedBack={!!selectedWalletForDetails || isVerifyDialogOpen}
         >
           {agent && (
             <>
@@ -704,20 +719,61 @@ export function AIAgentDetailsDialog({
                             <CopyButton value={agent.agentIdentifier || ''} />
                           </div>
                         </div>
-                        <div className="flex items-center justify-between py-2">
-                          <span className="text-sm text-muted-foreground">
-                            Linked Wallet Address
-                          </span>
-                          <WalletLink
-                            address={agent.SmartContractWallet.walletAddress}
-                            vkey={agent.SmartContractWallet.walletVkey}
-                            network={network}
-                            shorten={4}
-                            onInternalClick={() =>
-                              handleWalletClick(agent.SmartContractWallet.walletVkey)
-                            }
-                          />
-                        </div>
+                        {usesCombinedWallet && holdingWallet ? (
+                          <div className="flex items-center justify-between py-2">
+                            <span className="text-sm text-muted-foreground">
+                              Minting & Holding Wallet
+                            </span>
+                            <WalletLink
+                              address={holdingWallet.walletAddress}
+                              vkey={holdingWallet.walletVkey}
+                              network={network}
+                              shorten={4}
+                              onInternalClick={() => handleWalletClick(holdingWallet.walletVkey)}
+                            />
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex items-center justify-between py-2">
+                              <span className="text-sm text-muted-foreground">Minting Wallet</span>
+                              <WalletLink
+                                address={agent.SmartContractWallet.walletAddress}
+                                vkey={agent.SmartContractWallet.walletVkey}
+                                network={network}
+                                shorten={4}
+                                onInternalClick={() =>
+                                  handleWalletClick(agent.SmartContractWallet.walletVkey)
+                                }
+                              />
+                            </div>
+                            {holdingWallet && (
+                              <div className="flex items-center justify-between py-2 border-t">
+                                <span className="text-sm text-muted-foreground">
+                                  Holding Wallet
+                                </span>
+                                <WalletLink
+                                  address={holdingWallet.walletAddress}
+                                  vkey={holdingWallet.walletVkey}
+                                  network={network}
+                                  shorten={4}
+                                  onInternalClick={() =>
+                                    handleWalletClick(holdingWallet.walletVkey)
+                                  }
+                                />
+                              </div>
+                            )}
+                          </>
+                        )}
+                        {agent.sendFundingLovelace && (
+                          <div className="flex items-center justify-between py-2 border-t">
+                            <span className="text-sm text-muted-foreground">
+                              Holding Wallet Funding Override
+                            </span>
+                            <span className="font-mono text-sm">
+                              {formatPrice(agent.sendFundingLovelace)} ADA
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -747,6 +803,12 @@ export function AIAgentDetailsDialog({
               </div>
 
               <div className="py-4 px-4 border-t flex justify-end gap-2 bg-background shrink-0">
+                {agent?.state === 'RegistrationConfirmed' && agent.agentIdentifier && (
+                  <Button variant="outline" onClick={() => setIsVerifyDialogOpen(true)}>
+                    <ShieldCheck className="h-4 w-4" />
+                    Verify & Publish
+                  </Button>
+                )}
                 <Button variant="destructive" onClick={() => setIsDeleteDialogOpen(true)}>
                   <Trash2 className="h-4 w-4" />
                 </Button>
@@ -776,6 +838,11 @@ export function AIAgentDetailsDialog({
         onClose={() => setSelectedWalletForDetails(null)}
         wallet={selectedWalletForDetails}
         isChild
+      />
+      <VerifyAndPublishAgentDialog
+        agent={agent}
+        open={isVerifyDialogOpen}
+        onClose={() => setIsVerifyDialogOpen(false)}
       />
     </>
   );

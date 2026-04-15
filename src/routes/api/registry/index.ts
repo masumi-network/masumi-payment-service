@@ -1,14 +1,15 @@
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import { z } from '@/utils/zod-openapi';
-import { HotWalletType, PaymentType, PricingType, RegistrationState } from '@/generated/prisma/client';
+import { PaymentType, PricingType, RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 import { getBlockfrostInstance, validateAssetsOnChain } from '@/utils/blockfrost';
-import { buildWalletScopeFilter, assertHotWalletInScope } from '@/utils/shared/wallet-scope';
+import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
+import { normalizeRequestedRegistryFundingLovelace } from '@/services/registry/shared';
 import {
 	deleteAgentRegistrationSchemaInput,
 	deleteAgentRegistrationSchemaOutput,
@@ -23,7 +24,8 @@ import {
 } from './schemas';
 import { getRegistryEntriesForQuery } from './queries';
 import { serializeRegistryEntriesResponse } from './serializers';
-import { mapRegistryRequestToOutput, mapA2ARegistryRequestToOutput } from '@/routes/api/registry/utils';
+import { resolveScopedRecipientWalletOrThrow, resolveScopedSellingWalletOrThrow } from './shared';
+import { mapA2ARegistryRequestToOutput } from './utils';
 
 export {
 	deleteAgentRegistrationSchemaInput,
@@ -37,6 +39,7 @@ export {
 	registerAgentSchemaOutput,
 	registryRequestOutputSchema,
 };
+
 export const queryRegistryRequestGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: queryRegistryRequestSchemaInput,
@@ -64,7 +67,7 @@ export const queryRegistryCountGet = readAuthenticatedEndpointFactory.build({
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
 				},
 				SmartContractWallet: { deletedAt: null },
-				...buildWalletScopeFilter(ctx.walletScopeIds),
+				...buildManagedHolderWalletScopeFilter(ctx.walletScopeIds),
 			},
 		});
 
@@ -83,36 +86,22 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 		try {
 			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
-			const sellingWallet = await prisma.hotWallet.findUnique({
-				where: {
-					walletVkey: input.sellingWalletVkey,
-					type: HotWalletType.Selling,
-					deletedAt: null,
-					PaymentSource: {
-						deletedAt: null,
-						network: input.network,
-					},
-				},
-				include: {
-					PaymentSource: {
-						include: {
-							PaymentSourceConfig: {
-								select: { rpcProviderApiKey: true },
-							},
-						},
-					},
-				},
+			const sellingWallet = await resolveScopedSellingWalletOrThrow({
+				network: input.network,
+				sellingWalletVkey: input.sellingWalletVkey,
+				walletScopeIds: ctx.walletScopeIds,
+				metricPath: '/api/v1/registry',
+				operation: 'register_agent',
 			});
-			if (sellingWallet == null) {
-				recordBusinessEndpointError('/api/v1/registry', 'POST', 404, 'Network and Address combination not supported', {
-					network: input.network,
-					operation: 'register_agent',
-					step: 'wallet_lookup',
-					wallet_vkey: input.sellingWalletVkey,
-				});
-				throw createHttpError(404, 'Network and Address combination not supported');
-			}
-			assertHotWalletInScope(ctx.walletScopeIds, sellingWallet.id);
+			const recipientWallet = await resolveScopedRecipientWalletOrThrow({
+				network: input.network,
+				recipientWalletAddress: input.recipientWalletAddress,
+				sellingWallet,
+				walletScopeIds: ctx.walletScopeIds,
+				metricPath: '/api/v1/registry',
+				operation: 'register_agent',
+			});
+			const sendFundingLovelace = normalizeRequestedRegistryFundingLovelace(input.sendFundingLovelace);
 
 			// Validate pricing assets exist on-chain
 			if (input.AgentPricing.pricingType === PricingType.Fixed) {
@@ -158,6 +147,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 					authorContactEmail: input.Author.contactEmail,
 					authorContactOther: input.Author.contactOther,
 					authorOrganization: input.Author.organization,
+					sendFundingLovelace,
 					state: RegistrationState.RegistrationRequested,
 					agentIdentifier: null,
 					ExampleOutputs: {
@@ -174,6 +164,14 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 							id: sellingWallet.id,
 						},
 					},
+					RecipientWallet:
+						recipientWallet != null
+							? {
+									connect: {
+										id: recipientWallet.id,
+									},
+								}
+							: undefined,
 					PaymentSource: {
 						connect: {
 							id: sellingWallet.paymentSourceId,
@@ -214,6 +212,9 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 					SmartContractWallet: {
 						select: { walletVkey: true, walletAddress: true },
 					},
+					RecipientWallet: {
+						select: { walletVkey: true, walletAddress: true },
+					},
 					ExampleOutputs: {
 						select: {
 							name: true,
@@ -234,7 +235,46 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 				},
 			});
 
-			return mapRegistryRequestToOutput(result);
+			return {
+				...result,
+				Capability: {
+					name: result.capabilityName,
+					version: result.capabilityVersion,
+				},
+				Author: {
+					name: result.authorName,
+					contactEmail: result.authorContactEmail,
+					contactOther: result.authorContactOther,
+					organization: result.authorOrganization,
+				},
+				Legal: {
+					privacyPolicy: result.privacyPolicy,
+					terms: result.terms,
+					other: result.other,
+				},
+				AgentPricing:
+					result.Pricing.pricingType == PricingType.Fixed
+						? {
+								pricingType: PricingType.Fixed,
+								Pricing:
+									result.Pricing.FixedPricing?.Amounts.map((price) => ({
+										unit: price.unit,
+										amount: price.amount.toString(),
+									})) ?? [],
+							}
+						: {
+								pricingType: result.Pricing.pricingType,
+							},
+				sendFundingLovelace: result.sendFundingLovelace?.toString() ?? null,
+				Tags: result.tags,
+				RecipientWallet: result.RecipientWallet,
+				CurrentTransaction: result.CurrentTransaction
+					? {
+							...result.CurrentTransaction,
+							fees: result.CurrentTransaction.fees?.toString() ?? null,
+						}
+					: null,
+			};
 		} catch (error: unknown) {
 			// Record the business-specific error with context
 			const errorInstance = error instanceof Error ? error : new Error(String(error));
@@ -268,7 +308,19 @@ export const deleteAgentRegistration = adminAuthenticatedEndpointFactory.build({
 			];
 
 			const registryRequest = await prisma.registryRequest.findUnique({
-				where: { id: input.id },
+				where: {
+					id: input.id,
+				},
+				include: {
+					PaymentSource: {
+						select: {
+							id: true,
+							network: true,
+							policyId: true,
+							smartContractAddress: true,
+						},
+					},
+				},
 			});
 
 			if (registryRequest) {
@@ -293,7 +345,9 @@ export const deleteAgentRegistration = adminAuthenticatedEndpointFactory.build({
 				}
 
 				const item = await prisma.registryRequest.delete({
-					where: { id: registryRequest.id },
+					where: {
+						id: registryRequest.id,
+					},
 					include: {
 						Pricing: {
 							include: {
@@ -303,6 +357,9 @@ export const deleteAgentRegistration = adminAuthenticatedEndpointFactory.build({
 							},
 						},
 						SmartContractWallet: {
+							select: { walletVkey: true, walletAddress: true },
+						},
+						RecipientWallet: {
 							select: { walletVkey: true, walletAddress: true },
 						},
 						ExampleOutputs: {
@@ -321,7 +378,46 @@ export const deleteAgentRegistration = adminAuthenticatedEndpointFactory.build({
 					},
 				});
 
-				return mapRegistryRequestToOutput(item);
+				return {
+					...item,
+					Capability: {
+						name: item.capabilityName,
+						version: item.capabilityVersion,
+					},
+					Author: {
+						name: item.authorName,
+						contactEmail: item.authorContactEmail,
+						contactOther: item.authorContactOther,
+						organization: item.authorOrganization,
+					},
+					Legal: {
+						privacyPolicy: item.privacyPolicy,
+						terms: item.terms,
+						other: item.other,
+					},
+					AgentPricing:
+						item.Pricing.pricingType == PricingType.Fixed
+							? {
+									pricingType: PricingType.Fixed,
+									Pricing:
+										item.Pricing.FixedPricing?.Amounts.map((price) => ({
+											unit: price.unit,
+											amount: price.amount.toString(),
+										})) ?? [],
+								}
+							: {
+									pricingType: item.Pricing.pricingType,
+								},
+					sendFundingLovelace: item.sendFundingLovelace?.toString() ?? null,
+					Tags: item.tags,
+					RecipientWallet: item.RecipientWallet,
+					CurrentTransaction: item.CurrentTransaction
+						? {
+								...item.CurrentTransaction,
+								fees: item.CurrentTransaction.fees?.toString() ?? null,
+							}
+						: null,
+				};
 			}
 
 			const a2aRequest = await prisma.a2ARegistryRequest.findUnique({

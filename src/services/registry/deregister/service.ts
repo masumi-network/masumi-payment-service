@@ -20,14 +20,13 @@ import {
 	loadHotWalletSession,
 	updateCurrentTransactionHash,
 } from '@/services/shared';
+import {
+	findRegistryTokenUtxo,
+	generateRegistryDeregisterTransactionAutomaticFees,
+	resolveRegistryDeregistrationWallet,
+} from '../shared';
 
 const mutex = new Mutex();
-
-function validateDeregistrationRequest(request: { agentIdentifier: string | null }): void {
-	if (!request.agentIdentifier) {
-		throw new Error('Agent identifier is not set');
-	}
-}
 
 function findTokenUtxo(utxos: UTxO[], agentIdentifier: string): UTxO {
 	const tokenUtxo = utxos.find(
@@ -39,24 +38,37 @@ function findTokenUtxo(utxos: UTxO[], agentIdentifier: string): UTxO {
 	return tokenUtxo;
 }
 
+function validateDeregistrationRequest(request: { agentIdentifier: string | null }): void {
+	if (!request.agentIdentifier) {
+		throw new Error('Agent identifier is not set');
+	}
+}
+
 async function handlePotentialDeregistrationFailure(
 	result: RetryResult<boolean>,
-	registryRequest: { id: string },
-	isA2A = false,
+	registryRequest: {
+		id: string;
+		SmartContractWallet: { id: string };
+		DeregistrationHotWallet: { id: string } | null;
+	},
 ): Promise<void> {
 	if (result.success !== true || result.result !== true) {
 		const error = result.error;
-		logger.error(`Error deregistering agent ${registryRequest.id}`, { error: error });
-		const data = {
-			state: RegistrationState.DeregistrationFailed,
-			error: interpretBlockchainError(error),
-			SmartContractWallet: { update: { lockedAt: null } },
-		};
-		if (isA2A) {
-			await prisma.a2ARegistryRequest.update({ where: { id: registryRequest.id }, data });
-		} else {
-			await prisma.registryRequest.update({ where: { id: registryRequest.id }, data });
-		}
+		const walletToUnlock = registryRequest.DeregistrationHotWallet ?? registryRequest.SmartContractWallet;
+		logger.error(`Error deregistering agent ${registryRequest.id}`, {
+			error: error,
+		});
+		await prisma.registryRequest.update({
+			where: { id: registryRequest.id },
+			data: {
+				state: RegistrationState.DeregistrationFailed,
+				error: interpretBlockchainError(error),
+			},
+		});
+		await prisma.hotWallet.update({
+			where: { id: walletToUnlock.id, deletedAt: null },
+			data: { lockedAt: null },
+		});
 	}
 }
 
@@ -101,11 +113,12 @@ export async function deRegisterAgentV1() {
 					operation: async () => {
 						const request = deregistrationRequest;
 						validateDeregistrationRequest(request);
+						const deregistrationWallet = resolveRegistryDeregistrationWallet(request);
 						const walletSession = await loadHotWalletSession({
 							network: paymentSource.network,
 							rpcProviderApiKey: paymentSource.PaymentSourceConfig.rpcProviderApiKey,
-							encryptedMnemonic: request.SmartContractWallet.Secret.encryptedMnemonic,
-							hotWalletId: request.SmartContractWallet.id,
+							encryptedMnemonic: deregistrationWallet.Secret.encryptedMnemonic,
+							hotWalletId: deregistrationWallet.id,
 						});
 						const { wallet, utxos, address } = walletSession;
 
@@ -113,14 +126,21 @@ export async function deRegisterAgentV1() {
 							throw new Error('No UTXOs found for the wallet');
 						}
 						const { script, policyId } = await getRegistryScriptFromNetworkHandlerV1(paymentSource);
-						if (!deregistrationRequest.agentIdentifier)
+						if (!request.agentIdentifier) {
 							throw new Error('Agent identifier is required for deregistration');
-						const tokenUtxo = findTokenUtxo(utxos, deregistrationRequest.agentIdentifier);
+						}
+
+						const tokenUtxo = findRegistryTokenUtxo(utxos, request.agentIdentifier);
+
 						const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
 						const collateralUtxo = limitedFilteredUtxos[0];
-						if (collateralUtxo == null) throw new Error('Collateral UTXO not found');
-						const assetName = extractAssetName(deregistrationRequest.agentIdentifier);
-						const unsignedTx = await generateDeregisterAgentTransactionAutomaticFees(
+						if (collateralUtxo == null) {
+							throw new Error('Collateral UTXO not found');
+						}
+
+						const assetName = extractAssetName(request.agentIdentifier);
+
+						const unsignedTx = await generateRegistryDeregisterTransactionAutomaticFees(
 							blockchainProvider,
 							network,
 							script,
@@ -136,7 +156,7 @@ export async function deRegisterAgentV1() {
 							where: { id: deregistrationRequest.id },
 							data: {
 								state: RegistrationState.DeregistrationInitiated,
-								...createPendingTransaction(request.SmartContractWallet.id),
+								...createPendingTransaction(deregistrationWallet.id),
 							},
 						});
 						const newTxHash = await wallet.submitTx(signedTx);
@@ -267,6 +287,7 @@ async function generateDeregisterAgentTransactionAutomaticFees(
 		estimatedFee[0].budget,
 	);
 }
+
 async function generateDeregisterAgentTransaction(
 	blockchainProvider: IFetcher,
 	network: Network,
@@ -292,7 +313,6 @@ async function generateDeregisterAgentTransaction(
 		fetcher: blockchainProvider,
 	});
 	const deserializedAddress = txBuilder.serializer.deserializer.key.deserializeAddress(walletAddress);
-	//setup minting data separately as the minting function does not work well with hex encoded strings without some magic
 	txBuilder
 		.txIn(assetUtxo.input.txHash, assetUtxo.input.outputIndex)
 		.mintPlutusScript(script.version)

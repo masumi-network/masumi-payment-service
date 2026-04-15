@@ -1,6 +1,6 @@
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import { z } from '@/utils/zod-openapi';
-import { HotWalletType, Network, PricingType } from '@/generated/prisma/client';
+import { Network, PricingType } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contract-generator';
@@ -319,9 +319,7 @@ export const queryAgentFromWalletGet = readAuthenticatedEndpointFactory.build({
 		}
 
 		const blockfrost = getBlockfrostInstance(input.network, paymentSource.PaymentSourceConfig.rpcProviderApiKey);
-		const wallet = paymentSource.HotWallets.find(
-			(wallet) => wallet.walletVkey == input.walletVkey && wallet.type == HotWalletType.Selling,
-		);
+		const wallet = paymentSource.HotWallets.find((wallet) => wallet.walletVkey == input.walletVkey);
 		if (wallet == null) {
 			throw createHttpError(404, 'Wallet not found');
 		}

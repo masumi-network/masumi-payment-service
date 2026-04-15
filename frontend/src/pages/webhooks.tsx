@@ -196,14 +196,12 @@ export default function WebhooksPage() {
           }
 
           if (result.success) {
-            const responseCodeSuffix =
-              result.responseCode != null ? ` (HTTP ${result.responseCode})` : '';
-            toast.success(`Test webhook delivered successfully${responseCodeSuffix}`);
+            toast.success('Test webhook delivered successfully');
             void refetch();
             return;
           }
 
-          toast.error(result.errorMessage || 'Test webhook delivery failed');
+          toast.error(result.errorMessage || 'Delivery failed');
         },
         onError: (error: unknown) => {
           console.error('Failed to send test webhook:', error);

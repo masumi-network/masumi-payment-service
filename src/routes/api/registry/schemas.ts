@@ -21,7 +21,9 @@ export const queryRegistryRequestSchemaInput = z.object({
 	searchQuery: z
 		.string()
 		.optional()
-		.describe('Search query to filter by name, description, tags, wallet address, state, or price'),
+		.describe(
+			'Search query to filter by name, description, tags, minting or recipient wallet address, state, or price',
+		),
 });
 
 const agentPricingSchema = z
@@ -130,9 +132,73 @@ export const registryRequestOutputSchema = z
 			.max(250)
 			.nullable()
 			.describe('Full agent identifier (policy ID + asset name). Null if not yet minted'),
-		AgentPricing: agentPricingSchema,
-		SmartContractWallet: smartContractWalletSchema,
-		CurrentTransaction: currentTransactionSchema,
+		AgentPricing: z
+			.object({
+				pricingType: z.enum([PricingType.Fixed]).describe('Pricing type for the agent'),
+				Pricing: z
+					.array(
+						z.object({
+							amount: z
+								.string()
+								.describe(
+									'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
+								),
+							unit: z
+								.string()
+								.max(250)
+								.describe(
+									'Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
+								),
+						}),
+					)
+					.min(1)
+					.describe('List of assets and amounts for fixed pricing'),
+			})
+			.or(
+				z.object({
+					pricingType: z.enum([PricingType.Free]).describe('Pricing type for the agent'),
+				}),
+			)
+			.or(
+				z.object({
+					pricingType: z
+						.enum([PricingType.Dynamic])
+						.describe('Pricing type for the agent. Amounts are provided per payment/purchase request'),
+				}),
+			)
+			.describe('Pricing information for the agent'),
+		sendFundingLovelace: z
+			.string()
+			.nullable()
+			.describe(
+				'Effective lovelace amount explicitly configured for the NFT output. Null means the default minimum NFT funding is used.',
+			),
+		SmartContractWallet: z
+			.object({
+				walletVkey: z.string().describe('Payment key hash of the smart contract wallet'),
+				walletAddress: z.string().describe('Cardano address of the smart contract wallet'),
+			})
+			.describe('Smart contract wallet managing this agent registration'),
+		RecipientWallet: z
+			.object({
+				walletVkey: z.string().describe('Payment key hash of the managed recipient wallet'),
+				walletAddress: z.string().describe('Cardano address of the managed recipient wallet'),
+			})
+			.nullable()
+			.describe('Managed wallet that receives the registry NFT. Null when the minting wallet receives it'),
+		CurrentTransaction: z
+			.object({
+				txHash: z.string().nullable().describe('Cardano transaction hash'),
+				status: z.nativeEnum(TransactionStatus).describe('Current status of the transaction'),
+				confirmations: z
+					.number()
+					.nullable()
+					.describe('Number of block confirmations for this transaction. Null if not yet confirmed'),
+				fees: z.string().nullable().describe('Fees of the transaction'),
+				blockHeight: z.number().nullable().describe('Block height of the transaction'),
+				blockTime: z.number().nullable().describe('Block time of the transaction'),
+			})
+			.nullable(),
 	})
 	.openapi('RegistryEntry');
 
@@ -198,6 +264,21 @@ export const queryRegistryCountSchemaOutput = z.object({
 export const registerAgentSchemaInput = z.object({
 	network: z.nativeEnum(Network).describe('The Cardano network used to register the agent on'),
 	sellingWalletVkey: z.string().max(250).describe('The payment key of a specific wallet used for the registration'),
+	recipientWalletAddress: z
+		.string()
+		.max(250)
+		.optional()
+		.describe(
+			'Optional managed hot wallet address on the same payment source that should receive the minted registry NFT. If omitted, the minting wallet receives it.',
+		),
+	sendFundingLovelace: z
+		.string()
+		.regex(/^\d+$/)
+		.max(25)
+		.optional()
+		.describe(
+			'Optional lovelace amount to include with the minted NFT output. If provided below the minimum NFT funding, the current minimum is still used.',
+		),
 	ExampleOutputs: z
 		.array(
 			z.object({

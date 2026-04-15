@@ -9,7 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Badge } from '../ui/badge';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
@@ -36,6 +36,8 @@ import { getActiveStablecoinConfig } from '@/lib/constants/defaultWallets';
 import { Separator } from '@/components/ui/separator';
 import { useWallets } from '@/lib/queries/useWallets';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
+import { REGISTRY_DECIMAL_ADA_AMOUNT_PATTERN, REGISTRY_LIMITS } from '@/lib/registry-validation';
+import { convertDecimalToBaseUnits } from '@/lib/convertDecimalToBaseUnits';
 
 interface RegisterAIAgentDialogProps {
   open: boolean;
@@ -50,19 +52,29 @@ const createPriceSchema = (network: 'Mainnet' | 'Preprod') => {
     unit: z.enum(['lovelace', stablecoinUnit] as const, {
       error: () => 'Token is required',
     }),
-    amount: z.string().refine((val) => {
-      if (val === '0' || val === '0.0' || val === '0.00') return true;
-      return !isNaN(parseFloat(val)) && parseFloat(val) >= 0;
-    }, 'Amount must be a valid number >= 0'),
+    amount: z
+      .string()
+      .max(REGISTRY_LIMITS.lovelaceAmount, 'Amount must be less than 25 characters')
+      .refine((val) => {
+        if (val === '0' || val === '0.0' || val === '0.00') return true;
+        return !isNaN(parseFloat(val)) && parseFloat(val) >= 0;
+      }, 'Amount must be a valid number >= 0'),
   });
 };
 
 const exampleOutputSchema = z.object({
-  name: z.string().max(60, 'Name must be less than 60 characters').min(1, 'Name is required'),
-  url: z.string().url('URL must be a valid URL').min(1, 'URL is required'),
+  name: z
+    .string()
+    .max(REGISTRY_LIMITS.exampleOutputName, 'Name must be less than 60 characters')
+    .min(1, 'Name is required'),
+  url: z
+    .string()
+    .url('URL must be a valid URL')
+    .max(REGISTRY_LIMITS.exampleOutputUrl, 'URL must be less than 250 characters')
+    .min(1, 'URL is required'),
   mimeType: z
     .string()
-    .max(60, 'MIME type must be less than 60 characters')
+    .max(REGISTRY_LIMITS.exampleOutputMimeType, 'MIME type must be less than 60 characters')
     .min(1, 'MIME type is required'),
 });
 
@@ -73,69 +85,101 @@ const createAgentSchema = (network: 'Mainnet' | 'Preprod') => {
       apiUrl: z
         .string()
         .url('API URL must be a valid URL')
+        .max(REGISTRY_LIMITS.apiBaseUrl, 'API URL must be less than 250 characters')
         .min(1, 'API URL is required')
         .refine((val) => val.startsWith('http://') || val.startsWith('https://'), {
           message: 'API URL must start with http:// or https://',
         }),
-      name: z.string().min(1, 'Name is required'),
+      name: z
+        .string()
+        .min(1, 'Name is required')
+        .max(REGISTRY_LIMITS.agentName, 'Name must be less than 250 characters'),
       description: z
         .string()
         .min(1, 'Description is required')
-        .max(250, 'Description must be less than 250 characters'),
-      selectedWallet: z.string().min(1, 'Wallet is required'),
-      prices: z.array(priceSchema),
-      tags: z.array(z.string().min(1)).min(1, 'At least one tag is required'),
+        .max(REGISTRY_LIMITS.description, 'Description must be less than 250 characters'),
+      selectedWallet: z
+        .string()
+        .min(1, 'Wallet is required')
+        .max(REGISTRY_LIMITS.walletReference, 'Wallet is invalid'),
+      recipientWalletAddress: z
+        .string()
+        .max(REGISTRY_LIMITS.walletReference, 'Recipient wallet must be less than 250 characters')
+        .optional()
+        .or(z.literal('')),
+      sendFundingAda: z
+        .string()
+        .optional()
+        .or(z.literal(''))
+        .refine(
+          (val) => val == null || val === '' || REGISTRY_DECIMAL_ADA_AMOUNT_PATTERN.test(val),
+          'Funding amount must be a valid ADA amount with up to 6 decimals',
+        ),
+      prices: z
+        .array(priceSchema)
+        .max(REGISTRY_LIMITS.pricingOptionCount, 'You can add at most 5 prices'),
+      tags: z
+        .array(z.string().min(1).max(REGISTRY_LIMITS.tag, 'Tags must be less than 63 characters'))
+        .min(1, 'At least one tag is required')
+        .max(REGISTRY_LIMITS.tagCount, 'You can add at most 15 tags'),
       pricingType: z.enum(['Fixed', 'Free', 'Dynamic']),
       authorName: z
         .string()
-        .max(250, 'Author name must be less than 250 characters')
+        .max(REGISTRY_LIMITS.authorName, 'Author name must be less than 250 characters')
         .optional()
         .or(z.literal('')),
       authorEmail: z
         .string()
         .email('Author email must be a valid email')
-        .max(250, 'Author email must be less than 250 characters')
+        .max(REGISTRY_LIMITS.authorContact, 'Author email must be less than 250 characters')
         .optional()
         .or(z.literal('')),
       organization: z
         .string()
-        .max(250, 'Organization must be less than 250 characters')
+        .max(REGISTRY_LIMITS.authorContact, 'Organization must be less than 250 characters')
         .optional()
         .or(z.literal('')),
       contactOther: z
         .string()
-        .max(250, 'Contact other must be less than 250 characters')
+        .max(REGISTRY_LIMITS.authorContact, 'Contact other must be less than 250 characters')
         .optional()
         .or(z.literal('')),
       termsOfUseUrl: z
         .string()
         .url('Terms of use URL must be a valid URL')
-        .max(250, 'Terms of use URL must be less than 250 characters')
+        .max(REGISTRY_LIMITS.legalUrl, 'Terms of use URL must be less than 250 characters')
         .optional()
         .or(z.literal('')),
       privacyPolicyUrl: z
         .string()
         .url('Privacy policy URL must be a valid URL')
-        .max(250, 'Privacy policy URL must be less than 250 characters')
+        .max(REGISTRY_LIMITS.legalUrl, 'Privacy policy URL must be less than 250 characters')
         .optional()
         .or(z.literal('')),
       otherUrl: z
         .string()
         .url('Other URL must be a valid URL')
-        .max(250, 'Other URL must be less than 250 characters')
+        .max(REGISTRY_LIMITS.legalUrl, 'Other URL must be less than 250 characters')
         .optional()
         .or(z.literal('')),
       capabilityName: z
         .string()
-        .max(250, 'Capability name must be less than 250 characters')
+        .max(REGISTRY_LIMITS.capabilityName, 'Capability name must be less than 250 characters')
         .optional()
         .or(z.literal('')),
       capabilityVersion: z
         .string()
-        .max(250, 'Capability version must be less than 250 characters')
+        .max(
+          REGISTRY_LIMITS.capabilityVersion,
+          'Capability version must be less than 250 characters',
+        )
         .optional()
         .or(z.literal('')),
-      exampleOutputs: z.array(exampleOutputSchema).optional(),
+
+      exampleOutputs: z
+        .array(exampleOutputSchema)
+        .max(REGISTRY_LIMITS.exampleOutputCount, 'You can add at most 25 example outputs')
+        .optional(),
     })
     .superRefine((data, ctx) => {
       if (data.pricingType === 'Fixed' && data.prices.length === 0) {
@@ -210,6 +254,8 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
       name: '',
       description: '',
       selectedWallet: '',
+      recipientWalletAddress: '',
+      sendFundingAda: '',
       prices: [{ unit: 'lovelace', amount: '' }],
       tags: [],
       pricingType: 'Fixed',
@@ -275,6 +321,9 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
   }, [paymentSources, network]);
 
   const tags = watch('tags');
+  const selectedWalletVkey = watch('selectedWallet');
+  const selectedRecipientWalletAddress = watch('recipientWalletAddress');
+  const selectedSendFundingAda = watch('sendFundingAda');
   const [tagInput, setTagInput] = useState('');
 
   useEffect(() => {
@@ -303,29 +352,44 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
     }
   }, [open, reset, resetA2A]);
 
-  // ── Shared wallet validation ────────────────────────────────────────────────
-  const validateWallet = useCallback(
-    (selectedWalletVkey: string): boolean => {
-      const selectedWalletBalance = sellingWallets.find(
-        (w) => w.wallet.walletVkey == selectedWalletVkey,
-      )?.balance;
-      if (selectedWalletBalance === undefined || selectedWalletBalance <= 3000000) {
-        toast.error('Insufficient balance in selected wallet');
-        return false;
-      }
-      const paymentSource = currentNetworkPaymentSources.find((ps) =>
-        ps.SellingWallets?.some((s) => s.walletVkey == selectedWalletVkey),
-      );
-      if (!paymentSource) {
-        toast.error('Smart contract wallet not found in payment sources');
-        return false;
-      }
-      return true;
-    },
-    [sellingWallets, currentNetworkPaymentSources],
+  const selectedWallet = useMemo(
+    () => sellingWallets.find((wallet) => wallet.wallet.walletVkey === selectedWalletVkey),
+    [sellingWallets, selectedWalletVkey],
+  );
+  const selectedPaymentSource = useMemo(
+    () =>
+      currentNetworkPaymentSources.find((paymentSource) =>
+        paymentSource.SellingWallets?.some((wallet) => wallet.walletVkey === selectedWalletVkey),
+      ),
+    [currentNetworkPaymentSources, selectedWalletVkey],
+  );
+  const recipientWalletOptions = useMemo(
+    () =>
+      selectedPaymentSource
+        ? [
+            ...(selectedPaymentSource.SellingWallets ?? []),
+            ...(selectedPaymentSource.PurchasingWallets ?? []),
+          ].filter((wallet) => wallet.walletAddress !== selectedWallet?.wallet.walletAddress)
+        : [],
+    [selectedPaymentSource, selectedWallet?.wallet.walletAddress],
   );
 
-  // ── Standard submit ────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!selectedRecipientWalletAddress) {
+      if (selectedSendFundingAda) {
+        setValue('sendFundingAda', '');
+      }
+      return;
+    }
+
+    const isRecipientStillAvailable = recipientWalletOptions.some(
+      (wallet) => wallet.walletAddress === selectedRecipientWalletAddress,
+    );
+    if (!isRecipientStillAvailable) {
+      setValue('recipientWalletAddress', '');
+    }
+  }, [recipientWalletOptions, selectedRecipientWalletAddress, selectedSendFundingAda, setValue]);
+
   const onSubmit = useCallback(
     async (data: AgentFormValues) => {
       try {
@@ -358,6 +422,11 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
           body: {
             network: network,
             sellingWalletVkey: selectedWalletVkey,
+            recipientWalletAddress: data.recipientWalletAddress || undefined,
+            sendFundingLovelace:
+              data.recipientWalletAddress && data.sendFundingAda
+                ? convertDecimalToBaseUnits(data.sendFundingAda)
+                : undefined,
             name: data.name,
             description: data.description,
             apiBaseUrl: data.apiUrl,
@@ -379,7 +448,10 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
                     price.unit === stablecoinUnit
                       ? getActiveStablecoinConfig(network).fullAssetId
                       : price.unit;
-                  return { unit, amount: (parseFloat(price.amount) * 1_000_000).toString() };
+                  return {
+                    unit,
+                    amount: convertDecimalToBaseUnits(price.amount),
+                  };
                 }),
               };
             })(),
@@ -454,7 +526,13 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
   // ── Tag helpers (Standard) ─────────────────────────────────────────────────
   const handleAddTag = () => {
     const tag = tagInput.trim();
-    if (tag && !tags.includes(tag)) setValue('tags', [...tags, tag]);
+    if (tags.length >= REGISTRY_LIMITS.tagCount) {
+      return;
+    }
+
+    if (tag && !tags.includes(tag)) {
+      setValue('tags', [...tags, tag]);
+    }
     setTagInput('');
   };
   const handleRemoveTag = (tagToRemove: string) => {
@@ -573,21 +651,192 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
           </button>
         </div>
 
-        {/* ══════════════════════════════════════════════════════════════════
-            STANDARD FORM
-           ══════════════════════════════════════════════════════════════════ */}
-        {agentType === 'Standard' && (
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-            <div className="space-y-2">
+          <div className="space-y-2">
+            <label className="text-sm font-medium">
+              Description <span className="text-red-500">*</span>
+            </label>
+            <div className="relative">
+              <Textarea
+                {...register('description')}
+                placeholder="Describe what your agent does"
+                rows={3}
+                className={`resize-none overflow-y-auto h-[84px] ${errors.description ? 'border-red-500' : ''}`}
+                maxLength={250}
+              />
+              <div className="absolute bottom-2 right-2 text-xs text-muted-foreground">
+                {watch('description')?.length || 0}/250
+              </div>
+            </div>
+            {errors.description && (
+              <p className="text-sm text-red-500">{errors.description.message}</p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">
+              Minting wallet <span className="text-red-500">*</span>
+            </label>
+            <Controller
+              control={control}
+              name="selectedWallet"
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger
+                    disabled={isLoadingWallets}
+                    className={`${errors.selectedWallet ? 'border-red-500' : ''} ${isLoadingWallets ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    <SelectValue
+                      placeholder={
+                        isLoadingWallets ? 'Loading wallets...' : 'Select a minting wallet'
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {sellingWallets.map((wallet) => (
+                      <SelectItem
+                        disabled={wallet.balance <= 3000000}
+                        key={wallet.wallet.id}
+                        value={wallet.wallet.walletVkey}
+                      >
+                        {wallet.wallet.note
+                          ? `${wallet.wallet.note} (${shortenAddress(wallet.wallet.walletAddress)})`
+                          : shortenAddress(wallet.wallet.walletAddress)}{' '}
+                        {wallet.balance <= 3000000 ? ' - Insufficient balance' : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+            {errors.selectedWallet && (
+              <p className="text-sm text-red-500">{errors.selectedWallet.message}</p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Holding wallet</label>
+            <Controller
+              control={control}
+              name="recipientWalletAddress"
+              render={({ field }) => (
+                <Select
+                  value={field.value || '__default'}
+                  onValueChange={(value) => field.onChange(value === '__default' ? '' : value)}
+                >
+                  <SelectTrigger
+                    disabled={isLoadingWallets || !selectedPaymentSource}
+                    className={isLoadingWallets ? 'opacity-50 cursor-not-allowed' : ''}
+                  >
+                    <SelectValue
+                      placeholder={
+                        !selectedPaymentSource
+                          ? 'Select a minting wallet first'
+                          : 'Use minting wallet (default)'
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__default">Use minting wallet (default)</SelectItem>
+                    {recipientWalletOptions.map((wallet) => (
+                      <SelectItem key={wallet.id} value={wallet.walletAddress}>
+                        {wallet.note
+                          ? `${wallet.note} (${shortenAddress(wallet.walletAddress)})`
+                          : shortenAddress(wallet.walletAddress)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+            <p className="text-xs text-muted-foreground">
+              Optional. The selected minting wallet still mints and pays fees, while the registry
+              NFT is delivered to another managed holding wallet on the same payment source.
+            </p>
+            {selectedPaymentSource && recipientWalletOptions.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                No other managed wallets are available on this payment source.
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Holding wallet funding (ADA)</label>
+            <Input
+              {...register('sendFundingAda')}
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="0.000001"
+              placeholder="Optional ADA amount"
+              disabled={!selectedRecipientWalletAddress}
+              className={errors.sendFundingAda ? 'border-red-500' : ''}
+            />
+            <p className="text-xs text-muted-foreground">
+              Optional. Sends extra ADA with the minted NFT to the selected holding wallet. The
+              current minimum NFT funding still applies.
+            </p>
+            {!selectedRecipientWalletAddress && (
+              <p className="text-xs text-muted-foreground">
+                Select a holding wallet to set a custom funding amount.
+              </p>
+            )}
+            {errors.sendFundingAda && (
+              <p className="text-sm text-red-500">{errors.sendFundingAda.message}</p>
+            )}
+          </div>
+
+          {/* Pricing Type */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">
+              Pricing Type <span className="text-red-500">*</span>
+            </label>
+            <Controller
+              control={control}
+              name="pricingType"
+              render={({ field }) => (
+                <Select
+                  value={field.value}
+                  onValueChange={(val) => {
+                    field.onChange(val);
+                    if (val !== 'Fixed') {
+                      setValue('prices', [{ unit: 'lovelace', amount: '0.00' }]);
+                    }
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select pricing type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Fixed">Fixed - Price per Agent</SelectItem>
+                    <SelectItem value="Dynamic">Dynamic - Price set per payment</SelectItem>
+                    <SelectItem value="Free">Free - No cost for interactions</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            />
+            {watch('pricingType') === 'Dynamic' && (
+              <p className="text-xs text-muted-foreground">
+                The price will be determined per payment/purchase request by the agent.
+              </p>
+            )}
+          </div>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
               <label className="text-sm font-medium">
                 API URL <span className="text-red-500">*</span>
               </label>
-              <Input
-                {...register('apiUrl')}
-                placeholder="Enter the API URL for your agent"
-                className={errors.apiUrl ? 'border-red-500' : ''}
-              />
-              {errors.apiUrl && <p className="text-sm text-red-500">{errors.apiUrl.message}</p>}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={
+                  watch('pricingType') !== 'Fixed' ||
+                  priceFields.length >= REGISTRY_LIMITS.pricingOptionCount
+                }
+                onClick={() => appendPrice({ unit: 'lovelace', amount: '' })}
+              >
+                Add Price
+              </Button>
             </div>
 
             <div className="space-y-2">
@@ -1003,9 +1252,10 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
               </label>
               <div className="flex gap-2">
                 <Input
-                  placeholder="e.g. 0.2.5"
-                  value={a2aVersionInput}
-                  onChange={(e) => setA2aVersionInput(e.target.value)}
+                  placeholder="Add a tag"
+                  value={tagInput}
+                  maxLength={REGISTRY_LIMITS.tag}
+                  onChange={(e) => setTagInput(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
@@ -1014,7 +1264,12 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
                   }}
                   className={errorsA2A.a2aProtocolVersions ? 'border-red-500' : ''}
                 />
-                <Button type="button" variant="outline" onClick={handleAddA2AVersion}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={tags.length >= REGISTRY_LIMITS.tagCount}
+                  onClick={handleAddTag}
+                >
                   Add
                 </Button>
               </div>
@@ -1091,23 +1346,66 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
 
             {/* Skip validation toggle */}
             <div className="space-y-2">
-              <div className="flex items-center space-x-2">
-                <Controller
-                  control={controlA2A}
-                  name="skipAgentCardValidation"
-                  render={({ field }) => (
-                    <input
-                      type="checkbox"
-                      id="skipValidation"
-                      checked={field.value || false}
-                      onChange={(e) => field.onChange(e.target.checked)}
-                      className="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded"
-                    />
-                  )}
-                />
-                <label htmlFor="skipValidation" className="text-sm font-medium">
-                  Skip Agent Card validation
-                </label>
+              <label className="text-sm font-medium">Capability Name</label>
+              <Input
+                {...register('capabilityName')}
+                placeholder="e.g., Text Generation"
+                className={errors.capabilityName ? 'border-red-500' : ''}
+              />
+              {errors.capabilityName && (
+                <p className="text-sm text-red-500">{errors.capabilityName.message}</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Capability Version</label>
+              <Input
+                {...register('capabilityVersion')}
+                placeholder="e.g., 1.0.0"
+                className={errors.capabilityVersion ? 'border-red-500' : ''}
+              />
+              {errors.capabilityVersion && (
+                <p className="text-sm text-red-500">{errors.capabilityVersion.message}</p>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-4 border rounded-md p-4 bg-muted/40">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">Example Outputs</label>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={exampleOutputFields.length >= REGISTRY_LIMITS.exampleOutputCount}
+                onClick={() => appendExampleOutput({ name: '', url: '', mimeType: '' })}
+              >
+                Add Example
+              </Button>
+            </div>
+            {exampleOutputFields.map((field, index) => (
+              <div key={field.id} className="p-4 border rounded-md space-y-2 relative">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <Input
+                    placeholder="Name"
+                    {...register(`exampleOutputs.${index}.name` as const)}
+                  />
+                  <Input placeholder="URL" {...register(`exampleOutputs.${index}.url` as const)} />
+                  <Input
+                    placeholder="MIME Type"
+                    {...register(`exampleOutputs.${index}.mimeType` as const)}
+                  />
+                </div>
+                {index >= 0 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => removeExampleOutput(index)}
+                    className="absolute top-2 right-2"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
               {watchA2A('skipAgentCardValidation') && (
                 <div className="flex items-start gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-md text-yellow-800 text-xs">

@@ -91,8 +91,13 @@ model HotWallet {
   Secret                   WalletSecret              @relation(fields: [secretId], references: [id])
   PaymentRequest           PaymentRequest[]
   PurchaseRequest          PurchaseRequest[]
-  RegistryRequest          RegistryRequest[]
-  A2ARegistryRequest       A2ARegistryRequest[]
+  RegistryRequest          RegistryRequest[]         @relation("RegistryRequestMintingWallet")
+  RecipientRegistryRequest RegistryRequest[]         @relation("RegistryRequestRecipientWallet")
+  DeregistrationRequests   RegistryRequest[]         @relation("RegistryRequestDeregistrationWallet")
+  A2ARegistryRequest                      A2ARegistryRequest[]
+  InboxAgentRegistrationRequests          InboxAgentRegistrationRequest[] @relation("InboxAgentRegistrationRequestMintingWallet")
+  RecipientInboxAgentRegistrationRequests InboxAgentRegistrationRequest[] @relation("InboxAgentRegistrationRequestRecipientWallet")
+  InboxDeregistrationRequests             InboxAgentRegistrationRequest[] @relation("InboxAgentRegistrationRequestDeregistrationWallet")
   apiKeyWalletScopes       ApiKeyWalletScope[]
   LimitedPurchaseRequests  PurchaseRequest[]         @relation("HotWalletLimit")
   LowBalanceRules          HotWalletLowBalanceRule[]
@@ -143,6 +148,7 @@ model Transaction {
   PurchaseRequestCurrent   PurchaseRequest?  @relation("CurrentPurchaseTransaction")
   RegistryRequest          RegistryRequest[]
   A2ARegistryRequest       A2ARegistryRequest[]
+  InboxAgentRegistrationRequest InboxAgentRegistrationRequest[]
   PaymentRequestHistory    PaymentRequest?   @relation("PaymentTransactionHistory", fields: [paymentRequestHistoryId], references: [id])
   PurchaseRequestHistory   PurchaseRequest?  @relation("PurchaseTransactionHistory", fields: [purchaseRequestHistoryId], references: [id])
 }
@@ -201,6 +207,9 @@ model RegistryRequest {
   lastCheckedAt                  DateTime?
   paymentSourceId                String
   smartContractWalletId          String
+  recipientHotWalletId           String?
+  deregistrationHotWalletId      String?
+  sendFundingLovelace            BigInt?
   name                           String
   apiBaseUrl                     String
   capabilityName                 String?
@@ -225,7 +234,41 @@ model RegistryRequest {
   Pricing                        AgentPricing      @relation(fields: [agentPricingId], references: [id])
   CurrentTransaction             Transaction?      @relation(fields: [currentTransactionId], references: [id])
   PaymentSource                  PaymentSource     @relation(fields: [paymentSourceId], references: [id])
-  SmartContractWallet            HotWallet         @relation(fields: [smartContractWalletId], references: [id])
+  SmartContractWallet            HotWallet         @relation("RegistryRequestMintingWallet", fields: [smartContractWalletId], references: [id])
+  RecipientWallet                HotWallet?        @relation("RegistryRequestRecipientWallet", fields: [recipientHotWalletId], references: [id])
+  DeregistrationHotWallet        HotWallet?        @relation("RegistryRequestDeregistrationWallet", fields: [deregistrationHotWalletId], references: [id])
+
+  @@index([recipientHotWalletId])
+  @@index([deregistrationHotWalletId])
+}
+
+model InboxAgentRegistrationRequest {
+  id                             String            @id @default(cuid())
+  createdAt                      DateTime          @default(now())
+  updatedAt                      DateTime          @updatedAt
+  lastCheckedAt                  DateTime?
+  paymentSourceId                String
+  smartContractWalletId          String
+  recipientHotWalletId           String?
+  deregistrationHotWalletId      String?
+  sendFundingLovelace            BigInt?
+  name                           String
+  description                    String?
+  agentSlug                      String
+  metadataVersion                Int
+  agentIdentifier                String?           @unique
+  state                          RegistrationState
+  registrationStateLastChangedAt DateTime          @default(now())
+  currentTransactionId           String?
+  error                          String?
+  CurrentTransaction             Transaction?      @relation(fields: [currentTransactionId], references: [id])
+  PaymentSource                  PaymentSource     @relation(fields: [paymentSourceId], references: [id])
+  SmartContractWallet            HotWallet         @relation("InboxAgentRegistrationRequestMintingWallet", fields: [smartContractWalletId], references: [id])
+  RecipientWallet                HotWallet?        @relation("InboxAgentRegistrationRequestRecipientWallet", fields: [recipientHotWalletId], references: [id])
+  DeregistrationHotWallet        HotWallet?        @relation("InboxAgentRegistrationRequestDeregistrationWallet", fields: [deregistrationHotWalletId], references: [id])
+
+  @@index([recipientHotWalletId])
+  @@index([deregistrationHotWalletId])
 }
 
 model ExampleOutput {
@@ -464,6 +507,7 @@ model PaymentSource {
   PurchaseRequests         PurchaseRequest[]          @relation("PurchaseRequestPaymentSource")
   RegistryRequest          RegistryRequest[]
   A2ARegistryRequest       A2ARegistryRequest[]
+  InboxAgentRegistrationRequests InboxAgentRegistrationRequest[]
   WalletBases              WalletBase[]
   WebhookEndpoints         WebhookEndpoint[]
 

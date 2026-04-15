@@ -42,10 +42,12 @@ export const registryEntryExample = {
 			},
 		],
 	},
+	sendFundingLovelace: null,
 	SmartContractWallet: {
 		walletVkey: 'wallet_vkey',
 		walletAddress: 'wallet_address',
 	},
+	RecipientWallet: null,
 	CurrentTransaction: null,
 } satisfies z.infer<typeof registerAgentSchemaOutput>;
 

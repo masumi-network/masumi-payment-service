@@ -1,6 +1,7 @@
 import { RegistrationState, PricingType } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import { IFetcher, LanguageVersion, MeshTxBuilder, Network, UTxO } from '@meshsdk/core';
+import { blake2b } from 'ethereum-cryptography/blake2b';
 import { logger } from '@/utils/logger';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import {
@@ -9,7 +10,6 @@ import {
 } from '@/utils/db/lock-and-query-registry-request';
 import { DEFAULTS, SERVICE_CONSTANTS } from '@/utils/config';
 import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contract-generator';
-import { blake2b } from 'ethereum-cryptography/blake2b';
 import { stringToMetadata, cleanMetadata } from '@/utils/converter/metadata-string-convert';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
@@ -21,6 +21,13 @@ import {
 	loadHotWalletSession,
 	updateCurrentTransactionHash,
 } from '@/services/shared';
+import {
+	generateRegistryAssetName,
+	generateRegistryMintTransaction,
+	type RegistryMetadata,
+	resolveRegistryFundingLovelace,
+	resolveRegistryRecipientWalletAddress,
+} from '../shared';
 
 const mutex = new Mutex();
 
@@ -50,17 +57,6 @@ function validateRegistrationPricing(request: {
 	}
 }
 
-function generateAssetName(firstUtxo: UTxO): string {
-	const txId = firstUtxo.input.txHash;
-	const txIndex = firstUtxo.input.outputIndex;
-	const serializedOutput = txId + txIndex.toString(16).padStart(8, '0');
-
-	const serializedOutputUint8Array = new Uint8Array(Buffer.from(serializedOutput.toString(), 'hex'));
-	// Hash the serialized output using blake2b_256
-	const blake2b256 = blake2b(serializedOutputUint8Array, 32);
-	return Buffer.from(blake2b256).toString('hex');
-}
-
 function buildAgentMetadata(request: {
 	name: string;
 	description: string | null;
@@ -82,7 +78,8 @@ function buildAgentMetadata(request: {
 			Amounts: Array<{ unit: string; amount: bigint }>;
 		} | null;
 	};
-}): AgentMetadata {
+	metadataVersion: number;
+}): RegistryMetadata {
 	const metadata = {
 		name: stringToMetadata(request.name),
 		description: stringToMetadata(request.description),
@@ -128,7 +125,7 @@ function buildAgentMetadata(request: {
 		metadata_version: DEFAULTS.DEFAULT_METADATA_VERSION.toString(),
 	};
 	// Clean undefined values from metadata - MeshSDK cannot serialize undefined
-	return cleanMetadata(metadata) as AgentMetadata;
+	return cleanMetadata(metadata) as RegistryMetadata;
 }
 
 function buildAgentMetadataV2(request: {
@@ -324,14 +321,18 @@ export async function registerAgentV1() {
 
 						const firstUtxo = limitedFilteredUtxos[0];
 						const collateralUtxo = limitedFilteredUtxos[0];
+						const recipientWalletAddress = resolveRegistryRecipientWalletAddress(request);
+						const fundingLovelace = resolveRegistryFundingLovelace(request);
 
-						const assetName = generateAssetName(firstUtxo);
+						const assetName = generateRegistryAssetName(firstUtxo);
 						const metadata = buildAgentMetadata(request);
-						const evaluationTx = await generateRegisterAgentTransaction(
+						const evaluationTx = await generateRegistryMintTransaction(
 							blockchainProvider,
 							network,
 							script,
 							address,
+							recipientWalletAddress,
+							fundingLovelace,
 							policyId,
 							assetName,
 							firstUtxo,
@@ -343,11 +344,13 @@ export async function registerAgentV1() {
 							budget: { mem: number; steps: number };
 						}>;
 
-						const unsignedTx = await generateRegisterAgentTransaction(
+						const unsignedTx = await generateRegistryMintTransaction(
 							blockchainProvider,
 							network,
 							script,
 							address,
+							recipientWalletAddress,
+							fundingLovelace,
 							policyId,
 							assetName,
 							firstUtxo,
@@ -423,6 +426,15 @@ type AgentMetadata = {
 	[key: string]: string | string[] | AgentMetadata | AgentMetadata[] | undefined;
 };
 
+function generateAssetName(firstUtxo: UTxO): string {
+	const txId = firstUtxo.input.txHash;
+	const txIndex = firstUtxo.input.outputIndex;
+	const serializedOutput = txId + txIndex.toString(16).padStart(8, '0');
+	const serializedOutputUint8Array = new Uint8Array(Buffer.from(serializedOutput.toString(), 'hex'));
+	const blake2b256 = blake2b(serializedOutputUint8Array, 32);
+	return Buffer.from(blake2b256).toString('hex');
+}
+
 async function generateRegisterAgentTransaction(
 	blockchainProvider: IFetcher,
 	network: Network,
@@ -446,7 +458,6 @@ async function generateRegisterAgentTransaction(
 		fetcher: blockchainProvider,
 	});
 	const deserializedAddress = txBuilder.serializer.deserializer.key.deserializeAddress(walletAddress);
-	//setup minting data separately as the minting function does not work well with hex encoded strings without some magic
 	txBuilder
 		.txIn(firstUtxo.input.txHash, firstUtxo.input.outputIndex)
 		.mintPlutusScript(script.version)
