@@ -44,47 +44,15 @@ export async function lockAndQueryA2ARegistryRequests({
 					const potentialRequests = await prisma.a2ARegistryRequest.findMany({
 						where: {
 							state: state,
-							...(locksSellingWallet
-								? {
-										SmartContractWallet: {
-											id: hotWallet.id,
-											deletedAt: null,
-											PendingTransaction: { is: null },
-											lockedAt: null,
-										},
-									}
-								: {
-										OR: [
-											{
-												DeregistrationHotWallet: {
-													is: {
-														id: hotWallet.id,
-														deletedAt: null,
-														PendingTransaction: { is: null },
-														lockedAt: null,
-													},
-												},
-											},
-											{
-												deregistrationHotWalletId: null,
-												SmartContractWallet: {
-													id: hotWallet.id,
-													deletedAt: null,
-													PendingTransaction: { is: null },
-													lockedAt: null,
-												},
-											},
-										],
-									}),
+							SmartContractWallet: {
+								id: hotWallet.id,
+								deletedAt: null,
+								PendingTransaction: { is: null },
+								lockedAt: null,
+							},
 						},
 						include: {
 							SmartContractWallet: {
-								include: {
-									Secret: true,
-								},
-							},
-							RecipientWallet: true,
-							DeregistrationHotWallet: {
 								include: {
 									Secret: true,
 								},

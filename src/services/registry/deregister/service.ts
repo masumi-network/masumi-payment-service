@@ -205,7 +205,7 @@ export async function deRegisterAgentV1() {
 					errorResolvers: [delayErrorResolver({ configuration: SERVICE_CONSTANTS.RETRY })],
 					operation: async () => {
 						validateDeregistrationRequest(deregistrationRequest);
-						const deregistrationWallet = resolveRegistryDeregistrationWallet(deregistrationRequest);
+						const deregistrationWallet = deregistrationRequest.SmartContractWallet;
 						const walletSession = await loadHotWalletSession({
 							network: paymentSource.network,
 							rpcProviderApiKey: paymentSource.PaymentSourceConfig.rpcProviderApiKey,
@@ -251,7 +251,11 @@ export async function deRegisterAgentV1() {
 						return true;
 					},
 				});
-				await handlePotentialA2ADeregistrationFailure(result, deregistrationRequest);
+				await handlePotentialA2ADeregistrationFailure(result, {
+					id: deregistrationRequest.id,
+					SmartContractWallet: deregistrationRequest.SmartContractWallet,
+					DeregistrationHotWallet: null,
+				});
 			}),
 		]);
 	} catch (error) {
