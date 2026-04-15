@@ -6,6 +6,10 @@ const mockWebhookEndpointFindUnique = jest.fn() as jest.Mock<any>;
 const mockWebhookEndpointUpdate = jest.fn() as jest.Mock<any>;
 const mockWebhookDeliveryFindUnique = jest.fn() as jest.Mock<any>;
 const mockWebhookDeliveryUpdate = jest.fn() as jest.Mock<any>;
+const mockAssertWebhookDestinationAllowed = jest.fn() as jest.Mock<any>;
+const loggerInfo = jest.fn() as jest.Mock<any>;
+const loggerWarn = jest.fn() as jest.Mock<any>;
+const loggerError = jest.fn() as jest.Mock<any>;
 
 jest.unstable_mockModule('@/utils/db', () => ({
 	prisma: {
@@ -22,9 +26,9 @@ jest.unstable_mockModule('@/utils/db', () => ({
 
 jest.unstable_mockModule('@/utils/logger', () => ({
 	logger: {
-		info: jest.fn(),
-		warn: jest.fn(),
-		error: jest.fn(),
+		info: loggerInfo,
+		warn: loggerWarn,
+		error: loggerError,
 		debug: jest.fn(),
 	},
 }));
@@ -46,11 +50,19 @@ jest.unstable_mockModule('@/utils/security/webhook-secrets', () => ({
 	}),
 }));
 
+jest.unstable_mockModule('@/utils/security/webhook-destination-policy', () => ({
+	assertWebhookDestinationAllowed: mockAssertWebhookDestinationAllowed,
+	isWebhookDestinationPolicyError: jest.fn((error: unknown) => error instanceof Error && error.message === 'blocked'),
+	redactWebhookDestination: jest.fn((url: string) => `redacted:${url}`),
+	WEBHOOK_DELIVERY_BLOCKED_MESSAGE: 'Delivery blocked by policy',
+}));
+
 const { webhookSenderService } = await import('./sender.service');
 
 describe('webhookSenderService.sendWebhook', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
+		mockAssertWebhookDestinationAllowed.mockResolvedValue(undefined);
 		mockWebhookEndpointFindUnique.mockResolvedValue({
 			id: 'webhook-1',
 			consecutiveFailures: 3,
@@ -107,6 +119,7 @@ describe('webhookSenderService.sendWebhook', () => {
 					'User-Agent': 'Masumi-Webhook/1.0',
 				},
 				body: JSON.stringify(payload),
+				redirect: 'manual',
 			}),
 		);
 	});
@@ -143,6 +156,7 @@ describe('webhookSenderService.sendWebhook', () => {
 					'Content-Type': 'application/json',
 					'User-Agent': 'Masumi-Webhook/1.0',
 				},
+				redirect: 'manual',
 			}),
 		);
 		const slackBody = JSON.parse(((global.fetch as jest.Mock).mock.calls[0][1] as { body: string }).body);
@@ -199,6 +213,7 @@ describe('webhookSenderService.sendWebhook', () => {
 					'Content-Type': 'application/json; charset=UTF-8',
 					'User-Agent': 'Masumi-Webhook/1.0',
 				},
+				redirect: 'manual',
 			}),
 		);
 		const googleChatBody = JSON.parse(((global.fetch as jest.Mock).mock.calls[0][1] as { body: string }).body);
@@ -253,6 +268,7 @@ describe('webhookSenderService.sendWebhook', () => {
 					'Content-Type': 'application/json',
 					'User-Agent': 'Masumi-Webhook/1.0',
 				},
+				redirect: 'manual',
 			}),
 		);
 		const discordBody = JSON.parse(((global.fetch as jest.Mock).mock.calls[0][1] as { body: string }).body);
@@ -272,11 +288,44 @@ describe('webhookSenderService.sendWebhook', () => {
 			].join('\n'),
 		});
 	});
+
+	it('blocks private destinations before making an outbound request and logs only the redacted destination', async () => {
+		mockAssertWebhookDestinationAllowed.mockRejectedValue(new Error('blocked'));
+
+		const result = await webhookSenderService.sendWebhook(
+			'http://127.0.0.1/webhook',
+			WebhookFormat.EXTENDED,
+			'extended-secret',
+			{
+				event_type: WebhookEventType.PAYMENT_ON_ERROR,
+				service_name: 'masumi-test-service',
+				timestamp: '2026-04-08T10:00:00.000Z',
+				webhook_id: 'webhook-1',
+				data: {
+					id: 'payment-1',
+				},
+			} as unknown as StoredWebhookPayload,
+		);
+
+		expect(result).toEqual({
+			success: false,
+			errorMessage: 'Delivery blocked by policy',
+			durationMs: 0,
+		});
+		expect(global.fetch).not.toHaveBeenCalled();
+		expect(loggerWarn).toHaveBeenCalledWith(
+			'Webhook delivery blocked by policy',
+			expect.objectContaining({
+				url: 'redacted:http://127.0.0.1/webhook',
+			}),
+		);
+	});
 });
 
 describe('webhookSenderService.sendTestWebhook', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
+		mockAssertWebhookDestinationAllowed.mockResolvedValue(undefined);
 		mockWebhookEndpointFindUnique.mockResolvedValue({
 			id: 'webhook-test',
 			consecutiveFailures: 3,
@@ -317,6 +366,7 @@ describe('webhookSenderService.sendTestWebhook', () => {
 					'X-Masumi-Timestamp': expect.any(String),
 					'User-Agent': 'Masumi-Webhook/1.0',
 				},
+				redirect: 'manual',
 			}),
 		);
 		const extendedRequest = (global.fetch as jest.Mock).mock.calls[0][1] as { body: string };
@@ -365,6 +415,7 @@ describe('webhookSenderService.sendTestWebhook', () => {
 					'Content-Type': 'application/json',
 					'User-Agent': 'Masumi-Webhook/1.0',
 				},
+				redirect: 'manual',
 			}),
 		);
 		const slackRequest = (global.fetch as jest.Mock).mock.calls[0][1] as { body: string };
@@ -383,6 +434,7 @@ describe('webhookSenderService.sendTestWebhook', () => {
 describe('webhookSenderService.processWebhookDelivery', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
+		mockAssertWebhookDestinationAllowed.mockResolvedValue(undefined);
 		mockWebhookEndpointFindUnique.mockResolvedValue({
 			id: 'webhook-legacy',
 			consecutiveFailures: 0,
@@ -440,6 +492,7 @@ describe('webhookSenderService.processWebhookDelivery', () => {
 					'Content-Type': 'application/json',
 					'User-Agent': 'Masumi-Webhook/1.0',
 				},
+				redirect: 'manual',
 			}),
 		);
 		const slackBody = JSON.parse(((global.fetch as jest.Mock).mock.calls[0][1] as { body: string }).body);
