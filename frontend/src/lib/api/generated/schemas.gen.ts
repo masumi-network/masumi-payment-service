@@ -2280,7 +2280,7 @@ export const RegistryEntrySchema = {
                             enum: [
                                 'Fixed'
                             ],
-                            description: 'Pricing type for the agent '
+                            description: 'Pricing type for the agent'
                         },
                         Pricing: {
                             type: 'array',
@@ -2319,7 +2319,7 @@ export const RegistryEntrySchema = {
                             enum: [
                                 'Free'
                             ],
-                            description: 'Pricing type for the agent '
+                            description: 'Pricing type for the agent'
                         }
                     },
                     required: [

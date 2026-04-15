@@ -2293,7 +2293,7 @@
                                         "enum": [
                                             "Fixed"
                                         ],
-                                        "description": "Pricing type for the agent "
+                                        "description": "Pricing type for the agent"
                                     },
                                     "Pricing": {
                                         "type": "array",
@@ -2332,7 +2332,7 @@
                                         "enum": [
                                             "Free"
                                         ],
-                                        "description": "Pricing type for the agent "
+                                        "description": "Pricing type for the agent"
                                     }
                                 },
                                 "required": [
@@ -20335,6 +20335,379 @@
                     },
                     "404": {
                         "description": "Webhook or payment source not found"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/registry/a2a": {
+            "post": {
+                "description": "Registers an A2A (Agent-to-Agent) agent in the Masumi Registry using MIP-002-A2A metadata (version 2). Fetches and validates the Agent Card unless skipAgentCardValidation is set.",
+                "summary": "Register an A2A agent in the Masumi Registry. (PAY access required)",
+                "tags": [
+                    "registry"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "network": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Preprod",
+                                            "Mainnet"
+                                        ],
+                                        "description": "The Cardano network used to register the agent on"
+                                    },
+                                    "sellingWalletVkey": {
+                                        "type": "string",
+                                        "maxLength": 250,
+                                        "description": "The payment key of a specific wallet used for the registration"
+                                    },
+                                    "name": {
+                                        "type": "string",
+                                        "maxLength": 250,
+                                        "description": "Name of the agent"
+                                    },
+                                    "apiBaseUrl": {
+                                        "type": "string",
+                                        "maxLength": 500,
+                                        "format": "uri",
+                                        "description": "Base URL of the agent API for interactions"
+                                    },
+                                    "agentCardUrl": {
+                                        "type": "string",
+                                        "maxLength": 500,
+                                        "format": "uri",
+                                        "description": "URL to the Agent Card JSON (typically /.well-known/agent-card.json)"
+                                    },
+                                    "a2aProtocolVersions": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "maxLength": 20
+                                        },
+                                        "minItems": 1,
+                                        "maxItems": 10,
+                                        "description": "A2A protocol versions this agent supports"
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "maxLength": 250,
+                                        "description": "Description of the agent"
+                                    },
+                                    "Tags": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "maxLength": 63
+                                        },
+                                        "maxItems": 15,
+                                        "default": [],
+                                        "description": "Tags used in the registry metadata"
+                                    },
+                                    "skipAgentCardValidation": {
+                                        "type": "boolean",
+                                        "default": false,
+                                        "description": "Skip fetching and validating the Agent Card URL. Use with caution."
+                                    }
+                                },
+                                "required": [
+                                    "network",
+                                    "sellingWalletVkey",
+                                    "name",
+                                    "apiBaseUrl",
+                                    "agentCardUrl",
+                                    "a2aProtocolVersions"
+                                ],
+                                "example": {
+                                    "network": "Preprod",
+                                    "sellingWalletVkey": "wallet_vkey",
+                                    "name": "My A2A Agent",
+                                    "apiBaseUrl": "https://api.example.com",
+                                    "agentCardUrl": "https://api.example.com/.well-known/agent-card.json",
+                                    "a2aProtocolVersions": [
+                                        "0.2.5"
+                                    ],
+                                    "description": "An A2A-capable AI agent",
+                                    "Tags": [
+                                        "a2a",
+                                        "agent"
+                                    ],
+                                    "skipAgentCardValidation": false
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "A2A agent registered",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/A2ARegistryEntry"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "error": null,
+                                            "id": "a2a_registry_id",
+                                            "name": "My A2A Agent",
+                                            "description": "An A2A-capable AI agent",
+                                            "apiBaseUrl": "https://api.example.com",
+                                            "agentCardUrl": "https://api.example.com/.well-known/agent-card.json",
+                                            "a2aProtocolVersions": [
+                                                "0.2.5"
+                                            ],
+                                            "a2aAgentVersion": "1.0.0",
+                                            "a2aDefaultInputModes": [
+                                                "text/plain"
+                                            ],
+                                            "a2aDefaultOutputModes": [
+                                                "text/plain"
+                                            ],
+                                            "a2aProviderName": "Example Provider",
+                                            "a2aProviderUrl": "https://example.com",
+                                            "a2aDocumentationUrl": null,
+                                            "a2aIconUrl": null,
+                                            "a2aCapabilitiesStreaming": false,
+                                            "a2aCapabilitiesPushNotifications": false,
+                                            "state": "RegistrationRequested",
+                                            "Tags": [
+                                                "a2a",
+                                                "agent"
+                                            ],
+                                            "createdAt": "1970-01-20T20:00:36.260Z",
+                                            "updatedAt": "1970-01-20T20:00:36.260Z",
+                                            "lastCheckedAt": null,
+                                            "agentIdentifier": "policy_id_asset_name_policy_id_asset_name_policy_id_asset_name",
+                                            "AgentPricing": {
+                                                "pricingType": "Free"
+                                            },
+                                            "SmartContractWallet": {
+                                                "walletVkey": "wallet_vkey",
+                                                "walletAddress": "wallet_address"
+                                            },
+                                            "CurrentTransaction": null
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (invalid input or Agent Card validation failed)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Wallet not found"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            },
+            "get": {
+                "description": "Gets the A2A agent metadata.",
+                "summary": "List every A2A agent recorded in the Masumi Registry. (READ access required)",
+                "tags": [
+                    "registry"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "number",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 10,
+                            "description": "The number of registry entries to return"
+                        },
+                        "required": false,
+                        "description": "The number of registry entries to return",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "The cursor id to paginate through the results"
+                        },
+                        "required": false,
+                        "description": "The cursor id to paginate through the results",
+                        "name": "cursorId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Preprod",
+                                "Mainnet"
+                            ],
+                            "description": "The Cardano network used to register the agent on"
+                        },
+                        "required": true,
+                        "description": "The Cardano network used to register the agent on",
+                        "name": "network",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "The smart contract address of the payment source"
+                        },
+                        "required": false,
+                        "description": "The smart contract address of the payment source",
+                        "name": "filterSmartContractAddress",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Registered",
+                                "Deregistered",
+                                "Pending",
+                                "Failed"
+                            ],
+                            "description": "Filter by registration status category"
+                        },
+                        "required": false,
+                        "description": "Filter by registration status category",
+                        "name": "filterStatus",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Search query to filter by name, description, tags, minting or recipient wallet address, state, or price"
+                        },
+                        "required": false,
+                        "description": "Search query to filter by name, description, tags, minting or recipient wallet address, state, or price",
+                        "name": "searchQuery",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "A2A agent metadata",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "Assets": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/A2ARegistryEntry"
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "Assets"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "Success",
+                                        "data": {
+                                            "Assets": [
+                                                {
+                                                    "error": null,
+                                                    "id": "a2a_registry_id",
+                                                    "name": "My A2A Agent",
+                                                    "description": "An A2A-capable AI agent",
+                                                    "apiBaseUrl": "https://api.example.com",
+                                                    "agentCardUrl": "https://api.example.com/.well-known/agent-card.json",
+                                                    "a2aProtocolVersions": [
+                                                        "0.2.5"
+                                                    ],
+                                                    "a2aAgentVersion": "1.0.0",
+                                                    "a2aDefaultInputModes": [
+                                                        "text/plain"
+                                                    ],
+                                                    "a2aDefaultOutputModes": [
+                                                        "text/plain"
+                                                    ],
+                                                    "a2aProviderName": "Example Provider",
+                                                    "a2aProviderUrl": "https://example.com",
+                                                    "a2aDocumentationUrl": null,
+                                                    "a2aIconUrl": null,
+                                                    "a2aCapabilitiesStreaming": false,
+                                                    "a2aCapabilitiesPushNotifications": false,
+                                                    "state": "RegistrationRequested",
+                                                    "Tags": [
+                                                        "a2a",
+                                                        "agent"
+                                                    ],
+                                                    "createdAt": "1970-01-20T20:00:36.260Z",
+                                                    "updatedAt": "1970-01-20T20:00:36.260Z",
+                                                    "lastCheckedAt": null,
+                                                    "agentIdentifier": "policy_id_asset_name_policy_id_asset_name_policy_id_asset_name",
+                                                    "AgentPricing": {
+                                                        "pricingType": "Free"
+                                                    },
+                                                    "SmartContractWallet": {
+                                                        "walletVkey": "wallet_vkey",
+                                                        "walletAddress": "wallet_address"
+                                                    },
+                                                    "CurrentTransaction": null
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (possible parameters missing or invalid)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
                     },
                     "500": {
                         "description": "Internal Server Error"

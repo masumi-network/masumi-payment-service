@@ -8948,6 +8948,142 @@ export type PostWebhooksTestResponses = {
 
 export type PostWebhooksTestResponse = PostWebhooksTestResponses[keyof PostWebhooksTestResponses];
 
+export type GetRegistryA2aData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The number of registry entries to return
+         */
+        limit?: number;
+        /**
+         * The cursor id to paginate through the results
+         */
+        cursorId?: string;
+        /**
+         * The Cardano network used to register the agent on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The smart contract address of the payment source
+         */
+        filterSmartContractAddress?: string | null;
+        /**
+         * Filter by registration status category
+         */
+        filterStatus?: 'Registered' | 'Deregistered' | 'Pending' | 'Failed';
+        /**
+         * Search query to filter by name, description, tags, minting or recipient wallet address, state, or price
+         */
+        searchQuery?: string;
+    };
+    url: '/registry/a2a';
+};
+
+export type GetRegistryA2aErrors = {
+    /**
+     * Bad Request (possible parameters missing or invalid)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type GetRegistryA2aResponses = {
+    /**
+     * A2A agent metadata
+     */
+    200: {
+        status: string;
+        data: {
+            Assets: Array<A2aRegistryEntry>;
+        };
+    };
+};
+
+export type GetRegistryA2aResponse = GetRegistryA2aResponses[keyof GetRegistryA2aResponses];
+
+export type PostRegistryA2aData = {
+    body?: {
+        /**
+         * The Cardano network used to register the agent on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The payment key of a specific wallet used for the registration
+         */
+        sellingWalletVkey: string;
+        /**
+         * Name of the agent
+         */
+        name: string;
+        /**
+         * Base URL of the agent API for interactions
+         */
+        apiBaseUrl: string;
+        /**
+         * URL to the Agent Card JSON (typically /.well-known/agent-card.json)
+         */
+        agentCardUrl: string;
+        /**
+         * A2A protocol versions this agent supports
+         */
+        a2aProtocolVersions: Array<string>;
+        /**
+         * Description of the agent
+         */
+        description?: string;
+        /**
+         * Tags used in the registry metadata
+         */
+        Tags?: Array<string>;
+        /**
+         * Skip fetching and validating the Agent Card URL. Use with caution.
+         */
+        skipAgentCardValidation?: boolean;
+    };
+    path?: never;
+    query?: never;
+    url: '/registry/a2a';
+};
+
+export type PostRegistryA2aErrors = {
+    /**
+     * Bad Request (invalid input or Agent Card validation failed)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Wallet not found
+     */
+    404: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type PostRegistryA2aResponses = {
+    /**
+     * A2A agent registered
+     */
+    200: {
+        status: 'success';
+        data: A2aRegistryEntry;
+    };
+};
+
+export type PostRegistryA2aResponse = PostRegistryA2aResponses[keyof PostRegistryA2aResponses];
+
 export type GetInboxAgentsWalletData = {
     body?: never;
     path?: never;
