@@ -17,6 +17,7 @@ import { migrateWebhookEncryption } from '@/utils/startup-migrations/webhook-enc
 import { blockchainStateMonitorService } from '@/services/monitoring';
 import fs from 'fs';
 import { getHydraConnectionManager } from './services/hydra-connection-manager/hydra-connection-manager.service';
+import helmet from 'helmet';
 
 const __dirname = path.resolve();
 
@@ -94,6 +95,36 @@ export async function startApp() {
 			// Add request logger middleware
 			app.use(requestTiming);
 			app.use(requestLogger);
+			app.use(
+				helmet({
+					contentSecurityPolicy: {
+						directives: {
+							defaultSrc: ["'self'"],
+							baseUri: ["'self'"],
+							connectSrc: ["'self'"],
+							fontSrc: ["'self'", 'data:'],
+							frameAncestors: ["'none'"],
+							imgSrc: ["'self'", 'data:'],
+							objectSrc: ["'none'"],
+							scriptSrc: ["'self'", "'unsafe-inline'"],
+							styleSrc: ["'self'", "'unsafe-inline'"],
+						},
+					},
+					crossOriginEmbedderPolicy: false,
+					crossOriginOpenerPolicy: { policy: 'same-origin' },
+					crossOriginResourcePolicy: { policy: 'same-origin' },
+					originAgentCluster: false,
+					referrerPolicy: { policy: 'no-referrer' },
+					strictTransportSecurity: false,
+					xContentTypeOptions: true,
+					xDnsPrefetchControl: false,
+					xDownloadOptions: false,
+					xFrameOptions: { action: 'deny' },
+					xPermittedCrossDomainPolicies: false,
+					xPoweredBy: true,
+					xXssProtection: false,
+				}),
+			);
 
 			const replacer = (_key: string, value: unknown): unknown => {
 				if (typeof value === 'bigint') {
@@ -129,7 +160,7 @@ export async function startApp() {
 					customfavIcon: '/assets/swagger_favicon.svg',
 					customCss: customCss,
 					swaggerOptions: {
-						persistAuthorization: true,
+						persistAuthorization: false,
 						tryItOutEnabled: true,
 						displayRequestDuration: true,
 						deepLinking: true,

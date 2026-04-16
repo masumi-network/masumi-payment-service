@@ -3,7 +3,11 @@ import { z } from '@/utils/zod-openapi';
 
 export const registerWebhookSchemaInput = z
 	.object({
-		url: z.string().url().max(500).describe('The webhook URL to receive notifications'),
+		url: z
+			.string()
+			.url()
+			.max(500)
+			.describe('The webhook URL to receive notifications. Only public http and https destinations are allowed.'),
 		authToken: z
 			.string()
 			.min(10)
@@ -32,7 +36,11 @@ export const registerWebhookSchemaInput = z
 export const patchWebhookSchemaInput = z
 	.object({
 		webhookId: z.string().describe('The ID of the webhook to update'),
-		url: z.string().url().max(500).describe('The webhook URL to receive notifications'),
+		url: z
+			.string()
+			.url()
+			.max(500)
+			.describe('The webhook URL to receive notifications. Only public http and https destinations are allowed.'),
 		authToken: z
 			.string()
 			.min(10)
@@ -119,9 +127,12 @@ export const testWebhookSchemaInput = z.object({
 export const testWebhookSchemaOutput = z.object({
 	webhookId: z.string(),
 	success: z.boolean(),
-	responseCode: z.number().nullable(),
-	errorMessage: z.string().nullable(),
-	durationMs: z.number(),
+	responseCode: z
+		.number()
+		.nullable()
+		.describe('Always null for test deliveries to avoid exposing upstream response details.'),
+	errorMessage: z.string().nullable().describe('Null on success, otherwise a coarse delivery status message.'),
+	durationMs: z.number().describe('Always 0 for test deliveries to avoid exposing timing details.'),
 });
 
 export const deleteWebhookSchemaOutput = z.object({
