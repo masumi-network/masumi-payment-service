@@ -5,6 +5,29 @@ export function buildWalletScopeFilter(walletScopeIds: string[] | null) {
 	return { smartContractWalletId: { in: walletScopeIds } };
 }
 
+export function buildManagedHolderWalletScopeFilter(walletScopeIds: string[] | null) {
+	if (walletScopeIds === null) return {};
+
+	return {
+		AND: [
+			{
+				OR: [
+					{ deregistrationHotWalletId: { in: walletScopeIds } },
+					{
+						deregistrationHotWalletId: null,
+						recipientHotWalletId: { in: walletScopeIds },
+					},
+					{
+						deregistrationHotWalletId: null,
+						recipientHotWalletId: null,
+						smartContractWalletId: { in: walletScopeIds },
+					},
+				],
+			},
+		],
+	};
+}
+
 export function buildHotWalletScopeFilter(walletScopeIds: string[] | null) {
 	if (walletScopeIds === null) return {};
 	return { id: { in: walletScopeIds } };

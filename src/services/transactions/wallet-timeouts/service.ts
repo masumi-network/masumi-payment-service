@@ -12,6 +12,7 @@ import { logger } from '@/utils/logger';
 import { collectOutstandingPaymentsV1, submitResultV1, authorizeRefundV1 } from '@/services/payments';
 import { batchLatestPaymentEntriesV1, collectRefundV1, requestRefundsV1, cancelRefundsV1 } from '@/services/purchases';
 import { registerAgentV1, deRegisterAgentV1 } from '@/services/registry';
+import { registerInboxAgentV1, deRegisterInboxAgentV1 } from '@/services/registry-inbox';
 import { CONFIG, DEFAULTS } from '@/utils/config';
 import { errorToString } from '@/utils/converter/error-string-convert';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
@@ -720,9 +721,19 @@ export async function updateWalletTransactionHash() {
 				logger.error(`Error initiating register agent: ${errorToString(error)}`);
 			}
 			try {
+				await registerInboxAgentV1();
+			} catch (error) {
+				logger.error(`Error initiating register inbox agent: ${errorToString(error)}`);
+			}
+			try {
 				await deRegisterAgentV1();
 			} catch (error) {
 				logger.error(`Error initiating deregister agent: ${errorToString(error)}`);
+			}
+			try {
+				await deRegisterInboxAgentV1();
+			} catch (error) {
+				logger.error(`Error initiating deregister inbox agent: ${errorToString(error)}`);
 			}
 			try {
 				await authorizeRefundV1();

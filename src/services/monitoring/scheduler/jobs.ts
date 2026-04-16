@@ -7,6 +7,11 @@ import {
 } from '@/services/payments';
 import { batchLatestPaymentEntriesV1, collectRefundV1, requestRefundsV1, cancelRefundsV1 } from '@/services/purchases';
 import { registerAgentV1, deRegisterAgentV1, checkRegistryTransactions } from '@/services/registry';
+import {
+	checkInboxAgentRegistrationTransactions,
+	deRegisterInboxAgentV1,
+	registerInboxAgentV1,
+} from '@/services/registry-inbox';
 import { checkLatestTransactions, updateWalletTransactionHash } from '@/services/transactions';
 import { walletLowBalanceMonitorService, processFundTransfers } from '@/services/wallets';
 import { webhookQueueService } from '@/services/webhooks';
@@ -25,6 +30,12 @@ export const scheduledJobs: JobDefinition[] = [
 		intervalMs: CONFIG.CHECK_REGISTRY_TRANSACTIONS_INTERVAL * 1000,
 		startMessage: 'Starting to check for registry transactions',
 		run: checkRegistryTransactions,
+	},
+	{
+		initialDelayMs: 1500,
+		intervalMs: CONFIG.CHECK_REGISTRY_TRANSACTIONS_INTERVAL * 1000,
+		startMessage: 'Starting to check for inbox registry transactions',
+		run: checkInboxAgentRegistrationTransactions,
 	},
 	{
 		initialDelayMs: 5000,
@@ -69,11 +80,25 @@ export const scheduledJobs: JobDefinition[] = [
 		run: registerAgentV1,
 	},
 	{
+		initialDelayMs: 27500,
+		intervalMs: CONFIG.REGISTER_AGENT_INTERVAL * 1000,
+		startMessage: 'Starting to check for inbox agent registration',
+		finishMessage: 'Finished to check for inbox agent registration',
+		run: registerInboxAgentV1,
+	},
+	{
 		initialDelayMs: 30000,
 		intervalMs: CONFIG.DEREGISTER_AGENT_INTERVAL * 1000,
 		startMessage: 'Starting to check for agent deregistration',
 		finishMessage: 'Finished to check for agent deregistration',
 		run: deRegisterAgentV1,
+	},
+	{
+		initialDelayMs: 32500,
+		intervalMs: CONFIG.DEREGISTER_AGENT_INTERVAL * 1000,
+		startMessage: 'Starting to check for inbox agent deregistration',
+		finishMessage: 'Finished to check for inbox agent deregistration',
+		run: deRegisterInboxAgentV1,
 	},
 	{
 		initialDelayMs: 35000,

@@ -13,6 +13,13 @@ import {
 import { logger } from '@/utils/logger';
 import { CONFIG } from '@/utils/config';
 import { webhookSenderService } from '@/services/webhooks/sender.service';
+import { createAuthenticatedRateLimitMiddleware } from '@/utils/middleware/rate-limit';
+import {
+	assertWebhookDestinationAllowed,
+	isWebhookDestinationPolicyError,
+	WEBHOOK_DELIVERY_BLOCKED_MESSAGE,
+	WEBHOOK_DESTINATION_NOT_ALLOWED_MESSAGE,
+} from '@/utils/security/webhook-destination-policy';
 import {
 	deleteWebhookSchemaInput,
 	deleteWebhookSchemaOutput,
@@ -49,11 +56,45 @@ const decryptApiKeyTokenSafe = (encryptedToken: string | null): string | null =>
 	}
 };
 
-export const registerWebhookPost = payAuthenticatedEndpointFactory.build({
+const webhookMutationEndpointFactory = payAuthenticatedEndpointFactory.addMiddleware(
+	createAuthenticatedRateLimitMiddleware({
+		maxRequests: 30,
+		windowMs: 60_000,
+	}),
+);
+
+const webhookTestEndpointFactory = payAuthenticatedEndpointFactory.addMiddleware(
+	createAuthenticatedRateLimitMiddleware({
+		maxRequests: 10,
+		windowMs: 60_000,
+	}),
+);
+
+const ensureWebhookDestinationAllowed = async (url: string): Promise<void> => {
+	try {
+		await assertWebhookDestinationAllowed(url);
+	} catch (error) {
+		if (isWebhookDestinationPolicyError(error)) {
+			throw createHttpError(400, WEBHOOK_DESTINATION_NOT_ALLOWED_MESSAGE);
+		}
+		throw error;
+	}
+};
+
+const getCoarseWebhookTestErrorMessage = (errorMessage?: string): string => {
+	if (errorMessage === WEBHOOK_DELIVERY_BLOCKED_MESSAGE) {
+		return WEBHOOK_DELIVERY_BLOCKED_MESSAGE;
+	}
+
+	return 'Delivery failed';
+};
+
+export const registerWebhookPost = webhookMutationEndpointFactory.build({
 	method: 'post',
 	input: registerWebhookSchemaInput,
 	output: registerWebhookSchemaOutput,
 	handler: async ({ input, ctx }) => {
+		await ensureWebhookDestinationAllowed(input.url);
 		const urlHash = generateWebhookUrlHash(input.url);
 
 		if (input.paymentSourceId) {
@@ -112,11 +153,12 @@ export const registerWebhookPost = payAuthenticatedEndpointFactory.build({
 	},
 });
 
-export const patchWebhookPatch = payAuthenticatedEndpointFactory.build({
+export const patchWebhookPatch = webhookMutationEndpointFactory.build({
 	method: 'patch',
 	input: patchWebhookSchemaInput,
 	output: patchWebhookSchemaOutput,
 	handler: async ({ input, ctx }) => {
+		await ensureWebhookDestinationAllowed(input.url);
 		const urlHash = generateWebhookUrlHash(input.url);
 
 		const webhook = await prisma.webhookEndpoint.findUnique({
@@ -246,7 +288,7 @@ export const listWebhooksGet = payAuthenticatedEndpointFactory.build({
 	},
 });
 
-export const deleteWebhookDelete = payAuthenticatedEndpointFactory.build({
+export const deleteWebhookDelete = webhookMutationEndpointFactory.build({
 	method: 'delete',
 	input: deleteWebhookSchemaInput,
 	output: deleteWebhookSchemaOutput,
@@ -288,7 +330,7 @@ export const deleteWebhookDelete = payAuthenticatedEndpointFactory.build({
 	},
 });
 
-export const testWebhookPost = payAuthenticatedEndpointFactory.build({
+export const testWebhookPost = webhookTestEndpointFactory.build({
 	method: 'post',
 	input: testWebhookSchemaInput,
 	output: testWebhookSchemaOutput,
@@ -341,9 +383,9 @@ export const testWebhookPost = payAuthenticatedEndpointFactory.build({
 		return {
 			webhookId: webhook.id,
 			success: result.success,
-			responseCode: result.responseCode ?? null,
-			errorMessage: result.errorMessage ?? null,
-			durationMs: result.durationMs,
+			responseCode: null,
+			errorMessage: result.success ? null : getCoarseWebhookTestErrorMessage(result.errorMessage),
+			durationMs: 0,
 		};
 	},
 });

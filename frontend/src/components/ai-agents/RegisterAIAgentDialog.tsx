@@ -9,7 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Badge } from '../ui/badge';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { PaymentSourceExtended, postRegistry, SellingWallet } from '@/lib/api/generated';
@@ -23,6 +23,8 @@ import { getActiveStablecoinConfig } from '@/lib/constants/defaultWallets';
 import { Separator } from '@/components/ui/separator';
 import { useWallets } from '@/lib/queries/useWallets';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
+import { REGISTRY_DECIMAL_ADA_AMOUNT_PATTERN, REGISTRY_LIMITS } from '@/lib/registry-validation';
+import { convertDecimalToBaseUnits } from '@/lib/convertDecimalToBaseUnits';
 
 interface RegisterAIAgentDialogProps {
   open: boolean;
@@ -36,19 +38,29 @@ const createPriceSchema = (network: 'Mainnet' | 'Preprod') => {
     unit: z.enum(['lovelace', stablecoinUnit] as const, {
       error: () => 'Token is required',
     }),
-    amount: z.string().refine((val) => {
-      if (val === '0' || val === '0.0' || val === '0.00') return true;
-      return !isNaN(parseFloat(val)) && parseFloat(val) >= 0;
-    }, 'Amount must be a valid number >= 0'),
+    amount: z
+      .string()
+      .max(REGISTRY_LIMITS.lovelaceAmount, 'Amount must be less than 25 characters')
+      .refine((val) => {
+        if (val === '0' || val === '0.0' || val === '0.00') return true;
+        return !isNaN(parseFloat(val)) && parseFloat(val) >= 0;
+      }, 'Amount must be a valid number >= 0'),
   });
 };
 
 const exampleOutputSchema = z.object({
-  name: z.string().max(60, 'Name must be less than 60 characters').min(1, 'Name is required'),
-  url: z.string().url('URL must be a valid URL').min(1, 'URL is required'),
+  name: z
+    .string()
+    .max(REGISTRY_LIMITS.exampleOutputName, 'Name must be less than 60 characters')
+    .min(1, 'Name is required'),
+  url: z
+    .string()
+    .url('URL must be a valid URL')
+    .max(REGISTRY_LIMITS.exampleOutputUrl, 'URL must be less than 250 characters')
+    .min(1, 'URL is required'),
   mimeType: z
     .string()
-    .max(60, 'MIME type must be less than 60 characters')
+    .max(REGISTRY_LIMITS.exampleOutputMimeType, 'MIME type must be less than 60 characters')
     .min(1, 'MIME type is required'),
 });
 
@@ -59,73 +71,104 @@ const createAgentSchema = (network: 'Mainnet' | 'Preprod') => {
       apiUrl: z
         .string()
         .url('API URL must be a valid URL')
+        .max(REGISTRY_LIMITS.apiBaseUrl, 'API URL must be less than 250 characters')
         .min(1, 'API URL is required')
         .refine((val) => val.startsWith('http://') || val.startsWith('https://'), {
           message: 'API URL must start with http:// or https://',
         }),
-      name: z.string().min(1, 'Name is required'),
+      name: z
+        .string()
+        .min(1, 'Name is required')
+        .max(REGISTRY_LIMITS.agentName, 'Name must be less than 250 characters'),
       description: z
         .string()
         .min(1, 'Description is required')
-        .max(250, 'Description must be less than 250 characters'),
-      selectedWallet: z.string().min(1, 'Wallet is required'),
-      prices: z.array(priceSchema),
-      tags: z.array(z.string().min(1)).min(1, 'At least one tag is required'),
+        .max(REGISTRY_LIMITS.description, 'Description must be less than 250 characters'),
+      selectedWallet: z
+        .string()
+        .min(1, 'Wallet is required')
+        .max(REGISTRY_LIMITS.walletReference, 'Wallet is invalid'),
+      recipientWalletAddress: z
+        .string()
+        .max(REGISTRY_LIMITS.walletReference, 'Recipient wallet must be less than 250 characters')
+        .optional()
+        .or(z.literal('')),
+      sendFundingAda: z
+        .string()
+        .optional()
+        .or(z.literal(''))
+        .refine(
+          (val) => val == null || val === '' || REGISTRY_DECIMAL_ADA_AMOUNT_PATTERN.test(val),
+          'Funding amount must be a valid ADA amount with up to 6 decimals',
+        ),
+      prices: z
+        .array(priceSchema)
+        .max(REGISTRY_LIMITS.pricingOptionCount, 'You can add at most 5 prices'),
+      tags: z
+        .array(z.string().min(1).max(REGISTRY_LIMITS.tag, 'Tags must be less than 63 characters'))
+        .min(1, 'At least one tag is required')
+        .max(REGISTRY_LIMITS.tagCount, 'You can add at most 15 tags'),
       pricingType: z.enum(['Fixed', 'Free', 'Dynamic']),
       // Additional Fields
       authorName: z
         .string()
-        .max(250, 'Author name must be less than 250 characters')
+        .max(REGISTRY_LIMITS.authorName, 'Author name must be less than 250 characters')
         .optional()
         .or(z.literal('')),
       authorEmail: z
         .string()
         .email('Author email must be a valid email')
-        .max(250, 'Author email must be less than 250 characters')
+        .max(REGISTRY_LIMITS.authorContact, 'Author email must be less than 250 characters')
         .optional()
         .or(z.literal('')),
       organization: z
         .string()
-        .max(250, 'Organization must be less than 250 characters')
+        .max(REGISTRY_LIMITS.authorContact, 'Organization must be less than 250 characters')
         .optional()
         .or(z.literal('')),
       contactOther: z
         .string()
-        .max(250, 'Contact other must be less than 250 characters')
+        .max(REGISTRY_LIMITS.authorContact, 'Contact other must be less than 250 characters')
         .optional()
         .or(z.literal('')),
 
       termsOfUseUrl: z
         .string()
         .url('Terms of use URL must be a valid URL')
-        .max(250, 'Terms of use URL must be less than 250 characters')
+        .max(REGISTRY_LIMITS.legalUrl, 'Terms of use URL must be less than 250 characters')
         .optional()
         .or(z.literal('')),
       privacyPolicyUrl: z
         .string()
         .url('Privacy policy URL must be a valid URL')
-        .max(250, 'Privacy policy URL must be less than 250 characters')
+        .max(REGISTRY_LIMITS.legalUrl, 'Privacy policy URL must be less than 250 characters')
         .optional()
         .or(z.literal('')),
       otherUrl: z
         .string()
         .url('Other URL must be a valid URL')
-        .max(250, 'Other URL must be less than 250 characters')
+        .max(REGISTRY_LIMITS.legalUrl, 'Other URL must be less than 250 characters')
         .optional()
         .or(z.literal('')),
 
       capabilityName: z
         .string()
-        .max(250, 'Capability name must be less than 250 characters')
+        .max(REGISTRY_LIMITS.capabilityName, 'Capability name must be less than 250 characters')
         .optional()
         .or(z.literal('')),
       capabilityVersion: z
         .string()
-        .max(250, 'Capability version must be less than 250 characters')
+        .max(
+          REGISTRY_LIMITS.capabilityVersion,
+          'Capability version must be less than 250 characters',
+        )
         .optional()
         .or(z.literal('')),
 
-      exampleOutputs: z.array(exampleOutputSchema).optional(),
+      exampleOutputs: z
+        .array(exampleOutputSchema)
+        .max(REGISTRY_LIMITS.exampleOutputCount, 'You can add at most 25 example outputs')
+        .optional(),
     })
     .superRefine((data, ctx) => {
       if (data.pricingType === 'Fixed' && data.prices.length === 0) {
@@ -165,6 +208,8 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
       name: '',
       description: '',
       selectedWallet: '',
+      recipientWalletAddress: '',
+      sendFundingAda: '',
       prices: [{ unit: 'lovelace', amount: '' }],
       tags: [],
       pricingType: 'Fixed',
@@ -208,6 +253,9 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
   }, [paymentSources, network]);
 
   const tags = watch('tags');
+  const selectedWalletVkey = watch('selectedWallet');
+  const selectedRecipientWalletAddress = watch('recipientWalletAddress');
+  const selectedSendFundingAda = watch('sendFundingAda');
   const [tagInput, setTagInput] = useState('');
   useEffect(() => {
     setSellingWallets(
@@ -232,6 +280,44 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
       reset();
     }
   }, [open, reset]);
+
+  const selectedWallet = useMemo(
+    () => sellingWallets.find((wallet) => wallet.wallet.walletVkey === selectedWalletVkey),
+    [sellingWallets, selectedWalletVkey],
+  );
+  const selectedPaymentSource = useMemo(
+    () =>
+      currentNetworkPaymentSources.find((paymentSource) =>
+        paymentSource.SellingWallets?.some((wallet) => wallet.walletVkey === selectedWalletVkey),
+      ),
+    [currentNetworkPaymentSources, selectedWalletVkey],
+  );
+  const recipientWalletOptions = useMemo(
+    () =>
+      selectedPaymentSource
+        ? [
+            ...(selectedPaymentSource.SellingWallets ?? []),
+            ...(selectedPaymentSource.PurchasingWallets ?? []),
+          ].filter((wallet) => wallet.walletAddress !== selectedWallet?.wallet.walletAddress)
+        : [],
+    [selectedPaymentSource, selectedWallet?.wallet.walletAddress],
+  );
+
+  useEffect(() => {
+    if (!selectedRecipientWalletAddress) {
+      if (selectedSendFundingAda) {
+        setValue('sendFundingAda', '');
+      }
+      return;
+    }
+
+    const isRecipientStillAvailable = recipientWalletOptions.some(
+      (wallet) => wallet.walletAddress === selectedRecipientWalletAddress,
+    );
+    if (!isRecipientStillAvailable) {
+      setValue('recipientWalletAddress', '');
+    }
+  }, [recipientWalletOptions, selectedRecipientWalletAddress, selectedSendFundingAda, setValue]);
 
   const onSubmit = useCallback(
     async (data: AgentFormValues) => {
@@ -287,6 +373,11 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
           body: {
             network: network,
             sellingWalletVkey: selectedWalletVkey,
+            recipientWalletAddress: data.recipientWalletAddress || undefined,
+            sendFundingLovelace:
+              data.recipientWalletAddress && data.sendFundingAda
+                ? convertDecimalToBaseUnits(data.sendFundingAda)
+                : undefined,
             name: data.name,
             description: data.description,
             apiBaseUrl: data.apiUrl,
@@ -310,7 +401,7 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
                       : price.unit;
                   return {
                     unit,
-                    amount: (parseFloat(price.amount) * 1_000_000).toString(),
+                    amount: convertDecimalToBaseUnits(price.amount),
                   };
                 }),
               };
@@ -356,6 +447,10 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
   // Tag management
   const handleAddTag = () => {
     const tag = tagInput.trim();
+    if (tags.length >= REGISTRY_LIMITS.tagCount) {
+      return;
+    }
+
     if (tag && !tags.includes(tag)) {
       setValue('tags', [...tags, tag]);
     }
@@ -426,7 +521,7 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
 
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              Linked wallet <span className="text-red-500">*</span>
+              Minting wallet <span className="text-red-500">*</span>
             </label>
             <Controller
               control={control}
@@ -438,7 +533,9 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
                     className={`${errors.selectedWallet ? 'border-red-500' : ''} ${isLoadingWallets ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     <SelectValue
-                      placeholder={isLoadingWallets ? 'Loading wallets...' : 'Select a wallet'}
+                      placeholder={
+                        isLoadingWallets ? 'Loading wallets...' : 'Select a minting wallet'
+                      }
                     />
                   </SelectTrigger>
                   <SelectContent>
@@ -462,6 +559,79 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
               <p className="text-sm text-red-500">{errors.selectedWallet.message}</p>
             )}
           </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Holding wallet</label>
+            <Controller
+              control={control}
+              name="recipientWalletAddress"
+              render={({ field }) => (
+                <Select
+                  value={field.value || '__default'}
+                  onValueChange={(value) => field.onChange(value === '__default' ? '' : value)}
+                >
+                  <SelectTrigger
+                    disabled={isLoadingWallets || !selectedPaymentSource}
+                    className={isLoadingWallets ? 'opacity-50 cursor-not-allowed' : ''}
+                  >
+                    <SelectValue
+                      placeholder={
+                        !selectedPaymentSource
+                          ? 'Select a minting wallet first'
+                          : 'Use minting wallet (default)'
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__default">Use minting wallet (default)</SelectItem>
+                    {recipientWalletOptions.map((wallet) => (
+                      <SelectItem key={wallet.id} value={wallet.walletAddress}>
+                        {wallet.note
+                          ? `${wallet.note} (${shortenAddress(wallet.walletAddress)})`
+                          : shortenAddress(wallet.walletAddress)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+            <p className="text-xs text-muted-foreground">
+              Optional. The selected minting wallet still mints and pays fees, while the registry
+              NFT is delivered to another managed holding wallet on the same payment source.
+            </p>
+            {selectedPaymentSource && recipientWalletOptions.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                No other managed wallets are available on this payment source.
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Holding wallet funding (ADA)</label>
+            <Input
+              {...register('sendFundingAda')}
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="0.000001"
+              placeholder="Optional ADA amount"
+              disabled={!selectedRecipientWalletAddress}
+              className={errors.sendFundingAda ? 'border-red-500' : ''}
+            />
+            <p className="text-xs text-muted-foreground">
+              Optional. Sends extra ADA with the minted NFT to the selected holding wallet. The
+              current minimum NFT funding still applies.
+            </p>
+            {!selectedRecipientWalletAddress && (
+              <p className="text-xs text-muted-foreground">
+                Select a holding wallet to set a custom funding amount.
+              </p>
+            )}
+            {errors.sendFundingAda && (
+              <p className="text-sm text-red-500">{errors.sendFundingAda.message}</p>
+            )}
+          </div>
+
           {/* Pricing Type */}
           <div className="space-y-2">
             <label className="text-sm font-medium">
@@ -506,7 +676,10 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
                 type="button"
                 variant="outline"
                 size="sm"
-                disabled={watch('pricingType') !== 'Fixed'}
+                disabled={
+                  watch('pricingType') !== 'Fixed' ||
+                  priceFields.length >= REGISTRY_LIMITS.pricingOptionCount
+                }
                 onClick={() => appendPrice({ unit: 'lovelace', amount: '' })}
               >
                 Add Price
@@ -582,6 +755,7 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
                 <Input
                   placeholder="Add a tag"
                   value={tagInput}
+                  maxLength={REGISTRY_LIMITS.tag}
                   onChange={(e) => setTagInput(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
@@ -591,7 +765,12 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
                   }}
                   className={errors.tags ? 'border-red-500' : ''}
                 />
-                <Button type="button" variant="outline" onClick={handleAddTag}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={tags.length >= REGISTRY_LIMITS.tagCount}
+                  onClick={handleAddTag}
+                >
                   Add
                 </Button>
               </div>
@@ -736,6 +915,7 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
                 type="button"
                 variant="outline"
                 size="sm"
+                disabled={exampleOutputFields.length >= REGISTRY_LIMITS.exampleOutputCount}
                 onClick={() => appendExampleOutput({ name: '', url: '', mimeType: '' })}
               >
                 Add Example
