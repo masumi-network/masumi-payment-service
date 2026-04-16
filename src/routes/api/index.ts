@@ -25,7 +25,13 @@ import {
 	paymentSourceExtendedEndpointPost,
 } from './payment-source-extended';
 import { queryAPIKeyStatusEndpointGet } from './api-key-status';
-import { patchWalletEndpointPatch, postWalletEndpointPost, queryWalletEndpointGet } from './wallet';
+import {
+	patchWalletEndpointPatch,
+	postWalletEndpointPost,
+	queryWalletEndpointGet,
+	postWalletFundEndpointPost,
+	getWalletFundEndpointGet,
+} from './wallet';
 import {
 	deleteWalletLowBalanceRuleEndpointDelete,
 	getWalletLowBalanceRulesEndpointGet,
@@ -230,6 +236,10 @@ export const apiRouter: Routing = {
 				post: postWalletLowBalanceRuleEndpointPost,
 				patch: patchWalletLowBalanceRuleEndpointPatch,
 				delete: deleteWalletLowBalanceRuleEndpointDelete,
+			},
+			fund: {
+				get: getWalletFundEndpointGet,
+				post: postWalletFundEndpointPost,
 			},
 		},
 		'payment-source-extended': {
