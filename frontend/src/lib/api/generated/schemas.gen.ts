@@ -2322,6 +2322,11 @@ export const RegistryEntrySchema = {
             ],
             description: 'Pricing information for the agent'
         },
+        sendFundingLovelace: {
+            type: 'string',
+            nullable: true,
+            description: 'Effective lovelace amount explicitly configured for the NFT output. Null means the default minimum NFT funding is used.'
+        },
         SmartContractWallet: {
             type: 'object',
             properties: {
@@ -2339,6 +2344,25 @@ export const RegistryEntrySchema = {
                 'walletAddress'
             ],
             description: 'Smart contract wallet managing this agent registration'
+        },
+        RecipientWallet: {
+            type: 'object',
+            nullable: true,
+            properties: {
+                walletVkey: {
+                    type: 'string',
+                    description: 'Payment key hash of the managed recipient wallet'
+                },
+                walletAddress: {
+                    type: 'string',
+                    description: 'Cardano address of the managed recipient wallet'
+                }
+            },
+            required: [
+                'walletVkey',
+                'walletAddress'
+            ],
+            description: 'Managed wallet that receives the registry NFT. Null when the minting wallet receives it'
         },
         CurrentTransaction: {
             type: 'object',
@@ -2408,7 +2432,9 @@ export const RegistryEntrySchema = {
         'ExampleOutputs',
         'agentIdentifier',
         'AgentPricing',
+        'sendFundingLovelace',
         'SmartContractWallet',
+        'RecipientWallet',
         'CurrentTransaction'
     ]
 } as const;
@@ -3040,6 +3066,298 @@ export const RpcProviderKeySchema = {
         'createdAt',
         'updatedAt',
         'network'
+    ]
+} as const;
+
+export const InboxAgentMetadataSchema = {
+    type: 'object',
+    properties: {
+        policyId: {
+            type: 'string',
+            description: 'Policy ID of the inbox registry NFT'
+        },
+        assetName: {
+            type: 'string',
+            description: 'Asset name of the inbox registry NFT'
+        },
+        agentIdentifier: {
+            type: 'string',
+            description: 'Full inbox agent identifier (policy ID + asset name)'
+        },
+        Metadata: {
+            type: 'object',
+            properties: {
+                name: {
+                    type: 'string',
+                    maxLength: 120,
+                    description: 'Name of the inbox agent'
+                },
+                description: {
+                    type: 'string',
+                    nullable: true,
+                    maxLength: 500,
+                    description: 'Description of the inbox agent. Null if not provided'
+                },
+                agentSlug: {
+                    type: 'string',
+                    maxLength: 80,
+                    description: 'Canonical inbox agent slug'
+                },
+                metadataVersion: {
+                    type: 'integer',
+                    minimum: 1,
+                    maximum: 1,
+                    description: 'Version of the metadata schema (currently only version 1 is supported)'
+                }
+            },
+            required: [
+                'name',
+                'agentSlug',
+                'metadataVersion'
+            ],
+            description: 'On-chain metadata for the inbox agent'
+        }
+    },
+    required: [
+        'policyId',
+        'assetName',
+        'agentIdentifier',
+        'Metadata'
+    ]
+} as const;
+
+export const InboxAgentIdentifierMetadataSchema = {
+    type: 'object',
+    properties: {
+        policyId: {
+            type: 'string',
+            description: 'Policy ID of the inbox registry NFT'
+        },
+        assetName: {
+            type: 'string',
+            description: 'Asset name of the inbox registry NFT'
+        },
+        agentIdentifier: {
+            type: 'string',
+            description: 'Full inbox agent identifier (policy ID + asset name)'
+        },
+        Metadata: {
+            type: 'object',
+            properties: {
+                name: {
+                    type: 'string',
+                    maxLength: 120,
+                    description: 'Name of the inbox agent'
+                },
+                description: {
+                    type: 'string',
+                    nullable: true,
+                    maxLength: 500,
+                    description: 'Description of the inbox agent. Null if not provided'
+                },
+                agentSlug: {
+                    type: 'string',
+                    maxLength: 80,
+                    description: 'Canonical inbox agent slug'
+                },
+                metadataVersion: {
+                    type: 'integer',
+                    minimum: 1,
+                    maximum: 1,
+                    description: 'Version of the metadata schema (currently only version 1 is supported)'
+                }
+            },
+            required: [
+                'name',
+                'agentSlug',
+                'metadataVersion'
+            ],
+            description: 'On-chain metadata for the inbox agent'
+        }
+    },
+    required: [
+        'policyId',
+        'assetName',
+        'agentIdentifier',
+        'Metadata'
+    ]
+} as const;
+
+export const RegistryInboxEntrySchema = {
+    type: 'object',
+    properties: {
+        error: {
+            type: 'string',
+            nullable: true,
+            description: 'Error message if registration failed. Null if no error'
+        },
+        id: {
+            type: 'string',
+            description: 'Unique identifier for the inbox registration request'
+        },
+        name: {
+            type: 'string',
+            description: 'Name of the inbox agent'
+        },
+        description: {
+            type: 'string',
+            nullable: true,
+            description: 'Description of the inbox agent. Null if not provided'
+        },
+        agentSlug: {
+            type: 'string',
+            description: 'Canonical slug registered for the inbox agent'
+        },
+        state: {
+            type: 'string',
+            enum: [
+                'RegistrationRequested',
+                'RegistrationInitiated',
+                'RegistrationConfirmed',
+                'RegistrationFailed',
+                'DeregistrationRequested',
+                'DeregistrationInitiated',
+                'DeregistrationConfirmed',
+                'DeregistrationFailed'
+            ],
+            description: 'Current state of the inbox registration process'
+        },
+        createdAt: {
+            type: 'string',
+            format: 'date-time',
+            description: 'Timestamp when the inbox registration request was created'
+        },
+        updatedAt: {
+            type: 'string',
+            format: 'date-time',
+            description: 'Timestamp when the inbox registration request was last updated'
+        },
+        lastCheckedAt: {
+            type: 'string',
+            nullable: true,
+            format: 'date-time',
+            description: 'Timestamp when the inbox registration was last checked. Null if never checked'
+        },
+        agentIdentifier: {
+            type: 'string',
+            nullable: true,
+            minLength: 57,
+            maxLength: 250,
+            description: 'Full inbox agent identifier (policy ID + asset name). Null if not yet minted'
+        },
+        metadataVersion: {
+            type: 'integer',
+            description: 'Version of the inbox metadata schema'
+        },
+        sendFundingLovelace: {
+            type: 'string',
+            nullable: true,
+            description: 'Effective lovelace amount explicitly configured for the NFT output. Null means the default minimum NFT funding is used.'
+        },
+        SmartContractWallet: {
+            type: 'object',
+            properties: {
+                walletVkey: {
+                    type: 'string',
+                    description: 'Payment key hash of the minting wallet'
+                },
+                walletAddress: {
+                    type: 'string',
+                    description: 'Cardano address of the minting wallet'
+                }
+            },
+            required: [
+                'walletVkey',
+                'walletAddress'
+            ],
+            description: 'Minting wallet managing this inbox registration'
+        },
+        RecipientWallet: {
+            type: 'object',
+            nullable: true,
+            properties: {
+                walletVkey: {
+                    type: 'string',
+                    description: 'Payment key hash of the managed recipient wallet'
+                },
+                walletAddress: {
+                    type: 'string',
+                    description: 'Cardano address of the managed recipient wallet'
+                }
+            },
+            required: [
+                'walletVkey',
+                'walletAddress'
+            ],
+            description: 'Managed wallet that receives the inbox registry NFT. Null when the minting wallet receives it'
+        },
+        CurrentTransaction: {
+            type: 'object',
+            nullable: true,
+            properties: {
+                txHash: {
+                    type: 'string',
+                    nullable: true,
+                    description: 'Cardano transaction hash'
+                },
+                status: {
+                    type: 'string',
+                    enum: [
+                        'Pending',
+                        'Confirmed',
+                        'FailedViaTimeout',
+                        'FailedViaManualReset',
+                        'RolledBack'
+                    ],
+                    description: 'Current status of the transaction'
+                },
+                confirmations: {
+                    type: 'number',
+                    nullable: true,
+                    description: 'Number of block confirmations for this transaction. Null if not yet confirmed'
+                },
+                fees: {
+                    type: 'string',
+                    nullable: true,
+                    description: 'Fees of the transaction'
+                },
+                blockHeight: {
+                    type: 'number',
+                    nullable: true,
+                    description: 'Block height of the transaction'
+                },
+                blockTime: {
+                    type: 'number',
+                    nullable: true,
+                    description: 'Block time of the transaction'
+                }
+            },
+            required: [
+                'txHash',
+                'status',
+                'confirmations',
+                'fees',
+                'blockHeight',
+                'blockTime'
+            ]
+        }
+    },
+    required: [
+        'error',
+        'id',
+        'name',
+        'description',
+        'agentSlug',
+        'state',
+        'createdAt',
+        'updatedAt',
+        'lastCheckedAt',
+        'agentIdentifier',
+        'metadataVersion',
+        'sendFundingLovelace',
+        'SmartContractWallet',
+        'RecipientWallet',
+        'CurrentTransaction'
     ]
 } as const;
 

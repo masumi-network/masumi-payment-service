@@ -2335,6 +2335,11 @@
                         ],
                         "description": "Pricing information for the agent"
                     },
+                    "sendFundingLovelace": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Effective lovelace amount explicitly configured for the NFT output. Null means the default minimum NFT funding is used."
+                    },
                     "SmartContractWallet": {
                         "type": "object",
                         "properties": {
@@ -2352,6 +2357,25 @@
                             "walletAddress"
                         ],
                         "description": "Smart contract wallet managing this agent registration"
+                    },
+                    "RecipientWallet": {
+                        "type": "object",
+                        "nullable": true,
+                        "properties": {
+                            "walletVkey": {
+                                "type": "string",
+                                "description": "Payment key hash of the managed recipient wallet"
+                            },
+                            "walletAddress": {
+                                "type": "string",
+                                "description": "Cardano address of the managed recipient wallet"
+                            }
+                        },
+                        "required": [
+                            "walletVkey",
+                            "walletAddress"
+                        ],
+                        "description": "Managed wallet that receives the registry NFT. Null when the minting wallet receives it"
                     },
                     "CurrentTransaction": {
                         "type": "object",
@@ -2421,7 +2445,9 @@
                     "ExampleOutputs",
                     "agentIdentifier",
                     "AgentPricing",
+                    "sendFundingLovelace",
                     "SmartContractWallet",
+                    "RecipientWallet",
                     "CurrentTransaction"
                 ]
             },
@@ -3045,6 +3071,295 @@
                     "createdAt",
                     "updatedAt",
                     "network"
+                ]
+            },
+            "InboxAgentMetadata": {
+                "type": "object",
+                "properties": {
+                    "policyId": {
+                        "type": "string",
+                        "description": "Policy ID of the inbox registry NFT"
+                    },
+                    "assetName": {
+                        "type": "string",
+                        "description": "Asset name of the inbox registry NFT"
+                    },
+                    "agentIdentifier": {
+                        "type": "string",
+                        "description": "Full inbox agent identifier (policy ID + asset name)"
+                    },
+                    "Metadata": {
+                        "type": "object",
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "maxLength": 120,
+                                "description": "Name of the inbox agent"
+                            },
+                            "description": {
+                                "type": "string",
+                                "nullable": true,
+                                "maxLength": 500,
+                                "description": "Description of the inbox agent. Null if not provided"
+                            },
+                            "agentSlug": {
+                                "type": "string",
+                                "maxLength": 80,
+                                "description": "Canonical inbox agent slug"
+                            },
+                            "metadataVersion": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 1,
+                                "description": "Version of the metadata schema (currently only version 1 is supported)"
+                            }
+                        },
+                        "required": [
+                            "name",
+                            "agentSlug",
+                            "metadataVersion"
+                        ],
+                        "description": "On-chain metadata for the inbox agent"
+                    }
+                },
+                "required": [
+                    "policyId",
+                    "assetName",
+                    "agentIdentifier",
+                    "Metadata"
+                ]
+            },
+            "InboxAgentIdentifierMetadata": {
+                "type": "object",
+                "properties": {
+                    "policyId": {
+                        "type": "string",
+                        "description": "Policy ID of the inbox registry NFT"
+                    },
+                    "assetName": {
+                        "type": "string",
+                        "description": "Asset name of the inbox registry NFT"
+                    },
+                    "agentIdentifier": {
+                        "type": "string",
+                        "description": "Full inbox agent identifier (policy ID + asset name)"
+                    },
+                    "Metadata": {
+                        "type": "object",
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "maxLength": 120,
+                                "description": "Name of the inbox agent"
+                            },
+                            "description": {
+                                "type": "string",
+                                "nullable": true,
+                                "maxLength": 500,
+                                "description": "Description of the inbox agent. Null if not provided"
+                            },
+                            "agentSlug": {
+                                "type": "string",
+                                "maxLength": 80,
+                                "description": "Canonical inbox agent slug"
+                            },
+                            "metadataVersion": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 1,
+                                "description": "Version of the metadata schema (currently only version 1 is supported)"
+                            }
+                        },
+                        "required": [
+                            "name",
+                            "agentSlug",
+                            "metadataVersion"
+                        ],
+                        "description": "On-chain metadata for the inbox agent"
+                    }
+                },
+                "required": [
+                    "policyId",
+                    "assetName",
+                    "agentIdentifier",
+                    "Metadata"
+                ]
+            },
+            "RegistryInboxEntry": {
+                "type": "object",
+                "properties": {
+                    "error": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Error message if registration failed. Null if no error"
+                    },
+                    "id": {
+                        "type": "string",
+                        "description": "Unique identifier for the inbox registration request"
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Name of the inbox agent"
+                    },
+                    "description": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Description of the inbox agent. Null if not provided"
+                    },
+                    "agentSlug": {
+                        "type": "string",
+                        "description": "Canonical slug registered for the inbox agent"
+                    },
+                    "state": {
+                        "type": "string",
+                        "enum": [
+                            "RegistrationRequested",
+                            "RegistrationInitiated",
+                            "RegistrationConfirmed",
+                            "RegistrationFailed",
+                            "DeregistrationRequested",
+                            "DeregistrationInitiated",
+                            "DeregistrationConfirmed",
+                            "DeregistrationFailed"
+                        ],
+                        "description": "Current state of the inbox registration process"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Timestamp when the inbox registration request was created"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Timestamp when the inbox registration request was last updated"
+                    },
+                    "lastCheckedAt": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "date-time",
+                        "description": "Timestamp when the inbox registration was last checked. Null if never checked"
+                    },
+                    "agentIdentifier": {
+                        "type": "string",
+                        "nullable": true,
+                        "minLength": 57,
+                        "maxLength": 250,
+                        "description": "Full inbox agent identifier (policy ID + asset name). Null if not yet minted"
+                    },
+                    "metadataVersion": {
+                        "type": "integer",
+                        "description": "Version of the inbox metadata schema"
+                    },
+                    "sendFundingLovelace": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Effective lovelace amount explicitly configured for the NFT output. Null means the default minimum NFT funding is used."
+                    },
+                    "SmartContractWallet": {
+                        "type": "object",
+                        "properties": {
+                            "walletVkey": {
+                                "type": "string",
+                                "description": "Payment key hash of the minting wallet"
+                            },
+                            "walletAddress": {
+                                "type": "string",
+                                "description": "Cardano address of the minting wallet"
+                            }
+                        },
+                        "required": [
+                            "walletVkey",
+                            "walletAddress"
+                        ],
+                        "description": "Minting wallet managing this inbox registration"
+                    },
+                    "RecipientWallet": {
+                        "type": "object",
+                        "nullable": true,
+                        "properties": {
+                            "walletVkey": {
+                                "type": "string",
+                                "description": "Payment key hash of the managed recipient wallet"
+                            },
+                            "walletAddress": {
+                                "type": "string",
+                                "description": "Cardano address of the managed recipient wallet"
+                            }
+                        },
+                        "required": [
+                            "walletVkey",
+                            "walletAddress"
+                        ],
+                        "description": "Managed wallet that receives the inbox registry NFT. Null when the minting wallet receives it"
+                    },
+                    "CurrentTransaction": {
+                        "type": "object",
+                        "nullable": true,
+                        "properties": {
+                            "txHash": {
+                                "type": "string",
+                                "nullable": true,
+                                "description": "Cardano transaction hash"
+                            },
+                            "status": {
+                                "type": "string",
+                                "enum": [
+                                    "Pending",
+                                    "Confirmed",
+                                    "FailedViaTimeout",
+                                    "FailedViaManualReset",
+                                    "RolledBack"
+                                ],
+                                "description": "Current status of the transaction"
+                            },
+                            "confirmations": {
+                                "type": "number",
+                                "nullable": true,
+                                "description": "Number of block confirmations for this transaction. Null if not yet confirmed"
+                            },
+                            "fees": {
+                                "type": "string",
+                                "nullable": true,
+                                "description": "Fees of the transaction"
+                            },
+                            "blockHeight": {
+                                "type": "number",
+                                "nullable": true,
+                                "description": "Block height of the transaction"
+                            },
+                            "blockTime": {
+                                "type": "number",
+                                "nullable": true,
+                                "description": "Block time of the transaction"
+                            }
+                        },
+                        "required": [
+                            "txHash",
+                            "status",
+                            "confirmations",
+                            "fees",
+                            "blockHeight",
+                            "blockTime"
+                        ]
+                    }
+                },
+                "required": [
+                    "error",
+                    "id",
+                    "name",
+                    "description",
+                    "agentSlug",
+                    "state",
+                    "createdAt",
+                    "updatedAt",
+                    "lastCheckedAt",
+                    "agentIdentifier",
+                    "metadataVersion",
+                    "sendFundingLovelace",
+                    "SmartContractWallet",
+                    "RecipientWallet",
+                    "CurrentTransaction"
                 ]
             },
             "MonitoringStatus": {
@@ -9974,6 +10289,114 @@
                 }
             }
         },
+        "/signature/sign/verifyAndPublishAgent": {
+            "post": {
+                "description": "Provides a signed message from the registered agent wallet to authorize wallet verification for agent publishing. (+PAY access required)",
+                "summary": "Get a signed message to verify and publish an agent. (+PAY access required)",
+                "tags": [
+                    "signature"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "publicKey": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 1000,
+                                        "description": "The public key to sign for publishing the agent"
+                                    },
+                                    "agentIdentifier": {
+                                        "type": "string",
+                                        "minLength": 57,
+                                        "maxLength": 250,
+                                        "description": "Full agent identifier (policy ID + asset name in hex)"
+                                    },
+                                    "action": {
+                                        "type": "string",
+                                        "enum": [
+                                            "VerifyAndPublishAgent"
+                                        ],
+                                        "description": "The action to perform for agent publish verification"
+                                    }
+                                },
+                                "required": [
+                                    "publicKey",
+                                    "agentIdentifier",
+                                    "action"
+                                ],
+                                "example": {
+                                    "action": "VerifyAndPublishAgent",
+                                    "publicKey": "ed25519_pk1example",
+                                    "agentIdentifier": "policyidassetnamehex"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Agent publish signature generated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "signature": {
+                                                    "type": "string"
+                                                },
+                                                "key": {
+                                                    "type": "string"
+                                                },
+                                                "walletAddress": {
+                                                    "type": "string"
+                                                },
+                                                "signatureData": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "signature",
+                                                "key",
+                                                "walletAddress",
+                                                "signatureData"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "Success",
+                                        "data": {
+                                            "signature": "ed25519_signature",
+                                            "key": "ed25519_key",
+                                            "walletAddress": "addr1...",
+                                            "signatureData": "{\"action\":\"VerifyAndPublishAgent\",\"validUntil\":1736352000000,\"data\":{\"publicKey\":\"...\",\"walletVkey\":\"...\"}}"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/invoice/monthly": {
             "post": {
                 "description": "Generates an invoice PDF aggregating all payment requests for a buyer wallet within a month, using the end-of-month conversion rate. (+PAY access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.",
@@ -15199,10 +15622,10 @@
                     {
                         "schema": {
                             "type": "string",
-                            "description": "Search query to filter by name, description, tags, wallet address, state, or price"
+                            "description": "Search query to filter by name, description, tags, minting or recipient wallet address, state, or price"
                         },
                         "required": false,
-                        "description": "Search query to filter by name, description, tags, wallet address, state, or price",
+                        "description": "Search query to filter by name, description, tags, minting or recipient wallet address, state, or price",
                         "name": "searchQuery",
                         "in": "query"
                     }
@@ -15285,6 +15708,10 @@
                                                         "walletVkey": "wallet_vkey",
                                                         "walletAddress": "wallet_address"
                                                     },
+                                                    "RecipientWallet": {
+                                                        "walletVkey": "recipient_wallet_vkey",
+                                                        "walletAddress": "recipient_wallet_address"
+                                                    },
                                                     "CurrentTransaction": null
                                                 }
                                             ]
@@ -15326,6 +15753,17 @@
                                         "type": "string",
                                         "maxLength": 250,
                                         "description": "The payment key of a specific wallet used for the registration"
+                                    },
+                                    "recipientWalletAddress": {
+                                        "type": "string",
+                                        "maxLength": 250,
+                                        "description": "Optional managed hot wallet address on the same payment source that should receive the minted registry NFT. If omitted, the minting wallet receives it."
+                                    },
+                                    "sendFundingLovelace": {
+                                        "type": "string",
+                                        "maxLength": 25,
+                                        "pattern": "^\\d+$",
+                                        "description": "Optional lovelace amount to include with the minted NFT output. If provided below the minimum NFT funding, the current minimum is still used."
                                     },
                                     "ExampleOutputs": {
                                         "type": "array",
@@ -15569,6 +16007,8 @@
                                         "other": "Other Legal Information URL"
                                     },
                                     "sellingWalletVkey": "wallet_vkey",
+                                    "recipientWalletAddress": "recipient_wallet_address",
+                                    "sendFundingLovelace": "7500000",
                                     "Capability": {
                                         "name": "Capability Name",
                                         "version": "1.0.0"
@@ -15654,10 +16094,12 @@
                                                     }
                                                 ]
                                             },
+                                            "sendFundingLovelace": null,
                                             "SmartContractWallet": {
                                                 "walletVkey": "wallet_vkey",
                                                 "walletAddress": "wallet_address"
                                             },
+                                            "RecipientWallet": null,
                                             "CurrentTransaction": null
                                         }
                                     }
@@ -15768,10 +16210,12 @@
                                                     }
                                                 ]
                                             },
+                                            "sendFundingLovelace": null,
                                             "SmartContractWallet": {
                                                 "walletVkey": "wallet_vkey",
                                                 "walletAddress": "wallet_address"
                                             },
+                                            "RecipientWallet": null,
                                             "CurrentTransaction": null
                                         }
                                     }
@@ -16110,10 +16554,12 @@
                                                     }
                                                 ]
                                             },
+                                            "sendFundingLovelace": null,
                                             "SmartContractWallet": {
                                                 "walletVkey": "wallet_vkey",
                                                 "walletAddress": "wallet_address"
                                             },
+                                            "RecipientWallet": null,
                                             "CurrentTransaction": null
                                         }
                                     }
@@ -18968,7 +19414,7 @@
                                         "type": "string",
                                         "maxLength": 500,
                                         "format": "uri",
-                                        "description": "The webhook URL to receive notifications"
+                                        "description": "The webhook URL to receive notifications. Only public http and https destinations are allowed."
                                     },
                                     "authToken": {
                                         "type": "string",
@@ -19171,7 +19617,7 @@
                                         "type": "string",
                                         "maxLength": 500,
                                         "format": "uri",
-                                        "description": "The webhook URL to receive notifications"
+                                        "description": "The webhook URL to receive notifications. Only public http and https destinations are allowed."
                                     },
                                     "authToken": {
                                         "type": "string",
@@ -19513,14 +19959,17 @@
                                                 },
                                                 "responseCode": {
                                                     "type": "number",
-                                                    "nullable": true
+                                                    "nullable": true,
+                                                    "description": "Always null for test deliveries to avoid exposing upstream response details."
                                                 },
                                                 "errorMessage": {
                                                     "type": "string",
-                                                    "nullable": true
+                                                    "nullable": true,
+                                                    "description": "Null on success, otherwise a coarse delivery status message."
                                                 },
                                                 "durationMs": {
-                                                    "type": "number"
+                                                    "type": "number",
+                                                    "description": "Always 0 for test deliveries to avoid exposing timing details."
                                                 }
                                             },
                                             "required": [
@@ -19561,6 +20010,931 @@
                     },
                     "500": {
                         "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/inbox-agents/wallet": {
+            "get": {
+                "description": "Gets the inbox agent metadata.",
+                "summary": "Fetch all inbox agents (and their full metadata) that are registered to a specified wallet. (READ access required)",
+                "tags": [
+                    "inbox-agents"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 250,
+                            "description": "The payment key of the wallet to be queried"
+                        },
+                        "required": true,
+                        "description": "The payment key of the wallet to be queried",
+                        "name": "walletVkey",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Preprod",
+                                "Mainnet"
+                            ],
+                            "description": "The Cardano network used to register the inbox agent on"
+                        },
+                        "required": true,
+                        "description": "The Cardano network used to register the inbox agent on",
+                        "name": "network",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 250,
+                            "description": "The smart contract address of the payment source to which the registration belongs"
+                        },
+                        "required": false,
+                        "description": "The smart contract address of the payment source to which the registration belongs",
+                        "name": "smartContractAddress",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Inbox agent metadata",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "Assets": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/InboxAgentMetadata"
+                                                    },
+                                                    "description": "List of inbox agent assets registered to this wallet"
+                                                }
+                                            },
+                                            "required": [
+                                                "Assets"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "Assets": [
+                                                {
+                                                    "policyId": "policy_id",
+                                                    "assetName": "asset_name",
+                                                    "agentIdentifier": "agent_identifier",
+                                                    "Metadata": {
+                                                        "name": "Inbox Agent",
+                                                        "description": "Masumi inbox identity registration",
+                                                        "agentSlug": "inbox-agent",
+                                                        "metadataVersion": 1
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/inbox-agents/agent-identifier": {
+            "get": {
+                "description": "Gets the on-chain metadata for a specific inbox agent by its identifier.",
+                "summary": "Fetch the current metadata for a given inbox agentIdentifier. (READ access required)",
+                "tags": [
+                    "inbox-agents"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 57,
+                            "maxLength": 250,
+                            "description": "Full inbox agent identifier (policy ID + asset name in hex)"
+                        },
+                        "required": true,
+                        "description": "Full inbox agent identifier (policy ID + asset name in hex)",
+                        "name": "agentIdentifier",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Preprod",
+                                "Mainnet"
+                            ],
+                            "description": "The Cardano network (Preprod or Mainnet)"
+                        },
+                        "required": true,
+                        "description": "The Cardano network (Preprod or Mainnet)",
+                        "name": "network",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Inbox agent metadata retrieved successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/InboxAgentIdentifierMetadata"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "policyId": "policy_id",
+                                            "assetName": "asset_name",
+                                            "agentIdentifier": "policy_id_asset_name",
+                                            "Metadata": {
+                                                "name": "Inbox Agent",
+                                                "description": "Masumi inbox identity registration",
+                                                "agentSlug": "inbox-agent",
+                                                "metadataVersion": 1
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (agent identifier is not a valid hex string)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Agent identifier not found or network/policyId combination not supported"
+                    },
+                    "422": {
+                        "description": "Inbox agent metadata is invalid or malformed"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/inbox-agents": {
+            "get": {
+                "description": "Gets the inbox agent metadata.",
+                "summary": "List every inbox agent that is recorded in the Masumi registry inbox. (READ access required)",
+                "tags": [
+                    "inbox-agents"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "number",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 10,
+                            "description": "The number of inbox registry entries to return"
+                        },
+                        "required": false,
+                        "description": "The number of inbox registry entries to return",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "The cursor id to paginate through the results"
+                        },
+                        "required": false,
+                        "description": "The cursor id to paginate through the results",
+                        "name": "cursorId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Preprod",
+                                "Mainnet"
+                            ],
+                            "description": "The Cardano network used to register the inbox agent on"
+                        },
+                        "required": true,
+                        "description": "The Cardano network used to register the inbox agent on",
+                        "name": "network",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "The smart contract address of the payment source"
+                        },
+                        "required": false,
+                        "description": "The smart contract address of the payment source",
+                        "name": "filterSmartContractAddress",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Registered",
+                                "Deregistered",
+                                "Pending",
+                                "Failed"
+                            ],
+                            "description": "Filter by inbox registration status category"
+                        },
+                        "required": false,
+                        "description": "Filter by inbox registration status category",
+                        "name": "filterStatus",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Search query to filter by name, description, agent slug, minting or recipient wallet address, or state"
+                        },
+                        "required": false,
+                        "description": "Search query to filter by name, description, agent slug, minting or recipient wallet address, or state",
+                        "name": "searchQuery",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Inbox agent metadata",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "Assets": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/RegistryInboxEntry"
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "Assets"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "Assets": [
+                                                {
+                                                    "error": null,
+                                                    "id": "inbox_registry_id",
+                                                    "name": "Inbox Agent",
+                                                    "description": "Masumi inbox identity registration",
+                                                    "agentSlug": "inbox-agent",
+                                                    "state": "RegistrationRequested",
+                                                    "createdAt": "1970-01-20T20:00:36.260Z",
+                                                    "updatedAt": "1970-01-20T20:00:36.260Z",
+                                                    "lastCheckedAt": null,
+                                                    "agentIdentifier": "policy_id_asset_name_policy_id_asset_name_policy_id_asset_name",
+                                                    "metadataVersion": 1,
+                                                    "sendFundingLovelace": null,
+                                                    "SmartContractWallet": {
+                                                        "walletVkey": "wallet_vkey",
+                                                        "walletAddress": "wallet_address"
+                                                    },
+                                                    "RecipientWallet": null,
+                                                    "CurrentTransaction": null
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Registers an inbox agent to the registry (Please note that while it is put on-chain, the transaction is not yet finalized by the blockchain.)",
+                "summary": "Registers an inbox agent to the registry (+PAY access required)",
+                "tags": [
+                    "inbox-agents"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "network": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Preprod",
+                                            "Mainnet"
+                                        ],
+                                        "description": "The Cardano network used to register the inbox agent on"
+                                    },
+                                    "sellingWalletVkey": {
+                                        "type": "string",
+                                        "maxLength": 250,
+                                        "description": "The payment key of a specific wallet used for the registration"
+                                    },
+                                    "recipientWalletAddress": {
+                                        "type": "string",
+                                        "maxLength": 250,
+                                        "description": "Optional managed hot wallet address on the same payment source that should receive the minted inbox registry NFT. If omitted, the minting wallet receives it."
+                                    },
+                                    "sendFundingLovelace": {
+                                        "type": "string",
+                                        "maxLength": 25,
+                                        "pattern": "^\\d+$",
+                                        "description": "Optional lovelace amount to include with the minted inbox registry NFT output. If provided below the minimum NFT funding, the current minimum is still used."
+                                    },
+                                    "name": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 120,
+                                        "description": "Display name of the inbox agent"
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "maxLength": 500,
+                                        "description": "Optional description of the inbox agent"
+                                    },
+                                    "agentSlug": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 80,
+                                        "description": "Canonical inbox slug. Must already be normalized and not reserved"
+                                    }
+                                },
+                                "required": [
+                                    "network",
+                                    "sellingWalletVkey",
+                                    "name",
+                                    "agentSlug"
+                                ],
+                                "example": {
+                                    "network": "Preprod",
+                                    "sellingWalletVkey": "wallet_vkey",
+                                    "recipientWalletAddress": "recipient_wallet_address",
+                                    "sendFundingLovelace": "7500000",
+                                    "name": "Inbox Agent",
+                                    "description": "Masumi inbox identity registration",
+                                    "agentSlug": "inbox-agent"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Inbox agent registered",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/RegistryInboxEntry"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "error": null,
+                                            "id": "inbox_registry_id",
+                                            "name": "Inbox Agent",
+                                            "description": "Masumi inbox identity registration",
+                                            "agentSlug": "inbox-agent",
+                                            "state": "RegistrationRequested",
+                                            "createdAt": "1970-01-20T20:00:36.260Z",
+                                            "updatedAt": "1970-01-20T20:00:36.260Z",
+                                            "lastCheckedAt": null,
+                                            "agentIdentifier": "policy_id_asset_name_policy_id_asset_name_policy_id_asset_name",
+                                            "metadataVersion": 1,
+                                            "sendFundingLovelace": null,
+                                            "SmartContractWallet": {
+                                                "walletVkey": "wallet_vkey",
+                                                "walletAddress": "wallet_address"
+                                            },
+                                            "RecipientWallet": null,
+                                            "CurrentTransaction": null
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Permanently deletes an inbox registration record from the database. This action is irreversible and should only be used for registrations in specific failed or completed states.",
+                "summary": "Delete an inbox registration record. (admin access required)",
+                "tags": [
+                    "inbox-agents"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "format": "cuid",
+                                        "description": "The database ID of the inbox registration record to be deleted."
+                                    }
+                                },
+                                "required": [
+                                    "id"
+                                ],
+                                "example": {
+                                    "id": "example_id"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Inbox agent registration deleted successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/RegistryInboxEntry"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "error": null,
+                                            "id": "inbox_registry_id",
+                                            "name": "Inbox Agent",
+                                            "description": "Masumi inbox identity registration",
+                                            "agentSlug": "inbox-agent",
+                                            "state": "RegistrationRequested",
+                                            "createdAt": "1970-01-20T20:00:36.260Z",
+                                            "updatedAt": "1970-01-20T20:00:36.260Z",
+                                            "lastCheckedAt": null,
+                                            "agentIdentifier": "policy_id_asset_name_policy_id_asset_name_policy_id_asset_name",
+                                            "metadataVersion": 1,
+                                            "sendFundingLovelace": null,
+                                            "SmartContractWallet": {
+                                                "walletVkey": "wallet_vkey",
+                                                "walletAddress": "wallet_address"
+                                            },
+                                            "RecipientWallet": null,
+                                            "CurrentTransaction": null
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/inbox-agents/diff": {
+            "get": {
+                "description": "Returns inbox registry entries that changed since the provided timestamp (registrationStateLastChangedAt).",
+                "summary": "Diff inbox registry entries by state-change timestamp (READ access required)",
+                "tags": [
+                    "inbox-agents"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "number",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 10,
+                            "description": "The number of inbox registry entries to return"
+                        },
+                        "required": false,
+                        "description": "The number of inbox registry entries to return",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Pagination cursor (inbox registry request id). Used as tie-breaker when lastUpdate equals a state-change timestamp"
+                        },
+                        "required": false,
+                        "description": "Pagination cursor (inbox registry request id). Used as tie-breaker when lastUpdate equals a state-change timestamp",
+                        "name": "cursorId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string",
+                                    "format": "date"
+                                },
+                                {
+                                    "type": "string",
+                                    "format": "date-time"
+                                },
+                                {
+                                    "type": "string",
+                                    "format": "date-time"
+                                }
+                            ],
+                            "default": "1970-01-01T00:00:00.000Z",
+                            "description": "Return inbox registry entries whose registration state changed at/after this ISO timestamp"
+                        },
+                        "required": false,
+                        "description": "Return inbox registry entries whose registration state changed at/after this ISO timestamp",
+                        "name": "lastUpdate",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Preprod",
+                                "Mainnet"
+                            ],
+                            "description": "The Cardano network used to register the inbox agent on"
+                        },
+                        "required": true,
+                        "description": "The Cardano network used to register the inbox agent on",
+                        "name": "network",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "The smart contract address of the payment source"
+                        },
+                        "required": false,
+                        "description": "The smart contract address of the payment source",
+                        "name": "filterSmartContractAddress",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Inbox agent metadata diff",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "Assets": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/RegistryInboxEntry"
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "Assets"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "Assets": [
+                                                {
+                                                    "error": null,
+                                                    "id": "inbox_registry_id",
+                                                    "name": "Inbox Agent",
+                                                    "description": "Masumi inbox identity registration",
+                                                    "agentSlug": "inbox-agent",
+                                                    "state": "RegistrationRequested",
+                                                    "createdAt": "1970-01-20T20:00:36.260Z",
+                                                    "updatedAt": "1970-01-20T20:00:36.260Z",
+                                                    "lastCheckedAt": null,
+                                                    "agentIdentifier": "policy_id_asset_name_policy_id_asset_name_policy_id_asset_name",
+                                                    "metadataVersion": 1,
+                                                    "sendFundingLovelace": null,
+                                                    "SmartContractWallet": {
+                                                        "walletVkey": "wallet_vkey",
+                                                        "walletAddress": "wallet_address"
+                                                    },
+                                                    "RecipientWallet": null,
+                                                    "CurrentTransaction": null
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (possible parameters missing or invalid)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/inbox-agents/deregister": {
+            "post": {
+                "description": "Deregisters an inbox agent from the specified registry (Please note that while the command is put on-chain, the transaction is not yet finalized by the blockchain.)",
+                "summary": "Deregisters an inbox agent from the specified registry. (PAY access required)",
+                "tags": [
+                    "inbox-agents"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "agentIdentifier": {
+                                        "type": "string",
+                                        "minLength": 57,
+                                        "maxLength": 250,
+                                        "description": "The identifier of the inbox registration (asset) to be deregistered"
+                                    },
+                                    "network": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Preprod",
+                                            "Mainnet"
+                                        ],
+                                        "description": "The network the inbox registration was made on"
+                                    },
+                                    "smartContractAddress": {
+                                        "type": "string",
+                                        "maxLength": 250,
+                                        "description": "The smart contract address of the payment contract to which the inbox registration belongs"
+                                    }
+                                },
+                                "required": [
+                                    "agentIdentifier",
+                                    "network"
+                                ],
+                                "example": {
+                                    "agentIdentifier": "agentIdentifier",
+                                    "network": "Preprod"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Inbox agent deregistration requested",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/RegistryInboxEntry"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "error": null,
+                                            "id": "inbox_registry_id",
+                                            "name": "Inbox Agent",
+                                            "description": "Masumi inbox identity registration",
+                                            "agentSlug": "inbox-agent",
+                                            "state": "RegistrationRequested",
+                                            "createdAt": "1970-01-20T20:00:36.260Z",
+                                            "updatedAt": "1970-01-20T20:00:36.260Z",
+                                            "lastCheckedAt": null,
+                                            "agentIdentifier": "policy_id_asset_name_policy_id_asset_name_policy_id_asset_name",
+                                            "metadataVersion": 1,
+                                            "sendFundingLovelace": null,
+                                            "SmartContractWallet": {
+                                                "walletVkey": "wallet_vkey",
+                                                "walletAddress": "wallet_address"
+                                            },
+                                            "RecipientWallet": null,
+                                            "CurrentTransaction": null
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/inbox-agents/count": {
+            "get": {
+                "description": "Counts all inbox agents in the registry.",
+                "summary": "Count every inbox agent that is recorded in the Masumi registry inbox. (READ access required)",
+                "tags": [
+                    "inbox-agents"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Preprod",
+                                "Mainnet"
+                            ],
+                            "description": "The Cardano network used to register the inbox agent on"
+                        },
+                        "required": true,
+                        "description": "The Cardano network used to register the inbox agent on",
+                        "name": "network",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "The smart contract address of the payment source"
+                        },
+                        "required": false,
+                        "description": "The smart contract address of the payment source",
+                        "name": "filterSmartContractAddress",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Count returned",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "total": {
+                                                    "type": "number",
+                                                    "description": "Total number of inbox agents"
+                                                }
+                                            },
+                                            "required": [
+                                                "total"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "total": 42
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

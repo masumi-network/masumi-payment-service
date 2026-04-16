@@ -18,6 +18,10 @@ import {
 	postMonthlySignatureSchemaInput,
 	postMonthlySignatureSchemaOutput,
 } from '@/routes/api/signature/sign/create-invoice/monthly';
+import {
+	postVerifyAndPublishAgentSignatureSchemaInput,
+	postVerifyAndPublishAgentSignatureSchemaOutput,
+} from '@/routes/api/signature/sign/verify-and-publish-agent';
 import { queryRegistryCountSchemaInput, queryRegistryCountSchemaOutput } from '@/routes/api/registry/schemas';
 import {
 	createPurchaseInitSchemaInput,
@@ -100,6 +104,58 @@ export function registerInvoiceAndPurchasePaths({ registry, apiKeyAuth }: Swagge
 										key: 'ed25519_key',
 										walletAddress: 'addr1...',
 										signatureData: '{"action":"RetrieveMonthlyInvoices","validUntil":1736352000000,"hash":"..."}',
+									},
+								},
+							}),
+					},
+				},
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'post',
+		path: '/signature/sign/verifyAndPublishAgent',
+		description:
+			'Provides a signed message from the registered agent wallet to authorize wallet verification for agent publishing. (+PAY access required)',
+		summary: 'Get a signed message to verify and publish an agent. (+PAY access required)',
+		tags: ['signature'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			body: {
+				description: '',
+				content: {
+					'application/json': {
+						schema: postVerifyAndPublishAgentSignatureSchemaInput.openapi({
+							example: {
+								action: 'VerifyAndPublishAgent',
+								publicKey: 'ed25519_pk1example',
+								agentIdentifier: 'policyidassetnamehex',
+							},
+						}),
+					},
+				},
+			},
+		},
+		responses: {
+			200: {
+				description: 'Agent publish signature generated',
+				content: {
+					'application/json': {
+						schema: z
+							.object({
+								status: z.string(),
+								data: postVerifyAndPublishAgentSignatureSchemaOutput,
+							})
+							.openapi({
+								example: {
+									status: 'Success',
+									data: {
+										signature: 'ed25519_signature',
+										key: 'ed25519_key',
+										walletAddress: 'addr1...',
+										signatureData:
+											'{"action":"VerifyAndPublishAgent","validUntil":1736352000000,"data":{"publicKey":"...","walletVkey":"..."}}',
 									},
 								},
 							}),

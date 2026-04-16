@@ -5,6 +5,12 @@ import { prisma } from '@/utils/db';
 import { logger } from '@/utils/logger';
 import { getOwnPlainObject, getOwnString, isPlainObject } from '@/utils/object-properties';
 import { decryptWebhookAuthTokenSafe, decryptWebhookUrlForDelivery } from '@/utils/security/webhook-secrets';
+import {
+	assertWebhookDestinationAllowed,
+	isWebhookDestinationPolicyError,
+	redactWebhookDestination,
+	WEBHOOK_DELIVERY_BLOCKED_MESSAGE,
+} from '@/utils/security/webhook-destination-policy';
 
 interface WebhookDeliveryResult {
 	success: boolean;
@@ -36,11 +42,34 @@ class WebhookSenderService {
 		authToken: string | null,
 		payload: WebhookSendPayload,
 	): Promise<WebhookDeliveryResult> {
+		const redactedUrl = redactWebhookDestination(url);
+
+		try {
+			await assertWebhookDestinationAllowed(url);
+		} catch (error) {
+			if (isWebhookDestinationPolicyError(error)) {
+				logger.warn('Webhook delivery blocked by policy', {
+					url: redactedUrl,
+					format,
+					event_type: payload.event_type,
+					reason: error.reason,
+				});
+
+				return {
+					success: false,
+					errorMessage: WEBHOOK_DELIVERY_BLOCKED_MESSAGE,
+					durationMs: 0,
+				};
+			}
+
+			throw error;
+		}
+
 		const startTime = Date.now();
 
 		try {
 			logger.info('Sending webhook', {
-				url,
+				url: redactedUrl,
 				format,
 				event_type: payload.event_type,
 			});
@@ -51,13 +80,14 @@ class WebhookSenderService {
 				headers: request.headers,
 				body: request.body,
 				signal: AbortSignal.timeout(WebhookSenderService.REQUEST_TIMEOUT),
+				redirect: 'manual',
 			});
 
 			const durationMs = Date.now() - startTime;
 
 			if (response.ok) {
 				logger.info('Webhook delivered successfully', {
-					url,
+					url: redactedUrl,
 					format,
 					event_type: payload.event_type,
 					status_code: response.status,
@@ -73,7 +103,7 @@ class WebhookSenderService {
 				const errorMessage = `HTTP ${response.status}: ${response.statusText}`;
 
 				logger.warn('Webhook delivery failed', {
-					url,
+					url: redactedUrl,
 					format,
 					event_type: payload.event_type,
 					status_code: response.status,
@@ -98,7 +128,7 @@ class WebhookSenderService {
 			if (isTimeoutError) {
 				// Log timeout/network errors as warnings (expected external issues)
 				logger.warn('Webhook delivery timeout/network error', {
-					url,
+					url: redactedUrl,
 					format,
 					event_type: payload.event_type,
 					error: errorMessage,
@@ -107,7 +137,7 @@ class WebhookSenderService {
 			} else {
 				// Log other errors as errors (unexpected application issues)
 				logger.error('Webhook delivery error', {
-					url,
+					url: redactedUrl,
 					format,
 					event_type: payload.event_type,
 					error: errorMessage,
