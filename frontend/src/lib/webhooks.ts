@@ -7,6 +7,7 @@ export const WEBHOOK_EVENTS = [
   'PURCHASE_ON_ERROR',
   'PAYMENT_ON_ERROR',
   'WALLET_LOW_BALANCE',
+  'FUND_DISTRIBUTION_SENT',
 ] as const;
 
 export type WebhookFormat = (typeof WEBHOOK_FORMATS)[number];
@@ -26,6 +27,7 @@ export const WEBHOOK_EVENT_LABELS: Record<WebhookEvent, string> = {
   PURCHASE_ON_ERROR: 'Purchase error',
   PAYMENT_ON_ERROR: 'Payment error',
   WALLET_LOW_BALANCE: 'Wallet low balance',
+  FUND_DISTRIBUTION_SENT: 'Fund distribution sent',
 };
 
 export function formatWebhookDate(value: Date | string | null | undefined) {

@@ -5,6 +5,9 @@ jest.unstable_mockModule('@/utils/config', () => ({
 		LOW_BALANCE_DEFAULT_RULES_MAINNET: [],
 		LOW_BALANCE_DEFAULT_RULES_PREPROD: [],
 	},
+	CONSTANTS: {
+		MIN_TX_FEE_BUFFER_LOVELACE: 2000000n,
+	},
 }));
 
 jest.unstable_mockModule('@/utils/logger', () => ({

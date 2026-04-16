@@ -76,6 +76,13 @@ import {
 } from './purchases/diff';
 import { getMonitoringStatus, triggerMonitoringCycle, startMonitoring, stopMonitoring } from './monitoring';
 import {
+	getFundWalletEndpointGet,
+	postFundWalletEndpointPost,
+	patchFundWalletEndpointPatch,
+	deleteFundWalletEndpointDelete,
+} from './fund-wallet';
+import { getFundDistributionEndpointGet, triggerFundDistributionEndpointPost } from './fund-distribution';
+import {
 	swapTokensEndpointPost,
 	getSwapConfirmEndpointGet,
 	getSwapTransactionsEndpointGet,
@@ -309,6 +316,18 @@ export const apiRouter: Routing = {
 			},
 			stop: {
 				post: stopMonitoring,
+			},
+		},
+		'fund-wallet': {
+			get: getFundWalletEndpointGet,
+			post: postFundWalletEndpointPost,
+			patch: patchFundWalletEndpointPatch,
+			delete: deleteFundWalletEndpointDelete,
+		},
+		'fund-distribution': {
+			get: getFundDistributionEndpointGet,
+			trigger: {
+				post: triggerFundDistributionEndpointPost,
 			},
 		},
 	},
