@@ -221,8 +221,7 @@ export async function batchLatestPaymentEntriesV1() {
 	try {
 		const paymentContractsWithWalletLocked = await prisma.$transaction(
 			async (prisma) => {
-				// const payByTime = new Date().getTime() + 1000 * 57;
-				const payByTime = new Date().getTime();
+				const payByTimeL2 = new Date().getTime() + 1000;
 				const paymentContracts = await prisma.paymentSource.findMany({
 					where: {
 						deletedAt: null,
@@ -243,7 +242,7 @@ export async function batchLatestPaymentEntriesV1() {
 								},
 								CurrentTransaction: { is: null },
 								onChainState: null,
-								payByTime: { gte: payByTime },
+								payByTime: { gte: payByTimeL2 },
 							},
 							include: {
 								PaidFunds: true,
@@ -417,12 +416,15 @@ export async function batchLatestPaymentEntriesV1() {
 						}
 					}
 
-					if (l2ProcessedIds.size > 0) {
-						paymentContract.PurchaseRequests = paymentRequests.filter((r) => !l2ProcessedIds.has(r.id));
-						if (paymentContract.PurchaseRequests.length === 0) {
+					const l1Deadline = Date.now() + 1000 * 57;
+					paymentContract.PurchaseRequests = paymentRequests.filter(
+						(r) => !l2ProcessedIds.has(r.id) && r.payByTime != null && r.payByTime >= l1Deadline,
+					);
+					if (paymentContract.PurchaseRequests.length === 0) {
+						if (l2ProcessedIds.size > 0) {
 							logger.info('All requests processed via L2, no L1 batch needed');
-							return;
 						}
+						return;
 					}
 
 					const walletAmounts = await Promise.all(
