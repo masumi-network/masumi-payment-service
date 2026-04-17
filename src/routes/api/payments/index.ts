@@ -132,23 +132,23 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 		//require at least 3 hours between unlock time and the submit result time
 		const additionalExternalDisputeUnlockTime = BigInt(1000 * 60 * 15);
 
-		// if (payByTime > submitResultTime - BigInt(1000 * 60 * 5)) {
-		// 	throw createHttpError(400, 'Pay by time must be before submit result time (min. 5 minutes)');
-		// }
-		// if (payByTime < BigInt(Date.now() - 1000 * 60 * 5)) {
-		// 	throw createHttpError(400, 'Pay by time must be in the future (max. 5 minutes)');
-		// }
+		if (payByTime > submitResultTime - BigInt(1000 * 60 * 5)) {
+			throw createHttpError(400, 'Pay by time must be before submit result time (min. 5 minutes)');
+		}
+		if (payByTime < BigInt(Date.now() - 1000 * 60 * 5)) {
+			throw createHttpError(400, 'Pay by time must be in the future (max. 5 minutes)');
+		}
 
-		// if (externalDisputeUnlockTime < BigInt(unlockTime) + additionalExternalDisputeUnlockTime) {
-		// 	throw createHttpError(400, 'External dispute unlock time must be after unlock time (min. 15 minutes difference)');
-		// }
-		// if (submitResultTime < BigInt(Date.now() + 1000 * 60 * 15)) {
-		// 	throw createHttpError(400, 'Submit result time must be in the future (min. 15 minutes)');
-		// }
-		// const offset = BigInt(1000 * 60 * 15);
-		// if (submitResultTime > BigInt(unlockTime) - offset) {
-		// 	throw createHttpError(400, 'Submit result time must be before unlock time with at least 15 minutes difference');
-		// }
+		if (externalDisputeUnlockTime < BigInt(unlockTime) + additionalExternalDisputeUnlockTime) {
+			throw createHttpError(400, 'External dispute unlock time must be after unlock time (min. 15 minutes difference)');
+		}
+		if (submitResultTime < BigInt(Date.now() + 1000 * 60 * 15)) {
+			throw createHttpError(400, 'Submit result time must be in the future (min. 15 minutes)');
+		}
+		const offset = BigInt(1000 * 60 * 15);
+		if (submitResultTime > BigInt(unlockTime) - offset) {
+			throw createHttpError(400, 'Submit result time must be before unlock time with at least 15 minutes difference');
+		}
 
 		const provider = getBlockfrostInstance(
 			input.network,
