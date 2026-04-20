@@ -1,10 +1,8 @@
-import type { IFetcher, ISubmitter } from '@meshsdk/core';
-
 import type { HydraProvider } from '@/lib/hydra';
 import type { HydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 
 export interface HydraContext {
-	hydraProvider: HydraProvider & IFetcher & ISubmitter;
+	hydraProvider: HydraProvider;
 	hydraHeadId: string;
 }
 

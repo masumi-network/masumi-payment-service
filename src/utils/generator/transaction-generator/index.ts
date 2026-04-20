@@ -146,7 +146,6 @@ async function generateMasumiSmartContractInteractionTransactionCustomFee(
 		mem: 7e6,
 		steps: 3e9,
 	},
-
 	coinsPerUtxoSize: number = CONSTANTS.FALLBACK_COINS_PER_UTXO_SIZE,
 	isHydra = false,
 ) {

@@ -69,11 +69,15 @@ async function processSinglePurchaseRequest(
 	const isL2 = request.layer === 'L2';
 	let hydraContext: HydraContext | undefined;
 
-	if (isL2 && request.CurrentTransaction?.hydraHeadId) {
-		const provider = getHydraConnectionManager().getProvider(request.CurrentTransaction.hydraHeadId);
-		if (provider) {
-			hydraContext = { hydraProvider: provider, hydraHeadId: request.CurrentTransaction.hydraHeadId };
+	if (isL2) {
+		if (!request.CurrentTransaction?.hydraHeadId) {
+			throw new Error('No hydra head id found for layer 2 payment request');
 		}
+		const provider = getHydraConnectionManager().getProvider(request.CurrentTransaction.hydraHeadId);
+		if (!provider) {
+			throw new Error(`No hydra provider found for hydra head id ${request.CurrentTransaction.hydraHeadId}`);
+		}
+		hydraContext = { hydraProvider: provider, hydraHeadId: request.CurrentTransaction.hydraHeadId };
 	}
 
 	const purchasingWallet = request.SmartContractWallet;
