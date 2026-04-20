@@ -328,10 +328,7 @@ export async function submitResultV1() {
 		//Submit a result for invalid tokens
 		const paymentContractsWithWalletLocked = await lockAndQueryPayments({
 			paymentStatus: PaymentAction.SubmitResultRequested,
-			submitResultTime: {
-				// gte: Date.now() + 1000 * 60 * 1,
-				gte: Date.now(),
-			},
+			unlockTime: { lte: Date.now() - 1000 * 60 * 10 },
 			requestedResultHash: { not: null },
 			maxBatchSize: 1,
 		});
