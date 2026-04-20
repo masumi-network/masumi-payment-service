@@ -187,7 +187,7 @@ export class HydraConnectionManager {
 					};
 
 					if (headId) {
-						updateData.headId = headId;
+						updateData.headIdentifier = headId;
 					}
 
 					if (contestationDeadline) {

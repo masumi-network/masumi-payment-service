@@ -36,7 +36,7 @@ const hydraHeadSchema = z
 		createdAt: z.string(),
 		updatedAt: z.string(),
 		hydraRelationId: z.string(),
-		headId: z.string().nullable(),
+		headIdentifier: z.string().nullable(),
 		status: z.nativeEnum(HydraHeadStatus),
 		contestationPeriod: z.string(),
 		isEnabled: z.boolean(),

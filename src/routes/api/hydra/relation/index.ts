@@ -45,7 +45,7 @@ const hydraRelationDetailSchema = hydraRelationSchema
 				z.object({
 					id: z.string(),
 					status: z.nativeEnum(HydraHeadStatus),
-					headId: z.string().nullable(),
+					headIdentifier: z.string().nullable(),
 					isEnabled: z.boolean(),
 					createdAt: z.date(),
 					openedAt: z.date().nullable(),
@@ -93,7 +93,7 @@ export const getOrListRelationsGet = adminAuthenticatedEndpointFactory.build({
 						select: {
 							id: true,
 							status: true,
-							headId: true,
+							headIdentifier: true,
 							isEnabled: true,
 							createdAt: true,
 							openedAt: true,

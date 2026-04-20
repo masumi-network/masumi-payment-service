@@ -35,7 +35,7 @@ CREATE TABLE "HydraHead" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "hydraRelationId" TEXT NOT NULL,
-    "headId" TEXT,
+    "headIdentifier" TEXT,
     "status" "HydraHeadStatus" NOT NULL DEFAULT 'Idle',
     "contestationPeriod" BIGINT NOT NULL DEFAULT 86400,
     "openedAt" TIMESTAMP(3),
@@ -129,7 +129,7 @@ CREATE INDEX "HydraRelation_localHotWalletId_idx" ON "HydraRelation"("localHotWa
 CREATE UNIQUE INDEX "HydraRelation_network_localHotWalletId_remoteWalletId_key" ON "HydraRelation"("network", "localHotWalletId", "remoteWalletId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "HydraHead_headId_key" ON "HydraHead"("headId");
+CREATE UNIQUE INDEX "HydraHead_headIdentifier_key" ON "HydraHead"("headIdentifier");
 
 -- CreateIndex
 CREATE INDEX "HydraHead_status_idx" ON "HydraHead"("status");

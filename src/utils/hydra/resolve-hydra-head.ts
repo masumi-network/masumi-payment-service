@@ -35,7 +35,7 @@ export async function resolveUsableHydraHead(
 			Heads: {
 				where: {
 					isEnabled: true,
-					headId: { not: null },
+					headIdentifier: { not: null },
 					status: 'Open',
 				},
 				include: {
@@ -79,7 +79,7 @@ export async function resolveUsableHydraHeadForPurchase(
 	const head = await prisma.hydraHead.findFirst({
 		where: {
 			isEnabled: true,
-			headId: { not: null },
+			headIdentifier: { not: null },
 			status: HydraHeadStatus.Open,
 			LocalParticipant: {
 				walletId: buyerHotWalletId,
