@@ -105,13 +105,9 @@ export type HydraWallet = {
 };
 
 /**
- * In this type, fundWallet and nodeWallet are the same wallets in most of the cases.
- * And walletId is the ID from database for the HotWallet.
- * fundWallet and nodeWallet are optional -- only needed when building/signing transactions.
+ * WalletId is the ID from database for the HotWallet.
  */
 export type HydraNodeConfig = {
 	httpUrl: string;
 	walletId: string;
-	fundWallet?: HydraWallet;
-	nodeWallet?: HydraWallet;
 };
