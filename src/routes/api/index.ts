@@ -83,6 +83,25 @@ import {
 	cancelSwapEndpointPost,
 	acknowledgeSwapTimeoutEndpointPost,
 } from './swap';
+import {
+	closeHeadPost,
+	commitHeadPost,
+	createHeadPost,
+	createLocalParticipantPost,
+	createRelationPost,
+	createRemoteParticipantPost,
+	deleteLocalParticipantDelete,
+	deleteRelationDelete,
+	deleteRemoteParticipantDelete,
+	fanoutHeadPost,
+	getLocalParticipantGet,
+	getOrListHeadsGet,
+	getOrListRelationsGet,
+	getRemoteParticipantGet,
+	initHeadPost,
+	listHeadErrorsGet,
+	updateHeadPatch,
+} from './hydra';
 
 export const apiRouter: Routing = {
 	v1: {
@@ -309,6 +328,35 @@ export const apiRouter: Routing = {
 			},
 			stop: {
 				post: stopMonitoring,
+			},
+		},
+		hydra: {
+			relation: {
+				get: getOrListRelationsGet,
+				post: createRelationPost,
+				delete: deleteRelationDelete,
+			},
+			head: {
+				get: getOrListHeadsGet,
+				post: createHeadPost,
+				patch: updateHeadPatch,
+				init: { post: initHeadPost },
+				commit: { post: commitHeadPost },
+				close: { post: closeHeadPost },
+				fanout: { post: fanoutHeadPost },
+				errors: { get: listHeadErrorsGet },
+			},
+			participant: {
+				local: {
+					get: getLocalParticipantGet,
+					post: createLocalParticipantPost,
+					delete: deleteLocalParticipantDelete,
+				},
+				remote: {
+					get: getRemoteParticipantGet,
+					post: createRemoteParticipantPost,
+					delete: deleteRemoteParticipantDelete,
+				},
 			},
 		},
 	},

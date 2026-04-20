@@ -16,6 +16,7 @@ import { migrateApiKeyEncryption } from '@/utils/startup-migrations/api-key-encr
 import { migrateWebhookEncryption } from '@/utils/startup-migrations/webhook-encryption';
 import { blockchainStateMonitorService } from '@/services/monitoring';
 import fs from 'fs';
+import { getHydraConnectionManager } from './services/hydra-connection-manager/hydra-connection-manager.service';
 import helmet from 'helmet';
 
 const __dirname = path.resolve();
@@ -41,6 +42,10 @@ async function initialize() {
 		logger.warn('*****************************************************************');
 	}
 	await initJobs();
+
+	// Reconnect to any enabled Hydra heads that are reachable
+	await getHydraConnectionManager().initialize();
+	logger.info('Hydra connection manager initialized', { component: 'hydra' });
 
 	// Start blockchain state monitoring
 	await blockchainStateMonitorService.startMonitoring(30000); // Monitor every 30 seconds

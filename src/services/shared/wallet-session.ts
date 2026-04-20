@@ -8,6 +8,7 @@ import {
 	toBalanceMapFromMeshUtxos,
 	walletLowBalanceMonitorService,
 } from '@/services/wallets';
+import { HydraContext } from '@/utils/hydra';
 
 export type WalletSession = Awaited<ReturnType<typeof generateWalletExtended>> & {
 	hotWalletId: string;
@@ -25,9 +26,15 @@ export async function loadHotWalletSession(params: {
 	hotWalletId: string;
 	checkSource?: WalletBalanceCheckSource;
 	evaluateBalance?: boolean;
+	hydraContext?: HydraContext;
 }): Promise<WalletSession> {
 	const checkSource = params.checkSource ?? 'submission';
-	const session = await generateWalletExtended(params.network, params.rpcProviderApiKey, params.encryptedMnemonic);
+	const session = await generateWalletExtended(
+		params.network,
+		params.rpcProviderApiKey,
+		params.encryptedMnemonic,
+		params.hydraContext?.hydraProvider,
+	);
 
 	if (params.evaluateBalance !== false) {
 		await walletLowBalanceMonitorService.evaluateHotWalletById(

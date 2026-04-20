@@ -13,6 +13,7 @@ import {
 	registerInboxAgentV1,
 } from '@/services/registry-inbox';
 import { checkLatestTransactions, updateWalletTransactionHash } from '@/services/transactions';
+import { checkHydraTransactions } from '@/services/hydra-tx-handler';
 import { walletLowBalanceMonitorService } from '@/services/wallets';
 import { webhookQueueService } from '@/services/webhooks';
 import type { JobDefinition } from '@/services/shared';
@@ -148,5 +149,12 @@ export const scheduledJobs: JobDefinition[] = [
 		startMessage: 'Starting webhook cleanup',
 		finishMessage: 'Finished webhook cleanup',
 		run: () => webhookQueueService.cleanupOldDeliveries(),
+	},
+	{
+		initialDelayMs: 15000,
+		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
+		startMessage: 'Starting L2 hydra transaction polling',
+		finishMessage: 'Finished L2 hydra transaction polling',
+		run: checkHydraTransactions,
 	},
 ];

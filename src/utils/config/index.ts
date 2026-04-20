@@ -67,6 +67,9 @@ if (syncLockTimeoutInterval < 5) throw new Error('SYNC_LOCK_TIMEOUT_INTERVAL mus
 const walletLockTimeoutInterval = Number(process.env.WALLET_LOCK_TIMEOUT_INTERVAL ?? '300');
 if (walletLockTimeoutInterval < 5) throw new Error('WALLET_LOCK_TIMEOUT_INTERVAL must be at least 5 seconds');
 
+const checkHydraTxInterval = Number(process.env.CHECK_HYDRA_TX_INTERVAL ?? '10');
+if (checkHydraTxInterval < 5) throw new Error('CHECK_HYDRA_TX_INTERVAL must be at least 5 seconds');
+
 export type LowBalanceDefaultRule = {
 	assetUnit: string;
 	thresholdAmount: string;
@@ -181,6 +184,7 @@ export const CONFIG = {
 	AUTO_WITHDRAW_REFUNDS: autoWithdrawRefunds,
 	AUTO_DECISION_INTERVAL: autoDecisionInterval,
 	WEBHOOK_DELIVERY_INTERVAL: webhookDeliveryInterval,
+	CHECK_HYDRA_TX_INTERVAL: checkHydraTxInterval,
 	WEBHOOK_CLEANUP_INTERVAL: webhookCleanupInterval,
 	// OpenTelemetry configuration
 	OTEL_SERVICE_NAME: process.env.OTEL_SERVICE_NAME ?? 'masumi-payment-service',
@@ -288,8 +292,11 @@ export const DEFAULTS = {
 		'addr1qyfuahzn3rpnlah2ctcdjxdfl4230ygdar00qxc32guetexyg7nun6hggw9g2gpnayzf22sksr0aqdgkdcvqpc2stwtqgrp4f9',
 	FEE_PERMILLE_MAINNET: 50, //equals 5% fee for the network
 
-	PAYMENT_SMART_CONTRACT_ADDRESS_PREPROD: 'addr_test1wz7j4kmg2cs7yf92uat3ed4a3u97kr7axxr4avaz0lhwdsqukgwfm',
-	REGISTRY_POLICY_ID_PREPROD: '7e8bdaf2b2b919a3a4b94002cafb50086c0c845fe535d07a77ab7f77',
+	PAYMENT_SMART_CONTRACT_ADDRESS_PREPROD:
+		process.env.PAYMENT_SMART_CONTRACT_ADDRESS_PREPROD ??
+		'addr_test1wz7j4kmg2cs7yf92uat3ed4a3u97kr7axxr4avaz0lhwdsqukgwfm',
+	REGISTRY_POLICY_ID_PREPROD:
+		process.env.REGISTRY_POLICY_ID_PREPROD ?? '7e8bdaf2b2b919a3a4b94002cafb50086c0c845fe535d07a77ab7f77',
 	PAYMENT_SMART_CONTRACT_ADDRESS_MAINNET: 'addr1wx7j4kmg2cs7yf92uat3ed4a3u97kr7axxr4avaz0lhwdsq87ujx7',
 	REGISTRY_POLICY_ID_MAINNET: 'ad6424e3ce9e47bbd8364984bd731b41de591f1d11f6d7d43d0da9b9',
 	COOLDOWN_TIME_MAINNET: 1000 * 60 * 7,

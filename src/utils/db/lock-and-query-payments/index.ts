@@ -1,4 +1,4 @@
-import { HotWalletType, OnChainState, PaymentAction } from '@/generated/prisma/client';
+import { HotWalletType, OnChainState, PaymentAction, TransactionLayer } from '@/generated/prisma/client';
 import { prisma } from '..';
 
 export async function lockAndQueryPayments({
@@ -9,6 +9,7 @@ export async function lockAndQueryPayments({
 	resultHash = undefined,
 	requestedResultHash = undefined,
 	unlockTime = undefined,
+	layer = undefined,
 }: {
 	paymentStatus: PaymentAction | { in: PaymentAction[] };
 	submitResultTime?: { lte: number } | undefined | { gte: number };
@@ -16,6 +17,7 @@ export async function lockAndQueryPayments({
 	resultHash?: string | { not: string | null } | undefined;
 	requestedResultHash?: string | { not: null } | undefined;
 	unlockTime?: { lte: number } | undefined | { gte: number };
+	layer?: TransactionLayer | undefined;
 	maxBatchSize: number;
 }) {
 	return await prisma.$transaction(
@@ -65,9 +67,9 @@ export async function lockAndQueryPayments({
 								deletedAt: null,
 							},
 							onChainState: onChainState,
-							//we only want to lock the payment if the cooldown time has passed
 							sellerCoolDownTime: { lt: Date.now() - minCooldownTime },
 							resultHash: resultHash,
+							...(layer ? { layer } : {}),
 						},
 						include: {
 							NextAction: true,

@@ -1,4 +1,10 @@
-import { PaymentAction, Prisma, PurchasingAction, TransactionStatus } from '@/generated/prisma/client';
+import {
+	PaymentAction,
+	Prisma,
+	PurchasingAction,
+	TransactionLayer,
+	TransactionStatus,
+} from '@/generated/prisma/client';
 
 type PaymentNextActionCreateData = Prisma.XOR<
 	Omit<Prisma.PaymentActionDataCreateWithoutPaymentRequestCurrentInput, 'requestedAction'>,
@@ -20,12 +26,17 @@ export function connectPreviousAction(nextActionId: string) {
 	} satisfies Pick<Prisma.PaymentRequestUpdateInput, 'ActionHistory'>;
 }
 
-export function createPendingTransaction(blocksWalletId: string) {
+export function createPendingTransaction(
+	blocksWalletId: string,
+	l2?: { layer: TransactionLayer; hydraHeadId: string },
+) {
 	return {
 		CurrentTransaction: {
 			create: {
 				txHash: null,
 				status: TransactionStatus.Pending,
+				layer: l2?.layer ?? TransactionLayer.L1,
+				...(l2?.hydraHeadId ? { HydraHead: { connect: { id: l2.hydraHeadId } } } : {}),
 				BlocksWallet: {
 					connect: {
 						id: blocksWalletId,

@@ -1,4 +1,11 @@
-import { HotWallet, HotWalletType, PurchaseErrorType, PurchasingAction, Prisma } from '@/generated/prisma/client';
+import {
+	HotWallet,
+	HotWalletType,
+	PurchaseErrorType,
+	PurchasingAction,
+	Prisma,
+	TransactionLayer,
+} from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import {
 	BlockfrostProvider,
@@ -15,6 +22,8 @@ import { convertNetwork } from '@/utils/converter/network-convert';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { CONSTANTS } from '@/utils/config';
+import { resolveUsableHydraHeadForPurchase } from '@/utils/hydra/resolve-hydra-head';
+import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { calculateMinUtxo, DUMMY_RESULT_HASH } from '@/utils/min-utxo';
 import { toBalanceMapFromMeshUtxos, walletLowBalanceMonitorService } from '@/services/wallets';
 import {
@@ -67,15 +76,23 @@ async function executeSpecificBatchPayment(
 	walletPairing: WalletPairing,
 	paymentContract: PaymentSourceWithWallets,
 	blockchainProvider: BlockfrostProvider,
+	hydraHeadId?: string,
 ): Promise<boolean> {
 	const wallet = walletPairing.wallet;
 	const walletId = walletPairing.walletId;
 	const batchedRequests = walletPairing.batchedRequests;
+	const isL2 = !!hydraHeadId;
+	const layer = isL2 ? TransactionLayer.L2 : TransactionLayer.L1;
 
-	//batch payments
+	const fetcher = isL2 ? getHydraConnectionManager().getProvider(hydraHeadId) : blockchainProvider;
+	if (!fetcher) {
+		throw new Error(`No active HydraProvider for head ${hydraHeadId}`);
+	}
+
 	const unsignedTx = new Transaction({
 		initiator: wallet,
-		fetcher: blockchainProvider,
+		fetcher,
+		isHydra: isL2,
 	}).setMetadata(674, {
 		msg: ['Masumi', 'PaymentBatched'],
 	});
@@ -129,6 +146,7 @@ async function executeSpecificBatchPayment(
 		await prisma.purchaseRequest.update({
 			where: { id: request.paymentRequest.id },
 			data: {
+				layer,
 				...connectPreviousAction(request.paymentRequest.nextActionId),
 				...createNextPurchaseAction(PurchasingAction.FundsLockingInitiated),
 				collateralReturnLovelace: request.overpaidLovelace,
@@ -137,7 +155,7 @@ async function executeSpecificBatchPayment(
 						id: walletId,
 					},
 				},
-				...createPendingTransaction(walletId),
+				...createPendingTransaction(walletId, hydraHeadId ? { layer, hydraHeadId } : undefined),
 				TransactionHistory: request.paymentRequest.CurrentTransaction
 					? {
 							connect: {
@@ -203,7 +221,7 @@ export async function batchLatestPaymentEntriesV1() {
 	try {
 		const paymentContractsWithWalletLocked = await prisma.$transaction(
 			async (prisma) => {
-				const payByTime = new Date().getTime() + 1000 * 57;
+				const payByTimeL2 = new Date().getTime() + 1000;
 				const paymentContracts = await prisma.paymentSource.findMany({
 					where: {
 						deletedAt: null,
@@ -224,7 +242,7 @@ export async function batchLatestPaymentEntriesV1() {
 								},
 								CurrentTransaction: { is: null },
 								onChainState: null,
-								payByTime: { gte: payByTime },
+								payByTime: { gte: payByTimeL2 },
 							},
 							include: {
 								PaidFunds: true,
@@ -347,6 +365,65 @@ export async function batchLatestPaymentEntriesV1() {
 					const potentialWallets = paymentContract.HotWallets;
 					if (potentialWallets.length == 0) {
 						logger.warn('No unlocked wallet to batch payments, skipping');
+						return;
+					}
+
+					const l2ProcessedIds = new Set<string>();
+					for (const request of paymentRequests) {
+						for (const hotWallet of potentialWallets) {
+							try {
+								const hydraHead = await resolveUsableHydraHeadForPurchase(
+									hotWallet.id,
+									request.sellerWalletId,
+									paymentContract.network,
+								);
+								if (!hydraHead) continue;
+
+								const hydraProvider = getHydraConnectionManager().getProvider(hydraHead.hydraHead.id);
+								if (!hydraProvider) continue;
+
+								const {
+									wallet: l2Wallet,
+									utxos: l2Utxos,
+									address: l2Address,
+								} = await generateWalletExtended(
+									paymentContract.network,
+									paymentContract.PaymentSourceConfig.rpcProviderApiKey,
+									hotWallet.Secret.encryptedMnemonic,
+									hydraProvider,
+								);
+
+								await executeSpecificBatchPayment(
+									{
+										wallet: l2Wallet,
+										scriptAddress: paymentContract.smartContractAddress,
+										walletId: hotWallet.id,
+										changeAddress: l2Address,
+										utxos: l2Utxos,
+										batchedRequests: [{ paymentRequest: request, overpaidLovelace: 0n }],
+									},
+									paymentContract,
+									new BlockfrostProvider(paymentContract.PaymentSourceConfig.rpcProviderApiKey),
+									hydraHead.hydraHead.id,
+								);
+
+								l2ProcessedIds.add(request.id);
+								logger.info(`Routed purchase request ${request.id} via L2 head ${hydraHead.hydraHead.id}`);
+								break;
+							} catch (error) {
+								logger.warn(`L2 routing failed for request ${request.id}, falling back to L1`, { error });
+							}
+						}
+					}
+
+					const l1Deadline = Date.now() + 1000 * 57;
+					paymentContract.PurchaseRequests = paymentRequests.filter(
+						(r) => !l2ProcessedIds.has(r.id) && r.payByTime != null && r.payByTime >= l1Deadline,
+					);
+					if (paymentContract.PurchaseRequests.length === 0) {
+						if (l2ProcessedIds.size > 0) {
+							logger.info('All requests processed via L2, no L1 batch needed');
+						}
 						return;
 					}
 

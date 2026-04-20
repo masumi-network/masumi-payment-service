@@ -1,4 +1,4 @@
-import { HotWalletType, OnChainState, PurchasingAction } from '@/generated/prisma/client';
+import { HotWalletType, OnChainState, PurchasingAction, TransactionLayer } from '@/generated/prisma/client';
 import { prisma } from '..';
 import { logger } from '@/utils/logger';
 
@@ -9,12 +9,14 @@ export async function lockAndQueryPurchases({
 	onChainState = undefined,
 	submitResultTime = undefined,
 	resultHash = undefined,
+	layer = undefined,
 }: {
 	purchasingAction: PurchasingAction;
 	unlockTime?: { lte: number } | undefined | { gte: number };
 	onChainState?: OnChainState | { in: OnChainState[] } | undefined;
 	submitResultTime?: { lte: number } | undefined | { gte: number };
 	resultHash?: string | null | undefined;
+	layer?: TransactionLayer | undefined;
 	maxBatchSize: number;
 }) {
 	return await prisma.$transaction(
@@ -65,6 +67,7 @@ export async function lockAndQueryPurchases({
 									lockedAt: null,
 									deletedAt: null,
 								},
+								...(layer ? { layer } : {}),
 							},
 							orderBy: {
 								createdAt: 'asc',
