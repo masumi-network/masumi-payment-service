@@ -230,7 +230,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 			const wallets = await prisma.hotWallet.aggregate({
 				where: {
 					paymentSourceId: paymentSource.id,
-					type: HotWalletType.Selling,
+					type: HotWalletType.Purchasing,
 					deletedAt: null,
 				},
 				_count: true,
@@ -239,7 +239,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 				recordBusinessEndpointError('/api/v1/purchase', 'POST', 404, 'No valid purchasing wallets found', {
 					network: input.network,
 					payment_source_id: paymentSource.id,
-					wallet_type: 'selling',
+					wallet_type: 'purchasing',
 					step: 'wallet_lookup',
 				});
 				throw createHttpError(404, 'No valid purchasing wallets found');
