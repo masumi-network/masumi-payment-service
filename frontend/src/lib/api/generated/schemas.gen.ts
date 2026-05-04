@@ -3702,6 +3702,7 @@ export const Eip3009AuthorizationSchema = {
         },
         value: {
             type: 'string',
+            pattern: '^\\d+$',
             description: 'Amount in token base units'
         },
         validAfter: {

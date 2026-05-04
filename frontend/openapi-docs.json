@@ -3697,6 +3697,7 @@
                     },
                     "value": {
                         "type": "string",
+                        "pattern": "^\\d+$",
                         "description": "Amount in token base units"
                     },
                     "validAfter": {
@@ -21469,6 +21470,7 @@
                     {
                         "schema": {
                             "type": "string",
+                            "maxLength": 200,
                             "description": "Search query to filter by name, description, category, tags, URL, or payTo address"
                         },
                         "required": false,
