@@ -75,6 +75,9 @@ import {
 	queryPurchaseDiffOnChainStateOrResultGet,
 } from './purchases/diff';
 import { getMonitoringStatus, triggerMonitoringCycle, startMonitoring, stopMonitoring } from './monitoring';
+import { querySimpleApiListingGet, querySimpleApiCountGet } from './simple-api';
+import { querySimpleApiDiffGet } from './simple-api/diff';
+import { paySimpleApiPost } from './simple-api/pay';
 import {
 	swapTokensEndpointPost,
 	getSwapConfirmEndpointGet,
@@ -309,6 +312,18 @@ export const apiRouter: Routing = {
 			},
 			stop: {
 				post: stopMonitoring,
+			},
+		},
+		'simple-api': {
+			get: querySimpleApiListingGet,
+			count: {
+				get: querySimpleApiCountGet,
+			},
+			diff: {
+				get: querySimpleApiDiffGet,
+			},
+			pay: {
+				post: paySimpleApiPost,
 			},
 		},
 	},

@@ -28,8 +28,9 @@ model ApiKey {
   PaymentRequest        PaymentRequest[]
   PurchaseRequest       PurchaseRequest[]
   RemainingUsageCredits UnitValue[]
-  CreatedWebhooks       WebhookEndpoint[]
-  WalletScopes          ApiKeyWalletScope[]
+  CreatedWebhooks          WebhookEndpoint[]
+  WalletScopes             ApiKeyWalletScope[]
+  SimpleApiPaymentRecords  SimpleApiPaymentRecord[]
 }
 
 model ApiKeyWalletScope {
@@ -805,4 +806,69 @@ enum WebhookDeliveryStatus {
   Failed
   Retrying
   Cancelled
+}
+
+enum SimpleApiStatus {
+  Online
+  Offline
+  Invalid
+  Deregistered
+}
+
+model SimpleApiListing {
+  id                String                   @id @default(cuid())
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+  registryListingId String                   @unique
+  urlHash           String                   @unique
+  network           Network
+  name              String
+  description       String?
+  url               String
+  category          String?
+  tags              String[]
+  httpMethod        String?
+  status            SimpleApiStatus
+  lastActiveAt      DateTime?
+  statusUpdatedAt   DateTime                 @default(now())
+  lastSyncedAt      DateTime                 @default(now())
+  paymentScheme     String?
+  x402Network       String?
+  maxAmountRequired BigInt?
+  payTo             String?
+  asset             String?
+  resource          String?
+  mimeType          String?
+  rawAccepts        Json
+  extra             Json?
+
+  PaymentRecords SimpleApiPaymentRecord[]
+
+  @@index([network, status])
+  @@index([statusUpdatedAt])
+  @@index([statusUpdatedAt, id])
+}
+
+model SimpleApiPaymentRecord {
+  id                      String           @id @default(cuid())
+  createdAt               DateTime         @default(now())
+  updatedAt               DateTime         @updatedAt
+  listingId               String
+  registryListingId       String
+  requestedById           String
+  paymentNetwork          String
+  paymentScheme           String
+  amountPaid              String
+  payTo                   String
+  asset                   String
+  resource                String
+  facilitatorSettlementId String?
+  xPaymentHeader          String
+
+  Listing     SimpleApiListing @relation(fields: [listingId], references: [id])
+  RequestedBy ApiKey           @relation(fields: [requestedById], references: [id])
+
+  @@index([listingId])
+  @@index([requestedById])
+  @@index([createdAt])
 }

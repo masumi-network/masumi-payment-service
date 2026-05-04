@@ -1,4 +1,5 @@
 import { CONFIG } from '@/utils/config';
+import { syncSimpleApiListings } from '@/services/simple-api-sync';
 import {
 	handleAutomaticDecisions,
 	collectOutstandingPaymentsV1,
@@ -148,5 +149,12 @@ export const scheduledJobs: JobDefinition[] = [
 		startMessage: 'Starting webhook cleanup',
 		finishMessage: 'Finished webhook cleanup',
 		run: () => webhookQueueService.cleanupOldDeliveries(),
+	},
+	{
+		initialDelayMs: 55000,
+		intervalMs: CONFIG.SIMPLE_API_SYNC_INTERVAL * 1000,
+		startMessage: 'Starting SimpleApi registry sync',
+		finishMessage: 'Finished SimpleApi registry sync',
+		run: syncSimpleApiListings,
 	},
 ];

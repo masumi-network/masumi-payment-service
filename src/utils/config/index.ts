@@ -154,6 +154,19 @@ function parseLowBalanceDefaultRules(
 const lowBalanceCheckInterval = Number(process.env.LOW_BALANCE_CHECK_INTERVAL ?? '60');
 if (lowBalanceCheckInterval < 5) throw new Error('LOW_BALANCE_CHECK_INTERVAL must be at least 5 seconds');
 
+const simpleApiSyncInterval = Number(process.env.SIMPLE_API_SYNC_INTERVAL ?? '300');
+if (simpleApiSyncInterval < 30) throw new Error('SIMPLE_API_SYNC_INTERVAL must be at least 30 seconds');
+
+const registryServiceUrl = process.env.REGISTRY_SERVICE_URL ?? '';
+const registryApiKey = process.env.REGISTRY_API_KEY ?? '';
+
+const x402FacilitatorUrlEnv = process.env.X402_FACILITATOR_URL;
+const x402FacilitatorUrlIsExplicit = x402FacilitatorUrlEnv != null && x402FacilitatorUrlEnv.trim() !== '';
+const x402FacilitatorUrl =
+	x402FacilitatorUrlEnv != null && x402FacilitatorUrlEnv.trim() !== ''
+		? x402FacilitatorUrlEnv.trim()
+		: 'https://x402.org/facilitator';
+
 const lowBalanceDefaultRulesMainnet = parseLowBalanceDefaultRules('LOW_BALANCE_DEFAULT_RULES_MAINNET');
 const lowBalanceDefaultRulesPreprod = parseLowBalanceDefaultRules('LOW_BALANCE_DEFAULT_RULES_PREPROD');
 
@@ -197,6 +210,12 @@ export const CONFIG = {
 	// Prisma span filtering: only export outlier (slow) queries and cap volume
 	OTEL_PRISMA_OUTLIER_THRESHOLD_MS: Number(process.env.OTEL_PRISMA_OUTLIER_THRESHOLD_MS ?? '100'),
 	OTEL_PRISMA_MAX_SPANS_PER_MINUTE: Number(process.env.OTEL_PRISMA_MAX_SPANS_PER_MINUTE ?? '60'),
+	// SimpleApi / x402 registry sync
+	SIMPLE_API_SYNC_INTERVAL: simpleApiSyncInterval,
+	REGISTRY_SERVICE_URL: registryServiceUrl,
+	REGISTRY_API_KEY: registryApiKey,
+	X402_FACILITATOR_URL: x402FacilitatorUrl,
+	X402_FACILITATOR_URL_IS_EXPLICIT: x402FacilitatorUrlIsExplicit,
 };
 
 export const CONSTANTS = {
