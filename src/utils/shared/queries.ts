@@ -47,6 +47,12 @@ export function buildTransactionSearchFilter(
 	if (!searchLower) return {};
 	return {
 		OR: [
+			{
+				agentIdentifier: {
+					contains: searchLower,
+					mode: 'insensitive' as const,
+				},
+			},
 			{ id: { contains: searchLower, mode: 'insensitive' as const } },
 			{
 				CurrentTransaction: {
