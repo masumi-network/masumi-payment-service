@@ -295,6 +295,8 @@ interface WalletDetailsDialogProps {
   onClose: () => void;
   wallet: WalletWithBalance | null;
   isChild?: boolean;
+  /** When opened from AIAgentDetailsDialog with elevatedStack (over transaction modal). */
+  elevatedChildStack?: boolean;
 }
 
 export function WalletDetailsDialog({
@@ -302,6 +304,7 @@ export function WalletDetailsDialog({
   onClose,
   wallet,
   isChild,
+  elevatedChildStack,
 }: WalletDetailsDialogProps) {
   const queryClient = useQueryClient();
   const { apiClient, network } = useAppContext();
@@ -1101,6 +1104,7 @@ export function WalletDetailsDialog({
           isPushedBack={!!selectedWalletForTopup || !!selectedWalletForSwap || !!pendingDeleteRule}
           hideOverlay={isChild}
           onBack={isChild ? onClose : undefined}
+          elevatedChildStack={elevatedChildStack}
         >
           <DialogHeader>
             <div className="flex items-center justify-between">
@@ -2034,6 +2038,7 @@ export function WalletDetailsDialog({
       <ConfirmDialog
         open={!!pendingDeleteRule}
         onClose={() => setPendingDeleteRule(null)}
+        elevatedGrandchildStack={elevatedChildStack}
         title={
           pendingDeleteRule
             ? `Delete ${getRuleAssetLabel(pendingDeleteRule.assetUnit, network)} rule?`
@@ -2054,6 +2059,7 @@ export function WalletDetailsDialog({
         walletAddress={selectedWalletForSwap?.walletAddress || ''}
         walletVkey={selectedWalletForSwap?.walletVkey || ''}
         network={network}
+        elevatedGrandchildStack={elevatedChildStack}
         onSwapComplete={() => {
           fetchTokenBalances();
           fetchSwapTransactions();
@@ -2069,6 +2075,7 @@ export function WalletDetailsDialog({
           fetchTokenBalances();
         }}
         isChild
+        elevatedGrandchildStack={elevatedChildStack}
       />
     </>
   );

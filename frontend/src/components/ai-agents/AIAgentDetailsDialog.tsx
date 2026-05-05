@@ -622,6 +622,7 @@ export function AIAgentDetailsDialog({
       <ConfirmDialog
         open={isDeleteDialogOpen}
         onClose={() => setIsDeleteDialogOpen(false)}
+        elevatedChildStack={elevatedStack}
         title={
           agent?.state === 'RegistrationConfirmed'
             ? `Deregister ${agent?.name}?`
@@ -640,11 +641,13 @@ export function AIAgentDetailsDialog({
         onClose={() => setSelectedWalletForDetails(null)}
         wallet={selectedWalletForDetails}
         isChild
+        elevatedChildStack={elevatedStack}
       />
       <VerifyAndPublishAgentDialog
         agent={agent}
         open={isVerifyDialogOpen}
         onClose={() => setIsVerifyDialogOpen(false)}
+        elevatedChildStack={elevatedStack}
       />
     </>
   );

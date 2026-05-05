@@ -20,6 +20,8 @@ interface VerifyAndPublishAgentDialogProps {
   agent: RegistryEntry | null;
   open: boolean;
   onClose: () => void;
+  /** When parent AIAgentDetailsDialog uses elevatedStack (over transaction modal). */
+  elevatedChildStack?: boolean;
 }
 
 interface VerifyAndPublishSignatureResult {
@@ -33,6 +35,7 @@ export function VerifyAndPublishAgentDialog({
   agent,
   open,
   onClose,
+  elevatedChildStack,
 }: VerifyAndPublishAgentDialogProps) {
   const { apiClient } = useAppContext();
   const [publicKey, setPublicKey] = useState('');
@@ -87,7 +90,7 @@ export function VerifyAndPublishAgentDialog({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl" elevatedChildStack={elevatedChildStack}>
         <DialogHeader>
           <DialogTitle>Verify and Publish Agent</DialogTitle>
           <DialogDescription>
