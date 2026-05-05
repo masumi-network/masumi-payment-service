@@ -19,6 +19,7 @@ import {
   Search,
   Code,
   Wand2,
+  Globe,
 } from 'lucide-react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import { useSidebar } from '@/lib/contexts/SidebarContext';
@@ -209,6 +210,13 @@ export function MainLayout({ children }: MainLayoutProps) {
         href: '/inbox-agents',
         name: 'Inbox Agents',
         icon: <MessageSquare className="h-4 w-4" />,
+        badge: null,
+        group: 0,
+      },
+      {
+        href: '/simple-api',
+        name: 'Simple API',
+        icon: <Globe className="h-4 w-4" />,
         badge: null,
         group: 0,
       },

@@ -50,7 +50,7 @@ interface RegistrySimpleApiListing {
 interface RegistryListingsResponse {
 	status: string;
 	data: {
-		SimpleApiListings: RegistrySimpleApiListing[];
+		listings: RegistrySimpleApiListing[];
 		cursor?: string | null;
 	};
 }
@@ -182,7 +182,7 @@ async function fetchFullSync(network: Network): Promise<void> {
 			return;
 		}
 
-		const listings = json.data?.SimpleApiListings ?? [];
+		const listings = json.data?.listings ?? [];
 		await upsertListings(listings);
 
 		cursorId = json.data?.cursor ?? null;
@@ -262,7 +262,7 @@ async function fetchIncrementalSync(network: Network): Promise<void> {
 			return;
 		}
 
-		const listings = json.data?.SimpleApiListings ?? [];
+		const listings = json.data?.listings ?? [];
 		if (listings.length > 0) {
 			await upsertListings(listings);
 

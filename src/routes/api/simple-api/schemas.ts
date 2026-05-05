@@ -98,3 +98,16 @@ export const paySimpleApiSchemaOutput = z.object({
 	xPaymentHeader: z.string().describe('Value to set as the X-PAYMENT request header when calling the protected API'),
 	paymentRecordId: z.string().describe('Local payment record ID for tracking'),
 });
+
+export const registerSimpleApiSchemaInput = z.object({
+	network: z.nativeEnum(Network).describe('Cardano network grouping (Preprod or Mainnet)'),
+	url: z.string().url().max(500).describe('Base URL of the service (must return HTTP 402 or expose /services.json)'),
+	name: z.string().min(1).max(250).describe('Display name of the service'),
+	description: z.string().max(500).optional().describe('Optional description of the service'),
+	category: z.string().max(100).optional().describe('Optional service category'),
+	tags: z.array(z.string().max(100)).max(15).optional().describe('Optional tags (max 15)'),
+});
+
+export const registerSimpleApiSchemaOutput = z.object({
+	listing: simpleApiListingSchema,
+});

@@ -78,6 +78,7 @@ import { getMonitoringStatus, triggerMonitoringCycle, startMonitoring, stopMonit
 import { querySimpleApiListingGet, querySimpleApiCountGet } from './simple-api';
 import { querySimpleApiDiffGet } from './simple-api/diff';
 import { paySimpleApiPost } from './simple-api/pay';
+import { registerSimpleApiPost } from './simple-api/register';
 import {
 	swapTokensEndpointPost,
 	getSwapConfirmEndpointGet,
@@ -324,6 +325,9 @@ export const apiRouter: Routing = {
 			},
 			pay: {
 				post: paySimpleApiPost,
+			},
+			register: {
+				post: registerSimpleApiPost,
 			},
 		},
 	},

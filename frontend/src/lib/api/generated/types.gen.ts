@@ -9592,3 +9592,76 @@ export type PostSimpleApiPayResponses = {
 };
 
 export type PostSimpleApiPayResponse = PostSimpleApiPayResponses[keyof PostSimpleApiPayResponses];
+
+export type PostSimpleApiRegisterData = {
+    body?: {
+        /**
+         * Cardano network grouping (Preprod or Mainnet)
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * Base URL of the service (must return HTTP 402 or expose /services.json)
+         */
+        url: string;
+        /**
+         * Display name of the service
+         */
+        name: string;
+        /**
+         * Optional description of the service
+         */
+        description?: string;
+        /**
+         * Optional service category
+         */
+        category?: string;
+        /**
+         * Optional tags (max 15)
+         */
+        tags?: Array<string>;
+    };
+    path?: never;
+    query?: never;
+    url: '/simple-api/register';
+};
+
+export type PostSimpleApiRegisterErrors = {
+    /**
+     * Bad Request (invalid URL or validation failure from registry)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * URL did not return a valid HTTP 402 or /services.json manifest
+     */
+    422: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+    /**
+     * Registry service unreachable
+     */
+    502: unknown;
+    /**
+     * REGISTRY_SERVICE_URL not configured
+     */
+    503: unknown;
+};
+
+export type PostSimpleApiRegisterResponses = {
+    /**
+     * Service registered successfully
+     */
+    200: {
+        status: string;
+        data: {
+            listing: SimpleApiListing;
+        };
+    };
+};
+
+export type PostSimpleApiRegisterResponse = PostSimpleApiRegisterResponses[keyof PostSimpleApiRegisterResponses];

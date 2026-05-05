@@ -9,6 +9,8 @@ import {
 	querySimpleApiDiffSchemaOutput,
 	paySimpleApiSchemaInput,
 	paySimpleApiSchemaOutput,
+	registerSimpleApiSchemaInput,
+	registerSimpleApiSchemaOutput,
 } from '@/routes/api/simple-api/schemas';
 import { type SwaggerRegistrarContext } from '../shared';
 
@@ -172,6 +174,55 @@ export function registerSimpleApiPaths({ registry, apiKeyAuth }: SwaggerRegistra
 			401: { description: 'Unauthorized' },
 			404: { description: 'Listing not found' },
 			502: { description: 'Facilitator unreachable or returned an error' },
+			500: { description: 'Internal Server Error' },
+		},
+	});
+
+	registry.registerPath({
+		method: 'post',
+		path: '/simple-api/register',
+		description:
+			'Registers a new Simple API service with the registry. The registry validates that the URL returns a valid HTTP 402 response or exposes a /services.json manifest. Returns the newly created listing.',
+		summary: 'Register a Simple API service (Admin access required)',
+		tags: ['simple-api'],
+		request: {
+			body: {
+				content: {
+					'application/json': {
+						schema: registerSimpleApiSchemaInput.openapi({
+							example: {
+								network: Network.Preprod,
+								url: 'https://api.example.com/v1/chat',
+								name: 'Example Chat API',
+								description: 'An x402-gated LLM chat endpoint',
+								category: 'Inference',
+								tags: ['llm', 'chat'],
+							},
+						}),
+					},
+				},
+			},
+		},
+		security: [{ [apiKeyAuth.name]: [] }],
+		responses: {
+			200: {
+				description: 'Service registered successfully',
+				content: {
+					'application/json': {
+						schema: z.object({ status: z.string(), data: registerSimpleApiSchemaOutput }).openapi({
+							example: {
+								status: 'success',
+								data: { listing: {} },
+							},
+						}),
+					},
+				},
+			},
+			400: { description: 'Bad Request (invalid URL or validation failure from registry)' },
+			401: { description: 'Unauthorized' },
+			422: { description: 'URL did not return a valid HTTP 402 or /services.json manifest' },
+			502: { description: 'Registry service unreachable' },
+			503: { description: 'REGISTRY_SERVICE_URL not configured' },
 			500: { description: 'Internal Server Error' },
 		},
 	});
