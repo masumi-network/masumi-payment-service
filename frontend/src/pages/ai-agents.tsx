@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Plus, Trash2, ExternalLink, ShieldCheck } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 
 import { useRouter } from 'next/router';
 import { RegisterAIAgentDialog } from '@/components/ai-agents/RegisterAIAgentDialog';
@@ -23,7 +23,6 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { FaRegClock } from 'react-icons/fa';
 import { Tabs } from '@/components/ui/tabs';
 import { Pagination } from '@/components/ui/pagination';
-import { AIAgentDetailsDialog } from '@/components/ai-agents/AIAgentDetailsDialog';
 import { VerifyAndPublishAgentDialog } from '@/components/ai-agents/VerifyAndPublishAgentDialog';
 import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/WalletDetailsDialog';
 import { CopyButton } from '@/components/ui/copy-button';
@@ -35,6 +34,8 @@ import { SearchInput } from '@/components/ui/search-input';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { parseAmountSearchRange } from '@/lib/parseAmountSearchRange';
 import { extractApiErrorMessage } from '@/lib/api-error';
+import { useRegistryEntryByAgentIdentifier } from '@/lib/queries/useRegistryEntryByAgentIdentifier';
+import { useAgentDetailsDialog } from '@/lib/contexts/AgentDetailsDialogContext';
 import { findPaymentSourceWalletByVkey } from '@/lib/wallet-lookup';
 type AIAgent = RegistryEntry;
 
@@ -94,6 +95,7 @@ export default function AIAgentsPage() {
   });
 
   const queryClient = useQueryClient();
+  const { openAgentDetails, closeAgentDetails } = useAgentDetailsDialog();
 
   const refetchAll = useCallback(() => {
     void refetch();
@@ -116,6 +118,7 @@ export default function AIAgentsPage() {
     const amountRange = parseAmountSearchRange(query);
 
     return agents.filter((agent) => {
+      if (agent.agentIdentifier?.toLowerCase().includes(query)) return true;
       if (agent.name?.toLowerCase().includes(query)) return true;
       if (agent.description?.toLowerCase().includes(query)) return true;
       // Backend uses hasSome (exact match against tag array), not partial
@@ -141,20 +144,66 @@ export default function AIAgentsPage() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedAgentToDelete, setSelectedAgentToDelete] = useState<AIAgent | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  const { apiClient, network, selectedPaymentSourceId } = useAppContext();
+  const { apiClient, network, selectedPaymentSourceId, selectedPaymentSource } = useAppContext();
   const { paymentSources } = usePaymentSourceExtendedAll();
 
   const currentNetworkPaymentSources = useMemo(
     () => paymentSources.filter((paymentSource) => paymentSource.network === network),
     [paymentSources, network],
   );
-  const [selectedAgentForDetails, setSelectedAgentForDetails] = useState<AIAgent | null>(null);
   const [selectedAgentForVerification, setSelectedAgentForVerification] = useState<AIAgent | null>(
     null,
   );
-  const [initialDialogTab, setInitialDialogTab] = useState<'Details' | 'Earnings'>('Details');
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
     useState<WalletWithBalance | null>(null);
+
+  const agentIdentifierFromQuery =
+    router.isReady && typeof router.query.agentIdentifier === 'string'
+      ? router.query.agentIdentifier
+      : undefined;
+
+  const registryLookupSmartContractAddress = selectedPaymentSource?.smartContractAddress ?? null;
+
+  const {
+    data: deepLinkedAgent,
+    isFetching: deepLinkFetching,
+    isFetched: deepLinkFetched,
+  } = useRegistryEntryByAgentIdentifier({
+    agentIdentifier: agentIdentifierFromQuery,
+    smartContractAddress: registryLookupSmartContractAddress,
+    enabled: Boolean(agentIdentifierFromQuery && registryLookupSmartContractAddress),
+  });
+
+  const deepLinkHandledRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!agentIdentifierFromQuery) {
+      deepLinkHandledRef.current = null;
+      return;
+    }
+    if (!registryLookupSmartContractAddress || !deepLinkFetched || deepLinkFetching) return;
+
+    if (deepLinkHandledRef.current === agentIdentifierFromQuery) return;
+    deepLinkHandledRef.current = agentIdentifierFromQuery;
+
+    if (deepLinkedAgent) {
+      openAgentDetails(deepLinkedAgent, { initialTab: 'Details' });
+    } else {
+      toast.error('Agent not found in registry for this payment source.');
+    }
+
+    const nextQuery = { ...router.query };
+    delete nextQuery.agentIdentifier;
+    void router.replace({ pathname: '/ai-agents', query: nextQuery }, undefined, { shallow: true });
+  }, [
+    agentIdentifierFromQuery,
+    registryLookupSmartContractAddress,
+    deepLinkedAgent,
+    deepLinkFetched,
+    deepLinkFetching,
+    router,
+    openAgentDetails,
+  ]);
 
   const tabs = [
     { name: 'All', count: null },
@@ -264,7 +313,7 @@ export default function AIAgentsPage() {
   };
 
   const handleAgentClick = (agent: AIAgent) => {
-    setSelectedAgentForDetails(agent);
+    openAgentDetails(agent);
   };
 
   const handleWalletClick = useCallback(
@@ -546,8 +595,7 @@ export default function AIAgentsPage() {
                                   size="sm"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    setInitialDialogTab('Earnings');
-                                    handleAgentClick(agent);
+                                    openAgentDetails(agent, { initialTab: 'Earnings' });
                                   }}
                                   className="text-white hover:text-gray-200 hover:bg-gray-600"
                                   title="View Details & Earnings"
@@ -615,20 +663,6 @@ export default function AIAgentsPage() {
             }}
           />
 
-          <AIAgentDetailsDialog
-            agent={selectedAgentForDetails}
-            onClose={() => {
-              setSelectedAgentForDetails(null);
-              setInitialDialogTab('Details'); // Reset to default tab
-            }}
-            onSuccess={() => {
-              setTimeout(() => {
-                refetchAll();
-              }, 2000);
-            }}
-            initialTab={initialDialogTab}
-          />
-
           <VerifyAndPublishAgentDialog
             agent={selectedAgentForVerification}
             open={!!selectedAgentForVerification}
@@ -655,7 +689,7 @@ export default function AIAgentsPage() {
             }
             onConfirm={async () => {
               await handleDeleteConfirm();
-              setSelectedAgentForDetails(null);
+              closeAgentDetails();
             }}
             isLoading={isDeleting}
           />

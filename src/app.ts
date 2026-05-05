@@ -91,6 +91,7 @@ export async function startApp() {
 			app.use(requestTiming);
 			app.use(requestLogger);
 			app.use(
+				// eslint-disable-next-line @typescript-eslint/no-unsafe-call -- helmet default export not modeled under strict project refs
 				helmet({
 					contentSecurityPolicy: {
 						directives: {

@@ -38,10 +38,22 @@ const DialogContent = React.forwardRef<
     isPushedBack?: boolean;
     hideOverlay?: boolean;
     onBack?: () => void;
+    /** Render above another open dialog (higher overlay + content z-index). */
+    elevatedStack?: boolean;
   }
 >(
   (
-    { className, children, hideClose, variant, isPushedBack, hideOverlay, onBack, ...props },
+    {
+      className,
+      children,
+      hideClose,
+      variant,
+      isPushedBack,
+      hideOverlay,
+      onBack,
+      elevatedStack,
+      ...props
+    },
     ref,
   ) => {
     const useCustomAnimation = variant !== undefined || isPushedBack !== undefined;
@@ -59,11 +71,15 @@ const DialogContent = React.forwardRef<
 
     return (
       <DialogPortal>
-        <DialogOverlay hideOverlay={hideOverlay} />
+        <DialogOverlay
+          hideOverlay={hideOverlay}
+          className={elevatedStack ? '!z-[1100]' : undefined}
+        />
         <DialogPrimitive.Content
           ref={ref}
           className={cn(
             'fixed left-[50%] top-[50%] z-1000 grid w-full max-w-lg max-h-[80vh] overflow-y-auto translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background px-6 pb-6 pt-10 shadow-lg sm:rounded-lg',
+            elevatedStack && '!z-[1101]',
             defaultAnimationClasses,
             variantClass,
             isPushedBack !== undefined && 'dialog-content-stackable',

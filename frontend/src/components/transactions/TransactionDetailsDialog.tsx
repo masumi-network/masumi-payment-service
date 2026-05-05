@@ -24,6 +24,8 @@ import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/Wal
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { findPaymentSourceWalletByVkey } from '@/lib/wallet-lookup';
 import { extractApiErrorMessage } from '@/lib/api-error';
+import { useRegistryEntryByAgentIdentifier } from '@/lib/queries/useRegistryEntryByAgentIdentifier';
+import { useAgentDetailsDialog } from '@/lib/contexts/AgentDetailsDialogContext';
 
 type Transaction =
   | (Payment & { type: 'payment' })
@@ -107,6 +109,7 @@ export default function TransactionDetailsDialog({
   onRefresh,
 }: TransactionDetailsDialogProps) {
   const { network, apiClient } = useAppContext();
+  const { openAgentDetails } = useAgentDetailsDialog();
   const [showConfirmDialog, setShowConfirmDialog] = React.useState(false);
   const [confirmAction, setConfirmAction] = React.useState<'refund' | 'cancel' | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
@@ -192,6 +195,15 @@ export default function TransactionDetailsDialog({
 
   const agentIdentifier = transaction?.agentIdentifier;
   const agentNetwork = transaction?.PaymentSource?.network;
+  const agentPaymentSourceSc = transaction?.PaymentSource?.smartContractAddress ?? null;
+
+  const { data: registryAgentForLink, isFetching: registryAgentLinkLoading } =
+    useRegistryEntryByAgentIdentifier({
+      agentIdentifier,
+      smartContractAddress: agentPaymentSourceSc,
+      enabled: Boolean(agentIdentifier && agentPaymentSourceSc),
+    });
+
   const { data: agentName, isFetching: agentNameLoading } = useQuery({
     queryKey: ['registry-agent-identifier', agentIdentifier, agentNetwork],
     queryFn: async () => {
@@ -401,8 +413,22 @@ export default function TransactionDetailsDialog({
               {transaction.agentIdentifier ? (
                 <div>
                   <h4 className="font-semibold mb-1">Agent Identifier</h4>
-                  <div className="text-sm font-mono break-all flex gap-2 items-center">
-                    <span>{shortenAddress(transaction.agentIdentifier)}</span>
+                  <div className="text-sm font-mono break-all flex gap-2 items-center flex-wrap">
+                    {registryAgentLinkLoading ? (
+                      <Skeleton className="h-5 w-40" />
+                    ) : registryAgentForLink ? (
+                      <button
+                        type="button"
+                        className="font-mono text-primary hover:underline text-left"
+                        onClick={() =>
+                          openAgentDetails(registryAgentForLink, { stackOverParentModal: true })
+                        }
+                      >
+                        {shortenAddress(transaction.agentIdentifier)}
+                      </button>
+                    ) : (
+                      <span>{shortenAddress(transaction.agentIdentifier)}</span>
+                    )}
                     <CopyButton value={transaction.agentIdentifier} />
                   </div>
                 </div>

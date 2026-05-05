@@ -12,6 +12,9 @@ export function TransactionTableSkeleton({ rows = 5 }: { rows?: number }) {
             <Skeleton className="h-4 w-48" />
           </td>
           <td className="p-4">
+            <Skeleton className="h-4 w-36" />
+          </td>
+          <td className="p-4">
             <Skeleton className="h-4 w-24" />
           </td>
           <td className="p-4">
