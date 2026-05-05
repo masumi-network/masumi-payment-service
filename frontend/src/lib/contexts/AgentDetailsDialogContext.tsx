@@ -37,7 +37,11 @@ export function AgentDetailsDialogProvider({ children }: { children: ReactNode }
   }, []);
 
   const handleSuccess = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ['agents'] });
+    // Matches former ai-agents dialog onSuccess: delayed refetch so balances reflect fees/settlement after deregister/delete.
+    window.setTimeout(() => {
+      void queryClient.invalidateQueries({ queryKey: ['agents'] });
+      void queryClient.invalidateQueries({ queryKey: ['wallets'] });
+    }, 2000);
   }, [queryClient]);
 
   const value = useMemo(
