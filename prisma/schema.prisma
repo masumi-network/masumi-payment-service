@@ -312,6 +312,8 @@ model PaymentRequest {
   metadata                                      String?
   pricingType                                   PricingType         @default(Fixed)
   blockchainIdentifier                          String              @unique
+  /// Decoded agent asset id (policyId + asset name hex); denormalized for search. Mirrors decodeBlockchainIdentifier(..).agentIdentifier.
+  agentIdentifier                               String?
   submitResultTime                              BigInt
   unlockTime                                    BigInt
   externalDisputeUnlockTime                     BigInt
@@ -379,6 +381,8 @@ model PurchaseRequest {
   metadata                                      String?
   pricingType                                   PricingType          @default(Fixed)
   blockchainIdentifier                          String               @unique
+  /// Decoded agent asset id (policyId + asset name hex); denormalized for search. Mirrors decodeBlockchainIdentifier(..).agentIdentifier.
+  agentIdentifier                               String?
   submitResultTime                              BigInt
   unlockTime                                    BigInt
   externalDisputeUnlockTime                     BigInt

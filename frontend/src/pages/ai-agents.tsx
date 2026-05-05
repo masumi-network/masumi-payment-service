@@ -118,7 +118,6 @@ export default function AIAgentsPage() {
     const amountRange = parseAmountSearchRange(query);
 
     return agents.filter((agent) => {
-      if (agent.agentIdentifier?.toLowerCase().includes(query)) return true;
       if (agent.name?.toLowerCase().includes(query)) return true;
       if (agent.description?.toLowerCase().includes(query)) return true;
       // Backend uses hasSome (exact match against tag array), not partial

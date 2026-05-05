@@ -1,5 +1,6 @@
 import { prisma } from '@/utils/db';
 import { InsufficientFundsError } from '@/utils/errors/insufficient-funds-error';
+import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { Network, PricingType, PurchasingAction, WalletBase, WalletType } from '@/generated/prisma/client';
 
 async function handlePurchaseCreditInit({
@@ -137,6 +138,8 @@ async function handlePurchaseCreditInit({
 				});
 			}
 
+			const agentIdentifier = decodeBlockchainIdentifier(blockchainIdentifier)?.agentIdentifier ?? null;
+
 			const purchaseRequest = await prisma.purchaseRequest.create({
 				data: {
 					totalBuyerCardanoFees: BigInt(0),
@@ -159,6 +162,7 @@ async function handlePurchaseCreditInit({
 						connect: { id: sellerWallet.id },
 					},
 					blockchainIdentifier: blockchainIdentifier,
+					agentIdentifier,
 					inputHash: inputHash,
 					NextAction: {
 						create: {

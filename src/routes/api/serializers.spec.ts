@@ -93,6 +93,37 @@ describe('route serializers', () => {
 		expect(serialized.totalSellerCardanoFees).toBe(1.5);
 	});
 
+	it('prefers persisted agentIdentifier over decoding blockchain identifier', () => {
+		const blockchainIdentifier = generateBlockchainIdentifier(
+			'reference-key',
+			'signature',
+			`${'a'.repeat(64)}abcdef`,
+			'c'.repeat(64),
+		);
+		const payment = {
+			id: 'payment-2',
+			blockchainIdentifier,
+			agentIdentifier: 'override-from-db',
+			submitResultTime: BigInt(10),
+			payByTime: BigInt(20),
+			unlockTime: BigInt(30),
+			externalDisputeUnlockTime: BigInt(40),
+			collateralReturnLovelace: BigInt(50),
+			sellerCoolDownTime: BigInt(60),
+			buyerCoolDownTime: BigInt(70),
+			totalBuyerCardanoFees: BigInt(2_500_000),
+			totalSellerCardanoFees: BigInt(1_500_000),
+			RequestedFunds: [{ id: 'fund-1', unit: 'lovelace', amount: BigInt(1_000_000) }],
+			WithdrawnForSeller: [{ id: 'seller-1', unit: 'lovelace', amount: BigInt(500_000) }],
+			WithdrawnForBuyer: [{ id: 'buyer-1', unit: 'lovelace', amount: BigInt(250_000) }],
+			CurrentTransaction: null,
+			TransactionHistory: [],
+			ActionHistory: [],
+		} as unknown as Parameters<typeof serializePaymentListEntry>[0];
+
+		expect(serializePaymentListEntry(payment).agentIdentifier).toBe('override-from-db');
+	});
+
 	it('serializes registry pricing and transaction fees deterministically', () => {
 		const entry = {
 			capabilityName: 'demo',
