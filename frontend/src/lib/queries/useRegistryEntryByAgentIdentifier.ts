@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getRegistry, RegistryEntry } from '@/lib/api/generated';
-import { useAppContext } from '@/lib/contexts/AppContext';
+import { useAppContext, type NetworkType } from '@/lib/contexts/AppContext';
 
 /**
  * Resolves a registry row visible to the current wallet scope for the given payment source.
@@ -10,7 +10,7 @@ export function useRegistryEntryByAgentIdentifier(options: {
   agentIdentifier: string | null | undefined;
   smartContractAddress: string | null | undefined;
   /** When set (e.g. from a transaction’s PaymentSource), avoids mixing global UI network with row-specific SC/network. */
-  network?: string | null | undefined;
+  network?: NetworkType | null | undefined;
   enabled?: boolean;
 }) {
   const { apiClient, network: contextNetwork } = useAppContext();

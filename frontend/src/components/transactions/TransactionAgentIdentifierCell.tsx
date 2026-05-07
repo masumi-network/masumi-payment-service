@@ -4,12 +4,13 @@ import { CopyButton } from '@/components/ui/copy-button';
 import { shortenAddress } from '@/lib/utils';
 import { useRegistryEntryByAgentIdentifier } from '@/lib/queries/useRegistryEntryByAgentIdentifier';
 import { useAgentDetailsDialog } from '@/lib/contexts/AgentDetailsDialogContext';
+import type { NetworkType } from '@/lib/contexts/AppContext';
 
 type Props = {
   agentIdentifier: string | null | undefined;
   smartContractAddress: string | null | undefined;
   /** Payment source network for this row — keeps registry lookup stable if global network changes. */
-  network?: string | null | undefined;
+  network?: NetworkType | null | undefined;
 };
 
 /** Start registry lookup once the cell is near/on screen to avoid N parallel calls for off-screen rows. */
