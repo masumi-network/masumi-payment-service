@@ -8,10 +8,16 @@ import { useAgentDetailsDialog } from '@/lib/contexts/AgentDetailsDialogContext'
 type Props = {
   agentIdentifier: string | null | undefined;
   smartContractAddress: string | null | undefined;
+  /** Payment source network for this row — keeps registry lookup stable if global network changes. */
+  network?: string | null | undefined;
 };
 
 /** Start registry lookup once the cell is near/on screen to avoid N parallel calls for off-screen rows. */
-export function TransactionAgentIdentifierCell({ agentIdentifier, smartContractAddress }: Props) {
+export function TransactionAgentIdentifierCell({
+  agentIdentifier,
+  smartContractAddress,
+  network,
+}: Props) {
   const { openAgentDetails } = useAgentDetailsDialog();
   const containerRef = useRef<HTMLDivElement>(null);
   const [shouldResolve, setShouldResolve] = useState(false);
@@ -43,6 +49,7 @@ export function TransactionAgentIdentifierCell({ agentIdentifier, smartContractA
   const { data: registryEntry, isLoading } = useRegistryEntryByAgentIdentifier({
     agentIdentifier,
     smartContractAddress,
+    network,
     enabled: Boolean(agentIdentifier && smartContractAddress && shouldResolve),
   });
 

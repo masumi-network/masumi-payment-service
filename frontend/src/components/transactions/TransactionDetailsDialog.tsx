@@ -201,6 +201,7 @@ export default function TransactionDetailsDialog({
     useRegistryEntryByAgentIdentifier({
       agentIdentifier,
       smartContractAddress: agentPaymentSourceSc,
+      network: agentNetwork,
       enabled: Boolean(agentIdentifier && agentPaymentSourceSc),
     });
 

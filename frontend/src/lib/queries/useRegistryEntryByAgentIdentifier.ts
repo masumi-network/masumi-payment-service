@@ -9,10 +9,13 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 export function useRegistryEntryByAgentIdentifier(options: {
   agentIdentifier: string | null | undefined;
   smartContractAddress: string | null | undefined;
+  /** When set (e.g. from a transaction’s PaymentSource), avoids mixing global UI network with row-specific SC/network. */
+  network?: string | null | undefined;
   enabled?: boolean;
 }) {
-  const { apiClient, network } = useAppContext();
-  const { agentIdentifier, smartContractAddress, enabled = true } = options;
+  const { apiClient, network: contextNetwork } = useAppContext();
+  const { agentIdentifier, smartContractAddress, network: networkOption, enabled = true } = options;
+  const network = networkOption ?? contextNetwork;
 
   return useQuery({
     queryKey: [

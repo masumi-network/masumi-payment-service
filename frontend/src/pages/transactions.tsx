@@ -456,6 +456,7 @@ export default function Transactions() {
                           smartContractAddress={
                             transaction.PaymentSource?.smartContractAddress ?? null
                           }
+                          network={transaction.PaymentSource?.network}
                         />
                       </td>
                       <td className="p-4">
