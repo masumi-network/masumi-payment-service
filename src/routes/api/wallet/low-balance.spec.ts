@@ -36,6 +36,17 @@ jest.unstable_mockModule('@/utils/config', () => ({
 		LOW_BALANCE_DEFAULT_RULES_MAINNET: [],
 		LOW_BALANCE_DEFAULT_RULES_PREPROD: [],
 	},
+	SERVICE_CONSTANTS: {
+		RETRY: { maxRetries: 5, backoffMultiplier: 5, initialDelayMs: 500, maxDelayMs: 7500 },
+		TRANSACTION: { timeBufferMs: 150000, blockTimeBufferMs: 60000, validitySlotBuffer: 5, resultTimeSlotBuffer: 3 },
+		SMART_CONTRACT: {
+			collateralAmount: '5000000',
+			mintQuantity: '1',
+			defaultExUnits: { mem: 7000000, steps: 3000000000 },
+		},
+		METADATA: { nftLabel: 721, masumiLabel: 674 },
+		CARDANO: { NATIVE_TOKEN: 'lovelace' },
+	},
 }));
 
 jest.unstable_mockModule('@/utils/logger', () => ({
