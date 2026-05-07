@@ -1,7 +1,15 @@
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { z } from '@/utils/zod-openapi';
 import createHttpError from 'http-errors';
-import { swapTokens, getPoolEstimate, Token, cancelSwapOrder, findOrderOutputIndex } from '@/services/integrations';
+import {
+	swapTokens,
+	getPoolEstimate,
+	Token,
+	cancelSwapOrder,
+	findOrderOutputIndex,
+	SWAP_CHAIN_SUBMIT_TIMEOUT_MS,
+} from '@/services/integrations';
+import { CONFIG } from '@/utils/config';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { Network, TransactionStatus, SwapStatus } from '@/generated/prisma/client';
@@ -41,9 +49,6 @@ export {
 	acknowledgeSwapTimeoutSchemaInput,
 	acknowledgeSwapTimeoutSchemaOutput,
 };
-
-/** How long a pending tx can sit before we consider it timed out (15 minutes). */
-const SWAP_TX_TIMEOUT_MS = 15 * 60 * 1000;
 
 export const swapTokensEndpointPost = adminAuthenticatedEndpointFactory.build({
 	method: 'post',
@@ -309,6 +314,34 @@ export const getSwapConfirmEndpointGet = adminAuthenticatedEndpointFactory.build
 					};
 				}
 				const block = await blockfrost.blocks(tx.block);
+				const confirmations = block.confirmations ?? 0;
+
+				const awaitingConfirmationDepth =
+					swapTx &&
+					confirmations < CONFIG.BLOCK_CONFIRMATIONS_THRESHOLD &&
+					(swapTx.status === TransactionStatus.Pending ||
+						currentSwapStatus === SwapStatus.OrderPending ||
+						currentSwapStatus === SwapStatus.CancelPending);
+
+				if (awaitingConfirmationDepth) {
+					try {
+						await prisma.swapTransaction.update({
+							where: { id: swapTx.id },
+							data: { confirmations, lastCheckedAt: new Date() },
+						});
+					} catch (updateError) {
+						logger.error('Failed to persist swap confirmation depth while below threshold', {
+							swapTransactionId: swapTx.id,
+							error: updateError instanceof Error ? updateError.message : String(updateError),
+						});
+					}
+					return {
+						status: 'Pending' as const,
+						swapStatus: currentSwapStatus ?? undefined,
+						swapTransactionId: swapTx.id,
+						confirmations,
+					};
+				}
 
 				if (currentSwapStatus === SwapStatus.CancelPending && swapTx) {
 					// Cancel tx confirmed → transition to CancelConfirmed
@@ -472,7 +505,7 @@ export const getSwapConfirmEndpointGet = adminAuthenticatedEndpointFactory.build
 						const isPendingState =
 							currentSwapStatus === SwapStatus.OrderPending || currentSwapStatus === SwapStatus.CancelPending;
 
-						if (isPendingState && elapsed > SWAP_TX_TIMEOUT_MS) {
+						if (isPendingState && elapsed > SWAP_CHAIN_SUBMIT_TIMEOUT_MS) {
 							const timeoutStatus =
 								currentSwapStatus === SwapStatus.OrderPending
 									? SwapStatus.OrderSubmitTimeout

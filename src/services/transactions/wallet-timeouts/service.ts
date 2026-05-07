@@ -1,11 +1,12 @@
 import {
 	HotWalletType,
+	RegistrationState,
+	SwapStatus,
 	TransactionStatus,
 	PaymentAction,
 	PaymentErrorType,
 	PurchasingAction,
 	PurchaseErrorType,
-	RegistrationState,
 } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import { logger } from '@/utils/logger';
@@ -16,6 +17,13 @@ import { registerInboxAgentV1, deRegisterInboxAgentV1 } from '@/services/registr
 import { CONFIG, DEFAULTS } from '@/utils/config';
 import { errorToString } from '@/utils/converter/error-string-convert';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
+import {
+	findOrderOutputIndex,
+	getSwapTxInclusion,
+	SWAP_BACKGROUND_POLL_MIN_INTERVAL_MS,
+	SWAP_CHAIN_SUBMIT_TIMEOUT_MS,
+} from '@/services/integrations';
+import { getBlockfrostInstance } from '@/utils/blockfrost';
 import {
 	connectPreviousAction,
 	createMeshProvider,
@@ -504,7 +512,14 @@ export async function updateWalletTransactionHash() {
 		const swapLockedWallets = await prisma.hotWallet.findMany({
 			where: {
 				PendingSwapTransaction: {
-					OR: [{ lastCheckedAt: { lte: new Date(Date.now() - 1000 * 60 * 1) } }, { lastCheckedAt: null }],
+					OR: [
+						{
+							lastCheckedAt: {
+								lte: new Date(Date.now() - SWAP_BACKGROUND_POLL_MIN_INTERVAL_MS),
+							},
+						},
+						{ lastCheckedAt: null },
+					],
 				},
 				deletedAt: null,
 			},
@@ -519,57 +534,192 @@ export async function updateWalletTransactionHash() {
 		await Promise.allSettled(
 			swapLockedWallets.map(async (wallet) => {
 				try {
-					if (wallet.PendingSwapTransaction == null) {
+					const swapTx = wallet.PendingSwapTransaction;
+					if (swapTx == null) {
 						logger.error(`Wallet ${wallet.id} has no pending swap transaction when expected. Skipping...`);
 						return;
 					}
-					const swapTxId = wallet.PendingSwapTransaction.id;
-					const txHash = wallet.PendingSwapTransaction.txHash;
-					const isTimedOut =
-						wallet.lockedAt && new Date(wallet.lockedAt) < new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL);
+					const swapTxId = swapTx.id;
+					const txHash = swapTx.txHash;
+					const swapStatus = swapTx.swapStatus;
+					const network = wallet.PaymentSource.network;
+					const blockfrostKey = wallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey;
+					const now = new Date();
 
-					// Determine swap tx final status
+					const isTimedOutByWalletLock =
+						wallet.lockedAt != null &&
+						new Date(wallet.lockedAt).getTime() < Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL;
+					const elapsedSinceSwapCreated = Date.now() - swapTx.createdAt.getTime();
+
 					let finalStatus: TransactionStatus | null = null;
+					let finalSwapStatus: SwapStatus | null = null;
 					let shouldUnlock = false;
+
+					const persistSwapRow = async (extra: {
+						status?: TransactionStatus;
+						swapStatus?: SwapStatus;
+						confirmations?: number | null;
+						orderOutputIndex?: number;
+					}) => {
+						try {
+							await prisma.swapTransaction.update({
+								where: { id: swapTxId },
+								data: {
+									...(extra.status != null ? { status: extra.status } : {}),
+									...(extra.swapStatus != null ? { swapStatus: extra.swapStatus } : {}),
+									...(extra.confirmations !== undefined ? { confirmations: extra.confirmations } : {}),
+									...(extra.orderOutputIndex !== undefined ? { orderOutputIndex: extra.orderOutputIndex } : {}),
+									lastCheckedAt: now,
+								},
+							});
+						} catch (swapTxError) {
+							logger.error(`Failed to update swap transaction ${swapTxId}: ${errorToString(swapTxError)}`);
+						}
+					};
 
 					if (txHash == null) {
 						finalStatus = TransactionStatus.FailedViaTimeout;
+						finalSwapStatus =
+							swapStatus === SwapStatus.CancelPending ? SwapStatus.CancelSubmitTimeout : SwapStatus.OrderSubmitTimeout;
 						shouldUnlock = true;
-					} else {
-						const blockfrostKey = wallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey;
-						const provider = createMeshProvider(blockfrostKey);
+						await persistSwapRow({ status: finalStatus, swapStatus: finalSwapStatus });
+					} else if (!blockfrostKey) {
+						logger.error(`Wallet ${wallet.id} swap poll missing Blockfrost API key`);
+						await persistSwapRow({});
+					} else if (
+						swapStatus === SwapStatus.OrderSubmitTimeout ||
+						swapStatus === SwapStatus.CancelSubmitTimeout ||
+						swapStatus === SwapStatus.Completed ||
+						swapStatus === SwapStatus.CancelConfirmed
+					) {
+						shouldUnlock = true;
+						await persistSwapRow({});
+					} else if (swapStatus === SwapStatus.CancelPending || swapStatus === SwapStatus.OrderPending) {
+						const blockfrost = getBlockfrostInstance(network, blockfrostKey);
+						const txHashToCheck =
+							swapStatus === SwapStatus.CancelPending && swapTx.cancelTxHash ? swapTx.cancelTxHash : txHash;
+
 						try {
-							const txInfo = await provider.fetchTxInfo(txHash);
-							if (txInfo) {
+							const inclusion = await getSwapTxInclusion(blockfrost, txHashToCheck);
+
+							if (inclusion.kind === 'not_found') {
+								const lifecyclePending =
+									swapStatus === SwapStatus.OrderPending || swapStatus === SwapStatus.CancelPending;
+								if (lifecyclePending && elapsedSinceSwapCreated > SWAP_CHAIN_SUBMIT_TIMEOUT_MS) {
+									finalSwapStatus =
+										swapStatus === SwapStatus.CancelPending
+											? SwapStatus.CancelSubmitTimeout
+											: SwapStatus.OrderSubmitTimeout;
+									finalStatus = TransactionStatus.FailedViaTimeout;
+									shouldUnlock = true;
+									await persistSwapRow({ status: finalStatus, swapStatus: finalSwapStatus });
+								} else {
+									await persistSwapRow({});
+								}
+								return;
+							}
+
+							if (inclusion.kind === 'unconfirmed') {
+								await persistSwapRow({});
+								return;
+							}
+
+							const confirmations = inclusion.confirmations;
+							if (confirmations < CONFIG.BLOCK_CONFIRMATIONS_THRESHOLD) {
+								await persistSwapRow({ confirmations });
+								return;
+							}
+
+							if (swapStatus === SwapStatus.CancelPending) {
+								finalSwapStatus = SwapStatus.CancelConfirmed;
 								finalStatus = TransactionStatus.Confirmed;
 								shouldUnlock = true;
-							} else if (isTimedOut) {
-								finalStatus = TransactionStatus.FailedViaTimeout;
-								shouldUnlock = true;
+								await persistSwapRow({
+									status: finalStatus,
+									swapStatus: finalSwapStatus,
+									confirmations,
+								});
+								return;
 							}
-						} catch {
-							// Blockfrost error (e.g. 404) — tx not found on-chain yet
-							if (isTimedOut) {
+
+							let orderOutputIndex: number | null = null;
+							try {
+								orderOutputIndex = await findOrderOutputIndex(txHashToCheck, blockfrost, wallet.walletAddress);
+							} catch (outputError) {
+								logger.error('Failed to find order output index during swap poll', {
+									txHash: txHashToCheck,
+									walletId: wallet.id,
+									error: outputError instanceof Error ? outputError.message : String(outputError),
+								});
+							}
+
+							if (orderOutputIndex == null) {
+								await persistSwapRow({ confirmations });
+								return;
+							}
+
+							finalSwapStatus = SwapStatus.OrderConfirmed;
+							finalStatus = TransactionStatus.Confirmed;
+							shouldUnlock = true;
+							await persistSwapRow({
+								status: finalStatus,
+								swapStatus: finalSwapStatus,
+								confirmations,
+								orderOutputIndex,
+							});
+						} catch (pollError) {
+							logger.error(`Swap poll Blockfrost error for wallet ${wallet.id}: ${errorToString(pollError)}`);
+							if (isTimedOutByWalletLock) {
+								finalStatus = TransactionStatus.FailedViaTimeout;
+								finalSwapStatus =
+									swapStatus === SwapStatus.CancelPending
+										? SwapStatus.CancelSubmitTimeout
+										: SwapStatus.OrderSubmitTimeout;
+								shouldUnlock = true;
+								await persistSwapRow({ status: finalStatus, swapStatus: finalSwapStatus });
+							} else {
+								await persistSwapRow({});
+							}
+						}
+					} else if (swapStatus === SwapStatus.OrderConfirmed) {
+						shouldUnlock = true;
+						await persistSwapRow({});
+					} else {
+						const blockfrost = getBlockfrostInstance(network, blockfrostKey);
+						try {
+							const inclusion = await getSwapTxInclusion(blockfrost, txHash);
+							if (inclusion.kind === 'included') {
+								if (inclusion.confirmations >= CONFIG.BLOCK_CONFIRMATIONS_THRESHOLD) {
+									finalStatus = TransactionStatus.Confirmed;
+									finalSwapStatus = SwapStatus.Completed;
+									shouldUnlock = true;
+									await persistSwapRow({
+										status: finalStatus,
+										swapStatus: finalSwapStatus,
+										confirmations: inclusion.confirmations,
+									});
+								} else {
+									await persistSwapRow({ confirmations: inclusion.confirmations });
+								}
+							} else if (isTimedOutByWalletLock) {
 								finalStatus = TransactionStatus.FailedViaTimeout;
 								shouldUnlock = true;
+								await persistSwapRow({ status: finalStatus });
+							} else {
+								await persistSwapRow({});
+							}
+						} catch (pollError) {
+							logger.error(`Legacy swap poll error for wallet ${wallet.id}: ${errorToString(pollError)}`);
+							if (isTimedOutByWalletLock) {
+								finalStatus = TransactionStatus.FailedViaTimeout;
+								shouldUnlock = true;
+								await persistSwapRow({ status: finalStatus });
+							} else {
+								await persistSwapRow({});
 							}
 						}
 					}
 
-					// Update swap transaction status (best effort)
-					try {
-						await prisma.swapTransaction.update({
-							where: { id: swapTxId },
-							data: {
-								...(finalStatus ? { status: finalStatus } : {}),
-								lastCheckedAt: new Date(),
-							},
-						});
-					} catch (swapTxError) {
-						logger.error(`Failed to update swap transaction ${swapTxId}: ${errorToString(swapTxError)}`);
-					}
-
-					// Always unlock the wallet if needed — even if swap tx update failed
 					if (shouldUnlock) {
 						await prisma.hotWallet.update({
 							where: { id: wallet.id, deletedAt: null },
