@@ -616,57 +616,56 @@ export async function updateWalletTransactionHash() {
 								} else {
 									await persistSwapRow({});
 								}
-								return;
-							}
-
-							if (inclusion.kind === 'unconfirmed') {
+								if (!shouldUnlock) {
+									return;
+								}
+							} else if (inclusion.kind === 'unconfirmed') {
 								await persistSwapRow({});
 								return;
-							}
+							} else {
+								const confirmations = inclusion.confirmations;
+								if (confirmations < CONFIG.BLOCK_CONFIRMATIONS_THRESHOLD) {
+									await persistSwapRow({ confirmations });
+									return;
+								}
 
-							const confirmations = inclusion.confirmations;
-							if (confirmations < CONFIG.BLOCK_CONFIRMATIONS_THRESHOLD) {
-								await persistSwapRow({ confirmations });
-								return;
-							}
+								if (swapStatus === SwapStatus.CancelPending) {
+									finalSwapStatus = SwapStatus.CancelConfirmed;
+									finalStatus = TransactionStatus.Confirmed;
+									shouldUnlock = true;
+									await persistSwapRow({
+										status: finalStatus,
+										swapStatus: finalSwapStatus,
+										confirmations,
+									});
+								} else {
+									let orderOutputIndex: number | null = null;
+									try {
+										orderOutputIndex = await findOrderOutputIndex(txHashToCheck, blockfrost, wallet.walletAddress);
+									} catch (outputError) {
+										logger.error('Failed to find order output index during swap poll', {
+											txHash: txHashToCheck,
+											walletId: wallet.id,
+											error: outputError instanceof Error ? outputError.message : String(outputError),
+										});
+									}
 
-							if (swapStatus === SwapStatus.CancelPending) {
-								finalSwapStatus = SwapStatus.CancelConfirmed;
-								finalStatus = TransactionStatus.Confirmed;
-								shouldUnlock = true;
-								await persistSwapRow({
-									status: finalStatus,
-									swapStatus: finalSwapStatus,
-									confirmations,
-								});
-								return;
-							}
+									if (orderOutputIndex == null) {
+										await persistSwapRow({ confirmations });
+										return;
+									}
 
-							let orderOutputIndex: number | null = null;
-							try {
-								orderOutputIndex = await findOrderOutputIndex(txHashToCheck, blockfrost, wallet.walletAddress);
-							} catch (outputError) {
-								logger.error('Failed to find order output index during swap poll', {
-									txHash: txHashToCheck,
-									walletId: wallet.id,
-									error: outputError instanceof Error ? outputError.message : String(outputError),
-								});
+									finalSwapStatus = SwapStatus.OrderConfirmed;
+									finalStatus = TransactionStatus.Confirmed;
+									shouldUnlock = true;
+									await persistSwapRow({
+										status: finalStatus,
+										swapStatus: finalSwapStatus,
+										confirmations,
+										orderOutputIndex,
+									});
+								}
 							}
-
-							if (orderOutputIndex == null) {
-								await persistSwapRow({ confirmations });
-								return;
-							}
-
-							finalSwapStatus = SwapStatus.OrderConfirmed;
-							finalStatus = TransactionStatus.Confirmed;
-							shouldUnlock = true;
-							await persistSwapRow({
-								status: finalStatus,
-								swapStatus: finalSwapStatus,
-								confirmations,
-								orderOutputIndex,
-							});
 						} catch (pollError) {
 							logger.error(`Swap poll Blockfrost error for wallet ${wallet.id}: ${errorToString(pollError)}`);
 							if (isTimedOutByWalletLock) {
