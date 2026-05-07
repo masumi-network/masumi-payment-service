@@ -3,7 +3,7 @@ import { z } from '@/utils/zod-openapi';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { decrypt } from '@/utils/security/encryption';
-import { HotWalletType } from '@/generated/prisma/client';
+import { HotWalletType, Prisma } from '@/generated/prisma/client';
 import { MeshWallet, resolvePaymentKeyHash } from '@meshsdk/core';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
@@ -290,29 +290,21 @@ export const postWalletFundEndpointPost = adminAuthenticatedEndpointFactory.buil
 			throw createHttpError(400, 'lovelaceAmount must be at least 2000000 (2 ADA)');
 		}
 
-		const transfer = await prisma.$transaction(async (tx) => {
-			const wallet = await tx.hotWallet.findFirst({
-				where: { walletAddress: input.fromWalletAddress, lockedAt: null, deletedAt: null },
-			});
+		const wallet = await prisma.hotWallet.findFirst({
+			where: { walletAddress: input.fromWalletAddress, deletedAt: null },
+		});
 
-			if (wallet == null) {
-				throw createHttpError(409, 'Wallet not found or is currently locked by another operation');
-			}
+		if (wallet == null) {
+			throw createHttpError(404, 'Wallet not found');
+		}
 
-			const newTransfer = await tx.walletFundTransfer.create({
-				data: {
-					hotWalletId: wallet.id,
-					toAddress: input.toAddress,
-					lovelaceAmount: input.lovelaceAmount,
-				},
-			});
-
-			await tx.hotWallet.update({
-				where: { id: wallet.id },
-				data: { lockedAt: new Date(), pendingFundTransferId: newTransfer.id },
-			});
-
-			return newTransfer;
+		const transfer = await prisma.walletFundTransfer.create({
+			data: {
+				hotWalletId: wallet.id,
+				toAddress: input.toAddress,
+				lovelaceAmount: input.lovelaceAmount,
+				assets: input.assets ?? Prisma.JsonNull,
+			},
 		});
 
 		return {
@@ -321,6 +313,7 @@ export const postWalletFundEndpointPost = adminAuthenticatedEndpointFactory.buil
 			txHash: transfer.txHash,
 			toAddress: transfer.toAddress,
 			lovelaceAmount: transfer.lovelaceAmount.toString(),
+			assets: (transfer.assets as Array<{ unit: string; quantity: string }> | null) ?? null,
 			createdAt: transfer.createdAt,
 			updatedAt: transfer.updatedAt,
 			lastCheckedAt: transfer.lastCheckedAt,
@@ -334,7 +327,7 @@ export const getWalletFundEndpointGet = adminAuthenticatedEndpointFactory.build(
 	input: getWalletFundSchemaInput,
 	output: getWalletFundSchemaOutput,
 	handler: async ({ input }: { input: z.infer<typeof getWalletFundSchemaInput> }) => {
-		if (input.id != null) {
+		if (input.id !== undefined) {
 			const transfer = await prisma.walletFundTransfer.findUnique({
 				where: { id: input.id },
 			});
@@ -349,6 +342,7 @@ export const getWalletFundEndpointGet = adminAuthenticatedEndpointFactory.build(
 						txHash: transfer.txHash,
 						toAddress: transfer.toAddress,
 						lovelaceAmount: transfer.lovelaceAmount.toString(),
+						assets: (transfer.assets as Array<{ unit: string; quantity: string }> | null) ?? null,
 						createdAt: transfer.createdAt,
 						updatedAt: transfer.updatedAt,
 						lastCheckedAt: transfer.lastCheckedAt,
@@ -386,6 +380,7 @@ export const getWalletFundEndpointGet = adminAuthenticatedEndpointFactory.build(
 				txHash: t.txHash,
 				toAddress: t.toAddress,
 				lovelaceAmount: t.lovelaceAmount.toString(),
+				assets: (t.assets as Array<{ unit: string; quantity: string }> | null) ?? null,
 				createdAt: t.createdAt,
 				updatedAt: t.updatedAt,
 				lastCheckedAt: t.lastCheckedAt,

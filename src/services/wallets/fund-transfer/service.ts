@@ -44,6 +44,27 @@ async function processSingleFundTransfer(transfer: PendingFundTransfer): Promise
 		return;
 	}
 
+	// Atomically claim the wallet lock before doing any blockchain work.
+	// This prevents double-processing if two scheduler runs overlap.
+	const claimed = await prisma.$transaction(async (tx) => {
+		const freshWallet = await tx.hotWallet.findFirst({
+			where: { id: transfer.hotWalletId, lockedAt: null, deletedAt: null },
+		});
+		if (!freshWallet) return false;
+		await tx.hotWallet.update({
+			where: { id: freshWallet.id },
+			data: { lockedAt: new Date(), pendingFundTransferId: transfer.id },
+		});
+		return true;
+	});
+
+	if (!claimed) {
+		logger.info(
+			`WalletFundTransfer ${transfer.id}: wallet ${transfer.hotWalletId} was locked by another process, will retry next cycle`,
+		);
+		return;
+	}
+
 	const network = wallet.PaymentSource.network;
 	const rpcProviderApiKey = wallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey;
 	const encryptedMnemonic = wallet.Secret.encryptedMnemonic;
@@ -55,11 +76,20 @@ async function processSingleFundTransfer(transfer: PendingFundTransfer): Promise
 		address,
 	} = await generateWalletExtended(network, rpcProviderApiKey, encryptedMnemonic);
 
+	// Build combined asset list: lovelace first, then any additional native assets.
+	const assetsToSend: Array<{ unit: string; quantity: string }> = [
+		{ unit: 'lovelace', quantity: transfer.lovelaceAmount.toString() },
+	];
+	if (transfer.assets) {
+		const extraAssets = transfer.assets as Array<{ unit: string; quantity: string }>;
+		assetsToSend.push(...extraAssets);
+	}
+
 	const unsignedTx = await new Transaction({
 		initiator: meshWallet,
 		fetcher: blockchainProvider,
 	})
-		.sendAssets(transfer.toAddress, [{ unit: 'lovelace', quantity: transfer.lovelaceAmount.toString() }])
+		.sendAssets(transfer.toAddress, assetsToSend)
 		.setMetadata(674, { msg: ['Masumi', 'FundTransfer'] })
 		.setNetwork(convertNetwork(network))
 		.build();
@@ -99,13 +129,13 @@ export async function processFundTransfers() {
 	}
 
 	try {
+		// Find pending transfers where the wallet is currently unlocked and available.
+		// Locking happens atomically inside processSingleFundTransfer.
 		const pendingTransfers = await prisma.walletFundTransfer.findMany({
 			where: {
 				status: TransactionStatus.Pending,
 				txHash: null,
-				// Only process transfers where the wallet is still locked for this specific transfer.
-				// Prevents processing orphaned transfers and eliminates double-spend risk.
-				PendingForWallet: { isNot: null },
+				HotWallet: { lockedAt: null, deletedAt: null },
 			},
 			take: 50,
 			include: {

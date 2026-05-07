@@ -237,7 +237,7 @@ export const apiRouter: Routing = {
 				patch: patchWalletLowBalanceRuleEndpointPatch,
 				delete: deleteWalletLowBalanceRuleEndpointDelete,
 			},
-			fund: {
+			'transfer-funds': {
 				get: getWalletFundEndpointGet,
 				post: postWalletFundEndpointPost,
 			},

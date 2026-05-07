@@ -772,10 +772,10 @@ export function registerAdminPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 
 	registry.registerPath({
 		method: 'post',
-		path: '/wallet/fund',
+		path: '/wallet/transfer-funds',
 		description:
-			'Requests an asynchronous transfer of lovelace from a hot wallet to a target Cardano address. The wallet is locked immediately and the transfer is processed in the background. Poll GET /wallet/fund to check status.',
-		summary: 'Request a fund transfer from a wallet. (admin access required)',
+			'Queues an asynchronous transfer of lovelace (and optional native assets) from a hot wallet to a target Cardano address. The transfer is picked up by the background processor once the wallet is free. Poll GET /wallet/transfer-funds to check status.',
+		summary: 'Queue a fund transfer from a wallet. (admin access required)',
 		tags: ['wallet'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {
@@ -789,21 +789,21 @@ export function registerAdminPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 			},
 		},
 		responses: {
-			200: successResponse('Fund transfer requested', postWalletFundSchemaOutput, fundTransferExample),
+			200: successResponse('Fund transfer queued', postWalletFundSchemaOutput, fundTransferExample),
 			400: {
 				description: 'Bad Request (lovelaceAmount below 2 ADA minimum)',
 			},
-			409: {
-				description: 'Conflict (wallet not found or currently locked by another operation)',
+			404: {
+				description: 'Not Found (wallet not found)',
 			},
 		},
 	});
 
 	registry.registerPath({
 		method: 'get',
-		path: '/wallet/fund',
+		path: '/wallet/transfer-funds',
 		description:
-			'Query the status of a fund transfer by id, or list all fund transfers for a wallet. Status values: Pending (queued), Pending with txHash (submitted to blockchain), Confirmed (on-chain), FailedViaManualReset (submission error), FailedViaTimeout (no confirmation within timeout).',
+			'Query the status of a fund transfer by id, or list all fund transfers for a wallet. Poll this endpoint after posting to /wallet/transfer-funds. Status values: Pending (queued or submitted), Confirmed (on-chain), FailedViaManualReset (submission error), FailedViaTimeout (no confirmation within timeout).',
 		summary: 'Get fund transfer status or history. (admin access required)',
 		tags: ['wallet'],
 		security: [{ [apiKeyAuth.name]: [] }],

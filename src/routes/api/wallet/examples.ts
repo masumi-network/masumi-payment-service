@@ -95,6 +95,7 @@ export const fundTransferExample = {
 	txHash: 'a3f8c12d9e4b71d2f0e5c8a9b3d6e7f1a2b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8',
 	toAddress: 'addr_test1qz8x...purchasing_wallet_address',
 	lovelaceAmount: '100000000',
+	assets: null,
 	createdAt: new Date(1713636260),
 	updatedAt: new Date(1713636260),
 	lastCheckedAt: new Date(1713636260),

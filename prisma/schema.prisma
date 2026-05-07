@@ -184,6 +184,7 @@ model WalletFundTransfer {
   hotWalletId    String
   toAddress      String
   lovelaceAmount BigInt
+  assets         Json?
   txHash         String?
   status         TransactionStatus @default(Pending)
   lastCheckedAt  DateTime?

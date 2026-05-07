@@ -1,4 +1,3 @@
-
 -- AlterTable
 ALTER TABLE "HotWallet" ADD COLUMN     "pendingFundTransferId" TEXT;
 
@@ -10,6 +9,7 @@ CREATE TABLE "WalletFundTransfer" (
     "hotWalletId" TEXT NOT NULL,
     "toAddress" TEXT NOT NULL,
     "lovelaceAmount" BIGINT NOT NULL,
+    "assets" JSONB,
     "txHash" TEXT,
     "status" "TransactionStatus" NOT NULL DEFAULT 'Pending',
     "lastCheckedAt" TIMESTAMP(3),

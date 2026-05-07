@@ -217,6 +217,13 @@ export type WalletFundTransfer = {
      */
     lovelaceAmount: string;
     /**
+     * Additional native assets included in this transfer. Null if lovelace-only.
+     */
+    assets: Array<{
+        unit: string;
+        quantity: string;
+    }> | null;
+    /**
      * Timestamp when the transfer was requested
      */
     createdAt: Date;
@@ -3251,7 +3258,7 @@ export type PostSwapAcknowledgeTimeoutResponses = {
 
 export type PostSwapAcknowledgeTimeoutResponse = PostSwapAcknowledgeTimeoutResponses[keyof PostSwapAcknowledgeTimeoutResponses];
 
-export type GetWalletFundData = {
+export type GetWalletTransferFundsData = {
     body?: never;
     path?: never;
     query?: {
@@ -3276,17 +3283,17 @@ export type GetWalletFundData = {
          */
         limit?: string;
     };
-    url: '/wallet/fund';
+    url: '/wallet/transfer-funds';
 };
 
-export type GetWalletFundErrors = {
+export type GetWalletTransferFundsErrors = {
     /**
      * Fund transfer not found
      */
     404: unknown;
 };
 
-export type GetWalletFundResponses = {
+export type GetWalletTransferFundsResponses = {
     /**
      * Fund transfer list
      */
@@ -3296,9 +3303,9 @@ export type GetWalletFundResponses = {
     };
 };
 
-export type GetWalletFundResponse = GetWalletFundResponses[keyof GetWalletFundResponses];
+export type GetWalletTransferFundsResponse = GetWalletTransferFundsResponses[keyof GetWalletTransferFundsResponses];
 
-export type PostWalletFundData = {
+export type PostWalletTransferFundsData = {
     /**
      * Fund transfer request
      */
@@ -3315,26 +3322,39 @@ export type PostWalletFundData = {
          * Amount of lovelace to transfer (minimum 2000000 = 2 ADA)
          */
         lovelaceAmount: string;
+        /**
+         * Additional native assets to transfer alongside lovelace
+         */
+        assets?: Array<{
+            /**
+             * Asset unit (policy id + hex asset name, or "lovelace")
+             */
+            unit: string;
+            /**
+             * Amount of the asset to transfer
+             */
+            quantity: string;
+        }>;
     };
     path?: never;
     query?: never;
-    url: '/wallet/fund';
+    url: '/wallet/transfer-funds';
 };
 
-export type PostWalletFundErrors = {
+export type PostWalletTransferFundsErrors = {
     /**
      * Bad Request (lovelaceAmount below 2 ADA minimum)
      */
     400: unknown;
     /**
-     * Conflict (wallet not found or currently locked by another operation)
+     * Not Found (wallet not found)
      */
-    409: unknown;
+    404: unknown;
 };
 
-export type PostWalletFundResponses = {
+export type PostWalletTransferFundsResponses = {
     /**
-     * Fund transfer requested
+     * Fund transfer queued
      */
     200: {
         status: 'success';
@@ -3342,7 +3362,7 @@ export type PostWalletFundResponses = {
     };
 };
 
-export type PostWalletFundResponse = PostWalletFundResponses[keyof PostWalletFundResponses];
+export type PostWalletTransferFundsResponse = PostWalletTransferFundsResponses[keyof PostWalletTransferFundsResponses];
 
 export type GetPaymentData = {
     body?: never;

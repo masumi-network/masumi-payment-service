@@ -78,6 +78,15 @@ export const postWalletFundSchemaInput = z.object({
 		.min(1)
 		.describe('Amount of lovelace to transfer (minimum 2000000 = 2 ADA)')
 		.transform((s) => BigInt(s)),
+	assets: z
+		.array(
+			z.object({
+				unit: z.string().min(1).describe('Asset unit (policy id + hex asset name, or "lovelace")'),
+				quantity: z.string().min(1).describe('Amount of the asset to transfer'),
+			}),
+		)
+		.optional()
+		.describe('Additional native assets to transfer alongside lovelace'),
 });
 
 const fundTransferSchema = z
@@ -87,6 +96,10 @@ const fundTransferSchema = z
 		txHash: z.string().nullable().describe('Cardano transaction hash. Null until submitted to blockchain'),
 		toAddress: z.string().describe('Destination Cardano address'),
 		lovelaceAmount: z.string().describe('Amount transferred in lovelace'),
+		assets: z
+			.array(z.object({ unit: z.string(), quantity: z.string() }))
+			.nullable()
+			.describe('Additional native assets included in this transfer. Null if lovelace-only.'),
 		createdAt: z.date().describe('Timestamp when the transfer was requested'),
 		updatedAt: z.date().describe('Timestamp when the transfer was last updated'),
 		lastCheckedAt: z.date().nullable().describe('Timestamp when the blockchain was last polled for confirmation'),

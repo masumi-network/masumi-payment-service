@@ -346,6 +346,26 @@ export const WalletFundTransferSchema = {
             type: 'string',
             description: 'Amount transferred in lovelace'
         },
+        assets: {
+            type: 'array',
+            nullable: true,
+            items: {
+                type: 'object',
+                properties: {
+                    unit: {
+                        type: 'string'
+                    },
+                    quantity: {
+                        type: 'string'
+                    }
+                },
+                required: [
+                    'unit',
+                    'quantity'
+                ]
+            },
+            description: 'Additional native assets included in this transfer. Null if lovelace-only.'
+        },
         createdAt: {
             type: 'string',
             format: 'date-time',
@@ -374,6 +394,7 @@ export const WalletFundTransferSchema = {
         'txHash',
         'toAddress',
         'lovelaceAmount',
+        'assets',
         'createdAt',
         'updatedAt',
         'lastCheckedAt',
