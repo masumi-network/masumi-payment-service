@@ -317,13 +317,13 @@ export const getSwapConfirmEndpointGet = adminAuthenticatedEndpointFactory.build
 				const confirmations = block.confirmations ?? 0;
 
 				const awaitingConfirmationDepth =
-					swapTx &&
+					swapTx != null &&
 					confirmations < CONFIG.BLOCK_CONFIRMATIONS_THRESHOLD &&
 					(swapTx.status === TransactionStatus.Pending ||
 						currentSwapStatus === SwapStatus.OrderPending ||
 						currentSwapStatus === SwapStatus.CancelPending);
 
-				if (awaitingConfirmationDepth) {
+				if (awaitingConfirmationDepth && swapTx != null) {
 					try {
 						await prisma.swapTransaction.update({
 							where: { id: swapTx.id },
