@@ -12,6 +12,7 @@ import { getHealth, getApiKeyStatus } from '@/lib/api/generated';
 import { ThemeProvider, useTheme } from '@/lib/contexts/ThemeContext';
 import { SidebarProvider } from '@/lib/contexts/SidebarContext';
 import { QueryProvider } from '@/lib/contexts/QueryProvider';
+import { AgentDetailsDialogProvider } from '@/lib/contexts/AgentDetailsDialogContext';
 import { Spinner } from '@/components/ui/spinner';
 import { Header } from '@/components/Header';
 import { Footer } from '@/components/Footer';
@@ -268,7 +269,13 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
 
   return (
     <>
-      {apiKey ? <Component {...pageProps} /> : <ApiKeyDialog />}
+      {apiKey ? (
+        <AgentDetailsDialogProvider>
+          <Component {...pageProps} />
+        </AgentDetailsDialogProvider>
+      ) : (
+        <ApiKeyDialog />
+      )}
       {mounted && <ToastWrapper />}
     </>
   );

@@ -10,7 +10,8 @@ function serializePurchaseListEntry(purchase: PurchaseListRecord) {
 		...transformPurchaseGetAmounts(purchase),
 		totalBuyerCardanoFees: Number(purchase.totalBuyerCardanoFees.toString()) / 1_000_000,
 		totalSellerCardanoFees: Number(purchase.totalSellerCardanoFees.toString()) / 1_000_000,
-		agentIdentifier: decodeBlockchainIdentifier(purchase.blockchainIdentifier)?.agentIdentifier ?? null,
+		agentIdentifier:
+			purchase.agentIdentifier ?? decodeBlockchainIdentifier(purchase.blockchainIdentifier)?.agentIdentifier ?? null,
 		CurrentTransaction: purchase.CurrentTransaction
 			? {
 					...purchase.CurrentTransaction,

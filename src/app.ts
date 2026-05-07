@@ -14,6 +14,7 @@ import { requestLogger } from '@/utils/middleware/request-logger';
 import { generateApiKeySecureHash } from '@/utils/crypto/api-key-hash';
 import { migrateApiKeyEncryption } from '@/utils/startup-migrations/api-key-encryption';
 import { migrateWebhookEncryption } from '@/utils/startup-migrations/webhook-encryption';
+import { backfillTransactionAgentIdentifiers } from '@/utils/startup-migrations/backfill-transaction-agent-identifiers';
 import { blockchainStateMonitorService } from '@/services/monitoring';
 import fs from 'fs';
 import helmet from 'helmet';
@@ -25,6 +26,7 @@ async function initialize() {
 
 	await migrateApiKeyEncryption();
 	await migrateWebhookEncryption();
+	await backfillTransactionAgentIdentifiers();
 
 	const defaultAdminHash = await generateApiKeySecureHash(DEFAULTS.DEFAULT_ADMIN_KEY);
 	const defaultKeyRow = await prisma.apiKey.findFirst({
@@ -91,6 +93,7 @@ export async function startApp() {
 			app.use(requestTiming);
 			app.use(requestLogger);
 			app.use(
+				// eslint-disable-next-line @typescript-eslint/no-unsafe-call -- helmet default export not modeled under strict project refs
 				helmet({
 					contentSecurityPolicy: {
 						directives: {

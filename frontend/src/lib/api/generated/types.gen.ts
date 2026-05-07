@@ -7423,6 +7423,10 @@ export type GetRegistryData = {
          * Search query to filter by name, description, tags, minting or recipient wallet address, state, or price
          */
         searchQuery?: string;
+        /**
+         * When set, return only the registry entry whose on-chain agent identifier matches exactly (same scope as list: network, payment source, and wallet permissions)
+         */
+        filterAgentIdentifier?: string;
     };
     url: '/registry';
 };

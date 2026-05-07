@@ -12,6 +12,7 @@ interface TransakWidgetProps {
   walletAddress: string;
   onSuccess?: () => void;
   isChild?: boolean;
+  elevatedGrandchildStack?: boolean;
 }
 
 export function TransakWidget({
@@ -20,6 +21,7 @@ export function TransakWidget({
   walletAddress,
   onSuccess,
   isChild,
+  elevatedGrandchildStack,
 }: TransakWidgetProps) {
   const { network } = useAppContext();
 
@@ -56,6 +58,7 @@ export function TransakWidget({
           variant={isChild ? 'slide-from-right' : 'default'}
           hideOverlay={isChild}
           onBack={isChild ? onClose : undefined}
+          elevatedGrandchildStack={elevatedGrandchildStack}
         >
           <DialogHeader>
             <DialogTitle>Preprod Testnet Faucet</DialogTitle>
@@ -90,6 +93,7 @@ export function TransakWidget({
         variant={isChild ? 'slide-from-right' : 'default'}
         hideOverlay={isChild}
         onBack={isChild ? onClose : undefined}
+        elevatedGrandchildStack={elevatedGrandchildStack}
       >
         <DialogHeader>
           <DialogTitle>Top Up Wallet</DialogTitle>
