@@ -257,6 +257,7 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 				pricingType: pricing.pricingType,
 				blockchainIdentifier: compressedEncodedBlockchainIdentifier,
 				agentIdentifier: input.agentIdentifier,
+				agentIdentifierSyncedAt: new Date(),
 				PaymentSource: { connect: { id: specifiedPaymentContract.id } },
 				RequestedFunds: {
 					createMany: {

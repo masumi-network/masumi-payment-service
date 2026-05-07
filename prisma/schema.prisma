@@ -314,6 +314,8 @@ model PaymentRequest {
   blockchainIdentifier                          String              @unique
   /// Decoded agent asset id (policyId + asset name hex); denormalized for search. Mirrors decodeBlockchainIdentifier(..).agentIdentifier.
   agentIdentifier                               String?
+  /// Populated when agentIdentifier was aligned from blockchainIdentifier (create path or startup backfill). Null only on legacy rows pending sync.
+  agentIdentifierSyncedAt                       DateTime?
   submitResultTime                              BigInt
   unlockTime                                    BigInt
   externalDisputeUnlockTime                     BigInt
@@ -383,6 +385,8 @@ model PurchaseRequest {
   blockchainIdentifier                          String               @unique
   /// Decoded agent asset id (policyId + asset name hex); denormalized for search. Mirrors decodeBlockchainIdentifier(..).agentIdentifier.
   agentIdentifier                               String?
+  /// Populated when agentIdentifier was aligned from blockchainIdentifier (create path or startup backfill). Null only on legacy rows pending sync.
+  agentIdentifierSyncedAt                       DateTime?
   submitResultTime                              BigInt
   unlockTime                                    BigInt
   externalDisputeUnlockTime                     BigInt

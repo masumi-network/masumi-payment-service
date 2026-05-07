@@ -163,6 +163,7 @@ async function handlePurchaseCreditInit({
 					},
 					blockchainIdentifier: blockchainIdentifier,
 					agentIdentifier,
+					agentIdentifierSyncedAt: new Date(),
 					inputHash: inputHash,
 					NextAction: {
 						create: {
