@@ -71,22 +71,30 @@ export async function checkFundTransferConfirmations(): Promise<void> {
 					}
 				}
 
-				try {
+				if (shouldUnlock) {
+					if (finalStatus == null) {
+						logger.error(
+							`Wallet ${wallet.id}: shouldUnlock is true but finalStatus is null. Skipping unlock to avoid data corruption.`,
+						);
+						return;
+					}
+					await prisma.$transaction([
+						prisma.walletFundTransfer.update({
+							where: { id: fundTransferId },
+							data: {
+								status: finalStatus,
+								lastCheckedAt: new Date(),
+							},
+						}),
+						prisma.hotWallet.update({
+							where: { id: wallet.id, deletedAt: null },
+							data: { pendingFundTransferId: null, lockedAt: null },
+						}),
+					]);
+				} else {
 					await prisma.walletFundTransfer.update({
 						where: { id: fundTransferId },
-						data: {
-							...(finalStatus ? { status: finalStatus } : {}),
-							lastCheckedAt: new Date(),
-						},
-					});
-				} catch (updateError) {
-					logger.error(`Failed to update fund transfer ${fundTransferId}: ${errorToString(updateError)}`);
-				}
-
-				if (shouldUnlock) {
-					await prisma.hotWallet.update({
-						where: { id: wallet.id, deletedAt: null },
-						data: { pendingFundTransferId: null, lockedAt: null },
+						data: { lastCheckedAt: new Date() },
 					});
 				}
 			} catch (error) {
