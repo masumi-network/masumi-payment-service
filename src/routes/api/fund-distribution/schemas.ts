@@ -33,6 +33,9 @@ export const triggerFundDistributionSchemaInput = z.object({});
 
 export const triggerFundDistributionSchemaOutput = z
 	.object({
-		triggered: z.boolean().describe('Whether the distribution cycle was triggered'),
+		triggered: z.boolean().describe('Always true — indicates the request was received'),
+		alreadyRunning: z
+			.boolean()
+			.describe('True if a distribution cycle was already in progress when this request arrived'),
 	})
 	.openapi('FundDistributionTriggered');

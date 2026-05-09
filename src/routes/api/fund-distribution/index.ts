@@ -75,6 +75,8 @@ export const triggerFundDistributionEndpointPost = adminAuthenticatedEndpointFac
 	input: triggerFundDistributionSchemaInput,
 	output: triggerFundDistributionSchemaOutput,
 	handler: async () => {
+		const alreadyRunning = fundDistributionService.isRunning();
+
 		// Run cycle asynchronously — don't await to avoid blocking the request
 		fundDistributionService.processDistributionCycle().catch((error: unknown) => {
 			logger.error('Fund distribution cycle failed via manual trigger', {
@@ -83,6 +85,6 @@ export const triggerFundDistributionEndpointPost = adminAuthenticatedEndpointFac
 			});
 		});
 
-		return { triggered: true };
+		return { triggered: true, alreadyRunning };
 	},
 });

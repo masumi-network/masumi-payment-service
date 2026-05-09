@@ -18,6 +18,8 @@ import { webhookEventsService } from '@/services/webhooks';
 type FundWalletContext = {
 	id: string;
 	walletAddress: string;
+	walletVkey: string;
+	lowBalanceRuleId: string;
 	paymentSourceId: string;
 	network: string;
 	rpcProviderApiKey: string;
@@ -45,7 +47,13 @@ async function getFundWalletForPaymentSource(paymentSourceId: string): Promise<F
 		select: {
 			id: true,
 			walletAddress: true,
+			walletVkey: true,
 			paymentSourceId: true,
+			LowBalanceRules: {
+				where: { assetUnit: 'lovelace', enabled: true },
+				select: { id: true },
+				take: 1,
+			},
 			Secret: { select: { encryptedMnemonic: true } },
 			PaymentSource: {
 				select: {
@@ -76,6 +84,8 @@ async function getFundWalletForPaymentSource(paymentSourceId: string): Promise<F
 	return {
 		id: fundWallet.id,
 		walletAddress: fundWallet.walletAddress,
+		walletVkey: fundWallet.walletVkey,
+		lowBalanceRuleId: fundWallet.LowBalanceRules[0]?.id ?? '',
 		paymentSourceId: fundWallet.paymentSourceId,
 		network: fundWallet.PaymentSource.network,
 		rpcProviderApiKey: fundWallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
@@ -127,10 +137,10 @@ async function processRequestsForFundWallet(
 			balance: fundWalletBalance.toString(),
 		});
 		await webhookEventsService.triggerWalletLowBalance({
-			ruleId: '',
+			ruleId: fundWallet.lowBalanceRuleId,
 			walletId: fundWallet.id,
 			walletAddress: fundWallet.walletAddress,
-			walletVkey: '',
+			walletVkey: fundWallet.walletVkey,
 			walletType: HotWalletType.Funding,
 			paymentSourceId: fundWallet.paymentSourceId,
 			network: fundWallet.network as 'Mainnet' | 'Preprod',
@@ -282,6 +292,10 @@ async function processRequestsForFundWallet(
 }
 
 export class FundDistributionService {
+	isRunning(): boolean {
+		return mutex.isLocked();
+	}
+
 	async requestTopup(params: {
 		targetWalletId: string;
 		currentBalance: bigint;
@@ -466,15 +480,14 @@ export class FundDistributionService {
 			const fundWallet = await this.loadFundWalletContext(fundWalletId);
 			if (!fundWallet) continue;
 
-			await processRequestsForFundWallet(
-				fundWallet,
-				requests.map((r) => ({
-					id: r.id,
-					targetWalletId: r.targetWalletId,
-					targetAddress: r.TargetWallet.walletAddress,
-					amount: r.amount,
-				})),
-			);
+			const mappedRequests = requests.map((r) => ({
+				id: r.id,
+				targetWalletId: r.targetWalletId,
+				targetAddress: r.TargetWallet.walletAddress,
+				amount: r.amount,
+			}));
+
+			await processRequestsForFundWallet(fundWallet, mappedRequests);
 		}
 	}
 
@@ -663,12 +676,18 @@ export class FundDistributionService {
 	}
 
 	private async loadFundWalletContext(fundWalletId: string): Promise<FundWalletContext | null> {
-		const wallet = await prisma.hotWallet.findUnique({
+		const wallet = await prisma.hotWallet.findFirst({
 			where: { id: fundWalletId, deletedAt: null },
 			select: {
 				id: true,
 				walletAddress: true,
+				walletVkey: true,
 				paymentSourceId: true,
+				LowBalanceRules: {
+					where: { assetUnit: 'lovelace', enabled: true },
+					select: { id: true },
+					take: 1,
+				},
 				Secret: { select: { encryptedMnemonic: true } },
 				PaymentSource: {
 					select: {
@@ -699,6 +718,8 @@ export class FundDistributionService {
 		return {
 			id: wallet.id,
 			walletAddress: wallet.walletAddress,
+			walletVkey: wallet.walletVkey,
+			lowBalanceRuleId: wallet.LowBalanceRules[0]?.id ?? '',
 			paymentSourceId: wallet.paymentSourceId,
 			network: wallet.PaymentSource.network,
 			rpcProviderApiKey: wallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
