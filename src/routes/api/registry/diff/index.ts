@@ -58,7 +58,7 @@ function buildRegistryDiffWhere({
 				...base,
 				OR: [
 					{ registrationStateLastChangedAt: { gt: lastUpdate } },
-					{ registrationStateLastChangedAt: lastUpdate, id: { gte: cursorId } },
+					{ registrationStateLastChangedAt: lastUpdate, id: { gt: cursorId } },
 				],
 			}
 		: { ...base, registrationStateLastChangedAt: { gte: lastUpdate } };

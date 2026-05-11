@@ -178,6 +178,7 @@ describe('unregisterAgentPost', () => {
 		});
 		mockFindRegistryRequest.mockResolvedValue({
 			id: 'registry-request-1',
+			state: RegistrationState.RegistrationConfirmed,
 		});
 		mockUpdateRegistryRequest.mockResolvedValue(buildRegistryUpdateResponse());
 	});

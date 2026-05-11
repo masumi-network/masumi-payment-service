@@ -8,9 +8,33 @@ import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contrac
 import { DEFAULTS } from '@/utils/config';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { extractAssetName } from '@/utils/converter/agent-identifier';
-import { registryRequestOutputSchema } from '@/routes/api/registry';
+import { a2aRegistryRequestOutputSchema, registryRequestOutputSchema } from '@/routes/api/registry/schemas';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
+import { mapA2ARegistryRequestToOutput } from '@/routes/api/registry/utils';
+
+const a2aInclude = {
+	Pricing: {
+		include: {
+			FixedPricing: {
+				include: { Amounts: { select: { unit: true, amount: true } } },
+			},
+		},
+	},
+	SmartContractWallet: {
+		select: { walletVkey: true, walletAddress: true },
+	},
+	CurrentTransaction: {
+		select: {
+			txHash: true,
+			status: true,
+			confirmations: true,
+			fees: true,
+			blockHeight: true,
+			blockTime: true,
+		},
+	},
+} as const;
 
 export const unregisterAgentSchemaInput = z.object({
 	agentIdentifier: z
@@ -26,7 +50,7 @@ export const unregisterAgentSchemaInput = z.object({
 		.describe('The smart contract address of the payment contract to which the registration belongs'),
 });
 
-export const unregisterAgentSchemaOutput = registryRequestOutputSchema;
+export const unregisterAgentSchemaOutput = registryRequestOutputSchema.or(a2aRegistryRequestOutputSchema);
 
 export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 	method: 'post',
@@ -83,9 +107,32 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 				agentIdentifier: policyId + assetName,
 			},
 		});
+		if (registryRequest != null) {
+			if (registryRequest.state !== RegistrationState.RegistrationConfirmed) {
+				throw createHttpError(409, `Cannot deregister agent in current state: ${registryRequest.state}`);
+			}
+		}
+
 		if (registryRequest == null) {
+			const a2aRequest = await prisma.a2ARegistryRequest.findUnique({
+				where: { agentIdentifier: policyId + assetName },
+			});
+
+			if (a2aRequest != null) {
+				if (a2aRequest.state !== RegistrationState.RegistrationConfirmed) {
+					throw createHttpError(409, `Cannot deregister agent in current state: ${a2aRequest.state}`);
+				}
+				const a2aResult = await prisma.a2ARegistryRequest.update({
+					where: { id: a2aRequest.id, SmartContractWallet: { deletedAt: null } },
+					data: { state: RegistrationState.DeregistrationRequested },
+					include: a2aInclude,
+				});
+				return mapA2ARegistryRequestToOutput(a2aResult);
+			}
+
 			throw createHttpError(404, 'Registration not found');
 		}
+
 		const result = await prisma.registryRequest.update({
 			where: {
 				id: registryRequest.id,
