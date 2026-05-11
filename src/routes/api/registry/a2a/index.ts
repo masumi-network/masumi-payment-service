@@ -5,7 +5,7 @@ import { HotWalletType, Network, PaymentType, PricingType, RegistrationState } f
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
-import { fetchAndValidateAgentCard, AgentCard } from '@/utils/validator/agent-card';
+import { fetchAndValidateAgentCard, AgentCard, assertPublicHttpsUrl } from '@/utils/validator/agent-card';
 import {
 	a2aRegistryRequestOutputSchema,
 	FilterStatus,
@@ -22,7 +22,12 @@ export const registerA2AAgentSchemaInput = z.object({
 	network: z.nativeEnum(Network).describe('The Cardano network used to register the agent on'),
 	sellingWalletVkey: z.string().max(250).describe('The payment key of a specific wallet used for the registration'),
 	name: z.string().max(250).describe('Name of the agent'),
-	apiBaseUrl: z.string().url().max(500).describe('Base URL of the agent API for interactions'),
+	apiBaseUrl: z
+		.string()
+		.url()
+		.max(500)
+		.refine((u) => u.startsWith('https://'), { message: 'API base URL must use HTTPS' })
+		.describe('Base URL of the agent API for interactions'),
 	agentCardUrl: z
 		.string()
 		.url()
@@ -86,6 +91,8 @@ export const registerA2AAgentPost = payAuthenticatedEndpointFactory.build({
 				throw createHttpError(404, 'Network and Address combination not supported');
 			}
 			assertHotWalletInScope(ctx.walletScopeIds, sellingWallet.id);
+
+			await assertPublicHttpsUrl(input.apiBaseUrl);
 
 			// Fetch and validate the Agent Card unless explicitly skipped (admin-only bypass)
 			let agentCard: AgentCard | null = null;

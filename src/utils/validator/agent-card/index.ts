@@ -39,7 +39,7 @@ function isPrivateIp(ip: string): boolean {
 	return isPrivateIpv4(parts);
 }
 
-async function assertPublicHttpsUrl(rawUrl: string): Promise<void> {
+export async function assertPublicHttpsUrl(rawUrl: string): Promise<void> {
 	let parsed: URL;
 	try {
 		parsed = new URL(rawUrl);
@@ -99,11 +99,23 @@ export const agentCardSchema = z.object({
 	provider: z
 		.object({
 			organization: z.string().optional(),
-			url: z.string().optional(),
+			url: z
+				.string()
+				.url()
+				.refine((u) => u.startsWith('https://'), { message: 'Provider URL must use HTTPS' })
+				.optional(),
 		})
 		.optional(),
-	documentationUrl: z.string().optional(),
-	iconUrl: z.string().optional(),
+	documentationUrl: z
+		.string()
+		.url()
+		.refine((u) => u.startsWith('https://'), { message: 'Documentation URL must use HTTPS' })
+		.optional(),
+	iconUrl: z
+		.string()
+		.url()
+		.refine((u) => u.startsWith('https://'), { message: 'Icon URL must use HTTPS' })
+		.optional(),
 	capabilities: z
 		.object({
 			streaming: z.boolean().optional(),
@@ -154,6 +166,16 @@ export async function fetchAndValidateAgentCard(
 
 	if (!response.ok) {
 		throw createHttpError(400, `Agent card URL returned HTTP ${response.status}`);
+	}
+
+	const contentType = response.headers.get('content-type') ?? '';
+	if (!contentType.includes('application/json')) {
+		throw createHttpError(400, 'Agent card URL did not return JSON content type');
+	}
+
+	const contentLength = parseInt(response.headers.get('content-length') ?? '0', 10);
+	if (contentLength > 1_000_000) {
+		throw createHttpError(400, 'Agent card response exceeds maximum allowed size');
 	}
 
 	let json: unknown;
