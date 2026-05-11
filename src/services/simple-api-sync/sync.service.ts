@@ -101,7 +101,10 @@ function buildUpsertData(listing: RegistrySimpleApiListing) {
 		lastSyncedAt: new Date(),
 		paymentScheme: firstAccept?.scheme ?? null,
 		x402Network: firstAccept?.network ?? null,
-		maxAmountRequired: firstAccept?.maxAmountRequired ? BigInt(firstAccept.maxAmountRequired) : null,
+		maxAmountRequired:
+			firstAccept?.maxAmountRequired != null && /^\d+$/.test(firstAccept.maxAmountRequired)
+				? BigInt(firstAccept.maxAmountRequired)
+				: null,
 		payTo: firstAccept?.payTo ?? null,
 		asset: firstAccept?.asset ?? null,
 		resource: firstAccept?.resource ?? null,
@@ -160,6 +163,7 @@ async function fetchFullSync(network: Network): Promise<void> {
 					token: CONFIG.REGISTRY_API_KEY,
 				},
 				body: JSON.stringify(body),
+				signal: AbortSignal.timeout(30_000),
 			});
 		} catch (err) {
 			logger.error('SimpleApi sync: registry fetch error during full sync', { network, error: err });
@@ -193,10 +197,16 @@ async function fetchFullSync(network: Network): Promise<void> {
 			count: listings.length,
 			hasMore: cursorId != null,
 		});
+		if (pageCount >= MAX_SYNC_PAGES) {
+			logger.error('SimpleApi sync: full sync page cap reached, aborting', { network, pageCount });
+			break;
+		}
 	} while (cursorId != null);
 
 	logger.info('SimpleApi sync: full sync completed', { network, pages: pageCount });
 }
+
+const MAX_SYNC_PAGES = 500;
 
 const lastSyncCursors: Partial<Record<Network, { statusUpdatedAfter: string; cursorId: string | null }>> = {};
 
@@ -240,6 +250,7 @@ async function fetchIncrementalSync(network: Network): Promise<void> {
 					token: CONFIG.REGISTRY_API_KEY,
 				},
 				body: JSON.stringify(body),
+				signal: AbortSignal.timeout(30_000),
 			});
 		} catch (err) {
 			logger.error('SimpleApi sync: registry fetch error during incremental sync', { network, error: err });
@@ -278,6 +289,10 @@ async function fetchIncrementalSync(network: Network): Promise<void> {
 
 		cursorId = json.data?.cursor ?? null;
 		pageCount++;
+		if (pageCount >= MAX_SYNC_PAGES) {
+			logger.error('SimpleApi sync: incremental sync page cap reached, aborting', { network, pageCount });
+			break;
+		}
 	} while (cursorId != null);
 
 	lastSyncCursors[network] = { statusUpdatedAfter: newStatusUpdatedAfter, cursorId: null };

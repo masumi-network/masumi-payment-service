@@ -54,6 +54,7 @@ export async function settleX402Payment(opts: {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify(body),
+			signal: AbortSignal.timeout(15_000),
 		});
 	} catch (err) {
 		logger.error('x402 facilitator network error during settle', { url, error: err });
