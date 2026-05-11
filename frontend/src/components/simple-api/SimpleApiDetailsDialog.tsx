@@ -5,6 +5,15 @@ import { CopyButton } from '@/components/ui/copy-button';
 import { cn, shortenAddress } from '@/lib/utils';
 import { ExternalLink, Clock, Calendar, Tag } from 'lucide-react';
 
+function isSafeUrl(url: string): boolean {
+  try {
+    const { protocol } = new URL(url);
+    return protocol === 'https:' || protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
 interface SimpleApiDetailsDialogProps {
   listing: SimpleApiListing | null;
   onClose: () => void;
@@ -110,14 +119,18 @@ export function SimpleApiDetailsDialog({ listing, onClose }: SimpleApiDetailsDia
                 <span>{listing.url}</span>
                 <div className="flex-shrink-0 flex items-center gap-1">
                   <CopyButton value={listing.url} />
-                  <a
-                    href={listing.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-muted-foreground hover:text-primary"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </a>
+                  {isSafeUrl(listing.url) ? (
+                    <a
+                      href={listing.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-muted-foreground hover:text-primary"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  ) : (
+                    <ExternalLink className="h-3.5 w-3.5 text-muted-foreground/40" />
+                  )}
                 </div>
               </div>
             </DetailRow>

@@ -63,6 +63,15 @@ function formatLastActive(date: Date | null | undefined): string {
   return `${Math.floor(diffHours / 24)}d ago`;
 }
 
+function isSafeUrl(url: string): boolean {
+  try {
+    const { protocol } = new URL(url);
+    return protocol === 'https:' || protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
 export function SimpleApiCard({ listing, onDetails }: SimpleApiCardProps) {
   const { dot, badge } = getStatusConfig(listing.status);
   const firstAccept = listing.accepts[0];
@@ -105,15 +114,19 @@ export function SimpleApiCard({ listing, onDetails }: SimpleApiCardProps) {
         {/* URL */}
         <div className="flex items-center gap-1 text-xs text-muted-foreground">
           <span className="truncate font-mono">{listing.url}</span>
-          <a
-            href={listing.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="flex-shrink-0 hover:text-primary"
-          >
-            <ExternalLink className="h-3 w-3" />
-          </a>
+          {isSafeUrl(listing.url) ? (
+            <a
+              href={listing.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="shrink-0 hover:text-primary"
+            >
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          ) : (
+            <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground/40" />
+          )}
           <span onClick={(e) => e.stopPropagation()}>
             <CopyButton value={listing.url} />
           </span>

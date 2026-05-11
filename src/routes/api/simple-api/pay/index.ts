@@ -5,6 +5,7 @@ import createHttpError from 'http-errors';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { settleX402Payment } from '@/utils/x402-facilitator';
+import { encrypt } from '@/utils/security/encryption';
 import { CONFIG } from '@/utils/config';
 import { paySimpleApiSchemaInput, paySimpleApiSchemaOutput } from '../schemas';
 
@@ -72,7 +73,7 @@ export const paySimpleApiPost = payAuthenticatedEndpointFactory.build({
 				asset,
 				resource,
 				facilitatorSettlementId: settlementId || null,
-				xPaymentHeader,
+				xPaymentHeader: encrypt(xPaymentHeader),
 			},
 		});
 
