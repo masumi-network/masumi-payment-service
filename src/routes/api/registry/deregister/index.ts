@@ -1,6 +1,6 @@
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { z } from '@/utils/zod-openapi';
-import { HotWalletType, Network, PricingType, RegistrationState } from '@/generated/prisma/client';
+import { Network, PricingType, RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
@@ -73,13 +73,11 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 		}
 		const vkey = resolvePaymentKeyHash(holderWallet[0].address);
 
-		const sellingWallet = paymentSource.HotWallets.find(
-			(wallet) => wallet.walletVkey == vkey && wallet.type == HotWalletType.Selling,
-		);
-		if (sellingWallet == null) {
-			throw createHttpError(404, 'Registered Wallet not found');
+		const managedHolderWallet = paymentSource.HotWallets.find((wallet) => wallet.walletVkey == vkey);
+		if (managedHolderWallet == null) {
+			throw createHttpError(409, 'Registered asset is not currently held by a managed wallet');
 		}
-		assertHotWalletInScope(ctx.walletScopeIds, sellingWallet.id);
+		assertHotWalletInScope(ctx.walletScopeIds, managedHolderWallet.id);
 		const registryRequest = await prisma.registryRequest.findUnique({
 			where: {
 				agentIdentifier: policyId + assetName,
@@ -97,6 +95,7 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 			},
 			data: {
 				state: RegistrationState.DeregistrationRequested,
+				deregistrationHotWalletId: managedHolderWallet.id,
 			},
 			include: {
 				Pricing: {
@@ -107,6 +106,9 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 					},
 				},
 				SmartContractWallet: {
+					select: { walletVkey: true, walletAddress: true },
+				},
+				RecipientWallet: {
 					select: { walletVkey: true, walletAddress: true },
 				},
 				ExampleOutputs: { select: { name: true, url: true, mimeType: true } },
@@ -153,7 +155,9 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 					: {
 							pricingType: result.Pricing.pricingType,
 						},
+			sendFundingLovelace: result.sendFundingLovelace?.toString() ?? null,
 			Tags: result.tags,
+			RecipientWallet: result.RecipientWallet,
 			CurrentTransaction: result.CurrentTransaction
 				? {
 						...result.CurrentTransaction,
