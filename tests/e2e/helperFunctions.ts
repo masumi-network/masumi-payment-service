@@ -466,7 +466,6 @@ export async function createPurchase(paymentResult: PaymentResult, agentData: Co
 		inputHash: paymentResult.inputHash,
 		sellerVkey: agentData.SmartContractWallet.walletVkey,
 		agentIdentifier: agentData.agentIdentifier,
-		paymentType: paymentResult.response.PaymentSource.paymentType,
 		unlockTime: paymentResult.unlockTime,
 		externalDisputeUnlockTime: paymentResult.externalDisputeUnlockTime,
 		submitResultTime: paymentResult.submitResultTime,
