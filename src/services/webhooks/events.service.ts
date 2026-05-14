@@ -198,6 +198,28 @@ class WebhookEventsService {
 		await this.triggerGenericWebhook(WebhookEventType.PAYMENT_ON_ERROR, paymentId, 'payment');
 	}
 
+	async triggerFundDistributionSent(payload: WebhookPayloadDataByEvent<'FUND_DISTRIBUTION_SENT'>): Promise<void> {
+		try {
+			await webhookQueueService.queueWebhook(
+				WebhookEventType.FUND_DISTRIBUTION_SENT,
+				payload,
+				payload.fundWalletId,
+				undefined,
+			);
+
+			logger.info('FUND_DISTRIBUTION_SENT webhook triggered', {
+				fundWalletId: payload.fundWalletId,
+				txHash: payload.txHash,
+				batchId: payload.batchId,
+			});
+		} catch (error) {
+			logger.error('Failed to trigger FUND_DISTRIBUTION_SENT webhook', {
+				fundWalletId: payload.fundWalletId,
+				error: error instanceof Error ? error.message : 'Unknown error',
+			});
+		}
+	}
+
 	async triggerWalletLowBalance(payload: WalletLowBalanceWebhookData): Promise<void> {
 		try {
 			await webhookQueueService.queueWebhook(

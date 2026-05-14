@@ -109,6 +109,7 @@ export default [
 	{
 		ignores: [
 			'.eslint-rules/**',
+			'.remember/**',
 			'src/**/*.spec.ts',
 			'src/**/*.test.ts',
 			'tests/**/*.ts',

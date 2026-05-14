@@ -4043,7 +4043,8 @@
                                                                 "type": "string",
                                                                 "enum": [
                                                                     "Selling",
-                                                                    "Purchasing"
+                                                                    "Purchasing",
+                                                                    "Funding"
                                                                 ],
                                                                 "description": "Hot wallet type"
                                                             },
@@ -4248,7 +4249,8 @@
                                                     "type": "string",
                                                     "enum": [
                                                         "Selling",
-                                                        "Purchasing"
+                                                        "Purchasing",
+                                                        "Funding"
                                                     ],
                                                     "description": "Hot wallet type"
                                                 },
@@ -4439,7 +4441,8 @@
                                                     "type": "string",
                                                     "enum": [
                                                         "Selling",
-                                                        "Purchasing"
+                                                        "Purchasing",
+                                                        "Funding"
                                                     ],
                                                     "description": "Hot wallet type"
                                                 },
@@ -19268,7 +19271,8 @@
                                                                         "PAYMENT_ON_CHAIN_STATUS_CHANGED",
                                                                         "PURCHASE_ON_ERROR",
                                                                         "PAYMENT_ON_ERROR",
-                                                                        "WALLET_LOW_BALANCE"
+                                                                        "WALLET_LOW_BALANCE",
+                                                                        "FUND_DISTRIBUTION_SENT"
                                                                     ]
                                                                 }
                                                             },
@@ -19439,7 +19443,8 @@
                                                 "PAYMENT_ON_CHAIN_STATUS_CHANGED",
                                                 "PURCHASE_ON_ERROR",
                                                 "PAYMENT_ON_ERROR",
-                                                "WALLET_LOW_BALANCE"
+                                                "WALLET_LOW_BALANCE",
+                                                "FUND_DISTRIBUTION_SENT"
                                             ]
                                         },
                                         "minItems": 1,
@@ -19513,7 +19518,8 @@
                                                             "PAYMENT_ON_CHAIN_STATUS_CHANGED",
                                                             "PURCHASE_ON_ERROR",
                                                             "PAYMENT_ON_ERROR",
-                                                            "WALLET_LOW_BALANCE"
+                                                            "WALLET_LOW_BALANCE",
+                                                            "FUND_DISTRIBUTION_SENT"
                                                         ]
                                                     }
                                                 },
@@ -19639,7 +19645,8 @@
                                                 "PAYMENT_ON_CHAIN_STATUS_CHANGED",
                                                 "PURCHASE_ON_ERROR",
                                                 "PAYMENT_ON_ERROR",
-                                                "WALLET_LOW_BALANCE"
+                                                "WALLET_LOW_BALANCE",
+                                                "FUND_DISTRIBUTION_SENT"
                                             ]
                                         },
                                         "minItems": 1,
@@ -19711,7 +19718,8 @@
                                                             "PAYMENT_ON_CHAIN_STATUS_CHANGED",
                                                             "PURCHASE_ON_ERROR",
                                                             "PAYMENT_ON_ERROR",
-                                                            "WALLET_LOW_BALANCE"
+                                                            "WALLET_LOW_BALANCE",
+                                                            "FUND_DISTRIBUTION_SENT"
                                                         ]
                                                     }
                                                 },
