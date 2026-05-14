@@ -3515,3 +3515,215 @@ export const StoppedMonitoringSchema = {
         'stopped'
     ]
 } as const;
+
+export const SimpleApiListingSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string',
+            description: 'Local listing ID'
+        },
+        registryListingId: {
+            type: 'string',
+            description: 'Registry-assigned listing ID'
+        },
+        entryType: {
+            type: 'string',
+            enum: [
+                'SimpleApi'
+            ]
+        },
+        network: {
+            type: 'string',
+            enum: [
+                'Preprod',
+                'Mainnet'
+            ],
+            description: 'Cardano network grouping (Preprod or Mainnet)'
+        },
+        name: {
+            type: 'string',
+            description: 'Name of the SimpleApi service'
+        },
+        description: {
+            type: 'string',
+            nullable: true,
+            description: 'Description of the service'
+        },
+        url: {
+            type: 'string',
+            description: 'Base URL of the service'
+        },
+        category: {
+            type: 'string',
+            nullable: true,
+            description: 'Category of the service'
+        },
+        tags: {
+            type: 'array',
+            items: {
+                type: 'string'
+            },
+            description: 'Tags for the service'
+        },
+        httpMethod: {
+            type: 'string',
+            nullable: true,
+            description: 'HTTP method used to call the service'
+        },
+        status: {
+            type: 'string',
+            enum: [
+                'Online',
+                'Offline',
+                'Invalid',
+                'Deregistered'
+            ],
+            description: 'Current availability status'
+        },
+        accepts: {
+            type: 'array',
+            items: {
+                $ref: '#/components/schemas/SimpleApiAcceptEntry'
+            },
+            description: 'Payment options accepted by this service'
+        },
+        extra: {
+            type: 'object',
+            nullable: true,
+            additionalProperties: {
+                nullable: true
+            },
+            description: 'Additional metadata'
+        },
+        lastActiveAt: {
+            type: 'string',
+            nullable: true,
+            format: 'date-time',
+            description: 'Last time the service was seen Online'
+        },
+        statusUpdatedAt: {
+            type: 'string',
+            format: 'date-time',
+            description: 'Last time the status changed'
+        },
+        createdAt: {
+            type: 'string',
+            format: 'date-time',
+            description: 'When this record was first synced'
+        },
+        updatedAt: {
+            type: 'string',
+            format: 'date-time',
+            description: 'When this record was last updated'
+        }
+    },
+    required: [
+        'id',
+        'registryListingId',
+        'entryType',
+        'network',
+        'name',
+        'description',
+        'url',
+        'category',
+        'tags',
+        'httpMethod',
+        'status',
+        'accepts',
+        'extra',
+        'lastActiveAt',
+        'statusUpdatedAt',
+        'createdAt',
+        'updatedAt'
+    ]
+} as const;
+
+export const SimpleApiAcceptEntrySchema = {
+    type: 'object',
+    properties: {
+        scheme: {
+            type: 'string',
+            description: 'Payment scheme (e.g. exact)'
+        },
+        network: {
+            type: 'string',
+            description: 'x402 chain (e.g. base-sepolia)'
+        },
+        maxAmountRequired: {
+            type: 'string',
+            description: 'Maximum payment amount in token base units'
+        },
+        payTo: {
+            type: 'string',
+            description: 'EVM address to pay'
+        },
+        asset: {
+            type: 'string',
+            description: 'EVM token contract address'
+        },
+        resource: {
+            type: 'string',
+            description: 'API resource URL'
+        },
+        description: {
+            type: 'string',
+            nullable: true,
+            description: 'Description of this payment option'
+        },
+        mimeType: {
+            type: 'string',
+            nullable: true,
+            description: 'MIME type of the resource response'
+        }
+    },
+    required: [
+        'scheme',
+        'network',
+        'maxAmountRequired',
+        'payTo',
+        'asset',
+        'resource',
+        'description',
+        'mimeType'
+    ]
+} as const;
+
+export const Eip3009AuthorizationSchema = {
+    type: 'object',
+    properties: {
+        from: {
+            type: 'string',
+            description: 'EVM address of the token sender'
+        },
+        to: {
+            type: 'string',
+            description: 'EVM address of the token recipient (must match listing payTo)'
+        },
+        value: {
+            type: 'string',
+            pattern: '^\\d+$',
+            description: 'Amount in token base units'
+        },
+        validAfter: {
+            type: 'string',
+            description: 'Authorization valid after this Unix timestamp (string)'
+        },
+        validBefore: {
+            type: 'string',
+            description: 'Authorization valid before this Unix timestamp (string)'
+        },
+        nonce: {
+            type: 'string',
+            description: 'EIP-3009 nonce (32-byte hex)'
+        }
+    },
+    required: [
+        'from',
+        'to',
+        'value',
+        'validAfter',
+        'validBefore',
+        'nonce'
+    ]
+} as const;
