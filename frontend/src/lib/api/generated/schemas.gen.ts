@@ -315,6 +315,109 @@ export const GeneratedWalletSecretSchema = {
     ]
 } as const;
 
+export const WalletFundTransferSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string',
+            description: 'Unique identifier of the fund transfer'
+        },
+        status: {
+            type: 'string',
+            enum: [
+                'Pending',
+                'Confirmed',
+                'FailedViaTimeout',
+                'FailedViaManualReset',
+                'RolledBack'
+            ],
+            description: 'Current status of the fund transfer'
+        },
+        txHash: {
+            type: 'string',
+            nullable: true,
+            description: 'Cardano transaction hash. Null until submitted to blockchain'
+        },
+        toAddress: {
+            type: 'string',
+            description: 'Destination Cardano address'
+        },
+        lovelaceAmount: {
+            type: 'string',
+            description: 'Amount transferred in lovelace'
+        },
+        assets: {
+            type: 'array',
+            nullable: true,
+            items: {
+                type: 'object',
+                properties: {
+                    unit: {
+                        type: 'string'
+                    },
+                    quantity: {
+                        type: 'string'
+                    }
+                },
+                required: [
+                    'unit',
+                    'quantity'
+                ]
+            },
+            description: 'Additional native assets included in this transfer. Null if lovelace-only.'
+        },
+        createdAt: {
+            type: 'string',
+            format: 'date-time',
+            description: 'Timestamp when the transfer was requested'
+        },
+        updatedAt: {
+            type: 'string',
+            format: 'date-time',
+            description: 'Timestamp when the transfer was last updated'
+        },
+        lastCheckedAt: {
+            type: 'string',
+            nullable: true,
+            format: 'date-time',
+            description: 'Timestamp when the blockchain was last polled for confirmation'
+        },
+        errorNote: {
+            type: 'string',
+            nullable: true,
+            description: 'Error message if the transfer failed'
+        }
+    },
+    required: [
+        'id',
+        'status',
+        'txHash',
+        'toAddress',
+        'lovelaceAmount',
+        'assets',
+        'createdAt',
+        'updatedAt',
+        'lastCheckedAt',
+        'errorNote'
+    ]
+} as const;
+
+export const WalletFundTransferListSchema = {
+    type: 'object',
+    properties: {
+        transfers: {
+            type: 'array',
+            items: {
+                $ref: '#/components/schemas/WalletFundTransfer'
+            },
+            description: 'List of fund transfers'
+        }
+    },
+    required: [
+        'transfers'
+    ]
+} as const;
+
 export const PaymentSchema = {
     type: 'object',
     properties: {

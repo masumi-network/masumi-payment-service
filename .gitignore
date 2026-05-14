@@ -19,6 +19,9 @@ src/services/.DS_Store
 # Claude local settings (user-specific)
 .claude/
 
+# Claude Code session memory (local only)
+.remember/
+
 /certs/
 
 frontend/.env

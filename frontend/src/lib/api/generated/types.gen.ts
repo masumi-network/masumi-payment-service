@@ -195,6 +195,59 @@ export type GeneratedWalletSecret = {
     walletVkey: string;
 };
 
+export type WalletFundTransfer = {
+    /**
+     * Unique identifier of the fund transfer
+     */
+    id: string;
+    /**
+     * Current status of the fund transfer
+     */
+    status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
+    /**
+     * Cardano transaction hash. Null until submitted to blockchain
+     */
+    txHash: string | null;
+    /**
+     * Destination Cardano address
+     */
+    toAddress: string;
+    /**
+     * Amount transferred in lovelace
+     */
+    lovelaceAmount: string;
+    /**
+     * Additional native assets included in this transfer. Null if lovelace-only.
+     */
+    assets: Array<{
+        unit: string;
+        quantity: string;
+    }> | null;
+    /**
+     * Timestamp when the transfer was requested
+     */
+    createdAt: Date;
+    /**
+     * Timestamp when the transfer was last updated
+     */
+    updatedAt: Date;
+    /**
+     * Timestamp when the blockchain was last polled for confirmation
+     */
+    lastCheckedAt: Date | null;
+    /**
+     * Error message if the transfer failed
+     */
+    errorNote: string | null;
+};
+
+export type WalletFundTransferList = {
+    /**
+     * List of fund transfers
+     */
+    transfers: Array<WalletFundTransfer>;
+};
+
 export type Payment = {
     /**
      * Unique identifier for the payment
@@ -3204,6 +3257,112 @@ export type PostSwapAcknowledgeTimeoutResponses = {
 };
 
 export type PostSwapAcknowledgeTimeoutResponse = PostSwapAcknowledgeTimeoutResponses[keyof PostSwapAcknowledgeTimeoutResponses];
+
+export type GetWalletTransferFundsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Query a specific fund transfer by id
+         */
+        id?: string;
+        /**
+         * Query all fund transfers for a wallet by internal id
+         */
+        hotWalletId?: string;
+        /**
+         * Query all fund transfers for a wallet by its Cardano address
+         */
+        walletAddress?: string;
+        /**
+         * Cursor for pagination
+         */
+        cursorId?: string;
+        /**
+         * Number of results to return (1-100, default 20)
+         */
+        limit?: string;
+    };
+    url: '/wallet/transfer-funds';
+};
+
+export type GetWalletTransferFundsErrors = {
+    /**
+     * Fund transfer not found
+     */
+    404: unknown;
+};
+
+export type GetWalletTransferFundsResponses = {
+    /**
+     * Fund transfer list
+     */
+    200: {
+        status: 'success';
+        data: WalletFundTransferList;
+    };
+};
+
+export type GetWalletTransferFundsResponse = GetWalletTransferFundsResponses[keyof GetWalletTransferFundsResponses];
+
+export type PostWalletTransferFundsData = {
+    /**
+     * Fund transfer request
+     */
+    body?: {
+        /**
+         * The Cardano address of the hot wallet to send funds from
+         */
+        fromWalletAddress: string;
+        /**
+         * The Cardano address to send funds to
+         */
+        toAddress: string;
+        /**
+         * Amount of lovelace to transfer (minimum 2000000 = 2 ADA)
+         */
+        lovelaceAmount: string;
+        /**
+         * Additional native assets to transfer alongside lovelace
+         */
+        assets?: Array<{
+            /**
+             * Asset unit (policy id + hex asset name, or "lovelace")
+             */
+            unit: string;
+            /**
+             * Amount of the asset to transfer
+             */
+            quantity: string;
+        }>;
+    };
+    path?: never;
+    query?: never;
+    url: '/wallet/transfer-funds';
+};
+
+export type PostWalletTransferFundsErrors = {
+    /**
+     * Bad Request (lovelaceAmount below 2 ADA minimum)
+     */
+    400: unknown;
+    /**
+     * Not Found (wallet not found)
+     */
+    404: unknown;
+};
+
+export type PostWalletTransferFundsResponses = {
+    /**
+     * Fund transfer queued
+     */
+    200: {
+        status: 'success';
+        data: WalletFundTransfer;
+    };
+};
+
+export type PostWalletTransferFundsResponse = PostWalletTransferFundsResponses[keyof PostWalletTransferFundsResponses];
 
 export type GetPaymentData = {
     body?: never;
