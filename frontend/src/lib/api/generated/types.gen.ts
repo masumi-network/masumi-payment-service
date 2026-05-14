@@ -1974,6 +1974,138 @@ export type StoppedMonitoring = {
     stopped: boolean;
 };
 
+export type SimpleApiListing = {
+    /**
+     * Local listing ID
+     */
+    id: string;
+    /**
+     * Registry-assigned listing ID
+     */
+    registryListingId: string;
+    entryType: 'SimpleApi';
+    /**
+     * Cardano network grouping (Preprod or Mainnet)
+     */
+    network: 'Preprod' | 'Mainnet';
+    /**
+     * Name of the SimpleApi service
+     */
+    name: string;
+    /**
+     * Description of the service
+     */
+    description: string | null;
+    /**
+     * Base URL of the service
+     */
+    url: string;
+    /**
+     * Category of the service
+     */
+    category: string | null;
+    /**
+     * Tags for the service
+     */
+    tags: Array<string>;
+    /**
+     * HTTP method used to call the service
+     */
+    httpMethod: string | null;
+    /**
+     * Current availability status
+     */
+    status: 'Online' | 'Offline' | 'Invalid' | 'Deregistered';
+    /**
+     * Payment options accepted by this service
+     */
+    accepts: Array<SimpleApiAcceptEntry>;
+    /**
+     * Additional metadata
+     */
+    extra: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Last time the service was seen Online
+     */
+    lastActiveAt: Date | null;
+    /**
+     * Last time the status changed
+     */
+    statusUpdatedAt: Date;
+    /**
+     * When this record was first synced
+     */
+    createdAt: Date;
+    /**
+     * When this record was last updated
+     */
+    updatedAt: Date;
+};
+
+export type SimpleApiAcceptEntry = {
+    /**
+     * Payment scheme (e.g. exact)
+     */
+    scheme: string;
+    /**
+     * x402 chain (e.g. base-sepolia)
+     */
+    network: string;
+    /**
+     * Maximum payment amount in token base units
+     */
+    maxAmountRequired: string;
+    /**
+     * EVM address to pay
+     */
+    payTo: string;
+    /**
+     * EVM token contract address
+     */
+    asset: string;
+    /**
+     * API resource URL
+     */
+    resource: string;
+    /**
+     * Description of this payment option
+     */
+    description: string | null;
+    /**
+     * MIME type of the resource response
+     */
+    mimeType: string | null;
+};
+
+export type Eip3009Authorization = {
+    /**
+     * EVM address of the token sender
+     */
+    from: string;
+    /**
+     * EVM address of the token recipient (must match listing payTo)
+     */
+    to: string;
+    /**
+     * Amount in token base units
+     */
+    value: string;
+    /**
+     * Authorization valid after this Unix timestamp (string)
+     */
+    validAfter: string;
+    /**
+     * Authorization valid before this Unix timestamp (string)
+     */
+    validBefore: string;
+    /**
+     * EIP-3009 nonce (32-byte hex)
+     */
+    nonce: string;
+};
+
 export type GetHealthData = {
     body?: never;
     path?: never;
@@ -9233,3 +9365,230 @@ export type PostMonitoringStopResponses = {
 };
 
 export type PostMonitoringStopResponse = PostMonitoringStopResponses[keyof PostMonitoringStopResponses];
+
+export type GetSimpleApiData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Number of listings to return
+         */
+        limit?: number;
+        /**
+         * Cursor for pagination
+         */
+        cursorId?: string;
+        /**
+         * Cardano network grouping
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * Filter by listing status
+         */
+        filterStatus?: 'Online' | 'Offline' | 'Invalid' | 'Deregistered';
+        /**
+         * Search query to filter by name, description, category, tags, URL, or payTo address
+         */
+        searchQuery?: string;
+    };
+    url: '/simple-api';
+};
+
+export type GetSimpleApiErrors = {
+    /**
+     * Bad Request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type GetSimpleApiResponses = {
+    /**
+     * List of SimpleApi listings
+     */
+    200: {
+        status: string;
+        data: {
+            SimpleApiListings: Array<SimpleApiListing>;
+        };
+    };
+};
+
+export type GetSimpleApiResponse = GetSimpleApiResponses[keyof GetSimpleApiResponses];
+
+export type GetSimpleApiCountData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Cardano network grouping
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * Filter by listing status
+         */
+        filterStatus?: 'Online' | 'Offline' | 'Invalid' | 'Deregistered';
+    };
+    url: '/simple-api/count';
+};
+
+export type GetSimpleApiCountErrors = {
+    /**
+     * Bad Request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type GetSimpleApiCountResponses = {
+    /**
+     * Count of SimpleApi listings
+     */
+    200: {
+        status: string;
+        data: {
+            /**
+             * Total number of SimpleApi listings
+             */
+            total: number;
+        };
+    };
+};
+
+export type GetSimpleApiCountResponse = GetSimpleApiCountResponses[keyof GetSimpleApiCountResponses];
+
+export type GetSimpleApiDiffData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Cardano network grouping
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * Return listings whose status changed after this ISO timestamp
+         */
+        statusUpdatedAfter: Date;
+        /**
+         * Number of listings to return
+         */
+        limit?: number;
+        /**
+         * Cursor for pagination
+         */
+        cursorId?: string;
+    };
+    url: '/simple-api/diff';
+};
+
+export type GetSimpleApiDiffErrors = {
+    /**
+     * Bad Request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type GetSimpleApiDiffResponses = {
+    /**
+     * Changed SimpleApi listings
+     */
+    200: {
+        status: string;
+        data: {
+            SimpleApiListings: Array<SimpleApiListing>;
+            /**
+             * Cursor for the next page; null when no more pages
+             */
+            cursor: string | null;
+        };
+    };
+};
+
+export type GetSimpleApiDiffResponse = GetSimpleApiDiffResponses[keyof GetSimpleApiDiffResponses];
+
+export type PostSimpleApiPayData = {
+    body?: {
+        /**
+         * Local SimpleApiListing ID
+         */
+        listingId: string;
+        /**
+         * x402 chain to pay on (e.g. base-sepolia)
+         */
+        paymentNetwork: string;
+        authorization: Eip3009Authorization;
+        /**
+         * EIP-3009 signature (hex)
+         */
+        signature: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/simple-api/pay';
+};
+
+export type PostSimpleApiPayErrors = {
+    /**
+     * Bad Request (invalid listing, mismatched payTo, etc.)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Listing not found
+     */
+    404: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+    /**
+     * Facilitator unreachable or returned an error
+     */
+    502: unknown;
+};
+
+export type PostSimpleApiPayResponses = {
+    /**
+     * Payment settled successfully
+     */
+    200: {
+        status: string;
+        data: {
+            /**
+             * Value to set as the X-PAYMENT request header when calling the protected API
+             */
+            xPaymentHeader: string;
+            /**
+             * Local payment record ID for tracking
+             */
+            paymentRecordId: string;
+        };
+    };
+};
+
+export type PostSimpleApiPayResponse = PostSimpleApiPayResponses[keyof PostSimpleApiPayResponses];

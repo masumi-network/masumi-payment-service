@@ -3512,6 +3512,215 @@
                     "message",
                     "stopped"
                 ]
+            },
+            "SimpleApiListing": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Local listing ID"
+                    },
+                    "registryListingId": {
+                        "type": "string",
+                        "description": "Registry-assigned listing ID"
+                    },
+                    "entryType": {
+                        "type": "string",
+                        "enum": [
+                            "SimpleApi"
+                        ]
+                    },
+                    "network": {
+                        "type": "string",
+                        "enum": [
+                            "Preprod",
+                            "Mainnet"
+                        ],
+                        "description": "Cardano network grouping (Preprod or Mainnet)"
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Name of the SimpleApi service"
+                    },
+                    "description": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Description of the service"
+                    },
+                    "url": {
+                        "type": "string",
+                        "description": "Base URL of the service"
+                    },
+                    "category": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Category of the service"
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "Tags for the service"
+                    },
+                    "httpMethod": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "HTTP method used to call the service"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "Online",
+                            "Offline",
+                            "Invalid",
+                            "Deregistered"
+                        ],
+                        "description": "Current availability status"
+                    },
+                    "accepts": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/SimpleApiAcceptEntry"
+                        },
+                        "description": "Payment options accepted by this service"
+                    },
+                    "extra": {
+                        "type": "object",
+                        "nullable": true,
+                        "additionalProperties": {
+                            "nullable": true
+                        },
+                        "description": "Additional metadata"
+                    },
+                    "lastActiveAt": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "date-time",
+                        "description": "Last time the service was seen Online"
+                    },
+                    "statusUpdatedAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Last time the status changed"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "When this record was first synced"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "When this record was last updated"
+                    }
+                },
+                "required": [
+                    "id",
+                    "registryListingId",
+                    "entryType",
+                    "network",
+                    "name",
+                    "description",
+                    "url",
+                    "category",
+                    "tags",
+                    "httpMethod",
+                    "status",
+                    "accepts",
+                    "extra",
+                    "lastActiveAt",
+                    "statusUpdatedAt",
+                    "createdAt",
+                    "updatedAt"
+                ]
+            },
+            "SimpleApiAcceptEntry": {
+                "type": "object",
+                "properties": {
+                    "scheme": {
+                        "type": "string",
+                        "description": "Payment scheme (e.g. exact)"
+                    },
+                    "network": {
+                        "type": "string",
+                        "description": "x402 chain (e.g. base-sepolia)"
+                    },
+                    "maxAmountRequired": {
+                        "type": "string",
+                        "description": "Maximum payment amount in token base units"
+                    },
+                    "payTo": {
+                        "type": "string",
+                        "description": "EVM address to pay"
+                    },
+                    "asset": {
+                        "type": "string",
+                        "description": "EVM token contract address"
+                    },
+                    "resource": {
+                        "type": "string",
+                        "description": "API resource URL"
+                    },
+                    "description": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Description of this payment option"
+                    },
+                    "mimeType": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "MIME type of the resource response"
+                    }
+                },
+                "required": [
+                    "scheme",
+                    "network",
+                    "maxAmountRequired",
+                    "payTo",
+                    "asset",
+                    "resource",
+                    "description",
+                    "mimeType"
+                ]
+            },
+            "Eip3009Authorization": {
+                "type": "object",
+                "properties": {
+                    "from": {
+                        "type": "string",
+                        "description": "EVM address of the token sender"
+                    },
+                    "to": {
+                        "type": "string",
+                        "description": "EVM address of the token recipient (must match listing payTo)"
+                    },
+                    "value": {
+                        "type": "string",
+                        "pattern": "^\\d+$",
+                        "description": "Amount in token base units"
+                    },
+                    "validAfter": {
+                        "type": "string",
+                        "description": "Authorization valid after this Unix timestamp (string)"
+                    },
+                    "validBefore": {
+                        "type": "string",
+                        "description": "Authorization valid before this Unix timestamp (string)"
+                    },
+                    "nonce": {
+                        "type": "string",
+                        "description": "EIP-3009 nonce (32-byte hex)"
+                    }
+                },
+                "required": [
+                    "from",
+                    "to",
+                    "value",
+                    "validAfter",
+                    "validBefore",
+                    "nonce"
+                ]
             }
         },
         "parameters": {}
@@ -21188,6 +21397,472 @@
                     },
                     "500": {
                         "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/simple-api": {
+            "get": {
+                "description": "Returns SimpleApi listings synced from the registry. Supports pagination, status filter, and full-text search.",
+                "summary": "Query SimpleApi listings (READ access required)",
+                "tags": [
+                    "simple-api"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "number",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 10,
+                            "description": "Number of listings to return"
+                        },
+                        "required": false,
+                        "description": "Number of listings to return",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Cursor for pagination"
+                        },
+                        "required": false,
+                        "description": "Cursor for pagination",
+                        "name": "cursorId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Preprod",
+                                "Mainnet"
+                            ],
+                            "description": "Cardano network grouping"
+                        },
+                        "required": true,
+                        "description": "Cardano network grouping",
+                        "name": "network",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Online",
+                                "Offline",
+                                "Invalid",
+                                "Deregistered"
+                            ],
+                            "description": "Filter by listing status"
+                        },
+                        "required": false,
+                        "description": "Filter by listing status",
+                        "name": "filterStatus",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 200,
+                            "description": "Search query to filter by name, description, category, tags, URL, or payTo address"
+                        },
+                        "required": false,
+                        "description": "Search query to filter by name, description, category, tags, URL, or payTo address",
+                        "name": "searchQuery",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of SimpleApi listings",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "SimpleApiListings": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/SimpleApiListing"
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "SimpleApiListings"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "SimpleApiListings": []
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/simple-api/count": {
+            "get": {
+                "description": "Returns the total count of SimpleApi listings matching the given filters.",
+                "summary": "Count SimpleApi listings (READ access required)",
+                "tags": [
+                    "simple-api"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Preprod",
+                                "Mainnet"
+                            ],
+                            "description": "Cardano network grouping"
+                        },
+                        "required": true,
+                        "description": "Cardano network grouping",
+                        "name": "network",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Online",
+                                "Offline",
+                                "Invalid",
+                                "Deregistered"
+                            ],
+                            "description": "Filter by listing status"
+                        },
+                        "required": false,
+                        "description": "Filter by listing status",
+                        "name": "filterStatus",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Count of SimpleApi listings",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "total": {
+                                                    "type": "number",
+                                                    "description": "Total number of SimpleApi listings"
+                                                }
+                                            },
+                                            "required": [
+                                                "total"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "total": 0
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/simple-api/diff": {
+            "get": {
+                "description": "Returns SimpleApi listings whose status changed after the given timestamp (incremental sync).",
+                "summary": "Diff SimpleApi listings by status timestamp (READ access required)",
+                "tags": [
+                    "simple-api"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Preprod",
+                                "Mainnet"
+                            ],
+                            "description": "Cardano network grouping"
+                        },
+                        "required": true,
+                        "description": "Cardano network grouping",
+                        "name": "network",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "Return listings whose status changed after this ISO timestamp"
+                        },
+                        "required": true,
+                        "description": "Return listings whose status changed after this ISO timestamp",
+                        "name": "statusUpdatedAfter",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "number",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 100,
+                            "description": "Number of listings to return"
+                        },
+                        "required": false,
+                        "description": "Number of listings to return",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Cursor for pagination"
+                        },
+                        "required": false,
+                        "description": "Cursor for pagination",
+                        "name": "cursorId",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Changed SimpleApi listings",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "SimpleApiListings": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/SimpleApiListing"
+                                                    }
+                                                },
+                                                "cursor": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Cursor for the next page; null when no more pages"
+                                                }
+                                            },
+                                            "required": [
+                                                "SimpleApiListings",
+                                                "cursor"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "SimpleApiListings": [],
+                                            "cursor": null
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/simple-api/pay": {
+            "post": {
+                "description": "Initiates an EVM x402 payment for a SimpleApi listing. Forwards the EIP-3009 signed authorization to the configured x402 facilitator and returns the X-PAYMENT header for use with the protected API.",
+                "summary": "Pay for a SimpleApi service via x402 (ReadAndPay access required)",
+                "tags": [
+                    "simple-api"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "listingId": {
+                                        "type": "string",
+                                        "description": "Local SimpleApiListing ID"
+                                    },
+                                    "paymentNetwork": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "x402 chain to pay on (e.g. base-sepolia)"
+                                    },
+                                    "authorization": {
+                                        "$ref": "#/components/schemas/Eip3009Authorization"
+                                    },
+                                    "signature": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "EIP-3009 signature (hex)"
+                                    }
+                                },
+                                "required": [
+                                    "listingId",
+                                    "paymentNetwork",
+                                    "authorization",
+                                    "signature"
+                                ],
+                                "example": {
+                                    "listingId": "cm_listing_id",
+                                    "paymentNetwork": "base-sepolia",
+                                    "authorization": {
+                                        "from": "0xABCDEF...",
+                                        "to": "0x123456...",
+                                        "value": "1000000",
+                                        "validAfter": "0",
+                                        "validBefore": "9999999999",
+                                        "nonce": "0x0000000000000000000000000000000000000000000000000000000000000000"
+                                    },
+                                    "signature": "0xabc..."
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Payment settled successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "xPaymentHeader": {
+                                                    "type": "string",
+                                                    "description": "Value to set as the X-PAYMENT request header when calling the protected API"
+                                                },
+                                                "paymentRecordId": {
+                                                    "type": "string",
+                                                    "description": "Local payment record ID for tracking"
+                                                }
+                                            },
+                                            "required": [
+                                                "xPaymentHeader",
+                                                "paymentRecordId"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "xPaymentHeader": "x402-base64-encoded-header",
+                                            "paymentRecordId": "cm_record_id"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (invalid listing, mismatched payTo, etc.)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Listing not found"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    },
+                    "502": {
+                        "description": "Facilitator unreachable or returned an error"
                     }
                 }
             }
