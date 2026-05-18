@@ -1,4 +1,4 @@
-import { PricingType, RegistrationState, TransactionStatus, PaymentType } from '@/generated/prisma/client';
+import { PricingType, RegistrationState, TransactionStatus } from '@/generated/prisma/client';
 
 export type RegistryRequestWithIncludes = {
 	id: string;
@@ -21,7 +21,6 @@ export type RegistryRequestWithIncludes = {
 	createdAt: Date;
 	updatedAt: Date;
 	lastCheckedAt: Date | null;
-	paymentType: PaymentType;
 	Pricing: {
 		pricingType: PricingType;
 		FixedPricing: {
@@ -102,7 +101,6 @@ export type A2ARegistryRequestWithIncludes = {
 	createdAt: Date;
 	updatedAt: Date;
 	lastCheckedAt: Date | null;
-	paymentType: PaymentType;
 	Pricing: {
 		pricingType: PricingType;
 		FixedPricing: {

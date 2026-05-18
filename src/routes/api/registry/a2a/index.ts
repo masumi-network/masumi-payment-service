@@ -1,7 +1,7 @@
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import { z } from '@/utils/zod-openapi';
-import { HotWalletType, Network, PaymentType, PricingType, RegistrationState } from '@/generated/prisma/client';
+import { HotWalletType, Network, PricingType, RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
@@ -121,7 +121,6 @@ export const registerA2AAgentPost = payAuthenticatedEndpointFactory.build({
 					a2aIconUrl: agentCard?.iconUrl ?? null,
 					a2aCapabilitiesStreaming: agentCard?.capabilities?.streaming ?? null,
 					a2aCapabilitiesPushNotifications: agentCard?.capabilities?.pushNotifications ?? null,
-					paymentType: PaymentType.Web3CardanoV1,
 					state: RegistrationState.RegistrationRequested,
 					agentIdentifier: null,
 					tags: input.Tags,

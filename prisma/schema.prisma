@@ -309,7 +309,6 @@ model A2ARegistryRequest {
   registrationStateLastChangedAt   DateTime          @default(now())
   currentTransactionId             String?
   error                            String?
-  paymentType                      PaymentType       @default(Web3CardanoV1)
   Pricing                          AgentPricing      @relation(fields: [agentPricingId], references: [id])
   CurrentTransaction               Transaction?      @relation(fields: [currentTransactionId], references: [id])
   PaymentSource                    PaymentSource     @relation(fields: [paymentSourceId], references: [id])
