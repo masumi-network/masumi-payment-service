@@ -147,7 +147,6 @@ export interface CreatePaymentData {
 	network: Network;
 	agentIdentifier: string;
 	RequestedFunds?: Array<{ amount: string; unit: string }>;
-	paymentType: string;
 	payByTime: string;
 	submitResultTime: string;
 	unlockTime?: string;
@@ -193,7 +192,6 @@ export interface PaymentResponse {
 		network: Network;
 		smartContractAddress: string;
 		policyId: string | null;
-		paymentType: string;
 	};
 	BuyerWallet: {
 		id: string;
@@ -226,7 +224,6 @@ export interface CreatePurchaseData {
 	sellerVkey: string;
 	agentIdentifier: string;
 	Amounts?: Array<{ amount: string; unit: string }>;
-	paymentType: string;
 	unlockTime: string;
 	externalDisputeUnlockTime: string;
 	submitResultTime: string;
@@ -278,7 +275,6 @@ export interface PurchaseResponse {
 		network: Network;
 		policyId: string | null;
 		smartContractAddress: string;
-		paymentType: string;
 	};
 	SellerWallet: {
 		id: string;
