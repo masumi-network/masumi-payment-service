@@ -12,7 +12,7 @@ import { Client, createClient } from '@/lib/api/generated/client';
 import { usePaymentSourceExtendedAllWithParams } from '../hooks/usePaymentSourceExtendedAll';
 import { PaymentSource } from '../api/generated';
 
-type NetworkType = 'Preprod' | 'Mainnet';
+export type NetworkType = 'Preprod' | 'Mainnet';
 
 export const AppContext = createContext<
   | {

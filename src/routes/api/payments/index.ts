@@ -256,6 +256,8 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 				totalSellerCardanoFees: BigInt(0),
 				pricingType: pricing.pricingType,
 				blockchainIdentifier: compressedEncodedBlockchainIdentifier,
+				agentIdentifier: input.agentIdentifier,
+				agentIdentifierSyncedAt: new Date(),
 				PaymentSource: { connect: { id: specifiedPaymentContract.id } },
 				RequestedFunds: {
 					createMany: {
@@ -340,7 +342,8 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 			...transformPaymentGetAmounts(payment),
 			totalBuyerCardanoFees: Number(payment.totalBuyerCardanoFees.toString()) / 1_000_000,
 			totalSellerCardanoFees: Number(payment.totalSellerCardanoFees.toString()) / 1_000_000,
-			agentIdentifier: decodeBlockchainIdentifier(payment.blockchainIdentifier)?.agentIdentifier ?? null,
+			agentIdentifier:
+				payment.agentIdentifier ?? decodeBlockchainIdentifier(payment.blockchainIdentifier)?.agentIdentifier ?? null,
 			CurrentTransaction: payment.CurrentTransaction
 				? {
 						...payment.CurrentTransaction,

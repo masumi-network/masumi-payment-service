@@ -15625,6 +15625,18 @@
                         "description": "Search query to filter by name, description, tags, minting or recipient wallet address, state, or price",
                         "name": "searchQuery",
                         "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 57,
+                            "maxLength": 250,
+                            "description": "When set, return only the registry entry whose on-chain agent identifier matches exactly (same scope as list: network, payment source, and wallet permissions)"
+                        },
+                        "required": false,
+                        "description": "When set, return only the registry entry whose on-chain agent identifier matches exactly (same scope as list: network, payment source, and wallet permissions)",
+                        "name": "filterAgentIdentifier",
+                        "in": "query"
                     }
                 ],
                 "responses": {

@@ -24,6 +24,14 @@ export const queryRegistryRequestSchemaInput = z.object({
 		.describe(
 			'Search query to filter by name, description, tags, minting or recipient wallet address, state, or price',
 		),
+	filterAgentIdentifier: z
+		.string()
+		.min(57)
+		.max(250)
+		.optional()
+		.describe(
+			'When set, return only the registry entry whose on-chain agent identifier matches exactly (same scope as list: network, payment source, and wallet permissions)',
+		),
 });
 
 export const registryRequestOutputSchema = z
