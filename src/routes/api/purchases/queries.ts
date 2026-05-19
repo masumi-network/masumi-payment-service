@@ -1,6 +1,6 @@
-import { prisma } from '@/utils/db';
-import { z } from '@/utils/zod-openapi';
-import { AuthContext } from '@/utils/middleware/auth-middleware';
+import { prisma } from '@masumi/payment-core/db';
+import { z } from '@masumi/payment-core/zod';
+import { AuthContext } from '@masumi/payment-core/auth';
 import { parseAmountSearchRange, buildMatchingStates, buildTransactionSearchFilter } from '@/utils/shared/queries';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { queryPurchaseRequestSchemaInput } from './schemas';
@@ -21,6 +21,7 @@ export async function getPurchasesForQuery(
 				deletedAt: null,
 				network: input.network,
 				smartContractAddress: input.filterSmartContractAddress ?? undefined,
+				paymentSourceType: input.filterPaymentSourceType,
 			},
 			...buildWalletScopeFilter(walletScopeIds),
 			...(input.filterOnChainState ? { onChainState: input.filterOnChainState } : {}),
@@ -58,6 +59,7 @@ export async function getPurchasesForQuery(
 				select: {
 					id: true,
 					network: true,
+					paymentSourceType: true,
 					policyId: true,
 					smartContractAddress: true,
 				},

@@ -1,9 +1,9 @@
 import { PricingType, RegistrationState } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
-import { AuthContext } from '@/utils/middleware/auth-middleware';
+import { prisma } from '@masumi/payment-core/db';
+import { AuthContext } from '@masumi/payment-core/auth';
 import { parseAmountSearchRange } from '@/utils/shared/queries';
 import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
 import { FilterStatus, queryRegistryRequestSchemaInput } from './schemas';
 
 export type RegistryListQueryInput = z.infer<typeof queryRegistryRequestSchemaInput>;
@@ -55,6 +55,7 @@ export async function getRegistryEntriesForQuery(
 				network: input.network,
 				deletedAt: null,
 				smartContractAddress: input.filterSmartContractAddress ?? undefined,
+				paymentSourceType: input.filterPaymentSourceType,
 			},
 			SmartContractWallet: { deletedAt: null },
 			...buildManagedHolderWalletScopeFilter(walletScopeIds),

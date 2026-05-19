@@ -5,8 +5,20 @@ import {
 	submitResultV1,
 	authorizeRefundV1,
 } from '@/services/payments';
-import { batchLatestPaymentEntriesV1, collectRefundV1, requestRefundsV1, cancelRefundsV1 } from '@/services/purchases';
-import { registerAgentV1, deRegisterAgentV1, checkRegistryTransactions } from '@/services/registry';
+import {
+	authorizeWithdrawalsV2,
+	batchLatestPaymentEntriesV1,
+	collectRefundV1,
+	requestRefundsV1,
+	cancelRefundsV1,
+} from '@/services/purchases';
+import {
+	registerAgentV1,
+	registerAgentV2,
+	deRegisterAgentV1,
+	deRegisterAgentV2,
+	checkRegistryTransactions,
+} from '@/services/registry';
 import {
 	checkInboxAgentRegistrationTransactions,
 	deRegisterInboxAgentV1,
@@ -66,6 +78,13 @@ export const scheduledJobs: JobDefinition[] = [
 		run: cancelRefundsV1,
 	},
 	{
+		initialDelayMs: 21000,
+		intervalMs: CONFIG.CHECK_UNSET_REFUND_INTERVAL * 1000,
+		startMessage: 'Starting to check for V2 withdrawal authorizations',
+		finishMessage: 'Finished to check for V2 withdrawal authorizations',
+		run: authorizeWithdrawalsV2,
+	},
+	{
 		initialDelayMs: 23000,
 		intervalMs: CONFIG.CHECK_AUTHORIZE_REFUND_INTERVAL * 1000,
 		startMessage: 'Starting to check to authorize refunds',
@@ -80,6 +99,13 @@ export const scheduledJobs: JobDefinition[] = [
 		run: registerAgentV1,
 	},
 	{
+		initialDelayMs: 26000,
+		intervalMs: CONFIG.REGISTER_AGENT_INTERVAL * 1000,
+		startMessage: 'Starting to check for V2 agent registration',
+		finishMessage: 'Finished to check for V2 agent registration',
+		run: registerAgentV2,
+	},
+	{
 		initialDelayMs: 27500,
 		intervalMs: CONFIG.REGISTER_AGENT_INTERVAL * 1000,
 		startMessage: 'Starting to check for inbox agent registration',
@@ -92,6 +118,13 @@ export const scheduledJobs: JobDefinition[] = [
 		startMessage: 'Starting to check for agent deregistration',
 		finishMessage: 'Finished to check for agent deregistration',
 		run: deRegisterAgentV1,
+	},
+	{
+		initialDelayMs: 31000,
+		intervalMs: CONFIG.DEREGISTER_AGENT_INTERVAL * 1000,
+		startMessage: 'Starting to check for V2 agent deregistration',
+		finishMessage: 'Finished to check for V2 agent deregistration',
+		run: deRegisterAgentV2,
 	},
 	{
 		initialDelayMs: 32500,

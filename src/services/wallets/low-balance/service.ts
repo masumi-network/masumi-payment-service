@@ -1,13 +1,13 @@
 import { trace } from '@opentelemetry/api';
 import { Address, Transaction, Value } from '@emurgo/cardano-serialization-lib-nodejs';
 import type { UTxO } from '@meshsdk/core';
-import { HotWalletType, Network } from '@/generated/prisma/client';
+import { HotWalletType, Network, PaymentSourceType } from '@/generated/prisma/client';
 import { LowBalanceStatus } from '@/generated/prisma/enums';
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 import { CONFIG, type LowBalanceDefaultRule } from '@/utils/config';
 import { logger } from '@/utils/logger';
 import { logWarn } from '@/utils/logs';
-import { recordWalletLowBalanceAlert } from '@/utils/metrics';
+import { recordWalletLowBalanceAlert } from '@masumi/payment-core/metrics';
 import { generateWalletExtended } from '@/utils/generator/wallet-generator';
 import { webhookEventsService } from '@/services/webhooks';
 
@@ -32,6 +32,7 @@ type WalletLowBalanceContext = {
 	PaymentSource: {
 		id: string;
 		network: Network;
+		paymentSourceType?: PaymentSourceType;
 	};
 	LowBalanceRules: WalletLowBalanceRuleRecord[];
 };
@@ -292,6 +293,7 @@ export class WalletLowBalanceMonitorService {
 					select: {
 						id: true,
 						network: true,
+						paymentSourceType: true,
 					},
 				},
 				LowBalanceRules: {
@@ -585,6 +587,7 @@ export class WalletLowBalanceMonitorService {
 					select: {
 						id: true,
 						network: true,
+						paymentSourceType: true,
 						PaymentSourceConfig: {
 							select: {
 								rpcProviderApiKey: true,
@@ -680,6 +683,7 @@ export class WalletLowBalanceMonitorService {
 
 	private async emitLowBalanceAlert(alert: WalletLowBalanceAlert): Promise<void> {
 		const checkSourceLabel = describeCheckSource(alert.checkSource);
+		const paymentSourceType = alert.wallet.PaymentSource.paymentSourceType ?? PaymentSourceType.Web3CardanoV1;
 		const attributes = {
 			network: alert.wallet.PaymentSource.network,
 			wallet_id: alert.wallet.id,
@@ -687,6 +691,7 @@ export class WalletLowBalanceMonitorService {
 			wallet_address: alert.wallet.walletAddress,
 			wallet_type: alert.wallet.type,
 			payment_source_id: alert.wallet.PaymentSource.id,
+			payment_source_type: paymentSourceType,
 			asset_unit: alert.assetUnit,
 			threshold_amount: alert.thresholdAmount,
 			current_amount: alert.currentAmount,
@@ -709,6 +714,7 @@ export class WalletLowBalanceMonitorService {
 			asset_unit: alert.assetUnit,
 			wallet_type: alert.wallet.type,
 			check_source: alert.checkSource,
+			payment_source_type: paymentSourceType,
 		});
 
 		trace.getActiveSpan()?.addEvent(LOW_BALANCE_WARNING_EVENT, attributes);
@@ -720,6 +726,7 @@ export class WalletLowBalanceMonitorService {
 			walletVkey: alert.wallet.walletVkey,
 			walletType: alert.wallet.type,
 			paymentSourceId: alert.wallet.PaymentSource.id,
+			paymentSourceType,
 			network: alert.wallet.PaymentSource.network,
 			assetUnit: alert.assetUnit,
 			thresholdAmount: alert.thresholdAmount,
@@ -790,6 +797,7 @@ export class WalletLowBalanceMonitorService {
 					select: {
 						id: true,
 						network: true,
+						paymentSourceType: true,
 						PaymentSourceConfig: {
 							select: {
 								rpcProviderApiKey: true,

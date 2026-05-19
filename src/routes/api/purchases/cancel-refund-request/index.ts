@@ -1,9 +1,9 @@
-import { z } from '@/utils/zod-openapi';
-import { Network, PurchasingAction, OnChainState } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { z } from '@masumi/payment-core/zod';
+import { Network, PaymentSourceType, PurchasingAction, OnChainState } from '@/generated/prisma/client';
+import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
-import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { purchaseResponseSchema } from '@/routes/api/purchases';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
@@ -54,11 +54,29 @@ export const cancelPurchaseRefundRequestPost = payAuthenticatedEndpointFactory.b
 					txHash: { not: null },
 				},
 			},
+			include: {
+				PaymentSource: {
+					select: {
+						paymentSourceType: true,
+					},
+				},
+			},
 		});
 		if (purchase == null) {
 			throw createHttpError(404, 'Purchase not found or in invalid state');
 		}
 		assertWalletInScope(ctx.walletScopeIds, purchase.smartContractWalletId);
+		const requestedAction =
+			purchase.PaymentSource.paymentSourceType === PaymentSourceType.Web3CardanoV2
+				? PurchasingAction.AuthorizeWithdrawalRequested
+				: PurchasingAction.UnSetRefundRequestedRequested;
+
+		if (
+			purchase.PaymentSource.paymentSourceType === PaymentSourceType.Web3CardanoV2 &&
+			purchase.onChainState !== OnChainState.Disputed
+		) {
+			throw createHttpError(400, 'Authorize withdrawal is only available for disputed V2 purchases');
+		}
 
 		if (purchase.requestedById != ctx.id && !ctx.canAdmin) {
 			throw createHttpError(403, 'You are not authorized to cancel a refund request for this purchase');
@@ -74,7 +92,7 @@ export const cancelPurchaseRefundRequestPost = payAuthenticatedEndpointFactory.b
 				},
 				NextAction: {
 					create: {
-						requestedAction: PurchasingAction.UnSetRefundRequestedRequested,
+						requestedAction,
 					},
 				},
 			},
@@ -107,6 +125,7 @@ export const cancelPurchaseRefundRequestPost = payAuthenticatedEndpointFactory.b
 					select: {
 						id: true,
 						network: true,
+						paymentSourceType: true,
 						policyId: true,
 						smartContractAddress: true,
 					},

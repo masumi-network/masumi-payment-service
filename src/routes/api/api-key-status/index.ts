@@ -1,6 +1,6 @@
-import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
-import { z } from '@/utils/zod-openapi';
-import { prisma } from '@/utils/db';
+import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { z } from '@masumi/payment-core/zod';
+import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { apiKeyOutputSchema, mapApiKeyOutput } from '@/routes/api/api-key';
 

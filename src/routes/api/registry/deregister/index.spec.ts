@@ -12,6 +12,7 @@ const mockUpdateRegistryRequest = jest.fn() as AnyMock;
 const mockAssetsAddresses = jest.fn() as AnyMock;
 const mockResolvePaymentKeyHash = jest.fn() as AnyMock;
 const mockGetRegistryScript = jest.fn() as AnyMock;
+const mockGetRegistryScriptV2 = jest.fn() as AnyMock;
 
 jest.unstable_mockModule('@/utils/db', () => ({
 	prisma: {
@@ -61,6 +62,7 @@ jest.unstable_mockModule('@/utils/blockfrost', () => ({
 
 jest.unstable_mockModule('@/utils/generator/contract-generator', () => ({
 	getRegistryScriptFromNetworkHandlerV1: mockGetRegistryScript,
+	getRegistryScriptFromNetworkHandlerV2: mockGetRegistryScriptV2,
 }));
 
 jest.unstable_mockModule('@meshsdk/core-cst', () => ({
@@ -76,6 +78,8 @@ jest.unstable_mockModule('@prisma/client', () => ({
 		ResultSubmitted: 'ResultSubmitted',
 		RefundRequested: 'RefundRequested',
 		Disputed: 'Disputed',
+		WithdrawAuthorized: 'WithdrawAuthorized',
+		RefundAuthorized: 'RefundAuthorized',
 		Withdrawn: 'Withdrawn',
 		RefundWithdrawn: 'RefundWithdrawn',
 		DisputedWithdrawn: 'DisputedWithdrawn',
@@ -160,6 +164,7 @@ describe('unregisterAgentPost', () => {
 		mockFindPaymentSource.mockResolvedValue({
 			id: 'payment-source-1',
 			network: Network.Preprod,
+			paymentSourceType: 'Web3CardanoV1',
 			PaymentSourceConfig: {
 				rpcProviderApiKey: 'provider-key',
 			},

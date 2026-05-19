@@ -1,15 +1,15 @@
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
 import { HotWalletType } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
-import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { validateHexString } from '@/utils/validator/hex';
 import { handlePurchaseCreditInit } from '@/services/integrations';
 import { HttpExistsError } from '@/utils/errors/http-exists-error';
-import { recordBusinessEndpointError } from '@/utils/metrics';
+import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
 import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
-import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
+import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { resolvePurchaseCreationContext } from './shared';
 import {
@@ -62,6 +62,7 @@ export const queryPurchaseCountGet = readAuthenticatedEndpointFactory.build({
 					deletedAt: null,
 					network: input.network,
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
+					paymentSourceType: input.filterPaymentSourceType,
 				},
 				...buildWalletScopeFilter(ctx.walletScopeIds),
 			},
@@ -193,6 +194,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 				where: {
 					policyId: policyId,
 					network: input.network,
+					paymentSourceType: input.paymentSourceType,
 					deletedAt: null,
 				},
 				include: {
@@ -226,6 +228,9 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 				);
 				throw createHttpError(404, 'No payment source found for agent identifiers policy id');
 			}
+			if (input.paymentSourceType != null && paymentSource.paymentSourceType !== input.paymentSourceType) {
+				throw createHttpError(400, 'Payment source type does not match the agent identifier policy');
+			}
 
 			const wallets = await prisma.hotWallet.aggregate({
 				where: {
@@ -250,10 +255,15 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 				pricingType,
 				requestedCost,
 				sellerAddress,
+				sellerReturnAddress,
 				submitResultTime,
 				unlockTime,
 			} = await resolvePurchaseCreationContext({
-				input,
+				input: {
+					...input,
+					paymentSourceType: paymentSource.paymentSourceType,
+				},
+				paymentSourceId: paymentSource.id,
 				rpcProviderApiKey: paymentSource.PaymentSourceConfig.rpcProviderApiKey,
 			});
 			const smartContractAddress = paymentSource.smartContractAddress;
@@ -274,6 +284,8 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 				externalDisputeUnlockTime,
 				inputHash: input.inputHash,
 				pricingType,
+				buyerReturnAddress: input.buyerReturnAddress ?? null,
+				sellerReturnAddress,
 			});
 
 			return {

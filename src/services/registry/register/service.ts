@@ -1,10 +1,13 @@
-import { RegistrationState, PricingType } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { PaymentSourceType, RegistrationState, PricingType } from '@/generated/prisma/client';
+import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@/utils/logger';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { lockAndQueryRegistryRequests } from '@/utils/db/lock-and-query-registry-request';
 import { DEFAULTS, SERVICE_CONSTANTS } from '@/utils/config';
-import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contract-generator';
+import {
+	getRegistryScriptFromNetworkHandlerV1,
+	getRegistryScriptFromNetworkHandlerV2,
+} from '@/utils/generator/contract-generator';
 import { stringToMetadata, cleanMetadata } from '@/utils/converter/metadata-string-convert';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
@@ -23,6 +26,7 @@ import {
 	resolveRegistryFundingLovelace,
 	resolveRegistryRecipientWalletAddress,
 } from '../shared';
+import { parseSupportedPaymentSources } from '@/types/payment-source';
 
 const mutex = new Mutex();
 
@@ -74,7 +78,9 @@ function buildAgentMetadata(request: {
 		} | null;
 	};
 	metadataVersion: number;
+	supportedPaymentSources: unknown;
 }): RegistryMetadata {
+	const supportedPaymentSources = parseSupportedPaymentSources(request.supportedPaymentSources);
 	const metadata = {
 		name: stringToMetadata(request.name),
 		description: stringToMetadata(request.description),
@@ -118,12 +124,21 @@ function buildAgentMetadata(request: {
 					},
 		image: stringToMetadata(DEFAULTS.DEFAULT_IMAGE),
 		metadata_version: request.metadataVersion.toString(),
+		supported_payment_sources:
+			request.metadataVersion >= DEFAULTS.DEFAULT_REGISTRY_METADATA_VERSION && supportedPaymentSources != null
+				? supportedPaymentSources.map((source) => ({
+						chain: stringToMetadata(source.chain),
+						network: stringToMetadata(source.network),
+						paymentSourceType: stringToMetadata(source.paymentSourceType),
+						address: stringToMetadata(source.address),
+					}))
+				: undefined,
 	};
 	// Clean undefined values from metadata - MeshSDK cannot serialize undefined
 	return cleanMetadata(metadata) as RegistryMetadata;
 }
 
-export async function registerAgentV1() {
+async function registerAgent(paymentSourceType: PaymentSourceType) {
 	let release: MutexInterface.Releaser | null;
 	try {
 		release = await tryAcquire(mutex).acquire();
@@ -137,6 +152,7 @@ export async function registerAgentV1() {
 		const paymentSourcesWithWalletLocked = await lockAndQueryRegistryRequests({
 			state: RegistrationState.RegistrationRequested,
 			maxBatchSize: 1,
+			paymentSourceType,
 		});
 
 		await Promise.allSettled(
@@ -145,6 +161,7 @@ export async function registerAgentV1() {
 
 				logger.info(
 					`Registering ${paymentSource.RegistryRequest.length} agents for payment source ${paymentSource.id}`,
+					{ paymentSourceType: paymentSource.paymentSourceType },
 				);
 
 				const network = convertNetwork(paymentSource.network);
@@ -174,7 +191,10 @@ export async function registerAgentV1() {
 						if (utxos.length === 0) {
 							throw new Error('No UTXOs found for the wallet');
 						}
-						const { script, policyId } = await getRegistryScriptFromNetworkHandlerV1(paymentSource);
+						const { script, policyId } =
+							paymentSource.paymentSourceType === PaymentSourceType.Web3CardanoV2
+								? await getRegistryScriptFromNetworkHandlerV2(paymentSource)
+								: await getRegistryScriptFromNetworkHandlerV1(paymentSource);
 
 						const limitedFilteredUtxos = sortUtxosByLovelaceDesc(utxos);
 
@@ -278,4 +298,12 @@ export async function registerAgentV1() {
 	} finally {
 		release();
 	}
+}
+
+export async function registerAgentV1() {
+	return registerAgent(PaymentSourceType.Web3CardanoV1);
+}
+
+export async function registerAgentV2() {
+	return registerAgent(PaymentSourceType.Web3CardanoV2);
 }

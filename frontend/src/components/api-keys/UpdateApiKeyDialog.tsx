@@ -88,7 +88,7 @@ type UpdateApiKeyFormValues = z.infer<typeof updateApiKeySchema>;
 /**
  * Get a human-readable permission label from flags.
  */
-function getPermissionLabel(canRead: boolean, canPay: boolean, canAdmin: boolean): string {
+function getPermissionLabel(_canRead: boolean, canPay: boolean, canAdmin: boolean): string {
   if (canAdmin) return 'Admin';
   if (canPay) return 'Read and Pay';
   return 'Read Only';

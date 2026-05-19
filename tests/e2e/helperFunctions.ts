@@ -140,6 +140,7 @@ export async function registerAndConfirmAgent(network: Network): Promise<Confirm
 	console.log(`🎯 E2E: registration payload:
     - Agent Name: ${registrationData.name}
     - Network: ${registrationData.network}
+    - Payment Source Type: ${global.testConfig.paymentSourceType}
     - Wallet: ${testWallet.name}
     - Pricing: ${registrationData.AgentPricing.Pricing.map((p) => `${p.amount} ${p.unit}`).join(', ')}
   `);
@@ -271,7 +272,7 @@ export async function deregisterAgent(
 	agentIdentifier: string,
 ): Promise<{ id: string; state: string }> {
 	// Query the active smart contract address dynamically from database
-	const activeSmartContractAddress = await getActiveSmartContractAddress(network);
+	const activeSmartContractAddress = await getActiveSmartContractAddress(network, global.testConfig.paymentSourceType);
 
 	const deregisterResponse = await global.testApiClient.request<{
 		id: string;
@@ -353,10 +354,13 @@ export async function deregisterAndConfirmAgent(
 export async function createPayment(agentIdentifier: string, network: Network): Promise<PaymentResult> {
 	console.log('💰 E2E: creating payment (default timing)...');
 
-	const paymentData = generateTestPaymentData(network, agentIdentifier);
+	const paymentData = generateTestPaymentData(network, agentIdentifier, {
+		paymentSourceType: global.testConfig.paymentSourceType,
+	});
 
 	console.log(`🎯 E2E: payment payload:
     - Network: ${paymentData.network}
+    - Payment Source Type: ${paymentData.paymentSourceType}
     - Agent ID: ${agentIdentifier}
     - Purchaser ID: ${paymentData.identifierFromPurchaser}
   `);
@@ -409,11 +413,13 @@ export async function createPaymentWithCustomTiming(
   `);
 
 	const paymentData = generateTestPaymentData(network, agentIdentifier, {
+		paymentSourceType: global.testConfig.paymentSourceType,
 		customTiming,
 	});
 
 	console.log(`🎯 E2E: payment payload:
     - Network: ${paymentData.network}
+    - Payment Source Type: ${paymentData.paymentSourceType}
     - Agent ID: ${agentIdentifier}
     - Purchaser ID: ${paymentData.identifierFromPurchaser}
   `);
@@ -466,7 +472,7 @@ export async function createPurchase(paymentResult: PaymentResult, agentData: Co
 		inputHash: paymentResult.inputHash,
 		sellerVkey: agentData.SmartContractWallet.walletVkey,
 		agentIdentifier: agentData.agentIdentifier,
-		paymentType: paymentResult.response.PaymentSource.paymentType,
+		paymentSourceType: paymentResult.response.PaymentSource.paymentSourceType,
 		unlockTime: paymentResult.unlockTime,
 		externalDisputeUnlockTime: paymentResult.externalDisputeUnlockTime,
 		submitResultTime: paymentResult.submitResultTime,
@@ -524,9 +530,11 @@ export async function waitForFundsLocked(blockchainIdentifier: string, network: 
 			const [paymentResponse, purchaseResponse] = await Promise.all([
 				global.testApiClient.queryPayments({
 					network: network,
+					filterPaymentSourceType: global.testConfig.paymentSourceType,
 				}),
 				global.testApiClient.queryPurchases({
 					network: network,
+					filterPaymentSourceType: global.testConfig.paymentSourceType,
 				}),
 			]);
 
@@ -615,9 +623,11 @@ export async function waitForResultSubmitted(blockchainIdentifier: string, netwo
 			const [paymentResponse, purchaseResponse] = await Promise.all([
 				global.testApiClient.queryPayments({
 					network: network,
+					filterPaymentSourceType: global.testConfig.paymentSourceType,
 				}),
 				global.testApiClient.queryPurchases({
 					network: network,
+					filterPaymentSourceType: global.testConfig.paymentSourceType,
 				}),
 			]);
 
@@ -686,9 +696,11 @@ export async function waitForDisputed(blockchainIdentifier: string, network: Net
 			const [paymentResponse, purchaseResponse] = await Promise.all([
 				global.testApiClient.queryPayments({
 					network: network,
+					filterPaymentSourceType: global.testConfig.paymentSourceType,
 				}),
 				global.testApiClient.queryPurchases({
 					network: network,
+					filterPaymentSourceType: global.testConfig.paymentSourceType,
 				}),
 			]);
 
@@ -774,9 +786,11 @@ export async function waitForRefundRequested(blockchainIdentifier: string, netwo
 			const [paymentResponse, purchaseResponse] = await Promise.all([
 				global.testApiClient.queryPayments({
 					network: network,
+					filterPaymentSourceType: global.testConfig.paymentSourceType,
 				}),
 				global.testApiClient.queryPurchases({
 					network: network,
+					filterPaymentSourceType: global.testConfig.paymentSourceType,
 				}),
 			]);
 

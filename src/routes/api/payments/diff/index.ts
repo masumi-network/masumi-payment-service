@@ -1,8 +1,8 @@
-import { z } from '@/utils/zod-openapi';
-import { prisma } from '@/utils/db';
-import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
-import { Network, PaymentAction, PaymentErrorType, Prisma } from '@/generated/prisma/client';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { z } from '@masumi/payment-core/zod';
+import { prisma } from '@masumi/payment-core/db';
+import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { Network, PaymentAction, PaymentErrorType, PaymentSourceType, Prisma } from '@/generated/prisma/client';
+import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import createHttpError from 'http-errors';
 import { queryPaymentsSchemaOutput } from '@/routes/api/payments';
 import { transformPaymentGetAmounts, transformPaymentGetTimestamps } from '@/utils/shared/transformers';
@@ -33,6 +33,7 @@ export const queryPaymentDiffSchemaInput = z.object({
 		.optional()
 		.nullable()
 		.describe('The smart contract address of the payment source'),
+	filterPaymentSourceType: z.nativeEnum(PaymentSourceType).optional().describe('Filter by payment source type'),
 	includeHistory: z
 		.string()
 		.default('false')
@@ -47,6 +48,7 @@ function buildPaymentDiffWhere({
 	sinceId,
 	network,
 	filterSmartContractAddress,
+	filterPaymentSourceType,
 	walletScopeIds,
 }: {
 	mode: PaymentDiffMode;
@@ -54,12 +56,14 @@ function buildPaymentDiffWhere({
 	sinceId?: string;
 	network: Prisma.PaymentSourceWhereInput['network'];
 	filterSmartContractAddress?: string | null;
+	filterPaymentSourceType?: PaymentSourceType;
 	walletScopeIds: string[] | null;
 }): Prisma.PaymentRequestWhereInput {
 	const base: Prisma.PaymentRequestWhereInput = {
 		PaymentSource: {
 			network,
 			smartContractAddress: filterSmartContractAddress ?? undefined,
+			paymentSourceType: filterPaymentSourceType,
 			deletedAt: null,
 		},
 		...buildWalletScopeFilter(walletScopeIds),
@@ -141,6 +145,7 @@ async function queryPaymentDiffByMode({
 			sinceId,
 			network: input.network,
 			filterSmartContractAddress: input.filterSmartContractAddress,
+			filterPaymentSourceType: input.filterPaymentSourceType,
 			walletScopeIds: ctx.walletScopeIds,
 		}),
 		orderBy: buildPaymentDiffOrderBy(mode),
@@ -165,6 +170,7 @@ async function queryPaymentDiffByMode({
 				select: {
 					id: true,
 					network: true,
+					paymentSourceType: true,
 					smartContractAddress: true,
 					policyId: true,
 				},

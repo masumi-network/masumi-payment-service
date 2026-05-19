@@ -1,4 +1,5 @@
 import { PricingType } from '@/generated/prisma/client';
+import { parseSupportedPaymentSources } from '@/types/payment-source';
 import type { RegistryListRecord } from './queries';
 
 export function serializeRegistryEntry(item: RegistryListRecord) {
@@ -33,6 +34,7 @@ export function serializeRegistryEntry(item: RegistryListRecord) {
 						pricingType: item.Pricing.pricingType,
 					},
 		sendFundingLovelace: item.sendFundingLovelace?.toString() ?? null,
+		supportedPaymentSources: parseSupportedPaymentSources(item.supportedPaymentSources),
 		Tags: item.tags,
 		CurrentTransaction: item.CurrentTransaction
 			? {

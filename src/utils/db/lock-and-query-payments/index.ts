@@ -1,4 +1,4 @@
-import { HotWalletType, OnChainState, PaymentAction } from '@/generated/prisma/client';
+import { HotWalletType, OnChainState, PaymentAction, PaymentSourceType } from '@/generated/prisma/client';
 import { prisma } from '..';
 
 export async function lockAndQueryPayments({
@@ -9,6 +9,7 @@ export async function lockAndQueryPayments({
 	resultHash = undefined,
 	requestedResultHash = undefined,
 	unlockTime = undefined,
+	paymentSourceType = undefined,
 }: {
 	paymentStatus: PaymentAction | { in: PaymentAction[] };
 	submitResultTime?: { lte: number } | undefined | { gte: number };
@@ -16,6 +17,7 @@ export async function lockAndQueryPayments({
 	resultHash?: string | { not: string | null } | undefined;
 	requestedResultHash?: string | { not: null } | undefined;
 	unlockTime?: { lte: number } | undefined | { gte: number };
+	paymentSourceType?: PaymentSourceType;
 	maxBatchSize: number;
 }) {
 	return await prisma.$transaction(
@@ -25,6 +27,7 @@ export async function lockAndQueryPayments({
 					syncInProgress: false,
 					deletedAt: null,
 					disablePaymentAt: null,
+					paymentSourceType,
 				},
 				include: {
 					HotWallets: {

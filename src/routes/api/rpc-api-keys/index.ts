@@ -1,8 +1,8 @@
-import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
-import { z } from '@/utils/zod-openapi';
-import { prisma } from '@/utils/db';
+import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { z } from '@masumi/payment-core/zod';
+import { prisma } from '@masumi/payment-core/db';
 import { Network, RPCProvider } from '@/generated/prisma/client';
-import { AuthContext } from '@/utils/middleware/auth-middleware';
+import { AuthContext } from '@masumi/payment-core/auth';
 
 export const getRpcProviderKeysSchemaInput = z.object({
 	cursorId: z.string().min(1).max(250).optional().describe('Used to paginate through the rpc provider keys'),

@@ -1,15 +1,10 @@
-import { OnChainState, PaymentAction, PaymentErrorType } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { OnChainState, PaymentAction, PaymentErrorType, PaymentSourceType } from '@/generated/prisma/client';
+import { prisma } from '@masumi/payment-core/db';
 import { deserializeDatum } from '@meshsdk/core';
 import { logger } from '@/utils/logger';
-import {
-	getDatumFromBlockchainIdentifier,
-	getPaymentScriptFromPaymentSourceV1,
-	SmartContractState,
-	smartContractStateEqualsOnChainState,
-} from '@/utils/generator/contract-generator';
+import { SmartContractState, smartContractStateEqualsOnChainState } from '@/utils/generator/contract-generator';
 import { convertNetwork } from '@/utils/converter/network-convert';
-import { decodeV1ContractDatum, newCooldownTime } from '@/utils/converter/string-datum-convert';
+import { newCooldownTime } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
@@ -25,6 +20,7 @@ import {
 	loadHotWalletSession,
 	updateCurrentTransactionHash,
 } from '@/services/shared';
+import { getPaymentSourceContractAdapter } from '@/services/payment-source-adapters';
 
 const mutex = new Mutex();
 
@@ -97,7 +93,8 @@ export async function authorizeRefundV1() {
 						if (utxos.length === 0) {
 							throw new Error('No UTXOs found in the wallet. Wallet is empty.');
 						}
-						const { script, smartContractAddress } = await getPaymentScriptFromPaymentSourceV1(paymentContract);
+						const adapter = getPaymentSourceContractAdapter(paymentContract.paymentSourceType);
+						const { script, smartContractAddress } = await adapter.getPaymentScriptFromPaymentSource(paymentContract);
 						const txHash = request.CurrentTransaction?.txHash;
 						if (txHash == null) {
 							throw new Error('No transaction hash found');
@@ -114,7 +111,7 @@ export async function authorizeRefundV1() {
 							}
 
 							const decodedDatum: unknown = deserializeDatum(utxoDatum);
-							const decodedContract = decodeV1ContractDatum(decodedDatum, network);
+							const decodedContract = adapter.decodeContractDatum(decodedDatum, network);
 							if (decodedContract == null) {
 								return false;
 							}
@@ -148,24 +145,22 @@ export async function authorizeRefundV1() {
 						}
 
 						const decodedDatum: unknown = deserializeDatum(utxoDatum);
-						const decodedContract = decodeV1ContractDatum(decodedDatum, network);
+						const decodedContract = adapter.decodeContractDatum(decodedDatum, network);
 						if (decodedContract == null) {
 							throw new Error('Invalid datum');
 						}
-						const datum = getDatumFromBlockchainIdentifier({
+						const datum = adapter.createDatumFromDecodedContract({
+							decodedContract,
 							buyerAddress: buyerAddress,
 							sellerAddress: sellerAddress,
 							blockchainIdentifier: request.blockchainIdentifier,
-							inputHash: decodedContract.inputHash,
 							resultHash: null,
-							payByTime: decodedContract.payByTime,
-							collateralReturnLovelace: decodedContract.collateralReturnLovelace,
-							resultTime: decodedContract.resultTime,
-							unlockTime: decodedContract.unlockTime,
-							externalDisputeUnlockTime: decodedContract.externalDisputeUnlockTime,
 							newCooldownTimeSeller: newCooldownTime(BigInt(paymentContract.cooldownTime)),
 							newCooldownTimeBuyer: BigInt(0),
-							state: SmartContractState.RefundRequested,
+							state:
+								paymentContract.paymentSourceType === PaymentSourceType.Web3CardanoV2
+									? SmartContractState.RefundAuthorized
+									: SmartContractState.RefundRequested,
 						});
 
 						const { invalidBefore, invalidAfter } = createTxWindow(network);

@@ -1,10 +1,14 @@
 import { CONSTANTS } from '@/utils/config';
-import { DecodedV1ContractDatum, decodeV1ContractDatum } from '@/utils/converter/string-datum-convert';
+import {
+	DecodedV1ContractDatum,
+	decodeV1ContractDatum,
+	decodeV2ContractDatum,
+} from '@/utils/converter/string-datum-convert';
 import { SmartContractState } from '@/utils/generator/contract-generator';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { PlutusDatumSchema, Transaction } from '@emurgo/cardano-serialization-lib-nodejs';
 import { deserializeDatum, resolvePaymentKeyHash } from '@meshsdk/core';
-import { Network, OnChainState } from '@/generated/prisma/client';
+import { Network, OnChainState, PaymentSourceType } from '@/generated/prisma/client';
 import { getSmartContractInteractionTxHistoryList, TransactionMetadata } from '../blockchain';
 
 export function calculateValueChange(
@@ -151,9 +155,14 @@ export function redeemerToOnChainState(
 			return OnChainState.RefundRequested;
 		}
 	} else if (redeemerVersion == 2) {
-		//CancelRefundRequest
+		if (decodedNewContract?.state == SmartContractState.WithdrawAuthorized) {
+			return OnChainState.WithdrawAuthorized;
+		}
+		//CancelRefundRequest / AuthorizeWithdrawal
 		if (decodedNewContract?.resultHash != null && decodedNewContract?.resultHash != '') {
-			return OnChainState.ResultSubmitted;
+			return decodedNewContract.state == SmartContractState.Disputed
+				? OnChainState.Disputed
+				: OnChainState.ResultSubmitted;
 		} else {
 			//Ensure the amounts match, to prevent state change attacks
 
@@ -176,8 +185,10 @@ export function redeemerToOnChainState(
 			return OnChainState.ResultSubmitted;
 		}
 	} else if (redeemerVersion == 6) {
-		//AllowRefund
-		return OnChainState.RefundRequested;
+		//AllowRefund / AuthorizeRefund
+		return decodedNewContract?.state == SmartContractState.RefundAuthorized
+			? OnChainState.RefundAuthorized
+			: OnChainState.RefundRequested;
 	} else {
 		//invalid transaction
 		return null;
@@ -283,7 +294,7 @@ export function extractOnChainTransactionData(
 		};
 		transaction: Transaction;
 	},
-	paymentContract: { smartContractAddress: string; network: Network },
+	paymentContract: { smartContractAddress: string; network: Network; paymentSourceType?: PaymentSourceType },
 ): ExtractOnChainTransactionDataOutput {
 	const valueInputs = tx.utxos.inputs.filter((x) => {
 		return x.address == paymentContract.smartContractAddress;
@@ -332,10 +343,11 @@ export function extractOnChainTransactionData(
 	}
 
 	const decodedInputDatum: unknown = deserializeDatum(inputDatum);
-	const decodedOldContract = decodeV1ContractDatum(
-		decodedInputDatum,
-		paymentContract.network == Network.Mainnet ? 'mainnet' : 'preprod',
-	);
+	const datumNetwork = paymentContract.network == Network.Mainnet ? 'mainnet' : 'preprod';
+	const decodedOldContract =
+		paymentContract.paymentSourceType === PaymentSourceType.Web3CardanoV2
+			? decodeV2ContractDatum(decodedInputDatum, datumNetwork)
+			: decodeV1ContractDatum(decodedInputDatum, datumNetwork);
 	if (decodedOldContract == null) {
 		return {
 			type: 'Invalid',
@@ -353,10 +365,10 @@ export function extractOnChainTransactionData(
 
 	const outputDatum = valueOutput?.inline_datum ?? null;
 	const decodedOutputDatum: unknown = outputDatum != null ? deserializeDatum(outputDatum) : null;
-	const decodedNewContract = decodeV1ContractDatum(
-		decodedOutputDatum,
-		paymentContract.network == Network.Mainnet ? 'mainnet' : 'preprod',
-	);
+	const decodedNewContract =
+		paymentContract.paymentSourceType === PaymentSourceType.Web3CardanoV2
+			? decodeV2ContractDatum(decodedOutputDatum, datumNetwork)
+			: decodeV1ContractDatum(decodedOutputDatum, datumNetwork);
 
 	const redeemer = redeemers.get(0);
 	const redeemerJson = redeemer.data().to_json(PlutusDatumSchema.BasicConversions);

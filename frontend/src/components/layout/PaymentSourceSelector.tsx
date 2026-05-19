@@ -14,11 +14,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu';
-
-const DEFAULT_CONTRACT_ADDRESSES: Record<string, string> = {
-  Preprod: 'addr_test1wz7j4kmg2cs7yf92uat3ed4a3u97kr7axxr4avaz0lhwdsqukgwfm',
-  Mainnet: 'addr1wx7j4kmg2cs7yf92uat3ed4a3u97kr7axxr4avaz0lhwdsq87ujx7',
-};
+import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
+import {
+  getPaymentSourceTypeShortLabel,
+  sortPaymentSourcesByPreference,
+  type PaymentSourceType,
+} from '@/lib/payment-source-type';
 
 interface NetworkSourceCardProps {
   collapsed: boolean;
@@ -31,13 +32,11 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
     useAppContext();
   const { paymentSources } = usePaymentSourceExtendedAll();
 
-  const networkSources = paymentSources.filter((ps) => ps.network === network);
+  const networkSources = sortPaymentSourcesByPreference(
+    paymentSources.filter((ps) => ps.network === network),
+  );
   const isOnPaymentSourcesPage = router.pathname === '/payment-sources';
   const hasSources = networkSources.length > 0;
-
-  const isDefaultContract = (address: string) => address === DEFAULT_CONTRACT_ADDRESSES[network];
-  const selectedIsDefault =
-    selectedPaymentSource && isDefaultContract(selectedPaymentSource.smartContractAddress);
 
   if (collapsed) {
     return (
@@ -88,7 +87,6 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
               networkSources={networkSources}
               selectedPaymentSourceId={selectedPaymentSourceId}
               setSelectedPaymentSourceId={setSelectedPaymentSourceId}
-              isDefaultContract={isDefaultContract}
               isOnPaymentSourcesPage={isOnPaymentSourcesPage}
             />
           </DropdownMenu>
@@ -141,16 +139,11 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
             >
               <FileInput className="h-3.5 w-3.5 shrink-0" />
               <div className="flex-1 min-w-0">
-                <div
-                  className={cn(
-                    'text-xs truncate',
-                    selectedPaymentSource && !selectedIsDefault && 'font-mono',
-                  )}
-                >
+                <div className={cn('text-xs truncate', selectedPaymentSource && 'font-mono')}>
                   {selectedPaymentSource
-                    ? selectedIsDefault
-                      ? 'Default Contract'
-                      : shortenAddress(selectedPaymentSource.smartContractAddress, 8)
+                    ? `${getPaymentSourceTypeShortLabel(
+                        selectedPaymentSource.paymentSourceType,
+                      )} ${shortenAddress(selectedPaymentSource.smartContractAddress, 8)}`
                     : 'Select source'}
                 </div>
               </div>
@@ -161,7 +154,6 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
             networkSources={networkSources}
             selectedPaymentSourceId={selectedPaymentSourceId}
             setSelectedPaymentSourceId={setSelectedPaymentSourceId}
-            isDefaultContract={isDefaultContract}
             isOnPaymentSourcesPage={isOnPaymentSourcesPage}
           />
         </DropdownMenu>
@@ -174,19 +166,18 @@ function SourceDropdown({
   networkSources,
   selectedPaymentSourceId,
   setSelectedPaymentSourceId,
-  isDefaultContract,
   isOnPaymentSourcesPage,
 }: {
   networkSources: {
     id: string;
     smartContractAddress: string;
+    paymentSourceType: PaymentSourceType;
     feeRatePermille: number;
     PurchasingWallets?: { id: string }[];
     SellingWallets?: { id: string }[];
   }[];
   selectedPaymentSourceId: string | null;
   setSelectedPaymentSourceId: (id: string | null) => void;
-  isDefaultContract: (address: string) => boolean;
   isOnPaymentSourcesPage: boolean;
 }) {
   const router = useRouter();
@@ -196,7 +187,6 @@ function SourceDropdown({
       <DropdownMenuLabel>Payment Source</DropdownMenuLabel>
       {networkSources.map((source) => {
         const isSelected = source.id === selectedPaymentSourceId;
-        const isDefault = isDefaultContract(source.smartContractAddress);
         const sourceWalletCount =
           (source.PurchasingWallets?.length ?? 0) + (source.SellingWallets?.length ?? 0);
         return (
@@ -211,16 +201,16 @@ function SourceDropdown({
                 isSelected ? 'opacity-100' : 'opacity-0',
               )}
             />
-            <div className="flex flex-col gap-0.5">
-              {isDefault ? (
-                <span className="text-sm">Default Contract</span>
-              ) : (
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <PaymentSourceTypeBadge paymentSourceType={source.paymentSourceType} showDefault />
                 <span className="font-mono text-sm">
                   {shortenAddress(source.smartContractAddress, 8)}
                 </span>
-              )}
+              </div>
               <span className="text-xs text-muted-foreground">
-                {sourceWalletCount} {sourceWalletCount === 1 ? 'wallet' : 'wallets'}
+                {sourceWalletCount} {sourceWalletCount === 1 ? 'wallet' : 'wallets'} ·{' '}
+                {(source.feeRatePermille / 10).toFixed(1)}% fee
               </span>
             </div>
           </DropdownMenuItem>

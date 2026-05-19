@@ -1,15 +1,15 @@
-import { z } from 'zod';
 import { Network, PaymentAction, TransactionStatus, OnChainState } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
-import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { logger } from '@/utils/logger';
 import { ez } from 'express-zod-api';
 import { paymentResponseSchema } from '..';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { transformPaymentGetTimestamps, transformPaymentGetAmounts } from '@/utils/shared/transformers';
 import { assertWalletInScope } from '@/utils/shared/wallet-scope';
+import { z } from '@masumi/payment-core/zod';
 
 export const paymentErrorStateRecoverySchemaInput = z.object({
 	blockchainIdentifier: z.string().min(1).describe('The blockchain identifier of the payment request'),
@@ -168,6 +168,7 @@ export const paymentErrorStateRecoveryPost = payAuthenticatedEndpointFactory.bui
 						select: {
 							id: true,
 							network: true,
+							paymentSourceType: true,
 							smartContractAddress: true,
 							policyId: true,
 						},

@@ -1,9 +1,9 @@
-import { z } from '@/utils/zod-openapi';
-import { prisma } from '@/utils/db';
+import { z } from '@masumi/payment-core/zod';
+import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 
-import { recordBusinessEndpointError } from '@/utils/metrics';
+import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
 import { generateInvoicePDFBase64, generateCancellationInvoicePDFBase64 } from '@/utils/invoice/pdf-generator';
 import {
 	generateInvoiceGroups,
@@ -34,7 +34,7 @@ import {
 	type PaymentWithInvoiceContext,
 } from './billing';
 
-export { getBillableFunds, isPaymentBillable } from './billing';
+export { isPaymentBillable } from './billing';
 
 const isUsdcxUnit = (unit: string) => unit === MAINNET_USDCX_UNIT;
 const isUsdmUnit = (unit: string) => unit === MAINNET_USDM_UNIT || unit === PREPROD_USDM_UNIT;

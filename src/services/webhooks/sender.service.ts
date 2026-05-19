@@ -1,7 +1,7 @@
 import { WebhookDeliveryStatus, WebhookEventType, WebhookFormat } from '@/generated/prisma/client';
 import { WEBHOOK_TEST_EVENT_TYPE } from '@/types/webhook-constants';
 import type { StoredWebhookPayload, WebhookSendPayload, WebhookTestPayload } from '@/types/webhook-payloads';
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@/utils/logger';
 import { getOwnPlainObject, getOwnString, isPlainObject } from '@/utils/object-properties';
 import { decryptWebhookAuthTokenSafe, decryptWebhookUrlForDelivery } from '@/utils/security/webhook-secrets';

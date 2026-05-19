@@ -374,6 +374,16 @@ export const PaymentSchema = {
             nullable: true,
             description: 'Amount of collateral to return in lovelace. Null if no collateral'
         },
+        buyerReturnAddress: {
+            type: 'string',
+            nullable: true,
+            description: 'Optional buyer return address stored with the request'
+        },
+        sellerReturnAddress: {
+            type: 'string',
+            nullable: true,
+            description: 'Optional seller return address stored with the request'
+        },
         externalDisputeUnlockTime: {
             type: 'string',
             description: 'Unix timestamp (in milliseconds) after which external dispute resolution can occur'
@@ -432,6 +442,8 @@ export const PaymentSchema = {
                 'ResultSubmitted',
                 'RefundRequested',
                 'Disputed',
+                'WithdrawAuthorized',
+                'RefundAuthorized',
                 'Withdrawn',
                 'RefundWithdrawn',
                 'DisputedWithdrawn',
@@ -620,6 +632,8 @@ export const PaymentSchema = {
                         'ResultSubmitted',
                         'RefundRequested',
                         'Disputed',
+                        'WithdrawAuthorized',
+                        'RefundAuthorized',
                         'Withdrawn',
                         'RefundWithdrawn',
                         'DisputedWithdrawn',
@@ -636,6 +650,8 @@ export const PaymentSchema = {
                         'ResultSubmitted',
                         'RefundRequested',
                         'Disputed',
+                        'WithdrawAuthorized',
+                        'RefundAuthorized',
                         'Withdrawn',
                         'RefundWithdrawn',
                         'DisputedWithdrawn',
@@ -724,6 +740,8 @@ export const PaymentSchema = {
                             'ResultSubmitted',
                             'RefundRequested',
                             'Disputed',
+                            'WithdrawAuthorized',
+                            'RefundAuthorized',
                             'Withdrawn',
                             'RefundWithdrawn',
                             'DisputedWithdrawn',
@@ -740,6 +758,8 @@ export const PaymentSchema = {
                             'ResultSubmitted',
                             'RefundRequested',
                             'Disputed',
+                            'WithdrawAuthorized',
+                            'RefundAuthorized',
                             'Withdrawn',
                             'RefundWithdrawn',
                             'DisputedWithdrawn',
@@ -846,6 +866,14 @@ export const PaymentSchema = {
                     ],
                     description: 'The Cardano network (Mainnet, Preprod, or Preview)'
                 },
+                paymentSourceType: {
+                    type: 'string',
+                    enum: [
+                        'Web3CardanoV1',
+                        'Web3CardanoV2'
+                    ],
+                    description: 'Payment source type for adapter dispatch'
+                },
                 smartContractAddress: {
                     type: 'string',
                     description: 'Address of the smart contract managing this payment'
@@ -859,6 +887,7 @@ export const PaymentSchema = {
             required: [
                 'id',
                 'network',
+                'paymentSourceType',
                 'smartContractAddress',
                 'policyId'
             ],
@@ -925,6 +954,8 @@ export const PaymentSchema = {
         'submitResultTime',
         'unlockTime',
         'collateralReturnLovelace',
+        'buyerReturnAddress',
+        'sellerReturnAddress',
         'externalDisputeUnlockTime',
         'requestedById',
         'resultHash',
@@ -1045,6 +1076,8 @@ export const PurchaseSchema = {
                 'ResultSubmitted',
                 'RefundRequested',
                 'Disputed',
+                'WithdrawAuthorized',
+                'RefundAuthorized',
                 'Withdrawn',
                 'RefundWithdrawn',
                 'DisputedWithdrawn',
@@ -1056,6 +1089,16 @@ export const PurchaseSchema = {
             type: 'string',
             nullable: true,
             description: 'Amount of collateral to return in lovelace. Null if no collateral'
+        },
+        buyerReturnAddress: {
+            type: 'string',
+            nullable: true,
+            description: 'Optional buyer return address stored with the request'
+        },
+        sellerReturnAddress: {
+            type: 'string',
+            nullable: true,
+            description: 'Optional seller return address stored with the request'
         },
         cooldownTime: {
             type: 'number',
@@ -1091,7 +1134,9 @@ export const PurchaseSchema = {
                         'UnSetRefundRequestedRequested',
                         'UnSetRefundRequestedInitiated',
                         'WithdrawRefundRequested',
-                        'WithdrawRefundInitiated'
+                        'WithdrawRefundInitiated',
+                        'AuthorizeWithdrawalRequested',
+                        'AuthorizeWithdrawalInitiated'
                     ],
                     description: 'Next action required for this purchase'
                 },
@@ -1153,7 +1198,9 @@ export const PurchaseSchema = {
                             'UnSetRefundRequestedRequested',
                             'UnSetRefundRequestedInitiated',
                             'WithdrawRefundRequested',
-                            'WithdrawRefundInitiated'
+                            'WithdrawRefundInitiated',
+                            'AuthorizeWithdrawalRequested',
+                            'AuthorizeWithdrawalInitiated'
                         ],
                         description: 'Next action required for this purchase'
                     },
@@ -1244,6 +1291,8 @@ export const PurchaseSchema = {
                         'ResultSubmitted',
                         'RefundRequested',
                         'Disputed',
+                        'WithdrawAuthorized',
+                        'RefundAuthorized',
                         'Withdrawn',
                         'RefundWithdrawn',
                         'DisputedWithdrawn',
@@ -1260,6 +1309,8 @@ export const PurchaseSchema = {
                         'ResultSubmitted',
                         'RefundRequested',
                         'Disputed',
+                        'WithdrawAuthorized',
+                        'RefundAuthorized',
                         'Withdrawn',
                         'RefundWithdrawn',
                         'DisputedWithdrawn',
@@ -1348,6 +1399,8 @@ export const PurchaseSchema = {
                             'ResultSubmitted',
                             'RefundRequested',
                             'Disputed',
+                            'WithdrawAuthorized',
+                            'RefundAuthorized',
                             'Withdrawn',
                             'RefundWithdrawn',
                             'DisputedWithdrawn',
@@ -1364,6 +1417,8 @@ export const PurchaseSchema = {
                             'ResultSubmitted',
                             'RefundRequested',
                             'Disputed',
+                            'WithdrawAuthorized',
+                            'RefundAuthorized',
                             'Withdrawn',
                             'RefundWithdrawn',
                             'DisputedWithdrawn',
@@ -1460,6 +1515,13 @@ export const PurchaseSchema = {
                         'Mainnet'
                     ]
                 },
+                paymentSourceType: {
+                    type: 'string',
+                    enum: [
+                        'Web3CardanoV1',
+                        'Web3CardanoV2'
+                    ]
+                },
                 smartContractAddress: {
                     type: 'string'
                 },
@@ -1471,6 +1533,7 @@ export const PurchaseSchema = {
             required: [
                 'id',
                 'network',
+                'paymentSourceType',
                 'smartContractAddress',
                 'policyId'
             ]
@@ -1544,6 +1607,8 @@ export const PurchaseSchema = {
         'requestedById',
         'onChainState',
         'collateralReturnLovelace',
+        'buyerReturnAddress',
+        'sellerReturnAddress',
         'cooldownTime',
         'cooldownTimeOtherParty',
         'inputHash',
@@ -1792,8 +1857,54 @@ export const AgentMetadataSchema = {
                 metadataVersion: {
                     type: 'integer',
                     minimum: 1,
-                    maximum: 1,
-                    description: 'Version of the metadata schema (currently only version 1 is supported)'
+                    maximum: 2,
+                    description: 'Version of the metadata schema'
+                },
+                supportedPaymentSources: {
+                    type: 'array',
+                    nullable: true,
+                    items: {
+                        type: 'object',
+                        properties: {
+                            chain: {
+                                type: 'string',
+                                enum: [
+                                    'Cardano'
+                                ],
+                                description: 'The blockchain this payment source is available on'
+                            },
+                            network: {
+                                type: 'string',
+                                enum: [
+                                    'Preprod',
+                                    'Mainnet'
+                                ],
+                                description: 'The blockchain network this payment source is available on'
+                            },
+                            paymentSourceType: {
+                                type: 'string',
+                                enum: [
+                                    'Web3CardanoV1',
+                                    'Web3CardanoV2'
+                                ],
+                                description: 'The configured payment source type'
+                            },
+                            address: {
+                                type: 'string',
+                                maxLength: 250,
+                                description: 'The escrow smart contract address for this payment source'
+                            }
+                        },
+                        required: [
+                            'chain',
+                            'network',
+                            'paymentSourceType',
+                            'address'
+                        ]
+                    },
+                    minItems: 1,
+                    maxItems: 25,
+                    description: 'Payment sources advertised by this registry entry. Null for legacy metadata.'
                 }
             },
             required: [
@@ -1804,7 +1915,8 @@ export const AgentMetadataSchema = {
                 'Author',
                 'AgentPricing',
                 'image',
-                'metadataVersion'
+                'metadataVersion',
+                'supportedPaymentSources'
             ],
             description: 'On-chain metadata for the agent'
         }
@@ -2047,8 +2159,54 @@ export const AgentIdentifierMetadataSchema = {
                 metadataVersion: {
                     type: 'integer',
                     minimum: 1,
-                    maximum: 1,
-                    description: 'Version of the metadata schema (currently only version 1 is supported)'
+                    maximum: 2,
+                    description: 'Version of the metadata schema'
+                },
+                supportedPaymentSources: {
+                    type: 'array',
+                    nullable: true,
+                    items: {
+                        type: 'object',
+                        properties: {
+                            chain: {
+                                type: 'string',
+                                enum: [
+                                    'Cardano'
+                                ],
+                                description: 'The blockchain this payment source is available on'
+                            },
+                            network: {
+                                type: 'string',
+                                enum: [
+                                    'Preprod',
+                                    'Mainnet'
+                                ],
+                                description: 'The blockchain network this payment source is available on'
+                            },
+                            paymentSourceType: {
+                                type: 'string',
+                                enum: [
+                                    'Web3CardanoV1',
+                                    'Web3CardanoV2'
+                                ],
+                                description: 'The configured payment source type'
+                            },
+                            address: {
+                                type: 'string',
+                                maxLength: 250,
+                                description: 'The escrow smart contract address for this payment source'
+                            }
+                        },
+                        required: [
+                            'chain',
+                            'network',
+                            'paymentSourceType',
+                            'address'
+                        ]
+                    },
+                    minItems: 1,
+                    maxItems: 25,
+                    description: 'Payment sources advertised by this registry entry. Null for legacy metadata.'
                 }
             },
             required: [
@@ -2059,7 +2217,8 @@ export const AgentIdentifierMetadataSchema = {
                 'Author',
                 'AgentPricing',
                 'image',
-                'metadataVersion'
+                'metadataVersion',
+                'supportedPaymentSources'
             ],
             description: 'On-chain metadata for the agent'
         }
@@ -2327,6 +2486,52 @@ export const RegistryEntrySchema = {
             nullable: true,
             description: 'Effective lovelace amount explicitly configured for the NFT output. Null means the default minimum NFT funding is used.'
         },
+        supportedPaymentSources: {
+            type: 'array',
+            nullable: true,
+            items: {
+                type: 'object',
+                properties: {
+                    chain: {
+                        type: 'string',
+                        enum: [
+                            'Cardano'
+                        ],
+                        description: 'The blockchain this payment source is available on'
+                    },
+                    network: {
+                        type: 'string',
+                        enum: [
+                            'Preprod',
+                            'Mainnet'
+                        ],
+                        description: 'The blockchain network this payment source is available on'
+                    },
+                    paymentSourceType: {
+                        type: 'string',
+                        enum: [
+                            'Web3CardanoV1',
+                            'Web3CardanoV2'
+                        ],
+                        description: 'The configured payment source type'
+                    },
+                    address: {
+                        type: 'string',
+                        maxLength: 250,
+                        description: 'The escrow smart contract address for this payment source'
+                    }
+                },
+                required: [
+                    'chain',
+                    'network',
+                    'paymentSourceType',
+                    'address'
+                ]
+            },
+            minItems: 1,
+            maxItems: 25,
+            description: 'Payment sources advertised by this registry entry. Null for legacy metadata.'
+        },
         SmartContractWallet: {
             type: 'object',
             properties: {
@@ -2433,6 +2638,7 @@ export const RegistryEntrySchema = {
         'agentIdentifier',
         'AgentPricing',
         'sendFundingLovelace',
+        'supportedPaymentSources',
         'SmartContractWallet',
         'RecipientWallet',
         'CurrentTransaction'
@@ -2463,6 +2669,19 @@ export const PaymentSourceSchema = {
                 'Mainnet'
             ],
             description: 'The Cardano network (Mainnet, Preprod, or Preview)'
+        },
+        paymentSourceType: {
+            type: 'string',
+            enum: [
+                'Web3CardanoV1',
+                'Web3CardanoV2'
+            ],
+            description: 'Payment source type for adapter dispatch'
+        },
+        requiredAdminSignatures: {
+            type: 'integer',
+            nullable: true,
+            description: 'Required weighted admin signatures for Web3CardanoV2 sources. Null for Web3CardanoV1.'
         },
         policyId: {
             type: 'string',
@@ -2507,6 +2726,7 @@ export const PaymentSourceSchema = {
         },
         FeeReceiverNetworkWallet: {
             type: 'object',
+            nullable: true,
             properties: {
                 walletAddress: {
                     type: 'string',
@@ -2530,6 +2750,8 @@ export const PaymentSourceSchema = {
         'createdAt',
         'updatedAt',
         'network',
+        'paymentSourceType',
+        'requiredAdminSignatures',
         'policyId',
         'smartContractAddress',
         'lastIdentifierChecked',
@@ -2708,6 +2930,19 @@ export const PaymentSourceExtendedSchema = {
                 'Mainnet'
             ],
             description: 'The Cardano network'
+        },
+        paymentSourceType: {
+            type: 'string',
+            enum: [
+                'Web3CardanoV1',
+                'Web3CardanoV2'
+            ],
+            description: 'Payment source type for adapter dispatch'
+        },
+        requiredAdminSignatures: {
+            type: 'integer',
+            nullable: true,
+            description: 'Required weighted admin signatures for Web3CardanoV2 sources. Null for Web3CardanoV1.'
         },
         policyId: {
             type: 'string',
@@ -2907,6 +3142,7 @@ export const PaymentSourceExtendedSchema = {
         },
         FeeReceiverNetworkWallet: {
             type: 'object',
+            nullable: true,
             properties: {
                 walletAddress: {
                     type: 'string',
@@ -2930,6 +3166,8 @@ export const PaymentSourceExtendedSchema = {
         'createdAt',
         'updatedAt',
         'network',
+        'paymentSourceType',
+        'requiredAdminSignatures',
         'policyId',
         'smartContractAddress',
         'PaymentSourceConfig',

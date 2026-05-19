@@ -1,4 +1,4 @@
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
 
 /**
  * Schema-only module for swap API. Kept separate so OpenAPI/swagger generator

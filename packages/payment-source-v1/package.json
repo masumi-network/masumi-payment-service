@@ -1,0 +1,14 @@
+{
+	"name": "@masumi/payment-source-v1",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"dependencies": {
+		"@masumi/payment-core": "workspace:*",
+		"@meshsdk/core": "1.9.0-beta.96",
+		"@meshsdk/core-cst": "1.9.0-beta.90"
+	}
+}

@@ -7,10 +7,16 @@ import {
 	PurchaseErrorType,
 	RegistrationState,
 } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@/utils/logger';
 import { collectOutstandingPaymentsV1, submitResultV1, authorizeRefundV1 } from '@/services/payments';
-import { batchLatestPaymentEntriesV1, collectRefundV1, requestRefundsV1, cancelRefundsV1 } from '@/services/purchases';
+import {
+	batchLatestPaymentEntriesV1,
+	collectRefundV1,
+	requestRefundsV1,
+	cancelRefundsV1,
+	authorizeWithdrawalsV2,
+} from '@/services/purchases';
 import { registerAgentV1, deRegisterAgentV1 } from '@/services/registry';
 import { registerInboxAgentV1, deRegisterInboxAgentV1 } from '@/services/registry-inbox';
 import { CONFIG, DEFAULTS } from '@/utils/config';
@@ -176,6 +182,7 @@ export async function updateWalletTransactionHash() {
 								PurchasingAction.WithdrawRefundInitiated,
 								PurchasingAction.SetRefundRequestedInitiated,
 								PurchasingAction.UnSetRefundRequestedInitiated,
+								PurchasingAction.AuthorizeWithdrawalInitiated,
 							],
 						},
 					},
@@ -675,6 +682,11 @@ export async function updateWalletTransactionHash() {
 				await cancelRefundsV1();
 			} catch (error) {
 				logger.error(`Error initiating cancel refund: ${errorToString(error)}`);
+			}
+			try {
+				await authorizeWithdrawalsV2();
+			} catch (error) {
+				logger.error(`Error initiating authorize withdrawal: ${errorToString(error)}`);
 			}
 			try {
 				await batchLatestPaymentEntriesV1();

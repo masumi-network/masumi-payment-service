@@ -1,6 +1,10 @@
 import type { Config } from '@jest/types';
 
 const moduleNameMapper = {
+	'^@masumi/payment-core$': '<rootDir>/packages/payment-core/src/index.ts',
+	'^@masumi/payment-core/(.*)$': '<rootDir>/packages/payment-core/src/$1.ts',
+	'^@masumi/payment-source-v1$': '<rootDir>/packages/payment-source-v1/src/index.ts',
+	'^@masumi/payment-source-v2$': '<rootDir>/packages/payment-source-v2/src/index.ts',
 	'@/(.*)': '<rootDir>/src/$1',
 	'^(\\.{1,2}/.*)\\.js$': '$1',
 };

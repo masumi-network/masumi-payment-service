@@ -1,9 +1,9 @@
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
 import { Network, PaymentAction, PaymentErrorType } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
-import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
+import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
+import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { transformPaymentGetTimestamps, transformPaymentGetAmounts } from '@/utils/shared/transformers';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { paymentResponseSchema } from '@/routes/api/payments';
@@ -65,6 +65,7 @@ export const resolvePaymentRequestPost = readAuthenticatedEndpointFactory.build(
 					select: {
 						id: true,
 						network: true,
+						paymentSourceType: true,
 						smartContractAddress: true,
 						policyId: true,
 					},

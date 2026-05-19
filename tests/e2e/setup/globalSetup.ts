@@ -81,6 +81,7 @@ And accessible at: ${config.apiUrl}
 
 		const state: E2EGlobalState = {
 			network: config.network,
+			paymentSourceType: config.paymentSourceType,
 			agent,
 			createdAt: new Date().toISOString(),
 		};
@@ -91,6 +92,7 @@ And accessible at: ${config.apiUrl}
     - Agent Name: ${agent.name}
     - Agent ID: ${agent.id}
     - Agent Identifier: ${agent.agentIdentifier}
+    - Payment Source Type: ${config.paymentSourceType}
   `);
 	})();
 

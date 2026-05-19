@@ -1,5 +1,5 @@
 import { CONFIG, CONSTANTS } from '@/utils/config';
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@/utils/logger';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { Transaction } from '@emurgo/cardano-serialization-lib-nodejs';

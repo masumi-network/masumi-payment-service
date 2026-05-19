@@ -22,6 +22,8 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { parseAmountSearchRange } from '@/lib/parseAmountSearchRange';
 import Link from 'next/link';
+import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
+import { getPaymentSourceTypeLabel } from '@/lib/payment-source-type';
 
 type Transaction = ReturnType<typeof useTransactions>['transactions'][number];
 
@@ -161,6 +163,7 @@ export default function Transactions() {
       if (tx.CurrentTransaction?.txHash?.toLowerCase().includes(query)) return true;
       if (tx.SmartContractWallet?.walletAddress?.toLowerCase().includes(query)) return true;
       if (tx.PaymentSource?.network?.toLowerCase().includes(query)) return true;
+      if (tx.PaymentSource?.paymentSourceType?.toLowerCase().includes(query)) return true;
       if (tx.type?.toLowerCase().includes(query)) return true;
       if (matchingStates.length > 0 && tx.onChainState && matchingStates.includes(tx.onChainState))
         return true;
@@ -207,6 +210,8 @@ export default function Transactions() {
       case 'resultsubmitted':
         return 'text-green-500';
       case 'refundrequested':
+      case 'withdrawauthorized':
+      case 'refundauthorized':
         return 'text-orange-500';
       case 'refundwithdrawn':
         return 'text-blue-500';
@@ -226,6 +231,7 @@ export default function Transactions() {
         'Transaction Hash',
         'Payment Amounts',
         'Network',
+        'Payment Source Type',
         'Status',
         'Date',
         'Fee rate (%)',
@@ -261,6 +267,7 @@ export default function Transactions() {
           hash,
           amount,
           transaction.PaymentSource.network,
+          getPaymentSourceTypeLabel(transaction.PaymentSource.paymentSourceType),
           status,
           date,
           feeRateDisplay,
@@ -343,7 +350,7 @@ export default function Transactions() {
               <SearchInput
                 value={searchQuery}
                 onChange={setSearchQuery}
-                placeholder="Search by ID, hash, status, amount..."
+                placeholder="Search by ID, hash, status, amount, or source..."
                 className="max-w-xs"
                 isLoading={isSearchPending && !!searchQuery}
               />
@@ -369,7 +376,7 @@ export default function Transactions() {
                     Amount
                   </th>
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">
-                    Network
+                    Source
                   </th>
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">
                     Status
@@ -465,7 +472,15 @@ export default function Transactions() {
                               })
                             : '—'}
                       </td>
-                      <td className="p-4">{transaction.PaymentSource.network}</td>
+                      <td className="p-4">
+                        <div className="flex flex-col gap-1">
+                          <span>{transaction.PaymentSource.network}</span>
+                          <PaymentSourceTypeBadge
+                            paymentSourceType={transaction.PaymentSource.paymentSourceType}
+                            showDefault
+                          />
+                        </div>
+                      </td>
                       <td className="p-4">
                         <span
                           className={getStatusColor(

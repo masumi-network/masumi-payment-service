@@ -1,4 +1,4 @@
-import { Network } from '@/generated/prisma/enums';
+import { Network, PaymentSourceType } from '@/generated/prisma/enums';
 import { CreatePaymentData, RegistrationData } from '../utils/apiClient';
 import { createHash } from 'crypto';
 import { createId } from '@paralleldrive/cuid2';
@@ -100,6 +100,7 @@ export function getTestScenarios() {
 export function getTestEnvironment() {
 	return {
 		network: (process.env.TEST_NETWORK as Network) || Network.Preprod,
+		paymentSourceType: (process.env.TEST_PAYMENT_SOURCE_TYPE as PaymentSourceType) || PaymentSourceType.Web3CardanoV1,
 		apiUrl: process.env.TEST_API_URL || 'http://localhost:3001',
 		apiKey: process.env.TEST_API_KEY || 'DefaultTestApiKey12345',
 		timeout: {
@@ -193,6 +194,7 @@ export function generateTestPaymentData(
 	network: Network,
 	agentIdentifier: string,
 	options: {
+		paymentSourceType?: PaymentSourceType;
 		customTiming?: Partial<PaymentTimingConfig>;
 		metadata?: string;
 		inputData?: string;
@@ -224,7 +226,7 @@ export function generateTestPaymentData(
 		inputHash,
 		network,
 		agentIdentifier,
-		paymentType: 'Web3CardanoV1', // Valid payment type from API
+		paymentSourceType: options.paymentSourceType ?? getTestEnvironment().paymentSourceType,
 		payByTime: timing.payByTime.toISOString(),
 		submitResultTime: timing.submitResultTime.toISOString(),
 		unlockTime: timing.unlockTime?.toISOString(),

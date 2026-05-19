@@ -1,12 +1,14 @@
-import { HotWalletType, RegistrationState } from '@/generated/prisma/client';
+import { HotWalletType, PaymentSourceType, RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '../index.js';
 
 export async function lockAndQueryRegistryRequests({
 	state,
 	maxBatchSize,
+	paymentSourceType = PaymentSourceType.Web3CardanoV1,
 }: {
 	state: RegistrationState;
 	maxBatchSize: number;
+	paymentSourceType?: PaymentSourceType;
 }) {
 	const locksSellingWallet = state === RegistrationState.RegistrationRequested;
 
@@ -17,6 +19,7 @@ export async function lockAndQueryRegistryRequests({
 					syncInProgress: false,
 					deletedAt: null,
 					disablePaymentAt: null,
+					paymentSourceType,
 				},
 				include: {
 					HotWallets: {

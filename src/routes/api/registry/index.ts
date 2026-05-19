@@ -1,16 +1,19 @@
-import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
-import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
-import { z } from '@/utils/zod-openapi';
+import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { z } from '@masumi/payment-core/zod';
 import { PaymentType, PricingType, RegistrationState } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { DEFAULTS } from '@/utils/config';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
-import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
-import { recordBusinessEndpointError } from '@/utils/metrics';
+import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
+import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
+import { toPrismaInputJsonValue } from '@/utils/json-value';
 import { getBlockfrostInstance, validateAssetsOnChain } from '@/utils/blockfrost';
 import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { normalizeRequestedRegistryFundingLovelace } from '@/services/registry/shared';
+import { getDefaultSupportedPaymentSources } from '@/services/registry/supported-payment-sources';
+import { parseSupportedPaymentSources, validateSupportedPaymentSourcesOrThrow } from '@/types/payment-source';
 import {
 	deleteAgentRegistrationSchemaInput,
 	deleteAgentRegistrationSchemaOutput,
@@ -65,6 +68,7 @@ export const queryRegistryCountGet = readAuthenticatedEndpointFactory.build({
 					network: input.network,
 					deletedAt: null,
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
+					paymentSourceType: input.filterPaymentSourceType,
 				},
 				SmartContractWallet: { deletedAt: null },
 				...buildManagedHolderWalletScopeFilter(ctx.walletScopeIds),
@@ -102,6 +106,13 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 				operation: 'register_agent',
 			});
 			const sendFundingLovelace = normalizeRequestedRegistryFundingLovelace(input.sendFundingLovelace);
+			const supportedPaymentSources =
+				input.supportedPaymentSources ?? (await getDefaultSupportedPaymentSources(input.network));
+			try {
+				validateSupportedPaymentSourcesOrThrow(supportedPaymentSources, input.network);
+			} catch (error) {
+				throw createHttpError(400, error instanceof Error ? error.message : String(error));
+			}
 
 			// Validate pricing assets exist on-chain
 			if (input.AgentPricing.pricingType === PricingType.Fixed) {
@@ -150,7 +161,8 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 					sendFundingLovelace,
 					state: RegistrationState.RegistrationRequested,
 					agentIdentifier: null,
-					metadataVersion: DEFAULTS.DEFAULT_METADATA_VERSION,
+					metadataVersion: DEFAULTS.DEFAULT_REGISTRY_METADATA_VERSION,
+					supportedPaymentSources: toPrismaInputJsonValue(supportedPaymentSources),
 					ExampleOutputs: {
 						createMany: {
 							data: input.ExampleOutputs.map((exampleOutput) => ({
@@ -267,6 +279,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 								pricingType: result.Pricing.pricingType,
 							},
 				sendFundingLovelace: result.sendFundingLovelace?.toString() ?? null,
+				supportedPaymentSources: parseSupportedPaymentSources(result.supportedPaymentSources),
 				Tags: result.tags,
 				RecipientWallet: result.RecipientWallet,
 				CurrentTransaction: result.CurrentTransaction
@@ -418,6 +431,7 @@ export const deleteAgentRegistration = adminAuthenticatedEndpointFactory.build({
 								pricingType: item.Pricing.pricingType,
 							},
 				sendFundingLovelace: item.sendFundingLovelace?.toString() ?? null,
+				supportedPaymentSources: parseSupportedPaymentSources(item.supportedPaymentSources),
 				Tags: item.tags,
 				RecipientWallet: item.RecipientWallet,
 				CurrentTransaction: item.CurrentTransaction

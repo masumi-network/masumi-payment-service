@@ -216,6 +216,7 @@ const BUSINESS_METRIC_ATTRIBUTE_KEYS = new Set<string>([
 	'field',
 	'validation_type',
 	'wallet_type',
+	'payment_source_type',
 ]);
 
 const filterToAllowlist = (
@@ -319,12 +320,13 @@ export const isBusinessEndpoint = (endpoint: string): boolean => {
 };
 
 // Only these keys are safe for blockchain metrics (no entity_id to avoid unbounded cardinality).
-const BLOCKCHAIN_METRIC_ATTRIBUTE_KEYS = new Set<string>(['network']);
+const BLOCKCHAIN_METRIC_ATTRIBUTE_KEYS = new Set<string>(['network', 'payment_source_type']);
 const WALLET_LOW_BALANCE_METRIC_ATTRIBUTE_KEYS = new Set<string>([
 	'network',
 	'asset_unit',
 	'wallet_type',
 	'check_source',
+	'payment_source_type',
 ]);
 
 // Blockchain State Transition Recording Functions. Do not add entity_id to attributes.

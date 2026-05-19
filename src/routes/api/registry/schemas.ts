@@ -1,5 +1,12 @@
-import { Network, PricingType, RegistrationState, TransactionStatus } from '@/generated/prisma/client';
-import { z } from '@/utils/zod-openapi';
+import {
+	Network,
+	PaymentSourceType,
+	PricingType,
+	RegistrationState,
+	TransactionStatus,
+} from '@/generated/prisma/client';
+import { supportedPaymentSourcesSchema } from '@/types/payment-source';
+import { z } from '@masumi/payment-core/zod';
 
 export enum FilterStatus {
 	Registered = 'Registered',
@@ -17,6 +24,7 @@ export const queryRegistryRequestSchemaInput = z.object({
 		.optional()
 		.nullable()
 		.describe('The smart contract address of the payment source'),
+	filterPaymentSourceType: z.nativeEnum(PaymentSourceType).optional().describe('Filter by payment source type'),
 	filterStatus: z.nativeEnum(FilterStatus).optional().describe('Filter by registration status category'),
 	searchQuery: z
 		.string()
@@ -116,6 +124,9 @@ export const registryRequestOutputSchema = z
 			.describe(
 				'Effective lovelace amount explicitly configured for the NFT output. Null means the default minimum NFT funding is used.',
 			),
+		supportedPaymentSources: supportedPaymentSourcesSchema
+			.nullable()
+			.describe('Payment sources advertised by this registry entry. Null for legacy metadata.'),
 		SmartContractWallet: z
 			.object({
 				walletVkey: z.string().describe('Payment key hash of the smart contract wallet'),
@@ -156,6 +167,7 @@ export const queryRegistryCountSchemaInput = z.object({
 		.optional()
 		.nullable()
 		.describe('The smart contract address of the payment source'),
+	filterPaymentSourceType: z.nativeEnum(PaymentSourceType).optional().describe('Filter by payment source type'),
 });
 
 export const queryRegistryCountSchemaOutput = z.object({
@@ -179,6 +191,11 @@ export const registerAgentSchemaInput = z.object({
 		.optional()
 		.describe(
 			'Optional lovelace amount to include with the minted NFT output. If provided below the minimum NFT funding, the current minimum is still used.',
+		),
+	supportedPaymentSources: supportedPaymentSourcesSchema
+		.optional()
+		.describe(
+			'Payment sources to advertise in registry metadata. Defaults to the configured V2 source for the network.',
 		),
 	ExampleOutputs: z
 		.array(

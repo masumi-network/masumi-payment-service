@@ -1,0 +1,24 @@
+{
+	"name": "@masumi/payment-core",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts",
+		"./auth": "./src/auth.ts",
+		"./blockchain-identifier": "./src/blockchain-identifier.ts",
+		"./config": "./src/config.ts",
+		"./db": "./src/db.ts",
+		"./hex": "./src/hex.ts",
+		"./logger": "./src/logger.ts",
+		"./metrics": "./src/metrics.ts",
+		"./network": "./src/network.ts",
+		"./payment-source": "./src/payment-source.ts",
+		"./zod": "./src/zod.ts"
+	},
+	"dependencies": {
+		"@meshsdk/core-cst": "1.9.0-beta.90",
+		"express-zod-api": "26.3.1",
+		"lz-string": "1.5.0"
+	}
+}

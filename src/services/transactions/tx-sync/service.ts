@@ -6,7 +6,7 @@ import {
 	Prisma,
 	PurchasingAction,
 } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@/utils/logger';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { Mutex } from 'async-mutex';

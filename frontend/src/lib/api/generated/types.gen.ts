@@ -241,6 +241,14 @@ export type Payment = {
      */
     collateralReturnLovelace: string | null;
     /**
+     * Optional buyer return address stored with the request
+     */
+    buyerReturnAddress: string | null;
+    /**
+     * Optional seller return address stored with the request
+     */
+    sellerReturnAddress: string | null;
+    /**
      * Unix timestamp (in milliseconds) after which external dispute resolution can occur
      */
     externalDisputeUnlockTime: string;
@@ -287,7 +295,7 @@ export type Payment = {
     /**
      * Current state of the payment on the blockchain. Null if not yet on-chain
      */
-    onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+    onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
     /**
      * Next action required for this payment
      */
@@ -382,11 +390,11 @@ export type Payment = {
         /**
          * Previous on-chain state before this transaction
          */
-        previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+        previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
         /**
          * New on-chain state of this transaction
          */
-        newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+        newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
         /**
          * Number of block confirmations for this transaction
          */
@@ -431,11 +439,11 @@ export type Payment = {
         /**
          * Previous on-chain state before this transaction
          */
-        previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+        previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
         /**
          * New on-chain state of this transaction
          */
-        newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+        newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
         /**
          * Number of block confirmations for this transaction
          */
@@ -489,6 +497,10 @@ export type Payment = {
          * The Cardano network (Mainnet, Preprod, or Preview)
          */
         network: 'Preprod' | 'Mainnet';
+        /**
+         * Payment source type for adapter dispatch
+         */
+        paymentSourceType: 'Web3CardanoV1' | 'Web3CardanoV2';
         /**
          * Address of the smart contract managing this payment
          */
@@ -606,11 +618,19 @@ export type Purchase = {
     /**
      * Current state of the purchase on the blockchain. Null if not yet on-chain
      */
-    onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+    onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
     /**
      * Amount of collateral to return in lovelace. Null if no collateral
      */
     collateralReturnLovelace: string | null;
+    /**
+     * Optional buyer return address stored with the request
+     */
+    buyerReturnAddress: string | null;
+    /**
+     * Optional seller return address stored with the request
+     */
+    sellerReturnAddress: string | null;
     /**
      * Cooldown period in milliseconds for the buyer to dispute
      */
@@ -634,7 +654,7 @@ export type Purchase = {
         /**
          * Next action required for this purchase
          */
-        requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'FundsLockingRequested' | 'FundsLockingInitiated' | 'SetRefundRequestedRequested' | 'SetRefundRequestedInitiated' | 'UnSetRefundRequestedRequested' | 'UnSetRefundRequestedInitiated' | 'WithdrawRefundRequested' | 'WithdrawRefundInitiated';
+        requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'FundsLockingRequested' | 'FundsLockingInitiated' | 'SetRefundRequestedRequested' | 'SetRefundRequestedInitiated' | 'UnSetRefundRequestedRequested' | 'UnSetRefundRequestedInitiated' | 'WithdrawRefundRequested' | 'WithdrawRefundInitiated' | 'AuthorizeWithdrawalRequested' | 'AuthorizeWithdrawalInitiated';
         /**
          * Type of error that occurred, if any
          */
@@ -663,7 +683,7 @@ export type Purchase = {
         /**
          * Next action required for this purchase
          */
-        requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'FundsLockingRequested' | 'FundsLockingInitiated' | 'SetRefundRequestedRequested' | 'SetRefundRequestedInitiated' | 'UnSetRefundRequestedRequested' | 'UnSetRefundRequestedInitiated' | 'WithdrawRefundRequested' | 'WithdrawRefundInitiated';
+        requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'FundsLockingRequested' | 'FundsLockingInitiated' | 'SetRefundRequestedRequested' | 'SetRefundRequestedInitiated' | 'UnSetRefundRequestedRequested' | 'UnSetRefundRequestedInitiated' | 'WithdrawRefundRequested' | 'WithdrawRefundInitiated' | 'AuthorizeWithdrawalRequested' | 'AuthorizeWithdrawalInitiated';
         /**
          * Type of error that occurred, if any
          */
@@ -712,11 +732,11 @@ export type Purchase = {
         /**
          * Previous on-chain state before this transaction
          */
-        previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+        previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
         /**
          * New on-chain state of this transaction
          */
-        newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+        newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
         /**
          * Number of block confirmations for this transaction
          */
@@ -761,11 +781,11 @@ export type Purchase = {
         /**
          * Previous on-chain state before this transaction
          */
-        previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+        previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
         /**
          * New on-chain state of this transaction
          */
-        newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+        newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
         /**
          * Number of block confirmations for this transaction
          */
@@ -786,6 +806,7 @@ export type Purchase = {
     PaymentSource: {
         id: string;
         network: 'Preprod' | 'Mainnet';
+        paymentSourceType: 'Web3CardanoV1' | 'Web3CardanoV2';
         smartContractAddress: string;
         policyId: string | null;
     };
@@ -963,9 +984,30 @@ export type AgentMetadata = {
          */
         image: string;
         /**
-         * Version of the metadata schema (currently only version 1 is supported)
+         * Version of the metadata schema
          */
         metadataVersion: number;
+        /**
+         * Payment sources advertised by this registry entry. Null for legacy metadata.
+         */
+        supportedPaymentSources: Array<{
+            /**
+             * The blockchain this payment source is available on
+             */
+            chain: 'Cardano';
+            /**
+             * The blockchain network this payment source is available on
+             */
+            network: 'Preprod' | 'Mainnet';
+            /**
+             * The configured payment source type
+             */
+            paymentSourceType: 'Web3CardanoV1' | 'Web3CardanoV2';
+            /**
+             * The escrow smart contract address for this payment source
+             */
+            address: string;
+        }> | null;
     };
 };
 
@@ -1107,9 +1149,30 @@ export type AgentIdentifierMetadata = {
          */
         image: string;
         /**
-         * Version of the metadata schema (currently only version 1 is supported)
+         * Version of the metadata schema
          */
         metadataVersion: number;
+        /**
+         * Payment sources advertised by this registry entry. Null for legacy metadata.
+         */
+        supportedPaymentSources: Array<{
+            /**
+             * The blockchain this payment source is available on
+             */
+            chain: 'Cardano';
+            /**
+             * The blockchain network this payment source is available on
+             */
+            network: 'Preprod' | 'Mainnet';
+            /**
+             * The configured payment source type
+             */
+            paymentSourceType: 'Web3CardanoV1' | 'Web3CardanoV2';
+            /**
+             * The escrow smart contract address for this payment source
+             */
+            address: string;
+        }> | null;
     };
 };
 
@@ -1263,6 +1326,27 @@ export type RegistryEntry = {
      */
     sendFundingLovelace: string | null;
     /**
+     * Payment sources advertised by this registry entry. Null for legacy metadata.
+     */
+    supportedPaymentSources: Array<{
+        /**
+         * The blockchain this payment source is available on
+         */
+        chain: 'Cardano';
+        /**
+         * The blockchain network this payment source is available on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The configured payment source type
+         */
+        paymentSourceType: 'Web3CardanoV1' | 'Web3CardanoV2';
+        /**
+         * The escrow smart contract address for this payment source
+         */
+        address: string;
+    }> | null;
+    /**
      * Smart contract wallet managing this agent registration
      */
     SmartContractWallet: {
@@ -1334,6 +1418,14 @@ export type PaymentSource = {
      */
     network: 'Preprod' | 'Mainnet';
     /**
+     * Payment source type for adapter dispatch
+     */
+    paymentSourceType: 'Web3CardanoV1' | 'Web3CardanoV2';
+    /**
+     * Required weighted admin signatures for Web3CardanoV2 sources. Null for Web3CardanoV1.
+     */
+    requiredAdminSignatures: number | null;
+    /**
      * Policy ID for the agent registry NFTs. Null if not applicable
      */
     policyId: string | null;
@@ -1369,7 +1461,7 @@ export type PaymentSource = {
          * Cardano address that receives network fees
          */
         walletAddress: string;
-    };
+    } | null;
     /**
      * Fee rate in permille
      */
@@ -1484,6 +1576,14 @@ export type PaymentSourceExtended = {
      * The Cardano network
      */
     network: 'Preprod' | 'Mainnet';
+    /**
+     * Payment source type for adapter dispatch
+     */
+    paymentSourceType: 'Web3CardanoV1' | 'Web3CardanoV2';
+    /**
+     * Required weighted admin signatures for Web3CardanoV2 sources. Null for Web3CardanoV1.
+     */
+    requiredAdminSignatures: number | null;
     /**
      * Policy ID for the agent registry NFTs. Null if not applicable
      */
@@ -1622,7 +1722,7 @@ export type PaymentSourceExtended = {
          * Cardano address that receives network fees
          */
         walletAddress: string;
-    };
+    } | null;
     /**
      * Fee rate in permille (per thousand). Example: 50 = 5%
      */
@@ -3228,7 +3328,11 @@ export type GetPaymentData = {
         /**
          * Filter by on-chain state
          */
-        filterOnChainState?: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
+        filterOnChainState?: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
+        /**
+         * Filter by payment source type
+         */
+        filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
         /**
          * Search query to filter by ID, hash, state, network, wallet address, or amount
          */
@@ -3285,6 +3389,10 @@ export type PostPaymentData = {
          */
         agentIdentifier: string;
         /**
+         * Expected payment source type for this request
+         */
+        paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
+        /**
          * The amounts of the payment, should be null for fixed amount
          */
         RequestedFunds?: Array<{
@@ -3317,6 +3425,10 @@ export type PostPaymentData = {
          * Metadata to be stored with the payment request
          */
         metadata?: string;
+        /**
+         * Optional seller return address. Defaults to the selling hot wallet collection address when available.
+         */
+        sellerReturnAddress?: string;
         /**
          * A unique nonce from the purchaser. It must be in hex format
          */
@@ -3393,6 +3505,14 @@ export type PostPaymentResponses = {
              */
             collateralReturnLovelace: string | null;
             /**
+             * Optional buyer return address stored with the request
+             */
+            buyerReturnAddress: string | null;
+            /**
+             * Optional seller return address stored with the request
+             */
+            sellerReturnAddress: string | null;
+            /**
              * Unix timestamp (in milliseconds) after which external dispute resolution can occur
              */
             externalDisputeUnlockTime: string;
@@ -3439,7 +3559,7 @@ export type PostPaymentResponses = {
             /**
              * Current state of the payment on the blockchain. Null if not yet on-chain
              */
-            onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+            onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
             /**
              * Next action required for this payment
              */
@@ -3497,11 +3617,11 @@ export type PostPaymentResponses = {
                 /**
                  * Previous on-chain state before this transaction
                  */
-                previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+                previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
                 /**
                  * New on-chain state of this transaction
                  */
-                newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+                newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
                 /**
                  * Number of block confirmations for this transaction
                  */
@@ -3555,6 +3675,10 @@ export type PostPaymentResponses = {
                  * The Cardano network (Mainnet, Preprod, or Preview)
                  */
                 network: 'Preprod' | 'Mainnet';
+                /**
+                 * Payment source type for adapter dispatch
+                 */
+                paymentSourceType: 'Web3CardanoV1' | 'Web3CardanoV2';
                 /**
                  * Address of the smart contract managing this payment
                  */
@@ -3630,6 +3754,10 @@ export type GetPaymentDiffData = {
          */
         filterSmartContractAddress?: string | null;
         /**
+         * Filter by payment source type
+         */
+        filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
+        /**
          * Whether to include the full transaction and status history of the payments
          */
         includeHistory?: string;
@@ -3691,6 +3819,10 @@ export type GetPaymentDiffNextActionData = {
          */
         filterSmartContractAddress?: string | null;
         /**
+         * Filter by payment source type
+         */
+        filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
+        /**
          * Whether to include the full transaction and status history of the payments
          */
         includeHistory?: string;
@@ -3739,6 +3871,10 @@ export type GetPaymentCountData = {
          * The smart contract address of the payment source
          */
         filterSmartContractAddress?: string | null;
+        /**
+         * Filter by payment source type
+         */
+        filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
     };
     url: '/payment/count';
 };
@@ -3772,6 +3908,10 @@ export type GetPurchaseCountData = {
          * The smart contract address of the payment source
          */
         filterSmartContractAddress?: string | null;
+        /**
+         * Filter by payment source type
+         */
+        filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
     };
     url: '/purchase/count';
 };
@@ -3817,6 +3957,10 @@ export type GetPaymentDiffOnchainStateOrResultData = {
          * The smart contract address of the payment source
          */
         filterSmartContractAddress?: string | null;
+        /**
+         * Filter by payment source type
+         */
+        filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
         /**
          * Whether to include the full transaction and status history of the payments
          */
@@ -3948,6 +4092,14 @@ export type PostPaymentSubmitResultResponses = {
              */
             collateralReturnLovelace: string | null;
             /**
+             * Optional buyer return address stored with the request
+             */
+            buyerReturnAddress: string | null;
+            /**
+             * Optional seller return address stored with the request
+             */
+            sellerReturnAddress: string | null;
+            /**
              * Unix timestamp (in milliseconds) after which external dispute resolution can occur
              */
             externalDisputeUnlockTime: string;
@@ -3994,7 +4146,7 @@ export type PostPaymentSubmitResultResponses = {
             /**
              * Current state of the payment on the blockchain. Null if not yet on-chain
              */
-            onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+            onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
             /**
              * Next action required for this payment
              */
@@ -4052,11 +4204,11 @@ export type PostPaymentSubmitResultResponses = {
                 /**
                  * Previous on-chain state before this transaction
                  */
-                previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+                previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
                 /**
                  * New on-chain state of this transaction
                  */
-                newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+                newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
                 /**
                  * Number of block confirmations for this transaction
                  */
@@ -4110,6 +4262,10 @@ export type PostPaymentSubmitResultResponses = {
                  * The Cardano network (Mainnet, Preprod, or Preview)
                  */
                 network: 'Preprod' | 'Mainnet';
+                /**
+                 * Payment source type for adapter dispatch
+                 */
+                paymentSourceType: 'Web3CardanoV1' | 'Web3CardanoV2';
                 /**
                  * Address of the smart contract managing this payment
                  */
@@ -4250,6 +4406,14 @@ export type PostPaymentAuthorizeRefundResponses = {
              */
             collateralReturnLovelace: string | null;
             /**
+             * Optional buyer return address stored with the request
+             */
+            buyerReturnAddress: string | null;
+            /**
+             * Optional seller return address stored with the request
+             */
+            sellerReturnAddress: string | null;
+            /**
              * Unix timestamp (in milliseconds) after which external dispute resolution can occur
              */
             externalDisputeUnlockTime: string;
@@ -4296,7 +4460,7 @@ export type PostPaymentAuthorizeRefundResponses = {
             /**
              * Current state of the payment on the blockchain. Null if not yet on-chain
              */
-            onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+            onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
             /**
              * Next action required for this payment
              */
@@ -4354,11 +4518,11 @@ export type PostPaymentAuthorizeRefundResponses = {
                 /**
                  * Previous on-chain state before this transaction
                  */
-                previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+                previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
                 /**
                  * New on-chain state of this transaction
                  */
-                newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+                newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
                 /**
                  * Number of block confirmations for this transaction
                  */
@@ -4412,6 +4576,10 @@ export type PostPaymentAuthorizeRefundResponses = {
                  * The Cardano network (Mainnet, Preprod, or Preview)
                  */
                 network: 'Preprod' | 'Mainnet';
+                /**
+                 * Payment source type for adapter dispatch
+                 */
+                paymentSourceType: 'Web3CardanoV1' | 'Web3CardanoV2';
                 /**
                  * Address of the smart contract managing this payment
                  */
@@ -4568,6 +4736,14 @@ export type PostPaymentErrorStateRecoveryResponses = {
              */
             collateralReturnLovelace: string | null;
             /**
+             * Optional buyer return address stored with the request
+             */
+            buyerReturnAddress: string | null;
+            /**
+             * Optional seller return address stored with the request
+             */
+            sellerReturnAddress: string | null;
+            /**
              * Unix timestamp (in milliseconds) after which external dispute resolution can occur
              */
             externalDisputeUnlockTime: string;
@@ -4614,7 +4790,7 @@ export type PostPaymentErrorStateRecoveryResponses = {
             /**
              * Current state of the payment on the blockchain. Null if not yet on-chain
              */
-            onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+            onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
             /**
              * Next action required for this payment
              */
@@ -4672,11 +4848,11 @@ export type PostPaymentErrorStateRecoveryResponses = {
                 /**
                  * Previous on-chain state before this transaction
                  */
-                previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+                previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
                 /**
                  * New on-chain state of this transaction
                  */
-                newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+                newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
                 /**
                  * Number of block confirmations for this transaction
                  */
@@ -4730,6 +4906,10 @@ export type PostPaymentErrorStateRecoveryResponses = {
                  * The Cardano network (Mainnet, Preprod, or Preview)
                  */
                 network: 'Preprod' | 'Mainnet';
+                /**
+                 * Payment source type for adapter dispatch
+                 */
+                paymentSourceType: 'Web3CardanoV1' | 'Web3CardanoV2';
                 /**
                  * Address of the smart contract managing this payment
                  */
@@ -4911,11 +5091,19 @@ export type PostPurchaseErrorStateRecoveryResponses = {
             /**
              * Current state of the purchase on the blockchain. Null if not yet on-chain
              */
-            onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+            onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
             /**
              * Amount of collateral to return in lovelace. Null if no collateral
              */
             collateralReturnLovelace: string | null;
+            /**
+             * Optional buyer return address stored with the request
+             */
+            buyerReturnAddress: string | null;
+            /**
+             * Optional seller return address stored with the request
+             */
+            sellerReturnAddress: string | null;
             /**
              * Cooldown period in milliseconds for the buyer to dispute
              */
@@ -4939,7 +5127,7 @@ export type PostPurchaseErrorStateRecoveryResponses = {
                 /**
                  * Next action required for this purchase
                  */
-                requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'FundsLockingRequested' | 'FundsLockingInitiated' | 'SetRefundRequestedRequested' | 'SetRefundRequestedInitiated' | 'UnSetRefundRequestedRequested' | 'UnSetRefundRequestedInitiated' | 'WithdrawRefundRequested' | 'WithdrawRefundInitiated';
+                requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'FundsLockingRequested' | 'FundsLockingInitiated' | 'SetRefundRequestedRequested' | 'SetRefundRequestedInitiated' | 'UnSetRefundRequestedRequested' | 'UnSetRefundRequestedInitiated' | 'WithdrawRefundRequested' | 'WithdrawRefundInitiated' | 'AuthorizeWithdrawalRequested' | 'AuthorizeWithdrawalInitiated';
                 /**
                  * Type of error that occurred, if any
                  */
@@ -4988,11 +5176,11 @@ export type PostPurchaseErrorStateRecoveryResponses = {
                 /**
                  * Previous on-chain state before this transaction
                  */
-                previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+                previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
                 /**
                  * New on-chain state of this transaction
                  */
-                newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+                newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
                 /**
                  * Number of block confirmations for this transaction
                  */
@@ -5013,6 +5201,7 @@ export type PostPurchaseErrorStateRecoveryResponses = {
             PaymentSource: {
                 id: string;
                 network: 'Preprod' | 'Mainnet';
+                paymentSourceType: 'Web3CardanoV1' | 'Web3CardanoV2';
                 smartContractAddress: string;
                 policyId: string | null;
             };
@@ -5507,6 +5696,10 @@ export type GetRegistryCountData = {
          * The smart contract address of the payment source
          */
         filterSmartContractAddress?: string | null;
+        /**
+         * Filter by payment source type
+         */
+        filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
     };
     url: '/registry/count';
 };
@@ -5806,7 +5999,11 @@ export type GetPurchaseData = {
         /**
          * Filter by on-chain state
          */
-        filterOnChainState?: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
+        filterOnChainState?: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
+        /**
+         * Filter by payment source type
+         */
+        filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
         /**
          * Search query to filter by ID, hash, state, network, wallet address, or amount
          */
@@ -5859,6 +6056,10 @@ export type PostPurchaseData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
+         * Expected payment source type for this purchase
+         */
+        paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
+        /**
          * The hash of the input data of the purchase, should be sha256 hash of the input data, therefore needs to be in hex string format
          */
         inputHash: string;
@@ -5903,6 +6104,14 @@ export type PostPurchaseData = {
          * Metadata to be stored with the purchase request
          */
         metadata?: string;
+        /**
+         * Optional buyer return address. Defaults to the purchasing hot wallet collection address when available.
+         */
+        buyerReturnAddress?: string;
+        /**
+         * Optional seller return address when using a signed V2 identifier from the seller.
+         */
+        sellerReturnAddress?: string;
         /**
          * The nonce of the purchaser. It must be in hex format
          */
@@ -6003,11 +6212,19 @@ export type PostPurchaseErrors = {
             /**
              * Current state of the purchase on the blockchain. Null if not yet on-chain
              */
-            onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+            onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
             /**
              * Amount of collateral to return in lovelace. Null if no collateral
              */
             collateralReturnLovelace: string | null;
+            /**
+             * Optional buyer return address stored with the request
+             */
+            buyerReturnAddress: string | null;
+            /**
+             * Optional seller return address stored with the request
+             */
+            sellerReturnAddress: string | null;
             /**
              * Cooldown period in milliseconds for the buyer to dispute
              */
@@ -6031,7 +6248,7 @@ export type PostPurchaseErrors = {
                 /**
                  * Next action required for this purchase
                  */
-                requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'FundsLockingRequested' | 'FundsLockingInitiated' | 'SetRefundRequestedRequested' | 'SetRefundRequestedInitiated' | 'UnSetRefundRequestedRequested' | 'UnSetRefundRequestedInitiated' | 'WithdrawRefundRequested' | 'WithdrawRefundInitiated';
+                requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'FundsLockingRequested' | 'FundsLockingInitiated' | 'SetRefundRequestedRequested' | 'SetRefundRequestedInitiated' | 'UnSetRefundRequestedRequested' | 'UnSetRefundRequestedInitiated' | 'WithdrawRefundRequested' | 'WithdrawRefundInitiated' | 'AuthorizeWithdrawalRequested' | 'AuthorizeWithdrawalInitiated';
                 /**
                  * Type of error that occurred, if any
                  */
@@ -6080,11 +6297,11 @@ export type PostPurchaseErrors = {
                 /**
                  * Previous on-chain state before this transaction
                  */
-                previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+                previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
                 /**
                  * New on-chain state of this transaction
                  */
-                newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+                newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
                 /**
                  * Number of block confirmations for this transaction
                  */
@@ -6105,6 +6322,7 @@ export type PostPurchaseErrors = {
             PaymentSource: {
                 id: string;
                 network: 'Preprod' | 'Mainnet';
+                paymentSourceType: 'Web3CardanoV1' | 'Web3CardanoV2';
                 smartContractAddress: string;
                 policyId: string | null;
             };
@@ -6229,11 +6447,19 @@ export type PostPurchaseResponses = {
             /**
              * Current state of the purchase on the blockchain. Null if not yet on-chain
              */
-            onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+            onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
             /**
              * Amount of collateral to return in lovelace. Null if no collateral
              */
             collateralReturnLovelace: string | null;
+            /**
+             * Optional buyer return address stored with the request
+             */
+            buyerReturnAddress: string | null;
+            /**
+             * Optional seller return address stored with the request
+             */
+            sellerReturnAddress: string | null;
             /**
              * Cooldown period in milliseconds for the buyer to dispute
              */
@@ -6257,7 +6483,7 @@ export type PostPurchaseResponses = {
                 /**
                  * Next action required for this purchase
                  */
-                requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'FundsLockingRequested' | 'FundsLockingInitiated' | 'SetRefundRequestedRequested' | 'SetRefundRequestedInitiated' | 'UnSetRefundRequestedRequested' | 'UnSetRefundRequestedInitiated' | 'WithdrawRefundRequested' | 'WithdrawRefundInitiated';
+                requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'FundsLockingRequested' | 'FundsLockingInitiated' | 'SetRefundRequestedRequested' | 'SetRefundRequestedInitiated' | 'UnSetRefundRequestedRequested' | 'UnSetRefundRequestedInitiated' | 'WithdrawRefundRequested' | 'WithdrawRefundInitiated' | 'AuthorizeWithdrawalRequested' | 'AuthorizeWithdrawalInitiated';
                 /**
                  * Type of error that occurred, if any
                  */
@@ -6306,11 +6532,11 @@ export type PostPurchaseResponses = {
                 /**
                  * Previous on-chain state before this transaction
                  */
-                previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+                previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
                 /**
                  * New on-chain state of this transaction
                  */
-                newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+                newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
                 /**
                  * Number of block confirmations for this transaction
                  */
@@ -6331,6 +6557,7 @@ export type PostPurchaseResponses = {
             PaymentSource: {
                 id: string;
                 network: 'Preprod' | 'Mainnet';
+                paymentSourceType: 'Web3CardanoV1' | 'Web3CardanoV2';
                 smartContractAddress: string;
                 policyId: string | null;
             };
@@ -6734,11 +6961,19 @@ export type PostPurchaseRequestRefundResponses = {
             /**
              * Current state of the purchase on the blockchain. Null if not yet on-chain
              */
-            onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+            onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
             /**
              * Amount of collateral to return in lovelace. Null if no collateral
              */
             collateralReturnLovelace: string | null;
+            /**
+             * Optional buyer return address stored with the request
+             */
+            buyerReturnAddress: string | null;
+            /**
+             * Optional seller return address stored with the request
+             */
+            sellerReturnAddress: string | null;
             /**
              * Cooldown period in milliseconds for the buyer to dispute
              */
@@ -6762,7 +6997,7 @@ export type PostPurchaseRequestRefundResponses = {
                 /**
                  * Next action required for this purchase
                  */
-                requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'FundsLockingRequested' | 'FundsLockingInitiated' | 'SetRefundRequestedRequested' | 'SetRefundRequestedInitiated' | 'UnSetRefundRequestedRequested' | 'UnSetRefundRequestedInitiated' | 'WithdrawRefundRequested' | 'WithdrawRefundInitiated';
+                requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'FundsLockingRequested' | 'FundsLockingInitiated' | 'SetRefundRequestedRequested' | 'SetRefundRequestedInitiated' | 'UnSetRefundRequestedRequested' | 'UnSetRefundRequestedInitiated' | 'WithdrawRefundRequested' | 'WithdrawRefundInitiated' | 'AuthorizeWithdrawalRequested' | 'AuthorizeWithdrawalInitiated';
                 /**
                  * Type of error that occurred, if any
                  */
@@ -6811,11 +7046,11 @@ export type PostPurchaseRequestRefundResponses = {
                 /**
                  * Previous on-chain state before this transaction
                  */
-                previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+                previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
                 /**
                  * New on-chain state of this transaction
                  */
-                newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+                newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
                 /**
                  * Number of block confirmations for this transaction
                  */
@@ -6836,6 +7071,7 @@ export type PostPurchaseRequestRefundResponses = {
             PaymentSource: {
                 id: string;
                 network: 'Preprod' | 'Mainnet';
+                paymentSourceType: 'Web3CardanoV1' | 'Web3CardanoV2';
                 smartContractAddress: string;
                 policyId: string | null;
             };
@@ -6996,11 +7232,19 @@ export type PostPurchaseCancelRefundRequestResponses = {
             /**
              * Current state of the purchase on the blockchain. Null if not yet on-chain
              */
-            onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+            onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
             /**
              * Amount of collateral to return in lovelace. Null if no collateral
              */
             collateralReturnLovelace: string | null;
+            /**
+             * Optional buyer return address stored with the request
+             */
+            buyerReturnAddress: string | null;
+            /**
+             * Optional seller return address stored with the request
+             */
+            sellerReturnAddress: string | null;
             /**
              * Cooldown period in milliseconds for the buyer to dispute
              */
@@ -7024,7 +7268,7 @@ export type PostPurchaseCancelRefundRequestResponses = {
                 /**
                  * Next action required for this purchase
                  */
-                requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'FundsLockingRequested' | 'FundsLockingInitiated' | 'SetRefundRequestedRequested' | 'SetRefundRequestedInitiated' | 'UnSetRefundRequestedRequested' | 'UnSetRefundRequestedInitiated' | 'WithdrawRefundRequested' | 'WithdrawRefundInitiated';
+                requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'FundsLockingRequested' | 'FundsLockingInitiated' | 'SetRefundRequestedRequested' | 'SetRefundRequestedInitiated' | 'UnSetRefundRequestedRequested' | 'UnSetRefundRequestedInitiated' | 'WithdrawRefundRequested' | 'WithdrawRefundInitiated' | 'AuthorizeWithdrawalRequested' | 'AuthorizeWithdrawalInitiated';
                 /**
                  * Type of error that occurred, if any
                  */
@@ -7073,11 +7317,11 @@ export type PostPurchaseCancelRefundRequestResponses = {
                 /**
                  * Previous on-chain state before this transaction
                  */
-                previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+                previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
                 /**
                  * New on-chain state of this transaction
                  */
-                newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+                newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
                 /**
                  * Number of block confirmations for this transaction
                  */
@@ -7098,6 +7342,7 @@ export type PostPurchaseCancelRefundRequestResponses = {
             PaymentSource: {
                 id: string;
                 network: 'Preprod' | 'Mainnet';
+                paymentSourceType: 'Web3CardanoV1' | 'Web3CardanoV2';
                 smartContractAddress: string;
                 policyId: string | null;
             };
@@ -7416,6 +7661,10 @@ export type GetRegistryData = {
          */
         filterSmartContractAddress?: string | null;
         /**
+         * Filter by payment source type
+         */
+        filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
+        /**
          * Filter by registration status category
          */
         filterStatus?: 'Registered' | 'Deregistered' | 'Pending' | 'Failed';
@@ -7459,6 +7708,27 @@ export type PostRegistryData = {
          * Optional lovelace amount to include with the minted NFT output. If provided below the minimum NFT funding, the current minimum is still used.
          */
         sendFundingLovelace?: string;
+        /**
+         * Payment sources to advertise in registry metadata. Defaults to the configured V2 source for the network.
+         */
+        supportedPaymentSources?: Array<{
+            /**
+             * The blockchain this payment source is available on
+             */
+            chain: 'Cardano';
+            /**
+             * The blockchain network this payment source is available on
+             */
+            network: 'Preprod' | 'Mainnet';
+            /**
+             * The configured payment source type
+             */
+            paymentSourceType: 'Web3CardanoV1' | 'Web3CardanoV2';
+            /**
+             * The escrow smart contract address for this payment source
+             */
+            address: string;
+        }>;
         /**
          * List of example outputs from the agent
          */
@@ -7617,6 +7887,10 @@ export type GetRegistryDiffData = {
          * The smart contract address of the payment source
          */
         filterSmartContractAddress?: string | null;
+        /**
+         * Filter by payment source type
+         */
+        filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
     };
     url: '/registry/diff';
 };
@@ -7868,6 +8142,10 @@ export type PostPaymentSourceExtendedData = {
          * The network the payment source will be used on
          */
         network: 'Preprod' | 'Mainnet';
+        /**
+         * The payment source type to create
+         */
+        paymentSourceType: 'Web3CardanoV1' | 'Web3CardanoV2';
         PaymentSourceConfig: {
             /**
              * The rpc provider (blockfrost) api key to be used for the payment source
@@ -7881,38 +8159,28 @@ export type PostPaymentSourceExtendedData = {
         /**
          * The fee in permille to be used for the payment source. The default contract uses 50 (5%)
          */
-        feeRatePermille: number | null;
+        feeRatePermille?: number | null;
         /**
          * The cooldown time in milliseconds to be used for the payment source. The default contract uses 1000 * 60 * 7 (7 minutes)
          */
         cooldownTime?: number | null;
         /**
-         * The wallet addresses of the admin wallets (exactly 3)
+         * The wallet addresses of the admin wallets. V2 allows repeated addresses as weighted voting slots.
          */
-        AdminWallets: [
-            {
-                /**
-                 * Cardano address of the admin wallet
-                 */
-                walletAddress: string;
-            },
-            {
-                /**
-                 * Cardano address of the admin wallet
-                 */
-                walletAddress: string;
-            },
-            {
-                /**
-                 * Cardano address of the admin wallet
-                 */
-                walletAddress: string;
-            }
-        ];
+        AdminWallets: Array<{
+            /**
+             * Cardano address of the admin wallet
+             */
+            walletAddress: string;
+        }>;
+        /**
+         * Required weighted admin signatures for Web3CardanoV2 dispute settlement
+         */
+        requiredAdminSignatures?: number;
         /**
          * The wallet address of the network fee receiver wallet
          */
-        FeeReceiverNetworkWallet: {
+        FeeReceiverNetworkWallet?: {
             /**
              * Cardano address that receives network fees
              */
@@ -8081,6 +8349,10 @@ export type PostPurchaseSpendingData = {
          * The Cardano network to query spending from
          */
         network: 'Preprod' | 'Mainnet';
+        /**
+         * Filter by payment source type
+         */
+        filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
     };
     path?: never;
     query?: never;
@@ -8268,6 +8540,10 @@ export type PostPaymentIncomeData = {
          * The Cardano network to query income from
          */
         network: 'Preprod' | 'Mainnet';
+        /**
+         * Filter by payment source type
+         */
+        filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
     };
     path?: never;
     query?: never;

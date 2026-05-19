@@ -1,13 +1,16 @@
-import { OnChainState, PaymentAction, PaymentErrorType, TransactionStatus, Prisma } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import {
+	OnChainState,
+	PaymentAction,
+	PaymentErrorType,
+	PaymentSourceType,
+	TransactionStatus,
+	Prisma,
+} from '@/generated/prisma/client';
+import { prisma } from '@masumi/payment-core/db';
 import { Asset, BlockfrostProvider, deserializeDatum } from '@meshsdk/core';
 import { logger } from '@/utils/logger';
-import {
-	getPaymentScriptFromPaymentSourceV1,
-	smartContractStateEqualsOnChainState,
-} from '@/utils/generator/contract-generator';
+import { smartContractStateEqualsOnChainState } from '@/utils/generator/contract-generator';
 import { convertNetwork } from '@/utils/converter/network-convert';
-import { decodeV1ContractDatum } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
@@ -23,6 +26,7 @@ import {
 	loadHotWalletSession,
 	updateCurrentTransactionHash,
 } from '@/services/shared';
+import { getPaymentSourceContractAdapter } from '@/services/payment-source-adapters';
 
 type PaymentSourceWithRelations = Prisma.PaymentSourceGetPayload<{
 	include: {
@@ -76,7 +80,8 @@ async function processSinglePaymentCollection(
 		throw new Error('No UTXOs found in the wallet. Wallet is empty.');
 	}
 
-	const { script, smartContractAddress } = await getPaymentScriptFromPaymentSourceV1(paymentContract);
+	const adapter = getPaymentSourceContractAdapter(paymentContract.paymentSourceType);
+	const { script, smartContractAddress } = await adapter.getPaymentScriptFromPaymentSource(paymentContract);
 
 	const txHash = request.CurrentTransaction?.txHash;
 	if (txHash == null) {
@@ -95,7 +100,7 @@ async function processSinglePaymentCollection(
 		}
 
 		const decodedDatum: unknown = deserializeDatum(utxoDatum);
-		const decodedContract = decodeV1ContractDatum(decodedDatum, network);
+		const decodedContract = adapter.decodeContractDatum(decodedDatum, network);
 		if (decodedContract == null) {
 			return false;
 		}
@@ -126,7 +131,7 @@ async function processSinglePaymentCollection(
 	}
 
 	const decodedDatum: unknown = deserializeDatum(utxoDatum);
-	const decodedContract = decodeV1ContractDatum(decodedDatum, network);
+	const decodedContract = adapter.decodeContractDatum(decodedDatum, network);
 	if (decodedContract == null) {
 		throw new Error('Invalid datum');
 	}
@@ -167,11 +172,17 @@ async function processSinglePaymentCollection(
 	for (const assetValue of utxo.output.amount) {
 		const assetKey = assetValue.unit;
 		let minFee = 0;
-		if (assetValue.unit == '' || assetValue.unit.toLowerCase() == 'lovelace') {
+		if (
+			paymentContract.paymentSourceType !== PaymentSourceType.Web3CardanoV2 &&
+			(assetValue.unit == '' || assetValue.unit.toLowerCase() == 'lovelace')
+		) {
 			minFee = Number(CONSTANTS.MIN_COLLATERAL_LOVELACE);
 		}
 		const value = BigInt(assetValue.quantity);
-		const feeValue = BigInt(Math.max(minFee, (Number(value) * paymentContract.feeRatePermille) / 1000));
+		const feeValue =
+			paymentContract.paymentSourceType === PaymentSourceType.Web3CardanoV2
+				? 0n
+				: BigInt(Math.max(minFee, (Number(value) * paymentContract.feeRatePermille) / 1000));
 		const remainingValue = value - feeValue;
 		const remainingValueAsset: Asset = {
 			unit: assetValue.unit,
@@ -193,7 +204,7 @@ async function processSinglePaymentCollection(
 		}
 	}
 
-	let collectionAddress = request.SmartContractWallet.collectionAddress;
+	let collectionAddress = request.sellerReturnAddress ?? request.SmartContractWallet.collectionAddress;
 	if (collectionAddress == null || collectionAddress == '') {
 		collectionAddress = request.SmartContractWallet.walletAddress;
 	}
@@ -203,6 +214,9 @@ async function processSinglePaymentCollection(
 	if (collateralUtxo == null) {
 		throw new Error('Collateral UTXO not found');
 	}
+	const feeReceiverAddress = paymentContract.FeeReceiverNetworkWallet?.walletAddress ?? collectionAddress;
+	const shouldIncludeFeeOutput =
+		paymentContract.paymentSourceType !== PaymentSourceType.Web3CardanoV2 && Object.values(feeAssets).length > 0;
 
 	const unsignedTx = await generateMasumiSmartContractWithdrawTransactionAutomaticFees(
 		'CollectCompleted',
@@ -217,12 +231,14 @@ async function processSinglePaymentCollection(
 			collectAssets: Object.values(remainingAssets),
 			collectionAddress: collectionAddress,
 		},
-		{
-			feeAssets: Object.values(feeAssets),
-			feeAddress: paymentContract.FeeReceiverNetworkWallet.walletAddress,
-			txHash: utxo.input.txHash,
-			outputIndex: utxo.input.outputIndex,
-		},
+		shouldIncludeFeeOutput
+			? {
+					feeAssets: Object.values(feeAssets),
+					feeAddress: feeReceiverAddress,
+					txHash: utxo.input.txHash,
+					outputIndex: utxo.input.outputIndex,
+				}
+			: null,
 		{
 			lovelace: collateralReturnLovelace,
 			address: buyerAddress,
@@ -285,13 +301,24 @@ export async function collectOutstandingPaymentsV1() {
 	}
 
 	try {
-		const paymentContractsWithWalletLocked = await lockAndQueryPayments({
+		const paymentContractsWithTimedUnlocks = await lockAndQueryPayments({
 			paymentStatus: PaymentAction.WithdrawRequested,
 			resultHash: { not: null },
 			unlockTime: { lte: Date.now() - 1000 * 60 * 10 },
 			onChainState: { in: [OnChainState.ResultSubmitted] },
 			maxBatchSize: 1,
 		});
+		const paymentContractsWithAuthorizedWithdrawals = await lockAndQueryPayments({
+			paymentStatus: PaymentAction.WithdrawRequested,
+			resultHash: { not: null },
+			onChainState: { in: [OnChainState.WithdrawAuthorized] },
+			paymentSourceType: PaymentSourceType.Web3CardanoV2,
+			maxBatchSize: 1,
+		});
+		const paymentContractsWithWalletLocked = [
+			...paymentContractsWithTimedUnlocks,
+			...paymentContractsWithAuthorizedWithdrawals,
+		];
 
 		await Promise.allSettled(
 			paymentContractsWithWalletLocked.map(async (paymentContract) => {

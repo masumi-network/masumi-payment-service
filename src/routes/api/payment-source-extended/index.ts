@@ -1,13 +1,18 @@
-import { getPaymentScriptV1, getRegistryScriptV1 } from '@/utils/generator/contract-generator';
-import { prisma } from '@/utils/db';
+import {
+	getPaymentScriptV1,
+	getPaymentScriptV2,
+	getRegistryScriptV1,
+	getRegistryScriptV2,
+} from '@/utils/generator/contract-generator';
+import { prisma } from '@masumi/payment-core/db';
 import { encrypt } from '@/utils/security/encryption';
-import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
+import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
-import { HotWalletType, Network } from '@/generated/prisma/client';
+import { HotWalletType, Network, PaymentSourceType } from '@/generated/prisma/client';
 import createHttpError from 'http-errors';
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { DEFAULTS } from '@/utils/config';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { logger } from '@/utils/logger';
@@ -127,18 +132,44 @@ export const paymentSourceExtendedEndpointPost = adminAuthenticatedEndpointFacto
 		});
 
 		const createdPaymentSource = await prisma.$transaction(async (prisma) => {
-			const { smartContractAddress } = await getPaymentScriptV1(
-				input.AdminWallets[0].walletAddress,
-				input.AdminWallets[1].walletAddress,
-				input.AdminWallets[2].walletAddress,
-				input.FeeReceiverNetworkWallet.walletAddress,
-				input.feeRatePermille,
+			const cooldownTime =
 				input.cooldownTime ??
-					(input.network == Network.Preprod ? DEFAULTS.COOLDOWN_TIME_PREPROD : DEFAULTS.COOLDOWN_TIME_MAINNET),
-				input.network,
-			);
+				(input.network == Network.Preprod ? DEFAULTS.COOLDOWN_TIME_PREPROD : DEFAULTS.COOLDOWN_TIME_MAINNET);
+			const { smartContractAddress } =
+				input.paymentSourceType === PaymentSourceType.Web3CardanoV1
+					? await getPaymentScriptV1(
+							input.AdminWallets[0].walletAddress,
+							input.AdminWallets[1].walletAddress,
+							input.AdminWallets[2].walletAddress,
+							input.FeeReceiverNetworkWallet!.walletAddress,
+							input.feeRatePermille!,
+							cooldownTime,
+							input.network,
+						)
+					: await getPaymentScriptV2(
+							input.AdminWallets.map((wallet) => wallet.walletAddress),
+							input.requiredAdminSignatures!,
+							cooldownTime,
+							input.network,
+						);
 
-			const { policyId } = await getRegistryScriptV1(smartContractAddress, input.network);
+			const { policyId } =
+				input.paymentSourceType === PaymentSourceType.Web3CardanoV1
+					? await getRegistryScriptV1(smartContractAddress, input.network)
+					: await getRegistryScriptV2(input.network);
+			if (input.paymentSourceType === PaymentSourceType.Web3CardanoV2) {
+				const existingV2Source = await prisma.paymentSource.findFirst({
+					where: {
+						network: input.network,
+						paymentSourceType: PaymentSourceType.Web3CardanoV2,
+						deletedAt: null,
+					},
+					select: { id: true },
+				});
+				if (existingV2Source != null) {
+					throw createHttpError(409, 'An active Web3CardanoV2 payment source already exists for this network');
+				}
+			}
 			const latestIdentifierChecked = await resolveLatestIdentifierCheckpoint(
 				input.network,
 				input.PaymentSourceConfig.rpcProviderApiKey,
@@ -182,6 +213,9 @@ export const paymentSourceExtendedEndpointPost = adminAuthenticatedEndpointFacto
 			const paymentSource = await prisma.paymentSource.create({
 				data: {
 					network: input.network,
+					paymentSourceType: input.paymentSourceType,
+					requiredAdminSignatures:
+						input.paymentSourceType === PaymentSourceType.Web3CardanoV2 ? input.requiredAdminSignatures! : null,
 					smartContractAddress: smartContractAddress,
 					policyId: policyId,
 					lastIdentifierChecked: latestIdentifierChecked,
@@ -191,9 +225,7 @@ export const paymentSourceExtendedEndpointPost = adminAuthenticatedEndpointFacto
 							rpcProvider: input.PaymentSourceConfig.rpcProvider,
 						},
 					},
-					cooldownTime:
-						input.cooldownTime ??
-						(input.network == Network.Preprod ? DEFAULTS.COOLDOWN_TIME_PREPROD : DEFAULTS.COOLDOWN_TIME_MAINNET),
+					cooldownTime,
 					AdminWallets: {
 						createMany: {
 							data: input.AdminWallets.map((aw, index) => ({
@@ -202,13 +234,16 @@ export const paymentSourceExtendedEndpointPost = adminAuthenticatedEndpointFacto
 							})),
 						},
 					},
-					feeRatePermille: input.feeRatePermille,
-					FeeReceiverNetworkWallet: {
-						create: {
-							walletAddress: input.FeeReceiverNetworkWallet.walletAddress,
-							order: 0,
-						},
-					},
+					feeRatePermille: input.paymentSourceType === PaymentSourceType.Web3CardanoV2 ? 0 : input.feeRatePermille!,
+					FeeReceiverNetworkWallet:
+						input.paymentSourceType === PaymentSourceType.Web3CardanoV1
+							? {
+									create: {
+										walletAddress: input.FeeReceiverNetworkWallet!.walletAddress,
+										order: 0,
+									},
+								}
+							: undefined,
 					HotWallets: {
 						createMany: {
 							data: [...purchasingWallets, ...sellingWallets],

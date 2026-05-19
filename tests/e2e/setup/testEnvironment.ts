@@ -34,6 +34,11 @@ beforeAll(async () => {
 	});
 
 	const state = readGlobalStateFromEnv();
+	if (state.paymentSourceType !== config.paymentSourceType) {
+		throw new Error(
+			`E2E global state payment source type mismatch. setup=${state.paymentSourceType}, worker=${config.paymentSourceType}`,
+		);
+	}
 	global.testAgent = state.agent;
 });
 

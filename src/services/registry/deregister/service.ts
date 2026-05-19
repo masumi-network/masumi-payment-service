@@ -1,9 +1,12 @@
-import { RegistrationState } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { PaymentSourceType, RegistrationState } from '@/generated/prisma/client';
+import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@/utils/logger';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { lockAndQueryRegistryRequests } from '@/utils/db/lock-and-query-registry-request';
-import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contract-generator';
+import {
+	getRegistryScriptFromNetworkHandlerV1,
+	getRegistryScriptFromNetworkHandlerV2,
+} from '@/utils/generator/contract-generator';
 import { SERVICE_CONSTANTS } from '@/utils/config';
 import { advancedRetry, delayErrorResolver, RetryResult } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
@@ -58,7 +61,7 @@ async function handlePotentialDeregistrationFailure(
 	}
 }
 
-export async function deRegisterAgentV1() {
+async function deRegisterAgent(paymentSourceType: PaymentSourceType) {
 	let release: MutexInterface.Releaser | null;
 	try {
 		release = await tryAcquire(mutex).acquire();
@@ -72,6 +75,7 @@ export async function deRegisterAgentV1() {
 		const paymentSourcesWithWalletLocked = await lockAndQueryRegistryRequests({
 			state: RegistrationState.DeregistrationRequested,
 			maxBatchSize: 1,
+			paymentSourceType,
 		});
 
 		await Promise.allSettled(
@@ -80,6 +84,7 @@ export async function deRegisterAgentV1() {
 
 				logger.info(
 					`Deregistering ${paymentSource.RegistryRequest.length} agents for payment source ${paymentSource.id}`,
+					{ paymentSourceType: paymentSource.paymentSourceType },
 				);
 				const network = convertNetwork(paymentSource.network);
 
@@ -116,7 +121,10 @@ export async function deRegisterAgentV1() {
 						if (utxos.length === 0) {
 							throw new Error('No UTXOs found for the wallet');
 						}
-						const { script, policyId } = await getRegistryScriptFromNetworkHandlerV1(paymentSource);
+						const { script, policyId } =
+							paymentSource.paymentSourceType === PaymentSourceType.Web3CardanoV2
+								? await getRegistryScriptFromNetworkHandlerV2(paymentSource)
+								: await getRegistryScriptFromNetworkHandlerV1(paymentSource);
 
 						if (!request.agentIdentifier) {
 							throw new Error('Agent identifier is required for deregistration');
@@ -179,4 +187,12 @@ export async function deRegisterAgentV1() {
 	} finally {
 		release();
 	}
+}
+
+export async function deRegisterAgentV1() {
+	return deRegisterAgent(PaymentSourceType.Web3CardanoV1);
+}
+
+export async function deRegisterAgentV2() {
+	return deRegisterAgent(PaymentSourceType.Web3CardanoV2);
 }

@@ -1,4 +1,4 @@
-import { PricingType } from '@/generated/prisma/client';
+import { HotWalletType, PaymentSourceType, PricingType } from '@/generated/prisma/client';
 import { getPublicKeyFromCoseKey } from '@/utils/converter/public-key-convert';
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { generateSHA256Hash } from '@/utils/crypto';
@@ -10,6 +10,8 @@ import { validateHexString } from '@/utils/validator/hex';
 import { checkSignature, resolvePaymentKeyHash } from '@meshsdk/core';
 import createHttpError from 'http-errors';
 import stringify from 'canonical-json';
+import { prisma } from '@masumi/payment-core/db';
+import { buildSignedBlockchainIdentifierPayload } from '@/utils/generator/blockchain-identifier-payload';
 
 interface PurchaseInitBaseInput {
 	network: 'Preprod' | 'Mainnet';
@@ -23,13 +25,17 @@ interface PurchaseInitBaseInput {
 	submitResultTime: string;
 	payByTime: string;
 	identifierFromPurchaser: string;
+	paymentSourceType?: PaymentSourceType;
+	sellerReturnAddress?: string;
 }
 
 export async function resolvePurchaseCreationContext({
 	input,
+	paymentSourceId,
 	rpcProviderApiKey,
 }: {
 	input: PurchaseInitBaseInput;
+	paymentSourceId: string;
 	rpcProviderApiKey: string;
 }) {
 	const policyId = input.agentIdentifier.substring(0, 56);
@@ -74,6 +80,25 @@ export async function resolvePurchaseCreationContext({
 	if (sellerAddressVkey !== input.sellerVkey) {
 		throw createHttpError(400, 'Invalid seller vkey');
 	}
+	const sellerCollectionAddress =
+		(
+			await prisma.hotWallet.findFirst({
+				where: {
+					paymentSourceId,
+					type: HotWalletType.Selling,
+					deletedAt: null,
+					walletVkey: input.sellerVkey,
+					walletAddress: sellerAddress,
+				},
+				select: {
+					collectionAddress: true,
+				},
+			})
+		)?.collectionAddress ?? null;
+	const sellerReturnAddress =
+		input.paymentSourceType === PaymentSourceType.Web3CardanoV2
+			? (input.sellerReturnAddress ?? sellerCollectionAddress)
+			: sellerCollectionAddress;
 
 	const assetInfo = await provider.assetsById(input.agentIdentifier);
 	if (!assetInfo.onchain_metadata) {
@@ -154,12 +179,12 @@ export async function resolvePurchaseCreationContext({
 		throw createHttpError(400, 'Invalid blockchain identifier, key does not match');
 	}
 
-	const reconstructedBlockchainIdentifier = {
+	const reconstructedBlockchainIdentifier = buildSignedBlockchainIdentifierPayload({
 		inputHash: input.inputHash,
 		agentIdentifier: input.agentIdentifier,
 		purchaserIdentifier: purchaserId,
 		sellerIdentifier: sellerId,
-		RequestedFunds:
+		requestedFunds:
 			pricing.pricingType === PricingType.Dynamic && input.Amounts != null
 				? input.Amounts.map((amount) => ({
 						amount: amount.amount,
@@ -171,7 +196,9 @@ export async function resolvePurchaseCreationContext({
 		unlockTime: unlockTime.toString(),
 		externalDisputeUnlockTime: externalDisputeUnlockTime.toString(),
 		sellerAddress,
-	};
+		sellerReturnAddress,
+		paymentSourceType: input.paymentSourceType ?? PaymentSourceType.Web3CardanoV1,
+	});
 
 	const hashedBlockchainIdentifier = generateSHA256Hash(stringify(reconstructedBlockchainIdentifier));
 	const identifierIsSignedCorrectly = await checkSignature(hashedBlockchainIdentifier, {
@@ -188,6 +215,7 @@ export async function resolvePurchaseCreationContext({
 		unlockTime,
 		externalDisputeUnlockTime,
 		sellerAddress,
+		sellerReturnAddress,
 		pricingType: pricing.pricingType,
 		requestedCost: Array.from(requestedCostMap.entries()).map(([unit, amount]) => ({
 			amount,

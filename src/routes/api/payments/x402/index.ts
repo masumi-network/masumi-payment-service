@@ -1,9 +1,9 @@
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
 import { PaymentAction } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
-import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { BlockfrostProvider } from '@meshsdk/core';
 import { logger } from '@/utils/logger';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
@@ -71,6 +71,9 @@ export const buildX402TxPost = readAuthenticatedEndpointFactory.build({
 				unlockTime: BigInt(payment.unlockTime),
 				externalDisputeUnlockTime: BigInt(payment.externalDisputeUnlockTime),
 				sellerAddress: payment.SmartContractWallet.walletAddress,
+				sellerReturnAddress: payment.sellerReturnAddress,
+				buyerReturnAddress: payment.buyerReturnAddress,
+				paymentSourceType: payment.PaymentSource.paymentSourceType,
 				paidFunds: payment.RequestedFunds.map((f) => ({ unit: f.unit, amount: f.amount })),
 			},
 			buyerAddress: input.buyerAddress,

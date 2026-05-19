@@ -45,7 +45,7 @@ describe(`Cancel Refund Request Flow E2E Tests (${testNetwork})`, () => {
 			throw new Error('Global test configuration not available.');
 		}
 
-		const walletValidation = validateTestWallets(testNetwork);
+		const walletValidation = await validateTestWallets(testNetwork, global.testConfig.paymentSourceType);
 		if (!walletValidation.valid) {
 			walletValidation.errors.forEach((error) => console.error(`  - ${error}`));
 			throw new Error('Test wallets not properly configured.');
@@ -55,7 +55,9 @@ describe(`Cancel Refund Request Flow E2E Tests (${testNetwork})`, () => {
 			throw new Error('Test API client not initialized.');
 		}
 
-		console.log(`✅ Cancel Refund Request Flow environment validated for ${testNetwork}`);
+		console.log(
+			`✅ Cancel Refund Request Flow environment validated for ${global.testConfig.paymentSourceType} on ${testNetwork}`,
+		);
 	});
 
 	afterAll(async () => {

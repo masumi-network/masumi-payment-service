@@ -32,12 +32,21 @@ importers:
       '@harmoniclabs/cbor':
         specifier: 1.6.6
         version: 1.6.6
+      '@masumi/payment-core':
+        specifier: workspace:*
+        version: link:packages/payment-core
+      '@masumi/payment-source-v1':
+        specifier: workspace:*
+        version: link:packages/payment-source-v1
+      '@masumi/payment-source-v2':
+        specifier: workspace:*
+        version: link:packages/payment-source-v2
       '@meshsdk/core':
         specifier: 1.9.0-beta.96
         version: 1.9.0-beta.96(@bufbuild/protobuf@1.10.1)(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)
       '@meshsdk/core-cst':
         specifier: 1.9.0-beta.90
-        version: 1.9.0-beta.90(@harmoniclabs/bytestring@1.0.0)(rxjs@7.8.2)
+        version: 1.9.0-beta.90(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)
       '@opentelemetry/api':
         specifier: 1.9.0
         version: 1.9.0
@@ -401,6 +410,42 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
+  packages/payment-core:
+    dependencies:
+      '@meshsdk/core-cst':
+        specifier: 1.9.0-beta.90
+        version: 1.9.0-beta.90(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)
+      express-zod-api:
+        specifier: 26.3.1
+        version: 26.3.1(@types/express@5.0.0)(@types/http-errors@2.0.5)(@types/node@25.0.9)(express@5.2.1)(http-errors@2.0.1)(typescript@5.9.3)(zod@4.3.5)
+      lz-string:
+        specifier: 1.5.0
+        version: 1.5.0
+
+  packages/payment-source-v1:
+    dependencies:
+      '@masumi/payment-core':
+        specifier: workspace:*
+        version: link:../payment-core
+      '@meshsdk/core':
+        specifier: 1.9.0-beta.96
+        version: 1.9.0-beta.96(@bufbuild/protobuf@1.10.1)(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)
+      '@meshsdk/core-cst':
+        specifier: 1.9.0-beta.90
+        version: 1.9.0-beta.90(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)
+
+  packages/payment-source-v2:
+    dependencies:
+      '@masumi/payment-core':
+        specifier: workspace:*
+        version: link:../payment-core
+      '@meshsdk/core':
+        specifier: 1.9.0-beta.102
+        version: 1.9.0-beta.102(@bufbuild/protobuf@1.10.1)(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)
+      '@meshsdk/core-cst':
+        specifier: 1.9.0-beta.102
+        version: 1.9.0-beta.102(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)
+
 packages:
 
   '@alloc/quick-lru@5.2.0':
@@ -652,8 +697,8 @@ packages:
       rxjs:
         optional: true
 
-  '@cardano-sdk/core@0.46.11':
-    resolution: {integrity: sha512-N/f0Gna41Jsw/KFdulqgpTks4VoeNG1rhTYmGkgtUkMqBTYK+IdaOwMH4QrNxz08VpbOGv76Km3phqGuvTUinQ==}
+  '@cardano-sdk/core@0.46.12':
+    resolution: {integrity: sha512-yUA/xBUQMiMqIWiZPvIhM911pL3jNKg4PkZQ8qP9R7yU3NQ5x4RQkZ+zFDlVLxUt+gJiwIW2es0iPd8ObIKCxA==}
     engines: {node: '>=16.20.2'}
     peerDependencies:
       rxjs: ^7.4.0
@@ -691,8 +736,8 @@ packages:
       '@dcspark/cardano-multiplatform-lib-nodejs':
         optional: true
 
-  '@cardano-sdk/crypto@0.4.4':
-    resolution: {integrity: sha512-jvElFox4TPlTZRtjfw0HlkucRD90EeijfhMT0uD0N6ptkn8sRQXUFO+z+1Zcp9v9L2V324N7+2ThpjjBEoUdXQ==}
+  '@cardano-sdk/crypto@0.4.5':
+    resolution: {integrity: sha512-ymliqxdmen5dGVaiMVQ0VnhrwaYUjbPD3sHoMj8NI6MTuxrREp3pLJASREtWhwmv9k+QzDT6CoyuIXnlEQiWZQ==}
     engines: {node: '>=16.20.2'}
     peerDependencies:
       '@dcspark/cardano-multiplatform-lib-asmjs': ^3.1.1
@@ -706,24 +751,24 @@ packages:
       '@dcspark/cardano-multiplatform-lib-nodejs':
         optional: true
 
-  '@cardano-sdk/dapp-connector@0.13.25':
-    resolution: {integrity: sha512-pu+wTbdpfwO6NJ3NhOOyVPS0B08dHqYWlfuqzSpmz6nXHhnLI1w8yi20YZXKRpcajUoAjNdoyNOXJcFTLh6f/A==}
+  '@cardano-sdk/dapp-connector@0.13.26':
+    resolution: {integrity: sha512-4GptUVsGmgZhzKs+yp3360dA+HNdMi8IW1r2n1H63PYOJDPj2bjopBeyOGFn8Dmkzt+64rm2KyVyZM2SlcUq9Q==}
     engines: {node: '>=16.20.2'}
 
   '@cardano-sdk/input-selection@0.13.34':
     resolution: {integrity: sha512-/AidYTF9WesLoMc4PHoETxXgrfYEq8GECcikjvLwx1mygmKpok4Lp41Aio7sBasUCLvZ82/yTd3uXIAvec1aCA==}
     engines: {node: '>=16.20.2'}
 
-  '@cardano-sdk/input-selection@0.14.27':
-    resolution: {integrity: sha512-wvRvHLoimXypZiVAZ/5+8cEqgMBtD/i3J29QoZhg9N9cX9f1ufAQ0q6yLY6Z+koWpR3ZbroUGJugFtQ+gIyj6g==}
+  '@cardano-sdk/input-selection@0.14.28':
+    resolution: {integrity: sha512-pbysJUaIbbpesbv/f0XfFPKBb+bLjCmPcMfNJzpePSZBvr8bUcFpnfKtq28KthVdpe2mgL3k9ebTTcBSk7aERw==}
     engines: {node: '>=16.20.2'}
 
   '@cardano-sdk/key-management@0.25.1':
     resolution: {integrity: sha512-D99XTIplI2aQnCZtVUKZdmH9wZJQC2WuZL6hTqGZHHFBAeju2zBzGWT21LlcPRlT0/2DP2/OdfIHoHCr2ORp4g==}
     engines: {node: '>=16.20.2'}
 
-  '@cardano-sdk/key-management@0.29.11':
-    resolution: {integrity: sha512-vDnFknleJFlJcsigTJOi85J5iY2rfsLVkSUzGK9VcCT6F+aGjSMix+zwbT2ws/1Wc3lEpflWAbmtEimCaT5ObQ==}
+  '@cardano-sdk/key-management@0.29.13':
+    resolution: {integrity: sha512-yvdWrZcvrH9s5mBwnKpdT6xGF7vMZ9DSrrEENnhA9NG9jXDLpuYX/KI2TGczUdRPezBFm2y9kO7oHNf8GNYvAA==}
     engines: {node: '>=16.20.2'}
 
   '@cardano-sdk/util@0.15.7':
@@ -1714,11 +1759,23 @@ packages:
   '@leichtgewicht/ip-codec@2.0.5':
     resolution: {integrity: sha512-Vo+PSpZG2/fmgmiNzYK9qWRh8h/CHrwD0mo1h1DzL4yzHNSfWYujGTYsWGreD000gcgmZ7K4Ys6Tx9TxtsKdDw==}
 
+  '@meshsdk/common@1.9.0-beta.100':
+    resolution: {integrity: sha512-H3ktKR9eheRKZupg7DLdUr8A9dsefJbu7Wc+I1suwrv+oAZWiJ2wCuF3bX2QQo3LyWrSkVCE7WEiKFfQmukIww==}
+
+  '@meshsdk/common@1.9.0-beta.102':
+    resolution: {integrity: sha512-21qkpcGEe3EYpsmCF8uRUj3vM31MeO1y9vWMllKOFPCOYcOIbTfP+EE/HUSbAi7TAFKNd075BqPVgnvb6LA+hA==}
+
   '@meshsdk/common@1.9.0-beta.90':
     resolution: {integrity: sha512-2KKgGxXXLGzlBfklyr7Zvsm94+p8TqAsZPzZpi8UC0Fqt5MSgWmATghivB+nFyW2xHT/LfTt9Ts+MB1YdUkCTA==}
 
   '@meshsdk/common@1.9.0-beta.96':
     resolution: {integrity: sha512-GZKfVSahhmiAw1n59gOnPe8ZtYMhDJyrKanNk4fh7QPfzEgkYMu/V+KLKGlzV+A3f6wtR6N3Gy+AgMwKNS+CTg==}
+
+  '@meshsdk/core-cst@1.9.0-beta.100':
+    resolution: {integrity: sha512-gXC7c81puzv12C3xJ6vhH/KIEc/P6ScuXsgmLlqFMpDv0SuoMg+42HgdyWi0WrccVwi8cdepsn5YhtCaYVn0nw==}
+
+  '@meshsdk/core-cst@1.9.0-beta.102':
+    resolution: {integrity: sha512-PEIfq1c+Rls84giMpCyaGpnWRnjHEKrbDjCBOsL6meVXAARbX85zwSgpGryQL36dU/W6xkc7idNHcKyLW+HvLg==}
 
   '@meshsdk/core-cst@1.9.0-beta.90':
     resolution: {integrity: sha512-kVd9T+LMBZyEGjQaqpBoq34PaHxDipIm4ErPc2cc6EulSUfHhrZD0WkvYwfL5Fao/YfiTESPu8I3sKXaP07hLw==}
@@ -1726,14 +1783,26 @@ packages:
   '@meshsdk/core-cst@1.9.0-beta.96':
     resolution: {integrity: sha512-YhymUB86nzm5rSDHpaE4kXbgKIlzJa7JRnV71yvCBeCI6owWOnK71prLIDS1Pao8jjgj2q62LPWXFIzrOqma2A==}
 
+  '@meshsdk/core@1.9.0-beta.102':
+    resolution: {integrity: sha512-ZpF5ZnmLoNZ+/8jcgXH3AK3VPacah9Gf31GCJE4udS3Dz16Stbg9+fSIFWkgmZTu/U8cRbr6PcYtNE+mVvq1jg==}
+
   '@meshsdk/core@1.9.0-beta.96':
     resolution: {integrity: sha512-NRK2JkLsh/kk9v9fplBwf8EdnzmFoT4znyWQbVhP/VYWW/6kiudTczD86LKQkgJUzFEIG7eYON8+mKsOZrqkSQ==}
+
+  '@meshsdk/provider@1.9.0-beta.100':
+    resolution: {integrity: sha512-930tN8ZxK/pOXCSlvLxWIUbP5KyEO7EloacuPjSNnRP9rVJlt/AoiW30CSV8l9ZegA9VH30pev9Svv0Qj/kjRQ==}
 
   '@meshsdk/provider@1.9.0-beta.96':
     resolution: {integrity: sha512-fylHhb4V57eX8ZHhOE/nHf42gLTSfaWKJF9AXrOpg2Tb5oQJHWvYXskffxM/Ri59Dk/+QDaupZmnUhtdn/smiQ==}
 
+  '@meshsdk/transaction@1.9.0-beta.102':
+    resolution: {integrity: sha512-YW2LF/mzrs/hWw7+F4psfmSELQL37TgYDG+3y8krg+mUClDntYYVftpEDFAuX+YLjxDiGA2bqcAQaW/l28A+aw==}
+
   '@meshsdk/transaction@1.9.0-beta.96':
     resolution: {integrity: sha512-A7ManLPYs6lXeEPtu/dRuUXZoUQpuOSD4paIR/mqv2hr7PK3rXxcEu3KmCTRiG+qupyb1zDbuGBMzLSJWp+Afg==}
+
+  '@meshsdk/wallet@1.9.0-beta.102':
+    resolution: {integrity: sha512-e0Ba4XZ+XQcxQqA211BryIPZ4xkefhlRoAJKp37ZcuTfmiK1IyrDkaBGA3yuEgi1GnUPhNiCrY4aEBfdRrY1YQ==}
 
   '@meshsdk/wallet@1.9.0-beta.96':
     resolution: {integrity: sha512-WKUDL75FJHFqx9l4HuaYQtgJ298ZzPAr8pWCuTOMCWKMTzlw8pA6cTfkCcwT0Ch6Uvgq7V6pFCy9xqBDQrcBLg==}
@@ -5280,6 +5349,9 @@ packages:
     resolution: {integrity: sha512-Bb33KbowVTIj5s7Ked1OsqHUeCpz//tPwR+E2zJgJKo9Z5XolZ9b6bdUgjmYlwnWhoOQKoTd1TYToZGn5mAYOg==}
     engines: {node: '>= 0.8'}
 
+  hash.js@1.1.7:
+    resolution: {integrity: sha512-taOaskGt4z4SOANNseOviYDvjEJinIkRgmp7LbKP2YTTmVxWBl87s/uzK9r+44BclBSp2X7K1hqeNfz9JbBeXA==}
+
   hashlru@2.3.0:
     resolution: {integrity: sha512-0cMsjjIC8I+D3M44pOQdsy0OHXGLVz6Z0beRuufhKa0KfaD2wGwAev6jILzXsd3/vpnNQJmWyZtIILqM1N+n5A==}
 
@@ -6171,6 +6243,9 @@ packages:
   min-document@2.19.2:
     resolution: {integrity: sha512-8S5I8db/uZN8r9HSLFVWPdJCvYOejMcEC82VIzNUc6Zkklf/d1gg2psfE79/vyhWOj4+J8MtwmoOz3TmvaGu5A==}
 
+  minimalistic-assert@1.0.1:
+    resolution: {integrity: sha512-UtJcAD4yEaGtjPezWuO9wC4nwUnVH/8/Im3yEHQP4b67cXlD/Qr9hdITCU1xDbSEXg2XKNaP8jsReV7vQd00/A==}
+
   minimatch@10.1.1:
     resolution: {integrity: sha512-enIvLvRAFZYXJzkCYG5RKmPfrFArdLv+R+lbQ53BmIMLIry74bjKzX6iHAm8WYamJkhSSEabrWN5D97XnKObjQ==}
     engines: {node: 20 || >=22}
@@ -7058,6 +7133,9 @@ packages:
     resolution: {integrity: sha512-y5LWb0IlbO4e97Zr7c3mlpabcbBtS+ieiZ9iwDooShpFKWXf62zz5pEPdwrLYm+Bxn1fnbwFGzHuCLSA9tBmrw==}
     engines: {node: '>=14.0.0'}
     hasBin: true
+
+  scalus@0.14.2:
+    resolution: {integrity: sha512-dobDMIUDUVhtxoX3ceGlaykKQGkph4HOE9hjkLsmwVgYf24fIik6YrZzVFrZSNCTvI2WN7hjEknehIrEJo1CMQ==}
 
   scheduler@0.27.0:
     resolution: {integrity: sha512-eNv+WrVbKu1f3vbYJT/xtiF5syA5HPIMtf9IgY/nKg0sWqzAUEvqY/xm7OcZc/qafLx/iO9FgOmeSAp4v5ti/Q==}
@@ -8031,8 +8109,8 @@ snapshots:
 
   '@blaze-cardano/core@0.8.0(rxjs@7.8.2)':
     dependencies:
-      '@cardano-sdk/core': 0.46.11(rxjs@7.8.2)
-      '@cardano-sdk/crypto': 0.4.4
+      '@cardano-sdk/core': 0.46.12(rxjs@7.8.2)
+      '@cardano-sdk/crypto': 0.4.5
       '@cardano-sdk/util': 0.17.1
       '@noble/curves': 1.9.0
       '@noble/ed25519': 2.3.0
@@ -8258,12 +8336,12 @@ snapshots:
       - react-native-b4a
       - utf-8-validate
 
-  '@cardano-sdk/core@0.46.11(rxjs@7.8.2)':
+  '@cardano-sdk/core@0.46.12(rxjs@7.8.2)':
     dependencies:
       '@biglup/is-cid': 1.0.3
       '@cardano-ogmios/client': 6.9.0
       '@cardano-ogmios/schema': 6.9.0
-      '@cardano-sdk/crypto': 0.4.4
+      '@cardano-sdk/crypto': 0.4.5
       '@cardano-sdk/util': 0.17.1
       '@foxglove/crc': 0.0.3
       '@scure/base': 1.2.6
@@ -8312,7 +8390,7 @@ snapshots:
     transitivePeerDependencies:
       - react-native-b4a
 
-  '@cardano-sdk/crypto@0.4.4':
+  '@cardano-sdk/crypto@0.4.5':
     dependencies:
       '@cardano-sdk/util': 0.17.1
       blake2b: 2.1.4
@@ -8325,10 +8403,10 @@ snapshots:
     transitivePeerDependencies:
       - react-native-b4a
 
-  '@cardano-sdk/dapp-connector@0.13.25(rxjs@7.8.2)':
+  '@cardano-sdk/dapp-connector@0.13.26(rxjs@7.8.2)':
     dependencies:
-      '@cardano-sdk/core': 0.46.11(rxjs@7.8.2)
-      '@cardano-sdk/crypto': 0.4.4
+      '@cardano-sdk/core': 0.46.12(rxjs@7.8.2)
+      '@cardano-sdk/crypto': 0.4.5
       '@cardano-sdk/util': 0.17.1
       ts-custom-error: 3.3.1
       ts-log: 2.2.7
@@ -8361,10 +8439,10 @@ snapshots:
       - rxjs
       - utf-8-validate
 
-  '@cardano-sdk/input-selection@0.14.27(rxjs@7.8.2)':
+  '@cardano-sdk/input-selection@0.14.28(rxjs@7.8.2)':
     dependencies:
-      '@cardano-sdk/core': 0.46.11(rxjs@7.8.2)
-      '@cardano-sdk/key-management': 0.29.11
+      '@cardano-sdk/core': 0.46.12(rxjs@7.8.2)
+      '@cardano-sdk/key-management': 0.29.13
       '@cardano-sdk/util': 0.17.1
       bignumber.js: 9.3.1
       lodash: 4.17.21
@@ -8383,7 +8461,7 @@ snapshots:
     dependencies:
       '@cardano-sdk/core': 0.43.0(rxjs@7.8.2)
       '@cardano-sdk/crypto': 0.1.32
-      '@cardano-sdk/dapp-connector': 0.13.25(rxjs@7.8.2)
+      '@cardano-sdk/dapp-connector': 0.13.26(rxjs@7.8.2)
       '@cardano-sdk/util': 0.15.7
       '@emurgo/cardano-message-signing-nodejs': 1.1.0
       bip39: 3.1.0
@@ -8403,11 +8481,11 @@ snapshots:
       - react-native-b4a
       - utf-8-validate
 
-  '@cardano-sdk/key-management@0.29.11':
+  '@cardano-sdk/key-management@0.29.13':
     dependencies:
-      '@cardano-sdk/core': 0.46.11(rxjs@7.8.2)
-      '@cardano-sdk/crypto': 0.4.4
-      '@cardano-sdk/dapp-connector': 0.13.25(rxjs@7.8.2)
+      '@cardano-sdk/core': 0.46.12(rxjs@7.8.2)
+      '@cardano-sdk/crypto': 0.4.5
+      '@cardano-sdk/dapp-connector': 0.13.26(rxjs@7.8.2)
       '@cardano-sdk/util': 0.17.1
       '@emurgo/cardano-message-signing-nodejs': 1.1.0
       bip39: 3.1.0
@@ -8957,11 +9035,11 @@ snapshots:
 
   '@harmoniclabs/pair@1.0.0': {}
 
-  '@harmoniclabs/plutus-data@1.2.4(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/cbor@1.6.6)':
+  '@harmoniclabs/plutus-data@1.2.4(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/cbor@1.6.0)':
     dependencies:
       '@harmoniclabs/biguint': 1.0.0
       '@harmoniclabs/bytestring': 1.0.0
-      '@harmoniclabs/cbor': 1.6.6
+      '@harmoniclabs/cbor': 1.6.0
       '@harmoniclabs/crypto': 0.2.5
       '@harmoniclabs/uint8array-utils': 1.0.4
 
@@ -8975,14 +9053,15 @@ snapshots:
 
   '@harmoniclabs/uint8array-utils@1.0.4': {}
 
-  '@harmoniclabs/uplc@1.2.4(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/cbor@1.6.0)(@harmoniclabs/pair@1.0.0)(@harmoniclabs/plutus-data@1.2.4(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/cbor@1.6.0))':
+  '@harmoniclabs/uplc@1.2.4(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/cbor@1.6.0)(@harmoniclabs/crypto@0.2.5)(@harmoniclabs/pair@1.0.0)(@harmoniclabs/plutus-data@1.2.4(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/cbor@1.6.0))':
     dependencies:
       '@harmoniclabs/bigint-utils': 1.0.0
       '@harmoniclabs/bitstream': 1.0.0
       '@harmoniclabs/bytestring': 1.0.0
       '@harmoniclabs/cbor': 1.6.0
+      '@harmoniclabs/crypto': 0.2.5
       '@harmoniclabs/pair': 1.0.0
-      '@harmoniclabs/plutus-data': 1.2.4(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/cbor@1.6.6)
+      '@harmoniclabs/plutus-data': 1.2.4(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/cbor@1.6.0)
       '@harmoniclabs/uint8array-utils': 1.0.4
 
   '@harmoniclabs/uplc@1.4.1(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/cbor@1.6.0)(@harmoniclabs/crypto@0.2.5)(@harmoniclabs/pair@1.0.0)(@harmoniclabs/plutus-data@1.2.6(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/cbor@1.6.0))':
@@ -9386,6 +9465,24 @@ snapshots:
 
   '@leichtgewicht/ip-codec@2.0.5': {}
 
+  '@meshsdk/common@1.9.0-beta.100':
+    dependencies:
+      bech32: 2.0.0
+      bip39: 3.1.0
+      blake2b: 2.1.4
+      blakejs: 1.2.1
+    transitivePeerDependencies:
+      - react-native-b4a
+
+  '@meshsdk/common@1.9.0-beta.102':
+    dependencies:
+      bech32: 2.0.0
+      bip39: 3.1.0
+      blake2b: 2.1.4
+      blakejs: 1.2.1
+    transitivePeerDependencies:
+      - react-native-b4a
+
   '@meshsdk/common@1.9.0-beta.90':
     dependencies:
       bech32: 2.0.0
@@ -9404,7 +9501,67 @@ snapshots:
     transitivePeerDependencies:
       - react-native-b4a
 
-  '@meshsdk/core-cst@1.9.0-beta.90(@harmoniclabs/bytestring@1.0.0)(rxjs@7.8.2)':
+  '@meshsdk/core-cst@1.9.0-beta.100(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)':
+    dependencies:
+      '@cardano-sdk/core': 0.46.12(rxjs@7.8.2)
+      '@cardano-sdk/crypto': 0.4.5
+      '@cardano-sdk/input-selection': 0.14.28(rxjs@7.8.2)
+      '@cardano-sdk/util': 0.17.1
+      '@harmoniclabs/cbor': 1.6.0
+      '@harmoniclabs/pair': 1.0.0
+      '@harmoniclabs/plutus-data': 1.2.6(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/cbor@1.6.0)
+      '@harmoniclabs/uplc': 1.4.1(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/cbor@1.6.0)(@harmoniclabs/crypto@0.2.5)(@harmoniclabs/pair@1.0.0)(@harmoniclabs/plutus-data@1.2.6(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/cbor@1.6.0))
+      '@meshsdk/common': 1.9.0-beta.100
+      '@types/base32-encoding': 1.0.2
+      base32-encoding: 1.0.0
+      bech32: 2.0.0
+      blakejs: 1.2.1
+      bn.js: 5.2.2
+      hash.js: 1.1.7
+      scalus: 0.14.2
+    transitivePeerDependencies:
+      - '@dcspark/cardano-multiplatform-lib-asmjs'
+      - '@dcspark/cardano-multiplatform-lib-browser'
+      - '@dcspark/cardano-multiplatform-lib-nodejs'
+      - '@harmoniclabs/bytestring'
+      - '@harmoniclabs/crypto'
+      - bufferutil
+      - encoding
+      - react-native-b4a
+      - rxjs
+      - utf-8-validate
+
+  '@meshsdk/core-cst@1.9.0-beta.102(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)':
+    dependencies:
+      '@cardano-sdk/core': 0.46.12(rxjs@7.8.2)
+      '@cardano-sdk/crypto': 0.4.5
+      '@cardano-sdk/input-selection': 0.14.28(rxjs@7.8.2)
+      '@cardano-sdk/util': 0.17.1
+      '@harmoniclabs/cbor': 1.6.0
+      '@harmoniclabs/pair': 1.0.0
+      '@harmoniclabs/plutus-data': 1.2.6(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/cbor@1.6.0)
+      '@harmoniclabs/uplc': 1.4.1(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/cbor@1.6.0)(@harmoniclabs/crypto@0.2.5)(@harmoniclabs/pair@1.0.0)(@harmoniclabs/plutus-data@1.2.6(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/cbor@1.6.0))
+      '@meshsdk/common': 1.9.0-beta.102
+      '@types/base32-encoding': 1.0.2
+      base32-encoding: 1.0.0
+      bech32: 2.0.0
+      blakejs: 1.2.1
+      bn.js: 5.2.2
+      hash.js: 1.1.7
+      scalus: 0.14.2
+    transitivePeerDependencies:
+      - '@dcspark/cardano-multiplatform-lib-asmjs'
+      - '@dcspark/cardano-multiplatform-lib-browser'
+      - '@dcspark/cardano-multiplatform-lib-nodejs'
+      - '@harmoniclabs/bytestring'
+      - '@harmoniclabs/crypto'
+      - bufferutil
+      - encoding
+      - react-native-b4a
+      - rxjs
+      - utf-8-validate
+
+  '@meshsdk/core-cst@1.9.0-beta.90(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)':
     dependencies:
       '@cardano-sdk/core': 0.45.10(rxjs@7.8.2)
       '@cardano-sdk/crypto': 0.2.3
@@ -9412,8 +9569,8 @@ snapshots:
       '@cardano-sdk/util': 0.15.7
       '@harmoniclabs/cbor': 1.6.0
       '@harmoniclabs/pair': 1.0.0
-      '@harmoniclabs/plutus-data': 1.2.4(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/cbor@1.6.6)
-      '@harmoniclabs/uplc': 1.2.4(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/cbor@1.6.0)(@harmoniclabs/pair@1.0.0)(@harmoniclabs/plutus-data@1.2.4(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/cbor@1.6.0))
+      '@harmoniclabs/plutus-data': 1.2.4(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/cbor@1.6.0)
+      '@harmoniclabs/uplc': 1.2.4(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/cbor@1.6.0)(@harmoniclabs/crypto@0.2.5)(@harmoniclabs/pair@1.0.0)(@harmoniclabs/plutus-data@1.2.4(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/cbor@1.6.0))
       '@meshsdk/common': 1.9.0-beta.90
       '@types/base32-encoding': 1.0.2
       base32-encoding: 1.0.0
@@ -9434,9 +9591,9 @@ snapshots:
 
   '@meshsdk/core-cst@1.9.0-beta.96(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)':
     dependencies:
-      '@cardano-sdk/core': 0.46.11(rxjs@7.8.2)
-      '@cardano-sdk/crypto': 0.4.4
-      '@cardano-sdk/input-selection': 0.14.27(rxjs@7.8.2)
+      '@cardano-sdk/core': 0.46.12(rxjs@7.8.2)
+      '@cardano-sdk/crypto': 0.4.5
+      '@cardano-sdk/input-selection': 0.14.28(rxjs@7.8.2)
       '@cardano-sdk/util': 0.17.1
       '@harmoniclabs/cbor': 1.6.0
       '@harmoniclabs/pair': 1.0.0
@@ -9461,6 +9618,27 @@ snapshots:
       - rxjs
       - utf-8-validate
 
+  '@meshsdk/core@1.9.0-beta.102(@bufbuild/protobuf@1.10.1)(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)':
+    dependencies:
+      '@meshsdk/common': 1.9.0-beta.102
+      '@meshsdk/core-cst': 1.9.0-beta.102(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)
+      '@meshsdk/provider': 1.9.0-beta.100(@bufbuild/protobuf@1.10.1)(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)
+      '@meshsdk/transaction': 1.9.0-beta.102(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)
+      '@meshsdk/wallet': 1.9.0-beta.102(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)
+    transitivePeerDependencies:
+      - '@bufbuild/protobuf'
+      - '@dcspark/cardano-multiplatform-lib-asmjs'
+      - '@dcspark/cardano-multiplatform-lib-browser'
+      - '@dcspark/cardano-multiplatform-lib-nodejs'
+      - '@harmoniclabs/bytestring'
+      - '@harmoniclabs/crypto'
+      - bufferutil
+      - debug
+      - encoding
+      - react-native-b4a
+      - rxjs
+      - utf-8-validate
+
   '@meshsdk/core@1.9.0-beta.96(@bufbuild/protobuf@1.10.1)(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)':
     dependencies:
       '@meshsdk/common': 1.9.0-beta.96
@@ -9469,6 +9647,28 @@ snapshots:
       '@meshsdk/transaction': 1.9.0-beta.96(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)
       '@meshsdk/wallet': 1.9.0-beta.96(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)
       libsodium-wrappers-sumo: 0.7.15
+    transitivePeerDependencies:
+      - '@bufbuild/protobuf'
+      - '@dcspark/cardano-multiplatform-lib-asmjs'
+      - '@dcspark/cardano-multiplatform-lib-browser'
+      - '@dcspark/cardano-multiplatform-lib-nodejs'
+      - '@harmoniclabs/bytestring'
+      - '@harmoniclabs/crypto'
+      - bufferutil
+      - debug
+      - encoding
+      - react-native-b4a
+      - rxjs
+      - utf-8-validate
+
+  '@meshsdk/provider@1.9.0-beta.100(@bufbuild/protobuf@1.10.1)(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)':
+    dependencies:
+      '@meshsdk/common': 1.9.0-beta.100
+      '@meshsdk/core-cst': 1.9.0-beta.100(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)
+      '@utxorpc/sdk': 0.6.8(@bufbuild/protobuf@1.10.1)
+      '@utxorpc/spec': 0.16.0
+      axios: 1.15.0
+      cbor: 10.0.11
     transitivePeerDependencies:
       - '@bufbuild/protobuf'
       - '@dcspark/cardano-multiplatform-lib-asmjs'
@@ -9506,15 +9706,53 @@ snapshots:
       - rxjs
       - utf-8-validate
 
+  '@meshsdk/transaction@1.9.0-beta.102(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)':
+    dependencies:
+      '@cardano-sdk/core': 0.46.12(rxjs@7.8.2)
+      '@cardano-sdk/input-selection': 0.14.28(rxjs@7.8.2)
+      '@cardano-sdk/util': 0.17.1
+      '@meshsdk/common': 1.9.0-beta.102
+      '@meshsdk/core-cst': 1.9.0-beta.102(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)
+      json-bigint: 1.0.0
+    transitivePeerDependencies:
+      - '@dcspark/cardano-multiplatform-lib-asmjs'
+      - '@dcspark/cardano-multiplatform-lib-browser'
+      - '@dcspark/cardano-multiplatform-lib-nodejs'
+      - '@harmoniclabs/bytestring'
+      - '@harmoniclabs/crypto'
+      - bufferutil
+      - encoding
+      - react-native-b4a
+      - rxjs
+      - utf-8-validate
+
   '@meshsdk/transaction@1.9.0-beta.96(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)':
     dependencies:
-      '@cardano-sdk/core': 0.46.11(rxjs@7.8.2)
-      '@cardano-sdk/input-selection': 0.14.27(rxjs@7.8.2)
+      '@cardano-sdk/core': 0.46.12(rxjs@7.8.2)
+      '@cardano-sdk/input-selection': 0.14.28(rxjs@7.8.2)
       '@cardano-sdk/util': 0.17.1
       '@meshsdk/common': 1.9.0-beta.96
       '@meshsdk/core-cst': 1.9.0-beta.96(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)
       json-bigint: 1.0.0
       libsodium-wrappers-sumo: 0.7.15
+    transitivePeerDependencies:
+      - '@dcspark/cardano-multiplatform-lib-asmjs'
+      - '@dcspark/cardano-multiplatform-lib-browser'
+      - '@dcspark/cardano-multiplatform-lib-nodejs'
+      - '@harmoniclabs/bytestring'
+      - '@harmoniclabs/crypto'
+      - bufferutil
+      - encoding
+      - react-native-b4a
+      - rxjs
+      - utf-8-validate
+
+  '@meshsdk/wallet@1.9.0-beta.102(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)':
+    dependencies:
+      '@meshsdk/common': 1.9.0-beta.102
+      '@meshsdk/core-cst': 1.9.0-beta.102(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)
+      '@meshsdk/transaction': 1.9.0-beta.102(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)
+      '@simplewebauthn/browser': 13.2.2
     transitivePeerDependencies:
       - '@dcspark/cardano-multiplatform-lib-asmjs'
       - '@dcspark/cardano-multiplatform-lib-browser'
@@ -13135,6 +13373,23 @@ snapshots:
     transitivePeerDependencies:
       - '@types/node'
 
+  express-zod-api@26.3.1(@types/express@5.0.0)(@types/http-errors@2.0.5)(@types/node@25.0.9)(express@5.2.1)(http-errors@2.0.1)(typescript@5.9.3)(zod@4.3.5):
+    dependencies:
+      '@express-zod-api/zod-plugin': 3.0.0(zod@4.3.5)
+      ansis: 4.2.0
+      express: 5.2.1
+      http-errors: 2.0.1
+      node-mocks-http: 1.17.2(@types/express@5.0.0)(@types/node@25.0.9)
+      openapi3-ts: 4.5.0
+      ramda: 0.32.0
+      typescript: 5.9.3
+      zod: 4.3.5
+    optionalDependencies:
+      '@types/express': 5.0.0
+      '@types/http-errors': 2.0.5
+    transitivePeerDependencies:
+      - '@types/node'
+
   express@5.2.1:
     dependencies:
       accepts: 2.0.0
@@ -13539,6 +13794,11 @@ snapshots:
       readable-stream: 2.3.8
       safe-buffer: 5.2.1
       to-buffer: 1.2.2
+
+  hash.js@1.1.7:
+    dependencies:
+      inherits: 2.0.4
+      minimalistic-assert: 1.0.1
 
   hashlru@2.3.0: {}
 
@@ -14562,6 +14822,8 @@ snapshots:
     dependencies:
       dom-walk: 0.1.2
 
+  minimalistic-assert@1.0.1: {}
+
   minimatch@10.1.1:
     dependencies:
       '@isaacs/brace-expansion': 5.0.0
@@ -15495,6 +15757,8 @@ snapshots:
       source-map-js: 1.2.1
     optionalDependencies:
       '@parcel/watcher': 2.5.4
+
+  scalus@0.14.2: {}
 
   scheduler@0.27.0: {}
 

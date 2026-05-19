@@ -1,5 +1,5 @@
 import { HotWallet, HotWalletType, PurchaseErrorType, PurchasingAction, Prisma } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 import {
 	BlockfrostProvider,
 	MeshWallet,
@@ -10,7 +10,7 @@ import {
 } from '@meshsdk/core';
 import { logger } from '@/utils/logger';
 import { generateWalletExtended } from '@/utils/generator/wallet-generator';
-import { getDatumFromBlockchainIdentifier, SmartContractState } from '@/utils/generator/contract-generator';
+import { SmartContractState } from '@/utils/generator/contract-generator';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
@@ -23,6 +23,7 @@ import {
 	createPendingTransaction,
 	updateCurrentTransactionHash,
 } from '@/services/shared';
+import { getPaymentSourceContractAdapter } from '@/services/payment-source-adapters';
 
 type PaymentSourceWithWallets = Prisma.PaymentSourceGetPayload<{
 	include: {
@@ -57,6 +58,7 @@ type WalletPairing = {
 	scriptAddress: string;
 	walletId: string;
 	changeAddress: string;
+	collectionAddress: string | null;
 	utxos: UTxO[];
 	batchedRequests: BatchedRequest[];
 };
@@ -86,14 +88,18 @@ async function executeSpecificBatchPayment(
 		const submitResultTime = data.paymentRequest.submitResultTime;
 		const unlockTime = data.paymentRequest.unlockTime;
 		const externalDisputeUnlockTime = data.paymentRequest.externalDisputeUnlockTime;
+		const buyerReturnAddress = data.paymentRequest.buyerReturnAddress ?? walletPairing.collectionAddress;
+		const adapter = getPaymentSourceContractAdapter(paymentContract.paymentSourceType);
 
 		if (data.paymentRequest.payByTime == null) {
 			throw new Error('Pay by time is null, this is deprecated');
 		}
 
-		const datum = getDatumFromBlockchainIdentifier({
+		const datum = adapter.createDatumFromBlockchainIdentifier({
 			buyerAddress: buyerAddress,
+			buyerReturnAddress,
 			sellerAddress: sellerAddress,
+			sellerReturnAddress: data.paymentRequest.sellerReturnAddress,
 			blockchainIdentifier: data.paymentRequest.blockchainIdentifier,
 			inputHash: data.paymentRequest.inputHash,
 			payByTime: data.paymentRequest.payByTime,
@@ -137,6 +143,7 @@ async function executeSpecificBatchPayment(
 						id: walletId,
 					},
 				},
+				buyerReturnAddress: request.paymentRequest.buyerReturnAddress ?? walletPairing.collectionAddress,
 				...createPendingTransaction(walletId),
 				TransactionHistory: request.paymentRequest.CurrentTransaction
 					? {
@@ -367,6 +374,7 @@ export async function batchLatestPaymentEntriesV1() {
 								wallet: meshWallet,
 								walletId: wallet.id,
 								changeAddress: address,
+								collectionAddress: wallet.collectionAddress,
 								utxos,
 								scriptAddress: paymentContract.smartContractAddress,
 								amounts: Array.from(balanceMap.entries()).map(([unit, quantity]) => ({
@@ -416,9 +424,12 @@ export async function batchLatestPaymentEntriesV1() {
 								(amount) => amount.unit.toLowerCase() != '' && amount.unit.toLowerCase() != 'lovelace',
 							).length;
 
-							const resultSubmittedEstimateDatum = getDatumFromBlockchainIdentifier({
+							const adapter = getPaymentSourceContractAdapter(paymentContract.paymentSourceType);
+							const resultSubmittedEstimateDatum = adapter.createDatumFromBlockchainIdentifier({
 								buyerAddress: sellerAddress,
+								buyerReturnAddress: paymentRequest.buyerReturnAddress ?? walletData.collectionAddress,
 								sellerAddress: sellerAddress,
+								sellerReturnAddress: paymentRequest.sellerReturnAddress,
 								blockchainIdentifier: paymentRequest.blockchainIdentifier,
 								inputHash: paymentRequest.inputHash,
 								payByTime: paymentRequest.payByTime!,
@@ -542,6 +553,7 @@ export async function batchLatestPaymentEntriesV1() {
 								scriptAddress: walletData.scriptAddress,
 								walletId: walletData.walletId,
 								changeAddress: walletData.changeAddress,
+								collectionAddress: walletData.collectionAddress,
 								utxos: walletData.utxos,
 								batchedRequests: batchedPaymentRequests,
 							});

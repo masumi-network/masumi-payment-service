@@ -1,5 +1,5 @@
-import { prisma } from '@/utils/db';
-import { SmartContractState, getDatumFromBlockchainIdentifier } from '@/utils/generator/contract-generator';
+import { prisma } from '@masumi/payment-core/db';
+import { SmartContractState } from '@/utils/generator/contract-generator';
 import { logger } from '@/utils/logger';
 import { convertNewPaymentActionAndError, convertNewPurchasingActionAndError } from '@/utils/logic/state-transitions';
 import { Transaction } from '@emurgo/cardano-serialization-lib-nodejs';
@@ -9,6 +9,7 @@ import {
 	PaymentAction,
 	PaymentErrorType,
 	PaymentSource,
+	PaymentSourceType,
 	Prisma,
 	PurchaseErrorType,
 	PurchasingAction,
@@ -25,12 +26,13 @@ import {
 	redeemerToOnChainState,
 } from '@/services/transactions/tx-sync/util';
 import { deserializeDatum } from '@meshsdk/core';
-import { DecodedV1ContractDatum, decodeV1ContractDatum } from '@/utils/converter/string-datum-convert';
+import { DecodedV1ContractDatum } from '@/utils/converter/string-datum-convert';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { CONSTANTS } from '@/utils/config';
 import { TransactionMetadata } from '@/services/transactions/tx-sync/blockchain';
 import { calculateMinUtxo, getLovelaceFromAmounts, getNativeTokenCount, DUMMY_RESULT_HASH } from '@/utils/min-utxo';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
+import { getDatumNetwork, getPaymentSourceContractAdapter } from '@/services/payment-source-adapters';
 
 export type UpdateTransactionInput = {
 	blockTime: number;
@@ -63,6 +65,17 @@ export type UpdateTransactionInput = {
 	};
 	transaction: Transaction;
 };
+
+function nullableStringEquals(left: string | null | undefined, right: string | null | undefined) {
+	return (left ?? null) === (right ?? null);
+}
+
+function v2ReturnAddressesMatch(left: DecodedV1ContractDatum, right: DecodedV1ContractDatum) {
+	return (
+		nullableStringEquals(left.buyerReturnAddress, right.buyerReturnAddress) &&
+		nullableStringEquals(left.sellerReturnAddress, right.sellerReturnAddress)
+	);
+}
 
 async function handlePaymentTransactionCardanoV1(
 	tx_hash: string,
@@ -480,6 +493,7 @@ export async function updateInitialTransactions(
 	paymentContract: {
 		id: string;
 		network: Network;
+		paymentSourceType: PaymentSourceType;
 	},
 	tx: UpdateTransactionInput,
 	rpcProviderApiKey: string,
@@ -491,9 +505,10 @@ export async function updateInitialTransactions(
 			continue;
 		}
 		const decodedOutputDatum: unknown = deserializeDatum(outputDatum);
-		const decodedNewContract = decodeV1ContractDatum(
+		const adapter = getPaymentSourceContractAdapter(paymentContract.paymentSourceType);
+		const decodedNewContract = adapter.decodeContractDatum(
 			decodedOutputDatum,
-			paymentContract.network == Network.Mainnet ? 'mainnet' : 'preprod',
+			getDatumNetwork(paymentContract.network),
 		);
 		if (decodedNewContract == null) {
 			//invalid transaction
@@ -526,7 +541,7 @@ export async function updateInitialTransactions(
 	}
 }
 async function updateInitialPurchaseTransaction(
-	paymentContract: { id: string; network: Network },
+	paymentContract: { id: string; network: Network; paymentSourceType: PaymentSourceType },
 	decodedNewContract: DecodedV1ContractDatum,
 	output: Extract<ExtractOnChainTransactionDataOutput, { type: 'Initial' }>['valueOutputs'][number],
 	tx: UpdateTransactionInput,
@@ -757,6 +772,20 @@ async function updateInitialPurchaseTransaction(
 				});
 				return;
 			}
+			if (
+				paymentContract.paymentSourceType === PaymentSourceType.Web3CardanoV2 &&
+				(!nullableStringEquals(decodedNewContract.buyerReturnAddress, dbEntry.buyerReturnAddress) ||
+					!nullableStringEquals(decodedNewContract.sellerReturnAddress, dbEntry.sellerReturnAddress))
+			) {
+				logger.warn('Return addresses do not match return addresses in db. This likely is a spoofing attempt.', {
+					purchaseRequest: dbEntry,
+					buyerReturnAddress: decodedNewContract.buyerReturnAddress,
+					buyerReturnAddressDb: dbEntry.buyerReturnAddress,
+					sellerReturnAddress: decodedNewContract.sellerReturnAddress,
+					sellerReturnAddressDb: dbEntry.sellerReturnAddress,
+				});
+				return;
+			}
 			//TODO: optional check amounts
 			await prisma.purchaseRequest.update({
 				where: { id: dbEntry.id },
@@ -848,7 +877,7 @@ async function updateInitialPurchaseTransaction(
 
 async function updateInitialPaymentTransaction(
 	decodedNewContract: DecodedV1ContractDatum,
-	paymentContract: { id: string; network: Network },
+	paymentContract: { id: string; network: Network; paymentSourceType: PaymentSourceType },
 	tx: UpdateTransactionInput,
 	output: Extract<ExtractOnChainTransactionDataOutput, { type: 'Initial' }>['valueOutputs'][number],
 	metadata: TransactionMetadata,
@@ -1058,6 +1087,20 @@ async function updateInitialPaymentTransaction(
 				newState = OnChainState.FundsOrDatumInvalid;
 				errorNote.push(errorMessage);
 			}
+			if (
+				paymentContract.paymentSourceType === PaymentSourceType.Web3CardanoV2 &&
+				!nullableStringEquals(decodedNewContract.sellerReturnAddress, dbEntry.sellerReturnAddress)
+			) {
+				const errorMessage = 'Seller return address does not match seller return address in db.';
+				logger.warn(errorMessage, {
+					paymentRequest: dbEntry,
+					sellerReturnAddress: decodedNewContract.sellerReturnAddress,
+					sellerReturnAddressDb: dbEntry.sellerReturnAddress,
+				});
+				newAction = PaymentAction.WaitingForManualAction;
+				newState = OnChainState.FundsOrDatumInvalid;
+				errorNote.push(errorMessage);
+			}
 
 			const valueMatches = checkPaymentAmountsMatch(
 				dbEntry.RequestedFunds,
@@ -1109,17 +1152,13 @@ async function updateInitialPaymentTransaction(
 					});
 				}
 
-				const datumWithResultHash = getDatumFromBlockchainIdentifier({
+				const adapter = getPaymentSourceContractAdapter(paymentContract.paymentSourceType);
+				const datumWithResultHash = adapter.createDatumFromDecodedContract({
+					decodedContract: decodedNewContract,
 					buyerAddress: decodedNewContract.buyerAddress,
 					sellerAddress: decodedNewContract.sellerAddress,
 					blockchainIdentifier: decodedNewContract.blockchainIdentifier,
-					payByTime: decodedNewContract.payByTime,
-					collateralReturnLovelace: decodedNewContract.collateralReturnLovelace,
-					inputHash: decodedNewContract.inputHash,
 					resultHash: DUMMY_RESULT_HASH,
-					resultTime: decodedNewContract.resultTime,
-					unlockTime: decodedNewContract.unlockTime,
-					externalDisputeUnlockTime: decodedNewContract.externalDisputeUnlockTime,
 					newCooldownTimeSeller: BigInt(0),
 					newCooldownTimeBuyer: BigInt(0),
 					state: SmartContractState.ResultSubmitted,
@@ -1211,6 +1250,14 @@ async function updateInitialPaymentTransaction(
 							},
 					onChainState: newState,
 					resultHash: decodedNewContract.resultHash,
+					buyerReturnAddress:
+						paymentContract.paymentSourceType === PaymentSourceType.Web3CardanoV2
+							? decodedNewContract.buyerReturnAddress
+							: undefined,
+					sellerReturnAddress:
+						paymentContract.paymentSourceType === PaymentSourceType.Web3CardanoV2
+							? decodedNewContract.sellerReturnAddress
+							: undefined,
 					BuyerWallet: {
 						connectOrCreate: {
 							where: {
@@ -1348,6 +1395,20 @@ export async function updateTransaction(
 		extractedData.valueOutput?.amount ?? [],
 		extractedData.decodedOldContract.collateralReturnLovelace,
 	);
+	if (
+		paymentContract.paymentSourceType === PaymentSourceType.Web3CardanoV2 &&
+		extractedData.decodedNewContract != null &&
+		!v2ReturnAddressesMatch(extractedData.decodedOldContract, extractedData.decodedNewContract)
+	) {
+		logger.warn('Return addresses changed in V2 contract datum. This likely is a spoofing attempt.', {
+			txHash: tx.tx.tx_hash,
+			oldBuyerReturnAddress: extractedData.decodedOldContract.buyerReturnAddress,
+			newBuyerReturnAddress: extractedData.decodedNewContract.buyerReturnAddress,
+			oldSellerReturnAddress: extractedData.decodedOldContract.sellerReturnAddress,
+			newSellerReturnAddress: extractedData.decodedNewContract.sellerReturnAddress,
+		});
+		return;
+	}
 
 	const buyerCardanoFees = getCardanoFeesBuyer(extractedData.redeemerVersion, tx.metadata);
 	const sellerCardanoFees = getCardanoFeesSeller(extractedData.redeemerVersion, tx.metadata);

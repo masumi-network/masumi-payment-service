@@ -1,8 +1,8 @@
-import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
-import { prisma } from '@/utils/db';
+import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { Network, WebhookFormat } from '@/generated/prisma/client';
-import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { decrypt } from '@/utils/security/encryption';
 import {
 	decryptWebhookUrlSafe,

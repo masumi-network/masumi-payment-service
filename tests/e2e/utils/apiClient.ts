@@ -1,4 +1,4 @@
-import { Network } from '@/generated/prisma/enums';
+import { Network, PaymentSourceType } from '@/generated/prisma/enums';
 
 export interface ApiClientConfig {
 	baseUrl: string;
@@ -34,6 +34,12 @@ export interface RegistrationData {
 		terms?: string;
 		other?: string;
 	};
+	supportedPaymentSources?: Array<{
+		chain: string;
+		network: Network;
+		paymentSourceType: PaymentSourceType;
+		address: string;
+	}>;
 	Author: {
 		name: string;
 		contactEmail?: string;
@@ -81,6 +87,12 @@ export interface RegistrationResponse {
 		}>;
 	};
 	agentIdentifier?: string | null;
+	supportedPaymentSources?: Array<{
+		chain: string;
+		network: Network;
+		paymentSourceType: PaymentSourceType;
+		address: string;
+	}> | null;
 	createdAt: string;
 	updatedAt: string;
 }
@@ -89,6 +101,7 @@ export interface QueryRegistryParams {
 	cursorId?: string;
 	network: Network;
 	filterSmartContractAddress?: string;
+	filterPaymentSourceType?: PaymentSourceType;
 }
 
 export interface QueryRegistryResponse {
@@ -147,7 +160,7 @@ export interface CreatePaymentData {
 	network: Network;
 	agentIdentifier: string;
 	RequestedFunds?: Array<{ amount: string; unit: string }>;
-	paymentType: string;
+	paymentSourceType?: PaymentSourceType;
 	payByTime: string;
 	submitResultTime: string;
 	unlockTime?: string;
@@ -193,7 +206,7 @@ export interface PaymentResponse {
 		network: Network;
 		smartContractAddress: string;
 		policyId: string | null;
-		paymentType: string;
+		paymentSourceType: PaymentSourceType;
 	};
 	BuyerWallet: {
 		id: string;
@@ -212,6 +225,7 @@ export interface QueryPaymentsParams {
 	cursorId?: string;
 	network: Network;
 	filterSmartContractAddress?: string;
+	filterPaymentSourceType?: PaymentSourceType;
 	includeHistory?: boolean;
 }
 
@@ -226,7 +240,7 @@ export interface CreatePurchaseData {
 	sellerVkey: string;
 	agentIdentifier: string;
 	Amounts?: Array<{ amount: string; unit: string }>;
-	paymentType: string;
+	paymentSourceType?: PaymentSourceType;
 	unlockTime: string;
 	externalDisputeUnlockTime: string;
 	submitResultTime: string;
@@ -278,7 +292,7 @@ export interface PurchaseResponse {
 		network: Network;
 		policyId: string | null;
 		smartContractAddress: string;
-		paymentType: string;
+		paymentSourceType: PaymentSourceType;
 	};
 	SellerWallet: {
 		id: string;
@@ -297,6 +311,7 @@ export interface QueryPurchasesParams {
 	cursorId?: string;
 	network: Network;
 	filterSmartContractAddress?: string;
+	filterPaymentSourceType?: PaymentSourceType;
 	includeHistory?: boolean;
 }
 
@@ -322,6 +337,7 @@ export interface PaymentSourceResponse {
 	createdAt: string;
 	updatedAt: string;
 	network: Network;
+	paymentSourceType: PaymentSourceType;
 	policyId: string | null;
 	smartContractAddress: string;
 	PaymentSourceConfig: {
@@ -339,7 +355,7 @@ export interface PaymentSourceResponse {
 	SellingWallets: PaymentSourceWallet[];
 	FeeReceiverNetworkWallet: {
 		walletAddress: string;
-	};
+	} | null;
 	feeRatePermille: number;
 }
 
@@ -427,13 +443,19 @@ export class ApiClient {
 		if (params.filterSmartContractAddress) {
 			searchParams.set('filterSmartContractAddress', params.filterSmartContractAddress);
 		}
+		if (params.filterPaymentSourceType) {
+			searchParams.set('filterPaymentSourceType', params.filterPaymentSourceType);
+		}
 
 		return this.makeRequest<QueryRegistryResponse>(`/api/v1/registry?${searchParams.toString()}`);
 	}
 
 	async getRegistrationById(id: string, network: Network): Promise<RegistrationResponse | null> {
 		try {
-			const response = await this.queryRegistry({ network });
+			const response = await this.queryRegistry({
+				network,
+				filterPaymentSourceType: global.testConfig?.paymentSourceType,
+			});
 			const registration = response.Assets.find((asset) => asset.id === id);
 			return registration || null;
 		} catch (error) {
@@ -462,6 +484,9 @@ export class ApiClient {
 		if (params.filterSmartContractAddress) {
 			searchParams.set('filterSmartContractAddress', params.filterSmartContractAddress);
 		}
+		if (params.filterPaymentSourceType) {
+			searchParams.set('filterPaymentSourceType', params.filterPaymentSourceType);
+		}
 		if (params.includeHistory !== undefined) {
 			searchParams.set('includeHistory', params.includeHistory.toString());
 		}
@@ -484,6 +509,9 @@ export class ApiClient {
 		searchParams.set('network', params.network);
 		if (params.filterSmartContractAddress) {
 			searchParams.set('filterSmartContractAddress', params.filterSmartContractAddress);
+		}
+		if (params.filterPaymentSourceType) {
+			searchParams.set('filterPaymentSourceType', params.filterPaymentSourceType);
 		}
 		if (params.includeHistory !== undefined) {
 			searchParams.set('includeHistory', params.includeHistory.toString());

@@ -62,6 +62,44 @@ export function convertNewPurchasingActionAndError(
 	errorNote: string | null;
 	errorType: PurchaseErrorType | null;
 } {
+	if (newState === OnChainState.WithdrawAuthorized) {
+		switch (currentAction) {
+			case PurchasingAction.AuthorizeWithdrawalInitiated:
+			case PurchasingAction.AuthorizeWithdrawalRequested:
+			case PurchasingAction.WaitingForExternalAction:
+				return generatePurchasingActionAndErrorResult(PurchasingAction.WaitingForExternalAction);
+			case PurchasingAction.WaitingForManualAction:
+				return generatePurchasingActionAndErrorResult(
+					PurchasingAction.WaitingForManualAction,
+					ERROR_MESSAGES.MANUAL_ACTION_STATE_CHANGE,
+				);
+			default:
+				return generatePurchasingActionAndErrorResult(
+					PurchasingAction.WaitingForManualAction,
+					ERROR_MESSAGES.UNEXPECTED_STATE_CHANGE_EXTERNAL,
+				);
+		}
+	}
+	if (newState === OnChainState.RefundAuthorized) {
+		switch (currentAction) {
+			case PurchasingAction.WithdrawRefundInitiated:
+			case PurchasingAction.WithdrawRefundRequested:
+				return generatePurchasingActionAndErrorResult(PurchasingAction.WithdrawRefundRequested);
+			case PurchasingAction.WaitingForExternalAction:
+				return generatePurchasingActionAndErrorResult(PurchasingAction.WaitingForExternalAction);
+			case PurchasingAction.WaitingForManualAction:
+				return generatePurchasingActionAndErrorResult(
+					PurchasingAction.WaitingForManualAction,
+					ERROR_MESSAGES.MANUAL_ACTION_STATE_CHANGE,
+				);
+			default:
+				return generatePurchasingActionAndErrorResult(
+					PurchasingAction.WaitingForManualAction,
+					ERROR_MESSAGES.UNEXPECTED_STATE_CHANGE_EXTERNAL,
+				);
+		}
+	}
+
 	switch (currentAction) {
 		case PurchasingAction.Ignore:
 			return {
@@ -475,6 +513,44 @@ export function convertNewPaymentActionAndError(
 	errorNote: string | null;
 	errorType: PaymentErrorType | null;
 } {
+	if (newState === OnChainState.WithdrawAuthorized) {
+		switch (currentAction) {
+			case PaymentAction.WithdrawInitiated:
+			case PaymentAction.WithdrawRequested:
+				return generatePaymentActionAndErrorResult(PaymentAction.WithdrawRequested);
+			case PaymentAction.WaitingForExternalAction:
+				return generatePaymentActionAndErrorResult(PaymentAction.WaitingForExternalAction);
+			case PaymentAction.WaitingForManualAction:
+				return generatePaymentActionAndErrorResult(
+					PaymentAction.WaitingForManualAction,
+					ERROR_MESSAGES.MANUAL_ACTION_STATE_CHANGE,
+				);
+			default:
+				return generatePaymentActionAndErrorResult(
+					PaymentAction.WaitingForManualAction,
+					ERROR_MESSAGES.UNEXPECTED_STATE_CHANGE_EXTERNAL,
+				);
+		}
+	}
+	if (newState === OnChainState.RefundAuthorized) {
+		switch (currentAction) {
+			case PaymentAction.AuthorizeRefundInitiated:
+			case PaymentAction.AuthorizeRefundRequested:
+			case PaymentAction.WaitingForExternalAction:
+				return generatePaymentActionAndErrorResult(PaymentAction.WaitingForExternalAction);
+			case PaymentAction.WaitingForManualAction:
+				return generatePaymentActionAndErrorResult(
+					PaymentAction.WaitingForManualAction,
+					ERROR_MESSAGES.MANUAL_ACTION_STATE_CHANGE,
+				);
+			default:
+				return generatePaymentActionAndErrorResult(
+					PaymentAction.WaitingForManualAction,
+					ERROR_MESSAGES.UNEXPECTED_STATE_CHANGE_EXTERNAL,
+				);
+		}
+	}
+
 	switch (currentAction) {
 		case PaymentAction.Ignore:
 			return { action: PaymentAction.Ignore, errorNote: null, errorType: null };

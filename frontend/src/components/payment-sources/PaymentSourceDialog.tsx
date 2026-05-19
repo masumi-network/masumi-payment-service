@@ -7,11 +7,14 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { Badge } from '@/components/ui/badge';
 import { CopyButton } from '@/components/ui/copy-button';
 import { WalletLink } from '@/components/ui/wallet-link';
+import type { PaymentSourceExtended } from '@/lib/api/generated';
+import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
+import { getPaymentSourceTypeLabel, isV2PaymentSource } from '@/lib/payment-source-type';
 
 interface PaymentSourceDialogProps {
   open: boolean;
   onClose: () => void;
-  paymentSource: any;
+  paymentSource: PaymentSourceExtended | null;
 }
 
 export function PaymentSourceDialog({ open, onClose, paymentSource }: PaymentSourceDialogProps) {
@@ -38,21 +41,54 @@ export function PaymentSourceDialog({ open, onClose, paymentSource }: PaymentSou
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Payment Source Details</DialogTitle>
+          <DialogTitle className="flex flex-wrap items-center gap-2">
+            Payment Source Details
+            <PaymentSourceTypeBadge
+              paymentSourceType={paymentSource.paymentSourceType}
+              showDefault
+            />
+          </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-6">
           {/* Basic Information */}
           <div className="space-y-4">
             <h3 className="text-lg font-semibold">Basic Information</h3>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-muted-foreground">Network</label>
                 <div className="text-sm">{paymentSource.network}</div>
               </div>
               <div className="space-y-2">
+                <label className="text-sm font-medium text-muted-foreground">
+                  Payment Source Type
+                </label>
+                <div className="text-sm">
+                  {getPaymentSourceTypeLabel(paymentSource.paymentSourceType)}
+                </div>
+              </div>
+              <div className="space-y-2">
                 <label className="text-sm font-medium text-muted-foreground">Fee rate (%)</label>
-                <div className="text-sm">{(paymentSource.feeRatePermille / 10).toFixed(1)}%</div>
+                <div className="text-sm">
+                  {(paymentSource.feeRatePermille / 10).toFixed(1)}%
+                  {isV2PaymentSource(paymentSource) && (
+                    <span className="ml-1 text-xs text-muted-foreground">fixed</span>
+                  )}
+                </div>
+              </div>
+              {isV2PaymentSource(paymentSource) && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-muted-foreground">
+                    Required Admin Signatures
+                  </label>
+                  <div className="text-sm">{paymentSource.requiredAdminSignatures ?? 2} of 3</div>
+                </div>
+              )}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-muted-foreground">Policy ID</label>
+                <div className="text-sm font-mono">
+                  {paymentSource.policyId ? shortenAddress(paymentSource.policyId, 10) : 'None'}
+                </div>
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-muted-foreground">Created At</label>
@@ -252,6 +288,10 @@ export function PaymentSourceDialog({ open, onClose, paymentSource }: PaymentSou
                       network={network}
                       shorten={10}
                     />
+                  </div>
+                ) : isV2PaymentSource(paymentSource) ? (
+                  <div className="text-sm text-muted-foreground">
+                    V2 sources are zero-fee and do not need a fee receiver wallet.
                   </div>
                 ) : (
                   <div className="text-sm text-muted-foreground">No fee receiver wallet found</div>

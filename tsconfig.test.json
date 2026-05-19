@@ -18,9 +18,13 @@
 		"allowSyntheticDefaultImports": true,
 		"paths": {
 			"@/*": ["src/*"],
+			"@masumi/payment-core": ["packages/payment-core/src/index.ts"],
+			"@masumi/payment-core/*": ["packages/payment-core/src/*"],
+			"@masumi/payment-source-v1": ["packages/payment-source-v1/src/index.ts"],
+			"@masumi/payment-source-v2": ["packages/payment-source-v2/src/index.ts"],
 			"@prisma/client": ["src/generated/prisma/client"]
 		}
 	},
-	"include": ["src/**/*.spec.ts", "tests/**/*.ts", "jest.e2e.config.ts", "src/generated/**/*.ts"],
+	"include": ["src/**/*.spec.ts", "packages/**/*.ts", "tests/**/*.ts", "jest.e2e*.config.ts", "src/generated/**/*.ts"],
 	"exclude": ["node_modules"]
 }

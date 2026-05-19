@@ -34,9 +34,15 @@ const LowBalanceStatus = {
 	Healthy: 'Healthy',
 } as const;
 
+const PaymentSourceType = {
+	Web3CardanoV1: 'Web3CardanoV1',
+	Web3CardanoV2: 'Web3CardanoV2',
+} as const;
+
 jest.unstable_mockModule('@/generated/prisma/client', () => ({
 	HotWalletType,
 	Network,
+	PaymentSourceType,
 }));
 
 jest.unstable_mockModule('@/generated/prisma/enums', () => ({
@@ -286,6 +292,7 @@ describe('WalletLowBalanceMonitorService', () => {
 			asset_unit: 'lovelace',
 			wallet_type: HotWalletType.Purchasing,
 			check_source: 'interval_check',
+			payment_source_type: PaymentSourceType.Web3CardanoV1,
 		});
 	});
 
@@ -308,6 +315,7 @@ describe('WalletLowBalanceMonitorService', () => {
 			asset_unit: 'lovelace',
 			wallet_type: HotWalletType.Purchasing,
 			check_source: 'submission',
+			payment_source_type: PaymentSourceType.Web3CardanoV1,
 		});
 	});
 

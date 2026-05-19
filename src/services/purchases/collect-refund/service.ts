@@ -1,19 +1,16 @@
 import {
 	OnChainState,
+	PaymentSourceType,
 	PurchaseErrorType,
 	PurchasingAction,
 	TransactionStatus,
 	Prisma,
 } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 import { BlockfrostProvider, deserializeDatum } from '@meshsdk/core';
 import { logger } from '@/utils/logger';
-import {
-	getPaymentScriptFromPaymentSourceV1,
-	smartContractStateEqualsOnChainState,
-} from '@/utils/generator/contract-generator';
+import { smartContractStateEqualsOnChainState } from '@/utils/generator/contract-generator';
 import { convertNetwork } from '@/utils/converter/network-convert';
-import { decodeV1ContractDatum } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPurchases } from '@/utils/db/lock-and-query-purchases';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
@@ -28,6 +25,7 @@ import {
 	loadHotWalletSession,
 	updateCurrentTransactionHash,
 } from '@/services/shared';
+import { getPaymentSourceContractAdapter } from '@/services/payment-source-adapters';
 
 type PaymentSourceWithPurchaseRelations = Prisma.PaymentSourceGetPayload<{
 	include: {
@@ -81,7 +79,8 @@ async function processSingleRefundCollection(
 		throw new Error('No UTXOs found in the wallet. Wallet is empty.');
 	}
 
-	const { script, smartContractAddress } = await getPaymentScriptFromPaymentSourceV1(paymentContract);
+	const adapter = getPaymentSourceContractAdapter(paymentContract.paymentSourceType);
+	const { script, smartContractAddress } = await adapter.getPaymentScriptFromPaymentSource(paymentContract);
 
 	const txHash = request.CurrentTransaction?.txHash;
 	if (txHash == null) {
@@ -100,7 +99,7 @@ async function processSingleRefundCollection(
 		}
 
 		const decodedDatum: unknown = deserializeDatum(utxoDatum);
-		const decodedContract = decodeV1ContractDatum(decodedDatum, network);
+		const decodedContract = adapter.decodeContractDatum(decodedDatum, network);
 		if (decodedContract == null) {
 			return false;
 		}
@@ -131,7 +130,7 @@ async function processSingleRefundCollection(
 	}
 
 	const decodedDatum: unknown = deserializeDatum(utxoDatum);
-	const decodedContract = decodeV1ContractDatum(decodedDatum, network);
+	const decodedContract = adapter.decodeContractDatum(decodedDatum, network);
 	if (decodedContract == null) {
 		throw new Error('Invalid datum');
 	}
@@ -155,7 +154,7 @@ async function processSingleRefundCollection(
 		limitedFilteredUtxos,
 		{
 			collectAssets: utxo.output.amount,
-			collectionAddress: address,
+			collectionAddress: request.buyerReturnAddress ?? request.SmartContractWallet.collectionAddress ?? address,
 		},
 		null,
 		null,
@@ -221,7 +220,7 @@ export async function collectRefundV1() {
 	}
 
 	try {
-		const paymentContractsWithWalletLocked = await lockAndQueryPurchases({
+		const paymentContractsWithTimedRefunds = await lockAndQueryPurchases({
 			purchasingAction: PurchasingAction.WithdrawRefundRequested,
 			onChainState: {
 				in: [OnChainState.RefundRequested, OnChainState.FundsLocked],
@@ -232,6 +231,19 @@ export async function collectRefundV1() {
 			},
 			maxBatchSize: 1,
 		});
+		const paymentContractsWithAuthorizedRefunds = await lockAndQueryPurchases({
+			purchasingAction: PurchasingAction.WithdrawRefundRequested,
+			onChainState: {
+				in: [OnChainState.RefundAuthorized],
+			},
+			resultHash: null,
+			paymentSourceType: PaymentSourceType.Web3CardanoV2,
+			maxBatchSize: 1,
+		});
+		const paymentContractsWithWalletLocked = [
+			...paymentContractsWithTimedRefunds,
+			...paymentContractsWithAuthorizedRefunds,
+		];
 
 		await Promise.allSettled(
 			paymentContractsWithWalletLocked.map(async (paymentContract) => {

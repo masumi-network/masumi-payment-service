@@ -1,11 +1,11 @@
-import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
-import { z } from '@/utils/zod-openapi';
+import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { z } from '@masumi/payment-core/zod';
 import { HotWalletType, PaymentAction, PricingType } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { createId } from '@paralleldrive/cuid2';
 import { MeshWallet, resolvePaymentKeyHash } from '@meshsdk/core';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { convertNetworkToId } from '@/utils/converter/network-convert';
 import { decrypt } from '@/utils/security/encryption';
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
@@ -16,11 +16,12 @@ import {
 	decodeBlockchainIdentifier,
 	generateBlockchainIdentifier,
 } from '@/utils/generator/blockchain-identifier-generator';
+import { buildSignedBlockchainIdentifierPayload } from '@/utils/generator/blockchain-identifier-payload';
 import { validateHexString } from '@/utils/validator/hex';
 import { transformPaymentGetAmounts, transformPaymentGetTimestamps } from '@/utils/shared/transformers';
 import { extractPolicyId } from '@/utils/converter/agent-identifier';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
-import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
+import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { buildWalletScopeFilter, assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 import {
 	createPaymentSchemaOutput,
@@ -71,6 +72,7 @@ export const queryPaymentCountGet = readAuthenticatedEndpointFactory.build({
 				PaymentSource: {
 					network: input.network,
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
+					paymentSourceType: input.filterPaymentSourceType,
 					deletedAt: null,
 				},
 				...buildWalletScopeFilter(ctx.walletScopeIds),
@@ -95,6 +97,7 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 			where: {
 				network: input.network,
 				policyId: policyId,
+				paymentSourceType: input.paymentSourceType,
 				deletedAt: null,
 			},
 			include: {
@@ -105,6 +108,9 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 		});
 		if (specifiedPaymentContract == null) {
 			throw createHttpError(404, 'Network and policyId combination not supported');
+		}
+		if (input.paymentSourceType != null && specifiedPaymentContract.paymentSourceType !== input.paymentSourceType) {
+			throw createHttpError(400, 'Payment source type does not match the agent identifier policy');
 		}
 		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 		const purchaserId = input.identifierFromPurchaser;
@@ -214,20 +220,29 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 			throw createHttpError(404, 'Selling wallet not found');
 		}
 		assertHotWalletInScope(ctx.walletScopeIds, sellingWallet.id);
+		const sellerReturnAddress = input.sellerReturnAddress ?? sellingWallet.collectionAddress;
 		const sellerCUID = createId();
 		const sellerId = generateSHA256Hash(sellerCUID) + input.agentIdentifier;
-		const blockchainIdentifier = {
+		const blockchainIdentifier = buildSignedBlockchainIdentifierPayload({
 			inputHash: input.inputHash,
 			agentIdentifier: input.agentIdentifier,
 			purchaserIdentifier: input.identifierFromPurchaser,
 			sellerIdentifier: sellerId,
-			RequestedFunds: pricing.pricingType == PricingType.Dynamic ? amounts : null,
+			requestedFunds:
+				pricing.pricingType == PricingType.Dynamic
+					? amounts.map((amount) => ({
+							amount: amount.amount.toString(),
+							unit: amount.unit,
+						}))
+					: null,
 			payByTime: input.payByTime.getTime().toString(),
 			submitResultTime: input.submitResultTime.getTime().toString(),
 			unlockTime: unlockTime.toString(),
 			externalDisputeUnlockTime: externalDisputeUnlockTime.toString(),
 			sellerAddress: sellingWallet.walletAddress,
-		};
+			sellerReturnAddress,
+			paymentSourceType: specifiedPaymentContract.paymentSourceType,
+		});
 
 		const meshWallet = new MeshWallet({
 			networkId: convertNetworkToId(input.network),
@@ -278,6 +293,8 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 				submitResultTime: input.submitResultTime.getTime(),
 				unlockTime: unlockTime,
 				externalDisputeUnlockTime: externalDisputeUnlockTime,
+				sellerReturnAddress,
+				buyerReturnAddress: null,
 				sellerCoolDownTime: 0,
 				buyerCoolDownTime: 0,
 				requestedBy: { connect: { id: ctx.id } },
@@ -303,6 +320,7 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 					select: {
 						id: true,
 						network: true,
+						paymentSourceType: true,
 						smartContractAddress: true,
 						policyId: true,
 					},

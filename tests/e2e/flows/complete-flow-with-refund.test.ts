@@ -46,7 +46,7 @@ describe(`Complete E2E Flow with Refund Tests (${testNetwork})`, () => {
 		}
 
 		// Validate test wallet configuration
-		const walletValidation = validateTestWallets(testNetwork);
+		const walletValidation = await validateTestWallets(testNetwork, global.testConfig.paymentSourceType);
 		if (!walletValidation.valid) {
 			console.error('❌ Test wallet validation failed:');
 			walletValidation.errors.forEach((error) => console.error(`  - ${error}`));
@@ -58,8 +58,10 @@ describe(`Complete E2E Flow with Refund Tests (${testNetwork})`, () => {
 			throw new Error('Test API client not initialized. Make sure test setup ran correctly.');
 		}
 
-		console.log(`✅ Test wallets validated for network: ${testNetwork}`);
-		console.log(`✅ Complete E2E Flow with Refund environment validated for ${testNetwork}`);
+		console.log(`✅ Test wallets validated for ${global.testConfig.paymentSourceType} on ${testNetwork}`);
+		console.log(
+			`✅ Complete E2E Flow with Refund environment validated for ${global.testConfig.paymentSourceType} on ${testNetwork}`,
+		);
 	});
 
 	afterAll(async () => {

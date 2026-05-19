@@ -1,4 +1,4 @@
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 import { InsufficientFundsError } from '@/utils/errors/insufficient-funds-error';
 import { Network, PricingType, PurchasingAction, WalletBase, WalletType } from '@/generated/prisma/client';
 
@@ -19,6 +19,8 @@ async function handlePurchaseCreditInit({
 	inputHash,
 	pricingType,
 	collateralReturnLovelace,
+	buyerReturnAddress,
+	sellerReturnAddress,
 }: {
 	id: string;
 	walletScopeIds: string[] | null;
@@ -36,6 +38,8 @@ async function handlePurchaseCreditInit({
 	inputHash: string;
 	pricingType: PricingType;
 	collateralReturnLovelace?: bigint;
+	buyerReturnAddress?: string | null;
+	sellerReturnAddress?: string | null;
 }) {
 	return await prisma.$transaction(
 		async (prisma) => {
@@ -168,6 +172,8 @@ async function handlePurchaseCreditInit({
 					externalDisputeUnlockTime: externalDisputeUnlockTime,
 					unlockTime: unlockTime,
 					collateralReturnLovelace,
+					buyerReturnAddress,
+					sellerReturnAddress,
 					metadata: metadata,
 					isLimitedToHotWallets: walletScopeIds !== null,
 					...(walletScopeIds !== null && walletScopeIds.length > 0
@@ -184,6 +190,7 @@ async function handlePurchaseCreditInit({
 						select: {
 							id: true,
 							network: true,
+							paymentSourceType: true,
 							smartContractAddress: true,
 							policyId: true,
 						},

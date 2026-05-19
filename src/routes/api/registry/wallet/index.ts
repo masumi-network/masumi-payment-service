@@ -1,16 +1,21 @@
-import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
-import { z } from '@/utils/zod-openapi';
+import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { z } from '@masumi/payment-core/zod';
 import { Network, PricingType } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contract-generator';
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { DEFAULTS } from '@/utils/config';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { logger } from '@/utils/logger';
 import { extractAssetName } from '@/utils/converter/agent-identifier';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
+import {
+	parseSupportedPaymentSourcesFromMetadata,
+	supportedPaymentSourceMetadataSchema,
+	supportedPaymentSourcesSchema,
+} from '@/types/payment-source';
 
 export const metadataSchema = z.object({
 	name: z
@@ -91,7 +96,8 @@ export const metadataSchema = z.object({
 			}),
 		),
 	image: z.string().or(z.array(z.string())),
-	metadata_version: z.coerce.number().int().min(1).max(1),
+	metadata_version: z.coerce.number().int().min(1).max(2),
+	supported_payment_sources: z.array(supportedPaymentSourceMetadataSchema).optional(),
 });
 
 export const queryAgentFromWalletSchemaInput = z.object({
@@ -235,12 +241,10 @@ export const queryAgentFromWalletSchemaOutput = z.object({
 								)
 								.describe('Pricing information for the agent'),
 							image: z.string().max(250).describe('URL to the agent image/logo'),
-							metadataVersion: z.coerce
-								.number()
-								.int()
-								.min(1)
-								.max(1)
-								.describe('Version of the metadata schema (currently only version 1 is supported)'),
+							metadataVersion: z.coerce.number().int().min(1).max(2).describe('Version of the metadata schema'),
+							supportedPaymentSources: supportedPaymentSourcesSchema
+								.nullable()
+								.describe('Payment sources advertised by this registry entry. Null for legacy metadata.'),
 						})
 						.describe('On-chain metadata for the agent'),
 				})
@@ -364,6 +368,9 @@ export const queryAgentFromWalletGet = readAuthenticatedEndpointFactory.build({
 									},
 						image: metadataToString(parsedMetadata.data.image)!,
 						metadataVersion: parsedMetadata.data.metadata_version,
+						supportedPaymentSources: parseSupportedPaymentSourcesFromMetadata(
+							parsedMetadata.data.supported_payment_sources,
+						),
 					},
 				});
 			}),

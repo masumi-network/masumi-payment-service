@@ -4,10 +4,11 @@ import {
 	OnChainState,
 	PaymentAction,
 	PaymentErrorType,
+	PaymentSourceType,
 	PricingType,
 	TransactionStatus,
 } from '@/generated/prisma/client';
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
 
 const paymentTimeSchema = ez.dateIn();
 
@@ -24,6 +25,7 @@ export const queryPaymentsSchemaInput = z.object({
 		.nullable()
 		.describe('The smart contract address of the payment source'),
 	filterOnChainState: z.nativeEnum(OnChainState).optional().describe('Filter by on-chain state'),
+	filterPaymentSourceType: z.nativeEnum(PaymentSourceType).optional().describe('Filter by payment source type'),
 	searchQuery: z
 		.string()
 		.optional()
@@ -43,6 +45,7 @@ export const queryPaymentCountSchemaInput = z.object({
 		.optional()
 		.nullable()
 		.describe('The smart contract address of the payment source'),
+	filterPaymentSourceType: z.nativeEnum(PaymentSourceType).optional().describe('Filter by payment source type'),
 });
 
 export const queryPaymentCountSchemaOutput = z.object({
@@ -77,6 +80,8 @@ export const paymentResponseSchema = z
 			.string()
 			.nullable()
 			.describe('Amount of collateral to return in lovelace. Null if no collateral'),
+		buyerReturnAddress: z.string().nullable().describe('Optional buyer return address stored with the request'),
+		sellerReturnAddress: z.string().nullable().describe('Optional seller return address stored with the request'),
 		externalDisputeUnlockTime: z
 			.string()
 			.describe('Unix timestamp (in milliseconds) after which external dispute resolution can occur'),
@@ -211,6 +216,7 @@ export const paymentResponseSchema = z
 			.object({
 				id: z.string().describe('Unique identifier for the payment source'),
 				network: z.nativeEnum(Network).describe('The Cardano network (Mainnet, Preprod, or Preview)'),
+				paymentSourceType: z.nativeEnum(PaymentSourceType).describe('Payment source type for adapter dispatch'),
 				smartContractAddress: z.string().describe('Address of the smart contract managing this payment'),
 				policyId: z.string().nullable().describe('Policy ID for the agent registry NFTs. Null if not applicable'),
 			})
@@ -250,6 +256,10 @@ export const createPaymentsSchemaInput = z.object({
 		),
 	network: z.nativeEnum(Network).describe('The network the payment will be received on'),
 	agentIdentifier: z.string().min(57).max(250).describe('The identifier of the agent that will be paid'),
+	paymentSourceType: z
+		.nativeEnum(PaymentSourceType)
+		.optional()
+		.describe('Expected payment source type for this request'),
 	RequestedFunds: z
 		.array(
 			z.object({
@@ -274,6 +284,11 @@ export const createPaymentsSchemaInput = z.object({
 		.optional()
 		.describe('The time after which the payment will be unlocked for external dispute'),
 	metadata: z.string().optional().describe('Metadata to be stored with the payment request'),
+	sellerReturnAddress: z
+		.string()
+		.max(250)
+		.optional()
+		.describe('Optional seller return address. Defaults to the selling hot wallet collection address when available.'),
 	identifierFromPurchaser: z
 		.string()
 		.min(14)

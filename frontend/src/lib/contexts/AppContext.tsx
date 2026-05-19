@@ -10,7 +10,8 @@ import {
 import { ErrorDialog } from '@/components/ui/error-dialog';
 import { Client, createClient } from '@/lib/api/generated/client';
 import { usePaymentSourceExtendedAllWithParams } from '../hooks/usePaymentSourceExtendedAll';
-import { PaymentSource } from '../api/generated';
+import type { PaymentSource } from '../api/generated';
+import { getPreferredPaymentSource } from '@/lib/payment-source-type';
 
 type NetworkType = 'Preprod' | 'Mainnet';
 
@@ -129,22 +130,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   useEffect(() => {
-    if (!selectedPaymentSourceId && currentNetworkPaymentSources.length > 0) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronizing payment source selection with network and available sources requires state updates
-      setSelectedPaymentSourceIdAndPersist(currentNetworkPaymentSources[0].id);
-    }
-    if (selectedPaymentSourceId && currentNetworkPaymentSources.length > 0) {
-      const foundPaymentSource = currentNetworkPaymentSources.find(
-        (ps) => ps.id === selectedPaymentSourceId,
-      );
-
-      if (foundPaymentSource) {
-        setSelectedPaymentSource(foundPaymentSource);
-      } else {
+    if (currentNetworkPaymentSources.length === 0) {
+      if (selectedPaymentSourceId) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronizing localStorage-backed selection with available payment sources requires state updates
         setSelectedPaymentSourceIdAndPersist(null);
-        setSelectedPaymentSource(null);
       }
+      setSelectedPaymentSource(null);
+      return;
     }
+
+    const foundPaymentSource = selectedPaymentSourceId
+      ? currentNetworkPaymentSources.find((ps) => ps.id === selectedPaymentSourceId)
+      : null;
+    const nextPaymentSource =
+      foundPaymentSource ?? getPreferredPaymentSource(currentNetworkPaymentSources);
+
+    if (!nextPaymentSource) {
+      setSelectedPaymentSource(null);
+      return;
+    }
+
+    if (selectedPaymentSourceId !== nextPaymentSource.id) {
+      setSelectedPaymentSourceIdAndPersist(nextPaymentSource.id);
+    }
+    setSelectedPaymentSource(nextPaymentSource);
   }, [
     selectedPaymentSourceId,
     currentNetworkPaymentSources,

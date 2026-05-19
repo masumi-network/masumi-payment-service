@@ -1,5 +1,5 @@
 import { PaymentAction, PurchasingAction, PaymentSource, OnChainState } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@/utils/logger';
 import { CONFIG } from '@/utils/config';
 
@@ -41,19 +41,26 @@ async function handleInitializeAutoWithdrawPayments(paymentSources: PaymentSourc
 								requestedAction: PaymentAction.WaitingForExternalAction,
 								errorType: null,
 							},
-							onChainState: {
-								in: [OnChainState.ResultSubmitted],
-							},
 							resultHash: { not: null },
-							unlockTime: {
-								//10 minutes for blockchain time offset
-								lte: Date.now() - 1000 * 60 * 10,
-							},
+							OR: [
+								{
+									onChainState: OnChainState.WithdrawAuthorized,
+								},
+								{
+									onChainState: OnChainState.ResultSubmitted,
+									unlockTime: {
+										//10 minutes for blockchain time offset
+										lte: Date.now() - 1000 * 60 * 10,
+									},
+								},
+							],
 						},
 					});
-					logger.info(
-						`Found ${paymentRequests.length} auto withdraw payment requests for payment source ${paymentSource.id}`,
-					);
+					logger.info('Found auto withdraw payment requests', {
+						count: paymentRequests.length,
+						paymentSourceId: paymentSource.id,
+						paymentSourceType: paymentSource.paymentSourceType,
+					});
 					await Promise.all(
 						paymentRequests.map(async (paymentRequest) => {
 							try {
@@ -75,6 +82,7 @@ async function handleInitializeAutoWithdrawPayments(paymentSources: PaymentSourc
 							} catch (error) {
 								logger.error(`Error initializing auto withdraw payments`, {
 									paymentRequestId: paymentRequest.id,
+									paymentSourceType: paymentSource.paymentSourceType,
 									error: error,
 								});
 							}
@@ -84,6 +92,7 @@ async function handleInitializeAutoWithdrawPayments(paymentSources: PaymentSourc
 			} catch (error) {
 				logger.error(`Error initializing auto withdraw payments`, {
 					paymentSourceId: paymentSource.id,
+					paymentSourceType: paymentSource.paymentSourceType,
 					error: error,
 				});
 			}
@@ -103,19 +112,28 @@ async function handleInitializeAutoWithdrawRefunds(paymentSources: PaymentSource
 								requestedAction: PurchasingAction.WaitingForExternalAction,
 								errorType: null,
 							},
-							onChainState: {
-								in: [OnChainState.RefundRequested, OnChainState.FundsLocked],
-							},
 							resultHash: null,
-							submitResultTime: {
-								//10 minutes for blockchain time offset
-								lte: Date.now() - 1000 * 60 * 10,
-							},
+							OR: [
+								{
+									onChainState: OnChainState.RefundAuthorized,
+								},
+								{
+									onChainState: {
+										in: [OnChainState.RefundRequested, OnChainState.FundsLocked],
+									},
+									submitResultTime: {
+										//10 minutes for blockchain time offset
+										lte: Date.now() - 1000 * 60 * 10,
+									},
+								},
+							],
 						},
 					});
-					logger.info(
-						`Found ${purchaseRequests.length} auto withdraw refund requests for payment source ${paymentSource.id}`,
-					);
+					logger.info('Found auto withdraw refund requests', {
+						count: purchaseRequests.length,
+						paymentSourceId: paymentSource.id,
+						paymentSourceType: paymentSource.paymentSourceType,
+					});
 					await Promise.all(
 						purchaseRequests.map(async (purchaseRequest) => {
 							try {
@@ -137,6 +155,7 @@ async function handleInitializeAutoWithdrawRefunds(paymentSources: PaymentSource
 							} catch (error) {
 								logger.error(`Error initializing auto withdraw refunds`, {
 									purchaseRequestId: purchaseRequest.id,
+									paymentSourceType: paymentSource.paymentSourceType,
 									error: error,
 								});
 							}
@@ -146,6 +165,7 @@ async function handleInitializeAutoWithdrawRefunds(paymentSources: PaymentSource
 			} catch (error) {
 				logger.error(`Error initializing auto withdraw refunds`, {
 					paymentSourceId: paymentSource.id,
+					paymentSourceType: paymentSource.paymentSourceType,
 					error: error,
 				});
 			}

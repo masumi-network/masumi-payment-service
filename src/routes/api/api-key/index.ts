@@ -1,6 +1,6 @@
-import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
+import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { ApiKeyStatus, Network } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 import { createId } from '@paralleldrive/cuid2';
 import createHttpError from 'http-errors';
 import { generateApiKeySecureHash } from '@/utils/crypto/api-key-hash';
@@ -8,7 +8,7 @@ import { encrypt, decrypt } from '@/utils/security/encryption';
 import { CONSTANTS } from '@/utils/config';
 import { logger } from '@/utils/logger';
 import { transformBigIntAmounts } from '@/utils/shared/transformers';
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
 import {
 	addAPIKeySchemaInput,
 	addAPIKeySchemaOutput,

@@ -3,13 +3,6 @@ import { useState, useEffect } from 'react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Label } from '@/components/ui/label';
 import { toast } from 'react-toastify';
@@ -44,7 +37,7 @@ import {
 import { handleApiCall, shortenAddress } from '@/lib/utils';
 import { WalletLink } from '@/components/ui/wallet-link';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
-import { DEFAULT_ADMIN_WALLETS, DEFAULT_FEE_CONFIG } from '@/lib/constants/defaultWallets';
+import { DEFAULT_ADMIN_WALLETS } from '@/lib/constants/defaultWallets';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
@@ -67,6 +60,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { extractApiErrorMessage } from '@/lib/api-error';
 import { REGISTRY_LIMITS } from '@/lib/registry-validation';
 import { convertDecimalToBaseUnits } from '@/lib/convertDecimalToBaseUnits';
+import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
+import { DEFAULT_PAYMENT_SOURCE_TYPE, isV2PaymentSource } from '@/lib/payment-source-type';
 
 function formatNetworkDisplay(networkType: string): string {
   return networkType?.toUpperCase() === 'MAINNET' ? 'Mainnet' : 'Preprod';
@@ -90,7 +85,7 @@ function WelcomeScreen({ onStart, networkType }: { onStart: () => void; networkT
 
   const features = [
     { icon: Wallet, label: 'Create secure wallets' },
-    { icon: Key, label: 'Configure payment source' },
+    { icon: Key, label: 'Configure V2 payment source' },
     { icon: Bot, label: 'Register your AI agent (optional)' },
   ];
 
@@ -533,10 +528,7 @@ function SeedPhrasesScreen({
 
 const paymentSourceSchema = z.object({
   blockfrostApiKey: z.string().min(1, 'Blockfrost API key is required'),
-  feeReceiverWallet: z.object({
-    walletAddress: z.string().min(1, 'Fee receiver wallet is required'),
-  }),
-  feePermille: z.number().min(0).max(1000),
+  requiredAdminSignatures: z.number().int().min(1).max(3),
 });
 
 type PaymentSourceFormValues = z.infer<typeof paymentSourceSchema>;
@@ -596,46 +588,21 @@ function PaymentSourceSetupScreen({
   const { apiClient, network } = useAppContext();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>('');
-  const [customSetup, setCustomSetup] = useState(false);
-  const [showCustomSetupDialog, setShowCustomSetupDialog] = useState(false);
-  const [feePercentInput, setFeePercentInput] = useState('');
   const [customConfigOpen, setCustomConfigOpen] = useState(false);
 
   const adminWallets = DEFAULT_ADMIN_WALLETS[network];
-  const defaultFeeConfig = DEFAULT_FEE_CONFIG[network];
 
   const {
     register,
     handleSubmit,
-    setValue,
-    getValues,
     formState: { errors },
   } = useForm<PaymentSourceFormValues>({
     resolver: zodResolver(paymentSourceSchema),
     defaultValues: {
       blockfrostApiKey: '',
-      feeReceiverWallet: {
-        walletAddress: defaultFeeConfig.feeWalletAddress,
-      },
-      feePermille: defaultFeeConfig.feePermille,
+      requiredAdminSignatures: 2,
     },
   });
-
-  const handleCustomSetupChecked = (checked: boolean | 'indeterminate') => {
-    if (checked === true) {
-      setShowCustomSetupDialog(true);
-    } else {
-      setCustomSetup(false);
-      setValue('feeReceiverWallet.walletAddress', defaultFeeConfig.feeWalletAddress);
-      setValue('feePermille', defaultFeeConfig.feePermille);
-    }
-  };
-
-  const handleConfirmCustomSetup = () => {
-    setCustomSetup(true);
-    setShowCustomSetupDialog(false);
-    setFeePercentInput((defaultFeeConfig.feePermille / 10).toFixed(1));
-  };
 
   const onSubmit = async (data: PaymentSourceFormValues) => {
     if (!buyingWallet || !sellingWallet) {
@@ -656,30 +623,22 @@ function PaymentSourceSetupScreen({
       return;
     }
 
-    const feeReceiverWallet = customSetup
-      ? data.feeReceiverWallet
-      : { walletAddress: defaultFeeConfig.feeWalletAddress };
-    const feePermille = customSetup ? data.feePermille : defaultFeeConfig.feePermille;
-
     await handleApiCall(
       () =>
         postPaymentSourceExtended({
           client: apiClient,
           body: {
             network: network,
+            paymentSourceType: DEFAULT_PAYMENT_SOURCE_TYPE,
             PaymentSourceConfig: {
               rpcProviderApiKey: data.blockfrostApiKey,
               rpcProvider: 'Blockfrost',
             },
-            feeRatePermille: feePermille,
+            feeRatePermille: 0,
             AdminWallets: adminWallets.map((w) => ({
               walletAddress: w.walletAddress,
-            })) as [
-              { walletAddress: string },
-              { walletAddress: string },
-              { walletAddress: string },
-            ],
-            FeeReceiverNetworkWallet: feeReceiverWallet,
+            })),
+            requiredAdminSignatures: data.requiredAdminSignatures,
             PurchasingWallets: [
               {
                 walletMnemonic: buyingWallet.mnemonic,
@@ -698,7 +657,7 @@ function PaymentSourceSetupScreen({
         }),
       {
         onSuccess: () => {
-          toast.success('Payment source created successfully');
+          toast.success('V2 payment source created successfully');
           onNext();
         },
         onError: (error: unknown) => {
@@ -747,11 +706,24 @@ function PaymentSourceSetupScreen({
         <div className="inline-flex items-center justify-center rounded-full bg-gradient-to-br from-primary/20 to-primary/5 p-3 ring-1 ring-primary/20">
           <Key className="h-6 w-6 text-primary" />
         </div>
-        <h1 className="text-2xl font-bold">Configure payment source</h1>
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <h1 className="text-2xl font-bold">Configure payment source</h1>
+          <PaymentSourceTypeBadge paymentSourceType={DEFAULT_PAYMENT_SOURCE_TYPE} showDefault />
+        </div>
         <p className="text-sm text-muted-foreground max-w-md mx-auto">
-          Connect to Blockfrost and configure fee settings. Your wallets from the previous step will
+          Connect to Blockfrost and create the V2 source. Your wallets from the previous step will
           be linked automatically.
         </p>
+      </div>
+
+      <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100">
+        <div className="flex gap-3">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" />
+          <p>
+            V2 is now the default for new agents. If this network has older V1 agents, migrate them
+            after V2 setup, then delete the old source once it is no longer used.
+          </p>
+        </div>
       </div>
 
       {error && (
@@ -760,30 +732,6 @@ function PaymentSourceSetupScreen({
           {error}
         </div>
       )}
-
-      <Dialog open={showCustomSetupDialog} onOpenChange={setShowCustomSetupDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-amber-500" />
-              Custom network setup
-            </DialogTitle>
-          </DialogHeader>
-          <div className="py-2">
-            <p className="text-sm text-muted-foreground">
-              A custom network setup is required. There may not be registered agents on other
-              contracts, and customer support is limited. Only enable this if you need to use
-              different fee or admin settings.
-            </p>
-          </div>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setShowCustomSetupDialog(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleConfirmCustomSetup}>I understand, enable custom setup</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         <Card
@@ -877,7 +825,9 @@ function PaymentSourceSetupScreen({
                   </div>
                   <div>
                     <span className="text-sm font-medium">Advanced configuration</span>
-                    <p className="text-xs text-muted-foreground">Custom fee and admin settings</p>
+                    <p className="text-xs text-muted-foreground">
+                      V2 admin quorum and zero-fee setup
+                    </p>
                   </div>
                 </div>
                 {customConfigOpen ? (
@@ -889,21 +839,18 @@ function PaymentSourceSetupScreen({
             </CollapsibleTrigger>
             <CollapsibleContent>
               <div className="border-t px-6 pb-6 pt-4">
-                <div className={cn('space-y-4', !customSetup && 'opacity-75')}>
-                  <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-4 py-3">
-                    <div>
-                      <p className="text-sm font-medium">Enable custom setup</p>
-                      <p className="text-xs text-muted-foreground">
-                        Override default fee and admin wallet settings
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Checkbox
-                        id="customSetup"
-                        checked={customSetup}
-                        onCheckedChange={handleCustomSetupChecked}
+                <div className="space-y-4">
+                  <div className="rounded-lg border bg-muted/30 px-4 py-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <PaymentSourceTypeBadge
+                        paymentSourceType={DEFAULT_PAYMENT_SOURCE_TYPE}
+                        showDefault
                       />
+                      <p className="text-sm font-medium">Zero-fee V2 source</p>
                     </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      V2 sources always use 0% fees and do not require a fee receiver wallet.
+                    </p>
                   </div>
 
                   <div className="space-y-3">
@@ -914,10 +861,7 @@ function PaymentSourceSetupScreen({
                       {adminWallets.map((wallet, index) => (
                         <div
                           key={index}
-                          className={cn(
-                            'flex items-center justify-between rounded-lg border px-3 py-2.5',
-                            customSetup ? 'bg-muted/30' : 'bg-muted/10',
-                          )}
+                          className="flex items-center justify-between rounded-lg border bg-muted/10 px-3 py-2.5"
                         >
                           <span className="text-xs font-medium text-muted-foreground">
                             Admin {index + 1}
@@ -942,66 +886,25 @@ function PaymentSourceSetupScreen({
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="feeReceiverWallet" className="text-sm">
-                      Fee receiver wallet <span className="text-destructive">*</span>
+                    <Label htmlFor="requiredAdminSignatures" className="text-sm">
+                      Required admin signatures <span className="text-destructive">*</span>
                     </Label>
                     <Input
-                      id="feeReceiverWallet"
-                      type="text"
-                      placeholder="Enter fee receiver wallet address"
-                      {...register('feeReceiverWallet.walletAddress')}
-                      disabled={!customSetup}
-                      className={cn(
-                        errors.feeReceiverWallet?.walletAddress && 'border-destructive',
-                        !customSetup && 'cursor-not-allowed',
-                      )}
+                      id="requiredAdminSignatures"
+                      type="number"
+                      min={1}
+                      max={3}
+                      step={1}
+                      {...register('requiredAdminSignatures', { valueAsNumber: true })}
+                      className={cn(errors.requiredAdminSignatures && 'border-destructive')}
                     />
-                    {errors.feeReceiverWallet?.walletAddress && (
+                    <p className="text-xs text-muted-foreground">
+                      Default is 2 of 3 admin slots for V2 authorization.
+                    </p>
+                    {errors.requiredAdminSignatures && (
                       <p className="text-xs text-destructive">
-                        {errors.feeReceiverWallet.walletAddress.message}
+                        {errors.requiredAdminSignatures.message}
                       </p>
-                    )}
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="feePermille" className="text-sm">
-                      Fee percentage <span className="text-destructive">*</span>
-                    </Label>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        id="feePermille"
-                        type="number"
-                        min={0}
-                        max={100}
-                        step={0.1}
-                        value={
-                          customSetup
-                            ? feePercentInput
-                            : (defaultFeeConfig.feePermille / 10).toFixed(1)
-                        }
-                        onChange={(e) => setFeePercentInput(e.target.value)}
-                        onBlur={() => {
-                          const percent = parseFloat(feePercentInput);
-                          if (!Number.isNaN(percent)) {
-                            const permille = Math.round(Math.min(100, Math.max(0, percent)) * 10);
-                            setValue('feePermille', permille, { shouldValidate: true });
-                            setFeePercentInput((permille / 10).toFixed(1));
-                          } else {
-                            setFeePercentInput((getValues('feePermille') / 10).toFixed(1));
-                          }
-                        }}
-                        disabled={!customSetup}
-                        className={cn(
-                          'w-24',
-                          errors.feePermille && 'border-destructive',
-                          !customSetup && 'cursor-not-allowed',
-                        )}
-                      />
-                      <span className="text-sm text-muted-foreground">%</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground">Value between 0% and 100%</p>
-                    {errors.feePermille && (
-                      <p className="text-xs text-destructive">{errors.feePermille.message}</p>
                     )}
                   </div>
                 </div>
@@ -1241,8 +1144,8 @@ function AddAiAgentScreen({
         return;
       }
 
-      // Use the first payment source (most recent)
-      const paymentSource = filteredSources[0];
+      const paymentSource =
+        filteredSources.find((source: any) => isV2PaymentSource(source)) ?? filteredSources[0];
 
       const sellingWalletData = paymentSource.SellingWallets?.find(
         (s: any) => s.walletAddress === sellingWallet.address,
@@ -1942,11 +1845,13 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
     setWallets({ buying: null, selling: null });
   }, [networkType]);
 
-  // If the current network already has payment sources and we're on the welcome step,
-  // exit setup automatically (user switched to an already-configured network)
+  // If the current network already has a V2 payment source and we're on the welcome step,
+  // exit setup automatically. Legacy V1-only networks should still be able to migrate.
   useEffect(() => {
-    const hasSourcesForNetwork = paymentSources.some((ps) => ps.network === networkType);
-    if (currentStep === 0 && hasSourcesForNetwork) {
+    const hasV2SourceForNetwork = paymentSources.some(
+      (ps) => ps.network === networkType && isV2PaymentSource(ps),
+    );
+    if (currentStep === 0 && hasV2SourceForNetwork) {
       setIsSetupMode(false);
       router.push('/');
     }

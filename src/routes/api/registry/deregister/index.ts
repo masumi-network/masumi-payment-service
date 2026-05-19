@@ -1,16 +1,20 @@
-import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
-import { z } from '@/utils/zod-openapi';
+import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { z } from '@masumi/payment-core/zod';
 import { Network, PricingType, RegistrationState } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
-import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contract-generator';
+import {
+	getRegistryScriptFromNetworkHandlerV1,
+	getRegistryScriptFromNetworkHandlerV2,
+} from '@/utils/generator/contract-generator';
 import { DEFAULTS } from '@/utils/config';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { extractAssetName } from '@/utils/converter/agent-identifier';
 import { registryRequestOutputSchema } from '@/routes/api/registry';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
+import { parseSupportedPaymentSources } from '@/types/payment-source';
 
 export const unregisterAgentSchemaInput = z.object({
 	agentIdentifier: z
@@ -61,7 +65,10 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 
 		const blockfrost = getBlockfrostInstance(input.network, paymentSource.PaymentSourceConfig.rpcProviderApiKey);
 
-		const { policyId } = await getRegistryScriptFromNetworkHandlerV1(paymentSource);
+		const { policyId } =
+			paymentSource.paymentSourceType === 'Web3CardanoV2'
+				? await getRegistryScriptFromNetworkHandlerV2(paymentSource)
+				: await getRegistryScriptFromNetworkHandlerV1(paymentSource);
 
 		const assetName = extractAssetName(input.agentIdentifier);
 		const holderWallet = await blockfrost.assetsAddresses(policyId + assetName, {
@@ -156,6 +163,7 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 							pricingType: result.Pricing.pricingType,
 						},
 			sendFundingLovelace: result.sendFundingLovelace?.toString() ?? null,
+			supportedPaymentSources: parseSupportedPaymentSources(result.supportedPaymentSources),
 			Tags: result.tags,
 			RecipientWallet: result.RecipientWallet,
 			CurrentTransaction: result.CurrentTransaction

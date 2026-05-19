@@ -1,8 +1,8 @@
 import createHttpError from 'http-errors';
 import { HotWalletType, Network } from '@/generated/prisma/client';
 import { LowBalanceStatus } from '@/generated/prisma/enums';
-import { prisma } from '@/utils/db';
-import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
+import { prisma } from '@masumi/payment-core/db';
+import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { buildHotWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { serializeLowBalanceRecord, walletLowBalanceMonitorService } from '@/services/wallets';
 import {

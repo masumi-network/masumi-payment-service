@@ -1,13 +1,13 @@
-import { z } from '@/utils/zod-openapi';
-import { prisma } from '@/utils/db';
-import { Network, Prisma, PurchaseErrorType, PurchasingAction } from '@/generated/prisma/client';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { z } from '@masumi/payment-core/zod';
+import { prisma } from '@masumi/payment-core/db';
+import { Network, PaymentSourceType, Prisma, PurchaseErrorType, PurchasingAction } from '@/generated/prisma/client';
+import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import createHttpError from 'http-errors';
 import { queryPurchaseRequestSchemaOutput } from '@/routes/api/purchases';
 import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
-import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
+import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { exhaustiveFallback } from '@/utils/assert-never';
 
 type PurchaseDiffMode =
@@ -38,6 +38,7 @@ export const queryPurchaseDiffSchemaInput = z.object({
 		.optional()
 		.nullable()
 		.describe('The smart contract address of the payment source'),
+	filterPaymentSourceType: z.nativeEnum(PaymentSourceType).optional().describe('Filter by payment source type'),
 	includeHistory: z
 		.string()
 		.default('false')
@@ -52,6 +53,7 @@ function buildPurchaseDiffWhere({
 	sinceId,
 	network,
 	filterSmartContractAddress,
+	filterPaymentSourceType,
 	walletScopeIds,
 }: {
 	mode: PurchaseDiffMode;
@@ -59,6 +61,7 @@ function buildPurchaseDiffWhere({
 	sinceId?: string;
 	network: Prisma.PaymentSourceWhereInput['network'];
 	filterSmartContractAddress?: string | null;
+	filterPaymentSourceType?: PaymentSourceType;
 	walletScopeIds: string[] | null;
 }): Prisma.PurchaseRequestWhereInput {
 	const base: Prisma.PurchaseRequestWhereInput = {
@@ -66,6 +69,7 @@ function buildPurchaseDiffWhere({
 			deletedAt: null,
 			network,
 			smartContractAddress: filterSmartContractAddress ?? undefined,
+			paymentSourceType: filterPaymentSourceType,
 		},
 		...buildWalletScopeFilter(walletScopeIds),
 	};
@@ -146,6 +150,7 @@ async function queryPurchaseDiffByMode({
 			sinceId,
 			network: input.network,
 			filterSmartContractAddress: input.filterSmartContractAddress,
+			filterPaymentSourceType: input.filterPaymentSourceType,
 			walletScopeIds: ctx.walletScopeIds,
 		}),
 		orderBy: buildPurchaseDiffOrderBy(mode),
@@ -179,6 +184,7 @@ async function queryPurchaseDiffByMode({
 				select: {
 					id: true,
 					network: true,
+					paymentSourceType: true,
 					policyId: true,
 					smartContractAddress: true,
 				},

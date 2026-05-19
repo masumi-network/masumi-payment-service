@@ -1,15 +1,10 @@
-import { PaymentAction, PaymentErrorType, Network, Prisma } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { PaymentAction, PaymentErrorType, Prisma } from '@/generated/prisma/client';
+import { prisma } from '@masumi/payment-core/db';
 import { BlockfrostProvider, deserializeDatum, UTxO } from '@meshsdk/core';
 import { logger } from '@/utils/logger';
-import {
-	getDatumFromBlockchainIdentifier,
-	getPaymentScriptFromPaymentSourceV1,
-	SmartContractState,
-	smartContractStateEqualsOnChainState,
-} from '@/utils/generator/contract-generator';
+import { SmartContractState, smartContractStateEqualsOnChainState } from '@/utils/generator/contract-generator';
 import { convertNetwork } from '@/utils/converter/network-convert';
-import { decodeV1ContractDatum, DecodedV1ContractDatum, newCooldownTime } from '@/utils/converter/string-datum-convert';
+import { DecodedV1ContractDatum, newCooldownTime } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { sortAndLimitUtxos } from '@/utils/utxo';
@@ -26,6 +21,7 @@ import {
 	loadHotWalletSession,
 	updateCurrentTransactionHash,
 } from '@/services/shared';
+import { getDatumNetwork, getPaymentSourceContractAdapter } from '@/services/payment-source-adapters';
 
 type PaymentSourceWithRelations = Prisma.PaymentSourceGetPayload<{
 	include: {
@@ -106,8 +102,9 @@ async function findMatchingUtxoAndDecodeContract(
 	utxoList: UTxO[],
 	txHash: string,
 	request: PaymentRequestWithRelations,
-	network: Network,
+	paymentContract: PaymentSourceWithRelations,
 ): Promise<MatchingUtxoResult | undefined> {
+	const adapter = getPaymentSourceContractAdapter(paymentContract.paymentSourceType);
 	for (const utxo of utxoList) {
 		if (utxo.input.txHash !== txHash) {
 			continue;
@@ -119,7 +116,7 @@ async function findMatchingUtxoAndDecodeContract(
 		}
 
 		const decodedDatum: unknown = deserializeDatum(utxoDatum);
-		const decodedContract = decodeV1ContractDatum(decodedDatum, network === Network.Mainnet ? 'mainnet' : 'preprod');
+		const decodedContract = adapter.decodeContractDatum(decodedDatum, getDatumNetwork(paymentContract.network));
 		if (decodedContract === null) {
 			continue;
 		}
@@ -191,14 +188,15 @@ async function processSinglePaymentRequest(
 		throw new Error('No UTXOs found in the wallet. Wallet is empty.');
 	}
 
-	const { script, smartContractAddress } = await getPaymentScriptFromPaymentSourceV1(paymentContract);
+	const adapter = getPaymentSourceContractAdapter(paymentContract.paymentSourceType);
+	const { script, smartContractAddress } = await adapter.getPaymentScriptFromPaymentSource(paymentContract);
 	const txHash = request.CurrentTransaction?.txHash;
 	if (txHash == null) {
 		throw new Error('No transaction hash found');
 	}
 	const utxoByHash = await blockchainProvider.fetchUTxOs(txHash);
 
-	const matchResult = await findMatchingUtxoAndDecodeContract(utxoByHash, txHash, request, paymentContract.network);
+	const matchResult = await findMatchingUtxoAndDecodeContract(utxoByHash, txHash, request, paymentContract);
 
 	if (!matchResult) {
 		throw new Error('UTXO not found');
@@ -206,17 +204,12 @@ async function processSinglePaymentRequest(
 
 	const { utxo, decodedContract } = matchResult;
 
-	const datum = getDatumFromBlockchainIdentifier({
+	const datum = adapter.createDatumFromDecodedContract({
+		decodedContract,
 		buyerAddress: decodedContract.buyerAddress,
 		sellerAddress: decodedContract.sellerAddress,
 		blockchainIdentifier: request.blockchainIdentifier,
-		payByTime: decodedContract.payByTime,
-		collateralReturnLovelace: decodedContract.collateralReturnLovelace,
-		inputHash: decodedContract.inputHash,
 		resultHash: request.NextAction.resultHash,
-		resultTime: decodedContract.resultTime,
-		unlockTime: decodedContract.unlockTime,
-		externalDisputeUnlockTime: decodedContract.externalDisputeUnlockTime,
 		newCooldownTimeSeller: newCooldownTime(BigInt(paymentContract.cooldownTime)),
 		newCooldownTimeBuyer: BigInt(0),
 		state: determineNewContractState(decodedContract.state),
