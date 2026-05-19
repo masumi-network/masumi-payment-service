@@ -36,24 +36,21 @@ jest.unstable_mockModule('@/utils/config', () => ({
 		ENCRYPTION_KEY: '12345678901234567890',
 	},
 	DEFAULTS: {
-			DEFAULT_METADATA_VERSION: 1,
-			DEFAULT_REGISTRY_METADATA_VERSION: 2,
-			DEFAULT_ADMIN_SIGNATURES_V2: 2,
-			ADMIN_WALLET1_PREPROD:
-				'addr_test1qq0e6dy7cehm9zfqurcf8mwwg9te9nszsx5gy5q4eclpd0czhmdlpagxe5n8ppnrf6424tt8gwweumrtg2q7234x2p2qzjenfx',
-			ADMIN_WALLET2_PREPROD:
-				'addr_test1qqk38pk6rruh67j76s5e3sjj3uce6kr8329kgpg9umhp8k50t3yt4hw3u4fg4f4xtfh630g5fvg6fkr4p2svzyug4nsq40tdna',
-			ADMIN_WALLET3_PREPROD:
-				'addr_test1qq0e6dy7cehm9zfqurcf8mwwg9te9nszsx5gy5q4eclpd0czhmdlpagxe5n8ppnrf6424tt8gwweumrtg2q7234x2p2qzjenfx',
-			ADMIN_WALLET1_MAINNET:
-				'addr1w859pcn45l8mc85s65cjk6t56mk0evgp9wjlpyht3k42wwc3hq2df',
-			ADMIN_WALLET2_MAINNET:
-				'addr1w859pcn45l8mc85s65cjk6t56mk0evgp9wjlpyht3k42wwc3hq2df',
-			ADMIN_WALLET3_MAINNET:
-				'addr1w859pcn45l8mc85s65cjk6t56mk0evgp9wjlpyht3k42wwc3hq2df',
-			COOLDOWN_TIME_PREPROD: 420000,
-			COOLDOWN_TIME_MAINNET: 420000,
-		},
+		DEFAULT_METADATA_VERSION: 1,
+		DEFAULT_REGISTRY_METADATA_VERSION: 2,
+		DEFAULT_ADMIN_SIGNATURES_V2: 2,
+		ADMIN_WALLET1_PREPROD:
+			'addr_test1qq0e6dy7cehm9zfqurcf8mwwg9te9nszsx5gy5q4eclpd0czhmdlpagxe5n8ppnrf6424tt8gwweumrtg2q7234x2p2qzjenfx',
+		ADMIN_WALLET2_PREPROD:
+			'addr_test1qqk38pk6rruh67j76s5e3sjj3uce6kr8329kgpg9umhp8k50t3yt4hw3u4fg4f4xtfh630g5fvg6fkr4p2svzyug4nsq40tdna',
+		ADMIN_WALLET3_PREPROD:
+			'addr_test1qq0e6dy7cehm9zfqurcf8mwwg9te9nszsx5gy5q4eclpd0czhmdlpagxe5n8ppnrf6424tt8gwweumrtg2q7234x2p2qzjenfx',
+		ADMIN_WALLET1_MAINNET: 'addr1w859pcn45l8mc85s65cjk6t56mk0evgp9wjlpyht3k42wwc3hq2df',
+		ADMIN_WALLET2_MAINNET: 'addr1w859pcn45l8mc85s65cjk6t56mk0evgp9wjlpyht3k42wwc3hq2df',
+		ADMIN_WALLET3_MAINNET: 'addr1w859pcn45l8mc85s65cjk6t56mk0evgp9wjlpyht3k42wwc3hq2df',
+		COOLDOWN_TIME_PREPROD: 420000,
+		COOLDOWN_TIME_MAINNET: 420000,
+	},
 	SERVICE_CONSTANTS: {
 		SMART_CONTRACT: {
 			collateralAmount: '5000000',
