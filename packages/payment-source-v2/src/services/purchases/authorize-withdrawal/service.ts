@@ -48,13 +48,14 @@ function validatePurchaseRequestFields(request: {
 function decodeAndValidateUtxoDatum(params: {
 	utxo: UTxO;
 	network: 'mainnet' | 'preprod' | 'testnet' | 'preview';
+	smartContractAddress: string;
 }): DecodedV1ContractDatum {
 	const utxoDatum = params.utxo.output.plutusData;
 	if (!utxoDatum) {
 		throw new Error('No datum found in UTXO');
 	}
 	const decodedDatum: unknown = deserializeDatum(utxoDatum);
-	const decodedContract = decodeV2ContractDatum(decodedDatum, params.network);
+	const decodedContract = decodeV2ContractDatum(decodedDatum, params.network, params.smartContractAddress);
 	if (decodedContract == null) {
 		throw new Error('Invalid datum');
 	}
@@ -146,7 +147,7 @@ export async function authorizeWithdrawalsV2() {
 							const utxoDatum = utxo.output.plutusData;
 							if (!utxoDatum) return false;
 							const decodedDatum: unknown = deserializeDatum(utxoDatum);
-							const decodedContract = decodeV2ContractDatum(decodedDatum, network);
+							const decodedContract = decodeV2ContractDatum(decodedDatum, network, smartContractAddress);
 							if (decodedContract == null) return false;
 							return (
 								smartContractStateEqualsOnChainState(decodedContract.state, request.onChainState) &&
@@ -167,7 +168,7 @@ export async function authorizeWithdrawalsV2() {
 							throw new Error('UTXO not found');
 						}
 
-						const decodedContract = decodeAndValidateUtxoDatum({ utxo, network });
+						const decodedContract = decodeAndValidateUtxoDatum({ utxo, network, smartContractAddress });
 						const datum = createAuthorizeWithdrawalDatum({
 							decodedContract,
 							buyerAddress: request.SmartContractWallet!.walletAddress,

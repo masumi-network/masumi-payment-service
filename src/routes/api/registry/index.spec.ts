@@ -82,7 +82,8 @@ jest.unstable_mockModule('@masumi/payment-source-v2/services/registry/supported-
 
 jest.unstable_mockModule('@/generated/prisma/client', async () => await import('@/generated/prisma/enums'));
 
-jest.unstable_mockModule('@prisma/client', () => ({
+jest.unstable_mockModule('@prisma/client', async () => ({
+	...(await import('@/generated/prisma/enums')),
 	OnChainState: {
 		FundsLocked: 'FundsLocked',
 		FundsOrDatumInvalid: 'FundsOrDatumInvalid',

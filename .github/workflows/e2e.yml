@@ -9,6 +9,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
 
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - name: v1
+            script: test:e2e:v1
+          - name: v2
+            script: test:e2e:v2
+
+    name: e2e-${{ matrix.suite.name }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -28,7 +39,7 @@ jobs:
       - name: Create Neon Database Branch
         id: create-branch
         run: |
-          BRANCH_NAME="e2e-ci-pr-${{ github.event.pull_request.number }}-run-${{ github.run_id }}"
+          BRANCH_NAME="e2e-ci-pr-${{ github.event.pull_request.number }}-${{ matrix.suite.name }}-run-${{ github.run_id }}"
           EXPIRES_AT="$(date -u -d '+24 hours' +'%Y-%m-%dT%H:%M:%SZ')"
           echo "Creating database branch: $BRANCH_NAME"
           echo "Branch will expire at (UTC): $EXPIRES_AT"
@@ -92,14 +103,14 @@ jobs:
               "https://console.neon.tech/api/v2/projects/${{ secrets.NEON_PROJECT_ID }}/branches/${{ steps.create-branch.outputs.branch_id }}" \
               -H "Authorization: Bearer ${{ secrets.NEON_API_KEY }}" \
               -H "Accept: application/json")
-            
+
             STATUS=$(echo $RESPONSE | jq -r '.branch.current_state')
-            
+
             if [ "$STATUS" = "ready" ]; then
               echo "✅ Branch is ready!"
               break
             fi
-            
+
             ATTEMPT=$((ATTEMPT + 1))
             echo "Attempt $ATTEMPT/$MAX_ATTEMPTS: Branch state is '$STATUS', waiting 5 seconds..."
             sleep 5
@@ -162,8 +173,8 @@ jobs:
           echo "=== Server is responding, recent log tail ==="
           tail -50 server.log || true
 
-      - name: Run E2E Test Suite
-        run: pnpm run test:e2e
+      - name: Run E2E Test Suite (${{ matrix.suite.name }})
+        run: pnpm run ${{ matrix.suite.script }}
         env:
           TEST_API_KEY: ${{ secrets.TEST_API_KEY }}
           TEST_API_URL: http://127.0.0.1:3001
@@ -178,4 +189,20 @@ jobs:
           if [ -f server.pid ]; then
             kill $(cat server.pid) || true
             rm server.pid
+          fi
+
+      - name: Delete Neon Database Branch
+        if: always() && steps.create-branch.outputs.branch_id != ''
+        run: |
+          echo "Deleting database branch: ${{ steps.create-branch.outputs.branch_name }}"
+          DELETE_RESPONSE=$(curl -s -w "\n%{http_code}" -X DELETE \
+            "https://console.neon.tech/api/v2/projects/${{ secrets.NEON_PROJECT_ID }}/branches/${{ steps.create-branch.outputs.branch_id }}" \
+            -H "Authorization: Bearer ${{ secrets.NEON_API_KEY }}" \
+            -H "Accept: application/json")
+          DELETE_CODE=$(echo "$DELETE_RESPONSE" | tail -n1)
+          if [ "$DELETE_CODE" = "200" ] || [ "$DELETE_CODE" = "202" ]; then
+            echo "✅ Branch deleted (HTTP $DELETE_CODE)"
+          else
+            echo "⚠️ Branch delete returned HTTP $DELETE_CODE (auto-expiry at 24h will clean up)"
+            echo "$DELETE_RESPONSE" | sed '$d'
           fi

@@ -72,7 +72,8 @@ jest.unstable_mockModule('@meshsdk/core-cst', () => ({
 
 jest.unstable_mockModule('@/generated/prisma/client', async () => await import('@/generated/prisma/enums'));
 
-jest.unstable_mockModule('@prisma/client', () => ({
+jest.unstable_mockModule('@prisma/client', async () => ({
+	...(await import('@/generated/prisma/enums')),
 	OnChainState: {
 		FundsLocked: 'FundsLocked',
 		FundsOrDatumInvalid: 'FundsOrDatumInvalid',

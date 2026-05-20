@@ -100,7 +100,7 @@ async function processSinglePaymentCollection(
 		}
 
 		const decodedDatum: unknown = deserializeDatum(utxoDatum);
-		const decodedContract = decodeV2ContractDatum(decodedDatum, network);
+		const decodedContract = decodeV2ContractDatum(decodedDatum, network, smartContractAddress);
 		if (decodedContract == null) {
 			return false;
 		}
@@ -131,7 +131,7 @@ async function processSinglePaymentCollection(
 	}
 
 	const decodedDatum: unknown = deserializeDatum(utxoDatum);
-	const decodedContract = decodeV2ContractDatum(decodedDatum, network);
+	const decodedContract = decodeV2ContractDatum(decodedDatum, network, smartContractAddress);
 	if (decodedContract == null) {
 		throw new Error('Invalid datum');
 	}

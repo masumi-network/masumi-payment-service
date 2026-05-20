@@ -52,7 +52,11 @@ function serializeOptionalAddressObj(value: any, networkId: 0 | 1): string | nul
 	return serializeAddressObj(addressValue, networkId);
 }
 
-export function decodeV1ContractDatum(decodedDatum: any, network: Network): DecodedV1ContractDatum | null {
+export function decodeV1ContractDatum(
+	decodedDatum: any,
+	network: Network,
+	_smartContractAddress?: string | null,
+): DecodedV1ContractDatum | null {
 	try {
 		/*
   buyer: VerificationKeyHash,

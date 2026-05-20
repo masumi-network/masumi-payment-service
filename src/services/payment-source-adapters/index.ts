@@ -73,6 +73,7 @@ export type PaymentSourceContractAdapter = {
 	decodeContractDatum(
 		decodedDatum: unknown,
 		network: 'mainnet' | 'preprod' | 'preview' | 'testnet',
+		smartContractAddress?: string | null,
 	): DecodedV1ContractDatum | null;
 	createDatumFromBlockchainIdentifier(input: ContractDatumInput): ContractDatum;
 	createDatumFromDecodedContract(input: ContractDatumFromDecodedInput): ContractDatum;
