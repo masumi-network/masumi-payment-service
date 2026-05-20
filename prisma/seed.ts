@@ -279,7 +279,23 @@ export const seed = async (prisma: PrismaClient) => {
 			throw error;
 		}
 
-		try {
+		// V2 preprod seeding is opt-in via dedicated mnemonic env vars. We
+		// deliberately do NOT fall back to the V1 mnemonics here because:
+		//   (a) the wallets derived from V1 mnemonics would collide with the
+		//       V1 HotWallet rows on the global `walletVkey` unique constraint;
+		//   (b) sharing a single on-chain preprod wallet between V1 and V2
+		//       e2e jobs causes UTxO contention in parallel runs.
+		// If V2 mnemonics are not configured, skip V2 seeding entirely. V2 e2e
+		// will then fail fast with a clear "No active Web3CardanoV2
+		// PaymentSource" message in globalSetup, which is the intended signal
+		// to configure the secrets.
+		if (!purchaseWalletV2PreprodMnemonicRaw || !sellingWalletV2PreprodMnemonicRaw) {
+			console.log(
+				'V2 preprod seeding skipped: set PURCHASE_WALLET_V2_PREPROD_MNEMONIC and ' +
+					'SELLING_WALLET_V2_PREPROD_MNEMONIC (distinct from V1 mnemonics, funded on preprod) ' +
+					'to enable V2 e2e.',
+			);
+		} else try {
 			const purchaseWalletV2PreprodMnemonic = requireMnemonic(
 				purchaseWalletV2PreprodMnemonicRaw,
 				'PURCHASE_WALLET_V2_PREPROD_MNEMONIC',
@@ -617,4 +633,9 @@ seed(prisma)
 		prisma.$disconnect();
 		pool.end();
 		console.error(e);
+		// Exit non-zero so `prisma db seed` reports failure to the caller
+		// (e.g. CI). Without this the script swallowed errors and CI continued
+		// with an incomplete payment-source set, surfacing only later as an
+		// opaque "No active Web3CardanoV2 PaymentSource" abort in globalSetup.
+		process.exit(1);
 	});

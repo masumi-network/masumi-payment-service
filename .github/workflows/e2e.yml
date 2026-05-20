@@ -167,19 +167,19 @@ jobs:
           DATABASE_URL: '${{ steps.create-branch.outputs.connection_uri }}'
           PURCHASE_WALLET_PREPROD_MNEMONIC: '${{ secrets.PURCHASE_WALLET_PREPROD_MNEMONIC }}'
           SELLING_WALLET_PREPROD_MNEMONIC: '${{ secrets.SELLING_WALLET_PREPROD_MNEMONIC }}'
-          # V2 mnemonics. Required for the V2 e2e job; without them the V2
-          # PaymentSource is not seeded (the seed swallows the error) and the
-          # V2 globalSetup aborts with "No active Web3CardanoV2 PaymentSource".
-          # If dedicated V2 secrets are not configured, fall back to the V1
-          # mnemonics so the seed step still produces a V2 source. This means
-          # V1 and V2 e2e jobs share the same funded on-chain wallets — fine
-          # for sequential runs; with the parallel matrix the two jobs each
-          # operate on their own Neon branch so DB rows do not collide, but
-          # the on-chain wallet is shared, which can cause UTxO contention.
-          # For production-grade CI, configure dedicated V2 wallet secrets.
-          PURCHASE_WALLET_V2_PREPROD_MNEMONIC: '${{ secrets.PURCHASE_WALLET_V2_PREPROD_MNEMONIC || secrets.PURCHASE_WALLET_PREPROD_MNEMONIC }}'
-          SELLING_WALLET_V2_PREPROD_MNEMONIC: '${{ secrets.SELLING_WALLET_V2_PREPROD_MNEMONIC || secrets.SELLING_WALLET_PREPROD_MNEMONIC }}'
-          COLLECTION_WALLET_V2_PREPROD_ADDRESS: '${{ secrets.COLLECTION_WALLET_V2_PREPROD_ADDRESS || secrets.COLLECTION_WALLET_PREPROD_ADDRESS }}'
+          # V2 mnemonics MUST be distinct from V1 mnemonics:
+          #   (a) the HotWallet.walletVkey column is globally unique; reusing
+          #       V1 mnemonics would derive the same vkeys and the V2 seed
+          #       INSERT would fail with P2002 UniqueConstraintViolation;
+          #   (b) sharing the same on-chain wallet across V1 and V2 jobs would
+          #       cause UTxO contention.
+          # If V2 secrets are not configured, the seed skips V2 cleanly and
+          # the V2 e2e matrix job fails fast with a clear "No active
+          # Web3CardanoV2 PaymentSource" message — the intended prompt to
+          # provision and configure dedicated V2 wallets.
+          PURCHASE_WALLET_V2_PREPROD_MNEMONIC: '${{ secrets.PURCHASE_WALLET_V2_PREPROD_MNEMONIC }}'
+          SELLING_WALLET_V2_PREPROD_MNEMONIC: '${{ secrets.SELLING_WALLET_V2_PREPROD_MNEMONIC }}'
+          COLLECTION_WALLET_V2_PREPROD_ADDRESS: '${{ secrets.COLLECTION_WALLET_V2_PREPROD_ADDRESS }}'
           BLOCKFROST_API_KEY_PREPROD: '${{ secrets.BLOCKFROST_API_KEY_PREPROD }}'
           ENCRYPTION_KEY: '${{ secrets.ENCRYPTION_KEY }}'
           ADMIN_KEY: '${{ secrets.ADMIN_KEY }}'
