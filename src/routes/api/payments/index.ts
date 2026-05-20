@@ -1,6 +1,6 @@
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
-import { HotWalletType, PaymentAction, PricingType } from '@/generated/prisma/client';
+import { HotWalletType, PaymentAction, PaymentSourceType, PricingType } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { createId } from '@paralleldrive/cuid2';
@@ -221,6 +221,7 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 		}
 		assertHotWalletInScope(ctx.walletScopeIds, sellingWallet.id);
 		const sellerReturnAddress = input.sellerReturnAddress ?? sellingWallet.collectionAddress;
+		const isV2 = specifiedPaymentContract.paymentSourceType === PaymentSourceType.Web3CardanoV2;
 		const sellerCUID = createId();
 		const sellerId = generateSHA256Hash(sellerCUID) + input.agentIdentifier;
 		const blockchainIdentifier = buildSignedBlockchainIdentifierPayload({
@@ -241,6 +242,7 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 			externalDisputeUnlockTime: externalDisputeUnlockTime.toString(),
 			sellerAddress: sellingWallet.walletAddress,
 			sellerReturnAddress,
+			smartContractAddress: isV2 ? specifiedPaymentContract.smartContractAddress : null,
 			paymentSourceType: specifiedPaymentContract.paymentSourceType,
 		});
 
@@ -263,6 +265,7 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 			signedBlockchainIdentifier.signature,
 			sellerId,
 			input.identifierFromPurchaser,
+			isV2 ? specifiedPaymentContract.smartContractAddress : null,
 		);
 
 		const payment = await prisma.paymentRequest.create({

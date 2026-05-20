@@ -76,6 +76,10 @@ jest.unstable_mockModule('@/utils/blockfrost', () => ({
 	validateAssetsOnChain: jest.fn(),
 }));
 
+jest.unstable_mockModule('@masumi/payment-source-v2/services/registry/supported-payment-sources', () => ({
+	getDefaultSupportedPaymentSources: jest.fn(async () => []),
+}));
+
 jest.unstable_mockModule('@/generated/prisma/client', async () => await import('@/generated/prisma/enums'));
 
 jest.unstable_mockModule('@prisma/client', () => ({
@@ -161,6 +165,7 @@ function buildRegistryRequestResponse(
 			walletAddress: 'addr_test1sellingwallet',
 		},
 		RecipientWallet: recipientWallet,
+		SupportedPaymentSources: [],
 		CurrentTransaction: null,
 	};
 }

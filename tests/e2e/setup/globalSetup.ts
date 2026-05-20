@@ -5,6 +5,7 @@ import { ApiClient } from '../utils/apiClient';
 import { getTestEnvironment } from '../fixtures/testData';
 import { waitForServer } from '../utils/waitFor';
 import { registerAndConfirmAgent } from '../helperFunctions';
+import { validateE2EPaymentSourceWallets } from '../utils/paymentSourceHelper';
 import './globals';
 import { E2E_GLOBAL_STATE_ENV_KEY, encodeE2EGlobalState, type E2EGlobalState } from './e2eGlobalState';
 
@@ -73,6 +74,18 @@ And accessible at: ${config.apiUrl}
 🔧 Verify your API key is correct:
    export TEST_API_KEY="your-valid-api-key"
 `);
+			process.exit(1);
+		}
+
+		console.log('🔎 [globalSetup] Validating E2E payment source wallets...');
+		const walletValidation = await validateE2EPaymentSourceWallets(
+			config.network,
+			config.paymentSourceType,
+			apiClient,
+		);
+		if (!walletValidation.valid) {
+			console.error('❌ E2E payment source wallet validation failed:');
+			for (const err of walletValidation.errors) console.error(`   - ${err}`);
 			process.exit(1);
 		}
 

@@ -4,7 +4,7 @@ import { Network, RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
-import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contract-generator';
+import { getRegistryScriptFromNetworkHandler } from '@/utils/generator/contract-generator';
 import { DEFAULTS } from '@/utils/config';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { registryInboxRequestOutputSchema } from '@/routes/api/registry-inbox';
@@ -61,7 +61,7 @@ export const unregisterInboxAgentPost = payAuthenticatedEndpointFactory.build({
 		}
 
 		const blockfrost = getBlockfrostInstance(input.network, paymentSource.PaymentSourceConfig.rpcProviderApiKey);
-		const { policyId } = await getRegistryScriptFromNetworkHandlerV1(paymentSource);
+		const { policyId } = await getRegistryScriptFromNetworkHandler(paymentSource);
 		const assetName = extractAssetName(input.agentIdentifier);
 		const holderWallet = await blockfrost.assetsAddresses(policyId + assetName, {
 			order: 'desc',

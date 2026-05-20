@@ -157,19 +157,6 @@ export const paymentSourceExtendedEndpointPost = adminAuthenticatedEndpointFacto
 				input.paymentSourceType === PaymentSourceType.Web3CardanoV1
 					? await getRegistryScriptV1(smartContractAddress, input.network)
 					: await getRegistryScriptV2(input.network);
-			if (input.paymentSourceType === PaymentSourceType.Web3CardanoV2) {
-				const existingV2Source = await prisma.paymentSource.findFirst({
-					where: {
-						network: input.network,
-						paymentSourceType: PaymentSourceType.Web3CardanoV2,
-						deletedAt: null,
-					},
-					select: { id: true },
-				});
-				if (existingV2Source != null) {
-					throw createHttpError(409, 'An active Web3CardanoV2 payment source already exists for this network');
-				}
-			}
 			const latestIdentifierChecked = await resolveLatestIdentifierCheckpoint(
 				input.network,
 				input.PaymentSourceConfig.rpcProviderApiKey,

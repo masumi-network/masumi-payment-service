@@ -4,11 +4,11 @@ import { prisma } from '../index.js';
 export async function lockAndQueryRegistryRequests({
 	state,
 	maxBatchSize,
-	paymentSourceType = PaymentSourceType.Web3CardanoV1,
+	paymentSourceType,
 }: {
 	state: RegistrationState;
 	maxBatchSize: number;
-	paymentSourceType?: PaymentSourceType;
+	paymentSourceType: PaymentSourceType;
 }) {
 	const locksSellingWallet = state === RegistrationState.RegistrationRequested;
 
@@ -95,6 +95,7 @@ export async function lockAndQueryRegistryRequests({
 								include: { FixedPricing: { include: { Amounts: true } } },
 							},
 							ExampleOutputs: true,
+							SupportedPaymentSources: true,
 						},
 						orderBy: {
 							createdAt: 'asc',

@@ -9,16 +9,7 @@ import {
 } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@/utils/logger';
-import { collectOutstandingPaymentsV1, submitResultV1, authorizeRefundV1 } from '@/services/payments';
-import {
-	batchLatestPaymentEntriesV1,
-	collectRefundV1,
-	requestRefundsV1,
-	cancelRefundsV1,
-	authorizeWithdrawalsV2,
-} from '@/services/purchases';
-import { registerAgentV1, deRegisterAgentV1 } from '@/services/registry';
-import { registerInboxAgentV1, deRegisterInboxAgentV1 } from '@/services/registry-inbox';
+import { web3CardanoV1, web3CardanoV2 } from '@/services/payment-source-types';
 import { CONFIG, DEFAULTS } from '@/utils/config';
 import { errorToString } from '@/utils/converter/error-string-convert';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
@@ -626,72 +617,71 @@ export async function updateWalletTransactionHash() {
 		const uniqueUnlockedPurchasingWalletIds = [...new Set(unlockedPurchasingWalletIds)].filter((id) => id != null);
 		//TODO: reset initialized actions
 		if (uniqueUnlockedSellingWalletIds.length > 0) {
-			try {
-				await submitResultV1();
-			} catch (error) {
-				logger.error(`Error initiating submit result: ${errorToString(error)}`);
-			}
-			try {
-				await authorizeRefundV1();
-			} catch (error) {
-				logger.error(`Error initiating refunds: ${errorToString(error)}`);
-			}
-			try {
-				await collectOutstandingPaymentsV1();
-			} catch (error) {
-				logger.error(`Error initiating collect outstanding payments: ${errorToString(error)}`);
-			}
-			try {
-				await registerAgentV1();
-			} catch (error) {
-				logger.error(`Error initiating register agent: ${errorToString(error)}`);
-			}
-			try {
-				await registerInboxAgentV1();
-			} catch (error) {
-				logger.error(`Error initiating register inbox agent: ${errorToString(error)}`);
-			}
-			try {
-				await deRegisterAgentV1();
-			} catch (error) {
-				logger.error(`Error initiating deregister agent: ${errorToString(error)}`);
-			}
-			try {
-				await deRegisterInboxAgentV1();
-			} catch (error) {
-				logger.error(`Error initiating deregister inbox agent: ${errorToString(error)}`);
-			}
-			try {
-				await authorizeRefundV1();
-			} catch (error) {
-				logger.error(`Error initiating authorize refund: ${errorToString(error)}`);
+			for (const module of [web3CardanoV1, web3CardanoV2]) {
+				try {
+					await module.submitResult();
+				} catch (error) {
+					logger.error(`Error initiating submit result: ${errorToString(error)}`);
+				}
+				try {
+					await module.authorizeRefund();
+				} catch (error) {
+					logger.error(`Error initiating refunds: ${errorToString(error)}`);
+				}
+				try {
+					await module.collectOutstandingPayments();
+				} catch (error) {
+					logger.error(`Error initiating collect outstanding payments: ${errorToString(error)}`);
+				}
+				try {
+					await module.registerAgent();
+				} catch (error) {
+					logger.error(`Error initiating register agent: ${errorToString(error)}`);
+				}
+				try {
+					await module.registerInboxAgent();
+				} catch (error) {
+					logger.error(`Error initiating register inbox agent: ${errorToString(error)}`);
+				}
+				try {
+					await module.deRegisterAgent();
+				} catch (error) {
+					logger.error(`Error initiating deregister agent: ${errorToString(error)}`);
+				}
+				try {
+					await module.deRegisterInboxAgent();
+				} catch (error) {
+					logger.error(`Error initiating deregister inbox agent: ${errorToString(error)}`);
+				}
 			}
 		}
 		if (uniqueUnlockedPurchasingWalletIds.length > 0) {
-			try {
-				await collectRefundV1();
-			} catch (error) {
-				logger.error(`Error initiating collect refund: ${errorToString(error)}`);
+			for (const module of [web3CardanoV1, web3CardanoV2]) {
+				try {
+					await module.collectRefund();
+				} catch (error) {
+					logger.error(`Error initiating collect refund: ${errorToString(error)}`);
+				}
+				try {
+					await module.requestRefunds();
+				} catch (error) {
+					logger.error(`Error initiating request refund: ${errorToString(error)}`);
+				}
+				try {
+					await module.batchLatestPaymentEntries();
+				} catch (error) {
+					logger.error(`Error initiating batch latest payment entries: ${errorToString(error)}`);
+				}
 			}
 			try {
-				await requestRefundsV1();
-			} catch (error) {
-				logger.error(`Error initiating request refund: ${errorToString(error)}`);
-			}
-			try {
-				await cancelRefundsV1();
+				await web3CardanoV1.cancelRefunds();
 			} catch (error) {
 				logger.error(`Error initiating cancel refund: ${errorToString(error)}`);
 			}
 			try {
-				await authorizeWithdrawalsV2();
+				await web3CardanoV2.authorizeWithdrawals();
 			} catch (error) {
 				logger.error(`Error initiating authorize withdrawal: ${errorToString(error)}`);
-			}
-			try {
-				await batchLatestPaymentEntriesV1();
-			} catch (error) {
-				logger.error(`Error initiating batch latest payment entries: ${errorToString(error)}`);
 			}
 		}
 		try {

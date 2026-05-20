@@ -29,6 +29,9 @@ if (checkWalletTransactionHashInterval < 5)
 	throw new Error('CHECK_WALLET_TRANSACTION_HASH_INTERVAL must be at least 5 seconds');
 const checkAuthorizeRefundInterval = Number(process.env.CHECK_AUTHORIZE_REFUND_INTERVAL ?? '15');
 if (checkAuthorizeRefundInterval < 5) throw new Error('CHECK_AUTHORIZE_REFUND_INTERVAL must be at least 5 seconds');
+const checkAuthorizeWithdrawalInterval = Number(process.env.CHECK_AUTHORIZE_WITHDRAWAL_INTERVAL ?? '15');
+if (checkAuthorizeWithdrawalInterval < 5)
+	throw new Error('CHECK_AUTHORIZE_WITHDRAWAL_INTERVAL must be at least 5 seconds');
 const checkSubmitResultInterval = Number(process.env.CHECK_SUBMIT_RESULT_INTERVAL ?? '15');
 if (checkSubmitResultInterval < 5) throw new Error('CHECK_SUBMIT_RESULT_INTERVAL must be at least 5 seconds');
 const registerAgentInterval = Number(process.env.REGISTER_AGENT_INTERVAL ?? '15');
@@ -172,6 +175,7 @@ export const CONFIG = {
 	CHECK_UNSET_REFUND_INTERVAL: checkUnsetRefundInterval,
 	CHECK_WALLET_TRANSACTION_HASH_INTERVAL: checkWalletTransactionHashInterval,
 	CHECK_AUTHORIZE_REFUND_INTERVAL: checkAuthorizeRefundInterval,
+	CHECK_AUTHORIZE_WITHDRAWAL_INTERVAL: checkAuthorizeWithdrawalInterval,
 	CHECK_SUBMIT_RESULT_INTERVAL: checkSubmitResultInterval,
 	REGISTER_AGENT_INTERVAL: registerAgentInterval,
 	DEREGISTER_AGENT_INTERVAL: deregisterAgentInterval,

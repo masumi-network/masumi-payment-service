@@ -11,7 +11,27 @@ import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { metadataSchema } from '@/routes/api/registry/wallet';
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
-import { parseSupportedPaymentSourcesFromMetadata, supportedPaymentSourcesSchema } from '@/types/payment-source';
+import {
+	isCardanoAddressForNetwork,
+	parseSupportedPaymentSourcesFromMetadata,
+	SupportedPaymentSourceChain,
+	supportedPaymentSourcesSchema,
+	type SupportedPaymentSource,
+} from '@/types/payment-source';
+import type { Network as NetworkType } from '@/generated/prisma/client';
+
+function filterValidSupportedPaymentSources(
+	sources: SupportedPaymentSource[] | null,
+	expectedNetwork: NetworkType,
+): SupportedPaymentSource[] | null {
+	if (sources == null) return null;
+	return sources.filter(
+		(source) =>
+			source.chain === SupportedPaymentSourceChain.Cardano &&
+			source.network === expectedNetwork &&
+			isCardanoAddressForNetwork(source.address, expectedNetwork),
+	);
+}
 
 export const queryAgentByIdentifierSchemaInput = z.object({
 	agentIdentifier: z.string().min(57).max(250).describe('Full agent identifier (policy ID + asset name in hex)'),
@@ -278,8 +298,9 @@ export const queryAgentByIdentifierGet = readAuthenticatedEndpointFactory.build(
 							},
 				image: metadataToString(parsedMetadata.data.image)!,
 				metadataVersion: parsedMetadata.data.metadata_version,
-				supportedPaymentSources: parseSupportedPaymentSourcesFromMetadata(
-					parsedMetadata.data.supported_payment_sources,
+				supportedPaymentSources: filterValidSupportedPaymentSources(
+					parseSupportedPaymentSourcesFromMetadata(parsedMetadata.data.supported_payment_sources),
+					input.network,
 				),
 			},
 		};

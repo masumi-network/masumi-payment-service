@@ -165,6 +165,7 @@ describe('WalletLowBalanceMonitorService', () => {
 		PaymentSource: {
 			id: 'payment-source-1',
 			network: Network.Preprod,
+			paymentSourceType: PaymentSourceType.Web3CardanoV1,
 		},
 		LowBalanceRules: [
 			{

@@ -1,15 +1,13 @@
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
-import { Network, PaymentSourceType } from '@/generated/prisma/client';
+import { Chain, Network, PaymentSourceType } from '@/generated/prisma/client';
 import { z } from '@/utils/zod-openapi';
 
-export enum SupportedPaymentSourceChain {
-	Cardano = 'Cardano',
-}
+export { Chain as SupportedPaymentSourceChain };
 
 export const paymentSourceTypeSchema = z.nativeEnum(PaymentSourceType).describe('The configured payment source type');
 
 export const supportedPaymentSourceSchema = z.object({
-	chain: z.nativeEnum(SupportedPaymentSourceChain).describe('The blockchain this payment source is available on'),
+	chain: z.nativeEnum(Chain).describe('The blockchain this payment source is available on'),
 	network: z.nativeEnum(Network).describe('The blockchain network this payment source is available on'),
 	paymentSourceType: paymentSourceTypeSchema,
 	address: z.string().max(250).describe('The escrow smart contract address for this payment source'),
@@ -51,6 +49,15 @@ function validateCardanoAddressForNetwork(address: string, network: Network) {
 	}
 }
 
+export function isCardanoAddressForNetwork(address: string, network: Network): boolean {
+	try {
+		validateCardanoAddressForNetwork(address, network);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 export function validateSupportedPaymentSourcesOrThrow(
 	supportedPaymentSources: SupportedPaymentSource[],
 	expectedNetwork: Network,
@@ -60,21 +67,12 @@ export function validateSupportedPaymentSourcesOrThrow(
 			throw new Error('Supported payment source network must match the registry network');
 		}
 
-		if (supportedPaymentSource.chain !== SupportedPaymentSourceChain.Cardano) {
+		if (supportedPaymentSource.chain !== Chain.Cardano) {
 			throw new Error('Unsupported payment source chain');
 		}
 
 		validateCardanoAddressForNetwork(supportedPaymentSource.address, expectedNetwork);
 	}
-}
-
-export function parseSupportedPaymentSources(value: unknown): SupportedPaymentSource[] | null {
-	if (value == null) {
-		return null;
-	}
-
-	const parsed = supportedPaymentSourcesSchema.safeParse(value);
-	return parsed.success ? parsed.data : null;
 }
 
 export function parseSupportedPaymentSourcesFromMetadata(value: unknown): SupportedPaymentSource[] | null {
@@ -87,7 +85,7 @@ export function parseSupportedPaymentSourcesFromMetadata(value: unknown): Suppor
 		return null;
 	}
 
-	return parseSupportedPaymentSources(
+	const reparsed = supportedPaymentSourcesSchema.safeParse(
 		parsed.data.map((source) => ({
 			chain: metadataToString(source.chain),
 			network: metadataToString(source.network),
@@ -95,4 +93,5 @@ export function parseSupportedPaymentSourcesFromMetadata(value: unknown): Suppor
 			address: metadataToString(source.address),
 		})),
 	);
+	return reparsed.success ? reparsed.data : null;
 }

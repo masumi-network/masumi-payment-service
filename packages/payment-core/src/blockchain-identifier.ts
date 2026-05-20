@@ -7,6 +7,7 @@ export type DecodedBlockchainIdentifier = {
 	signature: string;
 	key: string;
 	agentIdentifier: string | null;
+	smartContractAddress: string | null;
 };
 
 export function generateBlockchainIdentifier(
@@ -14,10 +15,13 @@ export function generateBlockchainIdentifier(
 	referenceSignature: string,
 	sellerNonce: string,
 	buyerNonce: string,
+	smartContractAddress?: string | null,
 ): string {
-	const signedEncodedBlockchainIdentifier = Buffer.from(
-		sellerNonce + '.' + buyerNonce + '.' + referenceSignature + '.' + referenceKey,
-	).toString('utf-8');
+	const segments = [sellerNonce, buyerNonce, referenceSignature, referenceKey];
+	if (smartContractAddress != null) {
+		segments.push(smartContractAddress);
+	}
+	const signedEncodedBlockchainIdentifier = Buffer.from(segments.join('.')).toString('utf-8');
 
 	return Buffer.from(LZString.compressToUint8Array(signedEncodedBlockchainIdentifier)).toString('hex');
 }
@@ -29,7 +33,7 @@ export function decodeBlockchainIdentifier(blockchainIdentifier: string): Decode
 	}
 
 	const blockchainIdentifierSplit = decompressed.split('.');
-	if (blockchainIdentifierSplit.length != 4) {
+	if (blockchainIdentifierSplit.length !== 4 && blockchainIdentifierSplit.length !== 5) {
 		return null;
 	}
 	const sellerId = blockchainIdentifierSplit[0];
@@ -46,11 +50,13 @@ export function decodeBlockchainIdentifier(blockchainIdentifier: string): Decode
 	}
 	const signature = blockchainIdentifierSplit[2];
 	const key = blockchainIdentifierSplit[3];
+	const smartContractAddress = blockchainIdentifierSplit.length === 5 ? blockchainIdentifierSplit[4] : null;
 	return {
 		sellerId: sellerId,
 		purchaserId: purchaserId,
 		signature: signature,
 		key: key,
 		agentIdentifier: agentIdentifier,
+		smartContractAddress,
 	};
 }

@@ -14,7 +14,6 @@ import { extractAssetName } from '@/utils/converter/agent-identifier';
 import { registryRequestOutputSchema } from '@/routes/api/registry';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
-import { parseSupportedPaymentSources } from '@/types/payment-source';
 
 export const unregisterAgentSchemaInput = z.object({
 	agentIdentifier: z
@@ -119,6 +118,14 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 					select: { walletVkey: true, walletAddress: true },
 				},
 				ExampleOutputs: { select: { name: true, url: true, mimeType: true } },
+				SupportedPaymentSources: {
+					select: {
+						chain: true,
+						network: true,
+						paymentSourceType: true,
+						address: true,
+					},
+				},
 				CurrentTransaction: {
 					select: {
 						txHash: true,
@@ -163,7 +170,7 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 							pricingType: result.Pricing.pricingType,
 						},
 			sendFundingLovelace: result.sendFundingLovelace?.toString() ?? null,
-			supportedPaymentSources: parseSupportedPaymentSources(result.supportedPaymentSources),
+			supportedPaymentSources: result.SupportedPaymentSources.length > 0 ? result.SupportedPaymentSources : null,
 			Tags: result.tags,
 			RecipientWallet: result.RecipientWallet,
 			CurrentTransaction: result.CurrentTransaction

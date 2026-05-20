@@ -4,7 +4,9 @@ const moduleNameMapper = {
 	'^@masumi/payment-core$': '<rootDir>/packages/payment-core/src/index.ts',
 	'^@masumi/payment-core/(.*)$': '<rootDir>/packages/payment-core/src/$1.ts',
 	'^@masumi/payment-source-v1$': '<rootDir>/packages/payment-source-v1/src/index.ts',
+	'^@masumi/payment-source-v1/(.*)$': '<rootDir>/packages/payment-source-v1/src/$1.ts',
 	'^@masumi/payment-source-v2$': '<rootDir>/packages/payment-source-v2/src/index.ts',
+	'^@masumi/payment-source-v2/(.*)$': '<rootDir>/packages/payment-source-v2/src/$1.ts',
 	'@/(.*)': '<rootDir>/src/$1',
 	'^(\\.{1,2}/.*)\\.js$': '$1',
 };
@@ -12,7 +14,7 @@ const moduleNameMapper = {
 const config: Config.InitialOptions = {
 	verbose: true,
 	moduleNameMapper,
-	roots: ['<rootDir>/src'],
+	roots: ['<rootDir>/src', '<rootDir>/packages'],
 	extensionsToTreatAsEsm: ['.ts'],
 	transform: {
 		'^.+\\.tsx?$': [

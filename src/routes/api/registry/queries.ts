@@ -148,6 +148,14 @@ export async function getRegistryEntriesForQuery(
 					mimeType: true,
 				},
 			},
+			SupportedPaymentSources: {
+				select: {
+					chain: true,
+					network: true,
+					paymentSourceType: true,
+					address: true,
+				},
+			},
 		},
 	});
 }

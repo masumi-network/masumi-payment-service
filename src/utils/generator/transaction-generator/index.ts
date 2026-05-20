@@ -28,7 +28,7 @@ function convertMeshNetworkToPrismaNetwork(network: Network): PrismaNetwork {
 }
 
 export async function generateMasumiSmartContractInteractionTransactionAutomaticFees(
-	type: 'AuthorizeRefund' | 'CancelRefund' | 'RequestRefund' | 'SubmitResult',
+	type: 'AuthorizeRefund' | 'AuthorizeWithdrawal' | 'CancelRefund' | 'RequestRefund' | 'SubmitResult',
 	blockchainProvider: BlockfrostProvider,
 	network: Network,
 	script: {
@@ -99,7 +99,7 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 }
 
 async function generateMasumiSmartContractInteractionTransactionCustomFee(
-	type: 'AuthorizeRefund' | 'CancelRefund' | 'RequestRefund' | 'SubmitResult',
+	type: 'AuthorizeRefund' | 'AuthorizeWithdrawal' | 'CancelRefund' | 'RequestRefund' | 'SubmitResult',
 	blockchainProvider: IFetcher,
 	network: Network,
 	script: {
@@ -210,7 +210,14 @@ async function generateMasumiSmartContractInteractionTransactionCustomFee(
 }
 
 function generateRedeemerData(
-	type: 'AuthorizeRefund' | 'CancelRefund' | 'RequestRefund' | 'SubmitResult' | 'CollectCompleted' | 'CollectRefund',
+	type:
+		| 'AuthorizeRefund'
+		| 'AuthorizeWithdrawal'
+		| 'CancelRefund'
+		| 'RequestRefund'
+		| 'SubmitResult'
+		| 'CollectCompleted'
+		| 'CollectRefund',
 ) {
 	switch (type) {
 		case 'AuthorizeRefund':
@@ -218,7 +225,11 @@ function generateRedeemerData(
 				alternative: 6,
 				fields: [],
 			};
+		// V1 cancel-refund and V2 authorize-withdrawal both occupy the same on-chain
+		// redeemer alternative (2). Labels are distinct so future contract revisions can
+		// split them without ambiguity in service-layer call sites.
 		case 'CancelRefund':
+		case 'AuthorizeWithdrawal':
 			return {
 				alternative: 2,
 				fields: [],

@@ -33,6 +33,18 @@ function createMnemonicIfMissing(mnemonic: string | undefined) {
 	return mnemonic ?? (MeshWallet.brew(false) as string[]).join(' ');
 }
 
+// V2 wallets must be supplied via env: contract addresses are derived from these
+// mnemonics and re-seeding with a brewed mnemonic would orphan any V2 funds. V1
+// keeps the brew fallback for backwards compatibility with the original seed UX.
+function requireMnemonic(mnemonic: string | undefined, envName: string): string {
+	if (!mnemonic) {
+		throw new Error(
+			`${envName} is required for V2 seeding. Set it in your .env to a 24-word mnemonic that is distinct from your V1 wallets.`,
+		);
+	}
+	return mnemonic;
+}
+
 async function queryLatestTxHash(blockfrostApiKey: string, smartContractAddress: string, networkLabel: string) {
 	const blockfrostApi = new BlockFrostAPI({
 		projectId: blockfrostApiKey,
@@ -59,8 +71,11 @@ export const seed = async (prisma: PrismaClient) => {
 	const seedOnlyIfEmpty = process.env.SEED_ONLY_IF_EMPTY;
 
 	if (seedOnlyIfEmpty?.toLowerCase() === 'true') {
-		const adminKey = await prisma.apiKey.findFirst({});
-		if (adminKey) {
+		const [adminKey, paymentSourceCount] = await Promise.all([
+			prisma.apiKey.findFirst({}),
+			prisma.paymentSource.count({}),
+		]);
+		if (adminKey || paymentSourceCount > 0) {
 			console.log('Already seeded, skipping');
 			return;
 		}
@@ -113,8 +128,10 @@ export const seed = async (prisma: PrismaClient) => {
 	let collectionWalletPreprodAddress: string | null | undefined = process.env.COLLECTION_WALLET_PREPROD_ADDRESS;
 	const purchaseWalletPreprodMnemonic = createMnemonicIfMissing(process.env.PURCHASE_WALLET_PREPROD_MNEMONIC);
 	const sellingWalletPreprodMnemonic = createMnemonicIfMissing(process.env.SELLING_WALLET_PREPROD_MNEMONIC);
-	const purchaseWalletV2PreprodMnemonic = createMnemonicIfMissing(process.env.PURCHASE_WALLET_V2_PREPROD_MNEMONIC);
-	const sellingWalletV2PreprodMnemonic = createMnemonicIfMissing(process.env.SELLING_WALLET_V2_PREPROD_MNEMONIC);
+	// V2 mnemonics validated lazily at the V2 source creation site so that V1-only
+	// deployments (no BLOCKFROST_API_KEY_PREPROD) don't fail on missing V2 env.
+	const purchaseWalletV2PreprodMnemonicRaw = process.env.PURCHASE_WALLET_V2_PREPROD_MNEMONIC;
+	const sellingWalletV2PreprodMnemonicRaw = process.env.SELLING_WALLET_V2_PREPROD_MNEMONIC;
 	if (!collectionWalletPreprodAddress) {
 		collectionWalletPreprodAddress = null;
 	}
@@ -124,8 +141,8 @@ export const seed = async (prisma: PrismaClient) => {
 	let collectionWalletMainnetAddress: string | null | undefined = process.env.COLLECTION_WALLET_MAINNET_ADDRESS;
 	const purchaseWalletMainnetMnemonic = createMnemonicIfMissing(process.env.PURCHASE_WALLET_MAINNET_MNEMONIC);
 	const sellingWalletMainnetMnemonic = createMnemonicIfMissing(process.env.SELLING_WALLET_MAINNET_MNEMONIC);
-	const purchaseWalletV2MainnetMnemonic = createMnemonicIfMissing(process.env.PURCHASE_WALLET_V2_MAINNET_MNEMONIC);
-	const sellingWalletV2MainnetMnemonic = createMnemonicIfMissing(process.env.SELLING_WALLET_V2_MAINNET_MNEMONIC);
+	const purchaseWalletV2MainnetMnemonicRaw = process.env.PURCHASE_WALLET_V2_MAINNET_MNEMONIC;
+	const sellingWalletV2MainnetMnemonicRaw = process.env.SELLING_WALLET_V2_MAINNET_MNEMONIC;
 	if (!collectionWalletMainnetAddress) {
 		collectionWalletMainnetAddress = null;
 	}
@@ -262,6 +279,14 @@ export const seed = async (prisma: PrismaClient) => {
 		}
 
 		try {
+			const purchaseWalletV2PreprodMnemonic = requireMnemonic(
+				purchaseWalletV2PreprodMnemonicRaw,
+				'PURCHASE_WALLET_V2_PREPROD_MNEMONIC',
+			);
+			const sellingWalletV2PreprodMnemonic = requireMnemonic(
+				sellingWalletV2PreprodMnemonicRaw,
+				'SELLING_WALLET_V2_PREPROD_MNEMONIC',
+			);
 			const purchasingWallet = new MeshWallet({
 				networkId: 0,
 				key: {
@@ -476,6 +501,14 @@ export const seed = async (prisma: PrismaClient) => {
 		}
 
 		try {
+			const purchaseWalletV2MainnetMnemonic = requireMnemonic(
+				purchaseWalletV2MainnetMnemonicRaw,
+				'PURCHASE_WALLET_V2_MAINNET_MNEMONIC',
+			);
+			const sellingWalletV2MainnetMnemonic = requireMnemonic(
+				sellingWalletV2MainnetMnemonicRaw,
+				'SELLING_WALLET_V2_MAINNET_MNEMONIC',
+			);
 			const purchasingWallet = new MeshWallet({
 				networkId: 1,
 				key: {

@@ -237,19 +237,23 @@ export function decodeV2ContractDatum(decodedDatum: any, network: Network): Deco
 		const sellerNonce = fields[6]?.bytes;
 		const buyerNonce = fields[7]?.bytes;
 		const agentIdentifier = fields[8]?.bytes;
+		const inputHashBytes = fields[10]?.bytes;
+		const resultHashBytes = fields[11]?.bytes;
 		if (
 			typeof referenceKey !== 'string' ||
 			typeof referenceSignature !== 'string' ||
 			typeof sellerNonce !== 'string' ||
 			typeof buyerNonce !== 'string' ||
-			typeof agentIdentifier !== 'string'
+			typeof agentIdentifier !== 'string' ||
+			typeof inputHashBytes !== 'string' ||
+			typeof resultHashBytes !== 'string'
 		) {
 			return null;
 		}
 
 		const collateralReturnLovelace = BigInt(fields[9]?.int ?? -1);
-		let inputHash: string | null = fields[10]?.bytes as string;
-		let resultHash: string | null = fields[11]?.bytes as string;
+		let inputHash: string | null = inputHashBytes;
+		let resultHash: string | null = resultHashBytes;
 		const payByTime = BigInt(fields[12]?.int ?? -1);
 		const resultTime = BigInt(fields[13]?.int ?? -1);
 		const unlockTime = BigInt(fields[14]?.int ?? -1);
@@ -278,6 +282,9 @@ export function decodeV2ContractDatum(decodedDatum: any, network: Network): Deco
 			resultHash = null;
 		}
 
+		// V2 sellerNonce is exactly 64 hex chars (32 bytes). If the on-chain field exceeds
+		// 64 chars the agentIdentifier was already concatenated upstream — keep as-is.
+		// Otherwise append agentIdentifier (when present) to reconstruct the full identifier.
 		const sellerIdentifier =
 			sellerNonce.length > 64 || agentIdentifier.length === 0 ? sellerNonce : sellerNonce + agentIdentifier;
 		const blockchainIdentifier = generateBlockchainIdentifier(

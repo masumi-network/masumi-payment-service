@@ -12,6 +12,7 @@ export type SignedBlockchainIdentifierPayloadInput = {
 	externalDisputeUnlockTime: string;
 	sellerAddress: string;
 	sellerReturnAddress?: string | null;
+	smartContractAddress?: string | null;
 	paymentSourceType: PaymentSourceType;
 };
 
@@ -28,7 +29,10 @@ export function buildSignedBlockchainIdentifierPayload(input: SignedBlockchainId
 		externalDisputeUnlockTime: input.externalDisputeUnlockTime,
 		sellerAddress: input.sellerAddress,
 		...(input.paymentSourceType === PaymentSourceType.Web3CardanoV2
-			? { sellerReturnAddress: input.sellerReturnAddress ?? null }
+			? {
+					sellerReturnAddress: input.sellerReturnAddress ?? null,
+					smartContractAddress: input.smartContractAddress ?? null,
+				}
 			: {}),
 	};
 }

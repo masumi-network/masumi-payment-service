@@ -196,11 +196,24 @@ export const paymentSourceExtendedCreateSchemaInput = z
 			});
 		}
 		if (input.paymentSourceType === PaymentSourceType.Web3CardanoV2) {
+			if (input.AdminWallets.length < 3) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					path: ['AdminWallets'],
+					message: 'Web3CardanoV2 payment sources require at least 3 admin wallet slots',
+				});
+			}
 			if (input.requiredAdminSignatures == null) {
 				ctx.addIssue({
 					code: z.ZodIssueCode.custom,
 					path: ['requiredAdminSignatures'],
 					message: 'requiredAdminSignatures is required for Web3CardanoV2 payment sources',
+				});
+			} else if (input.requiredAdminSignatures < 2) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					path: ['requiredAdminSignatures'],
+					message: 'requiredAdminSignatures must be at least 2 to prevent single-admin custody',
 				});
 			} else if (input.requiredAdminSignatures > input.AdminWallets.length) {
 				ctx.addIssue({

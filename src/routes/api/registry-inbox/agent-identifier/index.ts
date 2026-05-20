@@ -1,6 +1,7 @@
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
 import { Network } from '@/generated/prisma/client';
+// PaymentSourceType is imported below alongside the V2 parser.
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
@@ -8,7 +9,9 @@ import { logger } from '@/utils/logger';
 import { extractPolicyId, extractAssetName } from '@/utils/converter/agent-identifier';
 import { validateHexString } from '@/utils/validator/hex';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
-import { parseInboxAgentRegistrationMetadata } from '@/services/registry-inbox/metadata';
+import { parseInboxAgentRegistrationMetadata as parseInboxAgentRegistrationMetadataV1 } from '@masumi/payment-source-v1/services/registry-inbox/metadata';
+import { parseInboxAgentRegistrationMetadata as parseInboxAgentRegistrationMetadataV2 } from '@masumi/payment-source-v2/services/registry-inbox/metadata';
+import { PaymentSourceType } from '@/generated/prisma/client';
 import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
 
 export const queryInboxAgentByIdentifierSchemaInput = z.object({
@@ -123,6 +126,10 @@ export const queryInboxAgentByIdentifierGet = readAuthenticatedEndpointFactory.b
 			throw createHttpError(404, 'Inbox agent registry metadata not found');
 		}
 
+		const parseInboxAgentRegistrationMetadata =
+			paymentSource.paymentSourceType === PaymentSourceType.Web3CardanoV2
+				? parseInboxAgentRegistrationMetadataV2
+				: parseInboxAgentRegistrationMetadataV1;
 		const parsedMetadata = parseInboxAgentRegistrationMetadata(assetInfo.onchain_metadata);
 		if (parsedMetadata == null) {
 			logger.error('Error parsing inbox agent metadata', {

@@ -12689,6 +12689,11 @@
                                         ],
                                         "description": "Expected payment source type for this purchase"
                                     },
+                                    "smartContractAddress": {
+                                        "type": "string",
+                                        "maxLength": 250,
+                                        "description": "Required for V2 purchases. The configured V2 payment contract address the seller selected."
+                                    },
                                     "inputHash": {
                                         "type": "string",
                                         "maxLength": 250,

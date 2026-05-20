@@ -32,7 +32,7 @@ type WalletLowBalanceContext = {
 	PaymentSource: {
 		id: string;
 		network: Network;
-		paymentSourceType?: PaymentSourceType;
+		paymentSourceType: PaymentSourceType;
 	};
 	LowBalanceRules: WalletLowBalanceRuleRecord[];
 };
@@ -683,7 +683,14 @@ export class WalletLowBalanceMonitorService {
 
 	private async emitLowBalanceAlert(alert: WalletLowBalanceAlert): Promise<void> {
 		const checkSourceLabel = describeCheckSource(alert.checkSource);
-		const paymentSourceType = alert.wallet.PaymentSource.paymentSourceType ?? PaymentSourceType.Web3CardanoV1;
+		// PaymentSource.paymentSourceType is a non-null enum column. Surface the bug instead
+		// of silently mis-attributing the alert to V1 when the column is unexpectedly null.
+		const paymentSourceType = alert.wallet.PaymentSource.paymentSourceType;
+		if (paymentSourceType == null) {
+			throw new Error(
+				`PaymentSource ${alert.wallet.PaymentSource.id} has null paymentSourceType while emitting low-balance alert`,
+			);
+		}
 		const attributes = {
 			network: alert.wallet.PaymentSource.network,
 			wallet_id: alert.wallet.id,

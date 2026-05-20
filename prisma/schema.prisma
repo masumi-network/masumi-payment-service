@@ -221,7 +221,6 @@ model RegistryRequest {
   authorContactOther             String?
   authorOrganization             String?
   metadataVersion                Int
-  supportedPaymentSources        Json?
   tags                           String[]
   agentPricingId                 String            @unique
   agentIdentifier                String?           @unique
@@ -229,8 +228,8 @@ model RegistryRequest {
   registrationStateLastChangedAt DateTime          @default(now())
   currentTransactionId           String?
   error                          String?
-  paymentType                    PaymentType       @default(Web3CardanoV1)
   ExampleOutputs                 ExampleOutput[]
+  SupportedPaymentSources        SupportedPaymentSource[]
   Pricing                        AgentPricing      @relation(fields: [agentPricingId], references: [id])
   CurrentTransaction             Transaction?      @relation(fields: [currentTransactionId], references: [id])
   PaymentSource                  PaymentSource     @relation(fields: [paymentSourceId], references: [id])
@@ -240,6 +239,22 @@ model RegistryRequest {
 
   @@index([recipientHotWalletId])
   @@index([deregistrationHotWalletId])
+}
+
+model SupportedPaymentSource {
+  id                String            @id @default(cuid())
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  registryRequestId String
+  chain             Chain
+  network           Network
+  paymentSourceType PaymentSourceType
+  address           String
+  RegistryRequest   RegistryRequest   @relation(fields: [registryRequestId], references: [id], onDelete: Cascade)
+
+  @@unique([registryRequestId, chain, network, paymentSourceType, address])
+  @@index([address])
+  @@index([paymentSourceType])
 }
 
 model InboxAgentRegistrationRequest {
@@ -547,11 +562,6 @@ enum PurchaseErrorType {
   Unknown
 }
 
-enum PaymentType {
-  Web3CardanoV1
-  None
-}
-
 enum TransactionStatus {
   Pending
   Confirmed
@@ -586,6 +596,10 @@ enum OnChainState {
 enum PaymentSourceType {
   Web3CardanoV1
   Web3CardanoV2
+}
+
+enum Chain {
+  Cardano
 }
 
 enum PaymentAction {

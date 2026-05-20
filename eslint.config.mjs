@@ -69,7 +69,7 @@ export default [
 	},
 	// Add custom rules for TypeScript
 	{
-		files: ['src/**/*.ts'],
+		files: ['src/**/*.ts', 'packages/**/*.ts'],
 		rules: {
 			'@typescript-eslint/array-type': ['error', { default: 'array-simple' }],
 			'@typescript-eslint/no-explicit-any': ['off'],

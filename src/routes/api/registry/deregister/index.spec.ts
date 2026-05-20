@@ -61,6 +61,7 @@ jest.unstable_mockModule('@/utils/blockfrost', () => ({
 }));
 
 jest.unstable_mockModule('@/utils/generator/contract-generator', () => ({
+	getRegistryScriptFromNetworkHandler: mockGetRegistryScript,
 	getRegistryScriptFromNetworkHandlerV1: mockGetRegistryScript,
 	getRegistryScriptFromNetworkHandlerV2: mockGetRegistryScriptV2,
 }));
@@ -140,6 +141,7 @@ function buildRegistryUpdateResponse() {
 			walletVkey: 'recipient-wallet-vkey',
 			walletAddress: 'addr_test1recipientwallet',
 		},
+		SupportedPaymentSources: [],
 		CurrentTransaction: null,
 	};
 }

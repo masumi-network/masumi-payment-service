@@ -6060,6 +6060,10 @@ export type PostPurchaseData = {
          */
         paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
         /**
+         * Required for V2 purchases. The configured V2 payment contract address the seller selected.
+         */
+        smartContractAddress?: string;
+        /**
          * The hash of the input data of the purchase, should be sha256 hash of the input data, therefore needs to be in hex string format
          */
         inputHash: string;

@@ -25,7 +25,7 @@ interface PurchaseInitBaseInput {
 	submitResultTime: string;
 	payByTime: string;
 	identifierFromPurchaser: string;
-	paymentSourceType?: PaymentSourceType;
+	paymentSourceType: PaymentSourceType;
 	sellerReturnAddress?: string;
 }
 
@@ -179,6 +179,11 @@ export async function resolvePurchaseCreationContext({
 		throw createHttpError(400, 'Invalid blockchain identifier, key does not match');
 	}
 
+	const resolvedPaymentSourceType = input.paymentSourceType;
+	const isV2 = resolvedPaymentSourceType === PaymentSourceType.Web3CardanoV2;
+	if (isV2 && decoded.smartContractAddress == null) {
+		throw createHttpError(400, 'Invalid blockchain identifier, V2 must carry smartContractAddress');
+	}
 	const reconstructedBlockchainIdentifier = buildSignedBlockchainIdentifierPayload({
 		inputHash: input.inputHash,
 		agentIdentifier: input.agentIdentifier,
@@ -197,7 +202,8 @@ export async function resolvePurchaseCreationContext({
 		externalDisputeUnlockTime: externalDisputeUnlockTime.toString(),
 		sellerAddress,
 		sellerReturnAddress,
-		paymentSourceType: input.paymentSourceType ?? PaymentSourceType.Web3CardanoV1,
+		smartContractAddress: isV2 ? decoded.smartContractAddress : null,
+		paymentSourceType: resolvedPaymentSourceType,
 	});
 
 	const hashedBlockchainIdentifier = generateSHA256Hash(stringify(reconstructedBlockchainIdentifier));

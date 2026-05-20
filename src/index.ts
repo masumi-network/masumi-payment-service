@@ -2,7 +2,6 @@ import { setupTracing } from '@/tracing';
 
 export async function bootstrap() {
 	await setupTracing();
-	await import('@/services/payment-source-adapters');
 	const { startApp } = await import('@/app');
 	await startApp();
 }

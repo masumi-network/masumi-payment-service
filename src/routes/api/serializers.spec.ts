@@ -20,15 +20,27 @@ jest.unstable_mockModule('@/utils/db', () => ({
 	prisma: {},
 }));
 
-const { HotWalletType, PricingType, TransactionStatus } = await import('@/generated/prisma/client');
-const { generateBlockchainIdentifier } = await import('@/utils/generator/blockchain-identifier-generator');
-const { serializePaymentSourceEntry } = await import('./payment-source/serializers');
-const { serializePaymentListEntry } = await import('./payments/serializers');
-const { serializeRegistryEntry } = await import('./registry/serializers');
-const { serializeInboxRegistryEntry } = await import('./registry-inbox/serializers');
-const { serializeSwapTransaction } = await import('./swap/serializers');
+let HotWalletType: typeof import('@/generated/prisma/client').HotWalletType;
+let PricingType: typeof import('@/generated/prisma/client').PricingType;
+let TransactionStatus: typeof import('@/generated/prisma/client').TransactionStatus;
+let generateBlockchainIdentifier: typeof import('@/utils/generator/blockchain-identifier-generator').generateBlockchainIdentifier;
+let serializePaymentSourceEntry: typeof import('./payment-source/serializers').serializePaymentSourceEntry;
+let serializePaymentListEntry: typeof import('./payments/serializers').serializePaymentListEntry;
+let serializeRegistryEntry: typeof import('./registry/serializers').serializeRegistryEntry;
+let serializeInboxRegistryEntry: typeof import('./registry-inbox/serializers').serializeInboxRegistryEntry;
+let serializeSwapTransaction: typeof import('./swap/serializers').serializeSwapTransaction;
 
 describe('route serializers', () => {
+	beforeAll(async () => {
+		({ HotWalletType, PricingType, TransactionStatus } = await import('@/generated/prisma/client'));
+		({ generateBlockchainIdentifier } = await import('@/utils/generator/blockchain-identifier-generator'));
+		({ serializePaymentSourceEntry } = await import('./payment-source/serializers'));
+		({ serializePaymentListEntry } = await import('./payments/serializers'));
+		({ serializeRegistryEntry } = await import('./registry/serializers'));
+		({ serializeInboxRegistryEntry } = await import('./registry-inbox/serializers'));
+		({ serializeSwapTransaction } = await import('./swap/serializers'));
+	});
+
 	it('serializes payment list entries without changing response shape', () => {
 		const blockchainIdentifier = generateBlockchainIdentifier(
 			'reference-key',
@@ -124,6 +136,7 @@ describe('route serializers', () => {
 				blockHeight: 1,
 				blockTime: new Date('2026-01-01T00:00:00.000Z'),
 			},
+			SupportedPaymentSources: [],
 		} as unknown as Parameters<typeof serializeRegistryEntry>[0];
 
 		const serialized = serializeRegistryEntry(entry);

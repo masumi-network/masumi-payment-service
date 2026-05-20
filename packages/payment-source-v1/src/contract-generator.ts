@@ -165,6 +165,8 @@ function getSmartContractStateDatum(state: SmartContractState) {
 				alternative: 5,
 				fields: [],
 			};
+		default:
+			throw new Error('Unsupported V1 smart contract state');
 	}
 }
 

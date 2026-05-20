@@ -1,5 +1,5 @@
 import { z } from '@masumi/payment-core/zod';
-import { HotWalletType } from '@/generated/prisma/client';
+import { HotWalletType, PaymentSourceType } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
@@ -189,20 +189,35 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 				});
 			}
 			const policyId = input.agentIdentifier.substring(0, 56);
+			const isV2 = input.paymentSourceType === PaymentSourceType.Web3CardanoV2;
 
-			const paymentSource = await prisma.paymentSource.findFirst({
-				where: {
-					policyId: policyId,
-					network: input.network,
-					paymentSourceType: input.paymentSourceType,
-					deletedAt: null,
-				},
-				include: {
-					PaymentSourceConfig: {
-						select: { rpcProviderApiKey: true, rpcProvider: true },
-					},
-				},
-			});
+			const paymentSource = isV2
+				? await prisma.paymentSource.findFirst({
+						where: {
+							network: input.network,
+							smartContractAddress: input.smartContractAddress,
+							paymentSourceType: PaymentSourceType.Web3CardanoV2,
+							deletedAt: null,
+						},
+						include: {
+							PaymentSourceConfig: {
+								select: { rpcProviderApiKey: true, rpcProvider: true },
+							},
+						},
+					})
+				: await prisma.paymentSource.findFirst({
+						where: {
+							policyId: policyId,
+							network: input.network,
+							paymentSourceType: input.paymentSourceType,
+							deletedAt: null,
+						},
+						include: {
+							PaymentSourceConfig: {
+								select: { rpcProviderApiKey: true, rpcProvider: true },
+							},
+						},
+					});
 			const inputHash = input.inputHash;
 			if (validateHexString(inputHash) == false) {
 				recordBusinessEndpointError('/api/v1/purchase', 'POST', 400, 'Input hash is not a valid hex string', {
@@ -218,17 +233,25 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 					'/api/v1/purchase',
 					'POST',
 					404,
-					'No payment source found for agent identifiers policy id',
+					isV2
+						? 'No configured V2 payment source found for smartContractAddress'
+						: 'No payment source found for agent identifiers policy id',
 					{
 						network: input.network,
 						policy_id: policyId,
+						smart_contract_address: input.smartContractAddress ?? '',
 						agent_identifier: input.agentIdentifier,
 						step: 'payment_source_lookup',
 					},
 				);
-				throw createHttpError(404, 'No payment source found for agent identifiers policy id');
+				throw createHttpError(
+					404,
+					isV2
+						? 'No configured V2 payment source found for smartContractAddress'
+						: 'No payment source found for agent identifiers policy id',
+				);
 			}
-			if (input.paymentSourceType != null && paymentSource.paymentSourceType !== input.paymentSourceType) {
+			if (paymentSource.paymentSourceType !== input.paymentSourceType) {
 				throw createHttpError(400, 'Payment source type does not match the agent identifier policy');
 			}
 

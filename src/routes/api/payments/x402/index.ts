@@ -8,7 +8,9 @@ import { BlockfrostProvider } from '@meshsdk/core';
 import { logger } from '@/utils/logger';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { CONSTANTS } from '@/utils/config';
-import { buildX402FundsLockingTransaction } from '@/services/purchases/x402-build/service';
+import { buildX402FundsLockingTransaction as buildX402FundsLockingTransactionV1 } from '@masumi/payment-source-v1/services/purchases/x402-build/service';
+import { buildX402FundsLockingTransactionV2 } from '@masumi/payment-source-v2/services/purchases/x402-build/service';
+import { PaymentSourceType } from '@/generated/prisma/client';
 import { buildX402TxSchemaInput, buildX402TxSchemaOutput } from './schemas';
 
 export { buildX402TxSchemaInput, buildX402TxSchemaOutput };
@@ -62,26 +64,47 @@ export const buildX402TxPost = readAuthenticatedEndpointFactory.build({
 		const blockchainProvider = new BlockfrostProvider(payment.PaymentSource.PaymentSourceConfig.rpcProviderApiKey);
 		const coinsPerUtxoSize = await getCoinsPerUtxoSize(blockchainProvider);
 
-		const result = await buildX402FundsLockingTransaction({
-			purchaseRequestData: {
-				blockchainIdentifier: payment.blockchainIdentifier,
-				inputHash: payment.inputHash,
-				payByTime: BigInt(payment.payByTime),
-				submitResultTime: BigInt(payment.submitResultTime),
-				unlockTime: BigInt(payment.unlockTime),
-				externalDisputeUnlockTime: BigInt(payment.externalDisputeUnlockTime),
-				sellerAddress: payment.SmartContractWallet.walletAddress,
-				sellerReturnAddress: payment.sellerReturnAddress,
-				buyerReturnAddress: payment.buyerReturnAddress,
-				paymentSourceType: payment.PaymentSource.paymentSourceType,
-				paidFunds: payment.RequestedFunds.map((f) => ({ unit: f.unit, amount: f.amount })),
-			},
-			buyerAddress: input.buyerAddress,
-			blockchainProvider,
-			network: input.network,
-			scriptAddress: payment.PaymentSource.smartContractAddress,
-			coinsPerUtxoSize,
-		});
+		const isV2 = payment.PaymentSource.paymentSourceType === PaymentSourceType.Web3CardanoV2;
+		const result = isV2
+			? await buildX402FundsLockingTransactionV2({
+					purchaseRequestData: {
+						blockchainIdentifier: payment.blockchainIdentifier,
+						inputHash: payment.inputHash,
+						payByTime: BigInt(payment.payByTime),
+						submitResultTime: BigInt(payment.submitResultTime),
+						unlockTime: BigInt(payment.unlockTime),
+						externalDisputeUnlockTime: BigInt(payment.externalDisputeUnlockTime),
+						sellerAddress: payment.SmartContractWallet.walletAddress,
+						sellerReturnAddress: payment.sellerReturnAddress,
+						buyerReturnAddress: payment.buyerReturnAddress,
+						paidFunds: payment.RequestedFunds.map((f) => ({ unit: f.unit, amount: f.amount })),
+					},
+					buyerAddress: input.buyerAddress,
+					blockchainProvider,
+					network: input.network,
+					scriptAddress: payment.PaymentSource.smartContractAddress,
+					coinsPerUtxoSize,
+				})
+			: await buildX402FundsLockingTransactionV1({
+					purchaseRequestData: {
+						blockchainIdentifier: payment.blockchainIdentifier,
+						inputHash: payment.inputHash,
+						payByTime: BigInt(payment.payByTime),
+						submitResultTime: BigInt(payment.submitResultTime),
+						unlockTime: BigInt(payment.unlockTime),
+						externalDisputeUnlockTime: BigInt(payment.externalDisputeUnlockTime),
+						sellerAddress: payment.SmartContractWallet.walletAddress,
+						sellerReturnAddress: payment.sellerReturnAddress,
+						buyerReturnAddress: payment.buyerReturnAddress,
+						paymentSourceType: payment.PaymentSource.paymentSourceType,
+						paidFunds: payment.RequestedFunds.map((f) => ({ unit: f.unit, amount: f.amount })),
+					},
+					buyerAddress: input.buyerAddress,
+					blockchainProvider,
+					network: input.network,
+					scriptAddress: payment.PaymentSource.smartContractAddress,
+					coinsPerUtxoSize,
+				});
 
 		return {
 			unsignedTxCbor: result.unsignedTxCbor,

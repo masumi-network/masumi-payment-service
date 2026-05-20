@@ -1,3 +1,8 @@
+import type { PaymentSource } from '@/generated/prisma/client';
+import { PaymentSourceType } from '@/generated/prisma/client';
+import { getRegistryScriptFromNetworkHandlerV1 } from '@masumi/payment-source-v1';
+import { getRegistryScriptFromNetworkHandlerV2 } from '@masumi/payment-source-v2';
+
 export { SmartContractState, smartContractStateEqualsOnChainState } from '@masumi/payment-core';
 export {
 	getPaymentScriptV1,
@@ -9,3 +14,10 @@ export {
 	getRegistryScriptFromNetworkHandlerV2,
 	getRegistryScriptV2,
 } from '@masumi/payment-source-v2';
+
+export async function getRegistryScriptFromNetworkHandler(paymentSource: PaymentSource) {
+	if (paymentSource.paymentSourceType === PaymentSourceType.Web3CardanoV2) {
+		return getRegistryScriptFromNetworkHandlerV2(paymentSource);
+	}
+	return getRegistryScriptFromNetworkHandlerV1(paymentSource);
+}

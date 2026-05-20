@@ -3,7 +3,7 @@ import { z } from '@masumi/payment-core/zod';
 import { Network, PricingType } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
-import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contract-generator';
+import { getRegistryScriptFromNetworkHandler } from '@/utils/generator/contract-generator';
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { DEFAULTS } from '@/utils/config';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
@@ -295,7 +295,7 @@ export const queryAgentFromWalletGet = readAuthenticatedEndpointFactory.build({
 			throw createHttpError(404, 'Wallet not found');
 		}
 		assertHotWalletInScope(ctx.walletScopeIds, wallet.id);
-		const { policyId } = await getRegistryScriptFromNetworkHandlerV1(paymentSource);
+		const { policyId } = await getRegistryScriptFromNetworkHandler(paymentSource);
 
 		const addressInfo = await blockfrost.addresses(wallet.walletAddress);
 		if (addressInfo.stake_address == null) {

@@ -59,6 +59,7 @@ jest.unstable_mockModule('@/utils/blockfrost', () => ({
 }));
 
 jest.unstable_mockModule('@/utils/generator/contract-generator', () => ({
+	getRegistryScriptFromNetworkHandler: mockGetRegistryScript,
 	getRegistryScriptFromNetworkHandlerV1: mockGetRegistryScript,
 }));
 

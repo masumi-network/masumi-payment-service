@@ -1,7 +1,7 @@
 import { logger } from '@/utils/logger';
 import { checkLatestTransactions } from '@/services/transactions';
 import { AsyncInterval } from '@/utils/async-interval';
-import { checkRegistryTransactions } from '@/services/registry';
+import { checkRegistryTransactions } from '@masumi/payment-source-v1/services/registry/tx-sync/service';
 import { scheduledJobs } from './jobs';
 import type { JobDefinition } from '@/services/shared';
 

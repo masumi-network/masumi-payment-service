@@ -6,18 +6,12 @@ ADD COLUMN "paymentSourceType" "PaymentSourceType" NOT NULL DEFAULT 'Web3Cardano
 ADD COLUMN "requiredAdminSignatures" INTEGER,
 ALTER COLUMN "adminWalletId" DROP NOT NULL;
 
--- Active-source uniqueness is partial because retired sources keep historical rows.
+-- Drop the strict unique on (network, policyId). Active-source uniqueness now lives in
+-- @@unique([network, smartContractAddress]); multiple V2 sources per network are allowed
+-- and disambiguated by smartContractAddress carried in the signed V2 identifier.
 DROP INDEX IF EXISTS "PaymentSource_network_policyId_key";
 CREATE INDEX "PaymentSource_network_policyId_idx"
 ON "PaymentSource"("network", "policyId");
-
-CREATE UNIQUE INDEX "PaymentSource_active_network_policyId_key"
-ON "PaymentSource"("network", "policyId")
-WHERE "policyId" IS NOT NULL AND "deletedAt" IS NULL;
-
-CREATE UNIQUE INDEX "PaymentSource_active_v2_network_key"
-ON "PaymentSource"("network")
-WHERE "paymentSourceType" = 'Web3CardanoV2' AND "deletedAt" IS NULL;
 
 -- V2 keeps return-address intent with the request rows.
 ALTER TABLE "PaymentRequest"
@@ -28,13 +22,64 @@ ALTER TABLE "PurchaseRequest"
 ADD COLUMN "buyerReturnAddress" TEXT,
 ADD COLUMN "sellerReturnAddress" TEXT;
 
--- Regular registry metadata v2 advertises supported payment sources.
-ALTER TABLE "RegistryRequest"
-ADD COLUMN "supportedPaymentSources" JSONB;
-
 -- V2 contract state/action extensions.
 ALTER TYPE "OnChainState" ADD VALUE IF NOT EXISTS 'WithdrawAuthorized';
 ALTER TYPE "OnChainState" ADD VALUE IF NOT EXISTS 'RefundAuthorized';
 
 ALTER TYPE "PurchasingAction" ADD VALUE IF NOT EXISTS 'AuthorizeWithdrawalRequested';
 ALTER TYPE "PurchasingAction" ADD VALUE IF NOT EXISTS 'AuthorizeWithdrawalInitiated';
+
+-- Supported payment sources advertised by a registry entry: persisted as rows in a
+-- dedicated child table, not as JSON. Mirrors the on-chain registry metadata.
+CREATE TYPE "Chain" AS ENUM ('Cardano');
+
+CREATE TABLE "SupportedPaymentSource" (
+    "id"                TEXT NOT NULL,
+    "createdAt"         TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt"         TIMESTAMP(3) NOT NULL,
+    "registryRequestId" TEXT NOT NULL,
+    "chain"             "Chain" NOT NULL,
+    "network"           "Network" NOT NULL,
+    "paymentSourceType" "PaymentSourceType" NOT NULL,
+    "address"           TEXT NOT NULL,
+
+    CONSTRAINT "SupportedPaymentSource_pkey" PRIMARY KEY ("id")
+);
+
+CREATE UNIQUE INDEX "SupportedPaymentSource_registryRequestId_chain_network_paymentSourceType_address_key"
+ON "SupportedPaymentSource"("registryRequestId", "chain", "network", "paymentSourceType", "address");
+
+CREATE INDEX "SupportedPaymentSource_address_idx"
+ON "SupportedPaymentSource"("address");
+
+CREATE INDEX "SupportedPaymentSource_paymentSourceType_idx"
+ON "SupportedPaymentSource"("paymentSourceType");
+
+ALTER TABLE "SupportedPaymentSource"
+ADD CONSTRAINT "SupportedPaymentSource_registryRequestId_fkey"
+FOREIGN KEY ("registryRequestId") REFERENCES "RegistryRequest"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- Backfill: every existing RegistryRequest tagged as Web3CardanoV1 gets one
+-- SupportedPaymentSource row derived from its linked PaymentSource. None-typed rows
+-- keep an empty relation (the canonical "no payment metadata" representation).
+INSERT INTO "SupportedPaymentSource" ("id", "createdAt", "updatedAt", "registryRequestId", "chain", "network", "paymentSourceType", "address")
+SELECT
+    'sps_' || rr.id,
+    NOW(),
+    NOW(),
+    rr.id,
+    'Cardano'::"Chain",
+    ps.network,
+    'Web3CardanoV1'::"PaymentSourceType",
+    ps."smartContractAddress"
+FROM "RegistryRequest" rr
+JOIN "PaymentSource" ps ON rr."paymentSourceId" = ps.id
+WHERE rr."paymentType" = 'Web3CardanoV1'
+ON CONFLICT DO NOTHING;
+
+-- Post-backfill verification (run manually if validating a deploy):
+--   SELECT
+--     (SELECT COUNT(*) FROM "RegistryRequest" WHERE "paymentType" = 'Web3CardanoV1') AS expected,
+--     (SELECT COUNT(*) FROM "SupportedPaymentSource") AS actual;
+-- expected and actual should match. Drift indicates a row was skipped (orphan registry
+-- entry whose paymentSourceId references a deleted PaymentSource) and needs investigation.

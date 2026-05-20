@@ -7,6 +7,7 @@ import {
   useRef,
   useMemo,
 } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { ErrorDialog } from '@/components/ui/error-dialog';
 import { Client, createClient } from '@/lib/api/generated/client';
 import { usePaymentSourceExtendedAllWithParams } from '../hooks/usePaymentSourceExtendedAll';
@@ -83,6 +84,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
   const [setupWizardStep, setSetupWizardStep] = useState(0);
+
+  const queryClient = useQueryClient();
 
   const { paymentSources } = usePaymentSourceExtendedAllWithParams({
     apiClient,
@@ -172,6 +175,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [network]);
 
+  // Invalidate payment-source-scoped queries whenever the active source changes.
+  // Query keys for transactions/wallets/etc. include the source id; without invalidation
+  // the UI can briefly render stale rows from the previous source.
+  useEffect(() => {
+    queryClient.invalidateQueries({ queryKey: ['transactions'] });
+    queryClient.invalidateQueries({ queryKey: ['wallets'] });
+    queryClient.invalidateQueries({ queryKey: ['payment-source-extended'] });
+  }, [selectedPaymentSourceId, queryClient]);
+
   const showError = useCallback((error: { code?: number; message: string; details?: unknown }) => {
     setError(error);
   }, []);
@@ -223,6 +235,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               }),
             );
           }
+          // Drop all cached query results so subsequent fetches use the new client/credentials.
+          queryClient.removeQueries();
         },
         setAuthorized,
         authorized,

@@ -117,6 +117,14 @@ export const queryRegistryDiffGet = readAuthenticatedEndpointFactory.build({
 						mimeType: true,
 					},
 				},
+				SupportedPaymentSources: {
+					select: {
+						chain: true,
+						network: true,
+						paymentSourceType: true,
+						address: true,
+					},
+				},
 			},
 		});
 

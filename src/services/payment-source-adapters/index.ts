@@ -1,4 +1,3 @@
-import { createPaymentSourceAdapterRegistry } from '@masumi/payment-core';
 import {
 	getDatumFromBlockchainIdentifier,
 	getPaymentScriptFromPaymentSourceV1,
@@ -20,8 +19,6 @@ import {
 } from '@/utils/converter/string-datum-convert';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { SmartContractState } from '@/utils/generator/contract-generator';
-
-export const paymentSourceAdapterRegistry = createPaymentSourceAdapterRegistry();
 
 export type PaymentSourceWithContractWallets = PaymentSource & {
 	AdminWallets: Array<{ walletAddress: string; order: number }>;
@@ -172,11 +169,13 @@ const v2ContractAdapter = {
 	},
 };
 
-paymentSourceAdapterRegistry.register(v1ContractAdapter);
-paymentSourceAdapterRegistry.register(v2ContractAdapter);
-
 export function getPaymentSourceContractAdapter(paymentSourceType: PaymentSourceType): PaymentSourceContractAdapter {
-	return paymentSourceAdapterRegistry.get(paymentSourceType) as PaymentSourceContractAdapter;
+	switch (paymentSourceType) {
+		case PaymentSourceType.Web3CardanoV1:
+			return v1ContractAdapter;
+		case PaymentSourceType.Web3CardanoV2:
+			return v2ContractAdapter;
+	}
 }
 
 export function getDatumNetwork(network: Network): 'mainnet' | 'preprod' {

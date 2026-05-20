@@ -8,6 +8,7 @@ import {
 	TransactionStatus,
 } from '@/generated/prisma/client';
 import { z } from '@masumi/payment-core/zod';
+import { isCardanoAddressForNetwork } from '@/types/payment-source';
 
 export const queryPurchaseRequestSchemaInput = z.object({
 	limit: z.coerce.number().min(1).max(100).default(10).describe('The number of purchases to return'),
@@ -221,52 +222,90 @@ export const queryPurchaseRequestSchemaOutput = z.object({
 	Purchases: z.array(purchaseResponseSchema),
 });
 
-export const createPurchaseInitSchemaInput = z.object({
-	blockchainIdentifier: z.string().max(8000).describe('The identifier of the purchase. Is provided by the seller'),
-	network: z.nativeEnum(Network).describe('The network the transaction will be made on'),
-	paymentSourceType: z
-		.nativeEnum(PaymentSourceType)
-		.optional()
-		.describe('Expected payment source type for this purchase'),
-	inputHash: z
-		.string()
-		.max(250)
-		.describe(
-			'The hash of the input data of the purchase, should be sha256 hash of the input data, therefore needs to be in hex string format',
-		),
-	sellerVkey: z.string().max(250).describe('The verification key of the seller'),
-	agentIdentifier: z.string().min(57).max(250).describe('The identifier of the agent that is being purchased'),
-	Amounts: z
-		.array(
-			z.object({
-				amount: z.string().max(25).describe('Amount of the asset in smallest unit (e.g., lovelace for ADA)'),
-				unit: z.string().max(150).describe('Asset policy id + asset name concatenated. Empty string for ADA/lovelace'),
-			}),
-		)
-		.max(7)
-		.optional()
-		.describe('The amounts to be paid for the purchase'),
-	unlockTime: z.string().describe('The time after which the purchase will be unlocked. In unix time (number)'),
-	externalDisputeUnlockTime: z
-		.string()
-		.describe('The time after which the purchase will be unlocked for external dispute. In unix time (number)'),
-	submitResultTime: z.string().describe('The time by which the result has to be submitted. In unix time (number)'),
-	payByTime: z.string().describe('The time after which the purchase has to be submitted to the smart contract'),
-	metadata: z.string().optional().describe('Metadata to be stored with the purchase request'),
-	buyerReturnAddress: z
-		.string()
-		.max(250)
-		.optional()
-		.describe(
-			'Optional buyer return address. Defaults to the purchasing hot wallet collection address when available.',
-		),
-	sellerReturnAddress: z
-		.string()
-		.max(250)
-		.optional()
-		.describe('Optional seller return address when using a signed V2 identifier from the seller.'),
-	identifierFromPurchaser: z.string().min(14).max(26).describe('The nonce of the purchaser. It must be in hex format'),
-});
+export const createPurchaseInitSchemaInput = z
+	.object({
+		blockchainIdentifier: z.string().max(8000).describe('The identifier of the purchase. Is provided by the seller'),
+		network: z.nativeEnum(Network).describe('The network the transaction will be made on'),
+		paymentSourceType: z
+			.nativeEnum(PaymentSourceType)
+			.describe(
+				'Payment source type for this purchase. Required so the seller-signed payload can be reconstructed deterministically.',
+			),
+		smartContractAddress: z
+			.string()
+			.max(250)
+			.optional()
+			.describe('Required for V2 purchases. The configured V2 payment contract address the seller selected.'),
+		inputHash: z
+			.string()
+			.max(250)
+			.describe(
+				'The hash of the input data of the purchase, should be sha256 hash of the input data, therefore needs to be in hex string format',
+			),
+		sellerVkey: z.string().max(250).describe('The verification key of the seller'),
+		agentIdentifier: z.string().min(57).max(250).describe('The identifier of the agent that is being purchased'),
+		Amounts: z
+			.array(
+				z.object({
+					amount: z.string().max(25).describe('Amount of the asset in smallest unit (e.g., lovelace for ADA)'),
+					unit: z
+						.string()
+						.max(150)
+						.describe('Asset policy id + asset name concatenated. Empty string for ADA/lovelace'),
+				}),
+			)
+			.max(7)
+			.optional()
+			.describe('The amounts to be paid for the purchase'),
+		unlockTime: z.string().describe('The time after which the purchase will be unlocked. In unix time (number)'),
+		externalDisputeUnlockTime: z
+			.string()
+			.describe('The time after which the purchase will be unlocked for external dispute. In unix time (number)'),
+		submitResultTime: z.string().describe('The time by which the result has to be submitted. In unix time (number)'),
+		payByTime: z.string().describe('The time after which the purchase has to be submitted to the smart contract'),
+		metadata: z.string().optional().describe('Metadata to be stored with the purchase request'),
+		buyerReturnAddress: z
+			.string()
+			.max(250)
+			.optional()
+			.describe(
+				'Optional buyer return address. Defaults to the purchasing hot wallet collection address when available.',
+			),
+		sellerReturnAddress: z
+			.string()
+			.max(250)
+			.optional()
+			.describe('Optional seller return address when using a signed V2 identifier from the seller.'),
+		identifierFromPurchaser: z
+			.string()
+			.min(14)
+			.max(26)
+			.describe('The nonce of the purchaser. It must be in hex format'),
+	})
+	.refine(
+		(value) =>
+			value.paymentSourceType !== PaymentSourceType.Web3CardanoV2 ||
+			(value.smartContractAddress != null && value.smartContractAddress.length > 0),
+		{
+			message: 'smartContractAddress is required when paymentSourceType is Web3CardanoV2',
+			path: ['smartContractAddress'],
+		},
+	)
+	.refine(
+		(value) => value.buyerReturnAddress == null || isCardanoAddressForNetwork(value.buyerReturnAddress, value.network),
+		{
+			message: 'buyerReturnAddress is not a valid Cardano address for the configured network',
+			path: ['buyerReturnAddress'],
+		},
+	)
+	.refine(
+		(value) =>
+			value.sellerReturnAddress == null || isCardanoAddressForNetwork(value.sellerReturnAddress, value.network),
+		{
+			message: 'sellerReturnAddress is not a valid Cardano address for the configured network',
+			path: ['sellerReturnAddress'],
+		},
+	);
 
 export const createPurchaseInitSchemaOutput = purchaseResponseSchema.omit({
 	TransactionHistory: true,

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [0004](0004-per-payment-source-type-service-trees.md). Multiple V2 sources per network are now allowed; disambiguation moves into the signed identifier (V2 `blockchainIdentifier` carries `smartContractAddress`) rather than into a database-level uniqueness rule.
 
 ## Context
 
