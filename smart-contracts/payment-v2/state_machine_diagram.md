@@ -46,9 +46,7 @@ stateDiagram-v2
     Disputed --> Disputed : SubmitResult/SetRefundRequested
     Disputed --> [*] : WithdrawDisputed (Admins) - After external_dispute_unlock_time
 
-    WithdrawAuthorized --> Disputed : SubmitResult (Seller)
     WithdrawAuthorized --> [*] : Withdraw (Seller)
-    RefundAuthorized --> Disputed : SubmitResult (Seller)
     RefundAuthorized --> [*] : WithdrawRefund (Buyer)
 ```
 
@@ -114,14 +112,17 @@ stateDiagram-v2
 ### 6. **SubmitResult** (Seller)
 
 - **Triggered by**: Seller
-- **From States**: Any state
+- **From States**: FundsLocked, ResultSubmitted, RefundRequested, Disputed
+  - Explicitly **not** allowed from WithdrawAuthorized or RefundAuthorized — once
+    the counterparty has authorized the terminal payout, the seller cannot
+    reopen the dispute by re-submitting a result.
 - **Conditions**:
   - Before submit_result_time OR (before external_dispute_unlock_time AND result hash exists/to update to an other result hash)
   - After seller_cooldown_time
   - Seller must sign the transaction
 - **To State**:
   - ResultSubmitted (if from FundsLocked or ResultSubmitted)
-  - Disputed (from any other state)
+  - Disputed (if from RefundRequested or Disputed)
 
 ### 7. **AuthorizeRefund** (Seller)
 

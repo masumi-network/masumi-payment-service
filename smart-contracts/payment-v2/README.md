@@ -72,8 +72,12 @@ pub type Datum {
 
 Return-address behavior:
 
-- If a return address is `None`, the validator accepts the actor's normal address for tagged payout checks.
-- If a return address is `Some(address)`, tagged payout outputs must go to that address.
+- If a return address is `None`, the validator does not enforce a tagged payout
+  output for that side. The actor (who must sign the tx) is free to route the
+  payout to any address of their choice via normal tx outputs.
+- If a return address is `Some(address)`, the validator requires a tagged
+  payout output at exactly that address (full Cardano `Address` equality
+  including stake credential).
 - Tagged payout outputs use an inline datum equal to the spent contract `OutputReference`.
 - On seller withdrawal, the buyer must receive at least `collateral_return_lovelace`, and the seller return output must cover the contract input value minus that collateral lovelace.
 - Buyer and seller payout checks assume the effective payout targets are distinct: `buyer_return_address` or `buyer` for the buyer side, and `seller_return_address` or `seller` for the seller side. This holds for normal buyer/seller wallets. If a deployment intentionally points both sides at the same address, one tagged output can satisfy both role checks, so off-chain validation should reject equal effective payout targets unless that aggregation is intended.
@@ -190,6 +194,28 @@ Requirements:
 - Buyer and seller tagged outputs pay at least the values specified in the redeemer.
 - The weighted count of valid admin signatures is at least `required_admins_multi_sig`.
 - Any remaining value from the disputed UTxO after the signed buyer/seller minimum payouts is intentionally unconstrained and serves as the transaction builder or settlement submitter fee.
+
+Admin signing runbook (mandatory off-chain process):
+
+- **Hash-pin the result_hash.** The seller can keep updating `result_hash` via
+  `SubmitResult` until `external_dispute_unlock_time`. Admins must therefore
+  inspect and pin the current `result_hash` on the target UTxO BEFORE
+  collecting signatures. Once `external_dispute_unlock_time` passes,
+  `SubmitResult` is rejected, so the pinned hash is stable. Admins should
+  refuse to sign before that timestamp.
+- **Use canonical CBOR encoding when serializing the signing payload.**
+  `DisputeWithdrawal { own_ref, buyer_value, seller_value }` is hashed via
+  `cbor.serialise |> blake2b_224` on-chain. Two equivalent payloads with
+  different map orderings produce different hashes and therefore different
+  signatures. Off-chain tooling MUST use deterministic CBOR encoding
+  (lexicographic ordering of asset names / policy ids) so that the signed
+  bytes round-trip exactly against the on-chain serialization.
+- **`collateral_return_lovelace` is NOT applied by the validator in
+  `WithdrawDisputed`.** Admins have full discretion over the buyer / seller
+  split via the signed minimum payouts. If admins intend the dispute
+  settlement to preserve the locked collateral semantics, they must encode
+  that in the signed `buyer_value` themselves. The collateral field on the
+  datum is only enforced on the cooperative `Withdraw` path.
 
 Weighted admin policy:
 
