@@ -62,6 +62,12 @@ FOREIGN KEY ("registryRequestId") REFERENCES "RegistryRequest"("id") ON DELETE C
 -- Backfill: every existing RegistryRequest tagged as Web3CardanoV1 gets one
 -- SupportedPaymentSource row derived from its linked PaymentSource. None-typed rows
 -- keep an empty relation (the canonical "no payment metadata" representation).
+-- Backfill: every existing RegistryRequest gets one SupportedPaymentSource row
+-- derived from its linked PaymentSource. The legacy "paymentType" column on
+-- RegistryRequest was removed in 20260410103222_remove_unused_payment_type, so
+-- we can no longer filter by it. Before this migration, V2 did not exist; every
+-- existing RegistryRequest therefore corresponds to Web3CardanoV1 by definition.
+-- Rows whose linked PaymentSource was deleted are skipped by the INNER JOIN.
 INSERT INTO "SupportedPaymentSource" ("id", "createdAt", "updatedAt", "registryRequestId", "chain", "network", "paymentSourceType", "address")
 SELECT
     'sps_' || rr.id,
@@ -74,12 +80,13 @@ SELECT
     ps."smartContractAddress"
 FROM "RegistryRequest" rr
 JOIN "PaymentSource" ps ON rr."paymentSourceId" = ps.id
-WHERE rr."paymentType" = 'Web3CardanoV1'
 ON CONFLICT DO NOTHING;
 
 -- Post-backfill verification (run manually if validating a deploy):
 --   SELECT
---     (SELECT COUNT(*) FROM "RegistryRequest" WHERE "paymentType" = 'Web3CardanoV1') AS expected,
+--     (SELECT COUNT(*) FROM "RegistryRequest" rr
+--        JOIN "PaymentSource" ps ON rr."paymentSourceId" = ps.id) AS expected,
 --     (SELECT COUNT(*) FROM "SupportedPaymentSource") AS actual;
--- expected and actual should match. Drift indicates a row was skipped (orphan registry
--- entry whose paymentSourceId references a deleted PaymentSource) and needs investigation.
+-- expected and actual should match. Drift indicates an orphan registry entry
+-- whose paymentSourceId references a deleted PaymentSource and needs
+-- investigation.
