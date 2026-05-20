@@ -9,7 +9,7 @@ import {
 import dotenv from 'dotenv';
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
 import { encrypt } from './../src/utils/security/encryption';
-import { DEFAULTS } from './../src/utils/config';
+import { DEFAULTS } from '@masumi/payment-core/config';
 import {
 	getPaymentScriptV1,
 	getPaymentScriptV2,
@@ -17,7 +17,7 @@ import {
 	getRegistryScriptV2,
 } from './../src/utils/generator/contract-generator';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
-import { generateApiKeySecureHash } from '../src/utils/crypto/api-key-hash';
+import { generateApiKeySecureHash } from '@masumi/payment-core/api-key-hash';
 import { MeshWallet } from '@meshsdk/core';
 
 import { Pool } from 'pg';
