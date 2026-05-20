@@ -127,6 +127,30 @@ jobs:
             exit 1
           fi
 
+      - name: Wait for Postgres endpoint to accept connections
+        # Neon reports branch state "ready" before the compute endpoint actually
+        # accepts queries (cold-start / wake delay; the wake handshake needs
+        # SSL + SNI so a plain TCP probe is not sufficient). Run a real
+        # SELECT 1 over the full SSL-enabled connection URI until it succeeds.
+        # prisma migrate deploy was failing with P1001 ("Can't reach database
+        # server") in this gap.
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client >/dev/null
+          export PGCONNECT_TIMEOUT=10
+          MAX_ATTEMPTS=60
+          ATTEMPT=0
+          until psql "${{ steps.create-branch.outputs.connection_uri }}" -tAc 'SELECT 1' >/dev/null 2>&1; do
+            ATTEMPT=$((ATTEMPT + 1))
+            if [ $ATTEMPT -ge $MAX_ATTEMPTS ]; then
+              echo "❌ Postgres endpoint not accepting queries after $MAX_ATTEMPTS attempts"
+              psql "${{ steps.create-branch.outputs.connection_uri }}" -tAc 'SELECT 1' || true
+              exit 1
+            fi
+            echo "Postgres not ready yet (attempt $ATTEMPT/$MAX_ATTEMPTS), waiting 5s..."
+            sleep 5
+          done
+          echo "✅ Postgres endpoint accepting queries"
+
       - name: Generate Prisma Client
         run: pnpm run prisma:generate
         env:
@@ -155,7 +179,7 @@ jobs:
           # For production-grade CI, configure dedicated V2 wallet secrets.
           PURCHASE_WALLET_V2_PREPROD_MNEMONIC: '${{ secrets.PURCHASE_WALLET_V2_PREPROD_MNEMONIC || secrets.PURCHASE_WALLET_PREPROD_MNEMONIC }}'
           SELLING_WALLET_V2_PREPROD_MNEMONIC: '${{ secrets.SELLING_WALLET_V2_PREPROD_MNEMONIC || secrets.SELLING_WALLET_PREPROD_MNEMONIC }}'
-          COLLECTION_WALLET_V2_PREPROD_ADDRESS: '${{ secrets.COLLECTION_WALLET_V2_PREPROD_ADDRESS }}'
+          COLLECTION_WALLET_V2_PREPROD_ADDRESS: '${{ secrets.COLLECTION_WALLET_V2_PREPROD_ADDRESS || secrets.COLLECTION_WALLET_PREPROD_ADDRESS }}'
           BLOCKFROST_API_KEY_PREPROD: '${{ secrets.BLOCKFROST_API_KEY_PREPROD }}'
           ENCRYPTION_KEY: '${{ secrets.ENCRYPTION_KEY }}'
           ADMIN_KEY: '${{ secrets.ADMIN_KEY }}'

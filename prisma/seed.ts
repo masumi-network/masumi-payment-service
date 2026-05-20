@@ -276,6 +276,7 @@ export const seed = async (prisma: PrismaClient) => {
 				'Error when seeding preprod, ensure you succeed with seeding, the following error occurred: ',
 				error,
 			);
+			throw error;
 		}
 
 		try {
@@ -371,6 +372,12 @@ export const seed = async (prisma: PrismaClient) => {
 				'Error when seeding preprod V2, ensure you succeed with seeding, the following error occurred: ',
 				error,
 			);
+			// Re-throw so that CI / automated environments fail loudly instead of
+			// silently continuing with an incomplete payment source set. The V2
+			// e2e suite expects a V2 PaymentSource to exist after seeding; without
+			// it, globalSetup aborts with an opaque "No active Web3CardanoV2
+			// PaymentSource" error that hides this root-cause stack.
+			throw error;
 		}
 	} else {
 		console.log(
