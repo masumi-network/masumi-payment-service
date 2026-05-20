@@ -30,11 +30,7 @@ import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 // `@meshsdk/common` as a direct workspace dep. The arrays we mutate ARE the
 // same references mesh's internal hashScriptData uses — JS modules give us a
 // live binding to the array object, not a copy.
-import {
-	DEFAULT_V1_COST_MODEL_LIST,
-	DEFAULT_V2_COST_MODEL_LIST,
-	DEFAULT_V3_COST_MODEL_LIST,
-} from '@meshsdk/core';
+import { DEFAULT_V1_COST_MODEL_LIST, DEFAULT_V2_COST_MODEL_LIST, DEFAULT_V3_COST_MODEL_LIST } from '@meshsdk/core';
 import { logger } from '@masumi/payment-core/logger';
 
 type CachedSync = {
