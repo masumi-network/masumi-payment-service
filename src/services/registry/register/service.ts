@@ -153,7 +153,12 @@ export async function registerAgentV1() {
 
 				if (registryRequests.length === 0) return;
 
-				const blockchainProvider = createMeshProvider(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
+				// `createMeshProvider` now also refreshes mesh-sdk's bundled
+				// Plutus cost models from chain via Blockfrost, working around
+				// an upstream gap that otherwise causes `PPViewHashesDontMatch`
+				// on submit when chain cost models have rotated past the SDK's
+				// bundled defaults. See src/utils/mesh-cost-model-sync.
+				const blockchainProvider = await createMeshProvider(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
 
 				const results = await advancedRetryAll({
 					errorResolvers: [

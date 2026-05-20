@@ -326,7 +326,7 @@ export async function submitResultV1() {
 
 				const network = convertNetwork(paymentContract.network);
 
-				const blockchainProvider = createMeshProvider(paymentContract.PaymentSourceConfig.rpcProviderApiKey);
+				const blockchainProvider = await createMeshProvider(paymentContract.PaymentSourceConfig.rpcProviderApiKey);
 
 				const paymentRequests = paymentContract.PaymentRequests;
 				if (paymentRequests.length == 0) return;

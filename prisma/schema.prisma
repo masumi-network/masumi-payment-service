@@ -228,7 +228,6 @@ model RegistryRequest {
   registrationStateLastChangedAt DateTime          @default(now())
   currentTransactionId           String?
   error                          String?
-  paymentType                    PaymentType       @default(Web3CardanoV1)
   ExampleOutputs                 ExampleOutput[]
   Pricing                        AgentPricing      @relation(fields: [agentPricingId], references: [id])
   CurrentTransaction             Transaction?      @relation(fields: [currentTransactionId], references: [id])
@@ -312,6 +311,10 @@ model PaymentRequest {
   metadata                                      String?
   pricingType                                   PricingType         @default(Fixed)
   blockchainIdentifier                          String              @unique
+  /// Decoded agent asset id (policyId + asset name hex); denormalized for search. Mirrors decodeBlockchainIdentifier(..).agentIdentifier.
+  agentIdentifier                               String?
+  /// Populated when agentIdentifier was aligned from blockchainIdentifier (create path or startup backfill). Null only on legacy rows pending sync.
+  agentIdentifierSyncedAt                       DateTime?
   submitResultTime                              BigInt
   unlockTime                                    BigInt
   externalDisputeUnlockTime                     BigInt
@@ -379,6 +382,10 @@ model PurchaseRequest {
   metadata                                      String?
   pricingType                                   PricingType          @default(Fixed)
   blockchainIdentifier                          String               @unique
+  /// Decoded agent asset id (policyId + asset name hex); denormalized for search. Mirrors decodeBlockchainIdentifier(..).agentIdentifier.
+  agentIdentifier                               String?
+  /// Populated when agentIdentifier was aligned from blockchainIdentifier (create path or startup backfill). Null only on legacy rows pending sync.
+  agentIdentifierSyncedAt                       DateTime?
   submitResultTime                              BigInt
   unlockTime                                    BigInt
   externalDisputeUnlockTime                     BigInt
@@ -538,11 +545,6 @@ enum PurchaseErrorType {
   NetworkError
   InsufficientFunds
   Unknown
-}
-
-enum PaymentType {
-  Web3CardanoV1
-  None
 }
 
 enum TransactionStatus {
@@ -740,7 +742,7 @@ model WebhookEndpoint {
   url       String
   urlHash   String?
   authToken String?
-  format    WebhookFormat @default(EXTENDED)
+  format    WebhookFormat      @default(EXTENDED)
   events    WebhookEventType[]
   name      String?
 

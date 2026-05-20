@@ -87,7 +87,7 @@ export async function deRegisterAgentV1() {
 
 				if (registryRequests.length == 0) return;
 
-				const blockchainProvider = createMeshProvider(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
+				const blockchainProvider = await createMeshProvider(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
 
 				//we can only deregister one agent at a time
 				const deregistrationRequest = registryRequests[0];
