@@ -14,7 +14,7 @@ import { usePaymentSourceExtendedAllWithParams } from '../hooks/usePaymentSource
 import type { PaymentSource } from '../api/generated';
 import { getPreferredPaymentSource } from '@/lib/payment-source-type';
 
-type NetworkType = 'Preprod' | 'Mainnet';
+export type NetworkType = 'Preprod' | 'Mainnet';
 
 export const AppContext = createContext<
   | {

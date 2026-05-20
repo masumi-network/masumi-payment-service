@@ -24,6 +24,7 @@ import { parseAmountSearchRange } from '@/lib/parseAmountSearchRange';
 import Link from 'next/link';
 import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
 import { getPaymentSourceTypeLabel } from '@/lib/payment-source-type';
+import { TransactionAgentIdentifierCell } from '@/components/transactions/TransactionAgentIdentifierCell';
 
 type Transaction = ReturnType<typeof useTransactions>['transactions'][number];
 
@@ -167,6 +168,7 @@ export default function Transactions() {
       if (tx.type?.toLowerCase().includes(query)) return true;
       if (matchingStates.length > 0 && tx.onChainState && matchingStates.includes(tx.onChainState))
         return true;
+      if (tx.agentIdentifier?.toLowerCase().includes(query)) return true;
       if (amountRange) {
         const funds =
           tx.type === 'payment' ? tx.RequestedFunds : tx.type === 'purchase' ? tx.PaidFunds : [];
@@ -229,6 +231,7 @@ export default function Transactions() {
       const headers = [
         'Transaction Type',
         'Transaction Hash',
+        'Agent Identifier',
         'Payment Amounts',
         'Network',
         'Payment Source Type',
@@ -259,12 +262,14 @@ export default function Transactions() {
         const amount = paymentAmounts.map((amount) => `${amount.amount} ${amount.unit}`).join(', ');
 
         const hash = transaction.CurrentTransaction?.txHash || '—';
+        const agentIdentifier = transaction.agentIdentifier?.trim() || '—';
         const status = formatStatus(transaction.onChainState);
         const date = new Date(transaction.createdAt).toLocaleString();
 
         return [
           transaction.type,
           hash,
+          agentIdentifier,
           amount,
           transaction.PaymentSource.network,
           getPaymentSourceTypeLabel(transaction.PaymentSource.paymentSourceType),
@@ -373,6 +378,9 @@ export default function Transactions() {
                     Transaction Hash
                   </th>
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                    Agent identifier
+                  </th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">
                     Amount
                   </th>
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">
@@ -393,7 +401,7 @@ export default function Transactions() {
                   <TransactionTableSkeleton rows={5} />
                 ) : displayTransactions.length === 0 ? (
                   <tr>
-                    <td colSpan={8}>
+                    <td colSpan={9}>
                       <EmptyState
                         icon={searchQuery ? 'search' : 'inbox'}
                         title={
@@ -448,6 +456,15 @@ export default function Transactions() {
                             <CopyButton value={transaction.CurrentTransaction?.txHash} />
                           )}
                         </div>
+                      </td>
+                      <td className="p-4">
+                        <TransactionAgentIdentifierCell
+                          agentIdentifier={transaction.agentIdentifier}
+                          smartContractAddress={
+                            transaction.PaymentSource?.smartContractAddress ?? null
+                          }
+                          network={transaction.PaymentSource?.network}
+                        />
                       </td>
                       <td className="p-4">
                         {transaction.type === 'payment' && transaction.RequestedFunds?.length

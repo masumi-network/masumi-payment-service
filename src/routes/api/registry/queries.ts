@@ -60,6 +60,7 @@ export async function getRegistryEntriesForQuery(
 			SmartContractWallet: { deletedAt: null },
 			...buildManagedHolderWalletScopeFilter(walletScopeIds),
 			...(stateFilter ? { state: { in: stateFilter } } : {}),
+			...(input.filterAgentIdentifier ? { agentIdentifier: input.filterAgentIdentifier } : {}),
 			...(searchLower
 				? {
 						OR: [

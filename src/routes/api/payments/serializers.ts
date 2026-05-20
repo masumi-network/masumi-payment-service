@@ -10,7 +10,8 @@ export function serializePaymentListEntry(payment: PaymentListRecord) {
 		...transformPaymentGetAmounts(payment),
 		totalBuyerCardanoFees: Number(payment.totalBuyerCardanoFees.toString()) / 1_000_000,
 		totalSellerCardanoFees: Number(payment.totalSellerCardanoFees.toString()) / 1_000_000,
-		agentIdentifier: decodeBlockchainIdentifier(payment.blockchainIdentifier)?.agentIdentifier ?? null,
+		agentIdentifier:
+			payment.agentIdentifier ?? decodeBlockchainIdentifier(payment.blockchainIdentifier)?.agentIdentifier ?? null,
 		CurrentTransaction: payment.CurrentTransaction
 			? {
 					...payment.CurrentTransaction,
