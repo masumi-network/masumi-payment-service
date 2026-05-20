@@ -123,9 +123,16 @@ async function generateMasumiSmartContractInteractionTransactionCustomFee(
 
 	coinsPerUtxoSize: number = CONSTANTS.FALLBACK_COINS_PER_UTXO_SIZE,
 ) {
+	// Pull live chain protocol params (incl. cost models) so the computed
+	// script_data_hash matches what the ledger expects. Without this, mesh
+	// uses its bundled defaults and submissions fail with
+	// `PPViewHashesDontMatch` after a hard fork or PParam vote. See
+	// generateRegistryMintTransaction in src/services/registry/shared.ts.
+	const protocolParameters = await blockchainProvider.fetchProtocolParameters(0);
 	const txBuilder = new MeshTxBuilder({
 		fetcher: blockchainProvider,
 	});
+	txBuilder.protocolParams(protocolParameters);
 	const redeemerData = generateRedeemerData(type);
 	const smartContractAddress: unknown = resolvePlutusScriptAddress(
 		script,
@@ -364,9 +371,12 @@ async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 		steps: 3e9,
 	},
 ) {
+	// See protocolParams comment in the first builder in this file.
+	const protocolParameters = await blockchainProvider.fetchProtocolParameters(0);
 	const txBuilder = new MeshTxBuilder({
 		fetcher: blockchainProvider,
 	});
+	txBuilder.protocolParams(protocolParameters);
 	const redeemerData = generateRedeemerData(type);
 
 	const deserializedAddress = txBuilder.serializer.deserializer.key.deserializeAddress(walletAddress);

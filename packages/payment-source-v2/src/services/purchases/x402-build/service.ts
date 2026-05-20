@@ -144,7 +144,12 @@ export async function buildX402FundsLockingTransactionV2({
 	const invalidAfterMs = Number(buildData.payByTime);
 	const invalidAfter = unixTimeToEnclosingSlot(invalidAfterMs, SLOT_CONFIG_NETWORK[meshNetwork]) + 5;
 
+	// Pull live chain protocol params so script_data_hash matches the
+	// ledger's computation. See generateRegistryMintTransaction in
+	// src/services/registry/shared.ts for the full rationale.
+	const protocolParameters = await blockchainProvider.fetchProtocolParameters(0);
 	const txBuilder = new MeshTxBuilder({ fetcher: blockchainProvider });
+	txBuilder.protocolParams(protocolParameters);
 	const deserializedBuyerAddress = txBuilder.serializer.deserializer.key.deserializeAddress(buyerAddress);
 	for (const utxo of selectedUtxos) {
 		txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex, utxo.output.amount, utxo.output.address);

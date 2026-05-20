@@ -71,9 +71,22 @@ export async function generateRegistryMintTransaction(
 		steps: number;
 	} = SERVICE_CONSTANTS.SMART_CONTRACT.defaultExUnits,
 ) {
+	// Fetch CURRENT chain protocol parameters (including the live Plutus cost
+	// models) and feed them into MeshTxBuilder. Without this, MeshTxBuilder
+	// falls back to its bundled default cost models, which can lag behind the
+	// chain after a hard fork or PParam vote. When that happens the
+	// script_data_hash computed for the transaction body does not match what
+	// the ledger recomputes from the actual on-chain cost models, and the
+	// submission is rejected with `ConwayUtxowFailure
+	// (PPViewHashesDontMatch ...)`. Symptom in CI: V1 RegistrationFailed with
+	// `TxSubmitFail` / `TxValidationErrorInCardanoMode` carrying a
+	// PPViewHashesDontMatch mismatch where `supplied` and `expected` are both
+	// stable across runs (because mesh's bundled models are deterministic).
+	const protocolParameters = await blockchainProvider.fetchProtocolParameters(0);
 	const txBuilder = new MeshTxBuilder({
 		fetcher: blockchainProvider,
 	});
+	txBuilder.protocolParams(protocolParameters);
 	const deserializedAddress = txBuilder.serializer.deserializer.key.deserializeAddress(mintingWalletAddress);
 
 	txBuilder
@@ -196,9 +209,14 @@ async function generateRegistryDeregisterTransaction(
 		steps: 3e9,
 	},
 ) {
+	// See protocolParams comment in generateRegistryMintTransaction above.
+	// Same fix: pull live chain params to keep script_data_hash in sync with
+	// what the ledger expects.
+	const protocolParameters = await blockchainProvider.fetchProtocolParameters(0);
 	const txBuilder = new MeshTxBuilder({
 		fetcher: blockchainProvider,
 	});
+	txBuilder.protocolParams(protocolParameters);
 	const deserializedAddress = txBuilder.serializer.deserializer.key.deserializeAddress(walletAddress);
 
 	txBuilder
