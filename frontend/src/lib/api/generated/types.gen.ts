@@ -6056,9 +6056,9 @@ export type PostPurchaseData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * Payment source type for this purchase. Required so the seller-signed payload can be reconstructed deterministically.
+         * Payment source type for this purchase. Optional for legacy V1 callers; required when targeting a V2 source so the seller-signed payload can be reconstructed deterministically.
          */
-        paymentSourceType: 'Web3CardanoV1' | 'Web3CardanoV2';
+        paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
         /**
          * Required for V2 purchases. The configured V2 payment contract address the seller selected.
          */
@@ -8147,9 +8147,9 @@ export type PostPaymentSourceExtendedData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The payment source type to create
+         * The payment source type to create. Defaults to Web3CardanoV1 for legacy admin clients.
          */
-        paymentSourceType: 'Web3CardanoV1' | 'Web3CardanoV2';
+        paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
         PaymentSourceConfig: {
             /**
              * The rpc provider (blockfrost) api key to be used for the payment source
