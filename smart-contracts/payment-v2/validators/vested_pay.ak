@@ -173,7 +173,16 @@ validator vested_pay(
       )
 
     when redeemer is {
-      // Seller withdraws after unlock_time if the result was submitted.
+      // Seller withdraws funds. Two valid paths:
+      //   1. state == WithdrawAuthorized — the buyer has explicitly signed
+      //      AuthorizeWithdrawal, so the seller may withdraw immediately. No
+      //      time bound applies; buyer authorization is the sole gate and is
+      //      intended to short-circuit unlock_time / cooldown windows.
+      //   2. state == ResultSubmitted — the buyer has not authorized, so the
+      //      seller must wait until validity_range starts at or after
+      //      unlock_time. This is the only path that requires waiting.
+      // Any other state (FundsLocked, RefundRequested, Disputed,
+      // RefundAuthorized) is rejected.
       Withdraw -> {
         let continuation_utxo =
           output_datum_signatures
@@ -184,7 +193,10 @@ validator vested_pay(
         expect must_be_signed_by(self, seller_vk)
 
         expect or {
+            // Path 1: buyer-authorized instant withdrawal. Intentional bypass
+            // of unlock_time / cooldown — see comment above.
             state == WithdrawAuthorized,
+            // Path 2: result was submitted but not authorized, must wait.
             and {
               must_start_after(validity_range, unlock_time),
               state == ResultSubmitted,
@@ -389,9 +401,20 @@ validator vested_pay(
 
         expect bytearray.is_empty(result_hash) == False
 
+        // Admins must only collect signatures after this timestamp. Combined
+        // with SubmitResult's own `must_end_before(external_dispute_unlock_time)`
+        // guard (see SubmitResult below), this means once admins begin signing
+        // the seller can no longer mutate the UTxO via SubmitResult, so the
+        // own_ref captured in DisputeWithdrawal cannot be invalidated by a
+        // racing seller transaction.
         expect must_start_after(validity_range, external_dispute_unlock_time)
 
-        // admin_vks may intentionally contain duplicates to weight voting power.
+        // INTENTIONAL: admin_vks may contain duplicates as a weighted-voting
+        // mechanism. A vkey appearing N times counts as N votes when matched
+        // against signatures, so a single physical admin signature can satisfy
+        // multiple slots. This is by design — it is the deployer's
+        // responsibility (off-chain) to construct admin_vks with the desired
+        // weight distribution. The contract does NOT enforce distinctness.
         let countOfAdmins = list.length(admin_vks)
         // Require at least one configured admin.
         expect countOfAdmins >= 1
@@ -425,10 +448,20 @@ validator vested_pay(
 
         expect value_bigger_or_equal(seller_value_returned, seller_value_to_pay)
 
-        // The signed buyer/seller values are minimum payouts. Any escrow value
-        // above those minimums is intentionally left unconstrained as the
-        // dispute settlement submitter fee. The signed own_ref binds this
-        // settlement authorization to the exact contract UTxO being spent.
+        // INTENTIONAL: the signed buyer_value / seller_value are MINIMUM
+        // payouts, not exact amounts. Any escrow value above the sum of the
+        // minimums is intentionally left unconstrained on-chain and accrues to
+        // whichever wallet builds and submits this transaction (the dispute
+        // settlement submitter). This is a deliberate economic incentive so
+        // that a third party is motivated to land the settlement tx without
+        // requiring buyer or seller to spend their own ADA on fees. Admins
+        // sign with full knowledge of the residual amount.
+        //
+        // Replay binding: own_ref is part of the signed payload, so an admin
+        // signature authorizes settlement of exactly one UTxO (uniquely
+        // identified by (tx_id, output_index)) and cannot be reused against
+        // any other UTxO — including other deployments of this validator,
+        // since OutputReferences are globally unique per chain.
         let signed_message =
           cbor.serialise(
             DisputeWithdrawal { own_ref, buyer_value, seller_value },
@@ -442,7 +475,8 @@ validator vested_pay(
               has_valid_admin_signature(vk, signed_message, admin_signatures)
             },
           )
-        // Duplicate admin hashes in admin_vks count as weighted votes.
+        // Duplicate admin hashes in admin_vks count as weighted votes (see
+        // weighted-voting note above where countOfAdmins is computed).
         list.length(signedBy) >= required_admins_multi_sig
       }
       SubmitResult -> {
