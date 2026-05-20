@@ -974,3 +974,703 @@ fn address_to_verification_key(address: Address) -> Option<VerificationKeyHash> 
     _ -> None
   }
 }
+
+// ===========================================================================
+// End-to-end validator tests
+// ===========================================================================
+//
+// These tests construct a full `Transaction` and invoke
+// `vested_pay.spend(...)` directly to exercise every redeemer/state path.
+//
+// Convention used throughout: validity_range upper_bound = `now` (tx_latest_time)
+// drives the `cooldown_time` derivation; validity_range lower_bound is used
+// for `must_start_after` checks; cooldown_period = 100 ms in all happy paths.
+
+const buyer_vk_hash: ByteArray =
+  #"00000000000000000000000000000000000000000000000000000001"
+
+const seller_vk_hash: ByteArray =
+  #"00000000000000000000000000000000000000000000000000000002"
+
+const other_vk_hash: ByteArray =
+  #"00000000000000000000000000000000000000000000000000000003"
+
+const admin_vk_hash: ByteArray =
+  #"00000000000000000000000000000000000000000000000000000099"
+
+const script_vk_hash: ByteArray =
+  #"000000000000000000000000000000000000000000000000000000aa"
+
+const ref_sig_default: ByteArray = #"deadbeef"
+
+const ref_sig_other: ByteArray = #"cafebabe"
+
+const result_hash_default: ByteArray = #"aabbccdd"
+
+const test_tx_id: ByteArray =
+  #"1111111111111111111111111111111111111111111111111111111111111111"
+
+// Build a verification-key address for a given key hash.
+fn stub_address(vk_hash: ByteArray) -> Address {
+  Address { payment_credential: VerificationKey(vk_hash), stake_credential: None }
+}
+
+// The (single) script address shared by inputs/outputs throughout the tests.
+// It also uses VerificationKey so the datum's buyer/seller addresses match a
+// well-formed Cardano credential; the validator only cares that
+// `input.output.address` is consistent across the script inputs/outputs.
+fn script_address() -> Address {
+  stub_address(script_vk_hash)
+}
+
+fn stub_own_ref(output_index: Int) -> OutputReference {
+  OutputReference { transaction_id: test_tx_id, output_index }
+}
+
+// Build a Datum with sensible defaults that any test can override field-by-field.
+fn stub_datum(
+  state: State,
+  result_hash: ByteArray,
+  reference_signature: ByteArray,
+  submit_result_time: POSIXTime,
+  unlock_time: POSIXTime,
+  external_dispute_unlock_time: POSIXTime,
+  seller_cooldown_time: POSIXTime,
+  buyer_cooldown_time: POSIXTime,
+) -> Datum {
+  Datum {
+    buyer: stub_address(buyer_vk_hash),
+    buyer_return_address: None,
+    seller: stub_address(seller_vk_hash),
+    seller_return_address: None,
+    reference_key: #"01",
+    reference_signature,
+    seller_nonce: #"02",
+    buyer_nonce: #"03",
+    agent_identifier: #"04",
+    collateral_return_lovelace: 0,
+    input_hash: #"05",
+    result_hash,
+    pay_by_time: 0,
+    submit_result_time,
+    unlock_time,
+    external_dispute_unlock_time,
+    seller_cooldown_time,
+    buyer_cooldown_time,
+    state,
+  }
+}
+
+fn stub_input(
+  addr: Address,
+  value: Value,
+  datum: Datum,
+  own_ref: OutputReference,
+) -> Input {
+  Input {
+    output_reference: own_ref,
+    output: Output {
+      address: addr,
+      value,
+      datum: InlineDatum(datum),
+      reference_script: None,
+    },
+  }
+}
+
+fn stub_script_output(addr: Address, value: Value, datum: Datum) -> Output {
+  Output {
+    address: addr,
+    value,
+    datum: InlineDatum(datum),
+    reference_script: None,
+  }
+}
+
+// Output of the buyer/seller payout return type (data = OutputReference tag).
+fn stub_payout_output(
+  addr: Address,
+  value: Value,
+  own_ref: OutputReference,
+) -> Output {
+  Output {
+    address: addr,
+    value,
+    datum: InlineDatum(own_ref),
+    reference_script: None,
+  }
+}
+
+fn stub_tx(
+  inputs: List<Input>,
+  outputs: List<Output>,
+  validity_range: ValidityRange,
+  extra_signatories: List<VerificationKeyHash>,
+) -> Transaction {
+  Transaction {
+    ..transaction.placeholder,
+    inputs: inputs,
+    outputs: outputs,
+    validity_range: validity_range,
+    extra_signatories: extra_signatories,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 1. Happy paths
+// ---------------------------------------------------------------------------
+
+test setrefund_funds_locked_to_refund_requested() {
+  // current_time (upper bound) = 100; cooldown_period = 100; cooldown_time = 200.
+  // unlock_time must be > 100 (must_end_before).
+  // buyer_cooldown_time (old) must be <= validity lower bound = 50.
+  // new buyer_cooldown_time must be >= 200.
+  let own_ref = stub_own_ref(0)
+  let in_datum =
+    stub_datum(
+      FundsLocked,
+      #"",
+      ref_sig_default,
+      // submit_result_time
+      500,
+      // unlock_time
+      1000,
+      // external_dispute_unlock_time
+      2000,
+      // seller_cooldown_time
+      0,
+      // buyer_cooldown_time
+      50,
+    )
+  // For SetRefundRequested, the new datum copies all fields except state &
+  // cooldown timers: new seller_cooldown_time == 0, new buyer_cooldown_time >= cooldown_time = 200.
+  let out_datum =
+    Datum { ..in_datum, state: RefundRequested, seller_cooldown_time: 0, buyer_cooldown_time: 200 }
+  let val = assets.from_lovelace(1_000_000)
+  let inp = stub_input(script_address(), val, in_datum, own_ref)
+  let out = stub_script_output(script_address(), val, out_datum)
+  let tx =
+    stub_tx([inp], [out], interval.between(50, 100), [buyer_vk_hash])
+
+  vested_pay.spend(1, [admin_vk_hash], 100, Some(in_datum), SetRefundRequested, own_ref, tx)
+}
+
+test setrefund_result_submitted_to_disputed() {
+  let own_ref = stub_own_ref(0)
+  let in_datum =
+    stub_datum(
+      ResultSubmitted,
+      result_hash_default,
+      ref_sig_default,
+      500,
+      1000,
+      2000,
+      0,
+      50,
+    )
+  let out_datum =
+    Datum { ..in_datum, state: Disputed, seller_cooldown_time: 0, buyer_cooldown_time: 200 }
+  let val = assets.from_lovelace(1_000_000)
+  let inp = stub_input(script_address(), val, in_datum, own_ref)
+  let out = stub_script_output(script_address(), val, out_datum)
+  let tx =
+    stub_tx([inp], [out], interval.between(50, 100), [buyer_vk_hash])
+
+  vested_pay.spend(1, [admin_vk_hash], 100, Some(in_datum), SetRefundRequested, own_ref, tx)
+}
+
+test submit_result_funds_locked_to_result_submitted() {
+  // SubmitResult: seller signs, must_start_after(seller_cooldown_time),
+  // must_end_before(submit_result_time) -- or end before external_dispute_unlock_time
+  // when result_hash is already non-empty. From FundsLocked the result_hash is empty,
+  // so the first OR branch is what matters: tx_latest_time < submit_result_time.
+  // new seller_cooldown_time >= cooldown_time, new buyer_cooldown_time == 0,
+  // new result_hash non-empty.
+  let own_ref = stub_own_ref(0)
+  let in_datum =
+    stub_datum(
+      FundsLocked,
+      #"",
+      ref_sig_default,
+      // submit_result_time
+      1000,
+      // unlock_time
+      2000,
+      // external_dispute_unlock_time
+      3000,
+      // seller_cooldown_time
+      50,
+      // buyer_cooldown_time
+      0,
+    )
+  let out_datum =
+    Datum {
+      ..in_datum,
+      state: ResultSubmitted,
+      result_hash: result_hash_default,
+      seller_cooldown_time: 200,
+      buyer_cooldown_time: 0,
+    }
+  let val = assets.from_lovelace(1_000_000)
+  let inp = stub_input(script_address(), val, in_datum, own_ref)
+  let out = stub_script_output(script_address(), val, out_datum)
+  let tx =
+    stub_tx([inp], [out], interval.between(50, 100), [seller_vk_hash])
+
+  vested_pay.spend(1, [admin_vk_hash], 100, Some(in_datum), SubmitResult, own_ref, tx)
+}
+
+test submit_result_disputed_rotation_allowed_before_external_unlock() {
+  // From Disputed, the new_state remains Disputed; second OR branch
+  // (must_end_before external_dispute_unlock_time && result_hash non-empty)
+  // is the one that lets us bypass submit_result_time.
+  let own_ref = stub_own_ref(0)
+  let in_datum =
+    stub_datum(
+      Disputed,
+      result_hash_default,
+      ref_sig_default,
+      // submit_result_time -- already passed
+      50,
+      // unlock_time
+      1000,
+      // external_dispute_unlock_time
+      3000,
+      // seller_cooldown_time
+      50,
+      // buyer_cooldown_time
+      0,
+    )
+  let out_datum =
+    Datum {
+      ..in_datum,
+      state: Disputed,
+      // a different hash to simulate rotation
+      result_hash: #"99887766",
+      seller_cooldown_time: 1100,
+      buyer_cooldown_time: 0,
+    }
+  let val = assets.from_lovelace(1_000_000)
+  let inp = stub_input(script_address(), val, in_datum, own_ref)
+  let out = stub_script_output(script_address(), val, out_datum)
+  // upper bound = 1000 → cooldown_time = 1100, must_end_before(external_dispute_unlock_time = 3000) holds
+  let tx =
+    stub_tx([inp], [out], interval.between(60, 1000), [seller_vk_hash])
+
+  vested_pay.spend(1, [admin_vk_hash], 100, Some(in_datum), SubmitResult, own_ref, tx)
+}
+
+test authorize_withdrawal_disputed_to_withdraw_authorized() {
+  // AuthorizeWithdrawal: buyer signs, result_hash non-empty, state==Disputed,
+  // continuation has state==WithdrawAuthorized, seller_cooldown_time == 0,
+  // buyer_cooldown_time >= cooldown_time, value preserved.
+  // must_start_after(buyer_cooldown_time) -> old buyer_cooldown_time <= lower bound.
+  let own_ref = stub_own_ref(0)
+  let in_datum =
+    stub_datum(
+      Disputed,
+      result_hash_default,
+      ref_sig_default,
+      500,
+      1000,
+      2000,
+      0,
+      // buyer_cooldown_time -- old must be <= validity lower bound
+      40,
+    )
+  let out_datum =
+    Datum {
+      ..in_datum,
+      state: WithdrawAuthorized,
+      seller_cooldown_time: 0,
+      buyer_cooldown_time: 200,
+    }
+  let val = assets.from_lovelace(1_000_000)
+  let inp = stub_input(script_address(), val, in_datum, own_ref)
+  let out = stub_script_output(script_address(), val, out_datum)
+  let tx =
+    stub_tx([inp], [out], interval.between(50, 100), [buyer_vk_hash])
+
+  vested_pay.spend(1, [admin_vk_hash], 100, Some(in_datum), AuthorizeWithdrawal, own_ref, tx)
+}
+
+test authorize_refund_funds_locked_to_refund_authorized_clears_result_hash() {
+  // AuthorizeRefund: seller signs, continuation has new state RefundAuthorized,
+  // result_hash cleared (empty), seller_cooldown_time >= cooldown_time,
+  // buyer_cooldown_time == 0. From FundsLocked the input result_hash is already
+  // empty -- still acceptable because the rule is on the *output* datum.
+  let own_ref = stub_own_ref(0)
+  let in_datum =
+    stub_datum(
+      FundsLocked,
+      // input result_hash already empty
+      #"",
+      ref_sig_default,
+      1000,
+      2000,
+      3000,
+      50,
+      50,
+    )
+  let out_datum =
+    Datum {
+      ..in_datum,
+      state: RefundAuthorized,
+      result_hash: #"",
+      seller_cooldown_time: 200,
+      buyer_cooldown_time: 0,
+    }
+  let val = assets.from_lovelace(1_000_000)
+  let inp = stub_input(script_address(), val, in_datum, own_ref)
+  let out = stub_script_output(script_address(), val, out_datum)
+  let tx =
+    stub_tx([inp], [out], interval.between(60, 100), [seller_vk_hash])
+
+  vested_pay.spend(1, [admin_vk_hash], 100, Some(in_datum), AuthorizeRefund, own_ref, tx)
+}
+
+test withdraw_result_submitted_after_unlock_time() {
+  // Withdraw path 2: state==ResultSubmitted, must_start_after(unlock_time).
+  // No continuation output (terminal). result_hash must be non-empty.
+  // Seller signs. There is no collateral here (collateral_return_lovelace==0)
+  // so no return outputs are required.
+  let own_ref = stub_own_ref(0)
+  let in_datum =
+    stub_datum(
+      ResultSubmitted,
+      result_hash_default,
+      ref_sig_default,
+      500,
+      // unlock_time
+      1000,
+      2000,
+      0,
+      0,
+    )
+  let val = assets.from_lovelace(1_000_000)
+  let inp = stub_input(script_address(), val, in_datum, own_ref)
+  // validity_range lower_bound >= unlock_time = 1000
+  let tx = stub_tx([inp], [], interval.between(1000, 1500), [seller_vk_hash])
+
+  vested_pay.spend(1, [admin_vk_hash], 100, Some(in_datum), Withdraw, own_ref, tx)
+}
+
+test withdraw_withdraw_authorized_no_time_wait() {
+  // Withdraw path 1: state==WithdrawAuthorized. No unlock_time wait required.
+  let own_ref = stub_own_ref(0)
+  let in_datum =
+    stub_datum(
+      WithdrawAuthorized,
+      result_hash_default,
+      ref_sig_default,
+      500,
+      // unlock_time -- still in the far future, must NOT matter on this path
+      9999,
+      // external_dispute_unlock_time -- same
+      99999,
+      0,
+      0,
+    )
+  let val = assets.from_lovelace(1_000_000)
+  let inp = stub_input(script_address(), val, in_datum, own_ref)
+  // validity range nowhere near unlock_time
+  let tx = stub_tx([inp], [], interval.between(10, 20), [seller_vk_hash])
+
+  vested_pay.spend(1, [admin_vk_hash], 100, Some(in_datum), Withdraw, own_ref, tx)
+}
+
+test withdraw_refund_funds_locked_after_submit_result_time() {
+  // WithdrawRefund: buyer signs, must_start_after(submit_result_time),
+  // state == FundsLocked, result_hash empty.
+  let own_ref = stub_own_ref(0)
+  let in_datum =
+    stub_datum(
+      FundsLocked,
+      #"",
+      ref_sig_default,
+      // submit_result_time -- already passed
+      100,
+      1000,
+      2000,
+      0,
+      0,
+    )
+  let val = assets.from_lovelace(1_000_000)
+  let inp = stub_input(script_address(), val, in_datum, own_ref)
+  let tx = stub_tx([inp], [], interval.between(200, 500), [buyer_vk_hash])
+
+  vested_pay.spend(1, [admin_vk_hash], 100, Some(in_datum), WithdrawRefund, own_ref, tx)
+}
+
+test withdraw_refund_refund_authorized_no_time_wait() {
+  // WithdrawRefund: state == RefundAuthorized bypasses submit_result_time check.
+  let own_ref = stub_own_ref(0)
+  let in_datum =
+    stub_datum(
+      RefundAuthorized,
+      #"",
+      ref_sig_default,
+      // submit_result_time -- still far in the future, must not matter
+      9999,
+      // unlock_time
+      9999,
+      99999,
+      0,
+      0,
+    )
+  let val = assets.from_lovelace(1_000_000)
+  let inp = stub_input(script_address(), val, in_datum, own_ref)
+  let tx = stub_tx([inp], [], interval.between(10, 20), [buyer_vk_hash])
+
+  vested_pay.spend(1, [admin_vk_hash], 100, Some(in_datum), WithdrawRefund, own_ref, tx)
+}
+
+// ---------------------------------------------------------------------------
+// 2. Negative tests -- each must fail
+// ---------------------------------------------------------------------------
+
+test submit_result_from_withdraw_authorized_rejected() fail {
+  // SubmitResult only allows states {FundsLocked, ResultSubmitted, Disputed, RefundRequested}.
+  let own_ref = stub_own_ref(0)
+  let in_datum =
+    stub_datum(WithdrawAuthorized, result_hash_default, ref_sig_default, 1000, 2000, 3000, 50, 0)
+  let out_datum =
+    Datum {
+      ..in_datum,
+      state: ResultSubmitted,
+      result_hash: result_hash_default,
+      seller_cooldown_time: 200,
+      buyer_cooldown_time: 0,
+    }
+  let val = assets.from_lovelace(1_000_000)
+  let inp = stub_input(script_address(), val, in_datum, own_ref)
+  let out = stub_script_output(script_address(), val, out_datum)
+  let tx = stub_tx([inp], [out], interval.between(50, 100), [seller_vk_hash])
+
+  vested_pay.spend(1, [admin_vk_hash], 100, Some(in_datum), SubmitResult, own_ref, tx)
+}
+
+test submit_result_from_refund_authorized_rejected() fail {
+  let own_ref = stub_own_ref(0)
+  let in_datum =
+    stub_datum(RefundAuthorized, #"", ref_sig_default, 1000, 2000, 3000, 50, 0)
+  let out_datum =
+    Datum {
+      ..in_datum,
+      state: ResultSubmitted,
+      result_hash: result_hash_default,
+      seller_cooldown_time: 200,
+      buyer_cooldown_time: 0,
+    }
+  let val = assets.from_lovelace(1_000_000)
+  let inp = stub_input(script_address(), val, in_datum, own_ref)
+  let out = stub_script_output(script_address(), val, out_datum)
+  let tx = stub_tx([inp], [out], interval.between(50, 100), [seller_vk_hash])
+
+  vested_pay.spend(1, [admin_vk_hash], 100, Some(in_datum), SubmitResult, own_ref, tx)
+}
+
+test withdraw_from_funds_locked_rejected() fail {
+  // Withdraw requires state==ResultSubmitted (with time) or WithdrawAuthorized.
+  let own_ref = stub_own_ref(0)
+  let in_datum =
+    stub_datum(FundsLocked, result_hash_default, ref_sig_default, 500, 1000, 2000, 0, 0)
+  let val = assets.from_lovelace(1_000_000)
+  let inp = stub_input(script_address(), val, in_datum, own_ref)
+  let tx = stub_tx([inp], [], interval.between(2000, 2500), [seller_vk_hash])
+
+  vested_pay.spend(1, [admin_vk_hash], 100, Some(in_datum), Withdraw, own_ref, tx)
+}
+
+test withdraw_result_submitted_before_unlock_time_rejected() fail {
+  // Withdraw path 2 requires must_start_after(unlock_time): validity.lower >= unlock_time.
+  let own_ref = stub_own_ref(0)
+  let in_datum =
+    stub_datum(ResultSubmitted, result_hash_default, ref_sig_default, 500, 1000, 2000, 0, 0)
+  let val = assets.from_lovelace(1_000_000)
+  let inp = stub_input(script_address(), val, in_datum, own_ref)
+  // lower_bound < unlock_time
+  let tx = stub_tx([inp], [], interval.between(500, 800), [seller_vk_hash])
+
+  vested_pay.spend(1, [admin_vk_hash], 100, Some(in_datum), Withdraw, own_ref, tx)
+}
+
+test setrefund_after_unlock_time_rejected() fail {
+  // must_end_before(validity_range, unlock_time): tx_latest_time < unlock_time.
+  let own_ref = stub_own_ref(0)
+  let in_datum =
+    stub_datum(FundsLocked, #"", ref_sig_default, 500, 1000, 2000, 0, 50)
+  let out_datum =
+    Datum { ..in_datum, state: RefundRequested, seller_cooldown_time: 0, buyer_cooldown_time: 1200 }
+  let val = assets.from_lovelace(1_000_000)
+  let inp = stub_input(script_address(), val, in_datum, own_ref)
+  let out = stub_script_output(script_address(), val, out_datum)
+  // upper_bound 1000 == unlock_time → must_end_before fails (strict <)
+  let tx = stub_tx([inp], [out], interval.between(50, 1000), [buyer_vk_hash])
+
+  vested_pay.spend(1, [admin_vk_hash], 100, Some(in_datum), SetRefundRequested, own_ref, tx)
+}
+
+test setrefund_without_buyer_signature_rejected() fail {
+  // Buyer signature missing.
+  let own_ref = stub_own_ref(0)
+  let in_datum =
+    stub_datum(FundsLocked, #"", ref_sig_default, 500, 1000, 2000, 0, 50)
+  let out_datum =
+    Datum { ..in_datum, state: RefundRequested, seller_cooldown_time: 0, buyer_cooldown_time: 200 }
+  let val = assets.from_lovelace(1_000_000)
+  let inp = stub_input(script_address(), val, in_datum, own_ref)
+  let out = stub_script_output(script_address(), val, out_datum)
+  // signed by seller, NOT buyer
+  let tx = stub_tx([inp], [out], interval.between(50, 100), [seller_vk_hash])
+
+  vested_pay.spend(1, [admin_vk_hash], 100, Some(in_datum), SetRefundRequested, own_ref, tx)
+}
+
+test submit_result_with_empty_new_result_hash_rejected() fail {
+  // The new datum must have a non-empty result_hash.
+  let own_ref = stub_own_ref(0)
+  let in_datum =
+    stub_datum(FundsLocked, #"", ref_sig_default, 1000, 2000, 3000, 50, 0)
+  let out_datum =
+    Datum {
+      ..in_datum,
+      state: ResultSubmitted,
+      // empty new result_hash -- should fail
+      result_hash: #"",
+      seller_cooldown_time: 200,
+      buyer_cooldown_time: 0,
+    }
+  let val = assets.from_lovelace(1_000_000)
+  let inp = stub_input(script_address(), val, in_datum, own_ref)
+  let out = stub_script_output(script_address(), val, out_datum)
+  let tx = stub_tx([inp], [out], interval.between(50, 100), [seller_vk_hash])
+
+  vested_pay.spend(1, [admin_vk_hash], 100, Some(in_datum), SubmitResult, own_ref, tx)
+}
+
+test authorize_refund_that_doesnt_clear_result_hash_rejected() fail {
+  // AuthorizeRefund requires the new datum's result_hash to be empty.
+  let own_ref = stub_own_ref(0)
+  let in_datum =
+    stub_datum(ResultSubmitted, result_hash_default, ref_sig_default, 1000, 2000, 3000, 50, 50)
+  let out_datum =
+    Datum {
+      ..in_datum,
+      state: RefundAuthorized,
+      // not cleared -- should fail
+      result_hash: result_hash_default,
+      seller_cooldown_time: 200,
+      buyer_cooldown_time: 0,
+    }
+  let val = assets.from_lovelace(1_000_000)
+  let inp = stub_input(script_address(), val, in_datum, own_ref)
+  let out = stub_script_output(script_address(), val, out_datum)
+  let tx = stub_tx([inp], [out], interval.between(60, 100), [seller_vk_hash])
+
+  vested_pay.spend(1, [admin_vk_hash], 100, Some(in_datum), AuthorizeRefund, own_ref, tx)
+}
+
+// ---------------------------------------------------------------------------
+// 3. Multi-UTxO guards
+// ---------------------------------------------------------------------------
+
+test two_script_inputs_with_identical_reference_signature_rejected() fail {
+  // Two inputs at the same script address share the same reference_signature →
+  // input dedupe check fails.
+  let own_ref_a = stub_own_ref(0)
+  let own_ref_b = stub_own_ref(1)
+  let in_datum_a =
+    stub_datum(FundsLocked, #"", ref_sig_default, 500, 1000, 2000, 0, 50)
+  let in_datum_b =
+    stub_datum(FundsLocked, #"", ref_sig_default, 500, 1000, 2000, 0, 50)
+  let out_datum =
+    Datum { ..in_datum_a, state: RefundRequested, seller_cooldown_time: 0, buyer_cooldown_time: 200 }
+  let val = assets.from_lovelace(1_000_000)
+  let inp_a = stub_input(script_address(), val, in_datum_a, own_ref_a)
+  let inp_b = stub_input(script_address(), val, in_datum_b, own_ref_b)
+  let out = stub_script_output(script_address(), val, out_datum)
+  let tx =
+    stub_tx([inp_a, inp_b], [out], interval.between(50, 100), [buyer_vk_hash])
+
+  vested_pay.spend(1, [admin_vk_hash], 100, Some(in_datum_a), SetRefundRequested, own_ref_a, tx)
+}
+
+test two_script_outputs_with_identical_reference_signature_rejected() fail {
+  // Two script outputs both carry the same reference_signature → output dedupe fails.
+  let own_ref = stub_own_ref(0)
+  let in_datum =
+    stub_datum(FundsLocked, #"", ref_sig_default, 500, 1000, 2000, 0, 50)
+  let out_datum_1 =
+    Datum { ..in_datum, state: RefundRequested, seller_cooldown_time: 0, buyer_cooldown_time: 200 }
+  let out_datum_2 =
+    Datum { ..in_datum, state: RefundRequested, seller_cooldown_time: 0, buyer_cooldown_time: 200 }
+  let val = assets.from_lovelace(1_000_000)
+  let inp = stub_input(script_address(), val, in_datum, own_ref)
+  let out_1 = stub_script_output(script_address(), val, out_datum_1)
+  let out_2 = stub_script_output(script_address(), val, out_datum_2)
+  let tx =
+    stub_tx([inp], [out_1, out_2], interval.between(50, 100), [buyer_vk_hash])
+
+  vested_pay.spend(1, [admin_vk_hash], 100, Some(in_datum), SetRefundRequested, own_ref, tx)
+}
+
+// ---------------------------------------------------------------------------
+// 4. WithdrawDisputed guards (cryptographic signature path NOT exercised).
+//    We verify the time guard and the state guard; the actual ed25519 CIP-8
+//    signature path is too complex to mock here -- see TODO at end.
+// ---------------------------------------------------------------------------
+
+test withdraw_disputed_before_external_unlock_rejected() fail {
+  // must_start_after(external_dispute_unlock_time) requires lower >= it.
+  let own_ref = stub_own_ref(0)
+  let in_datum =
+    stub_datum(Disputed, result_hash_default, ref_sig_default, 500, 1000, 2000, 0, 0)
+  let val = assets.from_lovelace(1_000_000)
+  let inp = stub_input(script_address(), val, in_datum, own_ref)
+  // lower_bound 100 < external_dispute_unlock_time 2000
+  let tx = stub_tx([inp], [], interval.between(100, 200), [other_vk_hash])
+
+  vested_pay.spend(
+    1,
+    [admin_vk_hash],
+    100,
+    Some(in_datum),
+    WithdrawDisputed {
+      buyer_value: [],
+      seller_value: [],
+      admin_signatures: [],
+    },
+    own_ref,
+    tx,
+  )
+}
+
+test withdraw_disputed_not_disputed_state_rejected() fail {
+  // state must be Disputed for WithdrawDisputed.
+  let own_ref = stub_own_ref(0)
+  let in_datum =
+    stub_datum(ResultSubmitted, result_hash_default, ref_sig_default, 500, 1000, 2000, 0, 0)
+  let val = assets.from_lovelace(1_000_000)
+  let inp = stub_input(script_address(), val, in_datum, own_ref)
+  // even after external_dispute_unlock_time, wrong state must reject
+  let tx = stub_tx([inp], [], interval.between(2500, 3000), [other_vk_hash])
+
+  vested_pay.spend(
+    1,
+    [admin_vk_hash],
+    100,
+    Some(in_datum),
+    WithdrawDisputed {
+      buyer_value: [],
+      seller_value: [],
+      admin_signatures: [],
+    },
+    own_ref,
+    tx,
+  )
+}
+// TODO: WithdrawDisputed happy-path test that exercises the CIP-8 ed25519
+// signature verification is intentionally omitted -- it requires generating
+// a real ed25519 keypair and signing the CBOR-encoded DisputeWithdrawal
+// payload off-chain, which is non-trivial in pure Aiken test land.
