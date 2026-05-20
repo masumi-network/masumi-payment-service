@@ -37,13 +37,22 @@ import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { DEFAULT_V1_COST_MODEL_LIST, DEFAULT_V2_COST_MODEL_LIST, DEFAULT_V3_COST_MODEL_LIST } from '@meshsdk/core';
 import { logger } from '@/utils/logger';
 
+// In-flight syncs and last successful sync are tracked per Blockfrost API key.
+// A single global slot would incorrectly coalesce concurrent calls from
+// different networks (e.g. mainnet + preprod processed in parallel via
+// Promise.allSettled): the second caller would await the first caller's fetch
+// and return without ever syncing its own cost models, leaving the global
+// arrays holding the wrong network's values for that caller's tx build. Note:
+// the mutated DEFAULT_V*_COST_MODEL_LIST arrays are STILL process-global —
+// the per-key tracking only fixes the "did we sync at all" question; if two
+// networks alternate, the arrays are last-writer-wins. Single-network
+// deployments are unaffected.
 type CachedSync = {
-	blockfrostApiKey: string;
 	at: number;
 };
 
-let inFlight: Promise<void> | null = null;
-let lastSync: CachedSync | null = null;
+const inFlightByKey = new Map<string, Promise<void>>();
+const lastSyncByKey = new Map<string, CachedSync>();
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -105,27 +114,29 @@ export async function syncMeshCostModelsFromChain(
 	options: { forceRefresh?: boolean } = {},
 ): Promise<void> {
 	const now = Date.now();
-	if (
-		!options.forceRefresh &&
-		lastSync != null &&
-		lastSync.blockfrostApiKey === blockfrostApiKey &&
-		now - lastSync.at < CACHE_TTL_MS
-	) {
+	const cached = lastSyncByKey.get(blockfrostApiKey);
+	if (!options.forceRefresh && cached != null && now - cached.at < CACHE_TTL_MS) {
 		return;
 	}
-	if (inFlight != null) {
-		await inFlight;
+	const existing = inFlightByKey.get(blockfrostApiKey);
+	if (existing != null) {
+		// Same-key concurrent caller: piggy-back on the running fetch.
+		// Different-key callers do NOT enter this branch — each key has its
+		// own in-flight slot, so concurrent multi-network syncs run in
+		// parallel rather than one stealing the other's result.
+		await existing;
 		return;
 	}
-	inFlight = (async () => {
+	const promise = (async () => {
 		try {
 			await fetchAndPatch(blockfrostApiKey);
-			lastSync = { blockfrostApiKey, at: Date.now() };
+			lastSyncByKey.set(blockfrostApiKey, { at: Date.now() });
 		} catch (error) {
 			logger.error('Failed to sync mesh-sdk cost models from chain', { error });
 		} finally {
-			inFlight = null;
+			inFlightByKey.delete(blockfrostApiKey);
 		}
 	})();
-	await inFlight;
+	inFlightByKey.set(blockfrostApiKey, promise);
+	await promise;
 }
