@@ -162,7 +162,8 @@ export async function buildX402FundsLockingTransaction({
 	// Pull live chain protocol params so script_data_hash matches the
 	// ledger's computation. See generateRegistryMintTransaction in
 	// src/services/registry/shared.ts for the full rationale.
-	const protocolParameters = await blockchainProvider.fetchProtocolParameters(0);
+	// NaN routes to /epochs/latest/parameters in the BlockfrostProvider impl.
+	const protocolParameters = await blockchainProvider.fetchProtocolParameters(Number.NaN);
 	const txBuilder = new MeshTxBuilder({ fetcher: blockchainProvider });
 	txBuilder.protocolParams(protocolParameters);
 	const deserializedBuyerAddress = txBuilder.serializer.deserializer.key.deserializeAddress(buyerAddress);

@@ -82,7 +82,11 @@ export async function generateRegistryMintTransaction(
 	// `TxSubmitFail` / `TxValidationErrorInCardanoMode` carrying a
 	// PPViewHashesDontMatch mismatch where `supplied` and `expected` are both
 	// stable across runs (because mesh's bundled models are deterministic).
-	const protocolParameters = await blockchainProvider.fetchProtocolParameters(0);
+	// NaN tells the BlockfrostProvider impl to call /epochs/latest/parameters.
+	// Passing a real epoch number (e.g. 0) would hit /epochs/0/parameters and
+	// return 404 on preprod, which surfaces as a Blockfrost "The requested
+	// component has not been found" error during V1 registration.
+	const protocolParameters = await blockchainProvider.fetchProtocolParameters(Number.NaN);
 	const txBuilder = new MeshTxBuilder({
 		fetcher: blockchainProvider,
 	});
@@ -212,7 +216,11 @@ async function generateRegistryDeregisterTransaction(
 	// See protocolParams comment in generateRegistryMintTransaction above.
 	// Same fix: pull live chain params to keep script_data_hash in sync with
 	// what the ledger expects.
-	const protocolParameters = await blockchainProvider.fetchProtocolParameters(0);
+	// NaN tells the BlockfrostProvider impl to call /epochs/latest/parameters.
+	// Passing a real epoch number (e.g. 0) would hit /epochs/0/parameters and
+	// return 404 on preprod, which surfaces as a Blockfrost "The requested
+	// component has not been found" error during V1 registration.
+	const protocolParameters = await blockchainProvider.fetchProtocolParameters(Number.NaN);
 	const txBuilder = new MeshTxBuilder({
 		fetcher: blockchainProvider,
 	});

@@ -128,7 +128,8 @@ async function generateMasumiSmartContractInteractionTransactionCustomFee(
 	// uses its bundled defaults and submissions fail with
 	// `PPViewHashesDontMatch` after a hard fork or PParam vote. See
 	// generateRegistryMintTransaction in src/services/registry/shared.ts.
-	const protocolParameters = await blockchainProvider.fetchProtocolParameters(0);
+	// NaN routes to /epochs/latest/parameters in the BlockfrostProvider impl.
+	const protocolParameters = await blockchainProvider.fetchProtocolParameters(Number.NaN);
 	const txBuilder = new MeshTxBuilder({
 		fetcher: blockchainProvider,
 	});
@@ -372,7 +373,8 @@ async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 	},
 ) {
 	// See protocolParams comment in the first builder in this file.
-	const protocolParameters = await blockchainProvider.fetchProtocolParameters(0);
+	// NaN routes to /epochs/latest/parameters in the BlockfrostProvider impl.
+	const protocolParameters = await blockchainProvider.fetchProtocolParameters(Number.NaN);
 	const txBuilder = new MeshTxBuilder({
 		fetcher: blockchainProvider,
 	});
