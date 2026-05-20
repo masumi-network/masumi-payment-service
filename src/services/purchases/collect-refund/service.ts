@@ -242,7 +242,7 @@ export async function collectRefundV1() {
 				logger.info(
 					`Collecting ${paymentContract.PurchaseRequests.length} refunds for payment source ${paymentContract.id}`,
 				);
-				const blockchainProvider = createMeshProvider(paymentContract.PaymentSourceConfig.rpcProviderApiKey);
+				const blockchainProvider = await createMeshProvider(paymentContract.PaymentSourceConfig.rpcProviderApiKey);
 
 				const purchaseRequests = paymentContract.PurchaseRequests;
 

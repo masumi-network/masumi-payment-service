@@ -303,7 +303,7 @@ export async function collectOutstandingPaymentsV1() {
 
 				const network = convertNetwork(paymentContract.network);
 
-				const blockchainProvider = createMeshProvider(paymentContract.PaymentSourceConfig.rpcProviderApiKey);
+				const blockchainProvider = await createMeshProvider(paymentContract.PaymentSourceConfig.rpcProviderApiKey);
 
 				const paymentRequests = paymentContract.PaymentRequests;
 
