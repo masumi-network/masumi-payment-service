@@ -1,3 +1,9 @@
+// Mesh SDK pinning: this file lives in the V1 package and MUST resolve to the
+// V1 mesh line (`@meshsdk/core@1.9.0-beta.96` / `@meshsdk/core-cst@1.9.0-beta.90`).
+// The derived `smartContractAddress` and any later script_data_hash depend on
+// the exact serializer behavior of these versions — bumping them would change
+// the on-chain V1 contract address and break compatibility with all existing
+// V1 deployments and locked funds. See docs/adr/0005-meshsdk-version-pinning-v1-v2.md.
 import { mPubKeyAddress, type Data, type PlutusScript } from '@meshsdk/core';
 import {
 	applyParamsToScript,

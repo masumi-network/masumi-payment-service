@@ -1,3 +1,10 @@
+// Mesh SDK pinning: `payment-core` declares the V1 mesh line
+// (`@meshsdk/core-cst@1.9.0-beta.90`) because the helpers in this module
+// (address parsing, payment-key-hash resolution) are shared across V1 and the
+// framework. V2 code paths in `packages/payment-source-v2` pin and use a
+// newer mesh line; they import their own copies of these helpers from there
+// rather than depending on this V1-aligned version. Do not bump. See
+// docs/adr/0005-meshsdk-version-pinning-v1-v2.md.
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
 import { Chain, Network, PaymentSourceType } from '@prisma/client';
 import { z } from './zod';

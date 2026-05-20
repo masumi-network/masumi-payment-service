@@ -10,6 +10,7 @@
 		"./services/registry/tx-sync/service": "./src/services/registry/tx-sync/service.ts",
 		"./services/registry-inbox/metadata": "./src/services/registry-inbox/metadata.ts"
 	},
+	"_meshsdk_pin_note": "V1 contract address + cost-model hash compat. DO NOT BUMP. See docs/adr/0005-meshsdk-version-pinning-v1-v2.md.",
 	"dependencies": {
 		"@masumi/payment-core": "workspace:*",
 		"@meshsdk/core": "1.9.0-beta.96",

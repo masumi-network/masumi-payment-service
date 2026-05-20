@@ -1,3 +1,9 @@
+// Mesh SDK pinning: this file is in the shared `src/` tree and is implicitly
+// V1-aligned because the repo root pins the V1 mesh line
+// (`@meshsdk/core@1.9.0-beta.96`). It builds V1 registry mint transactions.
+// V2 registry transactions are built inside `packages/payment-source-v2`,
+// which pins its own newer mesh line. Do not unify; do not bump. See
+// docs/adr/0005-meshsdk-version-pinning-v1-v2.md.
 import { SERVICE_CONSTANTS } from '@masumi/payment-core/config';
 import { blake2b } from 'ethereum-cryptography/blake2b';
 import { BlockfrostProvider, IFetcher, LanguageVersion, MeshTxBuilder, Network, UTxO } from '@meshsdk/core';

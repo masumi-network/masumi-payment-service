@@ -7,6 +7,7 @@
 	"license": "MIT",
 	"type": "module",
 	"packageManager": "pnpm@10.30.2",
+	"_meshsdk_pin_note": "DO NOT BUMP without ADR 0005. Root + V1 packages MUST stay on @meshsdk/core@1.9.0-beta.96 and @meshsdk/core-cst@1.9.0-beta.90. V2 has its own mesh line in packages/payment-source-v2. See docs/adr/0005-meshsdk-version-pinning-v1-v2.md and CLAUDE.md > Mesh SDK version isolation.",
 	"scripts": {
 		"preinstall": "node -e \"if (!(process.env.npm_config_user_agent||'').startsWith('pnpm')) { console.error('\\nThis project uses pnpm. Use: pnpm install\\n'); process.exit(1); }\"",
 		"postinstall": "test -f prisma/prisma.config.ts && pnpm run prisma:generate || true",
