@@ -163,7 +163,12 @@ jobs:
       - name: Start API Server
         run: |
           echo "Starting API server..."
-          pnpm exec tsx ./src/index.ts > server.log 2>&1 &
+          # Pipe through tee so each line is flushed to disk immediately
+          # rather than buffered (Node buffers stdout when piped). $! after
+          # the background pipeline returns the PID of the LAST command in
+          # the pipeline (tee). We need the tsx PID for kill; capture it via
+          # process substitution instead.
+          pnpm exec tsx ./src/index.ts > >(tee server.log) 2>&1 &
           SERVER_PID=$!
           echo "Server PID: $SERVER_PID"
           echo "$SERVER_PID" > server.pid
@@ -201,12 +206,41 @@ jobs:
           DATABASE_URL: ${{ steps.create-branch.outputs.connection_uri }}
           BLOCKFROST_API_KEY_PREPROD: ${{ secrets.BLOCKFROST_API_KEY_PREPROD }}
 
+      - name: Stop API server for log flush
+        if: always()
+        run: |
+          # Send SIGTERM, wait briefly, then SIGKILL if needed. This gives
+          # winston / stdout a chance to flush any buffered log lines BEFORE
+          # we dump the file.
+          if [ -f server.pid ]; then
+            PID=$(cat server.pid)
+            if kill -0 "$PID" 2>/dev/null; then
+              kill -TERM "$PID" 2>/dev/null || true
+              for i in 1 2 3 4 5; do
+                if ! kill -0 "$PID" 2>/dev/null; then break; fi
+                sleep 1
+              done
+              kill -KILL "$PID" 2>/dev/null || true
+            fi
+          fi
+          sleep 1
+
       - name: Dump server log
         if: always()
         run: |
-          echo "=== server.log tail (500 lines) ==="
-          tail -500 server.log || true
-          echo "=== end server.log tail ==="
+          if [ ! -f server.log ]; then
+            echo "server.log not present"
+            exit 0
+          fi
+          LINES=$(wc -l < server.log || echo 0)
+          echo "=== server.log total $LINES lines ==="
+          echo "=== server.log full contents (with line numbers) ==="
+          nl -ba server.log || cat server.log
+          echo "=== end server.log ==="
+          echo ""
+          echo "=== errors and warnings (grep) ==="
+          grep -E '"level":"(error|warn)"|RegistrationFailed|Failed to|Error registering|interpretBlockchainError' server.log | tail -200 || true
+          echo "=== end grep ==="
 
       - name: Upload server.log artifact
         if: always()
@@ -217,13 +251,11 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-      - name: Stop API Server
+      - name: Final cleanup of API Server pidfile
         if: always()
         run: |
-          if [ -f server.pid ]; then
-            kill $(cat server.pid) || true
-            rm server.pid
-          fi
+          # Server is already stopped above; this just clears the pidfile.
+          rm -f server.pid
 
       - name: Delete Neon Database Branch
         if: always() && steps.create-branch.outputs.branch_id != ''
