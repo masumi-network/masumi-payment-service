@@ -1,10 +1,10 @@
 import { PaymentSourceType, RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { lockAndQueryInboxAgentRegistrationRequests } from '@/utils/db/lock-and-query-inbox-agent-registration-request';
 import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contract-generator';
-import { SERVICE_CONSTANTS } from '@/utils/config';
+import { SERVICE_CONSTANTS } from '@masumi/payment-core/config';
 import { advancedRetry, delayErrorResolver, RetryResult } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';

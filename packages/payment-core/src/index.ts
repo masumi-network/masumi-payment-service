@@ -1,4 +1,4 @@
-import { PaymentSourceType } from '@/generated/prisma/client';
+import { PaymentSourceType } from '@prisma/client';
 
 export type PaymentSourceAdapter = {
 	paymentSourceType: PaymentSourceType;

@@ -3,7 +3,7 @@ import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 import { ez } from 'express-zod-api';
 import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';

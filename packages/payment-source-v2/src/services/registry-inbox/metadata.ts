@@ -1,4 +1,4 @@
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { isReservedInboxSlug, normalizeInboxSlug } from '@/utils/inbox-slug';
 

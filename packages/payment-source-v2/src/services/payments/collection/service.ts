@@ -9,7 +9,7 @@ import {
 import { prisma } from '@masumi/payment-core/db';
 import { Asset, deserializeDatum } from '@meshsdk/core';
 import type { BlockfrostProvider } from '@/services/shared';
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 import { smartContractStateEqualsOnChainState } from '@/utils/generator/contract-generator';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
@@ -26,7 +26,8 @@ import {
 	loadHotWalletSession,
 	updateCurrentTransactionHash,
 } from '@/services/shared';
-import { getPaymentSourceContractAdapter } from '@/services/payment-source-adapters';
+import { getPaymentScriptFromPaymentSourceV2 } from '@masumi/payment-source-v2';
+import { decodeV2ContractDatum } from '@/utils/converter/string-datum-convert';
 
 type PaymentSourceWithRelations = Prisma.PaymentSourceGetPayload<{
 	include: {
@@ -80,8 +81,7 @@ async function processSinglePaymentCollection(
 		throw new Error('No UTXOs found in the wallet. Wallet is empty.');
 	}
 
-	const adapter = getPaymentSourceContractAdapter(paymentContract.paymentSourceType);
-	const { script, smartContractAddress } = await adapter.getPaymentScriptFromPaymentSource(paymentContract);
+	const { script, smartContractAddress } = await getPaymentScriptFromPaymentSourceV2(paymentContract);
 
 	const txHash = request.CurrentTransaction?.txHash;
 	if (txHash == null) {
@@ -100,7 +100,7 @@ async function processSinglePaymentCollection(
 		}
 
 		const decodedDatum: unknown = deserializeDatum(utxoDatum);
-		const decodedContract = adapter.decodeContractDatum(decodedDatum, network);
+		const decodedContract = decodeV2ContractDatum(decodedDatum, network);
 		if (decodedContract == null) {
 			return false;
 		}
@@ -131,7 +131,7 @@ async function processSinglePaymentCollection(
 	}
 
 	const decodedDatum: unknown = deserializeDatum(utxoDatum);
-	const decodedContract = adapter.decodeContractDatum(decodedDatum, network);
+	const decodedContract = decodeV2ContractDatum(decodedDatum, network);
 	if (decodedContract == null) {
 		throw new Error('Invalid datum');
 	}

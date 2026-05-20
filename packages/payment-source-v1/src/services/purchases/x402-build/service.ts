@@ -12,9 +12,9 @@ import { Network, PaymentSourceType } from '@/generated/prisma/client';
 import { SmartContractState } from '@/utils/generator/contract-generator';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { calculateMinUtxo, DUMMY_RESULT_HASH, getNativeTokenCount } from '@/utils/min-utxo';
-import { CONSTANTS } from '@/utils/config';
-import { logger } from '@/utils/logger';
-import { getPaymentSourceContractAdapter } from '@/services/payment-source-adapters';
+import { CONSTANTS } from '@masumi/payment-core/config';
+import { logger } from '@masumi/payment-core/logger';
+import { getDatumFromBlockchainIdentifier } from '@masumi/payment-source-v1';
 
 interface X402PurchaseBuildData {
 	blockchainIdentifier: string;
@@ -46,14 +46,11 @@ export async function buildX402FundsLockingTransaction({
 	coinsPerUtxoSize: number;
 }): Promise<{ unsignedTxCbor: string; collateralReturnLovelace: bigint; buyerWalletVkey: string }> {
 	const buildData = purchaseRequestData;
-	const adapter = getPaymentSourceContractAdapter(buildData.paymentSourceType);
 
 	// Step 1: Estimate min UTXO via dummy datum (same algorithm as batch-payments service)
-	const tmpDatum = adapter.createDatumFromBlockchainIdentifier({
+	const tmpDatum = getDatumFromBlockchainIdentifier({
 		buyerAddress,
-		buyerReturnAddress: buildData.buyerReturnAddress,
 		sellerAddress: buildData.sellerAddress,
-		sellerReturnAddress: buildData.sellerReturnAddress,
 		blockchainIdentifier: buildData.blockchainIdentifier,
 		inputHash: buildData.inputHash,
 		resultHash: DUMMY_RESULT_HASH,
@@ -129,11 +126,9 @@ export async function buildX402FundsLockingTransaction({
 	}
 
 	// Step 3: Build final datum with real values
-	const finalDatum = adapter.createDatumFromBlockchainIdentifier({
+	const finalDatum = getDatumFromBlockchainIdentifier({
 		buyerAddress,
-		buyerReturnAddress: buildData.buyerReturnAddress,
 		sellerAddress: buildData.sellerAddress,
-		sellerReturnAddress: buildData.sellerReturnAddress,
 		blockchainIdentifier: buildData.blockchainIdentifier,
 		inputHash: buildData.inputHash,
 		resultHash: null,

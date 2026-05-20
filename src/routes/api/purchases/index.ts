@@ -6,7 +6,7 @@ import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { validateHexString } from '@/utils/validator/hex';
 import { handlePurchaseCreditInit } from '@/services/integrations';
-import { HttpExistsError } from '@/utils/errors/http-exists-error';
+import { HttpExistsError } from '@masumi/payment-core/http-exists-error';
 import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
 import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
@@ -288,6 +288,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 				},
 				paymentSourceId: paymentSource.id,
 				rpcProviderApiKey: paymentSource.PaymentSourceConfig.rpcProviderApiKey,
+				smartContractAddress: paymentSource.smartContractAddress,
 			});
 			const smartContractAddress = paymentSource.smartContractAddress;
 

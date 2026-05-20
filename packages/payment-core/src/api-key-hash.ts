@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { CONFIG } from '@/utils/config';
+import { CONFIG } from './config';
 
 // Memoized salt: scryptSync is expensive; compute once from ENCRYPTION_KEY and reuse.
 // The salt is deployment-specific (tied to ENCRYPTION_KEY) but deterministic,

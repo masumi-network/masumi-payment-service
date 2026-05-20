@@ -10,7 +10,7 @@ const mockFindPaymentSource = jest.fn() as AnyMock;
 const mockFindInboxRegistration = jest.fn() as AnyMock;
 const mockGetBlockfrostInstance = jest.fn() as AnyMock;
 
-jest.unstable_mockModule('@/utils/db', () => ({
+jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		apiKey: {
 			findUnique: mockFindApiKey,
@@ -24,7 +24,7 @@ jest.unstable_mockModule('@/utils/db', () => ({
 	},
 }));
 
-jest.unstable_mockModule('@/utils/logger', () => ({
+jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: {
 		info: jest.fn(),
 		warn: jest.fn(),
@@ -37,7 +37,7 @@ jest.unstable_mockModule('@/utils/blockfrost', () => ({
 	getBlockfrostInstance: mockGetBlockfrostInstance,
 }));
 
-jest.unstable_mockModule('@/utils/config', () => ({
+jest.unstable_mockModule('@masumi/payment-core/config', () => ({
 	CONFIG: {
 		DATABASE_URL: 'postgresql://test',
 		ENCRYPTION_KEY: '123456789012345678901',

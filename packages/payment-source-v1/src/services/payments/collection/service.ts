@@ -8,7 +8,7 @@ import {
 } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { Asset, BlockfrostProvider, deserializeDatum } from '@meshsdk/core';
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 import { smartContractStateEqualsOnChainState } from '@/utils/generator/contract-generator';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
@@ -17,7 +17,7 @@ import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractWithdrawTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
-import { CONSTANTS } from '@/utils/config';
+import { CONSTANTS } from '@masumi/payment-core/config';
 import {
 	connectPreviousAction,
 	createMeshProvider,
@@ -26,7 +26,8 @@ import {
 	loadHotWalletSession,
 	updateCurrentTransactionHash,
 } from '@/services/shared';
-import { getPaymentSourceContractAdapter } from '@/services/payment-source-adapters';
+import { getPaymentScriptFromPaymentSourceV1 } from '@masumi/payment-source-v1';
+import { decodeV1ContractDatum } from '@/utils/converter/string-datum-convert';
 
 type PaymentSourceWithRelations = Prisma.PaymentSourceGetPayload<{
 	include: {
@@ -80,8 +81,7 @@ async function processSinglePaymentCollection(
 		throw new Error('No UTXOs found in the wallet. Wallet is empty.');
 	}
 
-	const adapter = getPaymentSourceContractAdapter(paymentContract.paymentSourceType);
-	const { script, smartContractAddress } = await adapter.getPaymentScriptFromPaymentSource(paymentContract);
+	const { script, smartContractAddress } = await getPaymentScriptFromPaymentSourceV1(paymentContract);
 
 	const txHash = request.CurrentTransaction?.txHash;
 	if (txHash == null) {
@@ -100,7 +100,7 @@ async function processSinglePaymentCollection(
 		}
 
 		const decodedDatum: unknown = deserializeDatum(utxoDatum);
-		const decodedContract = adapter.decodeContractDatum(decodedDatum, network);
+		const decodedContract = decodeV1ContractDatum(decodedDatum, network);
 		if (decodedContract == null) {
 			return false;
 		}
@@ -131,7 +131,7 @@ async function processSinglePaymentCollection(
 	}
 
 	const decodedDatum: unknown = deserializeDatum(utxoDatum);
-	const decodedContract = adapter.decodeContractDatum(decodedDatum, network);
+	const decodedContract = decodeV1ContractDatum(decodedDatum, network);
 	if (decodedContract == null) {
 		throw new Error('Invalid datum');
 	}

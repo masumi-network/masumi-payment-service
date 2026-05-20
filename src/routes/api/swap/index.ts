@@ -8,7 +8,7 @@ import { Network, TransactionStatus, SwapStatus } from '@/generated/prisma/clien
 import { prisma } from '@masumi/payment-core/db';
 import { decrypt } from '@/utils/security/encryption';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 import {
 	swapTokensSchemaInput,

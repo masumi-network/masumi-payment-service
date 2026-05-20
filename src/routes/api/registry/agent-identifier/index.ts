@@ -4,7 +4,7 @@ import { Network, PricingType } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 import { extractPolicyId, extractAssetName } from '@/utils/converter/agent-identifier';
 import { validateHexString } from '@/utils/validator/hex';
 import { getBlockfrostInstance } from '@/utils/blockfrost';

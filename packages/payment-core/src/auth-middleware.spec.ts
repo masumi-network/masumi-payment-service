@@ -1,17 +1,17 @@
 import { jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import { testMiddleware } from 'express-zod-api';
-import { ApiKeyStatus, Network } from '@/generated/prisma/client';
+import { ApiKeyStatus, Network } from '@prisma/client';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
-jest.unstable_mockModule('@/utils/config', () => ({
+jest.unstable_mockModule('@masumi/payment-core/config', () => ({
 	CONFIG: { ENCRYPTION_KEY: '12345678901234567890' },
 	DEFAULTS: { DEFAULT_ADMIN_KEY: 'default-admin-key' },
 	CONSTANTS: { TRANSACTION_WAIT: { SERIALIZABLE: 5000 } },
 }));
 
-jest.unstable_mockModule('@/utils/db', () => ({
+jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		apiKey: {
 			findUnique: jest.fn(),
@@ -19,9 +19,9 @@ jest.unstable_mockModule('@/utils/db', () => ({
 	},
 }));
 
-const { authMiddleware } = await import('./index');
-const { prisma } = await import('@/utils/db');
-const { generateApiKeySecureHash } = await import('@/utils/crypto/api-key-hash');
+const { authMiddleware } = await import('./auth-middleware');
+const { prisma } = await import('@masumi/payment-core/db');
+const { generateApiKeySecureHash } = await import('@masumi/payment-core/api-key-hash');
 const mockFindUnique = prisma.apiKey.findUnique as AnyMock;
 
 /** Build a minimal valid active API key DB row */

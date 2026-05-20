@@ -13,3 +13,6 @@ export {
 	getRegistryScriptFromNetworkHandlerV1,
 	getRegistryScriptV1,
 } from './contract-generator';
+
+export { createDatumFromDecodedContractV1 } from './datum-builder';
+export type { V1DatumFromDecodedInput } from './datum-builder';

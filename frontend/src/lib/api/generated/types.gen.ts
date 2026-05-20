@@ -6056,9 +6056,9 @@ export type PostPurchaseData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * Expected payment source type for this purchase
+         * Payment source type for this purchase. Required so the seller-signed payload can be reconstructed deterministically.
          */
-        paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
+        paymentSourceType: 'Web3CardanoV1' | 'Web3CardanoV2';
         /**
          * Required for V2 purchases. The configured V2 payment contract address the seller selected.
          */

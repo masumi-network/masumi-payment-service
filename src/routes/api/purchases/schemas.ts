@@ -228,8 +228,10 @@ export const createPurchaseInitSchemaInput = z
 		network: z.nativeEnum(Network).describe('The network the transaction will be made on'),
 		paymentSourceType: z
 			.nativeEnum(PaymentSourceType)
+			.optional()
+			.default(PaymentSourceType.Web3CardanoV1)
 			.describe(
-				'Payment source type for this purchase. Required so the seller-signed payload can be reconstructed deterministically.',
+				'Payment source type for this purchase. Optional for legacy V1 callers; required when targeting a V2 source so the seller-signed payload can be reconstructed deterministically.',
 			),
 		smartContractAddress: z
 			.string()

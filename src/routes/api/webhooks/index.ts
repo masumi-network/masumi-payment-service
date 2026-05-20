@@ -10,8 +10,8 @@ import {
 	encryptWebhookUrl,
 	generateWebhookUrlHash,
 } from '@/utils/security/webhook-secrets';
-import { logger } from '@/utils/logger';
-import { CONFIG } from '@/utils/config';
+import { logger } from '@masumi/payment-core/logger';
+import { CONFIG } from '@masumi/payment-core/config';
 import { webhookSenderService } from '@/services/webhooks/sender.service';
 import { createAuthenticatedRateLimitMiddleware } from '@/utils/middleware/rate-limit';
 import {

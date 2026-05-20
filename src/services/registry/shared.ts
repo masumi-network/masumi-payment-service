@@ -1,4 +1,4 @@
-import { SERVICE_CONSTANTS } from '@/utils/config';
+import { SERVICE_CONSTANTS } from '@masumi/payment-core/config';
 import { blake2b } from 'ethereum-cryptography/blake2b';
 import { BlockfrostProvider, IFetcher, LanguageVersion, MeshTxBuilder, Network, UTxO } from '@meshsdk/core';
 

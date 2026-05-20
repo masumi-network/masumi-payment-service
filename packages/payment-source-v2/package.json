@@ -5,7 +5,10 @@
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts",
-		"./services": "./src/services/index.ts"
+		"./services": "./src/services/index.ts",
+		"./services/purchases/x402-build/service": "./src/services/purchases/x402-build/service.ts",
+		"./services/registry/supported-payment-sources": "./src/services/registry/supported-payment-sources.ts",
+		"./services/registry-inbox/metadata": "./src/services/registry-inbox/metadata.ts"
 	},
 	"dependencies": {
 		"@masumi/payment-core": "workspace:*",

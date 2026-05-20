@@ -39,7 +39,7 @@ export const authorizePaymentRefundEndpointPost = payAuthenticatedEndpointFactor
 					},
 				},
 				onChainState: {
-					in: [OnChainState.Disputed],
+					in: [OnChainState.Disputed, OnChainState.RefundRequested],
 				},
 				SmartContractWallet: {
 					deletedAt: null,

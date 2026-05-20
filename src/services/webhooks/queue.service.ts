@@ -2,8 +2,8 @@ import { WebhookDeliveryStatus, WebhookEventType } from '@/generated/prisma/clie
 import type { WebhookPayloadDataByEvent } from '@/types/webhook-payloads';
 import { prisma } from '@masumi/payment-core/db';
 import { toPrismaInputJsonValue } from '@/utils/json-value';
-import { logger } from '@/utils/logger';
-import { CONFIG } from '@/utils/config';
+import { logger } from '@masumi/payment-core/logger';
+import { CONFIG } from '@masumi/payment-core/config';
 import { webhookSenderService } from './sender.service';
 import { buildEndpointWebhookPayload, buildWebhookPayload, mergeWebhookEndpointBatch } from './queue.helpers';
 

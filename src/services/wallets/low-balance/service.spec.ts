@@ -49,7 +49,7 @@ jest.unstable_mockModule('@/generated/prisma/enums', () => ({
 	LowBalanceStatus,
 }));
 
-jest.unstable_mockModule('@/utils/db', () => ({
+jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		$transaction: async (
 			callback: (tx: { hotWalletLowBalanceRule: { updateMany: typeof mockUpdateMany } }) => Promise<unknown>,
@@ -72,14 +72,14 @@ jest.unstable_mockModule('@/utils/db', () => ({
 	},
 }));
 
-jest.unstable_mockModule('@/utils/config', () => ({
+jest.unstable_mockModule('@masumi/payment-core/config', () => ({
 	CONFIG: {
 		LOW_BALANCE_DEFAULT_RULES_MAINNET: [],
 		LOW_BALANCE_DEFAULT_RULES_PREPROD: [],
 	},
 }));
 
-jest.unstable_mockModule('@/utils/logger', () => ({
+jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: {
 		info: mockLoggerInfo,
 		warn: mockLoggerWarn,
@@ -91,7 +91,7 @@ jest.unstable_mockModule('@/utils/logs', () => ({
 	logWarn: mockLogWarn,
 }));
 
-jest.unstable_mockModule('@/utils/metrics', () => ({
+jest.unstable_mockModule('@masumi/payment-core/metrics', () => ({
 	recordWalletLowBalanceAlert: mockRecordWalletLowBalanceAlert,
 }));
 

@@ -1,6 +1,6 @@
 import { PaymentSourceType, RegistrationState, TransactionStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex } from 'async-mutex';

@@ -1,13 +1,13 @@
 import { jest } from '@jest/globals';
 
-jest.unstable_mockModule('@/utils/config', () => ({
+jest.unstable_mockModule('@masumi/payment-core/config', () => ({
 	CONFIG: {
 		LOW_BALANCE_DEFAULT_RULES_MAINNET: [],
 		LOW_BALANCE_DEFAULT_RULES_PREPROD: [],
 	},
 }));
 
-jest.unstable_mockModule('@/utils/logger', () => ({
+jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: {
 		info: jest.fn(),
 		warn: jest.fn(),
@@ -16,7 +16,7 @@ jest.unstable_mockModule('@/utils/logger', () => ({
 	},
 }));
 
-jest.unstable_mockModule('@/utils/db', () => ({
+jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {},
 }));
 

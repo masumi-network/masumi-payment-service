@@ -1,4 +1,4 @@
-import { z } from '@/utils/zod-openapi';
+import { z } from './zod';
 
 type allowedFormat = string | number | boolean | null | undefined | Date;
 

@@ -12687,7 +12687,7 @@
                                             "Web3CardanoV1",
                                             "Web3CardanoV2"
                                         ],
-                                        "description": "Expected payment source type for this purchase"
+                                        "description": "Payment source type for this purchase. Required so the seller-signed payload can be reconstructed deterministically."
                                     },
                                     "smartContractAddress": {
                                         "type": "string",
@@ -12774,6 +12774,7 @@
                                 "required": [
                                     "blockchainIdentifier",
                                     "network",
+                                    "paymentSourceType",
                                     "inputHash",
                                     "sellerVkey",
                                     "agentIdentifier",

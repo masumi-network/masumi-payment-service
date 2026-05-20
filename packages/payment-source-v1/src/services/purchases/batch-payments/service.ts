@@ -15,13 +15,13 @@ import {
 	UTxO,
 	unixTimeToEnclosingSlot,
 } from '@meshsdk/core';
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 import { generateWalletExtended } from '@/utils/generator/wallet-generator';
 import { SmartContractState } from '@/utils/generator/contract-generator';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
-import { CONSTANTS } from '@/utils/config';
+import { CONSTANTS } from '@masumi/payment-core/config';
 import { calculateMinUtxo, DUMMY_RESULT_HASH } from '@/utils/min-utxo';
 import { toBalanceMapFromMeshUtxos, walletLowBalanceMonitorService } from '@/services/wallets';
 import {
@@ -30,7 +30,7 @@ import {
 	createPendingTransaction,
 	updateCurrentTransactionHash,
 } from '@/services/shared';
-import { getPaymentSourceContractAdapter } from '@/services/payment-source-adapters';
+import { getDatumFromBlockchainIdentifier } from '@masumi/payment-source-v1';
 
 type PaymentSourceWithWallets = Prisma.PaymentSourceGetPayload<{
 	include: {
@@ -95,18 +95,14 @@ async function executeSpecificBatchPayment(
 		const submitResultTime = data.paymentRequest.submitResultTime;
 		const unlockTime = data.paymentRequest.unlockTime;
 		const externalDisputeUnlockTime = data.paymentRequest.externalDisputeUnlockTime;
-		const buyerReturnAddress = data.paymentRequest.buyerReturnAddress ?? walletPairing.collectionAddress;
-		const adapter = getPaymentSourceContractAdapter(paymentContract.paymentSourceType);
 
 		if (data.paymentRequest.payByTime == null) {
 			throw new Error('Pay by time is null, this is deprecated');
 		}
 
-		const datum = adapter.createDatumFromBlockchainIdentifier({
+		const datum = getDatumFromBlockchainIdentifier({
 			buyerAddress: buyerAddress,
-			buyerReturnAddress,
 			sellerAddress: sellerAddress,
-			sellerReturnAddress: data.paymentRequest.sellerReturnAddress,
 			blockchainIdentifier: data.paymentRequest.blockchainIdentifier,
 			inputHash: data.paymentRequest.inputHash,
 			payByTime: data.paymentRequest.payByTime,
@@ -432,12 +428,9 @@ export async function batchLatestPaymentEntriesV1() {
 								(amount) => amount.unit.toLowerCase() != '' && amount.unit.toLowerCase() != 'lovelace',
 							).length;
 
-							const adapter = getPaymentSourceContractAdapter(paymentContract.paymentSourceType);
-							const resultSubmittedEstimateDatum = adapter.createDatumFromBlockchainIdentifier({
+							const resultSubmittedEstimateDatum = getDatumFromBlockchainIdentifier({
 								buyerAddress: sellerAddress,
-								buyerReturnAddress: paymentRequest.buyerReturnAddress ?? walletData.collectionAddress,
 								sellerAddress: sellerAddress,
-								sellerReturnAddress: paymentRequest.sellerReturnAddress,
 								blockchainIdentifier: paymentRequest.blockchainIdentifier,
 								inputHash: paymentRequest.inputHash,
 								payByTime: paymentRequest.payByTime!,

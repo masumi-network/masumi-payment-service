@@ -1,5 +1,5 @@
 import { SLOT_CONFIG_NETWORK, unixTimeToEnclosingSlot } from '@meshsdk/core';
-import { SERVICE_CONSTANTS } from '@/utils/config';
+import { SERVICE_CONSTANTS } from '@masumi/payment-core/config';
 
 export type TxWindow = {
 	invalidBefore: number;

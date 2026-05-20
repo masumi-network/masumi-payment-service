@@ -1,7 +1,7 @@
 import { createLogger, format, transports } from 'winston';
 import { logs } from '@opentelemetry/api-logs';
-import type { RuntimePropertyValue } from '@/utils/object-properties';
-import { CONFIG } from '../config';
+import type { RuntimePropertyValue } from './object-properties';
+import { CONFIG } from './config';
 const { combine, timestamp, errors, json } = format;
 
 type LoggerInfoValue = RuntimePropertyValue | unknown[];

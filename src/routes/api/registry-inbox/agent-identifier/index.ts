@@ -1,11 +1,10 @@
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
 import { Network } from '@/generated/prisma/client';
-// PaymentSourceType is imported below alongside the V2 parser.
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 import { extractPolicyId, extractAssetName } from '@/utils/converter/agent-identifier';
 import { validateHexString } from '@/utils/validator/hex';
 import { getBlockfrostInstance } from '@/utils/blockfrost';

@@ -1,4 +1,4 @@
-import { CONSTANTS } from '@/utils/config';
+import { CONSTANTS } from '@masumi/payment-core/config';
 import {
 	DecodedV1ContractDatum,
 	decodeV1ContractDatum,
@@ -294,7 +294,7 @@ export function extractOnChainTransactionData(
 		};
 		transaction: Transaction;
 	},
-	paymentContract: { smartContractAddress: string; network: Network; paymentSourceType?: PaymentSourceType },
+	paymentContract: { smartContractAddress: string; network: Network; paymentSourceType: PaymentSourceType },
 ): ExtractOnChainTransactionDataOutput {
 	const valueInputs = tx.utxos.inputs.filter((x) => {
 		return x.address == paymentContract.smartContractAddress;
@@ -346,7 +346,7 @@ export function extractOnChainTransactionData(
 	const datumNetwork = paymentContract.network == Network.Mainnet ? 'mainnet' : 'preprod';
 	const decodedOldContract =
 		paymentContract.paymentSourceType === PaymentSourceType.Web3CardanoV2
-			? decodeV2ContractDatum(decodedInputDatum, datumNetwork)
+			? decodeV2ContractDatum(decodedInputDatum, datumNetwork, paymentContract.smartContractAddress)
 			: decodeV1ContractDatum(decodedInputDatum, datumNetwork);
 	if (decodedOldContract == null) {
 		return {
@@ -367,7 +367,7 @@ export function extractOnChainTransactionData(
 	const decodedOutputDatum: unknown = outputDatum != null ? deserializeDatum(outputDatum) : null;
 	const decodedNewContract =
 		paymentContract.paymentSourceType === PaymentSourceType.Web3CardanoV2
-			? decodeV2ContractDatum(decodedOutputDatum, datumNetwork)
+			? decodeV2ContractDatum(decodedOutputDatum, datumNetwork, paymentContract.smartContractAddress)
 			: decodeV1ContractDatum(decodedOutputDatum, datumNetwork);
 
 	const redeemer = redeemers.get(0);

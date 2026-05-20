@@ -1,5 +1,5 @@
 import { HotWalletType, Network, PaymentSourceType, WebhookEventType } from '@/generated/prisma/client';
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
 import { queryPurchaseRequestSchemaOutput } from '@/routes/api/purchases';
 import { queryPaymentsSchemaOutput } from '@/routes/api/payments';
 import type { Jsonified } from '@/utils/json-value';

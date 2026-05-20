@@ -1,6 +1,6 @@
 import { HotWalletType, OnChainState, PaymentSourceType, PurchasingAction } from '@/generated/prisma/client';
-import { prisma } from '..';
-import { logger } from '@/utils/logger';
+import { prisma } from '@masumi/payment-core/db';
+import { logger } from '@masumi/payment-core/logger';
 
 export async function lockAndQueryPurchases({
 	purchasingAction,

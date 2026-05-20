@@ -1,6 +1,6 @@
 import { creditTokenRepository } from '@/repositories/creditTokens';
 import { InsufficientFundsError } from '@/utils/errors/insufficient-funds-error';
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 import { Network, PricingType } from '@/generated/prisma/client';
 import createHttpError from 'http-errors';
 

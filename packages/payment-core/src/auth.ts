@@ -1,9 +1,9 @@
-export { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
-export { unauthenticatedEndpointFactory } from '@/utils/security/auth/not-authenticated';
-export { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
-export { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
-export {
-	authMiddleware,
-	checkIsAllowedNetworkOrThrowUnauthorized,
-	type AuthContext,
-} from '@/utils/middleware/auth-middleware';
+import endpointFactory from './endpoint-factory';
+import { authMiddleware } from './auth-middleware';
+
+export const adminAuthenticatedEndpointFactory = endpointFactory.addMiddleware(authMiddleware({ canAdmin: true }));
+export const payAuthenticatedEndpointFactory = endpointFactory.addMiddleware(authMiddleware({ canPay: true }));
+export const readAuthenticatedEndpointFactory = endpointFactory.addMiddleware(authMiddleware({ canRead: true }));
+export const unauthenticatedEndpointFactory = endpointFactory;
+
+export { authMiddleware, checkIsAllowedNetworkOrThrowUnauthorized, type AuthContext } from './auth-middleware';

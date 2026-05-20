@@ -1,7 +1,7 @@
 import { Middleware } from 'express-zod-api';
 import createHttpError from 'http-errors';
-import type { AuthContext } from '@/utils/middleware/auth-middleware';
-import { z } from '@/utils/zod-openapi';
+import type { AuthContext } from '@masumi/payment-core/auth-middleware';
+import { z } from '@masumi/payment-core/zod';
 
 type RateLimitCounter = {
 	count: number;

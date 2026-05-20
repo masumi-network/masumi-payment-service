@@ -23,9 +23,9 @@ import {
 import { detectInvoiceChanges, getOriginalInvoiceInfo } from '@/utils/invoice/comparison';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
-import { CONFIG } from '@/utils/config';
+import { CONFIG } from '@masumi/payment-core/config';
 import Coingecko from '@coingecko/coingecko-typescript';
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 import {
 	collectDistinctSellerWalletVkeys,
 	getBillableFunds,

@@ -3,13 +3,13 @@ import { MeshTxBuilder } from '@/services/shared';
 import type { BlockfrostProvider } from '@/services/shared';
 import { Address, Datum, toPlutusData, toValue, TransactionOutput } from '@meshsdk/core-cst';
 import createHttpError from 'http-errors';
-import { Network, PaymentSourceType } from '@/generated/prisma/client';
+import { Network } from '@/generated/prisma/client';
 import { SmartContractState } from '@/utils/generator/contract-generator';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { calculateMinUtxo, DUMMY_RESULT_HASH, getNativeTokenCount } from '@/utils/min-utxo';
-import { CONSTANTS } from '@/utils/config';
-import { logger } from '@/utils/logger';
-import { getPaymentSourceContractAdapter } from '@/services/payment-source-adapters';
+import { CONSTANTS } from '@masumi/payment-core/config';
+import { logger } from '@masumi/payment-core/logger';
+import { createDatumFromBlockchainIdentifierV2 } from '@masumi/payment-source-v2';
 
 interface X402PurchaseBuildData {
 	blockchainIdentifier: string;
@@ -40,9 +40,8 @@ export async function buildX402FundsLockingTransactionV2({
 	coinsPerUtxoSize: number;
 }): Promise<{ unsignedTxCbor: string; collateralReturnLovelace: bigint; buyerWalletVkey: string }> {
 	const buildData = purchaseRequestData;
-	const adapter = getPaymentSourceContractAdapter(PaymentSourceType.Web3CardanoV2);
 
-	const tmpDatum = adapter.createDatumFromBlockchainIdentifier({
+	const tmpDatum = createDatumFromBlockchainIdentifierV2({
 		buyerAddress,
 		buyerReturnAddress: buildData.buyerReturnAddress,
 		sellerAddress: buildData.sellerAddress,
@@ -114,7 +113,7 @@ export async function buildX402FundsLockingTransactionV2({
 		};
 	}
 
-	const finalDatum = adapter.createDatumFromBlockchainIdentifier({
+	const finalDatum = createDatumFromBlockchainIdentifierV2({
 		buyerAddress,
 		buyerReturnAddress: buildData.buyerReturnAddress,
 		sellerAddress: buildData.sellerAddress,

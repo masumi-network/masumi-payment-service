@@ -7,10 +7,10 @@ import {
 	PurchasingAction,
 } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { Mutex } from 'async-mutex';
-import { CONFIG, CONSTANTS } from '@/utils/config';
+import { CONFIG, CONSTANTS } from '@masumi/payment-core/config';
 import { extractOnChainTransactionData } from './util';
 import { getExtendedTxInformation, getTxsFromCardanoAfterSpecificTx } from './blockchain';
 import {

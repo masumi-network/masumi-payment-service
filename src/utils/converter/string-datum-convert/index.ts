@@ -3,7 +3,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { generateBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { SmartContractState } from '@/utils/generator/contract-generator';
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 import { serializeAddressObj } from '@meshsdk/core';
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
 import { Network } from '@meshsdk/core';
@@ -213,7 +213,11 @@ export function decodeV1ContractDatum(decodedDatum: any, network: Network): Deco
 	}
 }
 
-export function decodeV2ContractDatum(decodedDatum: any, network: Network): DecodedV1ContractDatum | null {
+export function decodeV2ContractDatum(
+	decodedDatum: any,
+	network: Network,
+	smartContractAddress?: string | null,
+): DecodedV1ContractDatum | null {
 	try {
 		if (decodedDatum == null) {
 			return null;
@@ -292,6 +296,7 @@ export function decodeV2ContractDatum(decodedDatum: any, network: Network): Deco
 			referenceSignature,
 			sellerIdentifier,
 			buyerNonce,
+			smartContractAddress,
 		);
 
 		return {

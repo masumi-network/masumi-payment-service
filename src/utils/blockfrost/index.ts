@@ -2,7 +2,7 @@
 
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { $Enums } from '@/generated/prisma/client';
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 
 // Key format: `${network}-${apiKey}`
 const blockfrostInstanceCache = new Map<string, BlockFrostAPI>();

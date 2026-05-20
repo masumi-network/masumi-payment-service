@@ -1,8 +1,8 @@
-import { HttpExistsError, allowedObjectSchema } from '@/utils/errors/http-exists-error';
+import { HttpExistsError, allowedObjectSchema } from './http-exists-error';
 import { EndpointsFactory, ensureHttpError, FlatObject, ResultHandler } from 'express-zod-api';
 import createHttpError, { HttpError } from 'http-errors';
 
-import { z } from '@/utils/zod-openapi';
+import { z } from './zod';
 
 type ErrorLogger = {
 	error: (message: string, meta: { error: HttpError; url: string; payload: FlatObject | null }) => unknown;

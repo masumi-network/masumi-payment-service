@@ -1,4 +1,4 @@
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 import { checkLatestTransactions } from '@/services/transactions';
 import { AsyncInterval } from '@/utils/async-interval';
 import { checkRegistryTransactions } from '@masumi/payment-source-v1/services/registry/tx-sync/service';

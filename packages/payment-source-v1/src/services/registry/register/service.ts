@@ -1,9 +1,9 @@
 import { PaymentSourceType, RegistrationState, PricingType } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { lockAndQueryRegistryRequests } from '@/utils/db/lock-and-query-registry-request';
-import { DEFAULTS, SERVICE_CONSTANTS } from '@/utils/config';
+import { DEFAULTS, SERVICE_CONSTANTS } from '@masumi/payment-core/config';
 import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contract-generator';
 import { stringToMetadata, cleanMetadata } from '@/utils/converter/metadata-string-convert';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';

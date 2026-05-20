@@ -6,8 +6,8 @@ import {
 	PurchasingAction,
 } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
-import { logger } from '@/utils/logger';
-import { CONFIG } from '@/utils/config';
+import { logger } from '@masumi/payment-core/logger';
+import { CONFIG } from '@masumi/payment-core/config';
 import { Mutex } from 'async-mutex';
 import { withJobLock } from '@/services/shared';
 

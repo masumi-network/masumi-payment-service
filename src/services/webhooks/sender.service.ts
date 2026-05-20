@@ -2,8 +2,8 @@ import { WebhookDeliveryStatus, WebhookEventType, WebhookFormat } from '@/genera
 import { WEBHOOK_TEST_EVENT_TYPE } from '@/types/webhook-constants';
 import type { StoredWebhookPayload, WebhookSendPayload, WebhookTestPayload } from '@/types/webhook-payloads';
 import { prisma } from '@masumi/payment-core/db';
-import { logger } from '@/utils/logger';
-import { getOwnPlainObject, getOwnString, isPlainObject } from '@/utils/object-properties';
+import { logger } from '@masumi/payment-core/logger';
+import { getOwnPlainObject, getOwnString, isPlainObject } from '@masumi/payment-core/object-properties';
 import { decryptWebhookAuthTokenSafe, decryptWebhookUrlForDelivery } from '@/utils/security/webhook-secrets';
 import {
 	assertWebhookDestinationAllowed,

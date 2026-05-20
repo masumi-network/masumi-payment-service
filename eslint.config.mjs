@@ -89,7 +89,14 @@ export default [
 	},
 	// Add Jest environment for test files
 	{
-		files: ['src/**/*.spec.ts', 'src/**/*.test.ts', 'tests/**/*.ts', 'jest.e2e.config.ts'],
+		files: [
+			'src/**/*.spec.ts',
+			'src/**/*.test.ts',
+			'packages/**/*.spec.ts',
+			'packages/**/*.test.ts',
+			'tests/**/*.ts',
+			'jest.e2e.config.ts',
+		],
 		languageOptions: {
 			globals: {
 				...globals.jest,
@@ -111,6 +118,8 @@ export default [
 			'.eslint-rules/**',
 			'src/**/*.spec.ts',
 			'src/**/*.test.ts',
+			'packages/**/*.spec.ts',
+			'packages/**/*.test.ts',
 			'tests/**/*.ts',
 			'jest.e2e.config.ts',
 			'**/node_modules/**',

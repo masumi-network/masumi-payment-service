@@ -1,6 +1,6 @@
 import { createLogger, format, transports } from 'winston';
 import { logs } from '@opentelemetry/api-logs';
-import { CONFIG } from '../config';
+import { CONFIG } from './config';
 import {
 	getOwnEntries,
 	getOwnString,
@@ -8,7 +8,7 @@ import {
 	isPlainObject,
 	type RuntimeObject,
 	type RuntimePropertyValue,
-} from '@/utils/object-properties';
+} from './object-properties';
 
 const { combine, timestamp, printf, errors } = format;
 const SPLAT = Symbol.for('splat');

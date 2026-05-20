@@ -1,4 +1,4 @@
-import { CONFIG } from '@/utils/config';
+import { CONFIG } from '@masumi/payment-core/config';
 import { web3CardanoV1, web3CardanoV2 } from '@/services/payment-source-types';
 import { checkLatestTransactions, updateWalletTransactionHash } from '@/services/transactions';
 import { walletLowBalanceMonitorService } from '@/services/wallets';

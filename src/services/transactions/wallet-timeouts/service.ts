@@ -8,9 +8,9 @@ import {
 	RegistrationState,
 } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 import { web3CardanoV1, web3CardanoV2 } from '@/services/payment-source-types';
-import { CONFIG, DEFAULTS } from '@/utils/config';
+import { CONFIG, DEFAULTS } from '@masumi/payment-core/config';
 import { errorToString } from '@/utils/converter/error-string-convert';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import {

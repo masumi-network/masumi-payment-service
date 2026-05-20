@@ -4,7 +4,7 @@ import { z } from '@masumi/payment-core/zod';
 import { PricingType, RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
-import { DEFAULTS } from '@/utils/config';
+import { DEFAULTS } from '@masumi/payment-core/config';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';

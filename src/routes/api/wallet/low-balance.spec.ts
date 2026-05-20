@@ -9,7 +9,7 @@ type AnyMock = Mock<(...args: any[]) => any>;
 const mockFindApiKey = jest.fn() as AnyMock;
 const mockFindManyRules = jest.fn() as AnyMock;
 
-jest.unstable_mockModule('@/utils/db', () => ({
+jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		apiKey: {
 			findUnique: mockFindApiKey,
@@ -30,7 +30,7 @@ jest.unstable_mockModule('@/utils/db', () => ({
 	},
 }));
 
-jest.unstable_mockModule('@/utils/config', () => ({
+jest.unstable_mockModule('@masumi/payment-core/config', () => ({
 	CONFIG: {
 		ENCRYPTION_KEY: '12345678901234567890',
 		LOW_BALANCE_DEFAULT_RULES_MAINNET: [],
@@ -38,7 +38,7 @@ jest.unstable_mockModule('@/utils/config', () => ({
 	},
 }));
 
-jest.unstable_mockModule('@/utils/logger', () => ({
+jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: {
 		info: jest.fn(),
 		warn: jest.fn(),
@@ -51,7 +51,7 @@ jest.unstable_mockModule('@/utils/logs', () => ({
 	logWarn: jest.fn(),
 }));
 
-jest.unstable_mockModule('@/utils/metrics', () => ({
+jest.unstable_mockModule('@masumi/payment-core/metrics', () => ({
 	recordWalletLowBalanceAlert: jest.fn(),
 }));
 

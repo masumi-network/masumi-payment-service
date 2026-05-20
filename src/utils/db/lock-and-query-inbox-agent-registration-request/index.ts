@@ -1,5 +1,5 @@
 import { HotWalletType, PaymentSourceType, RegistrationState } from '@/generated/prisma/client';
-import { prisma } from '../index.js';
+import { prisma } from '@masumi/payment-core/db';
 
 export async function lockAndQueryInboxAgentRegistrationRequests({
 	state,

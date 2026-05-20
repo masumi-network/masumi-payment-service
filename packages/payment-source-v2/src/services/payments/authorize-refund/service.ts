@@ -1,7 +1,7 @@
 import { OnChainState, PaymentAction, PaymentErrorType, PaymentSourceType } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { deserializeDatum } from '@meshsdk/core';
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 import { SmartContractState, smartContractStateEqualsOnChainState } from '@/utils/generator/contract-generator';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { newCooldownTime } from '@/utils/converter/string-datum-convert';
@@ -20,7 +20,8 @@ import {
 	loadHotWalletSession,
 	updateCurrentTransactionHash,
 } from '@/services/shared';
-import { getPaymentSourceContractAdapter } from '@/services/payment-source-adapters';
+import { createDatumFromDecodedContractV2, getPaymentScriptFromPaymentSourceV2 } from '@masumi/payment-source-v2';
+import { decodeV2ContractDatum } from '@/utils/converter/string-datum-convert';
 
 const mutex = new Mutex();
 
@@ -91,8 +92,7 @@ export async function authorizeRefundV2() {
 						if (utxos.length === 0) {
 							throw new Error('No UTXOs found in the wallet. Wallet is empty.');
 						}
-						const adapter = getPaymentSourceContractAdapter(PaymentSourceType.Web3CardanoV2);
-						const { script, smartContractAddress } = await adapter.getPaymentScriptFromPaymentSource(paymentContract);
+						const { script, smartContractAddress } = await getPaymentScriptFromPaymentSourceV2(paymentContract);
 						const txHash = request.CurrentTransaction?.txHash;
 						if (txHash == null) {
 							throw new Error('No transaction hash found');
@@ -103,7 +103,7 @@ export async function authorizeRefundV2() {
 							const utxoDatum = utxo.output.plutusData;
 							if (!utxoDatum) return false;
 							const decodedDatum: unknown = deserializeDatum(utxoDatum);
-							const decodedContract = adapter.decodeContractDatum(decodedDatum, network);
+							const decodedContract = decodeV2ContractDatum(decodedDatum, network, smartContractAddress);
 							if (decodedContract == null) return false;
 							return (
 								smartContractStateEqualsOnChainState(decodedContract.state, request.onChainState) &&
@@ -131,11 +131,11 @@ export async function authorizeRefundV2() {
 							throw new Error('No datum found in UTXO');
 						}
 						const decodedDatum: unknown = deserializeDatum(utxoDatum);
-						const decodedContract = adapter.decodeContractDatum(decodedDatum, network);
+						const decodedContract = decodeV2ContractDatum(decodedDatum, network, smartContractAddress);
 						if (decodedContract == null) {
 							throw new Error('Invalid datum');
 						}
-						const datum = adapter.createDatumFromDecodedContract({
+						const datum = createDatumFromDecodedContractV2({
 							decodedContract,
 							buyerAddress,
 							sellerAddress,

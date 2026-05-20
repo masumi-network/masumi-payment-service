@@ -5,7 +5,7 @@ import { AssetAmount } from '@sundaeswap/asset';
 import { ESwapType, EDatumType } from '@sundaeswap/core';
 import { SundaeUtils } from '@sundaeswap/core/utilities';
 import type { IPoolData } from '@sundaeswap/core';
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import {
 	toBalanceMapFromLucidUtxos,

@@ -1,6 +1,6 @@
 import { prisma } from '@masumi/payment-core/db';
 import { SmartContractState } from '@/utils/generator/contract-generator';
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 import { convertNewPaymentActionAndError, convertNewPurchasingActionAndError } from '@/utils/logic/state-transitions';
 import { Transaction } from '@emurgo/cardano-serialization-lib-nodejs';
 import {
@@ -28,7 +28,7 @@ import {
 import { deserializeDatum } from '@meshsdk/core';
 import { DecodedV1ContractDatum } from '@/utils/converter/string-datum-convert';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
-import { CONSTANTS } from '@/utils/config';
+import { CONSTANTS } from '@masumi/payment-core/config';
 import { TransactionMetadata } from '@/services/transactions/tx-sync/blockchain';
 import { calculateMinUtxo, getLovelaceFromAmounts, getNativeTokenCount, DUMMY_RESULT_HASH } from '@/utils/min-utxo';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
@@ -494,6 +494,7 @@ export async function updateInitialTransactions(
 		id: string;
 		network: Network;
 		paymentSourceType: PaymentSourceType;
+		smartContractAddress: string;
 	},
 	tx: UpdateTransactionInput,
 	rpcProviderApiKey: string,
@@ -509,6 +510,7 @@ export async function updateInitialTransactions(
 		const decodedNewContract = adapter.decodeContractDatum(
 			decodedOutputDatum,
 			getDatumNetwork(paymentContract.network),
+			paymentContract.smartContractAddress,
 		);
 		if (decodedNewContract == null) {
 			//invalid transaction
@@ -541,7 +543,7 @@ export async function updateInitialTransactions(
 	}
 }
 async function updateInitialPurchaseTransaction(
-	paymentContract: { id: string; network: Network; paymentSourceType: PaymentSourceType },
+	paymentContract: { id: string; network: Network; paymentSourceType: PaymentSourceType; smartContractAddress: string },
 	decodedNewContract: DecodedV1ContractDatum,
 	output: Extract<ExtractOnChainTransactionDataOutput, { type: 'Initial' }>['valueOutputs'][number],
 	tx: UpdateTransactionInput,
@@ -877,7 +879,7 @@ async function updateInitialPurchaseTransaction(
 
 async function updateInitialPaymentTransaction(
 	decodedNewContract: DecodedV1ContractDatum,
-	paymentContract: { id: string; network: Network; paymentSourceType: PaymentSourceType },
+	paymentContract: { id: string; network: Network; paymentSourceType: PaymentSourceType; smartContractAddress: string },
 	tx: UpdateTransactionInput,
 	output: Extract<ExtractOnChainTransactionDataOutput, { type: 'Initial' }>['valueOutputs'][number],
 	metadata: TransactionMetadata,

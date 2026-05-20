@@ -20,5 +20,6 @@ export { checkRegistryTransactionsV2 as checkRegistryTransactions } from './regi
 export { registerInboxAgentV2 as registerInboxAgent } from './registry-inbox/register/service';
 export { deRegisterInboxAgentV2 as deRegisterInboxAgent } from './registry-inbox/deregister/service';
 export { checkInboxAgentRegistrationTransactionsV2 as checkInboxAgentRegistrationTransactions } from './registry-inbox/tx-sync/service';
+export { parseInboxAgentRegistrationMetadata } from './registry-inbox/metadata';
 
 export { getDefaultSupportedPaymentSources } from './registry/supported-payment-sources';

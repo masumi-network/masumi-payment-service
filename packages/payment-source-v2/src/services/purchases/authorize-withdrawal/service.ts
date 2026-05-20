@@ -1,7 +1,7 @@
 import { OnChainState, PaymentSourceType, PurchaseErrorType, PurchasingAction } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { deserializeDatum, UTxO } from '@meshsdk/core';
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 import { SmartContractState, smartContractStateEqualsOnChainState } from '@/utils/generator/contract-generator';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { DecodedV1ContractDatum, newCooldownTime } from '@/utils/converter/string-datum-convert';
@@ -20,7 +20,8 @@ import {
 	loadHotWalletSession,
 	updateCurrentTransactionHash,
 } from '@/services/shared';
-import { getPaymentSourceContractAdapter } from '@/services/payment-source-adapters';
+import { createDatumFromDecodedContractV2, getPaymentScriptFromPaymentSourceV2 } from '@masumi/payment-source-v2';
+import { decodeV2ContractDatum } from '@/utils/converter/string-datum-convert';
 
 const mutex = new Mutex();
 
@@ -53,8 +54,7 @@ function decodeAndValidateUtxoDatum(params: {
 		throw new Error('No datum found in UTXO');
 	}
 	const decodedDatum: unknown = deserializeDatum(utxoDatum);
-	const adapter = getPaymentSourceContractAdapter(PaymentSourceType.Web3CardanoV2);
-	const decodedContract = adapter.decodeContractDatum(decodedDatum, params.network);
+	const decodedContract = decodeV2ContractDatum(decodedDatum, params.network);
 	if (decodedContract == null) {
 		throw new Error('Invalid datum');
 	}
@@ -68,8 +68,7 @@ function createAuthorizeWithdrawalDatum(params: {
 	blockchainIdentifier: string;
 	cooldownTime: bigint;
 }) {
-	const adapter = getPaymentSourceContractAdapter(PaymentSourceType.Web3CardanoV2);
-	return adapter.createDatumFromDecodedContract({
+	return createDatumFromDecodedContractV2({
 		decodedContract: params.decodedContract,
 		buyerAddress: params.buyerAddress,
 		sellerAddress: params.sellerAddress,
@@ -136,8 +135,7 @@ export async function authorizeWithdrawalsV2() {
 							throw new Error('No UTXOs found in the wallet. Wallet is empty.');
 						}
 
-						const adapter = getPaymentSourceContractAdapter(PaymentSourceType.Web3CardanoV2);
-						const { script, smartContractAddress } = await adapter.getPaymentScriptFromPaymentSource(paymentContract);
+						const { script, smartContractAddress } = await getPaymentScriptFromPaymentSourceV2(paymentContract);
 						const txHash = request.CurrentTransaction?.txHash;
 						if (txHash == null) {
 							throw new Error('Transaction hash not found');
@@ -148,7 +146,7 @@ export async function authorizeWithdrawalsV2() {
 							const utxoDatum = utxo.output.plutusData;
 							if (!utxoDatum) return false;
 							const decodedDatum: unknown = deserializeDatum(utxoDatum);
-							const decodedContract = adapter.decodeContractDatum(decodedDatum, network);
+							const decodedContract = decodeV2ContractDatum(decodedDatum, network);
 							if (decodedContract == null) return false;
 							return (
 								smartContractStateEqualsOnChainState(decodedContract.state, request.onChainState) &&

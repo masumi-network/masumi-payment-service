@@ -1,6 +1,6 @@
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
-import { Chain, Network, PaymentSourceType } from '@/generated/prisma/client';
-import { z } from '@/utils/zod-openapi';
+import { Chain, Network, PaymentSourceType } from '@prisma/client';
+import { z } from './zod';
 
 export { Chain as SupportedPaymentSourceChain };
 

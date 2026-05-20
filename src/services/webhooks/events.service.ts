@@ -1,5 +1,5 @@
 import { webhookQueueService } from './queue.service';
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 import { prisma } from '@masumi/payment-core/db';
 import { WebhookEventType } from '@/generated/prisma/client';
 import type { WebhookPayloadDataByEvent } from '@/types/webhook-payloads';

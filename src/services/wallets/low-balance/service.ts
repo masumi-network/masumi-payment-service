@@ -4,8 +4,8 @@ import type { UTxO } from '@meshsdk/core';
 import { HotWalletType, Network, PaymentSourceType } from '@/generated/prisma/client';
 import { LowBalanceStatus } from '@/generated/prisma/enums';
 import { prisma } from '@masumi/payment-core/db';
-import { CONFIG, type LowBalanceDefaultRule } from '@/utils/config';
-import { logger } from '@/utils/logger';
+import { CONFIG, type LowBalanceDefaultRule } from '@masumi/payment-core/config';
+import { logger } from '@masumi/payment-core/logger';
 import { logWarn } from '@/utils/logs';
 import { recordWalletLowBalanceAlert } from '@masumi/payment-core/metrics';
 import { generateWalletExtended } from '@/utils/generator/wallet-generator';
@@ -683,13 +683,14 @@ export class WalletLowBalanceMonitorService {
 
 	private async emitLowBalanceAlert(alert: WalletLowBalanceAlert): Promise<void> {
 		const checkSourceLabel = describeCheckSource(alert.checkSource);
-		// PaymentSource.paymentSourceType is a non-null enum column. Surface the bug instead
-		// of silently mis-attributing the alert to V1 when the column is unexpectedly null.
 		const paymentSourceType = alert.wallet.PaymentSource.paymentSourceType;
 		if (paymentSourceType == null) {
-			throw new Error(
-				`PaymentSource ${alert.wallet.PaymentSource.id} has null paymentSourceType while emitting low-balance alert`,
-			);
+			logger.error('PaymentSource has null paymentSourceType while emitting low-balance alert; skipping alert', {
+				paymentSourceId: alert.wallet.PaymentSource.id,
+				walletId: alert.wallet.id,
+				checkSource: alert.checkSource,
+			});
+			return;
 		}
 		const attributes = {
 			network: alert.wallet.PaymentSource.network,

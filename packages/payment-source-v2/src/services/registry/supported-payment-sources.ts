@@ -1,5 +1,5 @@
 import { Network, PaymentSourceType } from '@/generated/prisma/client';
-import { DEFAULTS } from '@/utils/config';
+import { DEFAULTS } from '@masumi/payment-core/config';
 import { SupportedPaymentSourceChain, type SupportedPaymentSource } from '@/types/payment-source';
 import { getPaymentScriptV2 } from '@masumi/payment-source-v2';
 

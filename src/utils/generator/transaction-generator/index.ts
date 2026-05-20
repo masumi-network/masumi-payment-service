@@ -12,9 +12,9 @@ import {
 import { resolvePlutusScriptAddress } from '@meshsdk/core-cst';
 import { convertNetworkToId } from '@/utils/converter/network-convert';
 import { Network as PrismaNetwork } from '@/generated/prisma/client';
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 import { calculateMinUtxo, getLovelaceFromAmounts, getNativeTokenCount, calculateTopUpAmount } from '@/utils/min-utxo';
-import { CONSTANTS } from '@/utils/config';
+import { CONSTANTS } from '@masumi/payment-core/config';
 
 function convertMeshNetworkToPrismaNetwork(network: Network): PrismaNetwork {
 	switch (network) {

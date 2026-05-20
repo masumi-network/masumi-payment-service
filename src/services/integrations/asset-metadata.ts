@@ -1,6 +1,6 @@
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { metadataSchema } from '@/routes/api/registry/wallet';
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
 
 type FetchAssetInWalletAndMetadataSuccess = {
 	data: {

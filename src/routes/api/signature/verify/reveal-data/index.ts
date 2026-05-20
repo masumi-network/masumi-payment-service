@@ -5,7 +5,7 @@ import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
 import stringify from 'canonical-json';
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { checkSignature, resolvePaymentKeyHash } from '@meshsdk/core';
-import { CONSTANTS } from '@/utils/config';
+import { CONSTANTS } from '@masumi/payment-core/config';
 import { AuthContext } from '@masumi/payment-core/auth';
 import { assertWalletInScope } from '@/utils/shared/wallet-scope';
 

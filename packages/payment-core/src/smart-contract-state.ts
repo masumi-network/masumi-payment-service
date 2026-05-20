@@ -1,4 +1,4 @@
-import { OnChainState } from '@/generated/prisma/client';
+import { OnChainState } from '@prisma/client';
 
 export enum SmartContractState {
 	FundsLocked = 0,

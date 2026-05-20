@@ -1,10 +1,10 @@
 import { Middleware } from 'express-zod-api';
 import createHttpError from 'http-errors';
-import { prisma } from '@/utils/db';
-import { z } from '@/utils/zod-openapi';
-import { ApiKeyStatus, Network } from '@/generated/prisma/enums';
-import { generateApiKeySecureHash } from '@/utils/crypto/api-key-hash';
-import { RequiredPermissionFlags, hasPermission, getPermissionName } from '@/utils/permissions';
+import { prisma } from './db';
+import { z } from './zod';
+import { ApiKeyStatus, Network } from '@prisma/client';
+import { generateApiKeySecureHash } from './api-key-hash';
+import { RequiredPermissionFlags, hasPermission, getPermissionName } from './permissions';
 
 /**
  * Authentication context passed to endpoint handlers.

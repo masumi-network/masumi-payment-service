@@ -2,7 +2,7 @@ import { PaymentAction, PaymentErrorType, PaymentSourceType, Prisma } from '@/ge
 import { prisma } from '@masumi/payment-core/db';
 import { deserializeDatum, UTxO } from '@meshsdk/core';
 import type { BlockfrostProvider } from '@/services/shared';
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 import { SmartContractState, smartContractStateEqualsOnChainState } from '@/utils/generator/contract-generator';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { DecodedV1ContractDatum, newCooldownTime } from '@/utils/converter/string-datum-convert';
@@ -22,7 +22,8 @@ import {
 	loadHotWalletSession,
 	updateCurrentTransactionHash,
 } from '@/services/shared';
-import { getDatumNetwork, getPaymentSourceContractAdapter } from '@/services/payment-source-adapters';
+import { createDatumFromDecodedContractV2, getPaymentScriptFromPaymentSourceV2 } from '@masumi/payment-source-v2';
+import { decodeV2ContractDatum } from '@/utils/converter/string-datum-convert';
 
 type PaymentSourceWithRelations = Prisma.PaymentSourceGetPayload<{
 	include: {
@@ -105,7 +106,6 @@ async function findMatchingUtxoAndDecodeContract(
 	request: PaymentRequestWithRelations,
 	paymentContract: PaymentSourceWithRelations,
 ): Promise<MatchingUtxoResult | undefined> {
-	const adapter = getPaymentSourceContractAdapter(paymentContract.paymentSourceType);
 	for (const utxo of utxoList) {
 		if (utxo.input.txHash !== txHash) {
 			continue;
@@ -117,7 +117,11 @@ async function findMatchingUtxoAndDecodeContract(
 		}
 
 		const decodedDatum: unknown = deserializeDatum(utxoDatum);
-		const decodedContract = adapter.decodeContractDatum(decodedDatum, getDatumNetwork(paymentContract.network));
+		const decodedContract = decodeV2ContractDatum(
+			decodedDatum,
+			convertNetwork(paymentContract.network),
+			paymentContract.smartContractAddress,
+		);
 		if (decodedContract === null) {
 			continue;
 		}
@@ -189,8 +193,7 @@ async function processSinglePaymentRequest(
 		throw new Error('No UTXOs found in the wallet. Wallet is empty.');
 	}
 
-	const adapter = getPaymentSourceContractAdapter(paymentContract.paymentSourceType);
-	const { script, smartContractAddress } = await adapter.getPaymentScriptFromPaymentSource(paymentContract);
+	const { script, smartContractAddress } = await getPaymentScriptFromPaymentSourceV2(paymentContract);
 	const txHash = request.CurrentTransaction?.txHash;
 	if (txHash == null) {
 		throw new Error('No transaction hash found');
@@ -205,7 +208,7 @@ async function processSinglePaymentRequest(
 
 	const { utxo, decodedContract } = matchResult;
 
-	const datum = adapter.createDatumFromDecodedContract({
+	const datum = createDatumFromDecodedContractV2({
 		decodedContract,
 		buyerAddress: decodedContract.buyerAddress,
 		sellerAddress: decodedContract.sellerAddress,

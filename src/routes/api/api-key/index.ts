@@ -3,10 +3,10 @@ import { ApiKeyStatus, Network } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { createId } from '@paralleldrive/cuid2';
 import createHttpError from 'http-errors';
-import { generateApiKeySecureHash } from '@/utils/crypto/api-key-hash';
+import { generateApiKeySecureHash } from '@masumi/payment-core/api-key-hash';
 import { encrypt, decrypt } from '@/utils/security/encryption';
-import { CONSTANTS } from '@/utils/config';
-import { logger } from '@/utils/logger';
+import { CONSTANTS } from '@masumi/payment-core/config';
+import { logger } from '@masumi/payment-core/logger';
 import { transformBigIntAmounts } from '@/utils/shared/transformers';
 import { z } from '@masumi/payment-core/zod';
 import {
@@ -20,7 +20,11 @@ import {
 	updateAPIKeySchemaInput,
 	updateAPIKeySchemaOutput,
 } from './schemas';
-import { computePermissionFromFlags, flagsFromLegacyPermission, LegacyPermission } from '@/utils/permissions';
+import {
+	computePermissionFromFlags,
+	flagsFromLegacyPermission,
+	LegacyPermission,
+} from '@masumi/payment-core/permissions';
 
 export {
 	addAPIKeySchemaInput,

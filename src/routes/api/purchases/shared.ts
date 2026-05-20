@@ -33,10 +33,12 @@ export async function resolvePurchaseCreationContext({
 	input,
 	paymentSourceId,
 	rpcProviderApiKey,
+	smartContractAddress,
 }: {
 	input: PurchaseInitBaseInput;
 	paymentSourceId: string;
 	rpcProviderApiKey: string;
+	smartContractAddress: string;
 }) {
 	const policyId = input.agentIdentifier.substring(0, 56);
 	const additionalExternalDisputeUnlockTime = BigInt(1000 * 60 * 15);
@@ -184,6 +186,9 @@ export async function resolvePurchaseCreationContext({
 	if (isV2 && decoded.smartContractAddress == null) {
 		throw createHttpError(400, 'Invalid blockchain identifier, V2 must carry smartContractAddress');
 	}
+	if (isV2 && decoded.smartContractAddress !== smartContractAddress) {
+		throw createHttpError(400, 'Invalid blockchain identifier, smartContractAddress mismatch');
+	}
 	const reconstructedBlockchainIdentifier = buildSignedBlockchainIdentifierPayload({
 		inputHash: input.inputHash,
 		agentIdentifier: input.agentIdentifier,
@@ -202,7 +207,7 @@ export async function resolvePurchaseCreationContext({
 		externalDisputeUnlockTime: externalDisputeUnlockTime.toString(),
 		sellerAddress,
 		sellerReturnAddress,
-		smartContractAddress: isV2 ? decoded.smartContractAddress : null,
+		smartContractAddress: isV2 ? smartContractAddress : null,
 		paymentSourceType: resolvedPaymentSourceType,
 	});
 

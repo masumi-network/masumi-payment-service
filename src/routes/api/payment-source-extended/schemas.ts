@@ -90,7 +90,11 @@ export const paymentSourceExtendedSchemaOutput = z.object({
 export const paymentSourceExtendedCreateSchemaInput = z
 	.object({
 		network: z.nativeEnum(Network).describe('The network the payment source will be used on'),
-		paymentSourceType: z.nativeEnum(PaymentSourceType).describe('The payment source type to create'),
+		paymentSourceType: z
+			.nativeEnum(PaymentSourceType)
+			.optional()
+			.default(PaymentSourceType.Web3CardanoV1)
+			.describe('The payment source type to create. Defaults to Web3CardanoV1 for legacy admin clients.'),
 		PaymentSourceConfig: z.object({
 			rpcProviderApiKey: z
 				.string()

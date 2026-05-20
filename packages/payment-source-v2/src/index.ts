@@ -13,3 +13,6 @@ export {
 	getRegistryScriptFromNetworkHandlerV2,
 	getRegistryScriptV2,
 } from './contract-generator';
+
+export { createDatumFromBlockchainIdentifierV2, createDatumFromDecodedContractV2 } from './datum-builder';
+export type { V2DatumInput, V2DatumFromDecodedInput } from './datum-builder';

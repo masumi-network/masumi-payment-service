@@ -8,7 +8,7 @@ import {
 	getRegistryScriptFromNetworkHandlerV1,
 	getRegistryScriptFromNetworkHandlerV2,
 } from '@/utils/generator/contract-generator';
-import { DEFAULTS } from '@/utils/config';
+import { DEFAULTS } from '@masumi/payment-core/config';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { extractAssetName } from '@/utils/converter/agent-identifier';
 import { registryRequestOutputSchema } from '@/routes/api/registry';

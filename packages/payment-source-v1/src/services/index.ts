@@ -11,6 +11,7 @@ export { batchLatestPaymentEntriesV1 as batchLatestPaymentEntries } from './purc
 export { cancelRefundsV1 as cancelRefunds } from './purchases/cancel-refund/service';
 export { collectRefundV1 as collectRefund } from './purchases/collect-refund/service';
 export { requestRefundsV1 as requestRefunds } from './purchases/request-refund/service';
+export { buildX402FundsLockingTransaction } from './purchases/x402-build/service';
 
 export { registerAgentV1 as registerAgent } from './registry/register/service';
 export { deRegisterAgentV1 as deRegisterAgent } from './registry/deregister/service';
@@ -19,3 +20,4 @@ export { checkRegistryTransactions } from './registry/tx-sync/service';
 export { registerInboxAgentV1 as registerInboxAgent } from './registry-inbox/register/service';
 export { deRegisterInboxAgentV1 as deRegisterInboxAgent } from './registry-inbox/deregister/service';
 export { checkInboxAgentRegistrationTransactions } from './registry-inbox/tx-sync/service';
+export { parseInboxAgentRegistrationMetadata } from './registry-inbox/metadata';
