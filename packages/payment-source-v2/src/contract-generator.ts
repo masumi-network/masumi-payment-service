@@ -8,6 +8,7 @@ import { mPubKeyAddress, type Data, type PlutusScript } from '@meshsdk/core';
 import {
 	applyParamsToScript,
 	deserializePlutusScript,
+	normalizePlutusScript,
 	resolvePaymentKeyHash,
 	resolvePlutusScriptAddress,
 	resolveStakeKeyHash,
@@ -74,8 +75,20 @@ export function getPaymentScriptV2(
 }
 
 export function getRegistryScriptV2(network: Network) {
+	// Aiken's plutus.json emits the validator as SingleCBOR-wrapped bytes, but
+	// mesh-sdk's `MeshTxBuilder.mintingScript(...)` / ledger consumers expect
+	// the script reference in DoubleCBOR form (CBOR-encoded ByteString
+	// containing the SingleCBOR script). When V1 contracts go through
+	// `applyParamsToScript(code, [...])` they pick up the second CBOR wrap as
+	// a side effect of param application. The V2 registry validator takes
+	// zero parameters and previously used `compiledCode` raw, leaving it as
+	// SingleCBOR. The on-chain symptom: ogmios `EvaluateTx` returns
+	// `EvaluationFailure: ScriptFailures: {}` (empty) because the script
+	// cannot be parsed before any Plutus eval starts. The matching example
+	// script `smart-contracts/registry-v2/mint-example.mjs` uses
+	// `normalizePlutusScript(code, 'DoubleCBOR')` for the same reason.
 	const script: PlutusScript = {
-		code: registryPlutusV2.validators[0].compiledCode,
+		code: normalizePlutusScript(registryPlutusV2.validators[0].compiledCode, 'DoubleCBOR'),
 		version: 'V3',
 	};
 

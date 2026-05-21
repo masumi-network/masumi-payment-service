@@ -9,7 +9,7 @@ import { stringToMetadata, cleanMetadata } from '@/utils/converter/metadata-stri
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
-import { pickCollateralUtxo, sortUtxosByLovelaceDesc } from '@/utils/utxo';
+import { sortUtxosByLovelaceDesc } from '@/utils/utxo';
 import {
 	createMeshProvider,
 	createPendingTransaction,
@@ -182,9 +182,7 @@ export async function registerAgentV1() {
 
 						const limitedFilteredUtxos = sortUtxosByLovelaceDesc(utxos);
 						const firstUtxo = limitedFilteredUtxos[0];
-						// See V2 register comment: collateral MUST differ from the
-						// spending input to satisfy Conway phase-1 validation.
-						const collateralUtxo = pickCollateralUtxo(limitedFilteredUtxos, firstUtxo);
+						const collateralUtxo = limitedFilteredUtxos[0];
 						const recipientWalletAddress = resolveRegistryRecipientWalletAddress(request);
 						const fundingLovelace = resolveRegistryFundingLovelace(request);
 						const assetName = generateRegistryAssetName(firstUtxo);
