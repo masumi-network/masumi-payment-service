@@ -7,6 +7,7 @@ import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/p
 import { BlockfrostProvider } from '@meshsdk/core';
 import { logger } from '@masumi/payment-core/logger';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
+import { createMeshProvider } from '@/services/shared';
 import { CONSTANTS } from '@masumi/payment-core/config';
 import { buildX402FundsLockingTransaction as buildX402FundsLockingTransactionV1 } from '@masumi/payment-source-v1/services/purchases/x402-build/service';
 import { buildX402FundsLockingTransactionV2 } from '@masumi/payment-source-v2/services/purchases/x402-build/service';
@@ -61,7 +62,7 @@ export const buildX402TxPost = readAuthenticatedEndpointFactory.build({
 			throw createHttpError(400, 'Payment has expired');
 		}
 
-		const blockchainProvider = new BlockfrostProvider(payment.PaymentSource.PaymentSourceConfig.rpcProviderApiKey);
+		const blockchainProvider = await createMeshProvider(payment.PaymentSource.PaymentSourceConfig.rpcProviderApiKey);
 		const coinsPerUtxoSize = await getCoinsPerUtxoSize(blockchainProvider);
 
 		const isV2 = payment.PaymentSource.paymentSourceType === PaymentSourceType.Web3CardanoV2;

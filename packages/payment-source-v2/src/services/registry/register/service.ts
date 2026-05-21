@@ -10,7 +10,6 @@ import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { sortUtxosByLovelaceDesc } from '@/utils/utxo';
-import { syncMeshCostModelsFromChain } from '@/utils/mesh-cost-model-sync';
 import {
 	createMeshProvider,
 	createPendingTransaction,
@@ -158,13 +157,7 @@ export async function registerAgentV2() {
 				const network = convertNetwork(paymentSource.network);
 				const registryRequests = paymentSource.RegistryRequest;
 				if (registryRequests.length === 0) return;
-				// Refresh mesh-sdk's bundled Plutus cost models from chain BEFORE
-				// building any tx in this batch. Without this, mesh would hash the
-				// transaction body against stale cost models and the ledger would
-				// reject submission with PPViewHashesDontMatch. The helper is
-				// memoized per-process, so this is a no-op within the TTL.
-				await syncMeshCostModelsFromChain(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
-				const blockchainProvider = createMeshProvider(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
+				const blockchainProvider = await createMeshProvider(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
 
 				const results = await advancedRetryAll({
 					errorResolvers: [delayErrorResolver({ configuration: SERVICE_CONSTANTS.RETRY })],

@@ -149,7 +149,9 @@ async function processSinglePaymentCollection(
 		);
 	}
 
-	const { invalidBefore, invalidAfter } = createTxWindow(network);
+	const { invalidBefore, invalidAfter } = createTxWindow(network, {
+		constrainBeforeMs: Number(decodedContract.sellerCooldownTime),
+	});
 
 	const buyerAddress = request.BuyerWallet?.walletAddress;
 	if (buyerAddress == null) {
@@ -306,7 +308,7 @@ export async function collectOutstandingPaymentsV2() {
 
 				const network = convertNetwork(paymentContract.network);
 
-				const blockchainProvider = createMeshProvider(paymentContract.PaymentSourceConfig.rpcProviderApiKey);
+				const blockchainProvider = await createMeshProvider(paymentContract.PaymentSourceConfig.rpcProviderApiKey);
 
 				const paymentRequests = paymentContract.PaymentRequests;
 

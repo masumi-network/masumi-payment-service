@@ -1,32 +1,39 @@
 // Sync mesh-sdk's bundled Plutus cost models with what the chain actually
 // uses. This is a workaround for an upstream gap in @meshsdk/core
-// 1.9.0-beta.96 (and identical in .102): MeshTxBuilder hardcodes the imported
-// DEFAULT_V*_COST_MODEL_LIST arrays into hashScriptData(), and the Protocol
-// type accepted by `.protocolParams(...)` has no cost-model fields, so there
-// is no public API to inject chain-current cost models.
+// 1.9.0-beta.* up to and including the current `latest` on npm (.102):
+// MeshTxBuilder hardcodes the imported DEFAULT_V*_COST_MODEL_LIST arrays
+// into hashScriptData(), and the Protocol type accepted by
+// `.protocolParams(...)` has no cost-model fields, so there is no public API
+// to inject chain-current cost models.
 //
 // Symptom when out of date: ledger rejects submission with
 //   ConwayUtxowFailure (PPViewHashesDontMatch ...)
 // because mesh's locally-computed script_data_hash uses stale cost models
-// while the ledger recomputes from the live on-chain cost models.
+// while the ledger recomputes from the live on-chain cost models. The hashes
+// are deterministic across runs, which makes the failure look like a code
+// regression even though it is a static-data drift between the SDK and the
+// chain after a Cardano protocol parameter update.
 //
-// Trick: the lists are exported as mutable arrays from `@meshsdk/common` and
-// referenced by `@meshsdk/core-cst`'s hash function via the same import. JS
-// arrays are passed by reference, so mutating the array in place (clearing it
-// and pushing chain values) updates what mesh sees from the next tx build on.
+// Trick: the lists are exported as mutable arrays from `@meshsdk/common` (and
+// re-exported by `@meshsdk/core`'s top-level `export *`). Mesh's internal
+// hashScriptData captures the array by reference at import time, so mutating
+// the array in place (clearing it and pushing chain values) updates what
+// mesh sees from the next tx build onward.
 //
 // We pull `cost_models_raw` from Blockfrost's `/epochs/latest/parameters`
-// because that is already the canonical ordered list the ledger uses; no need
-// to re-derive ordering. The sync is memoized per-process and refreshes when
-// `forceRefresh` is requested (e.g. on a tx submission failure that suggests
-// the cost models rotated mid-process).
+// because that response already contains the canonical ordered list the
+// ledger uses; no need to re-derive ordering. The same call returns the
+// mesh-format Protocol that `MeshTxBuilder.protocolParams(...)` accepts, so
+// we cache both alongside one another and let tx builders skip a second
+// roundtrip. The sync is memoized per Blockfrost API key for
+// {@link CACHE_TTL_MS} so we do not hammer Blockfrost.
 //
 // Long-term fix: upstream PR to mesh-sdk to expose a cost-model setter on
-// MeshTxBuilder. Track in docs/adr if/when that lands.
+// MeshTxBuilder, or migrate off mesh-sdk for tx building.
 
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 // `@meshsdk/core` re-exports `@meshsdk/common`'s symbols (`export * from
-// '@meshsdk/common'`), so we import from core to avoid needing to add
+// '@meshsdk/common'`), so we can import from core to avoid adding
 // `@meshsdk/common` as a direct workspace dep. The arrays we mutate ARE the
 // same references mesh's internal hashScriptData uses — JS modules give us a
 // live binding to the array object, not a copy.
@@ -42,13 +49,22 @@ import { logger } from '@masumi/payment-core/logger';
 // keep the cached value typed as `unknown`. Callers pass it straight back into
 // `MeshTxBuilder.protocolParams(...)` which accepts the runtime shape.
 type CachedSync = {
-	blockfrostApiKey: string;
 	protocolParameters: unknown;
 	at: number;
 };
 
-let inFlight: Promise<unknown> | null = null;
-let lastSync: CachedSync | null = null;
+// In-flight syncs and last successful sync are tracked per Blockfrost API key.
+// A single global slot would incorrectly coalesce concurrent calls from
+// different networks (e.g. mainnet + preprod processed in parallel via
+// Promise.allSettled): the second caller would await the first caller's fetch
+// and return without ever syncing its own cost models, leaving the global
+// arrays holding the wrong network's values for that caller's tx build. Note:
+// the mutated DEFAULT_V*_COST_MODEL_LIST arrays are STILL process-global —
+// the per-key tracking only fixes the "did we sync at all" question; if two
+// networks alternate, the arrays are last-writer-wins. Single-network
+// deployments are unaffected.
+const inFlightByKey = new Map<string, Promise<unknown>>();
+const lastSyncByKey = new Map<string, CachedSync>();
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -133,10 +149,10 @@ export function getCachedBlockfrostProvider(blockfrostApiKey: string): Blockfros
  * very first tx build of the process lifetime.
  */
 export function getCachedChainProtocolParameters(blockfrostApiKey: string): unknown {
-	if (lastSync == null) return null;
-	if (lastSync.blockfrostApiKey !== blockfrostApiKey) return null;
-	if (Date.now() - lastSync.at >= CACHE_TTL_MS) return null;
-	return lastSync.protocolParameters;
+	const cached = lastSyncByKey.get(blockfrostApiKey);
+	if (cached == null) return null;
+	if (Date.now() - cached.at >= CACHE_TTL_MS) return null;
+	return cached.protocolParameters;
 }
 
 /**
@@ -156,24 +172,22 @@ export async function syncMeshCostModelsFromChain(
 	options: { forceRefresh?: boolean } = {},
 ): Promise<unknown> {
 	const now = Date.now();
-	if (
-		!options.forceRefresh &&
-		lastSync != null &&
-		lastSync.blockfrostApiKey === blockfrostApiKey &&
-		now - lastSync.at < CACHE_TTL_MS
-	) {
-		return lastSync.protocolParameters;
+	const cached = lastSyncByKey.get(blockfrostApiKey);
+	if (!options.forceRefresh && cached != null && now - cached.at < CACHE_TTL_MS) {
+		return cached.protocolParameters;
 	}
-	if (inFlight != null) {
-		// In-flight refresh wins; await its result rather than starting a
-		// duplicate fetch (any caller racing for the same key gets the same
-		// promise).
-		return await inFlight;
+	const existing = inFlightByKey.get(blockfrostApiKey);
+	if (existing != null) {
+		// Same-key concurrent caller: piggy-back on the running fetch.
+		// Different-key callers do NOT enter this branch — each key has its
+		// own in-flight slot, so concurrent multi-network syncs run in
+		// parallel rather than one stealing the other's result.
+		return await existing;
 	}
-	inFlight = (async () => {
+	const promise = (async () => {
 		try {
 			const protocolParameters = await fetchAndPatch(blockfrostApiKey);
-			lastSync = { blockfrostApiKey, protocolParameters, at: Date.now() };
+			lastSyncByKey.set(blockfrostApiKey, { protocolParameters, at: Date.now() });
 			return protocolParameters;
 		} catch (error) {
 			logger.error('Failed to sync mesh-sdk cost models from chain', { error });
@@ -181,8 +195,9 @@ export async function syncMeshCostModelsFromChain(
 			// `provider.fetchProtocolParameters(NaN)` path.
 			return null;
 		} finally {
-			inFlight = null;
+			inFlightByKey.delete(blockfrostApiKey);
 		}
 	})();
-	return await inFlight;
+	inFlightByKey.set(blockfrostApiKey, promise);
+	return await promise;
 }

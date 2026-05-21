@@ -392,7 +392,7 @@ export async function batchLatestPaymentEntriesV2() {
 
 					let maxBatchSizeReached = false;
 
-					const blockchainProvider = createMeshProvider(paymentContract.PaymentSourceConfig.rpcProviderApiKey);
+					const blockchainProvider = await createMeshProvider(paymentContract.PaymentSourceConfig.rpcProviderApiKey);
 
 					const protocolParameter = await blockchainProvider.fetchProtocolParameters();
 

@@ -105,7 +105,7 @@ export async function cancelRefundsV1() {
 				logger.info(
 					`Cancelling ${paymentContract.PurchaseRequests.length} V1 refunds for payment source ${paymentContract.id}`,
 				);
-				const blockchainProvider = createMeshProvider(paymentContract.PaymentSourceConfig.rpcProviderApiKey);
+				const blockchainProvider = await createMeshProvider(paymentContract.PaymentSourceConfig.rpcProviderApiKey);
 				const purchaseRequests = paymentContract.PurchaseRequests;
 				if (purchaseRequests.length == 0) return;
 
@@ -178,7 +178,9 @@ export async function cancelRefundsV1() {
 							cooldownTime: BigInt(paymentContract.cooldownTime),
 						});
 
-						const { invalidBefore, invalidAfter } = createTxWindow(network);
+						const { invalidBefore, invalidAfter } = createTxWindow(network, {
+							constrainBeforeMs: Number(decodedContract.buyerCooldownTime),
+						});
 						const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
 
 						const unsignedTx = await generateMasumiSmartContractInteractionTransactionAutomaticFees(

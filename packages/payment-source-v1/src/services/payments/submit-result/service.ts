@@ -215,6 +215,7 @@ async function processSinglePaymentRequest(
 
 	const { invalidBefore, invalidAfter } = createTxWindow(network, {
 		constrainAfterMs: Number(decodedContract.resultTime),
+		constrainBeforeMs: Number(decodedContract.sellerCooldownTime),
 	});
 
 	const limitedUtxos = sortAndLimitUtxos(utxos, 8000000);
@@ -322,7 +323,7 @@ export async function submitResultV1() {
 
 				const network = convertNetwork(paymentContract.network);
 
-				const blockchainProvider = createMeshProvider(paymentContract.PaymentSourceConfig.rpcProviderApiKey);
+				const blockchainProvider = await createMeshProvider(paymentContract.PaymentSourceConfig.rpcProviderApiKey);
 
 				const paymentRequests = paymentContract.PaymentRequests;
 				if (paymentRequests.length == 0) return;

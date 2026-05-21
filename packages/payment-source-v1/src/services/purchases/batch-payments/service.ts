@@ -26,6 +26,7 @@ import { calculateMinUtxo, DUMMY_RESULT_HASH } from '@/utils/min-utxo';
 import { toBalanceMapFromMeshUtxos, walletLowBalanceMonitorService } from '@/services/wallets';
 import {
 	connectPreviousAction,
+	createMeshProvider,
 	createNextPurchaseAction,
 	createPendingTransaction,
 	updateCurrentTransactionHash,
@@ -393,7 +394,7 @@ export async function batchLatestPaymentEntriesV1() {
 
 					let maxBatchSizeReached = false;
 
-					const blockchainProvider = new BlockfrostProvider(paymentContract.PaymentSourceConfig.rpcProviderApiKey);
+					const blockchainProvider = await createMeshProvider(paymentContract.PaymentSourceConfig.rpcProviderApiKey);
 
 					const protocolParameter = await blockchainProvider.fetchProtocolParameters();
 

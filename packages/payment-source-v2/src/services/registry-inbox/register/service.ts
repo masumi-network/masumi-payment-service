@@ -70,7 +70,7 @@ export async function registerInboxAgentV2() {
 				const network = convertNetwork(paymentSource.network);
 				const registrationRequests = paymentSource.InboxAgentRegistrationRequests;
 				if (registrationRequests.length === 0) return;
-				const blockchainProvider = createMeshProvider(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
+				const blockchainProvider = await createMeshProvider(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
 
 				const results = await advancedRetryAll({
 					errorResolvers: [delayErrorResolver({ configuration: SERVICE_CONSTANTS.RETRY })],

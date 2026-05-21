@@ -479,7 +479,7 @@ export async function updateWalletTransactionHash() {
 					}
 
 					const blockfrostKey = wallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey;
-					const provider = createMeshProvider(blockfrostKey);
+					const provider = await createMeshProvider(blockfrostKey);
 					const txInfo = await provider.fetchTxInfo(txHash);
 					if (txInfo) {
 						await prisma.hotWallet.update({

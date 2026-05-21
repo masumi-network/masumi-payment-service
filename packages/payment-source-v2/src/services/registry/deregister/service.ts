@@ -82,7 +82,7 @@ export async function deRegisterAgentV2() {
 				const network = convertNetwork(paymentSource.network);
 				const registryRequests = paymentSource.RegistryRequest;
 				if (registryRequests.length == 0) return;
-				const blockchainProvider = createMeshProvider(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
+				const blockchainProvider = await createMeshProvider(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
 
 				const deregistrationRequest = registryRequests[0];
 				if (deregistrationRequest == null) {

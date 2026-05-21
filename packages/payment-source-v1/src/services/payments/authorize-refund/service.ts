@@ -65,7 +65,7 @@ export async function authorizeRefundV1() {
 				logger.info(
 					`Authorizing ${paymentContract.PaymentRequests.length} refunds for payment source ${paymentContract.id}`,
 				);
-				const blockchainProvider = createMeshProvider(paymentContract.PaymentSourceConfig.rpcProviderApiKey);
+				const blockchainProvider = await createMeshProvider(paymentContract.PaymentSourceConfig.rpcProviderApiKey);
 
 				const paymentRequests = paymentContract.PaymentRequests;
 				if (paymentRequests.length == 0) return;
@@ -160,7 +160,9 @@ export async function authorizeRefundV1() {
 							state: SmartContractState.RefundRequested,
 						});
 
-						const { invalidBefore, invalidAfter } = createTxWindow(network);
+						const { invalidBefore, invalidAfter } = createTxWindow(network, {
+							constrainBeforeMs: Number(decodedContract.sellerCooldownTime),
+						});
 
 						const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
 

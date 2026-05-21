@@ -106,7 +106,7 @@ export async function authorizeWithdrawalsV2() {
 				logger.info(
 					`Authorizing ${paymentContract.PurchaseRequests.length} V2 withdrawals for payment source ${paymentContract.id}`,
 				);
-				const blockchainProvider = createMeshProvider(paymentContract.PaymentSourceConfig.rpcProviderApiKey);
+				const blockchainProvider = await createMeshProvider(paymentContract.PaymentSourceConfig.rpcProviderApiKey);
 				const purchaseRequests = paymentContract.PurchaseRequests;
 				if (purchaseRequests.length == 0) return;
 
