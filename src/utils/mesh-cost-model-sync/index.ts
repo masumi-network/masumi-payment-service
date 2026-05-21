@@ -85,6 +85,26 @@ function replaceListInPlace(target: number[], next: unknown): boolean {
 	return true;
 }
 
+/**
+ * Last raw `cost_models_raw` payload fetched from Blockfrost, keyed by API key.
+ * The shared sync helper patches the V1 mesh line's bundled cost-model arrays;
+ * V2-pinned consumers (see `packages/payment-source-v2/src/utils/mesh-cost-model-sync.ts`)
+ * read this cached payload to also patch their own (separate) mesh-sdk
+ * cost-model arrays without re-hitting Blockfrost.
+ *
+ * Returns `null` until the first successful `syncMeshCostModelsFromChain(key)`.
+ * Stays valid until the next sync overwrites it; we intentionally do NOT
+ * TTL-expire it here (the apply step is idempotent — over-applying stale
+ * models is no worse than under-applying them, and the V2 helper has its own
+ * sync-or-skip decision based on `lastSyncByKey`).
+ */
+type RawCostModels = { PlutusV1?: unknown; PlutusV2?: unknown; PlutusV3?: unknown };
+const lastRawCostModelsByKey = new Map<string, RawCostModels>();
+
+export function getCachedRawCostModels(blockfrostApiKey: string): RawCostModels | null {
+	return lastRawCostModelsByKey.get(blockfrostApiKey) ?? null;
+}
+
 async function fetchAndPatch(blockfrostApiKey: string): Promise<unknown> {
 	const api = new BlockFrostAPI({ projectId: blockfrostApiKey });
 	// Fetch in parallel: BlockFrostAPI gives raw cost_models we need to mutate
@@ -110,11 +130,16 @@ async function fetchAndPatch(blockfrostApiKey: string): Promise<unknown> {
 				'Plutus tx submissions may fail with PPViewHashesDontMatch if the chain has rotated cost models.',
 		);
 	} else {
+		// Cache the raw payload so V2-pinned consumers can patch their own
+		// mesh-sdk cost-model arrays (separate npm install, separate globals)
+		// without re-fetching from Blockfrost.
+		lastRawCostModelsByKey.set(blockfrostApiKey, raw);
+
 		const v1Patched = replaceListInPlace(DEFAULT_V1_COST_MODEL_LIST, raw.PlutusV1);
 		const v2Patched = replaceListInPlace(DEFAULT_V2_COST_MODEL_LIST, raw.PlutusV2);
 		const v3Patched = replaceListInPlace(DEFAULT_V3_COST_MODEL_LIST, raw.PlutusV3);
 
-		logger.info('Synced mesh-sdk Plutus cost models from chain', {
+		logger.info('Synced mesh-sdk Plutus cost models from chain (V1 mesh line)', {
 			v1: v1Patched,
 			v2: v2Patched,
 			v3: v3Patched,

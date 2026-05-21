@@ -13,7 +13,8 @@ import {
 } from '@meshsdk/core';
 import { SERVICE_CONSTANTS } from '@masumi/payment-core/config';
 import { logger } from '@masumi/payment-core/logger';
-import { getCachedChainProtocolParameters, syncMeshCostModelsFromChain } from '@/utils/mesh-cost-model-sync';
+import { getCachedChainProtocolParameters } from '@/utils/mesh-cost-model-sync';
+import { syncMeshCostModelsFromChainV2 } from '../utils/mesh-cost-model-sync';
 
 // V2 mint contract `Action` enum: MintAction=0, UpdateAction=1, BurnAction=2.
 // See smart-contracts/registry-v2/validators/mint.ak.
@@ -163,7 +164,7 @@ export async function generateRegistryBatchMintTransaction(
 
 	if (rpcApiKey) {
 		// See cost-model sync comment in batch-interaction.ts.
-		await syncMeshCostModelsFromChain(rpcApiKey);
+		await syncMeshCostModelsFromChainV2(rpcApiKey);
 	}
 
 	const cachedParams = rpcApiKey == null ? null : getCachedChainProtocolParameters(rpcApiKey);
@@ -282,7 +283,7 @@ export async function generateRegistryBatchDeregisterTransactionAutomaticFees(
 	}
 
 	if (rpcApiKey) {
-		await syncMeshCostModelsFromChain(rpcApiKey);
+		await syncMeshCostModelsFromChainV2(rpcApiKey);
 	}
 
 	const evaluationTx = await buildBatchDeregisterTx(

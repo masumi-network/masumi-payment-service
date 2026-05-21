@@ -234,19 +234,23 @@ export async function deRegisterAgentV2() {
 
 				// Pick collateral that is NOT the asset-holding UTxO of any
 				// item — phase-1 Conway rejects collateral overlap and the
-				// asset UTxOs are part of the spending set.
+				// asset UTxOs are part of the spending set for the burn.
 				const excludeRefs = validated.map((v) => v.item.assetUtxo.input);
 				const collateralUtxo = pickBatchCollateral(utxos, excludeRefs);
 				if (collateralUtxo == null) {
-					const error = new Error('Collateral UTXO not found');
-					// Without collateral we cannot submit ANY burn this tick.
-					// Leave requests in their queued state so the next tick
-					// can retry once the wallet has more UTxOs.
-					logger.warn('V2 deregister batch could not find collateral UTxO; deferring to next tick', { error });
-					await prisma.hotWallet.update({
-						where: { id: deregistrationWallet.id, deletedAt: null },
-						data: { lockedAt: null },
-					});
+					// Wallet has no separate collateral candidate — typical for a
+					// just-registered seller wallet where the agent NFT UTxO is
+					// the only UTxO. The V1 single-tx builder handles this by
+					// passing the asset UTxO as BOTH `assetUtxo` and
+					// `collateralUtxo` (mesh-sdk routes `.txIn(...)` and
+					// `.txInCollateral(...)` into separate body fields and
+					// dedupes at assembly). Fall back to the per-item single-tx
+					// path which already uses that pattern via
+					// `generateRegistryDeregisterTransactionAutomaticFees`.
+					logger.warn(
+						'V2 deregister batch could not find separate collateral UTxO; falling back to single-item per-request processing',
+					);
+					await fallbackToSingleItems(validated, paymentSource, network, script, policyId);
 					return;
 				}
 

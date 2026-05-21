@@ -17,6 +17,11 @@ const moduleNameMapper = {
 const config: Config.InitialOptions = {
 	verbose: true,
 	moduleNameMapper,
+	// Inject placeholder DATABASE_URL / ENCRYPTION_KEY before any test module
+	// loads `@masumi/payment-core/config`, whose top-level body fail-fasts on
+	// missing env vars. Specs that need real DB connections (e2e) use the
+	// separate `jest.e2e.config.ts` configuration.
+	setupFiles: ['<rootDir>/jest.setup.env.ts'],
 	roots: ['<rootDir>/src', '<rootDir>/packages'],
 	extensionsToTreatAsEsm: ['.ts'],
 	transform: {

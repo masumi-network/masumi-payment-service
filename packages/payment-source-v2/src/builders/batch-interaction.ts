@@ -19,7 +19,8 @@ import { convertNetworkToId } from '@masumi/payment-core';
 import type { Network as PrismaNetwork } from '@/generated/prisma/client';
 import { logger } from '@masumi/payment-core/logger';
 import { calculateMinUtxo, calculateTopUpAmount, getLovelaceFromAmounts, getNativeTokenCount } from '@/utils/min-utxo';
-import { getCachedChainProtocolParameters, syncMeshCostModelsFromChain } from '@/utils/mesh-cost-model-sync';
+import { getCachedChainProtocolParameters } from '@/utils/mesh-cost-model-sync';
+import { syncMeshCostModelsFromChainV2 } from '../utils/mesh-cost-model-sync';
 import { generateRedeemerData } from './redeemer-data';
 
 // Mirrors `FALLBACK_COINS_PER_UTXO_SIZE` in @masumi/payment-core/config.
@@ -158,7 +159,7 @@ export async function generateMasumiSmartContractBatchInteractionTransactionAuto
 		// Mesh hardcodes the imported DEFAULT_V*_COST_MODEL_LIST arrays into
 		// hashScriptData(); without a fresh sync the ledger may reject submission
 		// with PPViewHashesDontMatch. Helper is memoized 5min, cheap to call.
-		await syncMeshCostModelsFromChain(rpcApiKey);
+		await syncMeshCostModelsFromChainV2(rpcApiKey);
 	}
 
 	let coinsPerUtxoSize: number = FALLBACK_COINS_PER_UTXO_SIZE;
@@ -390,7 +391,7 @@ export async function generateMasumiSmartContractBatchWithdrawTransactionAutomat
 	assertCollateralNotInBatch(items, collateralUtxo);
 
 	if (rpcApiKey) {
-		await syncMeshCostModelsFromChain(rpcApiKey);
+		await syncMeshCostModelsFromChainV2(rpcApiKey);
 	}
 
 	const sortedItems = sortItemsCanonical(items);

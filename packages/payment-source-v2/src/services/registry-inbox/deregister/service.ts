@@ -224,14 +224,13 @@ export async function deRegisterInboxAgentV2() {
 				const excludeRefs = validated.map((v) => v.item.assetUtxo.input);
 				const collateralUtxo = pickBatchCollateral(utxos, excludeRefs);
 				if (collateralUtxo == null) {
-					const error = new Error('Collateral UTXO not found');
-					logger.warn('V2 inbox deregister batch could not find collateral UTxO; deferring to next tick', {
-						error,
-					});
-					await prisma.hotWallet.update({
-						where: { id: deregistrationWallet.id, deletedAt: null },
-						data: { lockedAt: null },
-					});
+					// See sibling comment in `registry/deregister/service.ts` —
+					// wallet has only the asset UTxO; fall back to the V1-pattern
+					// single-tx path that reuses one UTxO for spend + collateral.
+					logger.warn(
+						'V2 inbox deregister batch could not find separate collateral UTxO; falling back to single-item per-request processing',
+					);
+					await fallbackToSingleItems(validated, paymentSource, network, script, policyId);
 					return;
 				}
 
