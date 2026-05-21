@@ -509,10 +509,16 @@ export async function createPurchase(paymentResult: PaymentResult, agentData: Co
 
 	// Use the blockchain identifier for purchase creation
 
-	// Create purchase data manually using the payment data
+	// Create purchase data manually using the payment data.
+	// V2 purchases require `smartContractAddress` because the V2 signed
+	// blockchainIdentifier payload binds to a specific contract, and the
+	// purchase route verifies the body's address matches what the V2 source
+	// is configured against. The payment response always carries the
+	// PaymentSource it was scoped to, so reuse that.
 	const purchaseData = {
 		blockchainIdentifier: paymentResult.blockchainIdentifier,
 		network: paymentResult.response.PaymentSource.network,
+		smartContractAddress: paymentResult.response.PaymentSource.smartContractAddress,
 		inputHash: paymentResult.inputHash,
 		sellerVkey: agentData.SmartContractWallet.walletVkey,
 		agentIdentifier: agentData.agentIdentifier,

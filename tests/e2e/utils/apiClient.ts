@@ -375,49 +375,74 @@ export class ApiClient {
 
 	private async makeRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
 		const url = `${this.config.baseUrl}${endpoint}`;
+		// Retry transient socket-level failures (server closed an idle
+		// keep-alive socket, TCP RST, etc.). E2E globalSetup awaits ~30 min for
+		// on-chain confirmations between API calls; any keep-alive socket the
+		// undici fetch dispatcher kept open during that idle window is liable
+		// to be closed by the server. The next fetch then surfaces as
+		// `fetch failed: SocketError: other side closed` from undici.
+		const maxRetries = 3;
+		for (let attempt = 0; attempt <= maxRetries; attempt++) {
+			const controller = new AbortController();
+			const timeoutId = setTimeout(() => controller.abort(), this.config.timeout);
+			try {
+				const response = await fetch(url, {
+					...options,
+					signal: controller.signal,
+					headers: {
+						token: this.config.apiKey,
+						'Content-Type': 'application/json',
+						// Force a fresh TCP connection on each request. Keep-alive
+						// sockets idle through long blockchain polls are the source
+						// of the transient socket-closed errors. Cost is minimal
+						// for an e2e workload.
+						Connection: 'close',
+						...options.headers,
+					},
+				});
+				clearTimeout(timeoutId);
 
-		const controller = new AbortController();
-		const timeoutId = setTimeout(() => controller.abort(), this.config.timeout);
+				if (!response.ok) {
+					const errorText = await response.text();
+					// HTTP-level errors (4xx/5xx) are deterministic — don't retry.
+					throw new Error(`HTTP ${response.status}: ${errorText}`);
+				}
 
-		try {
-			const response = await fetch(url, {
-				...options,
-				signal: controller.signal,
-				headers: {
-					token: this.config.apiKey,
-					'Content-Type': 'application/json',
-					...options.headers,
-				},
-			});
+				const jsonResponse: unknown = await response.json();
 
-			clearTimeout(timeoutId);
+				// Handle wrapped API responses with { status: "success", data: {...} } format
+				if (
+					jsonResponse &&
+					typeof jsonResponse === 'object' &&
+					'status' in jsonResponse &&
+					jsonResponse.status === 'success' &&
+					'data' in jsonResponse
+				) {
+					return (jsonResponse as { data: T }).data;
+				}
 
-			if (!response.ok) {
-				const errorText = await response.text();
-				throw new Error(`HTTP ${response.status}: ${errorText}`);
+				return jsonResponse as T;
+			} catch (error) {
+				clearTimeout(timeoutId);
+				const isTransient =
+					error instanceof Error &&
+					(error.name === 'TypeError' || // undici wraps low-level socket errors as TypeError('fetch failed')
+						/SocketError|ECONNRESET|EPIPE|other side closed/i.test(error.message) ||
+						/SocketError|ECONNRESET|EPIPE|other side closed/i.test(String((error as { cause?: unknown }).cause ?? ''))) &&
+					!/HTTP \d{3}:/.test(error.message);
+				if (isTransient && attempt < maxRetries) {
+					// Exponential backoff with jitter: 100ms, 250ms, 600ms (max).
+					const delay = Math.floor(Math.random() * (100 * Math.pow(2, attempt) + 100));
+					await new Promise((resolve) => setTimeout(resolve, delay));
+					continue;
+				}
+				if (error instanceof Error) {
+					throw new Error(`API request failed: ${error.message}`);
+				}
+				throw error;
 			}
-
-			const jsonResponse: unknown = await response.json();
-
-			// Handle wrapped API responses with { status: "success", data: {...} } format
-			if (
-				jsonResponse &&
-				typeof jsonResponse === 'object' &&
-				'status' in jsonResponse &&
-				jsonResponse.status === 'success' &&
-				'data' in jsonResponse
-			) {
-				return (jsonResponse as { data: T }).data;
-			}
-
-			return jsonResponse as T;
-		} catch (error) {
-			clearTimeout(timeoutId);
-			if (error instanceof Error) {
-				throw new Error(`API request failed: ${error.message}`);
-			}
-			throw error;
 		}
+		throw new Error(`API request failed after ${maxRetries + 1} attempts`);
 	}
 
 	/**
