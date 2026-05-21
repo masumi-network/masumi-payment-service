@@ -30,10 +30,16 @@ import {
 
 const testNetwork = (process.env.TEST_NETWORK as Network) || Network.Preprod;
 
-const cases = [
-	{ name: 'V1', sourceType: PaymentSourceType.Web3CardanoV1 },
-	{ name: 'V2', sourceType: PaymentSourceType.Web3CardanoV2 },
-] as const;
+const allCases = [
+	{ name: 'V1' as const, sourceType: PaymentSourceType.Web3CardanoV1 },
+	{ name: 'V2' as const, sourceType: PaymentSourceType.Web3CardanoV2 },
+];
+
+// The workflow spawns one jest invocation per source type and pins it via
+// TEST_PAYMENT_SOURCE_TYPE so V1 and V2 can run in parallel against the
+// shared API + DB. When unset (local dev), run both iterations sequentially.
+const envFilter = process.env.TEST_PAYMENT_SOURCE_TYPE as PaymentSourceType | undefined;
+const cases = envFilter ? allCases.filter((c) => c.sourceType === envFilter) : allCases;
 
 describe.each(cases)(`Early Refund Complete Flow E2E Tests — $name (${testNetwork})`, ({ sourceType }) => {
 	const testCleanupData: Array<{

@@ -93,7 +93,26 @@ And accessible at: ${config.apiUrl}
 			// Preserve a stable order so logs are predictable: V1 first when present.
 			.sort((a, b) => a.localeCompare(b));
 
-		const uniqueSourceTypes = Array.from(new Set(sourceTypesForNetwork)) as PaymentSourceType[];
+		let uniqueSourceTypes = Array.from(new Set(sourceTypesForNetwork)) as PaymentSourceType[];
+
+		// When the workflow spawns one jest invocation per source type (V1 and V2
+		// running in parallel against the shared API + DB), each invocation sets
+		// TEST_PAYMENT_SOURCE_TYPE to pin itself to a single source. We then
+		// register ONLY that source's agent here; the sibling invocation
+		// registers the other. Without the filter, both invocations would try
+		// to register both agents and fight over each other's wallets/locks.
+		const envSourceType = process.env.TEST_PAYMENT_SOURCE_TYPE as PaymentSourceType | undefined;
+		if (envSourceType) {
+			const wanted = uniqueSourceTypes.filter((s) => s === envSourceType);
+			if (wanted.length === 0) {
+				console.error(
+					`❌ TEST_PAYMENT_SOURCE_TYPE=${envSourceType} but no matching PaymentSource exists for network ${config.network}.`,
+				);
+				process.exit(1);
+			}
+			uniqueSourceTypes = wanted;
+			console.log(`🎯 [globalSetup] TEST_PAYMENT_SOURCE_TYPE pins this invocation to ${envSourceType}.`);
+		}
 
 		if (uniqueSourceTypes.length === 0) {
 			console.error(

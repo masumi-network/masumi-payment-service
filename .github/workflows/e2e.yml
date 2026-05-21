@@ -217,13 +217,53 @@ jobs:
           echo "=== Server is responding, recent log tail ==="
           tail -50 server.log || true
 
-      - name: Run E2E Suite
-        # Single jest invocation runs both V1 and V2 flows. The shared
-        # `globalSetup` discovers every PaymentSource the API exposes and
-        # registers one agent per source type in parallel, so V1 and V2
-        # registrations happen concurrently. The flow tests then iterate over
-        # both source types via `describe.each`.
-        run: pnpm run test:e2e
+      - name: Run V1 + V2 E2E in parallel
+        # Spawn ONE jest invocation per source type and run them concurrently
+        # against the shared API server + DB. The describe.each cases in each
+        # test file filter on `TEST_PAYMENT_SOURCE_TYPE`, so each invocation
+        # only runs its own iteration — V1 + V2 progress simultaneously
+        # instead of sequentially. Disjoint wallets (HotWallet.walletVkey
+        # uniqueness enforced at seed) prevent on-chain contention. The
+        # shared scheduler in the API server already processes both source
+        # types concurrently.
+        #
+        # Each invocation's stdout/stderr is sed-tagged `[V1] `/`[V2] ` so
+        # interleaved output is readable. Exit code is captured via a
+        # sentinel line written by the subshell so the pipeline (which exits
+        # with sed's status, not jest's) doesn't mask jest failures.
+        run: |
+          set +e
+
+          (
+            TEST_PAYMENT_SOURCE_TYPE=Web3CardanoV1 pnpm exec jest \
+              --config jest.e2e.config.ts --bail --forceExit 2>&1
+            echo "__E2E_EXIT__=$?"
+          ) | sed -u 's/^/[V1] /' > v1.log &
+          PID_V1=$!
+
+          (
+            TEST_PAYMENT_SOURCE_TYPE=Web3CardanoV2 pnpm exec jest \
+              --config jest.e2e.config.ts --bail --forceExit 2>&1
+            echo "__E2E_EXIT__=$?"
+          ) | sed -u 's/^/[V2] /' > v2.log &
+          PID_V2=$!
+
+          wait $PID_V1
+          wait $PID_V2
+
+          echo "=== V1 e2e log ==="
+          cat v1.log
+          echo "=== V2 e2e log ==="
+          cat v2.log
+
+          EXIT_V1=$(grep -oE '__E2E_EXIT__=[0-9]+' v1.log | tail -1 | cut -d= -f2)
+          EXIT_V2=$(grep -oE '__E2E_EXIT__=[0-9]+' v2.log | tail -1 | cut -d= -f2)
+          echo "V1 exit: ${EXIT_V1:-missing}"
+          echo "V2 exit: ${EXIT_V2:-missing}"
+
+          if [ "$EXIT_V1" != "0" ] || [ "$EXIT_V2" != "0" ]; then
+            exit 1
+          fi
         env:
           TEST_API_KEY: ${{ secrets.TEST_API_KEY }}
           TEST_API_URL: http://127.0.0.1:3001
@@ -274,6 +314,17 @@ jobs:
         with:
           name: server-log-${{ github.run_id }}
           path: server.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload e2e logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-logs-${{ github.run_id }}
+          path: |
+            v1.log
+            v2.log
           if-no-files-found: ignore
           retention-days: 7
 

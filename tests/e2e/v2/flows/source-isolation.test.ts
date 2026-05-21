@@ -16,7 +16,11 @@ import { getE2EPaymentSource } from '../../utils/paymentSourceHelper';
 
 const testNetwork = (process.env.TEST_NETWORK as Network) || Network.Preprod;
 
-describe(`Web3CardanoV2 source isolation (${testNetwork})`, () => {
+const envFilter = process.env.TEST_PAYMENT_SOURCE_TYPE as PaymentSourceType | undefined;
+// V2-only suite. Skip when the workflow pinned this jest invocation to V1.
+const describeFn = envFilter && envFilter !== PaymentSourceType.Web3CardanoV2 ? describe.skip : describe;
+
+describeFn(`Web3CardanoV2 source isolation (${testNetwork})`, () => {
 	beforeAll(async () => {
 		if (!global.testConfig) {
 			throw new Error('Global test configuration not available. Check testEnvironment.ts setup.');
