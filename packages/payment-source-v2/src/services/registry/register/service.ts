@@ -1,12 +1,13 @@
 import { PaymentSourceType, RegistrationState, PricingType } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
+import type { LanguageVersion, UTxO } from '@meshsdk/core';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { lockAndQueryRegistryRequests } from '@/utils/db/lock-and-query-registry-request';
 import { DEFAULTS, SERVICE_CONSTANTS } from '@masumi/payment-core/config';
 import { getRegistryScriptFromNetworkHandlerV2 } from '@/utils/generator/contract-generator';
 import { stringToMetadata, cleanMetadata } from '@/utils/converter/metadata-string-convert';
-import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
+import { advancedRetry, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { sortUtxosByLovelaceDesc } from '@/utils/utxo';
@@ -23,9 +24,33 @@ import {
 	resolveRegistryFundingLovelace,
 	resolveRegistryRecipientWalletAddress,
 } from '@/services/registry/shared';
+import {
+	assertNoCollateralOverlap,
+	assertTxSizeWithinLimit,
+	pickBatchCollateral,
+	shrinkBatchToFit,
+} from '../../../builders/batch-helpers';
+import { type BatchRegistryMintItem, generateRegistryBatchMintTransaction } from '../../../builders/batch-registry';
 import { type SupportedPaymentSource } from '@/types/payment-source';
 
+// V2 registry batch sizing. The on-chain `MintAction` validator runs once for
+// the policy bucket and verifies every minted asset name against the set of
+// spent inputs, so the per-item cost is mostly off-chain (CIP-25 metadata + a
+// fresh wallet UTxO per asset). The cap balances tx-size headroom (we keep
+// well under MAX_SAFE_TX_BYTES) against scheduler throughput.
+const REGISTRY_BATCH_SIZE = 7;
+
 const mutex = new Mutex();
+
+type LockedPaymentSource = Awaited<ReturnType<typeof lockAndQueryRegistryRequests>>[number];
+type RegistryRequestRecord = LockedPaymentSource['RegistryRequest'][number];
+
+type ValidatedRegistryItem = {
+	request: RegistryRequestRecord;
+	item: BatchRegistryMintItem;
+	assetName: string;
+	policyId: string;
+};
 
 function validateRegistrationPricing(request: {
 	Pricing: {
@@ -132,6 +157,156 @@ function buildAgentMetadata(request: {
 	return cleanMetadata(metadata) as RegistryMetadata;
 }
 
+async function markRequestFailed(request: RegistryRequestRecord, error: unknown): Promise<void> {
+	logger.error(`Error registering V2 agent ${request.id}`, { error });
+	await prisma.registryRequest.update({
+		where: { id: request.id },
+		data: {
+			state: RegistrationState.RegistrationFailed,
+			error: interpretBlockchainError(error),
+			SmartContractWallet: { update: { lockedAt: null } },
+		},
+	});
+}
+
+/**
+ * Release the hot wallet lock acquired by `lockAndQueryRegistryRequests` when
+ * the batch path bails early without making forward progress. Idempotent —
+ * downstream tx-sync also clears `lockedAt` on confirmation/failure.
+ */
+async function unlockHotWallet(hotWalletId: string): Promise<void> {
+	try {
+		await prisma.hotWallet.update({
+			where: { id: hotWalletId, deletedAt: null },
+			data: { lockedAt: null },
+		});
+	} catch (error) {
+		logger.warn('Failed to release hot wallet lock after V2 register batch bail-out', {
+			hotWalletId,
+			error,
+		});
+	}
+}
+
+/**
+ * Per-request validation pass. Returns a `ValidatedRegistryItem` if the
+ * request passed every check; throws otherwise (caller maps thrown errors to
+ * RegistrationFailed). The thrown branch is intentional — it mirrors the
+ * V1-style per-item failure model so caller code stays uniform.
+ */
+function validateAndBuildItem(request: RegistryRequestRecord, utxo: UTxO, policyId: string): ValidatedRegistryItem {
+	validateRegistrationPricing(request);
+	const recipientWalletAddress = resolveRegistryRecipientWalletAddress(request);
+	const fundingLovelace = resolveRegistryFundingLovelace(request);
+	// V2 mint contract requires the structured asset name
+	// [1B nonce>0x0f | 28B blake2b_224 | 3B version 0x000000] — the V1 flat
+	// blake2b_256 layout would fail every check.
+	const assetName = generateRegistryAssetNameV2(utxo);
+	const metadata = buildAgentMetadata(request);
+	return {
+		request,
+		assetName,
+		policyId,
+		item: {
+			recipientWalletAddress,
+			fundingLovelace,
+			assetName,
+			firstUtxo: utxo,
+			metadata,
+		},
+	};
+}
+
+/**
+ * Single-item fallback. Used when batch build / submit fails — we re-process
+ * each request one at a time in the same tick so a single bad item doesn't
+ * sink a whole batch's worth of throughput.
+ */
+async function processSingleRegistration(
+	validated: ValidatedRegistryItem,
+	paymentSource: LockedPaymentSource,
+	network: 'mainnet' | 'preprod',
+	script: { version: LanguageVersion; code: string },
+): Promise<void> {
+	const request = validated.request;
+	const walletSession = await loadHotWalletSession({
+		network: paymentSource.network,
+		rpcProviderApiKey: paymentSource.PaymentSourceConfig.rpcProviderApiKey,
+		encryptedMnemonic: request.SmartContractWallet.Secret.encryptedMnemonic,
+		hotWalletId: request.SmartContractWallet.id,
+	});
+	const { wallet, utxos, address } = walletSession;
+	if (utxos.length === 0) {
+		throw new Error('No UTXOs found for the wallet');
+	}
+	const blockchainProvider = await createMeshProvider(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
+	const limitedFilteredUtxos = sortUtxosByLovelaceDesc(utxos);
+	const firstUtxo = limitedFilteredUtxos[0];
+	const collateralUtxo = limitedFilteredUtxos[0];
+	const recipientWalletAddress = resolveRegistryRecipientWalletAddress(request);
+	const fundingLovelace = resolveRegistryFundingLovelace(request);
+	const assetName = generateRegistryAssetNameV2(firstUtxo);
+	const metadata = buildAgentMetadata(request);
+	const rpcApiKey = paymentSource.PaymentSourceConfig.rpcProviderApiKey;
+
+	const evaluationTx = await generateRegistryMintTransaction(
+		blockchainProvider,
+		network,
+		script,
+		address,
+		recipientWalletAddress,
+		fundingLovelace,
+		validated.policyId,
+		assetName,
+		firstUtxo,
+		collateralUtxo,
+		limitedFilteredUtxos,
+		metadata,
+		undefined,
+		rpcApiKey,
+	);
+	const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
+		budget: { mem: number; steps: number };
+	}>;
+	const unsignedTx = await generateRegistryMintTransaction(
+		blockchainProvider,
+		network,
+		script,
+		address,
+		recipientWalletAddress,
+		fundingLovelace,
+		validated.policyId,
+		assetName,
+		firstUtxo,
+		collateralUtxo,
+		limitedFilteredUtxos,
+		metadata,
+		estimatedFee[0].budget,
+		rpcApiKey,
+	);
+	const signedTx = await wallet.signTx(unsignedTx, true);
+	await prisma.registryRequest.update({
+		where: { id: request.id },
+		data: {
+			state: RegistrationState.RegistrationInitiated,
+			...createPendingTransaction(request.SmartContractWallet.id),
+		},
+	});
+	const newTxHash = await wallet.submitTx(signedTx);
+	await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
+	await prisma.registryRequest.update({
+		where: { id: request.id },
+		data: {
+			agentIdentifier: validated.policyId + assetName,
+			...updateCurrentTransactionHash(newTxHash),
+		},
+	});
+	logger.debug(`Created V2 register transaction (single-item fallback):
+              Tx ID: ${newTxHash}
+              View on https://${network === 'preprod' ? 'preprod.' : ''}cardanoscan.io/transaction/${newTxHash}
+          `);
+}
+
 export async function registerAgentV2() {
 	let release: MutexInterface.Releaser | null;
 	try {
@@ -144,7 +319,7 @@ export async function registerAgentV2() {
 	try {
 		const paymentSourcesWithWalletLocked = await lockAndQueryRegistryRequests({
 			state: RegistrationState.RegistrationRequested,
-			maxBatchSize: 1,
+			maxBatchSize: REGISTRY_BATCH_SIZE,
 			paymentSourceType: PaymentSourceType.Web3CardanoV2,
 		});
 
@@ -157,117 +332,296 @@ export async function registerAgentV2() {
 				const network = convertNetwork(paymentSource.network);
 				const registryRequests = paymentSource.RegistryRequest;
 				if (registryRequests.length === 0) return;
+
+				// lockAndQueryRegistryRequests guarantees every request in this
+				// batch shares the same SmartContractWallet, so a single wallet
+				// session and one UTxO set drive the whole batch.
+				const firstRequest = registryRequests[0];
 				const blockchainProvider = await createMeshProvider(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
+				const rpcApiKey = paymentSource.PaymentSourceConfig.rpcProviderApiKey;
+				const { script, policyId } = await getRegistryScriptFromNetworkHandlerV2(paymentSource);
 
-				const results = await advancedRetryAll({
-					errorResolvers: [delayErrorResolver({ configuration: SERVICE_CONSTANTS.RETRY })],
-					operations: registryRequests.map((request) => async () => {
-						validateRegistrationPricing(request);
-						const walletSession = await loadHotWalletSession({
-							network: paymentSource.network,
-							rpcProviderApiKey: paymentSource.PaymentSourceConfig.rpcProviderApiKey,
-							encryptedMnemonic: request.SmartContractWallet.Secret.encryptedMnemonic,
-							hotWalletId: request.SmartContractWallet.id,
-						});
-						const { wallet, utxos, address } = walletSession;
-						if (utxos.length === 0) {
-							throw new Error('No UTXOs found for the wallet');
+				let walletSession;
+				try {
+					walletSession = await loadHotWalletSession({
+						network: paymentSource.network,
+						rpcProviderApiKey: paymentSource.PaymentSourceConfig.rpcProviderApiKey,
+						encryptedMnemonic: firstRequest.SmartContractWallet.Secret.encryptedMnemonic,
+						hotWalletId: firstRequest.SmartContractWallet.id,
+					});
+				} catch (error) {
+					logger.error('Failed to load wallet session for V2 register batch', { error });
+					await Promise.allSettled(registryRequests.map((request) => markRequestFailed(request, error)));
+					return;
+				}
+				const { wallet, utxos, address } = walletSession;
+				if (utxos.length === 0) {
+					const error = new Error('No UTXOs found for the wallet');
+					await Promise.allSettled(registryRequests.map((request) => markRequestFailed(request, error)));
+					return;
+				}
+
+				// Pick collateral FIRST (smallest pure-ADA UTxO >= 5 ADA) so the
+				// remaining sorted-by-lovelace pool can drive distinct
+				// per-item `firstUtxo`s without overlap. Conway rejects
+				// collateral that carries any non-ADA asset, so we never fall
+				// back to a non-pure UTxO — if none exists, defer to the next
+				// tick when the wallet may have more UTxOs.
+				const collateralUtxo = pickBatchCollateral(utxos, []);
+				if (collateralUtxo == null) {
+					logger.warn('V2 register batch: no qualifying pure-ADA collateral UTxO available; deferring to next tick');
+					await unlockHotWallet(firstRequest.SmartContractWallet.id);
+					return;
+				}
+
+				const sortedUtxos = sortUtxosByLovelaceDesc(utxos);
+				const collateralKey = `${collateralUtxo.input.txHash}#${collateralUtxo.input.outputIndex}`;
+				const spendableUtxos = sortedUtxos.filter(
+					(utxo) => `${utxo.input.txHash}#${utxo.input.outputIndex}` !== collateralKey,
+				);
+
+				// Validate every request in parallel. Failures here become
+				// per-request RegistrationFailed updates and are removed from
+				// the batch.
+				const validations = await Promise.allSettled(
+					registryRequests.map((request, idx) => {
+						const utxo = spendableUtxos[idx];
+						if (utxo == null) {
+							throw new Error('Insufficient wallet UTXOs to assign a distinct firstUtxo to this request');
 						}
-						const { script, policyId } = await getRegistryScriptFromNetworkHandlerV2(paymentSource);
+						return Promise.resolve(validateAndBuildItem(request, utxo, policyId));
+					}),
+				);
 
-						const limitedFilteredUtxos = sortUtxosByLovelaceDesc(utxos);
-						const firstUtxo = limitedFilteredUtxos[0];
-						const collateralUtxo = limitedFilteredUtxos[0];
-						const recipientWalletAddress = resolveRegistryRecipientWalletAddress(request);
-						const fundingLovelace = resolveRegistryFundingLovelace(request);
-						// V2 mint contract requires the structured asset name
-						// [1B nonce>0x0f | 28B blake2b_224 | 3B version 0x000000] —
-						// the V1 flat blake2b_256 layout would fail every check.
-						const assetName = generateRegistryAssetNameV2(firstUtxo);
-						const metadata = buildAgentMetadata(request);
-						const rpcApiKey = paymentSource.PaymentSourceConfig.rpcProviderApiKey;
+				const validated: ValidatedRegistryItem[] = [];
+				for (let idx = 0; idx < validations.length; idx++) {
+					const outcome = validations[idx];
+					const request = registryRequests[idx];
+					if (outcome.status === 'fulfilled') {
+						validated.push(outcome.value);
+					} else if (outcome.reason instanceof Error && outcome.reason.message.includes('Insufficient wallet UTXOs')) {
+						// Not a per-request failure — wallet ran out of distinct
+						// UTxOs for the tail items. Leave the request in
+						// RegistrationRequested so the next tick (with more
+						// UTxOs or a smaller batch) can pick it up.
+						logger.warn(
+							`Skipping V2 register request ${request.id} this tick: not enough distinct wallet UTxOs in this batch`,
+						);
+					} else {
+						await markRequestFailed(request, outcome.reason);
+					}
+				}
 
-						const evaluationTx = await generateRegistryMintTransaction(
-							blockchainProvider,
-							network,
-							script,
-							address,
-							recipientWalletAddress,
-							fundingLovelace,
-							policyId,
-							assetName,
-							firstUtxo,
+				if (validated.length === 0) {
+					logger.info('No V2 register requests passed validation this tick');
+					await unlockHotWallet(firstRequest.SmartContractWallet.id);
+					return;
+				}
+
+				// Shrink the batch until tx-size is safe. We pre-validate the
+				// no-collateral-overlap invariant for the chosen subset before
+				// each builder pass.
+				const shrinkResult = shrinkBatchToFit(validated, (subset) => {
+					try {
+						assertNoCollateralOverlap(
 							collateralUtxo,
-							limitedFilteredUtxos,
-							metadata,
-							undefined,
-							rpcApiKey,
+							subset.map((v) => v.item.firstUtxo),
 						);
-						const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
-							budget: { mem: number; steps: number };
-						}>;
-						const unsignedTx = await generateRegistryMintTransaction(
-							blockchainProvider,
-							network,
-							script,
-							address,
-							recipientWalletAddress,
-							fundingLovelace,
-							policyId,
-							assetName,
-							firstUtxo,
-							collateralUtxo,
-							limitedFilteredUtxos,
-							metadata,
-							estimatedFee[0].budget,
-							rpcApiKey,
-						);
-						const signedTx = await wallet.signTx(unsignedTx, true);
-						await prisma.registryRequest.update({
-							where: { id: request.id },
-							data: {
-								state: RegistrationState.RegistrationInitiated,
-								...createPendingTransaction(request.SmartContractWallet.id),
-							},
-						});
-						const newTxHash = await wallet.submitTx(signedTx);
-						await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
-						await prisma.registryRequest.update({
-							where: { id: request.id },
-							data: {
-								agentIdentifier: policyId + assetName,
-								...updateCurrentTransactionHash(newTxHash),
-							},
-						});
-						logger.debug(`Created V2 register transaction:
+						return { ok: true };
+					} catch {
+						return { ok: false, reason: 'collateral' };
+					}
+				});
+
+				if (shrinkResult.fit.length === 0) {
+					logger.error('V2 register batch could not satisfy collateral non-overlap invariant', {
+						reason: shrinkResult.reason,
+					});
+					await unlockHotWallet(firstRequest.SmartContractWallet.id);
+					return;
+				}
+				if (shrinkResult.dropped.length > 0) {
+					logger.warn(
+						`V2 register batch shrunk from ${validated.length} to ${shrinkResult.fit.length} (reason=${shrinkResult.reason}); dropped items will retry next tick`,
+					);
+				}
+
+				const fit = shrinkResult.fit;
+				const items = fit.map((v) => v.item);
+
+				let unsignedTx: string;
+				try {
+					// Two-pass evaluateTx: pass 1 with default exUnits, pass 2
+					// with the single MINT redeemer budget the validator
+					// returns (V2 mint contract shares one redeemer for the
+					// whole policy bucket).
+					const evaluationTx = await generateRegistryBatchMintTransaction(
+						blockchainProvider,
+						network,
+						script,
+						address,
+						policyId,
+						items,
+						collateralUtxo,
+						spendableUtxos,
+						undefined,
+						rpcApiKey,
+					);
+					const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
+						tag?: string;
+						budget: { mem: number; steps: number };
+					}>;
+					const mintBudget = estimatedFee.find((action) => action.tag === 'MINT')?.budget ?? estimatedFee[0]?.budget;
+					if (mintBudget == null) {
+						throw new Error('evaluateTx returned no MINT budget for V2 register batch');
+					}
+					unsignedTx = await generateRegistryBatchMintTransaction(
+						blockchainProvider,
+						network,
+						script,
+						address,
+						policyId,
+						items,
+						collateralUtxo,
+						spendableUtxos,
+						mintBudget,
+						rpcApiKey,
+					);
+					assertTxSizeWithinLimit(unsignedTx, 'v2-registry-batch-mint');
+				} catch (batchError) {
+					logger.warn('V2 register batch build failed; falling back to single-item processing', {
+						error: batchError,
+						batchSize: fit.length,
+					});
+					await fallbackToSingleItems(fit, paymentSource, network, script);
+					return;
+				}
+
+				let signedTx: string;
+				try {
+					signedTx = await wallet.signTx(unsignedTx, true);
+				} catch (signError) {
+					logger.warn('V2 register batch sign failed; falling back to single-item processing', {
+						error: signError,
+					});
+					await fallbackToSingleItems(fit, paymentSource, network, script);
+					return;
+				}
+
+				// Pre-submit DB transition: stamp every request with
+				// RegistrationInitiated + its own CurrentTransaction in ONE
+				// $transaction so the rows move atomically together.
+				try {
+					await prisma.$transaction(
+						fit.map((v) =>
+							prisma.registryRequest.update({
+								where: { id: v.request.id },
+								data: {
+									state: RegistrationState.RegistrationInitiated,
+									...createPendingTransaction(v.request.SmartContractWallet.id),
+								},
+							}),
+						),
+					);
+				} catch (dbError) {
+					logger.error('V2 register batch DB pre-submit update failed', { error: dbError });
+					await unlockHotWallet(firstRequest.SmartContractWallet.id);
+					return;
+				}
+
+				let newTxHash: string;
+				try {
+					newTxHash = await wallet.submitTx(signedTx);
+				} catch (submitError) {
+					logger.warn('V2 register batch submit failed; rolling back DB and retrying as single items', {
+						error: submitError,
+					});
+					// Rollback the pre-submit transition so a stale
+					// CurrentTransaction doesn't pin the wallet.
+					await Promise.allSettled(
+						fit.map((v) =>
+							prisma.registryRequest.update({
+								where: { id: v.request.id },
+								data: {
+									state: RegistrationState.RegistrationRequested,
+									CurrentTransaction: { disconnect: true },
+								},
+							}),
+						),
+					);
+					await fallbackToSingleItems(fit, paymentSource, network, script);
+					return;
+				}
+
+				try {
+					await walletSession.evaluateProjectedBalance(unsignedTx, sortedUtxos);
+				} catch (balanceError) {
+					logger.warn('V2 register batch projected balance evaluation failed (non-fatal)', { error: balanceError });
+				}
+
+				// All items get the SAME txHash. Update them in one
+				// transaction so the assetIdentifier is set atomically with
+				// the txHash.
+				try {
+					await prisma.$transaction(
+						fit.map((v) =>
+							prisma.registryRequest.update({
+								where: { id: v.request.id },
+								data: {
+									agentIdentifier: v.policyId + v.assetName,
+									...updateCurrentTransactionHash(newTxHash),
+								},
+							}),
+						),
+					);
+				} catch (dbError) {
+					logger.error('V2 register batch post-submit DB update failed; rows will reconcile via tx-sync next tick', {
+						error: dbError,
+						txHash: newTxHash,
+					});
+				}
+
+				logger.debug(`Created V2 register batch transaction:
               Tx ID: ${newTxHash}
+              Items: ${fit.length}
               View on https://${network === 'preprod' ? 'preprod.' : ''}cardanoscan.io/transaction/${newTxHash}
           `);
-						return true;
-					}),
-				});
-				let index = 0;
-				for (const result of results) {
-					const request = registryRequests[index];
-					if (result.success === false || result.result !== true) {
-						const error = result.error;
-						logger.error(`Error registering V2 agent ${request.id}`, { error });
-						await prisma.registryRequest.update({
-							where: { id: request.id },
-							data: {
-								state: RegistrationState.RegistrationFailed,
-								error: interpretBlockchainError(error),
-								SmartContractWallet: { update: { lockedAt: null } },
-							},
-						});
-					}
-					index++;
-				}
 			}),
 		);
 	} catch (error) {
 		logger.error('Error registering V2 agents', { error });
 	} finally {
 		release();
+	}
+}
+
+async function fallbackToSingleItems(
+	validated: ValidatedRegistryItem[],
+	paymentSource: LockedPaymentSource,
+	network: 'mainnet' | 'preprod',
+	script: { version: LanguageVersion; code: string },
+): Promise<void> {
+	// Each closure catches its own error, so Promise.all never rejects — we
+	// only need to map per-item failures to a DB transition afterwards.
+	const outcomes = await Promise.all(
+		validated.map(async (v) => {
+			try {
+				await advancedRetry({
+					errorResolvers: [delayErrorResolver({ configuration: SERVICE_CONSTANTS.RETRY })],
+					operation: async () => {
+						await processSingleRegistration(v, paymentSource, network, script);
+						return true;
+					},
+				});
+				return { request: v.request, ok: true as const };
+			} catch (error) {
+				return { request: v.request, ok: false as const, error };
+			}
+		}),
+	);
+	for (const outcome of outcomes) {
+		if (!outcome.ok) {
+			await markRequestFailed(outcome.request, outcome.error);
+		}
 	}
 }

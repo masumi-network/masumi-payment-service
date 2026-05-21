@@ -1,8 +1,18 @@
 import { Network, PaymentSourceType } from '@/generated/prisma/enums';
 import { CreatePaymentData, RegistrationData } from '../utils/apiClient';
-import { createHash } from 'crypto';
-import { createId } from '@paralleldrive/cuid2';
+import { createHash, randomBytes } from 'crypto';
 import crypto from 'crypto';
+
+// In-test unique-id helper. We avoid `@paralleldrive/cuid2` here because it
+// is an ESM-only package and jest 30 in this repo's ESM mode struggles to
+// load it from .ts test files (`SyntaxError: Cannot use import statement
+// outside a module` in node_modules). `randomBytes(12).toString('hex')`
+// yields 24 chars of url-safe entropy — collision risk is negligible for
+// per-test fixtures and the value isn't observed by anything but humans
+// looking at logs.
+function createId(): string {
+	return randomBytes(12).toString('hex');
+}
 
 /**
  * Test data generators for e2e tests

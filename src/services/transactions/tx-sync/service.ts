@@ -193,7 +193,15 @@ async function processTransactionData(
 			paymentContract.PaymentSourceConfig.rpcProviderApiKey,
 		);
 	} else if (extractedData.type == 'Transaction') {
-		await updateTransaction(paymentContract, extractedData, blockfrost, tx);
+		// Multi-redeemer batch txs produce N entries — one per script input
+		// consumed in this tx. Each entry maps to exactly one PaymentRequest
+		// / PurchaseRequest row via its decoded datum's blockchainIdentifier.
+		// Process them sequentially: each updateTransaction is independent at
+		// the row level so order is irrelevant, but the sequential await
+		// keeps the per-entry Prisma transactions from racing each other.
+		for (const entry of extractedData.entries) {
+			await updateTransaction(paymentContract, entry, blockfrost, tx);
+		}
 	}
 }
 async function updateSyncCheckpoint(

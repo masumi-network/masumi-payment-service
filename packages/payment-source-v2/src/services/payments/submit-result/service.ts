@@ -1,6 +1,7 @@
 import { PaymentAction, PaymentErrorType, PaymentSourceType, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { deserializeDatum, UTxO } from '@meshsdk/core';
+import type { BlockfrostProvider as MeshV2BlockfrostProvider, LanguageVersion } from '@meshsdk/core';
 import type { BlockfrostProvider } from '@/services/shared';
 import { logger } from '@masumi/payment-core/logger';
 import { SmartContractState, smartContractStateEqualsOnChainState } from '@/utils/generator/contract-generator';
@@ -24,6 +25,24 @@ import {
 } from '@/services/shared';
 import { createDatumFromDecodedContractV2, getPaymentScriptFromPaymentSourceV2 } from '@masumi/payment-source-v2';
 import { decodeV2ContractDatum } from '@/utils/converter/string-datum-convert';
+import {
+	assertNoCollateralOverlap,
+	assertTxSizeWithinLimit,
+	intersectTxWindows,
+	pickBatchCollateral,
+	shrinkBatchToFit,
+	type TxWindowBounds,
+} from '../../../builders/batch-helpers';
+import {
+	type BatchInteractionItem,
+	generateMasumiSmartContractBatchInteractionTransactionAutomaticFees,
+} from '../../../builders/batch-interaction';
+
+// V2 submit-result sizing. Each leg evaluates the Aiken `SubmitResult` redeemer
+// over the same script; per-input ex-units run ~mem 4M / steps 1.5B in practice,
+// so 6 fits well under the protocol max-ex-units even with headroom. The cap
+// also matches the V2 register batch size for operational consistency.
+const SUBMIT_RESULT_BATCH_SIZE = 7;
 
 type PaymentSourceWithRelations = Prisma.PaymentSourceGetPayload<{
 	include: {
@@ -53,6 +72,14 @@ type MatchingUtxoResult = {
 	decodedContract: DecodedV1ContractDatum;
 };
 
+type ValidatedSubmitItem = {
+	request: PaymentRequestWithRelations;
+	smartContractUtxo: UTxO;
+	decodedContract: DecodedV1ContractDatum;
+	newInlineDatum: ReturnType<typeof createDatumFromDecodedContractV2>['value'];
+	window: TxWindowBounds;
+};
+
 const mutex = new Mutex();
 
 /**
@@ -65,47 +92,38 @@ function determineNewContractState(currentState: SmartContractState): SmartContr
 	return SmartContractState.ResultSubmitted;
 }
 
-/**
- * Handles the results of payment request processing
- */
-async function handlePaymentRequestResults(
-	results: Array<{ success: boolean; result?: boolean; error?: unknown }>,
-	paymentRequests: PaymentRequestWithRelations[],
-): Promise<void> {
-	for (let index = 0; index < results.length; index++) {
-		const result = results[index];
-		const request = paymentRequests[index];
+async function markRequestFailed(request: PaymentRequestWithRelations, error: unknown): Promise<void> {
+	logger.error(`Error submitting V2 result ${request.id}`, { error });
+	await prisma.paymentRequest.update({
+		where: { id: request.id },
+		data: {
+			...connectPreviousAction(request.nextActionId),
+			...createNextPaymentAction(PaymentAction.WaitingForManualAction, {
+				errorType: PaymentErrorType.Unknown,
+				errorNote: 'Submitting result failed: ' + interpretBlockchainError(error),
+			}),
+			SmartContractWallet: { update: { lockedAt: null } },
+		},
+	});
+}
 
-		if (result.success === false || result.result !== true) {
-			logger.error(`Error submitting result ${request.id}`, {
-				error: result.error,
-			});
-
-			await prisma.paymentRequest.update({
-				where: { id: request.id },
-				data: {
-					...connectPreviousAction(request.nextActionId),
-					...createNextPaymentAction(PaymentAction.WaitingForManualAction, {
-						errorType: PaymentErrorType.Unknown,
-						errorNote: 'Submitting result failed: ' + interpretBlockchainError(result.error),
-					}),
-					SmartContractWallet: {
-						update: {
-							lockedAt: null,
-						},
-					},
-				},
-			});
-		}
+async function unlockHotWallet(walletId: string): Promise<void> {
+	try {
+		await prisma.hotWallet.update({
+			where: { id: walletId, deletedAt: null },
+			data: { lockedAt: null },
+		});
+	} catch (error) {
+		logger.warn('Failed to unlock V2 submit-result hot wallet', { error, walletId });
 	}
 }
 
-async function findMatchingUtxoAndDecodeContract(
+function findMatchingUtxoAndDecodeContract(
 	utxoList: UTxO[],
 	txHash: string,
 	request: PaymentRequestWithRelations,
 	paymentContract: PaymentSourceWithRelations,
-): Promise<MatchingUtxoResult | undefined> {
+): MatchingUtxoResult | undefined {
 	for (const utxo of utxoList) {
 		if (utxo.input.txHash !== txHash) {
 			continue;
@@ -169,6 +187,63 @@ async function findMatchingUtxoAndDecodeContract(
 	return undefined;
 }
 
+/**
+ * Per-request validation. Locates the matching script UTxO, decodes the on-chain
+ * datum, builds the new continuation datum, and computes the per-item tx-window
+ * bounds. Throws on validation failure — caller maps the throw to a per-request
+ * failure update.
+ */
+async function validateAndBuildItem(
+	request: PaymentRequestWithRelations,
+	paymentContract: PaymentSourceWithRelations,
+	blockchainProvider: BlockfrostProvider,
+	network: 'mainnet' | 'preprod',
+): Promise<ValidatedSubmitItem> {
+	if (request.payByTime == null) {
+		throw new Error('Pay by time is null, this is deprecated');
+	}
+	if (request.collateralReturnLovelace == null) {
+		throw new Error('Collateral return lovelace is null, this is deprecated');
+	}
+	if (request.NextAction.resultHash == null) {
+		throw new Error('Result hash is not set on NextAction');
+	}
+	const txHash = request.CurrentTransaction?.txHash;
+	if (txHash == null) {
+		throw new Error('No transaction hash found');
+	}
+	const utxoByHash = await blockchainProvider.fetchUTxOs(txHash);
+	const matchResult = findMatchingUtxoAndDecodeContract(utxoByHash, txHash, request, paymentContract);
+	if (!matchResult) {
+		throw new Error('UTXO not found');
+	}
+	const { utxo, decodedContract } = matchResult;
+
+	const datum = createDatumFromDecodedContractV2({
+		decodedContract,
+		buyerAddress: decodedContract.buyerAddress,
+		sellerAddress: decodedContract.sellerAddress,
+		blockchainIdentifier: request.blockchainIdentifier,
+		resultHash: request.NextAction.resultHash,
+		newCooldownTimeSeller: newCooldownTime(BigInt(paymentContract.cooldownTime)),
+		newCooldownTimeBuyer: BigInt(0),
+		state: determineNewContractState(decodedContract.state),
+	});
+
+	const { invalidBefore, invalidAfter } = createTxWindow(network, {
+		constrainAfterMs: Number(decodedContract.resultTime),
+		constrainBeforeMs: Number(decodedContract.sellerCooldownTime),
+	});
+
+	return {
+		request,
+		smartContractUtxo: utxo,
+		decodedContract,
+		newInlineDatum: datum.value,
+		window: { invalidBefore, invalidAfter },
+	};
+}
+
 async function processSinglePaymentRequest(
 	request: PaymentRequestWithRelations,
 	paymentContract: PaymentSourceWithRelations,
@@ -200,7 +275,7 @@ async function processSinglePaymentRequest(
 	}
 	const utxoByHash = await blockchainProvider.fetchUTxOs(txHash);
 
-	const matchResult = await findMatchingUtxoAndDecodeContract(utxoByHash, txHash, request, paymentContract);
+	const matchResult = findMatchingUtxoAndDecodeContract(utxoByHash, txHash, request, paymentContract);
 
 	if (!matchResult) {
 		throw new Error('UTXO not found');
@@ -265,10 +340,10 @@ async function processSinglePaymentRequest(
 		});
 
 		logger.debug(`Created submit result transaction:
-                  Tx ID: ${txHash}
+                  Tx ID: ${newTxHash}
                   View (after a bit) on https://${
 										network === 'preprod' ? 'preprod.' : ''
-									}cardanoscan.io/transaction/${txHash}
+									}cardanoscan.io/transaction/${newTxHash}
                   Smart Contract Address: ${smartContractAddress}
               `);
 
@@ -295,6 +370,338 @@ async function processSinglePaymentRequest(
 	}
 }
 
+async function fallbackToSingleItems(
+	requests: PaymentRequestWithRelations[],
+	paymentContract: PaymentSourceWithRelations,
+	blockchainProvider: BlockfrostProvider,
+	network: 'mainnet' | 'preprod',
+): Promise<void> {
+	const results = await advancedRetryAll({
+		errorResolvers: [
+			delayErrorResolver({
+				configuration: {
+					maxRetries: 5,
+					backoffMultiplier: 5,
+					initialDelayMs: 500,
+					maxDelayMs: 7500,
+				},
+			}),
+		],
+		operations: requests.map(
+			(request) => async () => processSinglePaymentRequest(request, paymentContract, blockchainProvider, network),
+		),
+	});
+
+	for (let index = 0; index < results.length; index++) {
+		const result = results[index];
+		const request = requests[index];
+		if (result.success === false || result.result !== true) {
+			await markRequestFailed(request, result.error);
+		}
+	}
+}
+
+async function processWalletBatch(
+	requests: PaymentRequestWithRelations[],
+	paymentContract: PaymentSourceWithRelations,
+	blockchainProvider: BlockfrostProvider,
+	network: 'mainnet' | 'preprod',
+	script: { version: LanguageVersion; code: string },
+	smartContractAddress: string,
+): Promise<void> {
+	const firstRequest = requests[0];
+	const wallet = firstRequest.SmartContractWallet!;
+
+	let walletSession;
+	try {
+		walletSession = await loadHotWalletSession({
+			network: paymentContract.network,
+			rpcProviderApiKey: paymentContract.PaymentSourceConfig.rpcProviderApiKey,
+			encryptedMnemonic: wallet.Secret.encryptedMnemonic,
+			hotWalletId: wallet.id,
+		});
+	} catch (error) {
+		logger.error('Failed to load V2 submit-result wallet session', { error, walletId: wallet.id });
+		await Promise.allSettled(requests.map((request) => markRequestFailed(request, error)));
+		return;
+	}
+	const { wallet: meshWallet, utxos, address } = walletSession;
+	if (utxos.length === 0) {
+		const error = new Error('No UTXOs found in the wallet. Wallet is empty.');
+		await Promise.allSettled(requests.map((request) => markRequestFailed(request, error)));
+		return;
+	}
+
+	// Per-request validation. Failures here become per-request DB failures and
+	// are excluded from the batch.
+	const validated: ValidatedSubmitItem[] = [];
+	for (const request of requests) {
+		try {
+			validated.push(await validateAndBuildItem(request, paymentContract, blockchainProvider, network));
+		} catch (error) {
+			await markRequestFailed(request, error);
+		}
+	}
+	if (validated.length === 0) {
+		logger.info('No V2 submit-result items passed validation', { walletId: wallet.id });
+		await unlockHotWallet(wallet.id);
+		return;
+	}
+
+	// Pick collateral that is NOT in the spending set.
+	const excludeRefs = validated.map((v) => v.smartContractUtxo.input);
+	const collateralUtxo = pickBatchCollateral(utxos, excludeRefs);
+	if (collateralUtxo == null) {
+		logger.warn('V2 submit-result batch could not find collateral UTxO; falling back to single-item', {
+			walletId: wallet.id,
+		});
+		await fallbackToSingleItems(
+			validated.map((v) => v.request),
+			paymentContract,
+			blockchainProvider,
+			network,
+		);
+		return;
+	}
+
+	const spendingUtxoKeys = new Set(
+		validated.map((v) => `${v.smartContractUtxo.input.txHash}#${v.smartContractUtxo.input.outputIndex}`),
+	);
+	const collateralKey = `${collateralUtxo.input.txHash}#${collateralUtxo.input.outputIndex}`;
+	const walletUtxos = utxos.filter((utxo) => {
+		const key = `${utxo.input.txHash}#${utxo.input.outputIndex}`;
+		if (key === collateralKey) return false;
+		if (spendingUtxoKeys.has(key)) return false;
+		return true;
+	});
+	const limitedFilteredUtxos = sortAndLimitUtxos(walletUtxos, 8000000);
+
+	// Constraints applied progressively: validity-window intersection then
+	// no-collateral-overlap. tx-size is checked after the build pass.
+	const shrinkResult = shrinkBatchToFit(validated, (subset) => {
+		const window = intersectTxWindows(subset.map((v) => v.window));
+		if (window == null) {
+			return { ok: false, reason: 'window' };
+		}
+		try {
+			assertNoCollateralOverlap(
+				collateralUtxo,
+				subset.map((v) => ({ input: v.smartContractUtxo.input })),
+			);
+		} catch {
+			return { ok: false, reason: 'collateral' };
+		}
+		return { ok: true };
+	});
+
+	if (shrinkResult.fit.length === 0) {
+		logger.warn('V2 submit-result batch could not satisfy batch invariants; falling back to single-item', {
+			reason: shrinkResult.reason,
+			walletId: wallet.id,
+		});
+		await fallbackToSingleItems(
+			validated.map((v) => v.request),
+			paymentContract,
+			blockchainProvider,
+			network,
+		);
+		return;
+	}
+	if (shrinkResult.dropped.length > 0) {
+		logger.warn(
+			`V2 submit-result batch shrunk from ${validated.length} to ${shrinkResult.fit.length} (reason=${shrinkResult.reason})`,
+		);
+	}
+
+	const fit = shrinkResult.fit;
+	const droppedRequests = shrinkResult.dropped.map((v) => v.request);
+
+	// Composed window from the surviving subset.
+	const composed = intersectTxWindows(fit.map((v) => v.window));
+	if (composed == null) {
+		// shrinkBatchToFit invariant says this can't happen for fit.length > 0,
+		// but be defensive.
+		logger.error('V2 submit-result composed window is null after shrink — falling back', { walletId: wallet.id });
+		await fallbackToSingleItems(
+			validated.map((v) => v.request),
+			paymentContract,
+			blockchainProvider,
+			network,
+		);
+		return;
+	}
+
+	const items: BatchInteractionItem[] = fit.map((v) => ({
+		type: 'SubmitResult',
+		smartContractUtxo: v.smartContractUtxo,
+		newInlineDatum: v.newInlineDatum,
+	}));
+
+	let unsignedTx: string;
+	try {
+		// See note on cross-mesh-version type alias in
+		// packages/payment-source-v2/src/services/registry/deregister/service.ts.
+		unsignedTx = await generateMasumiSmartContractBatchInteractionTransactionAutomaticFees(
+			blockchainProvider as unknown as MeshV2BlockfrostProvider,
+			network,
+			script,
+			address,
+			collateralUtxo,
+			limitedFilteredUtxos,
+			items,
+			composed.invalidBefore,
+			composed.invalidAfter,
+			paymentContract.PaymentSourceConfig.rpcProviderApiKey,
+		);
+		assertTxSizeWithinLimit(unsignedTx, 'v2-submit-result-batch');
+	} catch (batchError) {
+		logger.warn('V2 submit-result batch build failed; falling back to single-item', {
+			error: batchError,
+			batchSize: fit.length,
+			walletId: wallet.id,
+		});
+		await fallbackToSingleItems(
+			validated.map((v) => v.request),
+			paymentContract,
+			blockchainProvider,
+			network,
+		);
+		return;
+	}
+
+	let signedTx: string;
+	try {
+		signedTx = await meshWallet.signTx(unsignedTx);
+	} catch (signError) {
+		logger.warn('V2 submit-result batch sign failed; falling back to single-item', {
+			error: signError,
+			walletId: wallet.id,
+		});
+		await fallbackToSingleItems(
+			validated.map((v) => v.request),
+			paymentContract,
+			blockchainProvider,
+			network,
+		);
+		return;
+	}
+
+	try {
+		await prisma.$transaction(
+			fit.map((v) =>
+				prisma.paymentRequest.update({
+					where: { id: v.request.id },
+					data: {
+						...connectPreviousAction(v.request.nextActionId),
+						...createNextPaymentAction(PaymentAction.SubmitResultInitiated),
+						...createPendingTransaction(wallet.id),
+						TransactionHistory: { connect: { id: v.request.CurrentTransaction!.id } },
+					},
+				}),
+			),
+		);
+	} catch (dbError) {
+		logger.error('V2 submit-result batch DB pre-submit update failed', { error: dbError });
+		await unlockHotWallet(wallet.id);
+		return;
+	}
+
+	let newTxHash: string;
+	try {
+		newTxHash = await meshWallet.submitTx(signedTx);
+	} catch (submitError) {
+		logger.warn('V2 submit-result batch submit failed; rolling back DB and retrying as single items', {
+			error: submitError,
+		});
+		await Promise.allSettled(
+			fit.map((v) =>
+				prisma.paymentRequest.update({
+					where: { id: v.request.id },
+					data: {
+						...connectPreviousAction(v.request.nextActionId),
+						...createNextPaymentAction(PaymentAction.SubmitResultRequested, {
+							errorType: null,
+							errorNote: null,
+							resultHash: v.request.NextAction.resultHash,
+						}),
+						CurrentTransaction: { disconnect: true },
+					},
+				}),
+			),
+		);
+		await fallbackToSingleItems(
+			validated.map((v) => v.request),
+			paymentContract,
+			blockchainProvider,
+			network,
+		);
+		return;
+	}
+
+	try {
+		await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
+	} catch (balanceError) {
+		logger.warn('V2 submit-result batch projected balance evaluation failed (non-fatal)', {
+			error: balanceError,
+		});
+	}
+
+	try {
+		await prisma.$transaction(
+			fit.map((v) =>
+				prisma.paymentRequest.update({
+					where: { id: v.request.id },
+					data: updateCurrentTransactionHash(newTxHash),
+				}),
+			),
+		);
+	} catch (dbError) {
+		logger.error('V2 submit-result batch post-submit DB update failed; tx-sync will reconcile next tick', {
+			error: dbError,
+			txHash: newTxHash,
+		});
+	}
+
+	logger.debug(`Created V2 submit-result batch transaction:
+              Tx ID: ${newTxHash}
+              Items: ${fit.length}
+              View on https://${network === 'preprod' ? 'preprod.' : ''}cardanoscan.io/transaction/${newTxHash}
+              Smart Contract Address: ${smartContractAddress}
+          `);
+
+	if (droppedRequests.length > 0) {
+		// Items that were peeled off should be retried via single-item next
+		// tick. Mark as failed-and-retryable so the scheduler can pick them up.
+		await Promise.allSettled(
+			droppedRequests.map((request) =>
+				prisma.paymentRequest.update({
+					where: { id: request.id },
+					data: {
+						...connectPreviousAction(request.nextActionId),
+						...createNextPaymentAction(PaymentAction.SubmitResultRequested, {
+							errorType: null,
+							errorNote: null,
+							resultHash: request.NextAction.resultHash,
+						}),
+						SmartContractWallet: { update: { lockedAt: null } },
+					},
+				}),
+			),
+		);
+	}
+}
+
+function groupRequestsByWallet(requests: PaymentRequestWithRelations[]): Map<string, PaymentRequestWithRelations[]> {
+	const byWallet = new Map<string, PaymentRequestWithRelations[]>();
+	for (const request of requests) {
+		if (request.SmartContractWallet == null) continue;
+		const list = byWallet.get(request.SmartContractWallet.id) ?? [];
+		list.push(request);
+		byWallet.set(request.SmartContractWallet.id, list);
+	}
+	return byWallet;
+}
+
 export async function submitResultV2() {
 	let release: MutexInterface.Releaser | null;
 	try {
@@ -305,7 +712,6 @@ export async function submitResultV2() {
 	}
 
 	try {
-		//Submit a result for invalid tokens
 		const paymentContractsWithWalletLocked = await lockAndQueryPayments({
 			paymentStatus: PaymentAction.SubmitResultRequested,
 			// Aiken SubmitResult requires `must_end_before(submit_result_time)`.
@@ -316,7 +722,7 @@ export async function submitResultV2() {
 				gt: Date.now() + 1000 * 60 * 5,
 			},
 			requestedResultHash: { not: null },
-			maxBatchSize: 1,
+			maxBatchSize: SUBMIT_RESULT_BATCH_SIZE,
 			paymentSourceType: PaymentSourceType.Web3CardanoV2,
 		});
 
@@ -325,36 +731,31 @@ export async function submitResultV2() {
 				if (paymentContract.PaymentRequests.length == 0) return;
 
 				logger.info(
-					`Submitting ${paymentContract.PaymentRequests.length} results for payment source ${paymentContract.id}`,
+					`Submitting ${paymentContract.PaymentRequests.length} V2 results for payment source ${paymentContract.id}`,
 				);
 
 				const network = convertNetwork(paymentContract.network);
-
 				const blockchainProvider = await createMeshProvider(paymentContract.PaymentSourceConfig.rpcProviderApiKey);
+				const { script, smartContractAddress } = await getPaymentScriptFromPaymentSourceV2(paymentContract);
 
-				const paymentRequests = paymentContract.PaymentRequests;
-				if (paymentRequests.length == 0) return;
-
-				const results = await advancedRetryAll({
-					errorResolvers: [
-						delayErrorResolver({
-							configuration: {
-								maxRetries: 5,
-								backoffMultiplier: 5,
-								initialDelayMs: 500,
-								maxDelayMs: 7500,
-							},
-						}),
-					],
-					operations: paymentRequests.map(
-						(request) => async () => processSinglePaymentRequest(request, paymentContract, blockchainProvider, network),
-					),
-				});
-				await handlePaymentRequestResults(results, paymentRequests);
+				const grouped = groupRequestsByWallet(paymentContract.PaymentRequests);
+				await Promise.allSettled(
+					Array.from(grouped.values()).map(async (walletRequests) => {
+						if (walletRequests.length === 0) return;
+						await processWalletBatch(
+							walletRequests,
+							paymentContract,
+							blockchainProvider,
+							network,
+							script,
+							smartContractAddress,
+						);
+					}),
+				);
 			}),
 		);
 	} catch (error) {
-		logger.error('Error submitting result', { error: error });
+		logger.error('Error submitting V2 result', { error });
 	} finally {
 		release();
 	}

@@ -1,13 +1,19 @@
 import { logger } from '@masumi/payment-core/logger';
 
-// Prisma error code for "could not serialize access due to read/write
-// dependencies among transactions" (Postgres 40001). Surfaces under
-// `isolationLevel: 'Serializable'` when concurrent transactions touch
-// overlapping row sets — e.g. when the V1 and V2 schedulers both run their
-// `lockAndQueryX` against the shared API server's DB at the same scheduler
-// tick. The conflict is INHERENTLY retryable: Postgres aborts the loser; the
-// retry sees a fresh consistent snapshot.
-const PRISMA_SERIALIZATION_FAILURE_CODE = 'P2034';
+// Prisma error codes we treat as retryable transaction failures.
+//
+// P2034 ("Transaction failed due to a write conflict or a deadlock") —
+//   the canonical serializable-conflict code. Postgres 40001 wrapped here.
+//
+// P2028 ("Transaction API error") — Prisma's catch-all for transactions
+//   that got closed/aborted by the driver adapter. In the Neon serverless
+//   adapter (and similar pooled adapters), serializable-conflict aborts can
+//   surface as P2028 with empty meta INSTEAD of P2034 (the driver-adapter
+//   layer re-wraps the underlying 40001). Empirically: under V1+V2 parallel
+//   schedulers contending on HotWallet rows, P2028 spam ≫ P2034 in the
+//   shared-API-server e2e setup. Both are safe to retry: the next attempt
+//   opens a fresh transaction with a fresh consistent snapshot.
+const PRISMA_RETRYABLE_CODES = new Set(['P2034', 'P2028']);
 
 type Logger = Pick<typeof logger, 'debug' | 'info' | 'warn'>;
 
@@ -22,7 +28,7 @@ export type RetryOptions = {
 function isSerializationConflict(error: unknown): boolean {
 	if (error == null || typeof error !== 'object') return false;
 	const code = (error as { code?: unknown }).code;
-	return code === PRISMA_SERIALIZATION_FAILURE_CODE;
+	return typeof code === 'string' && PRISMA_RETRYABLE_CODES.has(code);
 }
 
 /**

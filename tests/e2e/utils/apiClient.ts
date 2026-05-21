@@ -217,6 +217,14 @@ export interface PaymentResponse {
 		walletVkey: string;
 		walletAddress: string;
 	} | null;
+	// Present on /api/v1/payment query responses; null when no tx is in flight
+	// for this payment. Exposed here so batch-verification e2e specs can
+	// assert that N concurrent payments share the same on-chain tx hash.
+	CurrentTransaction?: {
+		id: string;
+		txHash: string | null;
+		status: string;
+	} | null;
 	metadata: string | null;
 }
 

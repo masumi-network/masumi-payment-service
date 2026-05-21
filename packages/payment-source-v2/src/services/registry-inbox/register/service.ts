@@ -1,12 +1,13 @@
 import { PaymentSourceType, RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
+import type { LanguageVersion, UTxO } from '@meshsdk/core';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { lockAndQueryInboxAgentRegistrationRequests } from '@/utils/db/lock-and-query-inbox-agent-registration-request';
 import { DEFAULTS, SERVICE_CONSTANTS } from '@masumi/payment-core/config';
 import { getRegistryScriptFromNetworkHandlerV2 } from '@/utils/generator/contract-generator';
 import { stringToMetadata, cleanMetadata } from '@/utils/converter/metadata-string-convert';
-import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
+import { advancedRetry, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { sortUtxosByLovelaceDesc } from '@/utils/utxo';
@@ -23,9 +24,32 @@ import {
 	resolveRegistryFundingLovelace,
 	resolveRegistryRecipientWalletAddress,
 } from '@/services/registry/shared';
+import {
+	assertNoCollateralOverlap,
+	assertTxSizeWithinLimit,
+	pickBatchCollateral,
+	shrinkBatchToFit,
+} from '../../../builders/batch-helpers';
+import { type BatchRegistryMintItem, generateRegistryBatchMintTransaction } from '../../../builders/batch-registry';
 import { INBOX_AGENT_REGISTRATION_METADATA_TYPE } from '../metadata';
 
+// Mirrors the V2 registry register cap. Inbox-agent items carry far less
+// metadata than full agent registrations, so the tx-size pressure is lower
+// and we could push higher; staying at 7 keeps the two paths uniform and
+// well under MAX_SAFE_TX_BYTES.
+const REGISTRY_BATCH_SIZE = 7;
+
 const mutex = new Mutex();
+
+type LockedPaymentSource = Awaited<ReturnType<typeof lockAndQueryInboxAgentRegistrationRequests>>[number];
+type InboxRequestRecord = LockedPaymentSource['InboxAgentRegistrationRequests'][number];
+
+type ValidatedInboxItem = {
+	request: InboxRequestRecord;
+	item: BatchRegistryMintItem;
+	assetName: string;
+	policyId: string;
+};
 
 function buildInboxAgentMetadata(request: {
 	name: string;
@@ -43,6 +67,146 @@ function buildInboxAgentMetadata(request: {
 	return cleanMetadata(metadata) as RegistryMetadata;
 }
 
+async function markRequestFailed(request: InboxRequestRecord, error: unknown): Promise<void> {
+	logger.error(`Error registering V2 inbox agent ${request.id}`, { error });
+	await prisma.inboxAgentRegistrationRequest.update({
+		where: { id: request.id },
+		data: {
+			state: RegistrationState.RegistrationFailed,
+			error: interpretBlockchainError(error),
+			SmartContractWallet: { update: { lockedAt: null } },
+		},
+	});
+}
+
+async function unlockHotWallet(hotWalletId: string): Promise<void> {
+	try {
+		await prisma.hotWallet.update({
+			where: { id: hotWalletId, deletedAt: null },
+			data: { lockedAt: null },
+		});
+	} catch (error) {
+		logger.warn('Failed to release hot wallet lock after V2 inbox register batch bail-out', {
+			hotWalletId,
+			error,
+		});
+	}
+}
+
+function validateAndBuildItem(request: InboxRequestRecord, utxo: UTxO, policyId: string): ValidatedInboxItem {
+	const recipientWalletAddress = resolveRegistryRecipientWalletAddress(request);
+	const fundingLovelace = resolveRegistryFundingLovelace(request);
+	const assetName = generateRegistryAssetNameV2(utxo);
+	const metadata = buildInboxAgentMetadata({
+		name: request.name,
+		description: request.description,
+		agentSlug: request.agentSlug,
+		metadataVersion: request.metadataVersion ?? DEFAULTS.DEFAULT_METADATA_VERSION,
+	});
+	return {
+		request,
+		assetName,
+		policyId,
+		item: {
+			recipientWalletAddress,
+			fundingLovelace,
+			assetName,
+			firstUtxo: utxo,
+			metadata,
+		},
+	};
+}
+
+async function processSingleRegistration(
+	validated: ValidatedInboxItem,
+	paymentSource: LockedPaymentSource,
+	network: 'mainnet' | 'preprod',
+	script: { version: LanguageVersion; code: string },
+): Promise<void> {
+	const request = validated.request;
+	const walletSession = await loadHotWalletSession({
+		network: paymentSource.network,
+		rpcProviderApiKey: paymentSource.PaymentSourceConfig.rpcProviderApiKey,
+		encryptedMnemonic: request.SmartContractWallet.Secret.encryptedMnemonic,
+		hotWalletId: request.SmartContractWallet.id,
+	});
+	const { wallet, utxos, address } = walletSession;
+	if (utxos.length === 0) {
+		throw new Error('No UTXOs found for the wallet');
+	}
+	const blockchainProvider = await createMeshProvider(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
+	const limitedFilteredUtxos = sortUtxosByLovelaceDesc(utxos);
+	const firstUtxo = limitedFilteredUtxos[0];
+	const collateralUtxo = limitedFilteredUtxos[0];
+	const recipientWalletAddress = resolveRegistryRecipientWalletAddress(request);
+	const fundingLovelace = resolveRegistryFundingLovelace(request);
+	const assetName = generateRegistryAssetNameV2(firstUtxo);
+	const metadata = buildInboxAgentMetadata({
+		name: request.name,
+		description: request.description,
+		agentSlug: request.agentSlug,
+		metadataVersion: request.metadataVersion ?? DEFAULTS.DEFAULT_METADATA_VERSION,
+	});
+	const rpcApiKey = paymentSource.PaymentSourceConfig.rpcProviderApiKey;
+
+	const evaluationTx = await generateRegistryMintTransaction(
+		blockchainProvider,
+		network,
+		script,
+		address,
+		recipientWalletAddress,
+		fundingLovelace,
+		validated.policyId,
+		assetName,
+		firstUtxo,
+		collateralUtxo,
+		limitedFilteredUtxos,
+		metadata,
+		undefined,
+		rpcApiKey,
+	);
+	const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
+		budget: { mem: number; steps: number };
+	}>;
+	const unsignedTx = await generateRegistryMintTransaction(
+		blockchainProvider,
+		network,
+		script,
+		address,
+		recipientWalletAddress,
+		fundingLovelace,
+		validated.policyId,
+		assetName,
+		firstUtxo,
+		collateralUtxo,
+		limitedFilteredUtxos,
+		metadata,
+		estimatedFee[0].budget,
+		rpcApiKey,
+	);
+	const signedTx = await wallet.signTx(unsignedTx, true);
+	await prisma.inboxAgentRegistrationRequest.update({
+		where: { id: request.id },
+		data: {
+			state: RegistrationState.RegistrationInitiated,
+			...createPendingTransaction(request.SmartContractWallet.id),
+		},
+	});
+	const newTxHash = await wallet.submitTx(signedTx);
+	await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
+	await prisma.inboxAgentRegistrationRequest.update({
+		where: { id: request.id },
+		data: {
+			agentIdentifier: validated.policyId + assetName,
+			...updateCurrentTransactionHash(newTxHash),
+		},
+	});
+	logger.debug(`Created V2 inbox agent registration transaction (single-item fallback):
+              Tx ID: ${newTxHash}
+              View on https://${network === 'preprod' ? 'preprod.' : ''}cardanoscan.io/transaction/${newTxHash}
+          `);
+}
+
 export async function registerInboxAgentV2() {
 	let release: MutexInterface.Releaser | null;
 	try {
@@ -55,7 +219,7 @@ export async function registerInboxAgentV2() {
 	try {
 		const paymentSourcesWithWalletLocked = await lockAndQueryInboxAgentRegistrationRequests({
 			state: RegistrationState.RegistrationRequested,
-			maxBatchSize: 1,
+			maxBatchSize: REGISTRY_BATCH_SIZE,
 			paymentSourceType: PaymentSourceType.Web3CardanoV2,
 		});
 
@@ -70,120 +234,268 @@ export async function registerInboxAgentV2() {
 				const network = convertNetwork(paymentSource.network);
 				const registrationRequests = paymentSource.InboxAgentRegistrationRequests;
 				if (registrationRequests.length === 0) return;
+
 				const blockchainProvider = await createMeshProvider(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
+				const rpcApiKey = paymentSource.PaymentSourceConfig.rpcProviderApiKey;
+				const { script, policyId } = await getRegistryScriptFromNetworkHandlerV2(paymentSource);
 
-				const results = await advancedRetryAll({
-					errorResolvers: [delayErrorResolver({ configuration: SERVICE_CONSTANTS.RETRY })],
-					operations: registrationRequests.map((request) => async () => {
-						const walletSession = await loadHotWalletSession({
-							network: paymentSource.network,
-							rpcProviderApiKey: paymentSource.PaymentSourceConfig.rpcProviderApiKey,
-							encryptedMnemonic: request.SmartContractWallet.Secret.encryptedMnemonic,
-							hotWalletId: request.SmartContractWallet.id,
-						});
-						const { wallet, utxos, address } = walletSession;
-						if (utxos.length === 0) {
-							throw new Error('No UTXOs found for the wallet');
+				const firstRequest = registrationRequests[0];
+
+				let walletSession;
+				try {
+					walletSession = await loadHotWalletSession({
+						network: paymentSource.network,
+						rpcProviderApiKey: paymentSource.PaymentSourceConfig.rpcProviderApiKey,
+						encryptedMnemonic: firstRequest.SmartContractWallet.Secret.encryptedMnemonic,
+						hotWalletId: firstRequest.SmartContractWallet.id,
+					});
+				} catch (error) {
+					logger.error('Failed to load wallet session for V2 inbox register batch', { error });
+					await Promise.allSettled(registrationRequests.map((request) => markRequestFailed(request, error)));
+					return;
+				}
+				const { wallet, utxos, address } = walletSession;
+				if (utxos.length === 0) {
+					const error = new Error('No UTXOs found for the wallet');
+					await Promise.allSettled(registrationRequests.map((request) => markRequestFailed(request, error)));
+					return;
+				}
+
+				const collateralUtxo = pickBatchCollateral(utxos, []);
+				if (collateralUtxo == null) {
+					logger.warn(
+						'V2 inbox register batch: no qualifying pure-ADA collateral UTxO available; deferring to next tick',
+					);
+					await unlockHotWallet(firstRequest.SmartContractWallet.id);
+					return;
+				}
+
+				const sortedUtxos = sortUtxosByLovelaceDesc(utxos);
+				const collateralKey = `${collateralUtxo.input.txHash}#${collateralUtxo.input.outputIndex}`;
+				const spendableUtxos = sortedUtxos.filter(
+					(utxo) => `${utxo.input.txHash}#${utxo.input.outputIndex}` !== collateralKey,
+				);
+
+				const validations = await Promise.allSettled(
+					registrationRequests.map((request, idx) => {
+						const utxo = spendableUtxos[idx];
+						if (utxo == null) {
+							throw new Error('Insufficient wallet UTXOs to assign a distinct firstUtxo to this request');
 						}
-						const { script, policyId } = await getRegistryScriptFromNetworkHandlerV2(paymentSource);
-
-						const limitedFilteredUtxos = sortUtxosByLovelaceDesc(utxos);
-						const firstUtxo = limitedFilteredUtxos[0];
-						const collateralUtxo = limitedFilteredUtxos[0];
-						const recipientWalletAddress = resolveRegistryRecipientWalletAddress(request);
-						const fundingLovelace = resolveRegistryFundingLovelace(request);
-						const assetName = generateRegistryAssetNameV2(firstUtxo);
-						const metadata = buildInboxAgentMetadata({
-							name: request.name,
-							description: request.description,
-							agentSlug: request.agentSlug,
-							metadataVersion: request.metadataVersion ?? DEFAULTS.DEFAULT_METADATA_VERSION,
-						});
-						const rpcApiKey = paymentSource.PaymentSourceConfig.rpcProviderApiKey;
-
-						const evaluationTx = await generateRegistryMintTransaction(
-							blockchainProvider,
-							network,
-							script,
-							address,
-							recipientWalletAddress,
-							fundingLovelace,
-							policyId,
-							assetName,
-							firstUtxo,
-							collateralUtxo,
-							limitedFilteredUtxos,
-							metadata,
-							undefined,
-							rpcApiKey,
-						);
-						const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
-							budget: { mem: number; steps: number };
-						}>;
-						const unsignedTx = await generateRegistryMintTransaction(
-							blockchainProvider,
-							network,
-							script,
-							address,
-							recipientWalletAddress,
-							fundingLovelace,
-							policyId,
-							assetName,
-							firstUtxo,
-							collateralUtxo,
-							limitedFilteredUtxos,
-							metadata,
-							estimatedFee[0].budget,
-							rpcApiKey,
-						);
-						const signedTx = await wallet.signTx(unsignedTx, true);
-
-						await prisma.inboxAgentRegistrationRequest.update({
-							where: { id: request.id },
-							data: {
-								state: RegistrationState.RegistrationInitiated,
-								...createPendingTransaction(request.SmartContractWallet.id),
-							},
-						});
-						const newTxHash = await wallet.submitTx(signedTx);
-						await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
-						await prisma.inboxAgentRegistrationRequest.update({
-							where: { id: request.id },
-							data: {
-								agentIdentifier: policyId + assetName,
-								...updateCurrentTransactionHash(newTxHash),
-							},
-						});
-						logger.debug(`Created V2 inbox agent registration transaction:
-              Tx ID: ${newTxHash}
-              View on https://${network === 'preprod' ? 'preprod.' : ''}cardanoscan.io/transaction/${newTxHash}
-          `);
-						return true;
+						return Promise.resolve(validateAndBuildItem(request, utxo, policyId));
 					}),
+				);
+
+				const validated: ValidatedInboxItem[] = [];
+				for (let idx = 0; idx < validations.length; idx++) {
+					const outcome = validations[idx];
+					const request = registrationRequests[idx];
+					if (outcome.status === 'fulfilled') {
+						validated.push(outcome.value);
+					} else if (outcome.reason instanceof Error && outcome.reason.message.includes('Insufficient wallet UTXOs')) {
+						logger.warn(
+							`Skipping V2 inbox register request ${request.id} this tick: not enough distinct wallet UTxOs in this batch`,
+						);
+					} else {
+						await markRequestFailed(request, outcome.reason);
+					}
+				}
+
+				if (validated.length === 0) {
+					logger.info('No V2 inbox register requests passed validation this tick');
+					await unlockHotWallet(firstRequest.SmartContractWallet.id);
+					return;
+				}
+
+				const shrinkResult = shrinkBatchToFit(validated, (subset) => {
+					try {
+						assertNoCollateralOverlap(
+							collateralUtxo,
+							subset.map((v) => v.item.firstUtxo),
+						);
+						return { ok: true };
+					} catch {
+						return { ok: false, reason: 'collateral' };
+					}
 				});
 
-				let index = 0;
-				for (const result of results) {
-					const request = registrationRequests[index];
-					if (result.success === false || result.result !== true) {
-						const error = result.error;
-						logger.error(`Error registering V2 inbox agent ${request.id}`, { error });
-						await prisma.inboxAgentRegistrationRequest.update({
-							where: { id: request.id },
-							data: {
-								state: RegistrationState.RegistrationFailed,
-								error: interpretBlockchainError(error),
-								SmartContractWallet: { update: { lockedAt: null } },
-							},
-						});
-					}
-					index++;
+				if (shrinkResult.fit.length === 0) {
+					logger.error('V2 inbox register batch could not satisfy collateral non-overlap invariant', {
+						reason: shrinkResult.reason,
+					});
+					await unlockHotWallet(firstRequest.SmartContractWallet.id);
+					return;
 				}
+				if (shrinkResult.dropped.length > 0) {
+					logger.warn(
+						`V2 inbox register batch shrunk from ${validated.length} to ${shrinkResult.fit.length} (reason=${shrinkResult.reason})`,
+					);
+				}
+
+				const fit = shrinkResult.fit;
+				const items = fit.map((v) => v.item);
+
+				let unsignedTx: string;
+				try {
+					const evaluationTx = await generateRegistryBatchMintTransaction(
+						blockchainProvider,
+						network,
+						script,
+						address,
+						policyId,
+						items,
+						collateralUtxo,
+						spendableUtxos,
+						undefined,
+						rpcApiKey,
+					);
+					const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
+						tag?: string;
+						budget: { mem: number; steps: number };
+					}>;
+					const mintBudget = estimatedFee.find((action) => action.tag === 'MINT')?.budget ?? estimatedFee[0]?.budget;
+					if (mintBudget == null) {
+						throw new Error('evaluateTx returned no MINT budget for V2 inbox register batch');
+					}
+					unsignedTx = await generateRegistryBatchMintTransaction(
+						blockchainProvider,
+						network,
+						script,
+						address,
+						policyId,
+						items,
+						collateralUtxo,
+						spendableUtxos,
+						mintBudget,
+						rpcApiKey,
+					);
+					assertTxSizeWithinLimit(unsignedTx, 'v2-inbox-batch-mint');
+				} catch (batchError) {
+					logger.warn('V2 inbox register batch build failed; falling back to single-item processing', {
+						error: batchError,
+						batchSize: fit.length,
+					});
+					await fallbackToSingleItems(fit, paymentSource, network, script);
+					return;
+				}
+
+				let signedTx: string;
+				try {
+					signedTx = await wallet.signTx(unsignedTx, true);
+				} catch (signError) {
+					logger.warn('V2 inbox register batch sign failed; falling back to single-item processing', {
+						error: signError,
+					});
+					await fallbackToSingleItems(fit, paymentSource, network, script);
+					return;
+				}
+
+				try {
+					await prisma.$transaction(
+						fit.map((v) =>
+							prisma.inboxAgentRegistrationRequest.update({
+								where: { id: v.request.id },
+								data: {
+									state: RegistrationState.RegistrationInitiated,
+									...createPendingTransaction(v.request.SmartContractWallet.id),
+								},
+							}),
+						),
+					);
+				} catch (dbError) {
+					logger.error('V2 inbox register batch DB pre-submit update failed', { error: dbError });
+					await unlockHotWallet(firstRequest.SmartContractWallet.id);
+					return;
+				}
+
+				let newTxHash: string;
+				try {
+					newTxHash = await wallet.submitTx(signedTx);
+				} catch (submitError) {
+					logger.warn('V2 inbox register batch submit failed; rolling back DB and retrying as single items', {
+						error: submitError,
+					});
+					await Promise.allSettled(
+						fit.map((v) =>
+							prisma.inboxAgentRegistrationRequest.update({
+								where: { id: v.request.id },
+								data: {
+									state: RegistrationState.RegistrationRequested,
+									CurrentTransaction: { disconnect: true },
+								},
+							}),
+						),
+					);
+					await fallbackToSingleItems(fit, paymentSource, network, script);
+					return;
+				}
+
+				try {
+					await walletSession.evaluateProjectedBalance(unsignedTx, sortedUtxos);
+				} catch (balanceError) {
+					logger.warn('V2 inbox register batch projected balance evaluation failed (non-fatal)', {
+						error: balanceError,
+					});
+				}
+
+				try {
+					await prisma.$transaction(
+						fit.map((v) =>
+							prisma.inboxAgentRegistrationRequest.update({
+								where: { id: v.request.id },
+								data: {
+									agentIdentifier: v.policyId + v.assetName,
+									...updateCurrentTransactionHash(newTxHash),
+								},
+							}),
+						),
+					);
+				} catch (dbError) {
+					logger.error('V2 inbox register batch post-submit DB update failed; tx-sync will reconcile next tick', {
+						error: dbError,
+						txHash: newTxHash,
+					});
+				}
+
+				logger.debug(`Created V2 inbox agent registration batch transaction:
+              Tx ID: ${newTxHash}
+              Items: ${fit.length}
+              View on https://${network === 'preprod' ? 'preprod.' : ''}cardanoscan.io/transaction/${newTxHash}
+          `);
 			}),
 		);
 	} catch (error) {
 		logger.error('Error registering V2 inbox agents', { error });
 	} finally {
 		release();
+	}
+}
+
+async function fallbackToSingleItems(
+	validated: ValidatedInboxItem[],
+	paymentSource: LockedPaymentSource,
+	network: 'mainnet' | 'preprod',
+	script: { version: LanguageVersion; code: string },
+): Promise<void> {
+	const outcomes = await Promise.all(
+		validated.map(async (v) => {
+			try {
+				await advancedRetry({
+					errorResolvers: [delayErrorResolver({ configuration: SERVICE_CONSTANTS.RETRY })],
+					operation: async () => {
+						await processSingleRegistration(v, paymentSource, network, script);
+						return true;
+					},
+				});
+				return { request: v.request, ok: true as const };
+			} catch (error) {
+				return { request: v.request, ok: false as const, error };
+			}
+		}),
+	);
+	for (const outcome of outcomes) {
+		if (!outcome.ok) {
+			await markRequestFailed(outcome.request, outcome.error);
+		}
 	}
 }

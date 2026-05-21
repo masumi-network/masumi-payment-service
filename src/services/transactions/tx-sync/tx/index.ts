@@ -20,6 +20,7 @@ import {
 	calculateValueChange,
 	checkIfTxIsInHistory,
 	checkPaymentAmountsMatch,
+	ExtractedTransactionEntry,
 	ExtractOnChainTransactionDataOutput,
 	getCardanoFeesBuyer,
 	getCardanoFeesSeller,
@@ -1292,27 +1293,36 @@ async function updateInitialPaymentTransaction(
 	);
 }
 
+/**
+ * Process ONE input/output pair from a (possibly batched) smart-contract tx.
+ *
+ * Single-redeemer V1 txs call this once. Multi-redeemer V2 batch txs call
+ * this N times (once per `ExtractedTransactionEntry` in
+ * `extractedData.entries`). Each invocation maps to exactly one
+ * `PaymentRequest` / `PurchaseRequest` row via the entry's
+ * `decodedOldContract.blockchainIdentifier`.
+ */
 export async function updateTransaction(
 	paymentContract: PaymentSource,
-	extractedData: Extract<ExtractOnChainTransactionDataOutput, { type: 'Transaction' }>,
+	entry: ExtractedTransactionEntry,
 	blockfrost: BlockFrostAPI,
 	tx: UpdateTransactionInput,
 ) {
 	const paymentRequest = await prisma.paymentRequest.findUnique({
 		where: {
 			paymentSourceId: paymentContract.id,
-			blockchainIdentifier: extractedData.decodedOldContract.blockchainIdentifier,
-			payByTime: extractedData.decodedOldContract.payByTime,
-			submitResultTime: extractedData.decodedOldContract.resultTime,
-			unlockTime: extractedData.decodedOldContract.unlockTime,
-			externalDisputeUnlockTime: extractedData.decodedOldContract.externalDisputeUnlockTime,
+			blockchainIdentifier: entry.decodedOldContract.blockchainIdentifier,
+			payByTime: entry.decodedOldContract.payByTime,
+			submitResultTime: entry.decodedOldContract.resultTime,
+			unlockTime: entry.decodedOldContract.unlockTime,
+			externalDisputeUnlockTime: entry.decodedOldContract.externalDisputeUnlockTime,
 			BuyerWallet: {
-				walletVkey: extractedData.decodedOldContract.buyerVkey,
-				walletAddress: extractedData.decodedOldContract.buyerAddress,
+				walletVkey: entry.decodedOldContract.buyerVkey,
+				walletAddress: entry.decodedOldContract.buyerAddress,
 			},
 			SmartContractWallet: {
-				walletVkey: extractedData.decodedOldContract.sellerVkey,
-				walletAddress: extractedData.decodedOldContract.sellerAddress,
+				walletVkey: entry.decodedOldContract.sellerVkey,
+				walletAddress: entry.decodedOldContract.sellerAddress,
 			},
 		},
 		include: {
@@ -1327,18 +1337,18 @@ export async function updateTransaction(
 	const purchasingRequest = await prisma.purchaseRequest.findUnique({
 		where: {
 			paymentSourceId: paymentContract.id,
-			blockchainIdentifier: extractedData.decodedOldContract.blockchainIdentifier,
-			payByTime: extractedData.decodedOldContract.payByTime,
-			submitResultTime: extractedData.decodedOldContract.resultTime,
-			unlockTime: extractedData.decodedOldContract.unlockTime,
-			externalDisputeUnlockTime: extractedData.decodedOldContract.externalDisputeUnlockTime,
+			blockchainIdentifier: entry.decodedOldContract.blockchainIdentifier,
+			payByTime: entry.decodedOldContract.payByTime,
+			submitResultTime: entry.decodedOldContract.resultTime,
+			unlockTime: entry.decodedOldContract.unlockTime,
+			externalDisputeUnlockTime: entry.decodedOldContract.externalDisputeUnlockTime,
 			SellerWallet: {
-				walletVkey: extractedData.decodedOldContract.sellerVkey,
-				walletAddress: extractedData.decodedOldContract.sellerAddress,
+				walletVkey: entry.decodedOldContract.sellerVkey,
+				walletAddress: entry.decodedOldContract.sellerAddress,
 			},
 			SmartContractWallet: {
-				walletVkey: extractedData.decodedOldContract.buyerVkey,
-				walletAddress: extractedData.decodedOldContract.buyerAddress,
+				walletVkey: entry.decodedOldContract.buyerVkey,
+				walletAddress: entry.decodedOldContract.buyerAddress,
 			},
 		},
 		include: {
@@ -1394,30 +1404,30 @@ export async function updateTransaction(
 
 	const valueMatches = checkPaymentAmountsMatch(
 		paymentRequest?.RequestedFunds ?? purchasingRequest?.PaidFunds ?? [],
-		extractedData.valueOutput?.amount ?? [],
-		extractedData.decodedOldContract.collateralReturnLovelace,
+		entry.valueOutput?.amount ?? [],
+		entry.decodedOldContract.collateralReturnLovelace,
 	);
 	if (
 		paymentContract.paymentSourceType === PaymentSourceType.Web3CardanoV2 &&
-		extractedData.decodedNewContract != null &&
-		!v2ReturnAddressesMatch(extractedData.decodedOldContract, extractedData.decodedNewContract)
+		entry.decodedNewContract != null &&
+		!v2ReturnAddressesMatch(entry.decodedOldContract, entry.decodedNewContract)
 	) {
 		logger.warn('Return addresses changed in V2 contract datum. This likely is a spoofing attempt.', {
 			txHash: tx.tx.tx_hash,
-			oldBuyerReturnAddress: extractedData.decodedOldContract.buyerReturnAddress,
-			newBuyerReturnAddress: extractedData.decodedNewContract.buyerReturnAddress,
-			oldSellerReturnAddress: extractedData.decodedOldContract.sellerReturnAddress,
-			newSellerReturnAddress: extractedData.decodedNewContract.sellerReturnAddress,
+			oldBuyerReturnAddress: entry.decodedOldContract.buyerReturnAddress,
+			newBuyerReturnAddress: entry.decodedNewContract.buyerReturnAddress,
+			oldSellerReturnAddress: entry.decodedOldContract.sellerReturnAddress,
+			newSellerReturnAddress: entry.decodedNewContract.sellerReturnAddress,
 		});
 		return;
 	}
 
-	const buyerCardanoFees = getCardanoFeesBuyer(extractedData.redeemerVersion, tx.metadata);
-	const sellerCardanoFees = getCardanoFeesSeller(extractedData.redeemerVersion, tx.metadata);
+	const buyerCardanoFees = getCardanoFeesBuyer(entry.redeemerVersion, entry.feesShare);
+	const sellerCardanoFees = getCardanoFeesSeller(entry.redeemerVersion, entry.feesShare);
 
 	const newState: OnChainState | null = redeemerToOnChainState(
-		extractedData.redeemerVersion,
-		extractedData.decodedNewContract,
+		entry.redeemerVersion,
+		entry.decodedNewContract,
 		valueMatches,
 	);
 
@@ -1430,17 +1440,9 @@ export async function updateTransaction(
 	}
 
 	if (newState == OnChainState.DisputedWithdrawn) {
-		sellerWithdrawn = calculateValueChange(
-			tx.utxos.inputs,
-			tx.utxos.outputs,
-			extractedData.decodedOldContract.sellerVkey,
-		);
+		sellerWithdrawn = calculateValueChange(tx.utxos.inputs, tx.utxos.outputs, entry.decodedOldContract.sellerVkey);
 
-		buyerWithdrawn = calculateValueChange(
-			tx.utxos.inputs,
-			tx.utxos.outputs,
-			extractedData.decodedOldContract.buyerVkey,
-		);
+		buyerWithdrawn = calculateValueChange(tx.utxos.inputs, tx.utxos.outputs, entry.decodedOldContract.buyerVkey);
 	}
 
 	try {
@@ -1449,11 +1451,11 @@ export async function updateTransaction(
 				tx.tx.tx_hash,
 				newState,
 				paymentContract.id,
-				extractedData.decodedOldContract.blockchainIdentifier,
-				extractedData.decodedNewContract?.resultHash ?? extractedData.decodedOldContract.resultHash,
+				entry.decodedOldContract.blockchainIdentifier,
+				entry.decodedNewContract?.resultHash ?? entry.decodedOldContract.resultHash,
 				paymentRequest?.NextAction?.requestedAction ?? PurchasingAction.None,
-				Number(extractedData.decodedNewContract?.buyerCooldownTime ?? 0),
-				Number(extractedData.decodedNewContract?.sellerCooldownTime ?? 0),
+				Number(entry.decodedNewContract?.buyerCooldownTime ?? 0),
+				Number(entry.decodedNewContract?.sellerCooldownTime ?? 0),
 				sellerWithdrawn,
 				buyerWithdrawn,
 				tx.block.confirmations,
@@ -1473,11 +1475,11 @@ export async function updateTransaction(
 				tx.tx.tx_hash,
 				newState,
 				paymentContract.id,
-				extractedData.decodedOldContract.blockchainIdentifier,
-				extractedData.decodedNewContract?.resultHash ?? extractedData.decodedOldContract.resultHash,
+				entry.decodedOldContract.blockchainIdentifier,
+				entry.decodedNewContract?.resultHash ?? entry.decodedOldContract.resultHash,
 				purchasingRequest?.NextAction?.requestedAction ?? PurchasingAction.None,
-				Number(extractedData.decodedNewContract?.buyerCooldownTime ?? 0),
-				Number(extractedData.decodedNewContract?.sellerCooldownTime ?? 0),
+				Number(entry.decodedNewContract?.buyerCooldownTime ?? 0),
+				Number(entry.decodedNewContract?.sellerCooldownTime ?? 0),
 				sellerWithdrawn,
 				buyerWithdrawn,
 				tx.block.confirmations,
