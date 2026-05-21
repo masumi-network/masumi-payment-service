@@ -13,6 +13,7 @@
 		"withdraw-refund": "node unlock-refund-example.mjs",
 		"withdraw": "node withdraw-with-fees-example.mjs",
 		"withdraw-disputed": "node disputed-refund-withdraw.mjs",
+		"lock-fake-disputed": "node lock-fake-disputed.mjs",
 		"generate-wallet": "node generate-credentials.mjs",
 		"defrag": "node cleanup-utxo.mjs"
 	},

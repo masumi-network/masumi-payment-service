@@ -247,6 +247,8 @@ async function processSinglePaymentCollection(
 		},
 		invalidBefore,
 		invalidAfter,
+		false,
+		paymentContract.PaymentSourceConfig.rpcProviderApiKey,
 	);
 
 	const signedTx = await wallet.signTx(unsignedTx);

@@ -19,6 +19,7 @@ import {
 import {
 	findRegistryTokenUtxo,
 	generateRegistryDeregisterTransactionAutomaticFees,
+	getBurnRedeemerAlternative,
 	resolveRegistryDeregistrationWallet,
 } from '@/services/registry/shared';
 
@@ -127,6 +128,8 @@ export async function deRegisterInboxAgentV2() {
 							tokenUtxo,
 							collateralUtxo,
 							limitedFilteredUtxos,
+							getBurnRedeemerAlternative(PaymentSourceType.Web3CardanoV2),
+							paymentSource.PaymentSourceConfig.rpcProviderApiKey,
 						);
 
 						const signedTx = await wallet.signTx(unsignedTx);

@@ -19,6 +19,7 @@ import {
 import {
 	findRegistryTokenUtxo,
 	generateRegistryDeregisterTransactionAutomaticFees,
+	getBurnRedeemerAlternative,
 	resolveRegistryDeregistrationWallet,
 } from '@/services/registry/shared';
 
@@ -126,6 +127,8 @@ export async function deRegisterAgentV1() {
 							tokenUtxo,
 							collateralUtxo,
 							limitedFilteredUtxos,
+							getBurnRedeemerAlternative(PaymentSourceType.Web3CardanoV1),
+							paymentSource.PaymentSourceConfig.rpcProviderApiKey,
 						);
 						const signedTx = await wallet.signTx(unsignedTx);
 						await prisma.registryRequest.update({

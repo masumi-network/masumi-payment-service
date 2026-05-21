@@ -176,7 +176,11 @@ async function processSinglePaymentCollection(
 		};
 	}
 
-	let collectionAddress = request.sellerReturnAddress ?? request.SmartContractWallet.collectionAddress;
+	// Aiken contract validates the seller payout output against the on-chain
+	// datum's `seller_return_address`. Trust the decoded datum first so we stay
+	// in lockstep with what the validator will accept.
+	let collectionAddress =
+		decodedContract.sellerReturnAddress ?? request.sellerReturnAddress ?? request.SmartContractWallet.collectionAddress;
 	if (collectionAddress == null || collectionAddress == '') {
 		collectionAddress = request.SmartContractWallet.walletAddress;
 	}
@@ -203,12 +207,21 @@ async function processSinglePaymentCollection(
 		null,
 		{
 			lovelace: collateralReturnLovelace,
-			address: buyerAddress,
+			// Aiken `Withdraw` checks the collateral return output via
+			// `outputs_with_reference_tag(..., buyer, buyer_return_address)`.
+			// When buyer_return_address is Some the validator demands the
+			// collateral land at that address, NOT at the buyer's vkey address.
+			// Use the decoded datum's return address when present.
+			address: decodedContract.buyerReturnAddress ?? buyerAddress,
 			txHash: utxo.input.txHash,
 			outputIndex: utxo.input.outputIndex,
 		},
 		invalidBefore,
 		invalidAfter,
+		// V2 contract requires the seller's main output to be tagged with own_ref
+		// when seller_return_address is Some. Tagging is also safe when None.
+		true,
+		paymentContract.PaymentSourceConfig.rpcProviderApiKey,
 	);
 
 	const signedTx = await wallet.signTx(unsignedTx);

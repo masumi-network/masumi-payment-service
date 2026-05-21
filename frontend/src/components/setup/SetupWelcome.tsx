@@ -1144,8 +1144,17 @@ function AddAiAgentScreen({
         return;
       }
 
+      // Prefer the source that actually owns the chosen selling wallet, then
+      // fall back to a V2 source, then to whatever's first. Locking to V2 by
+      // default silently routes V1-wallet users to a source that doesn't
+      // contain their wallet and fails downstream with an opaque vKey error.
+      const sourceContainingWallet = filteredSources.find((source: any) =>
+        source.SellingWallets?.some((s: any) => s.walletAddress === sellingWallet.address),
+      );
       const paymentSource =
-        filteredSources.find((source: any) => isV2PaymentSource(source)) ?? filteredSources[0];
+        sourceContainingWallet ??
+        filteredSources.find((source: any) => isV2PaymentSource(source)) ??
+        filteredSources[0];
 
       const sellingWalletData = paymentSource.SellingWallets?.find(
         (s: any) => s.walletAddress === sellingWallet.address,

@@ -460,43 +460,83 @@ export function AddPaymentSourceDialog({
           <div className="space-y-4">
             <h3 className="text-lg font-semibold">Basic Configuration</h3>
             <div className="space-y-2">
-              <label className="text-sm font-medium">
+              <label id="payment-source-type-label" className="text-sm font-medium">
                 Payment source type <span className="text-red-500">*</span>
               </label>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {(['Web3CardanoV2', 'Web3CardanoV1'] as const).map((type) => {
-                  const isSelected = paymentSourceType === type;
-                  return (
-                    <button
-                      key={type}
-                      type="button"
-                      onClick={() =>
-                        setValue('paymentSourceType', type, {
-                          shouldDirty: true,
-                          shouldValidate: true,
-                        })
-                      }
-                      className={cn(
-                        'rounded-lg border p-3 text-left transition-colors',
-                        isSelected
-                          ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
-                          : 'hover:bg-muted/40',
-                      )}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-medium">
-                          {getPaymentSourceTypeLabel(type)}
-                        </span>
-                        <PaymentSourceTypeBadge paymentSourceType={type} showDefault />
-                      </div>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {type === 'Web3CardanoV2'
-                          ? 'Default for new agents. Zero fees and V2 registry metadata.'
-                          : 'Legacy source for agents that still depend on the V1 contract.'}
-                      </p>
-                    </button>
-                  );
-                })}
+              <div
+                role="radiogroup"
+                aria-labelledby="payment-source-type-label"
+                aria-invalid={errors.paymentSourceType ? true : undefined}
+                className="grid gap-2 sm:grid-cols-2"
+              >
+                {(() => {
+                  const radioTypes = ['Web3CardanoV2', 'Web3CardanoV1'] as const;
+                  return radioTypes.map((type, index) => {
+                    const isSelected = paymentSourceType === type;
+                    return (
+                      <button
+                        key={type}
+                        type="button"
+                        role="radio"
+                        aria-checked={isSelected}
+                        // Roving tabIndex: only the selected radio receives focus
+                        // via Tab. Arrow keys move within the group per WAI-ARIA
+                        // radiogroup pattern.
+                        tabIndex={isSelected ? 0 : -1}
+                        onKeyDown={(event) => {
+                          if (
+                            event.key !== 'ArrowRight' &&
+                            event.key !== 'ArrowLeft' &&
+                            event.key !== 'ArrowDown' &&
+                            event.key !== 'ArrowUp'
+                          ) {
+                            return;
+                          }
+                          event.preventDefault();
+                          const direction =
+                            event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : -1;
+                          const nextIndex =
+                            (index + direction + radioTypes.length) % radioTypes.length;
+                          const nextType = radioTypes[nextIndex];
+                          setValue('paymentSourceType', nextType, {
+                            shouldDirty: true,
+                            shouldValidate: true,
+                          });
+                          const container = event.currentTarget.parentElement;
+                          const nextButton =
+                            container?.querySelectorAll<HTMLButtonElement>('button[role="radio"]')[
+                              nextIndex
+                            ];
+                          nextButton?.focus();
+                        }}
+                        onClick={() =>
+                          setValue('paymentSourceType', type, {
+                            shouldDirty: true,
+                            shouldValidate: true,
+                          })
+                        }
+                        className={cn(
+                          'rounded-lg border p-3 text-left transition-colors',
+                          isSelected
+                            ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
+                            : 'hover:bg-muted/40',
+                        )}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm font-medium">
+                            {getPaymentSourceTypeLabel(type)}
+                          </span>
+                          <PaymentSourceTypeBadge paymentSourceType={type} showDefault />
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {type === 'Web3CardanoV2'
+                            ? 'Default for new agents. Zero fees and V2 registry metadata.'
+                            : 'Legacy source for agents that still depend on the V1 contract.'}
+                        </p>
+                      </button>
+                    );
+                  });
+                })()}
               </div>
               {errors.paymentSourceType && (
                 <p className="text-xs text-destructive mt-1">{errors.paymentSourceType.message}</p>

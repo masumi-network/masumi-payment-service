@@ -36,12 +36,35 @@ describe(`Web3CardanoV2 source isolation (${testNetwork})`, () => {
 	});
 
 	test('uses a V2 source with wallets isolated from V1', async () => {
-		const paymentSource = await getE2EPaymentSource(testNetwork, PaymentSourceType.Web3CardanoV2);
+		const v2Source = await getE2EPaymentSource(testNetwork, PaymentSourceType.Web3CardanoV2);
 
-		expect(paymentSource.paymentSourceType).toBe(PaymentSourceType.Web3CardanoV2);
-		expect(paymentSource.SellingWallets.length).toBeGreaterThan(0);
-		expect(paymentSource.PurchasingWallets.length).toBeGreaterThan(0);
-		expect(paymentSource.feeRatePermille).toBe(0);
-		expect(paymentSource.FeeReceiverNetworkWallet).toBeNull();
+		expect(v2Source.paymentSourceType).toBe(PaymentSourceType.Web3CardanoV2);
+		expect(v2Source.SellingWallets.length).toBeGreaterThan(0);
+		expect(v2Source.PurchasingWallets.length).toBeGreaterThan(0);
+		expect(v2Source.feeRatePermille).toBe(0);
+		expect(v2Source.FeeReceiverNetworkWallet).toBeNull();
+
+		// Cross-check against V1 source (if seeded) so a misrouted dispatch that
+		// silently reuses V1 wallets/contracts surfaces here as a test failure
+		// rather than as on-chain corruption later.
+		let v1Source: Awaited<ReturnType<typeof getE2EPaymentSource>> | null = null;
+		try {
+			v1Source = await getE2EPaymentSource(testNetwork, PaymentSourceType.Web3CardanoV1);
+		} catch {
+			// V1 source not seeded in this environment — nothing to compare against.
+		}
+
+		if (v1Source != null) {
+			expect(v2Source.policyId).not.toBe(v1Source.policyId);
+			expect(v2Source.smartContractAddress).not.toBe(v1Source.smartContractAddress);
+
+			const v1Vkeys = new Set<string>([
+				...v1Source.SellingWallets.map((w) => w.walletVkey),
+				...v1Source.PurchasingWallets.map((w) => w.walletVkey),
+			]);
+			for (const wallet of [...v2Source.SellingWallets, ...v2Source.PurchasingWallets]) {
+				expect(v1Vkeys.has(wallet.walletVkey)).toBe(false);
+			}
+		}
 	});
 });

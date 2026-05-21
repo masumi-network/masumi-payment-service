@@ -523,7 +523,15 @@ export const seed = async (prisma: PrismaClient) => {
 			);
 		}
 
-		try {
+		// V2 mainnet seeding is opt-in via dedicated mnemonic env vars. Mirror
+		// the preprod gate: skip BEFORE creating any wallet secrets so a
+		// missing-env-var run does not leave orphan WalletSecret rows behind.
+		if (!purchaseWalletV2MainnetMnemonicRaw || !sellingWalletV2MainnetMnemonicRaw) {
+			console.log(
+				'V2 mainnet seeding skipped: set PURCHASE_WALLET_V2_MAINNET_MNEMONIC and ' +
+					'SELLING_WALLET_V2_MAINNET_MNEMONIC to enable.',
+			);
+		} else try {
 			const purchaseWalletV2MainnetMnemonic = requireMnemonic(
 				purchaseWalletV2MainnetMnemonicRaw,
 				'PURCHASE_WALLET_V2_MAINNET_MNEMONIC',
@@ -616,6 +624,10 @@ export const seed = async (prisma: PrismaClient) => {
 				'Error when seeding mainnet V2, ensure you succeed with seeding, the following error occurred: ',
 				error,
 			);
+			// Re-throw so prod/CI deployments fail loudly. Silent failure here
+			// leaves the mainnet V2 PaymentSource missing without any visible
+			// signal until the first V2 mainnet request silently 404s.
+			throw error;
 		}
 	} else {
 		console.log(

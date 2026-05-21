@@ -169,15 +169,25 @@ export async function authorizeWithdrawalsV2() {
 						}
 
 						const decodedContract = decodeAndValidateUtxoDatum({ utxo, network, smartContractAddress });
+						// Aiken `AuthorizeWithdrawal` strictly compares new_datum.buyer/seller
+						// against the input's buyer/seller. Trust the decoded chain values so
+						// any DB drift cannot brick the tx with a silent field mismatch.
 						const datum = createAuthorizeWithdrawalDatum({
 							decodedContract,
-							buyerAddress: request.SmartContractWallet!.walletAddress,
-							sellerAddress: request.SellerWallet.walletAddress,
+							buyerAddress: decodedContract.buyerAddress,
+							sellerAddress: decodedContract.sellerAddress,
 							blockchainIdentifier: request.blockchainIdentifier,
 							cooldownTime: BigInt(paymentContract.cooldownTime),
 						});
 
-						const { invalidBefore, invalidAfter } = createTxWindow(network);
+						// Aiken `AuthorizeWithdrawal` requires `must_start_after(validity_range,
+						// buyer_cooldown_time)`. The default tx-window's `invalidBefore` is
+						// `now - 2.5min`, which is BEFORE any buyer cooldown set seconds ago.
+						// Bind the lower bound to the on-chain cooldown so the validator's
+						// start-after check is always satisfied.
+						const { invalidBefore, invalidAfter } = createTxWindow(network, {
+							constrainBeforeMs: Number(decodedContract.buyerCooldownTime),
+						});
 						const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
 
 						const unsignedTx = await generateMasumiSmartContractInteractionTransactionAutomaticFees(
@@ -192,6 +202,7 @@ export async function authorizeWithdrawalsV2() {
 							datum.value,
 							invalidBefore,
 							invalidAfter,
+							paymentContract.PaymentSourceConfig.rpcProviderApiKey,
 						);
 						const signedTx = await wallet.signTx(unsignedTx);
 

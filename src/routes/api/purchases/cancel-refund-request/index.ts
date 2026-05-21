@@ -66,6 +66,13 @@ export const cancelPurchaseRefundRequestPost = payAuthenticatedEndpointFactory.b
 			throw createHttpError(404, 'Purchase not found or in invalid state');
 		}
 		assertWalletInScope(ctx.walletScopeIds, purchase.smartContractWalletId);
+
+		// Identity check must precede any state-shape 400 so an unauthorized
+		// caller cannot infer the V2/state of a purchase by status-code timing.
+		if (purchase.requestedById != ctx.id && !ctx.canAdmin) {
+			throw createHttpError(403, 'You are not authorized to cancel a refund request for this purchase');
+		}
+
 		const requestedAction =
 			purchase.PaymentSource.paymentSourceType === PaymentSourceType.Web3CardanoV2
 				? PurchasingAction.AuthorizeWithdrawalRequested
@@ -76,10 +83,6 @@ export const cancelPurchaseRefundRequestPost = payAuthenticatedEndpointFactory.b
 			purchase.onChainState !== OnChainState.Disputed
 		) {
 			throw createHttpError(400, 'Authorize withdrawal is only available for disputed V2 purchases');
-		}
-
-		if (purchase.requestedById != ctx.id && !ctx.canAdmin) {
-			throw createHttpError(403, 'You are not authorized to cancel a refund request for this purchase');
 		}
 
 		const result = await prisma.purchaseRequest.update({

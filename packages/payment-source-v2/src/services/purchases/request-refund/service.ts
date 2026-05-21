@@ -131,12 +131,16 @@ async function processSinglePurchaseRequest(
 	if (decodedContract == null) {
 		throw new Error('Invalid datum');
 	}
+	// Aiken SetRefundRequested requires every field of the continuation datum
+	// (including buyer/seller addresses AND return addresses) to equal the
+	// decoded input's values. Mirror chain state to avoid DB drift failing the
+	// validator. Other rewrite-able fields stay nulled via createDatumFromDecodedContractV2.
 	const datum = createDatumFromDecodedContractV2({
 		decodedContract,
-		buyerAddress: request.SmartContractWallet!.walletAddress,
-		buyerReturnAddress: request.buyerReturnAddress,
-		sellerAddress: request.SellerWallet.walletAddress,
-		sellerReturnAddress: request.sellerReturnAddress,
+		buyerAddress: decodedContract.buyerAddress,
+		buyerReturnAddress: decodedContract.buyerReturnAddress,
+		sellerAddress: decodedContract.sellerAddress,
+		sellerReturnAddress: decodedContract.sellerReturnAddress,
 		blockchainIdentifier: request.blockchainIdentifier,
 		resultHash: decodedContract.resultHash,
 		newCooldownTimeSeller: BigInt(0),
@@ -169,6 +173,7 @@ async function processSinglePurchaseRequest(
 		datum.value,
 		invalidBefore,
 		invalidAfter,
+		paymentContract.PaymentSourceConfig.rpcProviderApiKey,
 	);
 
 	const signedTx = await wallet.signTx(unsignedTx);
@@ -217,7 +222,13 @@ export async function requestRefundsV2() {
 	try {
 		const paymentContractsWithWalletLocked = await lockAndQueryPurchases({
 			purchasingAction: PurchasingAction.SetRefundRequestedRequested,
-			unlockTime: { gte: Date.now() - 1000 * 60 * 1 },
+			// Aiken `must_end_before(unlock_time)` requires the tx validity upper
+			// bound to be strictly less than unlock_time. The tx-window builder
+			// (createTxWindow with default ~2.5min buffer + slot buffer) cannot
+			// honor that constraint once unlock_time is within ~3 minutes of
+			// now. Filter to leave a comfortable margin so submissions don't
+			// hit the ledger boundary and fail with `OutsideValidityIntervalUTxO`.
+			unlockTime: { gt: Date.now() + 1000 * 60 * 3 },
 			maxBatchSize: 1,
 			paymentSourceType: PaymentSourceType.Web3CardanoV2,
 		});

@@ -189,6 +189,7 @@ export async function registerAgentV1() {
 						const fundingLovelace = resolveRegistryFundingLovelace(request);
 						const assetName = generateRegistryAssetName(firstUtxo);
 						const metadata = buildAgentMetadata(request);
+						const rpcApiKey = paymentSource.PaymentSourceConfig.rpcProviderApiKey;
 
 						const evaluationTx = await generateRegistryMintTransaction(
 							blockchainProvider,
@@ -203,6 +204,8 @@ export async function registerAgentV1() {
 							collateralUtxo,
 							limitedFilteredUtxos,
 							metadata,
+							undefined,
+							rpcApiKey,
 						);
 						const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
 							budget: { mem: number; steps: number };
@@ -221,6 +224,7 @@ export async function registerAgentV1() {
 							limitedFilteredUtxos,
 							metadata,
 							estimatedFee[0].budget,
+							rpcApiKey,
 						);
 						const signedTx = await wallet.signTx(unsignedTx, true);
 						await prisma.registryRequest.update({

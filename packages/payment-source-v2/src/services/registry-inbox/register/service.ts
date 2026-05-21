@@ -17,7 +17,7 @@ import {
 	updateCurrentTransactionHash,
 } from '@/services/shared';
 import {
-	generateRegistryAssetName,
+	generateRegistryAssetNameV2,
 	generateRegistryMintTransaction,
 	type RegistryMetadata,
 	resolveRegistryFundingLovelace,
@@ -92,13 +92,14 @@ export async function registerInboxAgentV2() {
 						const collateralUtxo = limitedFilteredUtxos[0];
 						const recipientWalletAddress = resolveRegistryRecipientWalletAddress(request);
 						const fundingLovelace = resolveRegistryFundingLovelace(request);
-						const assetName = generateRegistryAssetName(firstUtxo);
+						const assetName = generateRegistryAssetNameV2(firstUtxo);
 						const metadata = buildInboxAgentMetadata({
 							name: request.name,
 							description: request.description,
 							agentSlug: request.agentSlug,
 							metadataVersion: request.metadataVersion ?? DEFAULTS.DEFAULT_METADATA_VERSION,
 						});
+						const rpcApiKey = paymentSource.PaymentSourceConfig.rpcProviderApiKey;
 
 						const evaluationTx = await generateRegistryMintTransaction(
 							blockchainProvider,
@@ -113,6 +114,8 @@ export async function registerInboxAgentV2() {
 							collateralUtxo,
 							limitedFilteredUtxos,
 							metadata,
+							undefined,
+							rpcApiKey,
 						);
 						const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
 							budget: { mem: number; steps: number };
@@ -131,6 +134,7 @@ export async function registerInboxAgentV2() {
 							limitedFilteredUtxos,
 							metadata,
 							estimatedFee[0].budget,
+							rpcApiKey,
 						);
 						const signedTx = await wallet.signTx(unsignedTx, true);
 

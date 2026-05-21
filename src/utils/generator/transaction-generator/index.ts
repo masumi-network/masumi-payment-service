@@ -15,6 +15,7 @@ import { Network as PrismaNetwork } from '@/generated/prisma/client';
 import { logger } from '@masumi/payment-core/logger';
 import { calculateMinUtxo, getLovelaceFromAmounts, getNativeTokenCount, calculateTopUpAmount } from '@/utils/min-utxo';
 import { CONSTANTS } from '@masumi/payment-core/config';
+import { getCachedChainProtocolParameters, syncMeshCostModelsFromChain } from '@/utils/mesh-cost-model-sync';
 
 function convertMeshNetworkToPrismaNetwork(network: Network): PrismaNetwork {
 	switch (network) {
@@ -42,7 +43,16 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 	newInlineDatum: Data,
 	invalidBefore: number,
 	invalidAfter: number,
+	rpcApiKey?: string,
 ) {
+	if (rpcApiKey) {
+		// `MeshTxBuilder.protocolParams(...)` accepts a Protocol object that has
+		// NO cost-model fields. Mesh hashes the script_data against its bundled
+		// `DEFAULT_V*_COST_MODEL_LIST` arrays; if those drift from on-chain the
+		// ledger rejects with `PPViewHashesDontMatch`. Sync those arrays from
+		// chain before each build. The helper is memoized 5min.
+		await syncMeshCostModelsFromChain(rpcApiKey);
+	}
 	let coinsPerUtxoSize: number = CONSTANTS.FALLBACK_COINS_PER_UTXO_SIZE;
 	try {
 		const protocolParams = await blockchainProvider.fetchProtocolParameters();
@@ -75,6 +85,7 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 		invalidAfter,
 		undefined,
 		coinsPerUtxoSize,
+		rpcApiKey,
 	);
 
 	const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
@@ -95,6 +106,7 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 		invalidAfter,
 		estimatedFee[0].budget,
 		coinsPerUtxoSize,
+		rpcApiKey,
 	);
 }
 
@@ -122,14 +134,19 @@ async function generateMasumiSmartContractInteractionTransactionCustomFee(
 	},
 
 	coinsPerUtxoSize: number = CONSTANTS.FALLBACK_COINS_PER_UTXO_SIZE,
+	rpcApiKey?: string,
 ) {
 	// Pull live chain protocol params (incl. cost models) so the computed
 	// script_data_hash matches what the ledger expects. Without this, mesh
 	// uses its bundled defaults and submissions fail with
 	// `PPViewHashesDontMatch` after a hard fork or PParam vote. See
 	// generateRegistryMintTransaction in src/services/registry/shared.ts.
-	// NaN routes to /epochs/latest/parameters in the BlockfrostProvider impl.
-	const protocolParameters = await blockchainProvider.fetchProtocolParameters(Number.NaN);
+	// The outer Automatic builder already called syncMeshCostModelsFromChain
+	// which caches the mesh-format Protocol; reuse it to skip a duplicate
+	// `/epochs/latest/parameters` call. Fall back to a live fetch on cache
+	// miss (e.g. very first tx of the process).
+	const cachedParams = rpcApiKey == null ? null : getCachedChainProtocolParameters(rpcApiKey);
+	const protocolParameters = cachedParams ?? (await blockchainProvider.fetchProtocolParameters(Number.NaN));
 	const txBuilder = new MeshTxBuilder({
 		fetcher: blockchainProvider,
 	});
@@ -295,7 +312,17 @@ export async function generateMasumiSmartContractWithdrawTransactionAutomaticFee
 	} | null,
 	invalidBefore: number,
 	invalidAfter: number,
+	// V2 only: tag the main collection output with `OutputReference == own_ref`
+	// so the Aiken `outputs_with_reference_tag` filter matches it. Required when
+	// the on-chain datum has `seller_return_address`/`buyer_return_address` set
+	// (otherwise vested_pay.ak rejects the withdraw with value_returned == 0).
+	tagMainOutputAsOwnRef: boolean = false,
+	rpcApiKey?: string,
 ) {
+	if (rpcApiKey) {
+		// See cost-model sync comment in the interaction builder above.
+		await syncMeshCostModelsFromChain(rpcApiKey);
+	}
 	const evaluationTx = await generateMasumiSmartContractWithdrawTransactionCustomFee(
 		type,
 		blockchainProvider,
@@ -310,6 +337,9 @@ export async function generateMasumiSmartContractWithdrawTransactionAutomaticFee
 		collateralReturn,
 		invalidBefore,
 		invalidAfter,
+		undefined,
+		tagMainOutputAsOwnRef,
+		rpcApiKey,
 	);
 
 	const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
@@ -331,6 +361,8 @@ export async function generateMasumiSmartContractWithdrawTransactionAutomaticFee
 		invalidBefore,
 		invalidAfter,
 		estimatedFee[0].budget,
+		tagMainOutputAsOwnRef,
+		rpcApiKey,
 	);
 }
 
@@ -371,10 +403,14 @@ async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 		mem: 7e6,
 		steps: 3e9,
 	},
+	tagMainOutputAsOwnRef: boolean = false,
+	rpcApiKey?: string,
 ) {
-	// See protocolParams comment in the first builder in this file.
-	// NaN routes to /epochs/latest/parameters in the BlockfrostProvider impl.
-	const protocolParameters = await blockchainProvider.fetchProtocolParameters(Number.NaN);
+	// See protocolParams comment in the interaction builder above. Reuse the
+	// cached chain params populated by syncMeshCostModelsFromChain to avoid a
+	// second `/epochs/latest/parameters` roundtrip per tx build.
+	const cachedParams = rpcApiKey == null ? null : getCachedChainProtocolParameters(rpcApiKey);
+	const protocolParameters = cachedParams ?? (await blockchainProvider.fetchProtocolParameters(Number.NaN));
 	const txBuilder = new MeshTxBuilder({
 		fetcher: blockchainProvider,
 	});
@@ -397,6 +433,12 @@ async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
 		.setTotalCollateral('3000000')
 		.txOut(collection.collectionAddress, collection.collectAssets);
+
+	if (tagMainOutputAsOwnRef) {
+		txBuilder.txOutInlineDatumValue(
+			mOutputReference(smartContractUtxo.input.txHash, smartContractUtxo.input.outputIndex),
+		);
+	}
 
 	for (const utxo of walletUtxos) {
 		txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);

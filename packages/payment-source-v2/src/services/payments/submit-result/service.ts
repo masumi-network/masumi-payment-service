@@ -237,6 +237,7 @@ async function processSinglePaymentRequest(
 		datum.value,
 		invalidBefore,
 		invalidAfter,
+		paymentContract.PaymentSourceConfig.rpcProviderApiKey,
 	);
 
 	const signedTx = await wallet.signTx(unsignedTx);
@@ -306,8 +307,12 @@ export async function submitResultV2() {
 		//Submit a result for invalid tokens
 		const paymentContractsWithWalletLocked = await lockAndQueryPayments({
 			paymentStatus: PaymentAction.SubmitResultRequested,
+			// Aiken SubmitResult requires `must_end_before(submit_result_time)`.
+			// The default tx-window's invalidAfter is ~now + 2.5min + slot buffer.
+			// Filter to at least 5 minutes of slack so submissions don't race
+			// the ledger boundary.
 			submitResultTime: {
-				gte: Date.now() + 1000 * 60 * 1,
+				gt: Date.now() + 1000 * 60 * 5,
 			},
 			requestedResultHash: { not: null },
 			maxBatchSize: 1,

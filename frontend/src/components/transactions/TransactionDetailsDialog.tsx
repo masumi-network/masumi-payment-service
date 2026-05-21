@@ -69,8 +69,9 @@ const getStatusColor = (status: string | null, hasError?: boolean) => {
     case 'refundrequested':
     case 'withdrawauthorized':
     case 'refundauthorized':
-    case 'refundwithdrawn':
       return 'text-orange-500';
+    case 'refundwithdrawn':
+      return 'text-blue-500';
     case 'disputed':
     case 'disputedwithdrawn':
       return 'text-red-500';

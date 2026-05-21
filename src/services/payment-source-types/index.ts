@@ -4,6 +4,7 @@
 // New Types add a sibling package and extend this barrel; routes resolve the configured
 // PaymentSource and dispatch to the matching Type module by name.
 import { PaymentSourceType } from '@/generated/prisma/client';
+import { assertNever } from '@/utils/assert-never';
 
 import * as web3CardanoV1 from '@masumi/payment-source-v1/services';
 import * as web3CardanoV2 from '@masumi/payment-source-v2/services';
@@ -18,5 +19,7 @@ export function getPaymentSourceTypeModule(paymentSourceType: PaymentSourceType)
 			return web3CardanoV1;
 		case PaymentSourceType.Web3CardanoV2:
 			return web3CardanoV2;
+		default:
+			return assertNever(paymentSourceType);
 	}
 }

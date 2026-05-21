@@ -4,6 +4,9 @@ import { randomBytes } from 'node:crypto';
 import {
 	applyParamsToScript,
 	deserializeDatum,
+	DEFAULT_V1_COST_MODEL_LIST,
+	DEFAULT_V2_COST_MODEL_LIST,
+	DEFAULT_V3_COST_MODEL_LIST,
 	KoiosProvider,
 	MeshWallet,
 	mOutputReference,
@@ -21,6 +24,39 @@ export const network = process.env.NETWORK ?? 'preprod';
 export const networkId = network === 'mainnet' ? 1 : 0;
 export const cooldownPeriod = Number(process.env.COOLDOWN_PERIOD_MS ?? 1000 * 60 * 15);
 export const blockchainProvider = new KoiosProvider(network);
+
+// Sync mesh-sdk's bundled Plutus cost-model arrays with the chain-current values
+// before any tx build. Mesh's MeshTxBuilder hardcodes the imported
+// DEFAULT_V*_COST_MODEL_LIST references when computing script_data_hash; if
+// they drift from on-chain cost models the ledger rejects submissions with
+// `PPViewHashesDontMatch`. JS modules give us a live binding so mutating the
+// array in place updates what mesh sees on the next build. See
+// src/utils/mesh-cost-model-sync/ for the production-side equivalent.
+let costModelsSynced = false;
+export async function syncCostModelsFromChain() {
+	if (costModelsSynced) return;
+	const url = `https://${network === 'mainnet' ? 'api' : network}.koios.rest/api/v1/cli_protocol_params`;
+	const res = await fetch(url);
+	if (!res.ok) {
+		throw new Error(`Koios cli_protocol_params HTTP ${res.status}: ${await res.text()}`);
+	}
+	const params = await res.json();
+	const apply = (target, source, label) => {
+		if (!Array.isArray(source)) {
+			throw new Error(`Koios returned non-array cost model for ${label}`);
+		}
+		const numeric = source.map((v) => (typeof v === 'number' ? v : Number(v)));
+		if (numeric.some((v) => !Number.isFinite(v))) {
+			throw new Error(`Koios cost model for ${label} contains non-numeric values`);
+		}
+		target.length = 0;
+		for (const v of numeric) target.push(v);
+	};
+	apply(DEFAULT_V1_COST_MODEL_LIST, params.costModels?.PlutusV1, 'PlutusV1');
+	apply(DEFAULT_V2_COST_MODEL_LIST, params.costModels?.PlutusV2, 'PlutusV2');
+	apply(DEFAULT_V3_COST_MODEL_LIST, params.costModels?.PlutusV3, 'PlutusV3');
+	costModelsSynced = true;
+}
 
 export const State = {
 	FundsLocked: 0,
@@ -132,6 +168,45 @@ export async function fetchContractUtxo(provider, scriptAddress) {
 	return utxo;
 }
 
+export function explicitContractRef() {
+	const txHash = process.env.TX_HASH ?? process.argv[2];
+	if (!txHash) {
+		return null;
+	}
+	const outputIndex = process.env.OUTPUT_INDEX == null ? null : Number(process.env.OUTPUT_INDEX);
+	return { txHash, outputIndex };
+}
+
+export async function autoPickTimedOutDispute(provider, scriptAddress) {
+	const utxos = await provider.fetchAddressUTxOs(scriptAddress);
+	const nowMs = BigInt(Date.now());
+	const candidates = [];
+	for (const utxo of utxos) {
+		if (!utxo.output.plutusData) continue;
+		let fields;
+		try {
+			fields = readDatumFields(utxo);
+		} catch {
+			continue;
+		}
+		const state = stateAlternative(fields[18]);
+		if (state !== State.Disputed) continue;
+		const resultHash = fields[11];
+		if (typeof resultHash !== 'string' || resultHash.length === 0) continue;
+		const externalDisputeUnlockTime = BigInt(fields[15]);
+		if (externalDisputeUnlockTime > nowMs) continue;
+		candidates.push({ utxo, externalDisputeUnlockTime });
+	}
+	candidates.sort((a, b) =>
+		a.externalDisputeUnlockTime < b.externalDisputeUnlockTime
+			? -1
+			: a.externalDisputeUnlockTime > b.externalDisputeUnlockTime
+				? 1
+				: 0,
+	);
+	return candidates.length > 0 ? candidates[0].utxo : null;
+}
+
 export function addressData(address) {
 	return mPubKeyAddress(resolvePaymentKeyHash(address), resolveStakeKeyHash(address));
 }
@@ -171,17 +246,43 @@ export function taggedRecipient(address, utxo) {
 	};
 }
 
-export function validitySlots() {
-	const slotConfig = SLOT_CONFIG_NETWORK[network] ?? SLOT_CONFIG_NETWORK.preprod;
-	const invalidBeforeMs = Number(process.env.INVALID_BEFORE_MS ?? Date.now());
-	const invalidAfterMs = Number(process.env.INVALID_AFTER_MS ?? Date.now() + 150000);
-	const invalidBefore = unixTimeToEnclosingSlot(invalidBeforeMs, slotConfig) - 1;
-	const invalidAfter = unixTimeToEnclosingSlot(invalidAfterMs, slotConfig) + 1;
-	return { invalidBefore, invalidAfter };
+// Fetch the chain's current block_time and absolute slot from Koios. The
+// preprod chain's POSIX time can lag wall-clock by 1-2 minutes between blocks,
+// so anything that compares against on-chain datum timestamps must anchor on
+// the chain's view, not Date.now().
+export async function fetchChainTip() {
+	const host = network === 'mainnet' ? 'api.koios.rest' : `${network}.koios.rest`;
+	const res = await fetch(`https://${host}/api/v1/tip`);
+	if (!res.ok) {
+		throw new Error(`Koios /tip HTTP ${res.status}: ${await res.text()}`);
+	}
+	const body = await res.json();
+	const tip = Array.isArray(body) ? body[0] : body;
+	if (!tip || typeof tip.abs_slot !== 'number' || typeof tip.block_time !== 'number') {
+		throw new Error(`Unexpected Koios /tip response: ${JSON.stringify(body)}`);
+	}
+	return { slot: tip.abs_slot, posixMs: tip.block_time * 1000 };
 }
 
-export function applyValidity(tx) {
-	const { invalidBefore, invalidAfter } = validitySlots();
+export async function validitySlots() {
+	if (process.env.INVALID_BEFORE_MS != null && process.env.INVALID_AFTER_MS != null) {
+		const slotConfig = SLOT_CONFIG_NETWORK[network] ?? SLOT_CONFIG_NETWORK.preprod;
+		return {
+			invalidBefore: unixTimeToEnclosingSlot(Number(process.env.INVALID_BEFORE_MS), slotConfig) - 1,
+			invalidAfter: unixTimeToEnclosingSlot(Number(process.env.INVALID_AFTER_MS), slotConfig) + 1,
+		};
+	}
+	const tip = await fetchChainTip();
+	const beforeSlotBuffer = Number(process.env.VALIDITY_BEFORE_SLOT_BUFFER ?? 5);
+	const afterSlotBuffer = Number(process.env.VALIDITY_AFTER_SLOT_BUFFER ?? 150);
+	return {
+		invalidBefore: tip.slot - beforeSlotBuffer,
+		invalidAfter: tip.slot + afterSlotBuffer,
+	};
+}
+
+export async function applyValidity(tx) {
+	const { invalidBefore, invalidAfter } = await validitySlots();
 	tx.txBuilder.invalidBefore(invalidBefore);
 	tx.txBuilder.invalidHereafter(invalidAfter);
 	tx.setNetwork(network);

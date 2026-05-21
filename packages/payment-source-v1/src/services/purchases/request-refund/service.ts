@@ -165,6 +165,7 @@ async function processSinglePurchaseRequest(
 		datum.value,
 		invalidBefore,
 		invalidAfter,
+		paymentContract.PaymentSourceConfig.rpcProviderApiKey,
 	);
 
 	const signedTx = await wallet.signTx(unsignedTx);
@@ -213,7 +214,10 @@ export async function requestRefundsV1() {
 	try {
 		const paymentContractsWithWalletLocked = await lockAndQueryPurchases({
 			purchasingAction: PurchasingAction.SetRefundRequestedRequested,
-			unlockTime: { gte: Date.now() - 1000 * 60 * 1 },
+			// Aiken `must_end_before(unlock_time)` cannot be satisfied when the
+			// tx-window's invalidAfter already overshoots unlock_time. Leave a
+			// comfortable margin so submissions don't hit the ledger boundary.
+			unlockTime: { gt: Date.now() + 1000 * 60 * 3 },
 			maxBatchSize: 1,
 			paymentSourceType: PaymentSourceType.Web3CardanoV1,
 		});

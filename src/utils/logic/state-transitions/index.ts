@@ -501,6 +501,59 @@ export function convertNewPurchasingActionAndError(
 					);
 			}
 			break;
+		// V2 only. AuthorizeWithdrawal redeemer requires `state == Disputed`
+		// on-chain; only Disputed -> WithdrawAuthorized is valid. WithdrawAuthorized
+		// itself is intercepted by the top-level branch above.
+		case PurchasingAction.AuthorizeWithdrawalInitiated:
+			switch (newState) {
+				case OnChainState.Disputed:
+					return generatePurchasingActionAndErrorResult(PurchasingAction.AuthorizeWithdrawalRequested);
+				case OnChainState.DisputedWithdrawn:
+				case OnChainState.RefundWithdrawn:
+				case OnChainState.Withdrawn:
+					return generatePurchasingActionAndErrorResult(
+						PurchasingAction.WaitingForManualAction,
+						ERROR_MESSAGES.UNEXPECTED_STATE_CHANGE_TIMEOUT,
+					);
+				case OnChainState.FundsOrDatumInvalid:
+					return generatePurchasingActionAndErrorResult(
+						PurchasingAction.WaitingForManualAction,
+						ERROR_MESSAGES.AMOUNT_MISMATCH_MANUAL,
+					);
+				case OnChainState.FundsLocked:
+				case OnChainState.RefundRequested:
+				case OnChainState.ResultSubmitted:
+					return generatePurchasingActionAndErrorResult(
+						PurchasingAction.WaitingForManualAction,
+						ERROR_MESSAGES.UNEXPECTED_STATE_CHANGE,
+					);
+			}
+			break;
+		case PurchasingAction.AuthorizeWithdrawalRequested:
+			switch (newState) {
+				case OnChainState.Disputed:
+					return generatePurchasingActionAndErrorResult(PurchasingAction.AuthorizeWithdrawalRequested);
+				case OnChainState.DisputedWithdrawn:
+				case OnChainState.RefundWithdrawn:
+				case OnChainState.Withdrawn:
+					return generatePurchasingActionAndErrorResult(
+						PurchasingAction.WaitingForManualAction,
+						ERROR_MESSAGES.UNEXPECTED_STATE_CHANGE_TIMEOUT,
+					);
+				case OnChainState.FundsOrDatumInvalid:
+					return generatePurchasingActionAndErrorResult(
+						PurchasingAction.WaitingForManualAction,
+						ERROR_MESSAGES.AMOUNT_MISMATCH_MANUAL,
+					);
+				case OnChainState.FundsLocked:
+				case OnChainState.RefundRequested:
+				case OnChainState.ResultSubmitted:
+					return generatePurchasingActionAndErrorResult(
+						PurchasingAction.WaitingForManualAction,
+						ERROR_MESSAGES.UNEXPECTED_STATE_CHANGE,
+					);
+			}
+			break;
 	}
 	throw new Error(`Invalid state transition for ${currentAction} and ${newState}`);
 }

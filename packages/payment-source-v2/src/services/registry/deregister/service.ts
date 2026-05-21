@@ -19,6 +19,7 @@ import {
 import {
 	findRegistryTokenUtxo,
 	generateRegistryDeregisterTransactionAutomaticFees,
+	getBurnRedeemerAlternative,
 	resolveRegistryDeregistrationWallet,
 } from '@/services/registry/shared';
 
@@ -126,6 +127,11 @@ export async function deRegisterAgentV2() {
 							tokenUtxo,
 							collateralUtxo,
 							limitedFilteredUtxos,
+							// V2 mint contract reserves alt=1 for UpdateAction;
+							// BurnAction is alt=2. Pass through so the shared
+							// helper emits the V2-compatible redeemer.
+							getBurnRedeemerAlternative(PaymentSourceType.Web3CardanoV2),
+							paymentSource.PaymentSourceConfig.rpcProviderApiKey,
 						);
 						const signedTx = await wallet.signTx(unsignedTx);
 						await prisma.registryRequest.update({

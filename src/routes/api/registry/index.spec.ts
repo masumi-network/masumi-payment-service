@@ -1,7 +1,7 @@
 import { jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import { testEndpoint } from 'express-zod-api';
-import { ApiKeyStatus, Network, PricingType, RegistrationState } from '@/generated/prisma/enums';
+import { ApiKeyStatus, Network, PaymentSourceType, PricingType, RegistrationState } from '@/generated/prisma/enums';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -123,6 +123,9 @@ function buildSellingWallet() {
 		walletVkey: 'selling-wallet-vkey',
 		walletAddress: 'addr_test1sellingwallet',
 		PaymentSource: {
+			paymentSourceType: PaymentSourceType.Web3CardanoV2,
+			smartContractAddress: 'addr_test1smartcontract',
+			network: Network.Preprod,
 			PaymentSourceConfig: {
 				rpcProviderApiKey: 'provider-key',
 			},

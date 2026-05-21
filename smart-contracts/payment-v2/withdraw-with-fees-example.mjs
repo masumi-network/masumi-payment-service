@@ -48,7 +48,7 @@ if (hasAssets(sellerAssets)) {
 
 tx = tx.setChangeAddress(address).setRequiredSigners([sellerSignerAddress]);
 
-applyValidity(tx);
+await applyValidity(tx);
 const unsignedTx = await tx.build();
 const signedTx = await wallet.signTx(unsignedTx);
 const txHash = await wallet.submitTx(signedTx);

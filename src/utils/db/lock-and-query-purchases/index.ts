@@ -12,9 +12,9 @@ export async function lockAndQueryPurchases({
 	paymentSourceType = undefined,
 }: {
 	purchasingAction: PurchasingAction;
-	unlockTime?: { lte: number } | undefined | { gte: number };
+	unlockTime?: { lte?: number; gte?: number; lt?: number; gt?: number } | undefined;
 	onChainState?: OnChainState | { in: OnChainState[] } | undefined;
-	submitResultTime?: { lte: number } | undefined | { gte: number };
+	submitResultTime?: { lte?: number; gte?: number; lt?: number; gt?: number } | undefined;
 	resultHash?: string | null | undefined;
 	paymentSourceType?: PaymentSourceType;
 	maxBatchSize: number;

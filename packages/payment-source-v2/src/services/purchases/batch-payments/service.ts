@@ -428,7 +428,7 @@ export async function batchLatestPaymentEntriesV2() {
 							).length;
 
 							const resultSubmittedEstimateDatum = createDatumFromBlockchainIdentifierV2({
-								buyerAddress: sellerAddress,
+								buyerAddress: walletData.changeAddress,
 								buyerReturnAddress: paymentRequest.buyerReturnAddress ?? walletData.collectionAddress,
 								sellerAddress: sellerAddress,
 								sellerReturnAddress: paymentRequest.sellerReturnAddress,

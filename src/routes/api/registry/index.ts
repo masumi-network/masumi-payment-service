@@ -1,7 +1,7 @@
 import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
-import { PricingType, RegistrationState } from '@/generated/prisma/client';
+import { PaymentSourceType, PricingType, RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { DEFAULTS } from '@masumi/payment-core/config';
@@ -12,7 +12,7 @@ import { getBlockfrostInstance, validateAssetsOnChain } from '@/utils/blockfrost
 import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { normalizeRequestedRegistryFundingLovelace } from '@/services/registry/shared';
 import { getDefaultSupportedPaymentSources } from '@masumi/payment-source-v2/services/registry/supported-payment-sources';
-import { validateSupportedPaymentSourcesOrThrow } from '@/types/payment-source';
+import { SupportedPaymentSourceChain, validateSupportedPaymentSourcesOrThrow } from '@/types/payment-source';
 import {
 	deleteAgentRegistrationSchemaInput,
 	deleteAgentRegistrationSchemaOutput,
@@ -105,8 +105,22 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 				operation: 'register_agent',
 			});
 			const sendFundingLovelace = normalizeRequestedRegistryFundingLovelace(input.sendFundingLovelace);
+			// Default-advertise the EXACT payment source the selling wallet lives
+			// on. The previous default unconditionally pointed to a derived V2
+			// contract address, which mis-advertises a V1 wallet as accepting V2
+			// payments and breaks buyer-side dispatch.
 			const supportedPaymentSources =
-				input.supportedPaymentSources ?? (await getDefaultSupportedPaymentSources(input.network));
+				input.supportedPaymentSources ??
+				(sellingWallet.PaymentSource.paymentSourceType === PaymentSourceType.Web3CardanoV2
+					? await getDefaultSupportedPaymentSources(input.network)
+					: [
+							{
+								chain: SupportedPaymentSourceChain.Cardano,
+								network: input.network,
+								paymentSourceType: sellingWallet.PaymentSource.paymentSourceType,
+								address: sellingWallet.PaymentSource.smartContractAddress,
+							},
+						]);
 			try {
 				validateSupportedPaymentSourcesOrThrow(supportedPaymentSources, input.network);
 			} catch (error) {

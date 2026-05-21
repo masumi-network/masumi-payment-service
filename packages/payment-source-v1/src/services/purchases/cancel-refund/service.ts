@@ -168,10 +168,12 @@ export async function cancelRefundsV1() {
 						}
 
 						const decodedContract = decodeAndValidateUtxoDatum({ utxo, network });
+						// V1 Aiken cancel-refund requires new_datum.buyer/seller to equal the
+						// decoded input's buyer/seller. Trust on-chain values to avoid DB drift.
 						const datum = createCancelRefundDatum({
 							decodedContract,
-							buyerAddress: request.SmartContractWallet!.walletAddress,
-							sellerAddress: request.SellerWallet.walletAddress,
+							buyerAddress: decodedContract.buyerAddress,
+							sellerAddress: decodedContract.sellerAddress,
 							blockchainIdentifier: request.blockchainIdentifier,
 							cooldownTime: BigInt(paymentContract.cooldownTime),
 						});
@@ -191,6 +193,7 @@ export async function cancelRefundsV1() {
 							datum.value,
 							invalidBefore,
 							invalidAfter,
+							paymentContract.PaymentSourceConfig.rpcProviderApiKey,
 						);
 						const signedTx = await wallet.signTx(unsignedTx);
 

@@ -176,6 +176,7 @@ export async function authorizeRefundV1() {
 							datum.value,
 							invalidBefore,
 							invalidAfter,
+							paymentContract.PaymentSourceConfig.rpcProviderApiKey,
 						);
 
 						const signedTx = await wallet.signTx(unsignedTx);

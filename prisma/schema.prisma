@@ -494,7 +494,7 @@ model PaymentSource {
   AdminWallets                   AdminWallet[]                   @relation("AdminWallets")
   HotWallets                     HotWallet[]
   PaymentRequests                PaymentRequest[]                @relation("PaymentRequestPaymentSource")
-  FeeReceiverNetworkWallet       AdminWallet?                    @relation("FeeReceiverNetworkWallet", fields: [adminWalletId], references: [id], onDelete: Cascade)
+  FeeReceiverNetworkWallet       AdminWallet?                    @relation("FeeReceiverNetworkWallet", fields: [adminWalletId], references: [id], onDelete: SetNull)
   PaymentSourceConfig            PaymentSourceConfig             @relation(fields: [paymentSourceConfigId], references: [id])
   PaymentSourceIdentifiers       PaymentSourceIdentifiers[]
   PurchaseRequests               PurchaseRequest[]               @relation("PurchaseRequestPaymentSource")

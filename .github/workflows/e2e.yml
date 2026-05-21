@@ -4,6 +4,13 @@ on:
   pull_request:
     branches: [dev]
 
+# Cancel an in-flight run when a newer commit lands on the same PR. E2E
+# matrix entries share a small pool of on-chain preprod wallets; stacking
+# runs causes UTxO contention and burns CI minutes on stale commits.
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   e2e:
     runs-on: ubuntu-latest
@@ -86,7 +93,13 @@ jobs:
           fi
 
           BASE_URI="${{ secrets.DATABASE_URL }}"
-          CONNECTION_URI=$(echo $BASE_URI | sed "s/@[^/]*/@$ENDPOINT_HOST/")
+          CONNECTION_URI=$(printf '%s' "$BASE_URI" | sed "s/@[^/]*/@$ENDPOINT_HOST/")
+
+          # GitHub auto-masks raw secret values, but CONNECTION_URI is derived
+          # (different host) and still embeds the user:password from
+          # DATABASE_URL. Register it explicitly so it stays masked in any
+          # downstream log emission.
+          echo "::add-mask::$CONNECTION_URI"
 
           echo "branch_id=$BRANCH_ID" >> $GITHUB_OUTPUT
           echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT

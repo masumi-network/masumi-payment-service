@@ -7,12 +7,29 @@
 import { SERVICE_CONSTANTS } from '@masumi/payment-core/config';
 import { blake2b } from 'ethereum-cryptography/blake2b';
 import { BlockfrostProvider, IFetcher, LanguageVersion, MeshTxBuilder, Network, UTxO } from '@meshsdk/core';
+import { PaymentSourceType } from '@/generated/prisma/client';
+import { getCachedChainProtocolParameters, syncMeshCostModelsFromChain } from '@/utils/mesh-cost-model-sync';
 
 export type RegistryMetadata = {
 	[key: string]: string | string[] | RegistryMetadata | RegistryMetadata[] | undefined;
 };
 
 const minimumRegistryFundingLovelace = BigInt(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount);
+
+// V2 mint contract Action enum: MintAction=0, UpdateAction=1, BurnAction=2.
+// V1 mint contract Action enum: MintAction=0, BurnAction=1.
+// Map by PaymentSourceType so the same shared helper drives both.
+const V1_BURN_REDEEMER_ALTERNATIVE = 1;
+const V2_BURN_REDEEMER_ALTERNATIVE = 2;
+
+export function getBurnRedeemerAlternative(paymentSourceType: PaymentSourceType): number {
+	switch (paymentSourceType) {
+		case PaymentSourceType.Web3CardanoV1:
+			return V1_BURN_REDEEMER_ALTERNATIVE;
+		case PaymentSourceType.Web3CardanoV2:
+			return V2_BURN_REDEEMER_ALTERNATIVE;
+	}
+}
 
 export function normalizeRequestedRegistryFundingLovelace(sendFundingLovelace?: string): bigint | undefined {
 	if (sendFundingLovelace == null) {
@@ -33,6 +50,25 @@ export function generateRegistryAssetName(firstUtxo: UTxO): string {
 	const serializedOutputUint8Array = new Uint8Array(Buffer.from(serializedOutput.toString(), 'hex'));
 	const blake2b256 = blake2b(serializedOutputUint8Array, 32);
 	return Buffer.from(blake2b256).toString('hex');
+}
+
+// V2 registry mint contract requires asset names of the exact structure:
+//   [ 1 byte nonce > 0x0f | 28 bytes blake2b_224(tx_id || index_be4) | 3 bytes version 0x000000 ]
+// (see smart-contracts/registry-v2/validators/mint.ak). The nonce > 0x0f guard
+// keeps registry asset names out of the CIP-67/CIP-68 label-prefix range. The
+// version field starts at 0 and increments by 1 on every UpdateAction.
+const V2_REGISTRY_INITIAL_NONCE = '10'; // 0x10 — first byte strictly > 0x0f
+const V2_REGISTRY_INITIAL_VERSION = '000000'; // 3 bytes BE, starts at 0
+
+export function generateRegistryAssetNameV2(firstUtxo: UTxO): string {
+	const txId = firstUtxo.input.txHash;
+	const txIndex = firstUtxo.input.outputIndex;
+	const serializedOutput = txId + txIndex.toString(16).padStart(8, '0');
+	const serializedOutputUint8Array = new Uint8Array(Buffer.from(serializedOutput.toString(), 'hex'));
+	// 28-byte root hash matches the contract's `blake2b_224(...)` of the same input.
+	const rootHashBytes = blake2b(serializedOutputUint8Array, 28);
+	const rootHashHex = Buffer.from(rootHashBytes).toString('hex');
+	return V2_REGISTRY_INITIAL_NONCE + rootHashHex + V2_REGISTRY_INITIAL_VERSION;
 }
 
 export function resolveRegistryRecipientWalletAddress(request: {
@@ -70,7 +106,15 @@ export async function generateRegistryMintTransaction(
 		mem: number;
 		steps: number;
 	} = SERVICE_CONSTANTS.SMART_CONTRACT.defaultExUnits,
+	rpcApiKey?: string,
 ) {
+	if (rpcApiKey) {
+		// `protocolParams(...)` below does NOT carry cost models; mesh-sdk
+		// hashes script_data against its BUNDLED cost-model arrays. Patch them
+		// from chain or risk `PPViewHashesDontMatch` after any cost-model vote.
+		// Helper is memoized 5 min so this is cheap to call before each build.
+		await syncMeshCostModelsFromChain(rpcApiKey);
+	}
 	// Fetch CURRENT chain protocol parameters (including the live Plutus cost
 	// models) and feed them into MeshTxBuilder. Without this, MeshTxBuilder
 	// falls back to its bundled default cost models, which can lag behind the
@@ -82,11 +126,12 @@ export async function generateRegistryMintTransaction(
 	// `TxSubmitFail` / `TxValidationErrorInCardanoMode` carrying a
 	// PPViewHashesDontMatch mismatch where `supplied` and `expected` are both
 	// stable across runs (because mesh's bundled models are deterministic).
-	// NaN tells the BlockfrostProvider impl to call /epochs/latest/parameters.
-	// Passing a real epoch number (e.g. 0) would hit /epochs/0/parameters and
-	// return 404 on preprod, which surfaces as a Blockfrost "The requested
-	// component has not been found" error during V1 registration.
-	const protocolParameters = await blockchainProvider.fetchProtocolParameters(Number.NaN);
+	// `syncMeshCostModelsFromChain` (above, when `rpcApiKey` is supplied) ALSO
+	// caches the mesh-format Protocol object so we don't repeat
+	// `/epochs/latest/parameters` here. Fall back to a live fetch if the cache
+	// is cold (first tx of the process lifetime).
+	const cachedParams = rpcApiKey == null ? null : getCachedChainProtocolParameters(rpcApiKey);
+	const protocolParameters = cachedParams ?? (await blockchainProvider.fetchProtocolParameters(Number.NaN));
 	const txBuilder = new MeshTxBuilder({
 		fetcher: blockchainProvider,
 	});
@@ -162,6 +207,10 @@ export async function generateRegistryDeregisterTransactionAutomaticFees(
 	assetUtxo: UTxO,
 	collateralUtxo: UTxO,
 	utxos: UTxO[],
+	// V1 burn=alt 1; V2 burn=alt 2 (V2 reserves alt 1 for UpdateAction).
+	// Resolved via getBurnRedeemerAlternative(paymentSourceType).
+	burnRedeemerAlternative: number = V1_BURN_REDEEMER_ALTERNATIVE,
+	rpcApiKey?: string,
 ) {
 	const evaluationTx = await generateRegistryDeregisterTransaction(
 		blockchainProvider,
@@ -173,6 +222,9 @@ export async function generateRegistryDeregisterTransactionAutomaticFees(
 		assetUtxo,
 		collateralUtxo,
 		utxos,
+		undefined,
+		burnRedeemerAlternative,
+		rpcApiKey,
 	);
 	const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
 		budget: { mem: number; steps: number };
@@ -189,6 +241,8 @@ export async function generateRegistryDeregisterTransactionAutomaticFees(
 		collateralUtxo,
 		utxos,
 		estimatedFee[0].budget,
+		burnRedeemerAlternative,
+		rpcApiKey,
 	);
 }
 
@@ -212,15 +266,18 @@ async function generateRegistryDeregisterTransaction(
 		mem: 7e6,
 		steps: 3e9,
 	},
+	burnRedeemerAlternative: number = V1_BURN_REDEEMER_ALTERNATIVE,
+	rpcApiKey?: string,
 ) {
-	// See protocolParams comment in generateRegistryMintTransaction above.
-	// Same fix: pull live chain params to keep script_data_hash in sync with
-	// what the ledger expects.
-	// NaN tells the BlockfrostProvider impl to call /epochs/latest/parameters.
-	// Passing a real epoch number (e.g. 0) would hit /epochs/0/parameters and
-	// return 404 on preprod, which surfaces as a Blockfrost "The requested
-	// component has not been found" error during V1 registration.
-	const protocolParameters = await blockchainProvider.fetchProtocolParameters(Number.NaN);
+	if (rpcApiKey) {
+		// See cost-model sync comment in generateRegistryMintTransaction above.
+		await syncMeshCostModelsFromChain(rpcApiKey);
+	}
+	// Reuse the cached mesh-format chain params populated by the cost-model
+	// sync (see generateRegistryMintTransaction). Fall back to a live fetch on
+	// cache miss.
+	const cachedParams = rpcApiKey == null ? null : getCachedChainProtocolParameters(rpcApiKey);
+	const protocolParameters = cachedParams ?? (await blockchainProvider.fetchProtocolParameters(Number.NaN));
 	const txBuilder = new MeshTxBuilder({
 		fetcher: blockchainProvider,
 	});
@@ -232,7 +289,7 @@ async function generateRegistryDeregisterTransaction(
 		.mintPlutusScript(script.version)
 		.mint('-1', policyId, assetName)
 		.mintingScript(script.code)
-		.mintRedeemerValue({ alternative: 1, fields: [] }, 'Mesh', exUnits)
+		.mintRedeemerValue({ alternative: burnRedeemerAlternative, fields: [] }, 'Mesh', exUnits)
 		.txIn(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
 		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
 		.setTotalCollateral('3000000');

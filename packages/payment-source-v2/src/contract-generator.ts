@@ -27,8 +27,13 @@ export async function getPaymentScriptFromPaymentSourceV2(
 		throw new Error('V2 payment source requires requiredAdminSignatures');
 	}
 
+	// Admin wallet order is a script parameter — applyParamsToScript hashes it
+	// positionally. Prisma `include: { AdminWallets: true }` has no implicit
+	// ordering, so derive a stable order before deriving the script address.
+	const sortedAdminWallets = [...paymentSourceSupported.AdminWallets].sort((a, b) => a.order - b.order);
+
 	return await getPaymentScriptV2(
-		paymentSourceSupported.AdminWallets.map((wallet) => wallet.walletAddress),
+		sortedAdminWallets.map((wallet) => wallet.walletAddress),
 		requiredAdminSignatures,
 		paymentSourceSupported.cooldownTime,
 		paymentSourceSupported.network,

@@ -10,6 +10,7 @@ import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { sortUtxosByLovelaceDesc } from '@/utils/utxo';
+import { syncMeshCostModelsFromChain } from '@/utils/mesh-cost-model-sync';
 import {
 	createMeshProvider,
 	createPendingTransaction,
@@ -17,7 +18,7 @@ import {
 	updateCurrentTransactionHash,
 } from '@/services/shared';
 import {
-	generateRegistryAssetName,
+	generateRegistryAssetNameV2,
 	generateRegistryMintTransaction,
 	type RegistryMetadata,
 	resolveRegistryFundingLovelace,
@@ -157,6 +158,12 @@ export async function registerAgentV2() {
 				const network = convertNetwork(paymentSource.network);
 				const registryRequests = paymentSource.RegistryRequest;
 				if (registryRequests.length === 0) return;
+				// Refresh mesh-sdk's bundled Plutus cost models from chain BEFORE
+				// building any tx in this batch. Without this, mesh would hash the
+				// transaction body against stale cost models and the ledger would
+				// reject submission with PPViewHashesDontMatch. The helper is
+				// memoized per-process, so this is a no-op within the TTL.
+				await syncMeshCostModelsFromChain(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
 				const blockchainProvider = createMeshProvider(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
 
 				const results = await advancedRetryAll({
@@ -180,8 +187,12 @@ export async function registerAgentV2() {
 						const collateralUtxo = limitedFilteredUtxos[0];
 						const recipientWalletAddress = resolveRegistryRecipientWalletAddress(request);
 						const fundingLovelace = resolveRegistryFundingLovelace(request);
-						const assetName = generateRegistryAssetName(firstUtxo);
+						// V2 mint contract requires the structured asset name
+						// [1B nonce>0x0f | 28B blake2b_224 | 3B version 0x000000] —
+						// the V1 flat blake2b_256 layout would fail every check.
+						const assetName = generateRegistryAssetNameV2(firstUtxo);
 						const metadata = buildAgentMetadata(request);
+						const rpcApiKey = paymentSource.PaymentSourceConfig.rpcProviderApiKey;
 
 						const evaluationTx = await generateRegistryMintTransaction(
 							blockchainProvider,
@@ -196,6 +207,8 @@ export async function registerAgentV2() {
 							collateralUtxo,
 							limitedFilteredUtxos,
 							metadata,
+							undefined,
+							rpcApiKey,
 						);
 						const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
 							budget: { mem: number; steps: number };
@@ -214,6 +227,7 @@ export async function registerAgentV2() {
 							limitedFilteredUtxos,
 							metadata,
 							estimatedFee[0].budget,
+							rpcApiKey,
 						);
 						const signedTx = await wallet.signTx(unsignedTx, true);
 						await prisma.registryRequest.update({

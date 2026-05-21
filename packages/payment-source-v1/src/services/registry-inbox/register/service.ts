@@ -107,6 +107,7 @@ export async function registerInboxAgentV1() {
 							agentSlug: request.agentSlug,
 							metadataVersion: request.metadataVersion ?? DEFAULTS.DEFAULT_METADATA_VERSION,
 						});
+						const rpcApiKey = paymentSource.PaymentSourceConfig.rpcProviderApiKey;
 
 						const evaluationTx = await generateRegistryMintTransaction(
 							blockchainProvider,
@@ -121,6 +122,8 @@ export async function registerInboxAgentV1() {
 							collateralUtxo,
 							limitedFilteredUtxos,
 							metadata,
+							undefined,
+							rpcApiKey,
 						);
 						const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
 							budget: { mem: number; steps: number };
@@ -140,6 +143,7 @@ export async function registerInboxAgentV1() {
 							limitedFilteredUtxos,
 							metadata,
 							estimatedFee[0].budget,
+							rpcApiKey,
 						);
 
 						const signedTx = await wallet.signTx(unsignedTx, true);

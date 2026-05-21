@@ -144,6 +144,15 @@ async function processSingleRefundCollection(
 		throw new Error('Collateral UTXO not found');
 	}
 
+	// Aiken contract checks the buyer refund output against the on-chain datum's
+	// `buyer_return_address`. Trust the decoded datum over the DB row to stay in
+	// lockstep with what the validator will accept.
+	const buyerRefundAddress =
+		decodedContract.buyerReturnAddress ??
+		request.buyerReturnAddress ??
+		request.SmartContractWallet.collectionAddress ??
+		address;
+
 	const unsignedTx = await generateMasumiSmartContractWithdrawTransactionAutomaticFees(
 		'CollectRefund',
 		blockchainProvider,
@@ -155,12 +164,16 @@ async function processSingleRefundCollection(
 		limitedFilteredUtxos,
 		{
 			collectAssets: utxo.output.amount,
-			collectionAddress: request.buyerReturnAddress ?? request.SmartContractWallet.collectionAddress ?? address,
+			collectionAddress: buyerRefundAddress,
 		},
 		null,
 		null,
 		invalidBefore,
 		invalidAfter,
+		// V2 contract requires the buyer's refund output to be tagged with own_ref
+		// when buyer_return_address is Some. Tagging is also safe when None.
+		true,
+		paymentContract.PaymentSourceConfig.rpcProviderApiKey,
 	);
 
 	const signedTx = await wallet.signTx(unsignedTx);

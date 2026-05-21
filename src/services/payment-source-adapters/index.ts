@@ -19,6 +19,7 @@ import {
 } from '@/utils/converter/string-datum-convert';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { SmartContractState } from '@/utils/generator/contract-generator';
+import { assertNever } from '@/utils/assert-never';
 
 export type PaymentSourceWithContractWallets = PaymentSource & {
 	AdminWallets: Array<{ walletAddress: string; order: number }>;
@@ -176,6 +177,8 @@ export function getPaymentSourceContractAdapter(paymentSourceType: PaymentSource
 			return v1ContractAdapter;
 		case PaymentSourceType.Web3CardanoV2:
 			return v2ContractAdapter;
+		default:
+			return assertNever(paymentSourceType);
 	}
 }
 

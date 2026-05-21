@@ -32,7 +32,7 @@ const tx = new Transaction({ initiator: wallet, fetcher: blockchainProvider })
 	.setChangeAddress(address)
 	.setRequiredSigners([buyerAddress]);
 
-applyValidity(tx);
+await applyValidity(tx);
 const unsignedTx = await tx.build();
 const signedTx = await wallet.signTx(unsignedTx);
 const txHash = await wallet.submitTx(signedTx);

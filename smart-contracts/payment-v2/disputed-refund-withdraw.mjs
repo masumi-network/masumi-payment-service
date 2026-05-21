@@ -7,8 +7,10 @@ import {
 	applyValidity,
 	assetsMinusLovelace,
 	assetsToAssetValueData,
+	autoPickTimedOutDispute,
 	blockchainProvider,
 	disputeIntentHash,
+	explicitContractRef,
 	fetchContractUtxo,
 	firstWalletAddress,
 	hasAssets,
@@ -18,8 +20,11 @@ import {
 	network,
 	readAddress,
 	subtractAssets,
+	syncCostModelsFromChain,
 	taggedRecipient,
 } from './example-helpers.mjs';
+
+await syncCostModelsFromChain();
 
 console.log('Withdrawing disputed funds as V2 payment example');
 
@@ -29,7 +34,22 @@ const feePayerAddress = await firstWalletAddress(adminWallet1);
 const buyerAddress = process.env.BUYER_RETURN_ADDRESS ?? readAddress(1);
 const sellerAddress = process.env.SELLER_RETURN_ADDRESS ?? readAddress(2);
 const { script, scriptAddress } = loadPaymentScript();
-const utxo = await fetchContractUtxo(blockchainProvider, scriptAddress);
+
+// Either spend an explicit ref (TX_HASH env / first argv) or auto-pick the
+// oldest Disputed UTxO past its external_dispute_unlock_time.
+let utxo;
+if (explicitContractRef() != null) {
+	utxo = await fetchContractUtxo(blockchainProvider, scriptAddress);
+	console.log(`Using explicit UTxO ${utxo.input.txHash}#${utxo.input.outputIndex}`);
+} else {
+	utxo = await autoPickTimedOutDispute(blockchainProvider, scriptAddress);
+	if (!utxo) {
+		throw new Error(
+			'No timed-out Disputed UTxO found at script address. Pass TX_HASH=<hex> or wait for external_dispute_unlock_time.',
+		);
+	}
+	console.log(`Auto-picked Disputed UTxO ${utxo.input.txHash}#${utxo.input.outputIndex}`);
+}
 
 const buyerLovelace = BigInt(process.env.BUYER_LOVELACE ?? 0);
 const buyerAssets = buyerLovelace > 0n ? lovelaceAsset(buyerLovelace) : [];
@@ -66,7 +86,7 @@ if (hasAssets(sellerAssets)) {
 
 tx = tx.setChangeAddress(feePayerAddress).setRequiredSigners([feePayerAddress]);
 
-applyValidity(tx);
+await applyValidity(tx);
 const unsignedTx = await tx.build();
 const signedTx = await adminWallet1.signTx(unsignedTx);
 const txHash = await adminWallet1.submitTx(signedTx);

@@ -18,6 +18,10 @@ export function createTxWindow(
 		constrainAfterMs?: number;
 		constrainSlotBuffer?: number;
 		constrainStrategy?: 'min' | 'max';
+		// When set, ensures `invalidBefore` is no earlier than the slot
+		// containing `constrainBeforeMs`. Use to satisfy Aiken
+		// `must_start_after(validity_range, X)` checks (e.g. cooldowns).
+		constrainBeforeMs?: number;
 	} = {},
 ): TxWindow {
 	const nowMs = options.nowMs ?? Date.now();
@@ -25,7 +29,14 @@ export function createTxWindow(
 	const afterBufferMs = options.afterBufferMs ?? SERVICE_CONSTANTS.TRANSACTION.timeBufferMs;
 	const validitySlotBuffer = options.validitySlotBuffer ?? SERVICE_CONSTANTS.TRANSACTION.validitySlotBuffer;
 
-	const invalidBefore = unixTimeToEnclosingSlot(nowMs - beforeBufferMs, SLOT_CONFIG_NETWORK[network]) - 1;
+	const defaultInvalidBefore = unixTimeToEnclosingSlot(nowMs - beforeBufferMs, SLOT_CONFIG_NETWORK[network]) - 1;
+	const invalidBefore =
+		options.constrainBeforeMs == null
+			? defaultInvalidBefore
+			: Math.max(
+					defaultInvalidBefore,
+					unixTimeToEnclosingSlot(options.constrainBeforeMs, SLOT_CONFIG_NETWORK[network]) + 1,
+				);
 	const defaultInvalidAfter =
 		unixTimeToEnclosingSlot(nowMs + afterBufferMs, SLOT_CONFIG_NETWORK[network]) + validitySlotBuffer;
 
