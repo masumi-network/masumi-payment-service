@@ -1,5 +1,6 @@
 import { HotWalletType, PaymentSourceType, RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
+import { retryOnSerializationConflict } from '@/utils/db/retry';
 
 export async function lockAndQueryInboxAgentRegistrationRequests({
 	state,
@@ -12,116 +13,122 @@ export async function lockAndQueryInboxAgentRegistrationRequests({
 }) {
 	const locksSellingWallet = state === RegistrationState.RegistrationRequested;
 
-	return await prisma.$transaction(
-		async (prisma) => {
-			const paymentSources = await prisma.paymentSource.findMany({
-				where: {
-					syncInProgress: false,
-					deletedAt: null,
-					disablePaymentAt: null,
-					...(paymentSourceType != null ? { paymentSourceType } : {}),
-				},
-				include: {
-					HotWallets: {
-						include: {
-							Secret: true,
-						},
+	// Same retry rationale as the sibling lock-and-query helpers — concurrent
+	// scheduler ticks race on HotWallet locks under Serializable isolation.
+	return await retryOnSerializationConflict(
+		() =>
+			prisma.$transaction(
+				async (prisma) => {
+					const paymentSources = await prisma.paymentSource.findMany({
 						where: {
-							...(locksSellingWallet ? { type: HotWalletType.Selling } : {}),
-							PendingTransaction: null,
-							lockedAt: null,
+							syncInProgress: false,
 							deletedAt: null,
+							disablePaymentAt: null,
+							...(paymentSourceType != null ? { paymentSourceType } : {}),
 						},
-					},
-					AdminWallets: true,
-					FeeReceiverNetworkWallet: true,
-					PaymentSourceConfig: true,
-				},
-			});
+						include: {
+							HotWallets: {
+								include: {
+									Secret: true,
+								},
+								where: {
+									...(locksSellingWallet ? { type: HotWalletType.Selling } : {}),
+									PendingTransaction: null,
+									lockedAt: null,
+									deletedAt: null,
+								},
+							},
+							AdminWallets: true,
+							FeeReceiverNetworkWallet: true,
+							PaymentSourceConfig: true,
+						},
+					});
 
-			const newPaymentSources = [];
-			for (const paymentSource of paymentSources) {
-				const inboxAgentRegistrationRequests = [];
-				for (const hotWallet of paymentSource.HotWallets) {
-					const potentialInboxAgentRegistrationRequests = await prisma.inboxAgentRegistrationRequest.findMany({
-						where: {
-							state,
-							...(locksSellingWallet
-								? {
-										SmartContractWallet: {
-											id: hotWallet.id,
-											deletedAt: null,
-											PendingTransaction: { is: null },
-											lockedAt: null,
-										},
-									}
-								: {
-										OR: [
-											{
-												DeregistrationHotWallet: {
-													is: {
-														id: hotWallet.id,
-														deletedAt: null,
-														PendingTransaction: { is: null },
-														lockedAt: null,
-													},
-												},
-											},
-											{
-												deregistrationHotWalletId: null,
+					const newPaymentSources = [];
+					for (const paymentSource of paymentSources) {
+						const inboxAgentRegistrationRequests = [];
+						for (const hotWallet of paymentSource.HotWallets) {
+							const potentialInboxAgentRegistrationRequests = await prisma.inboxAgentRegistrationRequest.findMany({
+								where: {
+									state,
+									...(locksSellingWallet
+										? {
 												SmartContractWallet: {
 													id: hotWallet.id,
 													deletedAt: null,
 													PendingTransaction: { is: null },
 													lockedAt: null,
 												},
-											},
-										],
-									}),
-						},
-						include: {
-							SmartContractWallet: {
-								include: {
-									Secret: true,
+											}
+										: {
+												OR: [
+													{
+														DeregistrationHotWallet: {
+															is: {
+																id: hotWallet.id,
+																deletedAt: null,
+																PendingTransaction: { is: null },
+																lockedAt: null,
+															},
+														},
+													},
+													{
+														deregistrationHotWalletId: null,
+														SmartContractWallet: {
+															id: hotWallet.id,
+															deletedAt: null,
+															PendingTransaction: { is: null },
+															lockedAt: null,
+														},
+													},
+												],
+											}),
 								},
-							},
-							RecipientWallet: true,
-							DeregistrationHotWallet: {
 								include: {
-									Secret: true,
+									SmartContractWallet: {
+										include: {
+											Secret: true,
+										},
+									},
+									RecipientWallet: true,
+									DeregistrationHotWallet: {
+										include: {
+											Secret: true,
+										},
+									},
 								},
-							},
-						},
-						orderBy: {
-							createdAt: 'asc',
-						},
-						take: maxBatchSize,
-					});
-					if (potentialInboxAgentRegistrationRequests.length > 0) {
-						const hotWalletResult = await prisma.hotWallet.update({
-							where: { id: hotWallet.id, deletedAt: null },
-							data: { lockedAt: new Date() },
-						});
-						potentialInboxAgentRegistrationRequests.forEach((request) => {
-							const walletToLock =
-								locksSellingWallet || request.DeregistrationHotWallet == null
-									? request.SmartContractWallet
-									: request.DeregistrationHotWallet;
-							walletToLock.pendingTransactionId = hotWalletResult.pendingTransactionId;
-							walletToLock.lockedAt = hotWalletResult.lockedAt;
-						});
-						inboxAgentRegistrationRequests.push(...potentialInboxAgentRegistrationRequests);
+								orderBy: {
+									createdAt: 'asc',
+								},
+								take: maxBatchSize,
+							});
+							if (potentialInboxAgentRegistrationRequests.length > 0) {
+								const hotWalletResult = await prisma.hotWallet.update({
+									where: { id: hotWallet.id, deletedAt: null },
+									data: { lockedAt: new Date() },
+								});
+								potentialInboxAgentRegistrationRequests.forEach((request) => {
+									const walletToLock =
+										locksSellingWallet || request.DeregistrationHotWallet == null
+											? request.SmartContractWallet
+											: request.DeregistrationHotWallet;
+									walletToLock.pendingTransactionId = hotWalletResult.pendingTransactionId;
+									walletToLock.lockedAt = hotWalletResult.lockedAt;
+								});
+								inboxAgentRegistrationRequests.push(...potentialInboxAgentRegistrationRequests);
+							}
+						}
+						if (inboxAgentRegistrationRequests.length > 0) {
+							newPaymentSources.push({
+								...paymentSource,
+								InboxAgentRegistrationRequests: inboxAgentRegistrationRequests,
+							});
+						}
 					}
-				}
-				if (inboxAgentRegistrationRequests.length > 0) {
-					newPaymentSources.push({
-						...paymentSource,
-						InboxAgentRegistrationRequests: inboxAgentRegistrationRequests,
-					});
-				}
-			}
-			return newPaymentSources;
-		},
-		{ isolationLevel: 'Serializable', timeout: 1000000 },
+					return newPaymentSources;
+				},
+				{ isolationLevel: 'Serializable', timeout: 1000000 },
+			),
+		{ label: 'lockAndQueryInboxAgentRegistrationRequests' },
 	);
 }

@@ -3,8 +3,7 @@ import { Network, PaymentSourceType } from '@/generated/prisma/enums';
 
 export type E2EGlobalState = {
 	network: Network;
-	paymentSourceType: PaymentSourceType;
-	agent: ConfirmedAgent;
+	agents: Partial<Record<PaymentSourceType, ConfirmedAgent>>;
 	createdAt: string;
 };
 

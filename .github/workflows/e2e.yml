@@ -217,27 +217,13 @@ jobs:
           echo "=== Server is responding, recent log tail ==="
           tail -50 server.log || true
 
-      - name: Run V1 E2E Suite
-        # Run V1 first; the V1 scheduler and V2 scheduler both run inside the
-        # shared API server already, so the only ordering decision is which
-        # jest invocation goes first. V1 is the legacy suite and exercises
-        # the larger surface area, so a V1 break should fail-fast over V2.
-        run: pnpm run test:e2e:v1
-        env:
-          TEST_API_KEY: ${{ secrets.TEST_API_KEY }}
-          TEST_API_URL: http://127.0.0.1:3001
-          TEST_NETWORK: Preprod
-          TEST_TIMEOUT_REGISTRATION: 1800000
-          DATABASE_URL: ${{ steps.create-branch.outputs.connection_uri }}
-          BLOCKFROST_API_KEY_PREPROD: ${{ secrets.BLOCKFROST_API_KEY_PREPROD }}
-
-      - name: Run V2 E2E Suite
-        # `if: always()` so a V1 failure does NOT short-circuit V2: we still
-        # want signal on whether V2 paths regressed. The overall job still
-        # fails because V1 already non-zero-exited and a later step will
-        # propagate that.
-        if: always()
-        run: pnpm run test:e2e:v2
+      - name: Run E2E Suite
+        # Single jest invocation runs both V1 and V2 flows. The shared
+        # `globalSetup` discovers every PaymentSource the API exposes and
+        # registers one agent per source type in parallel, so V1 and V2
+        # registrations happen concurrently. The flow tests then iterate over
+        # both source types via `describe.each`.
+        run: pnpm run test:e2e
         env:
           TEST_API_KEY: ${{ secrets.TEST_API_KEY }}
           TEST_API_URL: http://127.0.0.1:3001

@@ -1,6 +1,7 @@
 import { HotWalletType, OnChainState, PaymentSourceType, PurchasingAction } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
+import { retryOnSerializationConflict } from '@/utils/db/retry';
 
 export async function lockAndQueryPurchases({
 	purchasingAction,
@@ -19,98 +20,105 @@ export async function lockAndQueryPurchases({
 	paymentSourceType?: PaymentSourceType;
 	maxBatchSize: number;
 }) {
-	return await prisma.$transaction(
-		async (prisma) => {
-			try {
-				const paymentSources = await prisma.paymentSource.findMany({
-					where: {
-						syncInProgress: false,
-						deletedAt: null,
-						disablePaymentAt: null,
-						paymentSourceType,
-					},
-					include: {
-						AdminWallets: true,
-						FeeReceiverNetworkWallet: true,
-						PaymentSourceConfig: true,
-						HotWallets: {
+	// Wrapped in retryOnSerializationConflict — see lockAndQueryPayments for
+	// the rationale. Concurrent V1+V2 scheduler ticks share this codepath
+	// under different paymentSourceType filters and race on HotWallet locks.
+	return await retryOnSerializationConflict(
+		() =>
+			prisma.$transaction(
+				async (prisma) => {
+					try {
+						const paymentSources = await prisma.paymentSource.findMany({
 							where: {
-								PendingTransaction: { is: null },
-								lockedAt: null,
+								syncInProgress: false,
 								deletedAt: null,
-								type: HotWalletType.Purchasing,
-							},
-							select: {
-								id: true,
-							},
-						},
-					},
-				});
-				const newPaymentSources = [];
-				for (const paymentSource of paymentSources) {
-					const purchasingRequests = [];
-					const minCooldownTime = paymentSource.cooldownTime;
-					for (const hotWallet of paymentSource.HotWallets) {
-						const potentialPurchasingRequests = await prisma.purchaseRequest.findMany({
-							where: {
-								buyerCoolDownTime: { lt: Date.now() - minCooldownTime },
-								submitResultTime: submitResultTime,
-								unlockTime: unlockTime,
-								NextAction: {
-									requestedAction: purchasingAction,
-									errorType: null,
-								},
-								resultHash: resultHash,
-								onChainState: onChainState,
-								SmartContractWallet: {
-									id: hotWallet.id,
-									PendingTransaction: { is: null },
-									lockedAt: null,
-									deletedAt: null,
-								},
-							},
-							orderBy: {
-								createdAt: 'asc',
+								disablePaymentAt: null,
+								paymentSourceType,
 							},
 							include: {
-								NextAction: true,
-								CurrentTransaction: true,
-								PaidFunds: true,
-								SellerWallet: true,
-								SmartContractWallet: {
-									include: {
-										Secret: true,
+								AdminWallets: true,
+								FeeReceiverNetworkWallet: true,
+								PaymentSourceConfig: true,
+								HotWallets: {
+									where: {
+										PendingTransaction: { is: null },
+										lockedAt: null,
+										deletedAt: null,
+										type: HotWalletType.Purchasing,
+									},
+									select: {
+										id: true,
 									},
 								},
 							},
-							take: maxBatchSize,
 						});
-						if (potentialPurchasingRequests.length > 0) {
-							const hotWalletResult = await prisma.hotWallet.update({
-								where: { id: hotWallet.id, deletedAt: null },
-								data: { lockedAt: new Date() },
-							});
-							potentialPurchasingRequests.forEach((purchasingRequest) => {
-								purchasingRequest.SmartContractWallet!.pendingTransactionId = hotWalletResult.pendingTransactionId;
-								purchasingRequest.SmartContractWallet!.lockedAt = hotWalletResult.lockedAt;
-							});
+						const newPaymentSources = [];
+						for (const paymentSource of paymentSources) {
+							const purchasingRequests = [];
+							const minCooldownTime = paymentSource.cooldownTime;
+							for (const hotWallet of paymentSource.HotWallets) {
+								const potentialPurchasingRequests = await prisma.purchaseRequest.findMany({
+									where: {
+										buyerCoolDownTime: { lt: Date.now() - minCooldownTime },
+										submitResultTime: submitResultTime,
+										unlockTime: unlockTime,
+										NextAction: {
+											requestedAction: purchasingAction,
+											errorType: null,
+										},
+										resultHash: resultHash,
+										onChainState: onChainState,
+										SmartContractWallet: {
+											id: hotWallet.id,
+											PendingTransaction: { is: null },
+											lockedAt: null,
+											deletedAt: null,
+										},
+									},
+									orderBy: {
+										createdAt: 'asc',
+									},
+									include: {
+										NextAction: true,
+										CurrentTransaction: true,
+										PaidFunds: true,
+										SellerWallet: true,
+										SmartContractWallet: {
+											include: {
+												Secret: true,
+											},
+										},
+									},
+									take: maxBatchSize,
+								});
+								if (potentialPurchasingRequests.length > 0) {
+									const hotWalletResult = await prisma.hotWallet.update({
+										where: { id: hotWallet.id, deletedAt: null },
+										data: { lockedAt: new Date() },
+									});
+									potentialPurchasingRequests.forEach((purchasingRequest) => {
+										purchasingRequest.SmartContractWallet!.pendingTransactionId = hotWalletResult.pendingTransactionId;
+										purchasingRequest.SmartContractWallet!.lockedAt = hotWalletResult.lockedAt;
+									});
 
-							purchasingRequests.push(...potentialPurchasingRequests);
+									purchasingRequests.push(...potentialPurchasingRequests);
+								}
+							}
+							if (purchasingRequests.length > 0) {
+								newPaymentSources.push({
+									...paymentSource,
+									PurchaseRequests: purchasingRequests,
+								});
+							}
 						}
+						return newPaymentSources;
+					} catch (error) {
+						logger.error('Error locking and querying purchases', error);
+						throw error;
 					}
-					if (purchasingRequests.length > 0) {
-						newPaymentSources.push({
-							...paymentSource,
-							PurchaseRequests: purchasingRequests,
-						});
-					}
-				}
-				return newPaymentSources;
-			} catch (error) {
-				logger.error('Error locking and querying purchases', error);
-				throw error;
-			}
-		},
-		{ isolationLevel: 'Serializable' },
+				},
+				{ isolationLevel: 'Serializable' },
+			),
+		{ label: 'lockAndQueryPurchases' },
 	);
 }

@@ -1,7 +1,5 @@
 import type { Config } from '@jest/types';
 
-process.env.TEST_PAYMENT_SOURCE_TYPE ??= 'Web3CardanoV1';
-
 const moduleNameMapper = {
 	'^@masumi/payment-core$': '<rootDir>/packages/payment-core/src/index.ts',
 	'^@masumi/payment-core/(.*)$': '<rootDir>/packages/payment-core/src/$1.ts',
@@ -20,11 +18,11 @@ const moduleNameMapper = {
 
 const config: Config.InitialOptions = {
 	preset: 'ts-jest/presets/default-esm',
-	displayName: 'E2E V1 Tests',
+	displayName: 'E2E',
 	verbose: true,
 	moduleNameMapper,
 	roots: ['<rootDir>/tests/e2e', '<rootDir>/src'],
-	testMatch: ['<rootDir>/tests/e2e/flows/**/*.test.ts'],
+	testMatch: ['<rootDir>/tests/e2e/flows/**/*.test.ts', '<rootDir>/tests/e2e/v2/flows/**/*.test.ts'],
 	extensionsToTreatAsEsm: ['.ts'],
 	globals: {
 		'ts-jest': {
@@ -38,7 +36,11 @@ const config: Config.InitialOptions = {
 	setupFilesAfterEnv: ['<rootDir>/tests/e2e/setup/testEnvironment.ts'],
 	// Per-test timeout (applies to each `test(...)` and async hooks in test files)
 	testTimeout: 1_200_000, // 20 minutes
-	maxWorkers: 3,
+	// Sequential workers: the V2 source-isolation suite mutates
+	// `global.testConfig.paymentSourceType` and the describe.each blocks in the
+	// shared flow tests do the same. Running in parallel would cause cross-file
+	// races on that shared global.
+	maxWorkers: 1,
 	collectCoverageFrom: ['src/**/*.ts', '!src/**/*.spec.ts', '!src/**/*.test.ts'],
 };
 

@@ -4,14 +4,20 @@ import dotenv from 'dotenv';
 import { ApiClient } from '../utils/apiClient';
 import { getTestEnvironment } from '../fixtures/testData';
 import { waitForServer } from '../utils/waitFor';
-import { registerAndConfirmAgent } from '../helperFunctions';
+import { registerAndConfirmAgent, type ConfirmedAgent } from '../helperFunctions';
 import { validateE2EPaymentSourceWallets } from '../utils/paymentSourceHelper';
 import './globals';
 import { E2E_GLOBAL_STATE_ENV_KEY, encodeE2EGlobalState, type E2EGlobalState } from './e2eGlobalState';
+import { PaymentSourceType } from '@/generated/prisma/enums';
 
 /**
  * Jest global setup for E2E tests.
  * Runs ONCE per Jest invocation (not per test file).
+ *
+ * Discovers every PaymentSource the API exposes for the test network and registers
+ * an agent against each one in parallel. The resulting agents are stored under
+ * their PaymentSourceType so the per-test `describe.each` blocks can pick the
+ * right one without re-registering.
  */
 export default async function globalSetup() {
 	const GLOBAL_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
@@ -77,36 +83,62 @@ And accessible at: ${config.apiUrl}
 			process.exit(1);
 		}
 
-		console.log('🔎 [globalSetup] Validating E2E payment source wallets...');
-		const walletValidation = await validateE2EPaymentSourceWallets(
-			config.network,
-			config.paymentSourceType,
-			apiClient,
-		);
-		if (!walletValidation.valid) {
-			console.error('❌ E2E payment source wallet validation failed:');
-			for (const err of walletValidation.errors) console.error(`   - ${err}`);
+		// Discover which PaymentSources exist for this network. We only register
+		// agents for the ones the API actually exposes — environments without
+		// V2 seeded should still run the V1 flows without skipping.
+		console.log('🔎 [globalSetup] Discovering PaymentSources for test network...');
+		const paymentSources = await apiClient.queryPaymentSources({ take: 100 });
+		const sourceTypesForNetwork = paymentSources.ExtendedPaymentSources.filter((ps) => ps.network === config.network)
+			.map((ps) => ps.paymentSourceType)
+			// Preserve a stable order so logs are predictable: V1 first when present.
+			.sort((a, b) => a.localeCompare(b));
+
+		const uniqueSourceTypes = Array.from(new Set(sourceTypesForNetwork)) as PaymentSourceType[];
+
+		if (uniqueSourceTypes.length === 0) {
+			console.error(
+				`❌ No PaymentSources found for network ${config.network}. Seed the database before running E2E tests.`,
+			);
 			process.exit(1);
 		}
 
-		console.log('🧑‍💻 [globalSetup] Registering shared E2E agent...');
-		const agent = await registerAndConfirmAgent(config.network);
+		console.log(`🔎 [globalSetup] Found PaymentSource types: ${uniqueSourceTypes.join(', ')}`);
+
+		console.log('🔎 [globalSetup] Validating E2E payment source wallets...');
+		for (const sourceType of uniqueSourceTypes) {
+			const walletValidation = await validateE2EPaymentSourceWallets(config.network, sourceType, apiClient);
+			if (!walletValidation.valid) {
+				console.error(`❌ E2E payment source wallet validation failed for ${sourceType}:`);
+				for (const err of walletValidation.errors) console.error(`   - ${err}`);
+				process.exit(1);
+			}
+		}
+
+		console.log(`🧑‍💻 [globalSetup] Registering shared E2E agents in parallel for: ${uniqueSourceTypes.join(', ')}`);
+		const registrationResults = await Promise.all(
+			uniqueSourceTypes.map(async (sourceType) => {
+				const agent = await registerAndConfirmAgent(config.network, sourceType);
+				return [sourceType, agent] as const;
+			}),
+		);
+
+		const agents: Partial<Record<PaymentSourceType, ConfirmedAgent>> = {};
+		for (const [sourceType, agent] of registrationResults) {
+			agents[sourceType] = agent;
+		}
 
 		const state: E2EGlobalState = {
 			network: config.network,
-			paymentSourceType: config.paymentSourceType,
-			agent,
+			agents,
 			createdAt: new Date().toISOString(),
 		};
 
 		process.env[E2E_GLOBAL_STATE_ENV_KEY] = encodeE2EGlobalState(state);
 
-		console.log(`✅ [globalSetup] Shared agent ready:
-    - Agent Name: ${agent.name}
-    - Agent ID: ${agent.id}
-    - Agent Identifier: ${agent.agentIdentifier}
-    - Payment Source Type: ${config.paymentSourceType}
-  `);
+		console.log('✅ [globalSetup] Shared agents ready:');
+		for (const [sourceType, agent] of registrationResults) {
+			console.log(`    - ${sourceType}: ${agent.name} (${agent.agentIdentifier})`);
+		}
 	})();
 
 	const timeoutPromise = new Promise<never>((_, reject) => {

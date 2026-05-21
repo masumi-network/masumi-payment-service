@@ -3,6 +3,11 @@
  *
  * Verifies that the configured V2 PaymentSource has its own selling/purchasing
  * wallets, fees disabled, no fee receiver, and no wallet-vkey overlap with V1.
+ *
+ * V2-only by design: the shared flow tests already cover V1+V2 happy paths.
+ * This file pins `global.testConfig.paymentSourceType` to V2 for the duration
+ * of the suite so helper utilities (which read the global when no explicit
+ * type is passed) resolve to the V2 source.
  */
 
 import { Network, PaymentSourceType } from '@/generated/prisma/enums';
@@ -16,15 +21,13 @@ describe(`Web3CardanoV2 source isolation (${testNetwork})`, () => {
 		if (!global.testConfig) {
 			throw new Error('Global test configuration not available. Check testEnvironment.ts setup.');
 		}
-		if (global.testConfig.paymentSourceType !== PaymentSourceType.Web3CardanoV2) {
-			throw new Error(
-				`V2 E2E tests must run with TEST_PAYMENT_SOURCE_TYPE=${PaymentSourceType.Web3CardanoV2}. ` +
-					`Received ${global.testConfig.paymentSourceType}.`,
-			);
-		}
 		if (!global.testApiClient) {
 			throw new Error('Test API client not initialized. Make sure test setup ran correctly.');
 		}
+
+		// Pin the global so any helper that reads `global.testConfig.paymentSourceType`
+		// (without an explicit override) resolves to V2 inside this suite.
+		global.testConfig.paymentSourceType = PaymentSourceType.Web3CardanoV2;
 
 		const walletValidation = await validateTestWallets(testNetwork, PaymentSourceType.Web3CardanoV2);
 		if (!walletValidation.valid) {

@@ -450,11 +450,15 @@ export class ApiClient {
 		return this.makeRequest<QueryRegistryResponse>(`/api/v1/registry?${searchParams.toString()}`);
 	}
 
-	async getRegistrationById(id: string, network: Network): Promise<RegistrationResponse | null> {
+	async getRegistrationById(
+		id: string,
+		network: Network,
+		paymentSourceType?: PaymentSourceType,
+	): Promise<RegistrationResponse | null> {
 		try {
 			const response = await this.queryRegistry({
 				network,
-				filterPaymentSourceType: global.testConfig?.paymentSourceType,
+				filterPaymentSourceType: paymentSourceType ?? global.testConfig?.paymentSourceType,
 			});
 			const registration = response.Assets.find((asset) => asset.id === id);
 			return registration || null;

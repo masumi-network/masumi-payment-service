@@ -138,6 +138,7 @@ export async function getTestWalletFromDatabase(
 	network: Network,
 	role: 'seller' | 'buyer',
 	apiClient?: ApiClient,
+	paymentSourceType?: PaymentSourceType,
 ): Promise<{
 	name: string;
 	vkey: string;
@@ -146,13 +147,13 @@ export async function getTestWalletFromDatabase(
 	const walletType = role === 'seller' ? HotWalletType.Selling : HotWalletType.Purchasing;
 
 	try {
-		const paymentSourceType = resolvePaymentSourceType();
-		const vkey = await getActiveWalletVKey(network, walletType, paymentSourceType, apiClient);
+		const resolvedPaymentSourceType = resolvePaymentSourceType(paymentSourceType);
+		const vkey = await getActiveWalletVKey(network, walletType, resolvedPaymentSourceType, apiClient);
 
 		return {
-			name: `Dynamic ${role} wallet (${paymentSourceType}, ${network})`,
+			name: `Dynamic ${role} wallet (${resolvedPaymentSourceType}, ${network})`,
 			vkey: vkey,
-			description: `Dynamically retrieved ${role} wallet for ${paymentSourceType} ${network} e2e tests`,
+			description: `Dynamically retrieved ${role} wallet for ${resolvedPaymentSourceType} ${network} e2e tests`,
 		};
 	} catch (error) {
 		throw new Error(`Failed to get ${role} wallet for ${network}: ${error}`);

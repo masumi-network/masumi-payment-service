@@ -14,7 +14,7 @@
  * - Refund Functions
  */
 
-import { Network } from '@/generated/prisma/enums';
+import { Network, PaymentSourceType } from '@/generated/prisma/enums';
 import { PaymentResponse, PurchaseResponse, RegistrationResponse } from './utils/apiClient';
 import './setup/globals';
 import { getTestWalletFromDatabase, getActiveSmartContractAddress } from './utils/paymentSourceHelper';
@@ -125,14 +125,19 @@ export interface TimingConfig {
 /**
  * Register an agent and wait for full confirmation with agent identifier
  * @param network - The blockchain network (Preprod, Mainnet, etc.)
+ * @param paymentSourceType - Optional override for the payment source type (defaults to `global.testConfig.paymentSourceType`)
  * @returns Confirmed agent data with identifier
  */
-export async function registerAndConfirmAgent(network: Network): Promise<ConfirmedAgent> {
+export async function registerAndConfirmAgent(
+	network: Network,
+	paymentSourceType?: PaymentSourceType,
+): Promise<ConfirmedAgent> {
+	const resolvedPaymentSourceType = paymentSourceType ?? global.testConfig.paymentSourceType;
 	console.log('📝 E2E: starting agent registration and confirmation...');
 
 	// Get test wallet dynamically from database
 	console.log('🔍 E2E: loading test wallet from database...');
-	const testWallet = await getTestWalletFromDatabase(network, 'seller');
+	const testWallet = await getTestWalletFromDatabase(network, 'seller', undefined, resolvedPaymentSourceType);
 	const testScenario = getTestScenarios().basicAgent;
 
 	const registrationData = generateTestRegistrationData(network, testWallet.vkey, testScenario);
@@ -140,7 +145,7 @@ export async function registerAndConfirmAgent(network: Network): Promise<Confirm
 	console.log(`🎯 E2E: registration payload:
     - Agent Name: ${registrationData.name}
     - Network: ${registrationData.network}
-    - Payment Source Type: ${global.testConfig.paymentSourceType}
+    - Payment Source Type: ${resolvedPaymentSourceType}
     - Wallet: ${testWallet.name}
     - Pricing: ${registrationData.AgentPricing.Pricing.map((p) => `${p.amount} ${p.unit}`).join(', ')}
   `);
@@ -181,7 +186,11 @@ export async function registerAndConfirmAgent(network: Network): Promise<Confirm
 				`🔄 E2E: poll #${checkCount} (${elapsedMinutes} min elapsed) — registration ${registrationResponse.id}`,
 			);
 
-			const registration = await global.testApiClient.getRegistrationById(registrationResponse.id, network);
+			const registration = await global.testApiClient.getRegistrationById(
+				registrationResponse.id,
+				network,
+				resolvedPaymentSourceType,
+			);
 
 			if (!registration) {
 				throw new Error(`Registration ${registrationResponse.id} not found`);
@@ -214,7 +223,11 @@ export async function registerAndConfirmAgent(network: Network): Promise<Confirm
 
 	await pollUntil(
 		async () => {
-			const registration = await global.testApiClient.getRegistrationById(registrationResponse.id, network);
+			const registration = await global.testApiClient.getRegistrationById(
+				registrationResponse.id,
+				network,
+				resolvedPaymentSourceType,
+			);
 
 			if (!registration) {
 				throw new Error(`Registration ${registrationResponse.id} not found`);
@@ -299,19 +312,50 @@ export async function deregisterAgent(
 /**
  * Deregister an agent and wait for DeregistrationConfirmed.
  * This will fail fast if the request transitions into DeregistrationFailed.
+ *
+ * @param paymentSourceType - Optional override for the payment source type (defaults to `global.testConfig.paymentSourceType`).
+ *   When V1 and V2 teardown run concurrently (e.g. `Promise.allSettled`), each call must
+ *   carry its own type instead of racing on the shared global.
  */
 export async function deregisterAndConfirmAgent(
 	network: Network,
 	agentIdentifier: string,
 	options?: { timeoutMs?: number; intervalMs?: number },
+	paymentSourceType?: PaymentSourceType,
 ): Promise<{ id: string; state: string }> {
+	const resolvedPaymentSourceType = paymentSourceType ?? global.testConfig.paymentSourceType;
 	console.log('🔄 E2E: deregistering agent and waiting for confirmation...');
 
-	const deregisterResponse = await deregisterAgent(network, agentIdentifier);
+	// Inline the deregister request so we can thread `resolvedPaymentSourceType` through without
+	// mutating the shared `global.testConfig` (V1 + V2 teardown can run concurrently).
+	const activeSmartContractAddress = await getActiveSmartContractAddress(network, resolvedPaymentSourceType);
+
+	const deregisterResponse = await global.testApiClient.request<{
+		id: string;
+		state: string;
+	}>('/api/v1/registry/deregister', {
+		method: 'POST',
+		body: JSON.stringify({
+			network: network,
+			agentIdentifier: agentIdentifier,
+			smartContractAddress: activeSmartContractAddress,
+		}),
+	});
+
+	if (!deregisterResponse.id) {
+		throw new Error('Deregistration response ID is undefined');
+	}
+	if (!deregisterResponse.state) {
+		throw new Error('Deregistration response state is undefined');
+	}
 
 	await pollUntil(
 		async () => {
-			const registration = await global.testApiClient.getRegistrationById(deregisterResponse.id, network);
+			const registration = await global.testApiClient.getRegistrationById(
+				deregisterResponse.id,
+				network,
+				resolvedPaymentSourceType,
+			);
 
 			if (!registration) {
 				throw new Error(`Deregistration ${deregisterResponse.id} not found`);

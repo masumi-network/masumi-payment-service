@@ -9,7 +9,7 @@ import { stringToMetadata, cleanMetadata } from '@/utils/converter/metadata-stri
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
-import { sortUtxosByLovelaceDesc } from '@/utils/utxo';
+import { pickCollateralUtxo, sortUtxosByLovelaceDesc } from '@/utils/utxo';
 import {
 	createMeshProvider,
 	createPendingTransaction,
@@ -89,7 +89,9 @@ export async function registerInboxAgentV2() {
 
 						const limitedFilteredUtxos = sortUtxosByLovelaceDesc(utxos);
 						const firstUtxo = limitedFilteredUtxos[0];
-						const collateralUtxo = limitedFilteredUtxos[0];
+						// Conway phase-1 rejects collateral===spending-input; see V2
+						// registry/register/service.ts for the failure signature.
+						const collateralUtxo = pickCollateralUtxo(limitedFilteredUtxos, firstUtxo);
 						const recipientWalletAddress = resolveRegistryRecipientWalletAddress(request);
 						const fundingLovelace = resolveRegistryFundingLovelace(request);
 						const assetName = generateRegistryAssetNameV2(firstUtxo);
