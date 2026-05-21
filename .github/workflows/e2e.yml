@@ -4,9 +4,9 @@ on:
   pull_request:
     branches: [dev]
 
-# Cancel an in-flight run when a newer commit lands on the same PR. E2E
-# matrix entries share a small pool of on-chain preprod wallets; stacking
-# runs causes UTxO contention and burns CI minutes on stale commits.
+# Cancel an in-flight run when a newer commit lands on the same PR. E2E uses
+# real preprod wallets; stacking runs causes UTxO contention and burns CI
+# minutes on stale commits.
 concurrency:
   group: e2e-${{ github.ref }}
   cancel-in-progress: true
@@ -15,22 +15,6 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 120
-
-    strategy:
-      fail-fast: false
-      # Run v1 and v2 sequentially. They may share the same on-chain preprod
-      # wallets (when dedicated V2 wallet secrets are not configured), and
-      # running in parallel would cause UTxO contention on the shared wallet.
-      # With dedicated V2 wallets configured, this can safely be raised.
-      max-parallel: 1
-      matrix:
-        suite:
-          - name: v1
-            script: test:e2e:v1
-          - name: v2
-            script: test:e2e:v2
-
-    name: e2e-${{ matrix.suite.name }}
 
     steps:
       - name: Checkout code
@@ -51,7 +35,7 @@ jobs:
       - name: Create Neon Database Branch
         id: create-branch
         run: |
-          BRANCH_NAME="e2e-ci-pr-${{ github.event.pull_request.number }}-${{ matrix.suite.name }}-run-${{ github.run_id }}"
+          BRANCH_NAME="e2e-ci-pr-${{ github.event.pull_request.number }}-run-${{ github.run_id }}"
           EXPIRES_AT="$(date -u -d '+24 hours' +'%Y-%m-%dT%H:%M:%SZ')"
           echo "Creating database branch: $BRANCH_NAME"
           echo "Branch will expire at (UTC): $EXPIRES_AT"
@@ -174,22 +158,22 @@ jobs:
         env:
           DATABASE_URL: ${{ steps.create-branch.outputs.connection_uri }}
 
-      - name: Seed Database
+      - name: Seed Database (V1 + V2)
+        # Single seed run creates BOTH PaymentSources when the V2 mnemonics
+        # are present (the seed gates V2 separately and skips cleanly when the
+        # V2 env vars are missing). Downstream V1 and V2 suites run against
+        # this one DB + one API server.
         run: pnpm exec prisma db seed --config prisma/prisma.config.ts
         env:
           DATABASE_URL: '${{ steps.create-branch.outputs.connection_uri }}'
           PURCHASE_WALLET_PREPROD_MNEMONIC: '${{ secrets.PURCHASE_WALLET_PREPROD_MNEMONIC }}'
           SELLING_WALLET_PREPROD_MNEMONIC: '${{ secrets.SELLING_WALLET_PREPROD_MNEMONIC }}'
-          # V2 mnemonics MUST be distinct from V1 mnemonics:
-          #   (a) the HotWallet.walletVkey column is globally unique; reusing
-          #       V1 mnemonics would derive the same vkeys and the V2 seed
-          #       INSERT would fail with P2002 UniqueConstraintViolation;
-          #   (b) sharing the same on-chain wallet across V1 and V2 jobs would
-          #       cause UTxO contention.
-          # If V2 secrets are not configured, the seed skips V2 cleanly and
-          # the V2 e2e matrix job fails fast with a clear "No active
-          # Web3CardanoV2 PaymentSource" message — the intended prompt to
-          # provision and configure dedicated V2 wallets.
+          # V2 mnemonics MUST be distinct from V1 mnemonics: HotWallet.walletVkey
+          # is globally unique, so reusing V1 mnemonics would derive the same
+          # vkeys and the V2 seed INSERT would fail with P2002
+          # UniqueConstraintViolation. Distinct wallets also avoid UTxO
+          # contention since V1 and V2 e2e suites both run against the same
+          # on-chain network in this shared-setup configuration.
           PURCHASE_WALLET_V2_PREPROD_MNEMONIC: '${{ secrets.PURCHASE_WALLET_V2_PREPROD_MNEMONIC }}'
           SELLING_WALLET_V2_PREPROD_MNEMONIC: '${{ secrets.SELLING_WALLET_V2_PREPROD_MNEMONIC }}'
           COLLECTION_WALLET_V2_PREPROD_ADDRESS: '${{ secrets.COLLECTION_WALLET_V2_PREPROD_ADDRESS }}'
@@ -233,8 +217,27 @@ jobs:
           echo "=== Server is responding, recent log tail ==="
           tail -50 server.log || true
 
-      - name: Run E2E Test Suite (${{ matrix.suite.name }})
-        run: pnpm run ${{ matrix.suite.script }}
+      - name: Run V1 E2E Suite
+        # Run V1 first; the V1 scheduler and V2 scheduler both run inside the
+        # shared API server already, so the only ordering decision is which
+        # jest invocation goes first. V1 is the legacy suite and exercises
+        # the larger surface area, so a V1 break should fail-fast over V2.
+        run: pnpm run test:e2e:v1
+        env:
+          TEST_API_KEY: ${{ secrets.TEST_API_KEY }}
+          TEST_API_URL: http://127.0.0.1:3001
+          TEST_NETWORK: Preprod
+          TEST_TIMEOUT_REGISTRATION: 1800000
+          DATABASE_URL: ${{ steps.create-branch.outputs.connection_uri }}
+          BLOCKFROST_API_KEY_PREPROD: ${{ secrets.BLOCKFROST_API_KEY_PREPROD }}
+
+      - name: Run V2 E2E Suite
+        # `if: always()` so a V1 failure does NOT short-circuit V2: we still
+        # want signal on whether V2 paths regressed. The overall job still
+        # fails because V1 already non-zero-exited and a later step will
+        # propagate that.
+        if: always()
+        run: pnpm run test:e2e:v2
         env:
           TEST_API_KEY: ${{ secrets.TEST_API_KEY }}
           TEST_API_URL: http://127.0.0.1:3001
@@ -283,7 +286,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: server-log-${{ matrix.suite.name }}-${{ github.run_id }}
+          name: server-log-${{ github.run_id }}
           path: server.log
           if-no-files-found: ignore
           retention-days: 7
