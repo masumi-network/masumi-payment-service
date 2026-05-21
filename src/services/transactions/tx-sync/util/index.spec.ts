@@ -1,10 +1,6 @@
 import { OnChainState } from '@/generated/prisma/client';
 import { SmartContractState } from '@/utils/generator/contract-generator';
-import {
-	getCardanoFeesBuyer,
-	getCardanoFeesSeller,
-	redeemerToOnChainState,
-} from './index';
+import { getCardanoFeesBuyer, getCardanoFeesSeller, redeemerToOnChainState } from './index';
 
 describe('getCardanoFeesSeller', () => {
 	// V1: tx fees that benefited the seller are attributed to the seller. The
@@ -77,31 +73,19 @@ describe('redeemerToOnChainState', () => {
 	describe('RequestRefund (1)', () => {
 		it('maps to RefundRequested when no result hash present', () => {
 			expect(
-				redeemerToOnChainState(
-					1,
-					{ resultHash: null, state: SmartContractState.RefundRequested },
-					valueMatches,
-				),
+				redeemerToOnChainState(1, { resultHash: null, state: SmartContractState.RefundRequested }, valueMatches),
 			).toBe(OnChainState.RefundRequested);
 		});
 
 		it('maps to RefundRequested when result hash is empty string', () => {
 			expect(
-				redeemerToOnChainState(
-					1,
-					{ resultHash: '', state: SmartContractState.RefundRequested },
-					valueMatches,
-				),
+				redeemerToOnChainState(1, { resultHash: '', state: SmartContractState.RefundRequested }, valueMatches),
 			).toBe(OnChainState.RefundRequested);
 		});
 
 		it('maps to Disputed when result hash is non-empty (result already submitted then refund-requested)', () => {
 			expect(
-				redeemerToOnChainState(
-					1,
-					{ resultHash: 'abc123', state: SmartContractState.Disputed },
-					valueMatches,
-				),
+				redeemerToOnChainState(1, { resultHash: 'abc123', state: SmartContractState.Disputed }, valueMatches),
 			).toBe(OnChainState.Disputed);
 		});
 	});
@@ -109,52 +93,32 @@ describe('redeemerToOnChainState', () => {
 	describe('AuthorizeWithdrawal / CancelRefund (2)', () => {
 		it('maps to WithdrawAuthorized when new state is WithdrawAuthorized', () => {
 			expect(
-				redeemerToOnChainState(
-					2,
-					{ resultHash: 'abc', state: SmartContractState.WithdrawAuthorized },
-					valueMatches,
-				),
+				redeemerToOnChainState(2, { resultHash: 'abc', state: SmartContractState.WithdrawAuthorized }, valueMatches),
 			).toBe(OnChainState.WithdrawAuthorized);
 		});
 
 		it('maps to Disputed when cancel-refund leaves state=Disputed with a result hash', () => {
-			expect(
-				redeemerToOnChainState(
-					2,
-					{ resultHash: 'abc', state: SmartContractState.Disputed },
-					valueMatches,
-				),
-			).toBe(OnChainState.Disputed);
+			expect(redeemerToOnChainState(2, { resultHash: 'abc', state: SmartContractState.Disputed }, valueMatches)).toBe(
+				OnChainState.Disputed,
+			);
 		});
 
 		it('maps to ResultSubmitted when cancel-refund leaves state=ResultSubmitted', () => {
 			expect(
-				redeemerToOnChainState(
-					2,
-					{ resultHash: 'abc', state: SmartContractState.ResultSubmitted },
-					valueMatches,
-				),
+				redeemerToOnChainState(2, { resultHash: 'abc', state: SmartContractState.ResultSubmitted }, valueMatches),
 			).toBe(OnChainState.ResultSubmitted);
 		});
 
 		it('maps to FundsLocked on cancel-refund without result hash when values match', () => {
-			expect(
-				redeemerToOnChainState(
-					2,
-					{ resultHash: null, state: SmartContractState.FundsLocked },
-					valueMatches,
-				),
-			).toBe(OnChainState.FundsLocked);
+			expect(redeemerToOnChainState(2, { resultHash: null, state: SmartContractState.FundsLocked }, valueMatches)).toBe(
+				OnChainState.FundsLocked,
+			);
 		});
 
 		it('maps to FundsOrDatumInvalid on cancel-refund without result hash when values mismatch (state-change attack defence)', () => {
-			expect(
-				redeemerToOnChainState(
-					2,
-					{ resultHash: null, state: SmartContractState.FundsLocked },
-					false,
-				),
-			).toBe(OnChainState.FundsOrDatumInvalid);
+			expect(redeemerToOnChainState(2, { resultHash: null, state: SmartContractState.FundsLocked }, false)).toBe(
+				OnChainState.FundsOrDatumInvalid,
+			);
 		});
 	});
 
@@ -169,33 +133,21 @@ describe('redeemerToOnChainState', () => {
 	describe('SubmitResult (5)', () => {
 		it('maps to ResultSubmitted when new state is ResultSubmitted', () => {
 			expect(
-				redeemerToOnChainState(
-					5,
-					{ resultHash: 'abc', state: SmartContractState.ResultSubmitted },
-					valueMatches,
-				),
+				redeemerToOnChainState(5, { resultHash: 'abc', state: SmartContractState.ResultSubmitted }, valueMatches),
 			).toBe(OnChainState.ResultSubmitted);
 		});
 
 		it('maps to Disputed when SubmitResult races a RefundRequested (state stays Disputed)', () => {
-			expect(
-				redeemerToOnChainState(
-					5,
-					{ resultHash: 'abc', state: SmartContractState.Disputed },
-					valueMatches,
-				),
-			).toBe(OnChainState.Disputed);
+			expect(redeemerToOnChainState(5, { resultHash: 'abc', state: SmartContractState.Disputed }, valueMatches)).toBe(
+				OnChainState.Disputed,
+			);
 		});
 
 		it('maps to Disputed when SubmitResult is performed on a RefundRequested input', () => {
 			// State transition for the Disputed branch of submitResult — see
 			// determineNewContractState in submit-result/service.ts.
 			expect(
-				redeemerToOnChainState(
-					5,
-					{ resultHash: 'abc', state: SmartContractState.RefundRequested },
-					valueMatches,
-				),
+				redeemerToOnChainState(5, { resultHash: 'abc', state: SmartContractState.RefundRequested }, valueMatches),
 			).toBe(OnChainState.Disputed);
 		});
 	});
@@ -203,21 +155,13 @@ describe('redeemerToOnChainState', () => {
 	describe('AuthorizeRefund (6)', () => {
 		it('maps to RefundAuthorized when new state is RefundAuthorized', () => {
 			expect(
-				redeemerToOnChainState(
-					6,
-					{ resultHash: null, state: SmartContractState.RefundAuthorized },
-					valueMatches,
-				),
+				redeemerToOnChainState(6, { resultHash: null, state: SmartContractState.RefundAuthorized }, valueMatches),
 			).toBe(OnChainState.RefundAuthorized);
 		});
 
 		it('falls back to RefundRequested when state field is anything else', () => {
 			expect(
-				redeemerToOnChainState(
-					6,
-					{ resultHash: null, state: SmartContractState.RefundRequested },
-					valueMatches,
-				),
+				redeemerToOnChainState(6, { resultHash: null, state: SmartContractState.RefundRequested }, valueMatches),
 			).toBe(OnChainState.RefundRequested);
 		});
 	});

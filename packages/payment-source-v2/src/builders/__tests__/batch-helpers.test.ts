@@ -19,10 +19,7 @@ function makeUtxo(opts: {
 	address?: string;
 }): UTxO {
 	const lovelaceQty = opts.lovelace ?? '0';
-	const amount = [
-		{ unit: 'lovelace', quantity: lovelaceQty },
-		...(opts.extraAssets ?? []),
-	];
+	const amount = [{ unit: 'lovelace', quantity: lovelaceQty }, ...(opts.extraAssets ?? [])];
 	return {
 		input: { txHash: opts.txHash, outputIndex: opts.outputIndex ?? 0 },
 		output: {
@@ -124,10 +121,7 @@ describe('pickBatchCollateral', () => {
 	});
 
 	it('skips UTxOs below the requiredLovelace floor', () => {
-		const utxos = [
-			makeUtxo({ txHash: 'small', lovelace: '4000000' }),
-			makeUtxo({ txHash: 'ok', lovelace: '8000000' }),
-		];
+		const utxos = [makeUtxo({ txHash: 'small', lovelace: '4000000' }), makeUtxo({ txHash: 'ok', lovelace: '8000000' })];
 		const picked = pickBatchCollateral(utxos, [], 5_000_000n);
 		expect(picked?.input.txHash).toBe('ok');
 	});
@@ -203,14 +197,11 @@ describe('computeCollateralFromExUnits', () => {
 	});
 
 	it('accepts numeric prices in addition to decimal strings', () => {
-		const result = computeCollateralFromExUnits(
-			[{ mem: 1_000_000, steps: 100_000_000 }],
-			{
-				priceMem: 0.0577,
-				priceStep: 0.0000721,
-				collateralPercentage: 150,
-			},
-		);
+		const result = computeCollateralFromExUnits([{ mem: 1_000_000, steps: 100_000_000 }], {
+			priceMem: 0.0577,
+			priceStep: 0.0000721,
+			collateralPercentage: 150,
+		});
 		// memFee  = ceil(1_000_000 * 0.0577)   = 57_700
 		// stepFee = ceil(100_000_000 * 0.0000721) = 7_210
 		// fee     = 64_910
@@ -219,7 +210,13 @@ describe('computeCollateralFromExUnits', () => {
 	});
 
 	it('returns 0 when all budgets are zero', () => {
-		const result = computeCollateralFromExUnits([{ mem: 0, steps: 0 }, { mem: 0, steps: 0 }], protocolParams);
+		const result = computeCollateralFromExUnits(
+			[
+				{ mem: 0, steps: 0 },
+				{ mem: 0, steps: 0 },
+			],
+			protocolParams,
+		);
 		expect(result).toBe(0n);
 	});
 
@@ -234,14 +231,16 @@ describe('computeCollateralFromExUnits', () => {
 	});
 
 	it('scales linearly with collateralPercentage', () => {
-		const result100 = computeCollateralFromExUnits(
-			[{ mem: 1_000_000, steps: 100_000_000 }],
-			{ priceMem: '0.0577', priceStep: '0.0000721', collateralPercentage: 100 },
-		);
-		const result200 = computeCollateralFromExUnits(
-			[{ mem: 1_000_000, steps: 100_000_000 }],
-			{ priceMem: '0.0577', priceStep: '0.0000721', collateralPercentage: 200 },
-		);
+		const result100 = computeCollateralFromExUnits([{ mem: 1_000_000, steps: 100_000_000 }], {
+			priceMem: '0.0577',
+			priceStep: '0.0000721',
+			collateralPercentage: 100,
+		});
+		const result200 = computeCollateralFromExUnits([{ mem: 1_000_000, steps: 100_000_000 }], {
+			priceMem: '0.0577',
+			priceStep: '0.0000721',
+			collateralPercentage: 200,
+		});
 		expect(result200).toBe(result100 * 2n);
 	});
 });
