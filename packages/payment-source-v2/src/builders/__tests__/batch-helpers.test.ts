@@ -107,17 +107,39 @@ describe('pickBatchCollateral', () => {
 		expect(picked?.input.outputIndex).toBe(1);
 	});
 
-	it('skips UTxOs with native tokens (not pure ADA)', () => {
+	it('prefers pure-ADA over native-token UTxOs even when the native-token one has more lovelace', () => {
 		const utxos = [
 			makeUtxo({
 				txHash: 'mixed',
-				lovelace: '6000000',
+				lovelace: '20000000',
 				extraAssets: [{ unit: 'policy.name', quantity: '1' }],
 			}),
 			makeUtxo({ txHash: 'pure', lovelace: '8000000' }),
 		];
 		const picked = pickBatchCollateral(utxos, []);
 		expect(picked?.input.txHash).toBe('pure');
+	});
+
+	it('falls back to a native-token UTxO when no pure-ADA candidate exists', () => {
+		// Mirrors V1 register's behavior — selling/purchasing wallets that have
+		// accumulated NFT registration tokens often have no pure-ADA UTxO
+		// available, and the V1 builder happily uses the native-token UTxO as
+		// collateral (mesh emits collateral_return_output to refund the assets).
+		const utxos = [
+			makeUtxo({
+				txHash: 'nft-a',
+				lovelace: '12000000',
+				extraAssets: [{ unit: 'policy.nftA', quantity: '1' }],
+			}),
+			makeUtxo({
+				txHash: 'nft-b',
+				lovelace: '7000000',
+				extraAssets: [{ unit: 'policy.nftB', quantity: '1' }],
+			}),
+		];
+		const picked = pickBatchCollateral(utxos, []);
+		// Smallest qualifying native-token UTxO.
+		expect(picked?.input.txHash).toBe('nft-b');
 	});
 
 	it('skips UTxOs below the requiredLovelace floor', () => {
@@ -135,15 +157,17 @@ describe('pickBatchCollateral', () => {
 		expect(picked?.input.txHash).toBe('big');
 	});
 
-	it('returns null when nothing qualifies', () => {
+	it('returns null when nothing qualifies (every candidate either underfunded or excluded)', () => {
 		const utxos = [
 			makeUtxo({ txHash: 'tiny', lovelace: '1000000' }),
 			makeUtxo({
-				txHash: 'mixed',
-				lovelace: '20000000',
+				txHash: 'mixed-tiny',
+				lovelace: '2000000',
 				extraAssets: [{ unit: 'p.n', quantity: '1' }],
 			}),
 		];
+		// Both fall below the 5_000_000n floor — neither pure-ADA nor
+		// native-token branch finds a candidate.
 		expect(pickBatchCollateral(utxos, [])).toBeNull();
 	});
 

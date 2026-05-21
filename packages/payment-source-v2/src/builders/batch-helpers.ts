@@ -79,9 +79,16 @@ function refKey(input: { txHash: string; outputIndex: number }): string {
 }
 
 /**
- * Pick a collateral UTxO that is NOT also a spending input. Returns the
- * SMALLEST qualifying pure-ADA UTxO so we don't burn a fat UTxO as
- * collateral.
+ * Pick a collateral UTxO that is NOT also a script spending input.
+ *
+ * Preference order:
+ *   1. Pure-ADA UTxO, smallest qualifying first — avoids burning a fat UTxO
+ *      as collateral and avoids the collateral-return-output overhead that
+ *      kicks in for native-token collateral.
+ *   2. Native-token-carrying UTxO, smallest qualifying first — fallback when
+ *      the wallet has no pure-ADA candidate (typical of selling/purchasing
+ *      wallets that have accumulated NFT registration tokens). Mesh-SDK
+ *      auto-emits a `collateral_return_output` in this case.
  *
  * The `requiredLovelace` floor accounts for Conway's `collateralPercentage`
  * (typically 150) applied to `sum_of_redeemer_fees`. For batches with N
@@ -93,17 +100,20 @@ function refKey(input: { txHash: string; outputIndex: number }): string {
  * first `evaluateTx` pass returns budgets.
  *
  * Conway phase-1 rejects a tx whose collateral UTxO reference is ALSO in
- * the spending input set. We filter against `excludeSpendingInputs` to honor
- * that. Collateral overlap manifests as an opaque
- * `EvaluationFailure: ScriptFailures: {}` from ogmios — pre-filtering here
- * keeps the diagnostic on the caller's side instead.
+ * the *script* spending input set. The caller MUST pass every script input
+ * ref (e.g. the per-item `smartContractUtxo.input` refs of an interaction
+ * batch, or the asset UTxOs of a burn batch) via `excludeSpendingInputs`.
+ * Regular wallet-input overlap is allowed — Mesh-SDK 1.9 routes
+ * `.txIn(...)` and `.txInCollateral(...)` into separate body fields, so the
+ * same UTxO ref can appear in both (the V1 single-tx register builder
+ * already exploits this).
  *
  * Returns `null` (NOT throws) — the caller decides how to handle a missing
  * collateral (e.g. shrink the batch, fall back to single-item, surface to
  * operator).
  *
  * @param utxos                   Wallet UTxOs to choose from.
- * @param excludeSpendingInputs   References that MUST NOT also be the collateral.
+ * @param excludeSpendingInputs   Script input refs that MUST NOT also be the collateral.
  * @param requiredLovelace        Minimum lovelace; defaults to 5_000_000n.
  * @returns                       A qualifying UTxO, or `null` if none match.
  */
@@ -117,24 +127,36 @@ export function pickBatchCollateral(
 		excludeKeys.add(refKey(ref));
 	}
 
-	const candidates: Array<{ utxo: UTxO; lovelace: bigint }> = [];
+	const pureCandidates: Array<{ utxo: UTxO; lovelace: bigint }> = [];
+	const mixedCandidates: Array<{ utxo: UTxO; lovelace: bigint }> = [];
 	for (const utxo of utxos) {
 		if (excludeKeys.has(refKey(utxo.input))) continue;
-		if (!isPureLovelace(utxo)) continue;
 		const lovelace = getLovelace(utxo);
 		if (lovelace < requiredLovelace) continue;
-		candidates.push({ utxo, lovelace });
+		if (isPureLovelace(utxo)) {
+			pureCandidates.push({ utxo, lovelace });
+		} else {
+			mixedCandidates.push({ utxo, lovelace });
+		}
 	}
 
-	if (candidates.length === 0) return null;
-
-	// Smallest qualifying first.
-	candidates.sort((a, b) => {
+	// Prefer pure-ADA; fall back to native-token UTxOs only when the wallet
+	// has none. Within each group, pick the smallest qualifying UTxO so we
+	// don't burn a fat one as collateral.
+	const ascending = (a: { lovelace: bigint }, b: { lovelace: bigint }): number => {
 		if (a.lovelace < b.lovelace) return -1;
 		if (a.lovelace > b.lovelace) return 1;
 		return 0;
-	});
-	return candidates[0].utxo;
+	};
+	if (pureCandidates.length > 0) {
+		pureCandidates.sort(ascending);
+		return pureCandidates[0].utxo;
+	}
+	if (mixedCandidates.length > 0) {
+		mixedCandidates.sort(ascending);
+		return mixedCandidates[0].utxo;
+	}
+	return null;
 }
 
 /**

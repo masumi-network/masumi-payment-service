@@ -24,12 +24,7 @@ import {
 	resolveRegistryFundingLovelace,
 	resolveRegistryRecipientWalletAddress,
 } from '@/services/registry/shared';
-import {
-	assertNoCollateralOverlap,
-	assertTxSizeWithinLimit,
-	pickBatchCollateral,
-	shrinkBatchToFit,
-} from '../../../builders/batch-helpers';
+import { assertTxSizeWithinLimit, pickBatchCollateral, shrinkBatchToFit } from '../../../builders/batch-helpers';
 import { type BatchRegistryMintItem, generateRegistryBatchMintTransaction } from '../../../builders/batch-registry';
 import { type SupportedPaymentSource } from '@/types/payment-source';
 
@@ -369,16 +364,22 @@ export async function registerAgentV2() {
 				// tick when the wallet may have more UTxOs.
 				const collateralUtxo = pickBatchCollateral(utxos, []);
 				if (collateralUtxo == null) {
-					logger.warn('V2 register batch: no qualifying pure-ADA collateral UTxO available; deferring to next tick');
+					logger.warn(
+						'V2 register batch: no wallet UTxO has enough lovelace to serve as collateral (>=5 ADA); deferring to next tick',
+					);
 					await unlockHotWallet(firstRequest.SmartContractWallet.id);
 					return;
 				}
 
-				const sortedUtxos = sortUtxosByLovelaceDesc(utxos);
-				const collateralKey = `${collateralUtxo.input.txHash}#${collateralUtxo.input.outputIndex}`;
-				const spendableUtxos = sortedUtxos.filter(
-					(utxo) => `${utxo.input.txHash}#${utxo.input.outputIndex}` !== collateralKey,
-				);
+				// MINT-only tx: Conway phase-1 does NOT forbid the collateral UTxO
+				// from also appearing in the (non-script) spending input set, and
+				// the V1 single-tx register builder already exploits this — it
+				// passes the same UTxO as both `firstUtxo` and `collateralUtxo`,
+				// and Mesh-SDK routes them into separate body fields. We follow
+				// the same pattern here so a wallet with K UTxOs can drive a
+				// batch of min(K, registryRequests.length) items (rather than
+				// K-1, which would block a 1-UTxO wallet entirely).
+				const spendableUtxos = sortUtxosByLovelaceDesc(utxos);
 
 				// Validate every request in parallel. Failures here become
 				// per-request RegistrationFailed updates and are removed from
@@ -418,20 +419,14 @@ export async function registerAgentV2() {
 					return;
 				}
 
-				// Shrink the batch until tx-size is safe. We pre-validate the
-				// no-collateral-overlap invariant for the chosen subset before
-				// each builder pass.
-				const shrinkResult = shrinkBatchToFit(validated, (subset) => {
-					try {
-						assertNoCollateralOverlap(
-							collateralUtxo,
-							subset.map((v) => v.item.firstUtxo),
-						);
-						return { ok: true };
-					} catch {
-						return { ok: false, reason: 'collateral' };
-					}
-				});
+				// Shrink the batch until tx-size is safe. We do NOT pre-check
+				// no-collateral-overlap here: the mint path tolerates the
+				// `firstUtxo == collateral` case (mesh routes the ref into both
+				// body fields and dedupes the collateral side at assembly
+				// time), and enforcing disjointness would block 1-UTxO wallets
+				// from minting at all. Tx-size is checked inline after the
+				// build pass via assertTxSizeWithinLimit further down.
+				const shrinkResult = shrinkBatchToFit(validated, () => ({ ok: true }));
 
 				if (shrinkResult.fit.length === 0) {
 					logger.error('V2 register batch could not satisfy collateral non-overlap invariant', {
@@ -554,7 +549,7 @@ export async function registerAgentV2() {
 				}
 
 				try {
-					await walletSession.evaluateProjectedBalance(unsignedTx, sortedUtxos);
+					await walletSession.evaluateProjectedBalance(unsignedTx, spendableUtxos);
 				} catch (balanceError) {
 					logger.warn('V2 register batch projected balance evaluation failed (non-fatal)', { error: balanceError });
 				}

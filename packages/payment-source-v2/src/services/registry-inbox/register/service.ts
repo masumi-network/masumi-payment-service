@@ -24,12 +24,7 @@ import {
 	resolveRegistryFundingLovelace,
 	resolveRegistryRecipientWalletAddress,
 } from '@/services/registry/shared';
-import {
-	assertNoCollateralOverlap,
-	assertTxSizeWithinLimit,
-	pickBatchCollateral,
-	shrinkBatchToFit,
-} from '../../../builders/batch-helpers';
+import { assertTxSizeWithinLimit, pickBatchCollateral, shrinkBatchToFit } from '../../../builders/batch-helpers';
 import { type BatchRegistryMintItem, generateRegistryBatchMintTransaction } from '../../../builders/batch-registry';
 import { INBOX_AGENT_REGISTRATION_METADATA_TYPE } from '../metadata';
 
@@ -264,17 +259,19 @@ export async function registerInboxAgentV2() {
 				const collateralUtxo = pickBatchCollateral(utxos, []);
 				if (collateralUtxo == null) {
 					logger.warn(
-						'V2 inbox register batch: no qualifying pure-ADA collateral UTxO available; deferring to next tick',
+						'V2 inbox register batch: no wallet UTxO has enough lovelace to serve as collateral (>=5 ADA); deferring to next tick',
 					);
 					await unlockHotWallet(firstRequest.SmartContractWallet.id);
 					return;
 				}
 
-				const sortedUtxos = sortUtxosByLovelaceDesc(utxos);
-				const collateralKey = `${collateralUtxo.input.txHash}#${collateralUtxo.input.outputIndex}`;
-				const spendableUtxos = sortedUtxos.filter(
-					(utxo) => `${utxo.input.txHash}#${utxo.input.outputIndex}` !== collateralKey,
-				);
+				// MINT-only tx: Conway phase-1 does NOT forbid the collateral UTxO
+				// from also appearing in the (non-script) spending input set.
+				// Mesh-SDK routes `.txIn(...)` and `.txInCollateral(...)` into
+				// separate body fields. Allow `firstUtxo[0]` to be the same UTxO
+				// as the collateral so a 1-UTxO wallet can still drive a 1-item
+				// batch — matches the V1 single-tx register pattern.
+				const spendableUtxos = sortUtxosByLovelaceDesc(utxos);
 
 				const validations = await Promise.allSettled(
 					registrationRequests.map((request, idx) => {
@@ -307,17 +304,11 @@ export async function registerInboxAgentV2() {
 					return;
 				}
 
-				const shrinkResult = shrinkBatchToFit(validated, (subset) => {
-					try {
-						assertNoCollateralOverlap(
-							collateralUtxo,
-							subset.map((v) => v.item.firstUtxo),
-						);
-						return { ok: true };
-					} catch {
-						return { ok: false, reason: 'collateral' };
-					}
-				});
+				// No-collateral-overlap is NOT a hard invariant here — mint-only
+				// txs tolerate `firstUtxo == collateral` (see the matching
+				// comment in services/registry/register/service.ts). Tx-size is
+				// validated inline after the build pass.
+				const shrinkResult = shrinkBatchToFit(validated, () => ({ ok: true }));
 
 				if (shrinkResult.fit.length === 0) {
 					logger.error('V2 inbox register batch could not satisfy collateral non-overlap invariant', {
@@ -431,7 +422,7 @@ export async function registerInboxAgentV2() {
 				}
 
 				try {
-					await walletSession.evaluateProjectedBalance(unsignedTx, sortedUtxos);
+					await walletSession.evaluateProjectedBalance(unsignedTx, spendableUtxos);
 				} catch (balanceError) {
 					logger.warn('V2 inbox register batch projected balance evaluation failed (non-fatal)', {
 						error: balanceError,

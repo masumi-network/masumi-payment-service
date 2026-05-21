@@ -70,6 +70,25 @@ function refKey(utxo: UTxO): string {
 	return `${utxo.input.txHash}#${utxo.input.outputIndex}`;
 }
 
+/**
+ * Throws when `collateralUtxo` overlaps with any `spendingInput`. Conway
+ * phase-1 rejects `collateralInputs ∩ inputs ≠ ∅`; the on-chain symptom is an
+ * opaque `EvaluationFailure: ScriptFailures: {}` from ogmios that is very
+ * hard to diagnose post-hoc, so failing fast off-chain is much friendlier.
+ *
+ * Used by the BURN builder where asset UTxOs MUST be in `inputs` for the
+ * wallet to have authority to consume them — collateral overlapping with an
+ * asset UTxO would either fail phase-1 or, if mesh routed it as collateral
+ * only, would leave the asset un-spent on success and break the mint balance.
+ *
+ * NOT used by the MINT builder: mint-only txs tolerate collateral/input
+ * overlap (Mesh-SDK 1.9 routes `.txIn(...)` and `.txInCollateral(...)` into
+ * separate body fields and dedupes the collateral side at assembly time —
+ * the V1 single-tx register builder relies on this same pattern, passing the
+ * same UTxO as both `firstUtxo` and `collateralUtxo`). Skipping the check
+ * there is what allows a 1-UTxO wallet to drive a 1-item mint batch instead
+ * of deferring forever.
+ */
 function assertCollateralNotInInputs(collateralUtxo: UTxO, spendingInputs: UTxO[]): void {
 	const collateralKey = refKey(collateralUtxo);
 	for (const utxo of spendingInputs) {
@@ -135,10 +154,12 @@ export async function generateRegistryBatchMintTransaction(
 		throw new Error('no items in batch');
 	}
 	assertDistinctAssetNames(items.map((item) => item.assetName));
-	assertCollateralNotInInputs(
-		collateralUtxo,
-		items.map((item) => item.firstUtxo),
-	);
+	// Intentionally NOT calling `assertCollateralNotInInputs(collateral,
+	// firstUtxos)` here: mint-only txs tolerate the overlap (mesh routes
+	// `.txIn(...)` and `.txInCollateral(...)` into separate body fields, and
+	// the V1 single-tx register builder already exploits this to let a
+	// 1-UTxO wallet drive a 1-asset mint by passing the same UTxO as both
+	// `firstUtxo` and `collateralUtxo`). See the jsdoc on the helper above.
 
 	if (rpcApiKey) {
 		// See cost-model sync comment in batch-interaction.ts.
