@@ -532,6 +532,8 @@ async function processWalletBatch(
 	// Per-request validation. Failures here become per-request DB failures and
 	// are excluded from the batch.
 	const validated: ValidatedSubmitItem[] = [];
+	const deferredIds: string[] = [];
+	const failedIds: string[] = [];
 	for (const request of requests) {
 		try {
 			validated.push(await validateAndBuildItem(request, paymentContract, blockchainProvider, network));
@@ -541,21 +543,50 @@ async function processWalletBatch(
 				// has already been consumed by something tx-sync has not
 				// observed yet). Leave the request queued — tx-sync owns
 				// the chain-state truth and will drive any terminal
-				// transition. Logged at info because it is expected during
-				// indexer lag.
-				logger.info(
-					`Deferring V2 batch item this tick (chain lookup not ready); request ${request.id} stays queued for tx-sync to reconcile`,
-					{ error: error instanceof Error ? error.message : error },
-				);
+				// transition. WARN-level so the CI grep captures it — this is
+				// the most likely path for a 'stuck item' to enter, and we
+				// need to be able to count defers per tick from the log dump.
+				deferredIds.push(request.id);
+				logger.warn('V2 submit-result: deferring item this tick (chain lookup not ready) [batch-diag]', {
+					tickPhase: 'validate',
+					requestId: request.id,
+					blockchainIdentifier: request.blockchainIdentifier,
+					walletId: wallet.id,
+					currentTxHash: request.CurrentTransaction?.txHash ?? null,
+					error: error instanceof Error ? error.message : error,
+				});
 			} else {
+				failedIds.push(request.id);
+				logger.warn('V2 submit-result: marking item as failed (non-defer error) [batch-diag]', {
+					requestId: request.id,
+					blockchainIdentifier: request.blockchainIdentifier,
+					error: error instanceof Error ? { message: error.message, name: error.name } : error,
+				});
 				await markRequestFailed(request, error);
 			}
 		}
 	}
+	// WARN-level so CI grep captures it. This is the single most useful log
+	// for diagnosing 'stuck item' failures in batch-verification e2e.
+	logger.warn('V2 submit-result: per-item validation outcome [batch-diag]', {
+		tickPhase: 'validate-summary',
+		walletId: wallet.id,
+		totalIn: requests.length,
+		validatedCount: validated.length,
+		deferredCount: deferredIds.length,
+		failedCount: failedIds.length,
+		validatedIds: validated.map((v) => v.request.blockchainIdentifier),
+		deferredIds,
+		failedIds,
+		inboundIds: requests.map((r) => ({
+			blockchainIdentifier: r.blockchainIdentifier,
+			currentTxHash: r.CurrentTransaction?.txHash ?? null,
+		})),
+	});
 	if (validated.length === 0) {
 		logger.info(
 			'No V2 submit-result items in this tick reached the batch builder (every item was either deferred for tx-sync to reconcile or marked failed); leaving wallet unlocked',
-			{ walletId: wallet.id },
+			{ walletId: wallet.id, deferredIds, failedIds },
 		);
 		await unlockHotWallet(wallet.id);
 		return;
@@ -828,6 +859,21 @@ async function processWalletBatch(
 			txHash: newTxHash,
 		});
 	}
+
+	// WARN-level so CI grep captures it. Single source of truth for what
+	// landed in the on-chain tx vs what got left behind this tick.
+	logger.warn('V2 submit-result: batch submitted [batch-diag]', {
+		tickPhase: 'submitted',
+		walletId: wallet.id,
+		newTxHash,
+		sharedTxId,
+		fitCount: fit.length,
+		fitIds: fit.map((v) => v.request.blockchainIdentifier),
+		droppedCount: droppedRequests.length,
+		droppedIds: droppedRequests.map((r) => r.blockchainIdentifier),
+		deferredIds,
+		failedIds,
+	});
 
 	logger.debug(`Created V2 submit-result batch transaction:
               Tx ID: ${newTxHash}

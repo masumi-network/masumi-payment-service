@@ -477,11 +477,12 @@ async function processWalletBatch(
 			if (isLookupDeferred(error)) {
 				// Chain-lookup miss (UTxO not on chain yet, datum still old, etc).
 				// Tx-sync is responsible for eventually moving this request to a
-				// terminal state when chain state changes; until then we leave it
-				// queued. Logged at info-level because this is expected behaviour
-				// while blockfrost catches up, not an error.
+				// terminal state when chain state changes; until then we leave
+				// it queued. WARN-level so the CI grep captures it — this is
+				// the most likely path for a 'stuck item' to enter, and we
+				// need to be able to count defers per tick from the log dump.
 				deferredIds.push(request.id);
-				logger.info('V2 request-refund: deferring item this tick (chain lookup not ready)', {
+				logger.warn('V2 request-refund: deferring item this tick (chain lookup not ready) [batch-diag]', {
 					tickPhase: 'validate',
 					requestId: request.id,
 					blockchainIdentifier: request.blockchainIdentifier,
@@ -491,20 +492,33 @@ async function processWalletBatch(
 				});
 			} else {
 				failedIds.push(request.id);
+				logger.warn('V2 request-refund: marking item as failed (non-defer error) [batch-diag]', {
+					requestId: request.id,
+					blockchainIdentifier: request.blockchainIdentifier,
+					error: error instanceof Error ? { message: error.message, name: error.name } : error,
+				});
 				await markRequestFailed(request, error);
 			}
 		}
 	}
-	logger.info('V2 request-refund: per-item validation outcome [batch-diag]', {
+	// WARN-level so CI grep captures it. This is the single most useful log
+	// for diagnosing 'stuck item' failures in batch-verification e2e.
+	logger.warn('V2 request-refund: per-item validation outcome [batch-diag]', {
 		tickPhase: 'validate-summary',
 		walletId: wallet.id,
 		totalIn: requests.length,
-		validated: validated.length,
-		deferred: deferredIds.length,
-		failed: failedIds.length,
+		validatedCount: validated.length,
+		deferredCount: deferredIds.length,
+		failedCount: failedIds.length,
 		validatedIds: validated.map((v) => v.request.blockchainIdentifier),
 		deferredIds,
 		failedIds,
+		// Each candidate's CurrentTransaction.txHash so we can see WHICH
+		// submit-result-tx UTxO the validate step is trying to look up.
+		inboundIds: requests.map((r) => ({
+			blockchainIdentifier: r.blockchainIdentifier,
+			currentTxHash: r.CurrentTransaction?.txHash ?? null,
+		})),
 	});
 	if (validated.length === 0) {
 		logger.info(
@@ -787,7 +801,9 @@ async function processWalletBatch(
 		});
 	}
 
-	logger.info('V2 request-refund batch submitted [batch-diag]', {
+	// WARN-level so CI grep captures it. Single source of truth for what
+	// landed in the on-chain tx vs what got left behind this tick.
+	logger.warn('V2 request-refund batch submitted [batch-diag]', {
 		tickPhase: 'submitted',
 		walletId: wallet.id,
 		newTxHash,
