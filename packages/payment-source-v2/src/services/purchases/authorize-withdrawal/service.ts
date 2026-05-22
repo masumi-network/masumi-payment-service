@@ -76,6 +76,44 @@ type ValidatedAuthorizeWithdrawalItem = {
 	window: TxWindowBounds;
 };
 
+// Sentinel prefix used in thrown error messages from validateAndBuildItem
+// to signal that the failure is a CHAIN-LOOKUP miss, not a DB-shape error.
+// The catch site in processWalletBatch recognises this prefix and SKIPS
+// the item — leaves it in its `*Requested` state for the next scheduler
+// tick — instead of calling markRequestFailed.
+//
+// Chain-state authority belongs to the tx-sync service: it watches contract
+// events and rewrites DB state when chain state changes. Marking a request
+// as `WaitingForManualAction` from within an action service races tx-sync
+// (the UTxO might have been spent by an external observer, or blockfrost
+// might just be lagged), and once a request is parked in
+// `WaitingForManualAction` the scheduler will never re-pick it up. Defer
+// the call and let tx-sync drive any terminal transition.
+const LOOKUP_DEFERRED_PREFIX = 'V2_BATCH_LOOKUP_DEFERRED:';
+
+function isLookupDeferred(error: unknown): boolean {
+	return error instanceof Error && error.message.startsWith(LOOKUP_DEFERRED_PREFIX);
+}
+
+/**
+ * Wrap `fetchUTxOs(txHash)` with a single retry after a short delay when the
+ * first call returns an empty list. The most common cause is blockfrost not
+ * having indexed a freshly-landed tx yet (~5–30s lag after block
+ * confirmation). One quick retry covers the common case; if it is STILL
+ * empty after the second attempt, we throw the transient sentinel so the
+ * caller defers to the next tick instead of marking the request as failed.
+ */
+async function fetchUTxOsWithDeferOnEmpty(blockchainProvider: BlockfrostProvider, txHash: string): Promise<UTxO[]> {
+	const first = await fetchUTxOsWithDeferOnEmpty(blockchainProvider, txHash);
+	if (first.length > 0) return first;
+	await new Promise((resolve) => setTimeout(resolve, 5000));
+	const second = await fetchUTxOsWithDeferOnEmpty(blockchainProvider, txHash);
+	if (second.length > 0) return second;
+	throw new Error(
+		`${LOOKUP_DEFERRED_PREFIX} fetchUTxOs(${txHash}) returned empty after retry — chain state not visible to blockfrost yet, deferring to tx-sync / next tick`,
+	);
+}
+
 const mutex = new Mutex();
 
 function validatePurchaseRequestFields(request: {
@@ -183,19 +221,19 @@ async function validateAndBuildItem(
 ): Promise<ValidatedAuthorizeWithdrawalItem> {
 	validatePurchaseRequestFields(request);
 	const txHash = request.CurrentTransaction!.txHash!;
-	const utxoByHash = await blockchainProvider.fetchUTxOs(txHash);
+	const utxoByHash = await fetchUTxOsWithDeferOnEmpty(blockchainProvider, txHash);
 	const utxo = findMatchingUtxo(utxoByHash, txHash, request, network, smartContractAddress);
 	if (!utxo) {
-		throw new Error('UTXO not found');
+		throw new Error(`${LOOKUP_DEFERRED_PREFIX} UTXO not found`);
 	}
 	const utxoDatum = utxo.output.plutusData;
 	if (!utxoDatum) {
-		throw new Error('No datum found in UTXO');
+		throw new Error(`${LOOKUP_DEFERRED_PREFIX} No datum found in UTXO`);
 	}
 	const decodedDatum: unknown = deserializeDatum(utxoDatum);
 	const decodedContract = decodeV2ContractDatum(decodedDatum, network, smartContractAddress);
 	if (decodedContract == null) {
-		throw new Error('Invalid datum');
+		throw new Error(`${LOOKUP_DEFERRED_PREFIX} Invalid datum`);
 	}
 	// Aiken `AuthorizeWithdrawal` strictly compares new_datum.buyer/seller
 	// against the input's buyer/seller. Trust the decoded chain values so
@@ -244,20 +282,20 @@ async function processSinglePurchaseRequest(
 	}
 	const { script, smartContractAddress } = await getPaymentScriptFromPaymentSourceV2(paymentContract);
 	const txHash = request.CurrentTransaction!.txHash!;
-	const utxoByHash = await blockchainProvider.fetchUTxOs(txHash);
+	const utxoByHash = await fetchUTxOsWithDeferOnEmpty(blockchainProvider, txHash);
 	const utxo = findMatchingUtxo(utxoByHash, txHash, request, network, smartContractAddress);
 	if (!utxo) {
-		throw new Error('UTXO not found');
+		throw new Error(`${LOOKUP_DEFERRED_PREFIX} UTXO not found`);
 	}
 
 	const utxoDatum = utxo.output.plutusData;
 	if (!utxoDatum) {
-		throw new Error('No datum found in UTXO');
+		throw new Error(`${LOOKUP_DEFERRED_PREFIX} No datum found in UTXO`);
 	}
 	const decodedDatum: unknown = deserializeDatum(utxoDatum);
 	const decodedContract = decodeV2ContractDatum(decodedDatum, network, smartContractAddress);
 	if (decodedContract == null) {
-		throw new Error('Invalid datum');
+		throw new Error(`${LOOKUP_DEFERRED_PREFIX} Invalid datum`);
 	}
 	const datum = createAuthorizeWithdrawalDatum({
 		decodedContract,
@@ -349,7 +387,17 @@ async function fallbackToSingleItems(
 			},
 		});
 	} catch (error) {
-		await markRequestFailed(request, error);
+		if (isLookupDeferred(error)) {
+			// Same defer-to-tx-sync semantics as the batch validation pass:
+			// chain lookup miss is NOT a per-item failure; leave the request
+			// queued and let tx-sync drive any terminal transition.
+			logger.info(
+				`Deferring V2 single-item fallback (chain lookup not ready); request ${request.id} stays queued for tx-sync to reconcile`,
+				{ error: error instanceof Error ? error.message : error },
+			);
+		} else {
+			await markRequestFailed(request, error);
+		}
 	}
 	// requests[1..] are intentionally left untouched — they remain in
 	// their `*Requested` state and the next tick (after the wallet
@@ -379,14 +427,33 @@ async function processWalletBatch(
 			hotWalletId: wallet.id,
 		});
 	} catch (error) {
-		logger.error('Failed to load V2 authorize-withdrawal wallet session', { error, walletId: wallet.id });
-		await Promise.allSettled(requests.map((request) => markRequestFailed(request, error)));
+		logger.warn(
+			'V2 authorize-withdrawal batch could not load wallet session; leaving items in pool for next tick [batch-fallback]',
+			{
+				error: error instanceof Error ? { message: error.message, stack: error.stack, name: error.name } : error,
+				walletId: wallet.id,
+				batchSize: requests.length,
+			},
+		);
+		// Wallet-load failure is NOT a per-item failure: every request
+		// in this batch was waiting on the same wallet. Marking them all
+		// as `WaitingForManualAction` would terminate good requests for
+		// a transient infra issue. Unlock the hot wallet and leave the
+		// requests in their queued state — next tick (after the wallet
+		// session loads cleanly) re-batches them.
+		await unlockHotWallet(wallet.id);
 		return;
 	}
 	const { wallet: meshWallet, utxos, address } = walletSession;
 	if (utxos.length === 0) {
-		const error = new Error('No UTXOs found in the wallet. Wallet is empty.');
-		await Promise.allSettled(requests.map((request) => markRequestFailed(request, error)));
+		logger.warn('V2 batch hot wallet returned no UTxOs; leaving items in pool for next tick [batch-fallback]', {
+			walletId: wallet.id,
+			batchSize: requests.length,
+		});
+		// Empty wallet is a transient operational issue (faucet ran out,
+		// pending state still settling). NOT a per-item failure — leave
+		// items queued for the next tick after the wallet has UTxOs.
+		await unlockHotWallet(wallet.id);
 		return;
 	}
 
@@ -397,7 +464,19 @@ async function processWalletBatch(
 				await validateAndBuildItem(request, paymentContract, blockchainProvider, network, smartContractAddress),
 			);
 		} catch (error) {
-			await markRequestFailed(request, error);
+			if (isLookupDeferred(error)) {
+				// Chain-lookup miss (UTxO not on chain yet, datum still old, etc).
+				// Tx-sync is responsible for eventually moving this request to a
+				// terminal state when chain state changes; until then we leave it
+				// queued. Logged at info-level because this is expected behaviour
+				// while blockfrost catches up, not an error.
+				logger.info(
+					`Deferring V2 item this tick (chain lookup not ready); request ${request.id} stays queued for tx-sync to reconcile`,
+					{ error: error instanceof Error ? error.message : error },
+				);
+			} else {
+				await markRequestFailed(request, error);
+			}
 		}
 	}
 	if (validated.length === 0) {
@@ -409,9 +488,12 @@ async function processWalletBatch(
 	const excludeRefs = validated.map((v) => v.smartContractUtxo.input);
 	const collateralUtxo = pickBatchCollateral(utxos, excludeRefs);
 	if (collateralUtxo == null) {
-		logger.warn('V2 authorize-withdrawal batch could not find collateral UTxO; falling back to single-item', {
-			walletId: wallet.id,
-		});
+		logger.warn(
+			'V2 authorize-withdrawal batch could not find collateral UTxO; falling back to single-item [batch-fallback]',
+			{
+				walletId: wallet.id,
+			},
+		);
 		await fallbackToSingleItems(
 			validated.map((v) => v.request),
 			paymentContract,
@@ -448,10 +530,13 @@ async function processWalletBatch(
 	});
 
 	if (shrinkResult.fit.length === 0) {
-		logger.warn('V2 authorize-withdrawal batch could not satisfy batch invariants; falling back to single-item', {
-			reason: shrinkResult.reason,
-			walletId: wallet.id,
-		});
+		logger.warn(
+			'V2 authorize-withdrawal batch could not satisfy batch invariants; falling back to single-item [batch-fallback]',
+			{
+				reason: shrinkResult.reason,
+				walletId: wallet.id,
+			},
+		);
 		await fallbackToSingleItems(
 			validated.map((v) => v.request),
 			paymentContract,
@@ -505,7 +590,7 @@ async function processWalletBatch(
 		);
 		assertTxSizeWithinLimit(unsignedTx, 'v2-authorize-withdrawal-batch');
 	} catch (batchError) {
-		logger.warn('V2 authorize-withdrawal batch build failed; falling back to single-item', {
+		logger.warn('V2 authorize-withdrawal batch build failed; falling back to single-item [batch-fallback]', {
 			error:
 				batchError instanceof Error
 					? { message: batchError.message, stack: batchError.stack, name: batchError.name }
@@ -526,7 +611,7 @@ async function processWalletBatch(
 	try {
 		signedTx = await meshWallet.signTx(unsignedTx);
 	} catch (signError) {
-		logger.warn('V2 authorize-withdrawal batch sign failed; falling back to single-item', {
+		logger.warn('V2 authorize-withdrawal batch sign failed; falling back to single-item [batch-fallback]', {
 			error:
 				signError instanceof Error
 					? { message: signError.message, stack: signError.stack, name: signError.name }

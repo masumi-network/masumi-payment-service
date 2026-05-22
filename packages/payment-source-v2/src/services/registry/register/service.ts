@@ -345,14 +345,31 @@ export async function registerAgentV2() {
 						hotWalletId: firstRequest.SmartContractWallet.id,
 					});
 				} catch (error) {
-					logger.error('Failed to load wallet session for V2 register batch', { error });
-					await Promise.allSettled(registryRequests.map((request) => markRequestFailed(request, error)));
+					logger.warn(
+						'V2 register batch could not load wallet session; leaving items in pool for next tick [batch-fallback]',
+						{
+							error: error instanceof Error ? { message: error.message, stack: error.stack, name: error.name } : error,
+							batchSize: registryRequests.length,
+						},
+					);
+					// Wallet-load failure is NOT a per-item failure: every
+					// request was waiting on the same wallet. Unlock and
+					// leave the items queued; next tick re-batches them.
+					await unlockHotWallet(firstRequest.SmartContractWallet.id);
 					return;
 				}
 				const { wallet, utxos, address } = walletSession;
 				if (utxos.length === 0) {
-					const error = new Error('No UTXOs found for the wallet');
-					await Promise.allSettled(registryRequests.map((request) => markRequestFailed(request, error)));
+					logger.warn(
+						'V2 register batch hot wallet has no UTxOs; leaving items in pool for next tick [batch-fallback]',
+						{
+							batchSize: registryRequests.length,
+						},
+					);
+					// Empty wallet — transient operational state. Leave
+					// items queued; next tick after wallet has UTxOs
+					// re-batches them.
+					await unlockHotWallet(firstRequest.SmartContractWallet.id);
 					return;
 				}
 
@@ -484,7 +501,7 @@ export async function registerAgentV2() {
 					);
 					assertTxSizeWithinLimit(unsignedTx, 'v2-registry-batch-mint');
 				} catch (batchError) {
-					logger.warn('V2 register batch build failed; falling back to single-item processing', {
+					logger.warn('V2 register batch build failed; falling back to single-item processing [batch-fallback]', {
 						error:
 							batchError instanceof Error
 								? { message: batchError.message, stack: batchError.stack, name: batchError.name }
@@ -499,7 +516,7 @@ export async function registerAgentV2() {
 				try {
 					signedTx = await wallet.signTx(unsignedTx, true);
 				} catch (signError) {
-					logger.warn('V2 register batch sign failed; falling back to single-item processing', {
+					logger.warn('V2 register batch sign failed; falling back to single-item processing [batch-fallback]', {
 						error:
 							signError instanceof Error
 								? { message: signError.message, stack: signError.stack, name: signError.name }

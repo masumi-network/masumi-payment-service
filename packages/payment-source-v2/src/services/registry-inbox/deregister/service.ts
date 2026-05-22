@@ -69,6 +69,26 @@ async function markRequestFailed(request: InboxRequestRecord, error: unknown): P
 	});
 }
 
+/**
+ * Release the hot wallet lock without changing any request state. Used by
+ * wallet-level batch-bail paths (wallet load failure, no UTxOs, etc.) where
+ * EVERY request was waiting on the same wallet and the failure is not a
+ * per-item concern — items stay queued for the next scheduler tick.
+ */
+async function unlockHotWallet(hotWalletId: string): Promise<void> {
+	try {
+		await prisma.hotWallet.update({
+			where: { id: hotWalletId, deletedAt: null },
+			data: { lockedAt: null },
+		});
+	} catch (error) {
+		logger.warn('Failed to release hot wallet lock after V2 inbox deregister batch bail-out', {
+			hotWalletId,
+			error,
+		});
+	}
+}
+
 function validateAndBuildItem(request: InboxRequestRecord, utxos: UTxO[]): ValidatedInboxDeregistrationItem {
 	validateDeregistrationRequest(request);
 	if (!request.agentIdentifier) {
@@ -192,14 +212,31 @@ export async function deRegisterInboxAgentV2() {
 						hotWalletId: deregistrationWallet.id,
 					});
 				} catch (error) {
-					logger.error('Failed to load wallet session for V2 inbox deregister batch', { error });
-					await Promise.allSettled(registrationRequests.map((request) => markRequestFailed(request, error)));
+					logger.warn(
+						'V2 inbox deregister batch could not load wallet session; leaving items in pool for next tick [batch-fallback]',
+						{
+							error: error instanceof Error ? { message: error.message, stack: error.stack, name: error.name } : error,
+							batchSize: registrationRequests.length,
+						},
+					);
+					// Wallet-load failure is NOT a per-item failure: every
+					// request was waiting on the same wallet. Unlock and
+					// leave the items queued; next tick re-batches them.
+					await unlockHotWallet(deregistrationWallet.id);
 					return;
 				}
 				const { wallet, utxos, address } = walletSession;
 				if (utxos.length === 0) {
-					const error = new Error('No UTXOs found for the wallet');
-					await Promise.allSettled(registrationRequests.map((request) => markRequestFailed(request, error)));
+					logger.warn(
+						'V2 inbox deregister batch hot wallet has no UTxOs; leaving items in pool for next tick [batch-fallback]',
+						{
+							batchSize: registrationRequests.length,
+						},
+					);
+					// Empty wallet — transient operational state. Leave
+					// items queued; next tick after wallet has UTxOs
+					// re-batches them.
+					await unlockHotWallet(deregistrationWallet.id);
 					return;
 				}
 
@@ -228,7 +265,7 @@ export async function deRegisterInboxAgentV2() {
 					// wallet has only the asset UTxO; fall back to the V1-pattern
 					// single-tx path that reuses one UTxO for spend + collateral.
 					logger.warn(
-						'V2 inbox deregister batch could not find separate collateral UTxO; falling back to single-item per-request processing',
+						'V2 inbox deregister batch could not find separate collateral UTxO; falling back to single-item [batch-fallback] per-request processing [batch-fallback]',
 					);
 					await fallbackToSingleItems(validated, paymentSource, network, script, policyId);
 					return;
@@ -293,13 +330,16 @@ export async function deRegisterInboxAgentV2() {
 					);
 					assertTxSizeWithinLimit(unsignedTx, 'v2-inbox-batch-deregister');
 				} catch (batchError) {
-					logger.warn('V2 inbox deregister batch build failed; falling back to single-item processing', {
-						error:
-							batchError instanceof Error
-								? { message: batchError.message, stack: batchError.stack, name: batchError.name }
-								: batchError,
-						batchSize: fit.length,
-					});
+					logger.warn(
+						'V2 inbox deregister batch build failed; falling back to single-item processing [batch-fallback]',
+						{
+							error:
+								batchError instanceof Error
+									? { message: batchError.message, stack: batchError.stack, name: batchError.name }
+									: batchError,
+							batchSize: fit.length,
+						},
+					);
 					await fallbackToSingleItems(fit, paymentSource, network, script, policyId);
 					return;
 				}
@@ -308,12 +348,15 @@ export async function deRegisterInboxAgentV2() {
 				try {
 					signedTx = await wallet.signTx(unsignedTx);
 				} catch (signError) {
-					logger.warn('V2 inbox deregister batch sign failed; falling back to single-item processing', {
-						error:
-							signError instanceof Error
-								? { message: signError.message, stack: signError.stack, name: signError.name }
-								: signError,
-					});
+					logger.warn(
+						'V2 inbox deregister batch sign failed; falling back to single-item processing [batch-fallback]',
+						{
+							error:
+								signError instanceof Error
+									? { message: signError.message, stack: signError.stack, name: signError.name }
+									: signError,
+						},
+					);
 					await fallbackToSingleItems(fit, paymentSource, network, script, policyId);
 					return;
 				}

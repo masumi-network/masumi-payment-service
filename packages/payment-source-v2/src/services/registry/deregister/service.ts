@@ -73,6 +73,26 @@ async function markRequestFailed(request: RegistryRequestRecord, error: unknown)
 }
 
 /**
+ * Release the hot wallet lock without changing any request state. Used by
+ * wallet-level batch-bail paths where every request was waiting on the same
+ * wallet — items stay queued for the next scheduler tick instead of being
+ * terminated en masse.
+ */
+async function unlockHotWallet(hotWalletId: string): Promise<void> {
+	try {
+		await prisma.hotWallet.update({
+			where: { id: hotWalletId, deletedAt: null },
+			data: { lockedAt: null },
+		});
+	} catch (error) {
+		logger.warn('Failed to release hot wallet lock after V2 deregister batch bail-out', {
+			hotWalletId,
+			error,
+		});
+	}
+}
+
+/**
  * Per-request validation. Locates the asset's UTxO in the wallet and builds
  * the per-item burn payload. Throws on validation failure — caller maps the
  * throw to DeregistrationFailed.
@@ -200,14 +220,31 @@ export async function deRegisterAgentV2() {
 						hotWalletId: deregistrationWallet.id,
 					});
 				} catch (error) {
-					logger.error('Failed to load wallet session for V2 deregister batch', { error });
-					await Promise.allSettled(registryRequests.map((request) => markRequestFailed(request, error)));
+					logger.warn(
+						'V2 deregister batch could not load wallet session; leaving items in pool for next tick [batch-fallback]',
+						{
+							error: error instanceof Error ? { message: error.message, stack: error.stack, name: error.name } : error,
+							batchSize: registryRequests.length,
+						},
+					);
+					// Wallet-load failure is NOT a per-item failure: every
+					// request was waiting on the same wallet. Unlock and
+					// leave the items queued; next tick re-batches them.
+					await unlockHotWallet(deregistrationWallet.id);
 					return;
 				}
 				const { wallet, utxos, address } = walletSession;
 				if (utxos.length === 0) {
-					const error = new Error('No UTXOs found for the wallet');
-					await Promise.allSettled(registryRequests.map((request) => markRequestFailed(request, error)));
+					logger.warn(
+						'V2 deregister batch hot wallet has no UTxOs; leaving items in pool for next tick [batch-fallback]',
+						{
+							batchSize: registryRequests.length,
+						},
+					);
+					// Empty wallet — transient operational state. Leave
+					// items queued; next tick after wallet has UTxOs
+					// re-batches them.
+					await unlockHotWallet(deregistrationWallet.id);
 					return;
 				}
 
@@ -248,7 +285,7 @@ export async function deRegisterAgentV2() {
 					// path which already uses that pattern via
 					// `generateRegistryDeregisterTransactionAutomaticFees`.
 					logger.warn(
-						'V2 deregister batch could not find separate collateral UTxO; falling back to single-item per-request processing',
+						'V2 deregister batch could not find separate collateral UTxO; falling back to single-item [batch-fallback] per-request processing [batch-fallback]',
 					);
 					await fallbackToSingleItems(validated, paymentSource, network, script, policyId);
 					return;
@@ -325,7 +362,7 @@ export async function deRegisterAgentV2() {
 					);
 					assertTxSizeWithinLimit(unsignedTx, 'v2-registry-batch-deregister');
 				} catch (batchError) {
-					logger.warn('V2 deregister batch build failed; falling back to single-item processing', {
+					logger.warn('V2 deregister batch build failed; falling back to single-item processing [batch-fallback]', {
 						error:
 							batchError instanceof Error
 								? { message: batchError.message, stack: batchError.stack, name: batchError.name }
@@ -340,7 +377,7 @@ export async function deRegisterAgentV2() {
 				try {
 					signedTx = await wallet.signTx(unsignedTx);
 				} catch (signError) {
-					logger.warn('V2 deregister batch sign failed; falling back to single-item processing', {
+					logger.warn('V2 deregister batch sign failed; falling back to single-item processing [batch-fallback]', {
 						error:
 							signError instanceof Error
 								? { message: signError.message, stack: signError.stack, name: signError.name }

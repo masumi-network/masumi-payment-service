@@ -52,6 +52,35 @@ function sleep(ms: number): Promise<void> {
  * timeout. We don't reuse `pollUntil` from helperFunctions because it's
  * private to that module and we want a value-returning shape here.
  */
+/**
+ * Best-effort summary of an arbitrary value for the timeout error message.
+ * Captures the fields the predicate actually cares about (`NextAction`,
+ * `CurrentTransaction`, `onChainState`) without dumping the entire object —
+ * those are the only fields the V2 batch tests check, and they are exactly
+ * what we need to diagnose a stuck request post-hoc.
+ */
+function describeLastValue(value: unknown): string {
+	if (value == null) return '<none>';
+	if (typeof value !== 'object') return String(value);
+	const v = value as Record<string, unknown>;
+	const next = v.NextAction as Record<string, unknown> | undefined;
+	const curr = v.CurrentTransaction as Record<string, unknown> | null | undefined;
+	const summary = {
+		blockchainIdentifier: typeof v.blockchainIdentifier === 'string' ? v.blockchainIdentifier.slice(0, 20) + '…' : undefined,
+		onChainState: v.onChainState,
+		requestedAction: next?.requestedAction,
+		errorType: next?.errorType,
+		errorNote: next?.errorNote,
+		currentTxHash: curr?.txHash,
+		currentTxStatus: curr?.status,
+	};
+	try {
+		return JSON.stringify(summary);
+	} catch {
+		return 'present-but-failed-predicate (serialization failed)';
+	}
+}
+
 async function pollForValue<T>(
 	fetch: () => Promise<T>,
 	predicate: (value: T) => boolean,
@@ -73,10 +102,13 @@ async function pollForValue<T>(
 		await sleep(options.intervalMs);
 	}
 
+	// Include a structured summary of the last observed value so a timeout
+	// failure in CI is self-diagnostic: we see whether the request was stuck
+	// in `WaitingForManualAction` (validation failed), still in its initial
+	// `*Requested` state (scheduler never got to it), or transitioned to
+	// `*Initiated` but `CurrentTransaction.txHash` was still null.
 	throw new Error(
-		`pollForValue timed out after ${Math.floor((Date.now() - startedAt) / 1000)}s (${options.label}); lastValue=${
-			lastValue == null ? '<none>' : 'present-but-failed-predicate'
-		}`,
+		`pollForValue timed out after ${Math.floor((Date.now() - startedAt) / 1000)}s (${options.label}); lastValue=${describeLastValue(lastValue)}`,
 	);
 }
 

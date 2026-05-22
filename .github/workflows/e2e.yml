@@ -184,15 +184,32 @@ jobs:
       - name: Start API Server
         run: |
           echo "Starting API server..."
-          # Pipe through tee so each line is flushed to disk immediately
-          # rather than buffered (Node buffers stdout when piped). $! after
-          # the background pipeline returns the PID of the LAST command in
-          # the pipeline (tee). We need the tsx PID for kill; capture it via
-          # process substitution instead.
-          pnpm exec tsx ./src/index.ts > >(tee server.log) 2>&1 &
+          # We want each log line flushed to disk immediately (Node buffers
+          # stdout when it sees a non-tty destination), AND we want a
+          # well-defined PID for the tsx process so teardown's SIGTERM
+          # actually reaches the API server.
+          #
+          # Process substitution (`cmd > >(tee server.log) 2>&1 &`) does NOT
+          # reliably leave `$!` pointing at `cmd` — depending on the bash
+          # build, `$!` can resolve to the `tee` subshell instead, which
+          # means our teardown step kills `tee` (orphaning the API) and the
+          # file never sees the final flush. The previous comment in this
+          # script claimed `$!` was tsx, but the runtime behavior on
+          # ubuntu-latest (bash 5.x) is the opposite for this exact form.
+          #
+          # Fix: use an explicit named pipe. `tee` reads from the fifo, tsx
+          # writes to it. The two backgrounds are separate jobs, so `$!`
+          # after each is unambiguous, and we record both PIDs so teardown
+          # can terminate them in order (tsx first → fifo writer closes →
+          # tee gets EOF → tee flushes server.log → tee exits).
+          mkfifo server.fifo
+          tee server.log < server.fifo &
+          TEE_PID=$!
+          echo "$TEE_PID" > tee.pid
+          pnpm exec tsx ./src/index.ts > server.fifo 2>&1 &
           SERVER_PID=$!
-          echo "Server PID: $SERVER_PID"
           echo "$SERVER_PID" > server.pid
+          echo "Server PID: $SERVER_PID (tee PID: $TEE_PID)"
 
         env:
           DATABASE_URL: '${{ steps.create-branch.outputs.connection_uri }}'
@@ -234,6 +251,20 @@ jobs:
         run: |
           set +e
 
+          # NOTE on `$!` semantics here: `(subshell) | sed > log &` is one
+          # backgrounded pipeline, and `$!` returns the PID of the LAST
+          # command in that pipeline (sed), NOT the subshell that runs
+          # jest. We don't use PID_V*  for anything except `wait`, and
+          # `wait` on sed implicitly waits for the whole pipeline to
+          # drain (sed sees EOF on its stdin only after the subshell
+          # closes its write end, i.e. only after jest has exited), so
+          # the captured PID is sufficient HERE.
+          #
+          # If a future change ever needs to send a signal directly to
+          # jest (e.g. graceful cancellation, time-bounded kill), this
+          # PID is wrong — use a fifo-based redirect like the API server
+          # step above so `$!` after the `pnpm exec jest` invocation is
+          # unambiguously the jest PID.
           (
             TEST_PAYMENT_SOURCE_TYPE=Web3CardanoV1 pnpm exec jest \
               --config jest.e2e.config.ts --bail --forceExit 2>&1
@@ -275,9 +306,12 @@ jobs:
       - name: Stop API server for log flush
         if: always()
         run: |
-          # Send SIGTERM, wait briefly, then SIGKILL if needed. This gives
-          # winston / stdout a chance to flush any buffered log lines BEFORE
-          # we dump the file.
+          # Send SIGTERM to tsx (server.pid). On exit, the fifo writer closes
+          # → tee gets EOF and flushes server.log → tee exits on its own.
+          # We then wait briefly for tee to drain before falling back to
+          # SIGKILL. Order matters: killing tee first would leave tsx
+          # writing into a broken pipe (SIGPIPE) and abort it without a
+          # clean shutdown.
           if [ -f server.pid ]; then
             PID=$(cat server.pid)
             if kill -0 "$PID" 2>/dev/null; then
@@ -289,6 +323,18 @@ jobs:
               kill -KILL "$PID" 2>/dev/null || true
             fi
           fi
+          # Now drain tee. It should exit on its own once the writer end of
+          # the fifo closes; bound the wait so a stuck reader doesn't hang
+          # the workflow.
+          if [ -f tee.pid ]; then
+            TEE_PID=$(cat tee.pid)
+            for i in 1 2 3 4 5; do
+              if ! kill -0 "$TEE_PID" 2>/dev/null; then break; fi
+              sleep 1
+            done
+            kill -KILL "$TEE_PID" 2>/dev/null || true
+          fi
+          rm -f server.fifo
           sleep 1
 
       - name: Dump server log
@@ -307,6 +353,42 @@ jobs:
           echo "=== errors and warnings (grep) ==="
           grep -E '"level":"(error|warn)"|RegistrationFailed|Failed to|Error registering|interpretBlockchainError' server.log | tail -200 || true
           echo "=== end grep ==="
+
+      - name: Detect V2 batch fallback usage
+        # The V2 batch services log "[batch-fallback]" when a batch-builder pass
+        # fails and the service falls back to single-item processing. Batching
+        # is the design intent; a fallback usually signals a transient chain /
+        # blockfrost / scheduler issue (still recoverable on the next tick),
+        # but it is worth surfacing so we can investigate why the batch did
+        # not land. Emit a GitHub Actions warning annotation per occurrence
+        # plus a summary line so the run shows up with a yellow "warning"
+        # banner without failing the build.
+        if: always()
+        run: |
+          if [ ! -f server.log ]; then
+            echo "server.log not present, skipping batch-fallback scan"
+            exit 0
+          fi
+          COUNT=$(grep -c '\[batch-fallback\]' server.log || true)
+          COUNT=${COUNT:-0}
+          if [ "$COUNT" -gt 0 ]; then
+            echo "::warning title=V2 batch fallback used::$COUNT batch-fallback occurrence(s) detected in server.log — batches degraded to single-item processing. Inspect the dumped log for the preceding error context."
+            echo "### V2 batch fallback usage" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "**$COUNT occurrence(s)** of \`[batch-fallback]\` in server.log." >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Each occurrence means a V2 batch builder pass failed and the service degraded to single-item processing for one item; remaining items wait for the next scheduler tick." >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "<details><summary>Fallback log lines</summary>" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            grep '\[batch-fallback\]' server.log | tail -50 >> "$GITHUB_STEP_SUMMARY" || true
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo "</details>" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No V2 batch fallback detected (server.log is clean of [batch-fallback])."
+            echo "✅ No V2 batch fallback usage detected." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload server.log artifact
         if: always()
@@ -331,8 +413,9 @@ jobs:
       - name: Final cleanup of API Server pidfile
         if: always()
         run: |
-          # Server is already stopped above; this just clears the pidfile.
-          rm -f server.pid
+          # Server + tee are already stopped above; clear the pidfiles and
+          # the fifo so a re-run on the same runner image starts clean.
+          rm -f server.pid tee.pid server.fifo
 
       - name: Delete Neon Database Branch
         if: always() && steps.create-branch.outputs.branch_id != ''
