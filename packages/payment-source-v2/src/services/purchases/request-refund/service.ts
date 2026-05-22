@@ -601,7 +601,8 @@ async function processWalletBatch(
 			droppedIds: shrinkResult.dropped.map((v) => v.request.blockchainIdentifier),
 		});
 	} else {
-		logger.info('V2 request-refund batch composition [batch-diag]', {
+		// WARN so CI grep picks this up. Confirms shrink succeeded with no drops.
+		logger.warn('V2 request-refund batch composition [batch-diag]', {
 			tickPhase: 'shrink',
 			walletId: wallet.id,
 			fitCount: shrinkResult.fit.length,
@@ -645,6 +646,13 @@ async function processWalletBatch(
 			paymentContract.PaymentSourceConfig.rpcProviderApiKey,
 		);
 		assertTxSizeWithinLimit(unsignedTx, 'v2-request-refund-batch');
+		// WARN so CI grep picks this up. Confirms batch tx was built + sized OK.
+		logger.warn('V2 request-refund batch tx built [batch-diag]', {
+			tickPhase: 'built',
+			walletId: wallet.id,
+			itemCount: items.length,
+			txByteSize: unsignedTx.length / 2,
+		});
 	} catch (batchError) {
 		logger.warn('V2 request-refund batch build failed; falling back to single-item [batch-fallback]', {
 			error:
@@ -682,6 +690,10 @@ async function processWalletBatch(
 		);
 		return;
 	}
+	logger.warn('V2 request-refund batch tx signed [batch-diag]', {
+		tickPhase: 'signed',
+		walletId: wallet.id,
+	});
 
 	// V2 batch shared-Transaction pre-submit:
 	// 1. Create ONE Transaction row carrying BlocksWallet → wallet.
@@ -887,14 +899,37 @@ export async function requestRefundsV2() {
 				await Promise.allSettled(
 					Array.from(grouped.values()).map(async (walletRequests) => {
 						if (walletRequests.length === 0) return;
-						await processWalletBatch(
-							walletRequests,
-							paymentContract,
-							blockchainProvider,
-							network,
-							script,
-							smartContractAddress,
-						);
+						try {
+							await processWalletBatch(
+								walletRequests,
+								paymentContract,
+								blockchainProvider,
+								network,
+								script,
+								smartContractAddress,
+							);
+						} catch (uncaughtError) {
+							// processWalletBatch internally try/catches every IO step
+							// and logs WARN/ERROR on each failure path — so this catch
+							// is intended to surface the ELSE: an uncaught throw from
+							// pure code (pickBatchCollateral, shrinkBatchToFit, etc.)
+							// that would otherwise be swallowed silently by the outer
+							// Promise.allSettled. Emit at WARN so CI grep captures it.
+							logger.warn('V2 request-refund processWalletBatch threw uncaught [batch-diag]', {
+								tickPhase: 'uncaught',
+								walletRequestsCount: walletRequests.length,
+								firstRequestId: walletRequests[0]?.id ?? null,
+								firstBlockchainIdentifier: walletRequests[0]?.blockchainIdentifier ?? null,
+								error:
+									uncaughtError instanceof Error
+										? {
+												name: uncaughtError.name,
+												message: uncaughtError.message,
+												stack: uncaughtError.stack,
+											}
+										: uncaughtError,
+							});
+						}
 					}),
 				);
 			}),

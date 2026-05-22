@@ -443,32 +443,63 @@ export async function batchLatestPaymentEntriesV2() {
 								(amount) => amount.unit.toLowerCase() != '' && amount.unit.toLowerCase() != 'lovelace',
 							).length;
 
-							const resultSubmittedEstimateDatum = createDatumFromBlockchainIdentifierV2({
-								buyerAddress: walletData.changeAddress,
-								buyerReturnAddress: paymentRequest.buyerReturnAddress ?? walletData.collectionAddress,
-								sellerAddress: sellerAddress,
-								sellerReturnAddress: paymentRequest.sellerReturnAddress,
-								blockchainIdentifier: paymentRequest.blockchainIdentifier,
-								inputHash: paymentRequest.inputHash,
-								payByTime: paymentRequest.payByTime!,
-								collateralReturnLovelace: 0n,
-								resultHash: DUMMY_RESULT_HASH,
-								resultTime: BigInt(paymentRequest.submitResultTime),
-								unlockTime: BigInt(paymentRequest.unlockTime),
-								externalDisputeUnlockTime: BigInt(paymentRequest.externalDisputeUnlockTime),
-								newCooldownTimeSeller: BigInt(0),
-								newCooldownTimeBuyer: BigInt(0),
-								state: SmartContractState.ResultSubmitted,
-							});
+							// V2 datum carries `collateralReturnLovelace` whose CBOR size
+							// grows with the value (a non-zero BigInt is ~3-4 bytes vs 1
+							// byte for 0n). The actual on-chain datum will use the
+							// derived `overpaidLovelace` as collateralReturnLovelace, so
+							// estimating min-UTxO with 0n understates it by ~2 bytes ×
+							// coinsPerUtxoSize (~8.6k lovelace at current params). Fix:
+							// iterate the min-UTxO calculation until the estimate uses
+							// the same collateralReturnLovelace value that the lock
+							// output will carry. Two iterations always suffice in
+							// practice (the size difference between 0n and ~6M is at
+							// most 4 bytes; the second pass's overpaidLovelace is in the
+							// same size class as the first, so its CBOR size matches).
+							const buildEstimateDatum = (collateralReturnLovelace: bigint) =>
+								createDatumFromBlockchainIdentifierV2({
+									buyerAddress: walletData.changeAddress,
+									buyerReturnAddress: paymentRequest.buyerReturnAddress ?? walletData.collectionAddress,
+									sellerAddress: sellerAddress,
+									sellerReturnAddress: paymentRequest.sellerReturnAddress,
+									blockchainIdentifier: paymentRequest.blockchainIdentifier,
+									inputHash: paymentRequest.inputHash,
+									payByTime: paymentRequest.payByTime!,
+									collateralReturnLovelace,
+									resultHash: DUMMY_RESULT_HASH,
+									resultTime: BigInt(paymentRequest.submitResultTime),
+									unlockTime: BigInt(paymentRequest.unlockTime),
+									externalDisputeUnlockTime: BigInt(paymentRequest.externalDisputeUnlockTime),
+									newCooldownTimeSeller: BigInt(0),
+									newCooldownTimeBuyer: BigInt(0),
+									state: SmartContractState.ResultSubmitted,
+								});
 
-							const minUtxoResult = calculateMinUtxo({
-								datum: resultSubmittedEstimateDatum.value,
-								nativeTokenCount: otherUnits,
-								coinsPerUtxoSize: protocolParameter.coinsPerUtxoSize,
-								includeBuffers: true,
-							});
+							const computeMinUtxoFor = (collateralReturnLovelace: bigint) =>
+								calculateMinUtxo({
+									datum: buildEstimateDatum(collateralReturnLovelace).value,
+									nativeTokenCount: otherUnits,
+									coinsPerUtxoSize: protocolParameter.coinsPerUtxoSize,
+									includeBuffers: true,
+								}).minUtxoLovelace;
 
-							let overestimatedMinUtxoCost = minUtxoResult.minUtxoLovelace;
+							const paidLovelaceAtThisPoint =
+								paymentRequest.PaidFunds.find((amount) => amount.unit.toLowerCase() === '')?.amount ?? 0n;
+
+							// Pass 1: estimate min-UTxO assuming no collateral return.
+							let overestimatedMinUtxoCost = computeMinUtxoFor(0n);
+							// Pass 2: estimate min-UTxO assuming the collateral return
+							// value the lock will actually emit (overpaid component of
+							// the lovelace going to script). Two iterations is enough —
+							// the CBOR length of `overpaidLovelace` is at most 4 bytes
+							// for any realistic amount, so the size class is stable.
+							const projectedOverpaid =
+								overestimatedMinUtxoCost > paidLovelaceAtThisPoint
+									? overestimatedMinUtxoCost - paidLovelaceAtThisPoint
+									: 0n;
+							const iteratedMinUtxoCost = computeMinUtxoFor(projectedOverpaid);
+							if (iteratedMinUtxoCost > overestimatedMinUtxoCost) {
+								overestimatedMinUtxoCost = iteratedMinUtxoCost;
+							}
 
 							//set min ada required;
 							const lovelaceRequired = paymentRequest.PaidFunds.findIndex((amount) => amount.unit.toLowerCase() === '');
