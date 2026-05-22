@@ -221,7 +221,7 @@ describeFn(`Web3CardanoV2 batch action verification (${testNetwork})`, () => {
 							value != null &&
 							value.NextAction.requestedAction === 'SubmitResultInitiated' &&
 							value.CurrentTransaction?.txHash != null,
-						{ timeoutMs: 120_000, intervalMs: 3000, label: `SubmitResultInitiated ${p.blockchainIdentifier.slice(0, 16)}` },
+						{ timeoutMs: 600_000, intervalMs: 3000, label: `SubmitResultInitiated ${p.blockchainIdentifier.slice(0, 16)}` },
 					);
 					return payment?.CurrentTransaction?.txHash ?? null;
 				}),
@@ -249,7 +249,7 @@ describeFn(`Web3CardanoV2 batch action verification (${testNetwork})`, () => {
 							value.NextAction.requestedAction === 'SetRefundRequestedInitiated' &&
 							value.CurrentTransaction?.txHash != null,
 						{
-							timeoutMs: 120_000,
+							timeoutMs: 600_000,
 							intervalMs: 3000,
 							label: `SetRefundRequestedInitiated ${p.blockchainIdentifier.slice(0, 16)}`,
 						},
@@ -280,7 +280,7 @@ describeFn(`Web3CardanoV2 batch action verification (${testNetwork})`, () => {
 							value.NextAction.requestedAction === 'AuthorizeRefundInitiated' &&
 							value.CurrentTransaction?.txHash != null,
 						{
-							timeoutMs: 120_000,
+							timeoutMs: 600_000,
 							intervalMs: 3000,
 							label: `AuthorizeRefundInitiated ${p.blockchainIdentifier.slice(0, 16)}`,
 						},

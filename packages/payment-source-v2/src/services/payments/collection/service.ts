@@ -549,23 +549,26 @@ async function processWalletBatch(
 
 	try {
 		await prisma.$transaction(
-			fit.map((v) =>
-				prisma.paymentRequest.update({
-					where: { id: v.request.id },
-					data: {
-						...connectPreviousAction(v.request.nextActionId),
-						...createNextPaymentAction(PaymentAction.WithdrawInitiated),
-						CurrentTransaction: {
-							update: {
-								txHash: null,
-								status: TransactionStatus.Pending,
-								BlocksWallet: { connect: { id: wallet.id } },
+			async (tx) => {
+				for (const v of fit) {
+					await tx.paymentRequest.update({
+						where: { id: v.request.id },
+						data: {
+							...connectPreviousAction(v.request.nextActionId),
+							...createNextPaymentAction(PaymentAction.WithdrawInitiated),
+							CurrentTransaction: {
+								update: {
+									txHash: null,
+									status: TransactionStatus.Pending,
+									BlocksWallet: { connect: { id: wallet.id } },
+								},
 							},
+							TransactionHistory: { connect: { id: v.request.CurrentTransaction!.id } },
 						},
-						TransactionHistory: { connect: { id: v.request.CurrentTransaction!.id } },
-					},
-				}),
-			),
+					});
+				}
+			},
+			{ timeout: 30_000 },
 		);
 	} catch (dbError) {
 		logger.error('V2 collection batch DB pre-submit update failed', { error: dbError });
@@ -609,12 +612,15 @@ async function processWalletBatch(
 
 	try {
 		await prisma.$transaction(
-			fit.map((v) =>
-				prisma.paymentRequest.update({
-					where: { id: v.request.id },
-					data: updateCurrentTransactionHash(newTxHash),
-				}),
-			),
+			async (tx) => {
+				for (const v of fit) {
+					await tx.paymentRequest.update({
+						where: { id: v.request.id },
+						data: updateCurrentTransactionHash(newTxHash),
+					});
+				}
+			},
+			{ timeout: 30_000 },
 		);
 	} catch (dbError) {
 		logger.error('V2 collection batch post-submit DB update failed; tx-sync will reconcile next tick', {

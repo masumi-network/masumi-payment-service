@@ -314,15 +314,18 @@ export async function deRegisterInboxAgentV2() {
 
 				try {
 					await prisma.$transaction(
-						fit.map((v) =>
-							prisma.inboxAgentRegistrationRequest.update({
-								where: { id: v.request.id },
-								data: {
-									state: RegistrationState.DeregistrationInitiated,
-									...createPendingTransaction(v.deregistrationWalletId),
-								},
-							}),
-						),
+						async (tx) => {
+							for (const v of fit) {
+								await tx.inboxAgentRegistrationRequest.update({
+									where: { id: v.request.id },
+									data: {
+										state: RegistrationState.DeregistrationInitiated,
+										...createPendingTransaction(v.deregistrationWalletId),
+									},
+								});
+							}
+						},
+						{ timeout: 30_000 },
 					);
 				} catch (dbError) {
 					logger.error('V2 inbox deregister batch DB pre-submit update failed', { error: dbError });
@@ -365,12 +368,15 @@ export async function deRegisterInboxAgentV2() {
 
 				try {
 					await prisma.$transaction(
-						fit.map((v) =>
-							prisma.inboxAgentRegistrationRequest.update({
-								where: { id: v.request.id },
-								data: updateCurrentTransactionHash(newTxHash),
-							}),
-						),
+						async (tx) => {
+							for (const v of fit) {
+								await tx.inboxAgentRegistrationRequest.update({
+									where: { id: v.request.id },
+									data: updateCurrentTransactionHash(newTxHash),
+								});
+							}
+						},
+						{ timeout: 30_000 },
 					);
 				} catch (dbError) {
 					logger.error('V2 inbox deregister batch post-submit DB update failed; tx-sync will reconcile next tick', {

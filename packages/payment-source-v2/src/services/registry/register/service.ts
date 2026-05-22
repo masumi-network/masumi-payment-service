@@ -508,15 +508,18 @@ export async function registerAgentV2() {
 				// $transaction so the rows move atomically together.
 				try {
 					await prisma.$transaction(
-						fit.map((v) =>
-							prisma.registryRequest.update({
-								where: { id: v.request.id },
-								data: {
-									state: RegistrationState.RegistrationInitiated,
-									...createPendingTransaction(v.request.SmartContractWallet.id),
-								},
-							}),
-						),
+						async (tx) => {
+							for (const v of fit) {
+								await tx.registryRequest.update({
+									where: { id: v.request.id },
+									data: {
+										state: RegistrationState.RegistrationInitiated,
+										...createPendingTransaction(v.request.SmartContractWallet.id),
+									},
+								});
+							}
+						},
+						{ timeout: 30_000 },
 					);
 				} catch (dbError) {
 					logger.error('V2 register batch DB pre-submit update failed', { error: dbError });
@@ -559,15 +562,18 @@ export async function registerAgentV2() {
 				// the txHash.
 				try {
 					await prisma.$transaction(
-						fit.map((v) =>
-							prisma.registryRequest.update({
-								where: { id: v.request.id },
-								data: {
-									agentIdentifier: v.policyId + v.assetName,
-									...updateCurrentTransactionHash(newTxHash),
-								},
-							}),
-						),
+						async (tx) => {
+							for (const v of fit) {
+								await tx.registryRequest.update({
+									where: { id: v.request.id },
+									data: {
+										agentIdentifier: v.policyId + v.assetName,
+										...updateCurrentTransactionHash(newTxHash),
+									},
+								});
+							}
+						},
+						{ timeout: 30_000 },
 					);
 				} catch (dbError) {
 					logger.error('V2 register batch post-submit DB update failed; rows will reconcile via tx-sync next tick', {

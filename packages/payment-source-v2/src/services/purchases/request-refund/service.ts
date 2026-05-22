@@ -514,17 +514,20 @@ async function processWalletBatch(
 
 	try {
 		await prisma.$transaction(
-			fit.map((v) =>
-				prisma.purchaseRequest.update({
-					where: { id: v.request.id },
-					data: {
-						...connectPreviousAction(v.request.nextActionId),
-						...createNextPurchaseAction(PurchasingAction.SetRefundRequestedInitiated),
-						...createPendingTransaction(wallet.id),
-						TransactionHistory: { connect: { id: v.request.CurrentTransaction!.id } },
-					},
-				}),
-			),
+			async (tx) => {
+				for (const v of fit) {
+					await tx.purchaseRequest.update({
+						where: { id: v.request.id },
+						data: {
+							...connectPreviousAction(v.request.nextActionId),
+							...createNextPurchaseAction(PurchasingAction.SetRefundRequestedInitiated),
+							...createPendingTransaction(wallet.id),
+							TransactionHistory: { connect: { id: v.request.CurrentTransaction!.id } },
+						},
+					});
+				}
+			},
+			{ timeout: 30_000 },
 		);
 	} catch (dbError) {
 		logger.error('V2 request-refund batch DB pre-submit update failed', { error: dbError });
@@ -568,12 +571,15 @@ async function processWalletBatch(
 
 	try {
 		await prisma.$transaction(
-			fit.map((v) =>
-				prisma.purchaseRequest.update({
-					where: { id: v.request.id },
-					data: updateCurrentTransactionHash(newTxHash),
-				}),
-			),
+			async (tx) => {
+				for (const v of fit) {
+					await tx.purchaseRequest.update({
+						where: { id: v.request.id },
+						data: updateCurrentTransactionHash(newTxHash),
+					});
+				}
+			},
+			{ timeout: 30_000 },
 		);
 	} catch (dbError) {
 		logger.error('V2 request-refund batch post-submit DB update failed; tx-sync will reconcile next tick', {
