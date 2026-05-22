@@ -135,7 +135,7 @@ export async function lockAndQueryRegistryRequests({
 					}
 					return newPaymentSources;
 				},
-				{ isolationLevel: 'Serializable', timeout: 1000000 },
+				{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
 			),
 		{ label: 'lockAndQueryRegistryRequests' },
 	);

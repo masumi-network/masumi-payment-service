@@ -1,4 +1,10 @@
-import { PaymentSourceType, Prisma, PurchaseErrorType, PurchasingAction } from '@/generated/prisma/client';
+import {
+	PaymentSourceType,
+	Prisma,
+	PurchaseErrorType,
+	PurchasingAction,
+	TransactionStatus,
+} from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { deserializeDatum, UTxO } from '@meshsdk/core';
 import type { BlockfrostProvider as MeshV2BlockfrostProvider, LanguageVersion } from '@meshsdk/core';
@@ -15,6 +21,7 @@ import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import {
+	connectExistingTransaction,
 	connectPreviousAction,
 	createMeshProvider,
 	createNextPurchaseAction,
@@ -91,21 +98,27 @@ function isLookupDeferred(error: unknown): boolean {
 }
 
 /**
- * Wrap `fetchUTxOs(txHash)` with a single retry after a short delay when the
- * first call returns an empty list. The most common cause is blockfrost not
- * having indexed a freshly-landed tx yet (~5–30s lag after block
- * confirmation). One quick retry covers the common case; if it is STILL
- * empty after the second attempt, we throw the transient sentinel so the
- * caller defers to the next tick instead of marking the request as failed.
+ * Wrap `fetchUTxOs(txHash)` with progressive retries when the first call
+ * returns an empty list. The most common cause is blockfrost not having
+ * indexed a freshly-landed tx yet (5-30s+ lag after block confirmation on
+ * preprod). The 3-step backoff (5s, 10s, 20s) covers the long tail of slow
+ * indexing without burning the whole scheduler tick on a single item; if
+ * STILL empty after the final attempt, we throw the transient sentinel so
+ * the caller defers to the next tick instead of marking the request as
+ * failed.
  */
 async function fetchUTxOsWithDeferOnEmpty(blockchainProvider: BlockfrostProvider, txHash: string): Promise<UTxO[]> {
+	const backoffMs = [5_000, 10_000, 20_000];
 	const first = await blockchainProvider.fetchUTxOs(txHash);
 	if (first.length > 0) return first;
-	await new Promise((resolve) => setTimeout(resolve, 5000));
-	const second = await blockchainProvider.fetchUTxOs(txHash);
-	if (second.length > 0) return second;
+	for (const wait of backoffMs) {
+		await new Promise((resolve) => setTimeout(resolve, wait));
+		const next = await blockchainProvider.fetchUTxOs(txHash);
+		if (next.length > 0) return next;
+	}
+	const totalSeconds = backoffMs.reduce((sum, ms) => sum + ms, 0) / 1000;
 	throw new Error(
-		`${LOOKUP_DEFERRED_PREFIX} fetchUTxOs(${txHash}) returned empty after retry — chain state not visible to blockfrost yet, deferring to tx-sync / next tick`,
+		`${LOOKUP_DEFERRED_PREFIX} fetchUTxOs(${txHash}) returned empty after ${backoffMs.length + 1} attempts (${totalSeconds}s total wait) — chain state not visible to blockfrost yet, deferring to tx-sync / next tick`,
 	);
 }
 
@@ -453,6 +466,8 @@ async function processWalletBatch(
 	}
 
 	const validated: ValidatedRequestRefundItem[] = [];
+	const deferredIds: string[] = [];
+	const failedIds: string[] = [];
 	for (const request of requests) {
 		try {
 			validated.push(
@@ -465,19 +480,36 @@ async function processWalletBatch(
 				// terminal state when chain state changes; until then we leave it
 				// queued. Logged at info-level because this is expected behaviour
 				// while blockfrost catches up, not an error.
-				logger.info(
-					`Deferring V2 item this tick (chain lookup not ready); request ${request.id} stays queued for tx-sync to reconcile`,
-					{ error: error instanceof Error ? error.message : error },
-				);
+				deferredIds.push(request.id);
+				logger.info('V2 request-refund: deferring item this tick (chain lookup not ready)', {
+					tickPhase: 'validate',
+					requestId: request.id,
+					blockchainIdentifier: request.blockchainIdentifier,
+					walletId: wallet.id,
+					currentTxHash: request.CurrentTransaction?.txHash ?? null,
+					error: error instanceof Error ? error.message : error,
+				});
 			} else {
+				failedIds.push(request.id);
 				await markRequestFailed(request, error);
 			}
 		}
 	}
+	logger.info('V2 request-refund: per-item validation outcome [batch-diag]', {
+		tickPhase: 'validate-summary',
+		walletId: wallet.id,
+		totalIn: requests.length,
+		validated: validated.length,
+		deferred: deferredIds.length,
+		failed: failedIds.length,
+		validatedIds: validated.map((v) => v.request.blockchainIdentifier),
+		deferredIds,
+		failedIds,
+	});
 	if (validated.length === 0) {
 		logger.info(
 			'No V2 request-refund items in this tick reached the batch builder (every item was either deferred for tx-sync to reconcile or marked failed); leaving wallet unlocked',
-			{ walletId: wallet.id },
+			{ walletId: wallet.id, deferredIds, failedIds },
 		);
 		await unlockHotWallet(wallet.id);
 		return;
@@ -544,9 +576,23 @@ async function processWalletBatch(
 		return;
 	}
 	if (shrinkResult.dropped.length > 0) {
-		logger.warn(
-			`V2 request-refund batch shrunk from ${validated.length} to ${shrinkResult.fit.length} (reason=${shrinkResult.reason})`,
-		);
+		logger.warn('V2 request-refund batch shrunk [batch-diag]', {
+			tickPhase: 'shrink',
+			walletId: wallet.id,
+			validatedCount: validated.length,
+			fitCount: shrinkResult.fit.length,
+			droppedCount: shrinkResult.dropped.length,
+			reason: shrinkResult.reason,
+			fitIds: shrinkResult.fit.map((v) => v.request.blockchainIdentifier),
+			droppedIds: shrinkResult.dropped.map((v) => v.request.blockchainIdentifier),
+		});
+	} else {
+		logger.info('V2 request-refund batch composition [batch-diag]', {
+			tickPhase: 'shrink',
+			walletId: wallet.id,
+			fitCount: shrinkResult.fit.length,
+			fitIds: shrinkResult.fit.map((v) => v.request.blockchainIdentifier),
+		});
 	}
 
 	const fit = shrinkResult.fit;
@@ -623,22 +669,37 @@ async function processWalletBatch(
 		return;
 	}
 
+	// V2 batch shared-Transaction pre-submit:
+	// 1. Create ONE Transaction row carrying BlocksWallet → wallet.
+	// 2. Connect every fit item's CurrentTransaction to that shared Tx.
+	// This replaces the N-orphan pattern (one createPendingTransaction per
+	// item) — HotWallet.pendingTransactionId points to the single shared Tx,
+	// so tx-sync's BlocksWallet-driven wallet unlock fires exactly once per
+	// batch regardless of which entry it processes first.
+	let sharedTxId: string;
 	try {
-		await retryOnSerializationConflict(
+		sharedTxId = await retryOnSerializationConflict(
 			() =>
 				prisma.$transaction(
 					async (tx) => {
+						const sharedTx = await tx.transaction.create({
+							data: {
+								status: TransactionStatus.Pending,
+								BlocksWallet: { connect: { id: wallet.id } },
+							},
+						});
 						for (const v of fit) {
 							await tx.purchaseRequest.update({
 								where: { id: v.request.id },
 								data: {
 									...connectPreviousAction(v.request.nextActionId),
 									...createNextPurchaseAction(PurchasingAction.SetRefundRequestedInitiated),
-									...createPendingTransaction(wallet.id),
+									...connectExistingTransaction(sharedTx.id),
 									TransactionHistory: { connect: { id: v.request.CurrentTransaction!.id } },
 								},
 							});
 						}
+						return sharedTx.id;
 					},
 					{ timeout: 30_000 },
 				),
@@ -660,6 +721,12 @@ async function processWalletBatch(
 					? { message: submitError.message, stack: submitError.stack, name: submitError.name }
 					: submitError,
 		});
+		// Rollback: revert every fit item's CurrentTransaction back to its
+		// original (pre-batch) submit-result tx. The shared Tx row created in
+		// pre-submit becomes orphaned (no PaymentRequest/PurchaseRequest
+		// references it) and HotWallet.pendingTransactionId still points to
+		// it — wallet-timeouts cleans that up on its next tick, which is
+		// before the fallback's tx confirms anyway.
 		await retryOnSerializationConflict(
 			() =>
 				prisma.$transaction(
@@ -695,17 +762,18 @@ async function processWalletBatch(
 		logger.warn('V2 request-refund batch projected balance evaluation failed (non-fatal)', { error: balanceError });
 	}
 
+	// Post-submit: a SINGLE Transaction row carries the txHash for the whole
+	// batch (because pre-submit created one shared Tx referenced by every
+	// participating PurchaseRequest). One update suffices.
 	try {
 		await retryOnSerializationConflict(
 			() =>
 				prisma.$transaction(
 					async (tx) => {
-						for (const v of fit) {
-							await tx.purchaseRequest.update({
-								where: { id: v.request.id },
-								data: updateCurrentTransactionHash(newTxHash),
-							});
-						}
+						await tx.transaction.update({
+							where: { id: sharedTxId },
+							data: { txHash: newTxHash },
+						});
 					},
 					{ timeout: 30_000 },
 				),
@@ -718,6 +786,19 @@ async function processWalletBatch(
 			txHash: newTxHash,
 		});
 	}
+
+	logger.info('V2 request-refund batch submitted [batch-diag]', {
+		tickPhase: 'submitted',
+		walletId: wallet.id,
+		newTxHash,
+		sharedTxId,
+		fitCount: fit.length,
+		fitIds: fit.map((v) => v.request.blockchainIdentifier),
+		droppedCount: droppedRequests.length,
+		droppedIds: droppedRequests.map((r) => r.blockchainIdentifier),
+		deferredIds,
+		failedIds,
+	});
 
 	logger.debug(`Created V2 request-refund batch transaction:
               Tx ID: ${newTxHash}
@@ -734,7 +815,6 @@ async function processWalletBatch(
 					data: {
 						...connectPreviousAction(request.nextActionId),
 						...createNextPurchaseAction(PurchasingAction.SetRefundRequestedRequested),
-						SmartContractWallet: { update: { lockedAt: null } },
 					},
 				}),
 			),

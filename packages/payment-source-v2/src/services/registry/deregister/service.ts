@@ -1,4 +1,4 @@
-import { PaymentSourceType, RegistrationState } from '@/generated/prisma/client';
+import { PaymentSourceType, RegistrationState, TransactionStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import type { BlockfrostProvider as MeshV2BlockfrostProvider, LanguageVersion, UTxO } from '@meshsdk/core';
@@ -13,6 +13,7 @@ import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interp
 import { extractAssetName } from '@/utils/converter/agent-identifier';
 import { sortAndLimitUtxos } from '@/utils/utxo';
 import {
+	connectExistingTransaction,
 	createMeshProvider,
 	createPendingTransaction,
 	loadHotWalletSession,
@@ -388,20 +389,32 @@ export async function deRegisterAgentV2() {
 					return;
 				}
 
+				// Pre-submit: create ONE shared Transaction row carrying
+				// BlocksWallet → deregistration wallet, then connect every
+				// fit item's CurrentTransaction to that shared Tx so tx-sync
+				// fires the wallet unlock exactly once per batch.
+				let sharedTxId: string;
 				try {
-					await retryOnSerializationConflict(
+					sharedTxId = await retryOnSerializationConflict(
 						() =>
 							prisma.$transaction(
 								async (tx) => {
+									const sharedTx = await tx.transaction.create({
+										data: {
+											status: TransactionStatus.Pending,
+											BlocksWallet: { connect: { id: deregistrationWallet.id } },
+										},
+									});
 									for (const v of fit) {
 										await tx.registryRequest.update({
 											where: { id: v.request.id },
 											data: {
 												state: RegistrationState.DeregistrationInitiated,
-												...createPendingTransaction(v.deregistrationWalletId),
+												...connectExistingTransaction(sharedTx.id),
 											},
 										});
 									}
+									return sharedTx.id;
 								},
 								{ timeout: 30_000 },
 							),
@@ -461,17 +474,18 @@ export async function deRegisterAgentV2() {
 					});
 				}
 
+				// Post-submit: a SINGLE Transaction row carries the txHash for
+				// the whole batch (pre-submit created one shared Tx referenced
+				// by every fit item). One update suffices.
 				try {
 					await retryOnSerializationConflict(
 						() =>
 							prisma.$transaction(
 								async (tx) => {
-									for (const v of fit) {
-										await tx.registryRequest.update({
-											where: { id: v.request.id },
-											data: updateCurrentTransactionHash(newTxHash),
-										});
-									}
+									await tx.transaction.update({
+										where: { id: sharedTxId },
+										data: { txHash: newTxHash },
+									});
 								},
 								{ timeout: 30_000 },
 							),

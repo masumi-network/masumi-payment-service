@@ -5,6 +5,7 @@ import {
 	PurchaseErrorType,
 	PurchasingAction,
 	Prisma,
+	TransactionStatus,
 } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { retryOnSerializationConflict } from '@/utils/db/retry';
@@ -21,11 +22,10 @@ import { CONSTANTS } from '@masumi/payment-core/config';
 import { calculateMinUtxo, DUMMY_RESULT_HASH } from '@/utils/min-utxo';
 import { toBalanceMapFromMeshUtxos, walletLowBalanceMonitorService } from '@/services/wallets';
 import {
+	connectExistingTransaction,
 	connectPreviousAction,
 	createMeshProvider,
 	createNextPurchaseAction,
-	createPendingTransaction,
-	updateCurrentTransactionHash,
 } from '@/services/shared';
 import { createDatumFromBlockchainIdentifierV2 } from '@masumi/payment-source-v2';
 
@@ -131,33 +131,45 @@ async function executeSpecificBatchPayment(
 		);
 	}
 
-	for (const request of batchedRequests) {
-		logger.info('Batching payments, updating purchase request', {
-			paymentRequestId: request.paymentRequest.id,
-		});
-		await prisma.purchaseRequest.update({
-			where: { id: request.paymentRequest.id },
-			data: {
-				...connectPreviousAction(request.paymentRequest.nextActionId),
-				...createNextPurchaseAction(PurchasingAction.FundsLockingInitiated),
-				collateralReturnLovelace: request.overpaidLovelace,
-				SmartContractWallet: {
-					connect: {
-						id: walletId,
-					},
-				},
-				buyerReturnAddress: request.paymentRequest.buyerReturnAddress ?? walletPairing.collectionAddress,
-				...createPendingTransaction(walletId),
-				TransactionHistory: request.paymentRequest.CurrentTransaction
-					? {
-							connect: {
-								id: request.paymentRequest.CurrentTransaction.id,
+	// Shared-Transaction pre-submit: ONE Transaction row per batch with
+	// BlocksWallet → wallet. Every batched purchase request connects to it
+	// via CurrentTransaction. Avoids the N-orphan pattern that breaks
+	// HotWallet.pendingTransactionId @unique (only the last create survives).
+	const sharedTxId = await retryOnSerializationConflict(
+		() =>
+			prisma.$transaction(
+				async (tx) => {
+					const sharedTx = await tx.transaction.create({
+						data: {
+							status: TransactionStatus.Pending,
+							BlocksWallet: { connect: { id: walletId } },
+						},
+					});
+					for (const request of batchedRequests) {
+						logger.info('Batching payments, updating purchase request', {
+							paymentRequestId: request.paymentRequest.id,
+						});
+						await tx.purchaseRequest.update({
+							where: { id: request.paymentRequest.id },
+							data: {
+								...connectPreviousAction(request.paymentRequest.nextActionId),
+								...createNextPurchaseAction(PurchasingAction.FundsLockingInitiated),
+								collateralReturnLovelace: request.overpaidLovelace,
+								SmartContractWallet: { connect: { id: walletId } },
+								buyerReturnAddress: request.paymentRequest.buyerReturnAddress ?? walletPairing.collectionAddress,
+								...connectExistingTransaction(sharedTx.id),
+								TransactionHistory: request.paymentRequest.CurrentTransaction
+									? { connect: { id: request.paymentRequest.CurrentTransaction.id } }
+									: undefined,
 							},
-						}
-					: undefined,
-			},
-		});
-	}
+						});
+					}
+					return sharedTx.id;
+				},
+				{ timeout: 30_000 },
+			),
+		{ label: 'batch-payments-v2-presubmit' },
+	);
 
 	logger.info('Batching payments, purchase request initialized');
 
@@ -187,13 +199,12 @@ async function executeSpecificBatchPayment(
 		txHash: txHash,
 	});
 
-	//update purchase requests
-	for (const request of batchedRequests) {
-		await prisma.purchaseRequest.update({
-			where: { id: request.paymentRequest.id },
-			data: updateCurrentTransactionHash(txHash),
-		});
-	}
+	// Post-submit: single shared Transaction row receives the txHash. No
+	// per-request loop required.
+	await prisma.transaction.update({
+		where: { id: sharedTxId },
+		data: { txHash },
+	});
 	logger.info('Batching payments, purchase request updated');
 
 	return true;

@@ -60,11 +60,13 @@ function convertMeshNetworkToPrismaNetwork(network: Network): PrismaNetwork {
 }
 
 /**
- * Stable lex order on `(txHash, outputIndex)`. Mesh sorts inputs internally
- * using the same canonical order before computing the `Spend` redeemer index,
- * so by sorting our items the same way, the per-item array index in our local
- * loop is the same as the `redeemerData.index` mesh attaches in the body. That
- * is what lets us match `evaluateTx`'s `index` field back to a specific item.
+ * Stable lex order on `(txHash, outputIndex)`. Cardano canonically sorts ALL
+ * tx body inputs (script + wallet) by `(txHash, outputIndex)` before assigning
+ * redeemer pointer indices. By pre-sorting our items with the same key, the
+ * I-th canonically-sorted script input in the body is sortedItems[I] — and
+ * that one-to-one position-vs-index mapping is what `buildSpendBudgetMap`
+ * relies on to remap the body-canonical `action.index` values evaluateTx
+ * returns back to our local per-item array index.
  */
 function compareUtxoRef(a: UTxO, b: UTxO): number {
 	if (a.input.txHash < b.input.txHash) return -1;
@@ -108,12 +110,29 @@ type ExUnits = { mem: number; steps: number };
 
 type EvalAction = { tag: string; index: number; budget: ExUnits };
 
+/**
+ * Map evaluateTx SPEND budgets onto our per-item sortedItems index.
+ *
+ * `action.index` from evaluateTx is the BODY-CANONICAL position of the script
+ * input (Cardano sorts ALL inputs — script + wallet — by `(txHash, outputIndex)`
+ * before assigning redeemer indices). If a wallet UTxO sorts between two
+ * script UTxOs, the script inputs end up at non-contiguous body positions
+ * (e.g. {0, 2, 4} instead of {0, 1, 2}). Indexing the map directly by
+ * `action.index` then misaligns with our local `sortedItems[idx]` which always
+ * runs `0..N-1`.
+ *
+ * Since we pre-sort `sortedItems` by the same canonical key the ledger uses,
+ * the I-th canonically-sorted script input IS sortedItems[I]. So we sort the
+ * SPEND actions by `action.index` ascending and key the budget map by their
+ * position in that sort — which is exactly the index callers want.
+ */
 function buildSpendBudgetMap(evaluated: EvalAction[]): Map<number, ExUnits> {
 	const map = new Map<number, ExUnits>();
-	for (const action of evaluated) {
-		if (action.tag === 'SPEND') {
-			map.set(action.index, action.budget);
-		}
+	const spendActionsSortedByBodyIndex = evaluated
+		.filter((action) => action.tag === 'SPEND')
+		.sort((a, b) => a.index - b.index);
+	for (let i = 0; i < spendActionsSortedByBodyIndex.length; i++) {
+		map.set(i, spendActionsSortedByBodyIndex[i].budget);
 	}
 	return map;
 }
@@ -126,8 +145,11 @@ function buildSpendBudgetMap(evaluated: EvalAction[]): Map<number, ExUnits> {
  *
  * Two-pass tx build: pass 1 attaches default exUnits, calls `evaluateTx`, and
  * collects the per-spend budget. Pass 2 rebuilds with the chain-computed
- * exUnits, keeping the same canonical sort so `evaluateTx`'s
- * `index` field aligns with our per-item index.
+ * exUnits. We pre-sort `sortedItems` canonically (same key the ledger uses
+ * for body input ordering) and remap evaluateTx's body-canonical SPEND
+ * indices back to per-item array indices via `buildSpendBudgetMap`. That
+ * remap is what lets wallet UTxOs interleave with script UTxOs in body
+ * position without misaligning the exUnits.
  *
  * The on-chain semantics map to `vested_pay.ak`'s `Action` redeemers: each
  * input runs the validator once with its own `own_ref` and the matching

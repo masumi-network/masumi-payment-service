@@ -4,6 +4,7 @@ import {
 	Prisma,
 	PurchaseErrorType,
 	PurchasingAction,
+	TransactionStatus,
 } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { deserializeDatum, UTxO } from '@meshsdk/core';
@@ -21,6 +22,7 @@ import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import {
+	connectExistingTransaction,
 	connectPreviousAction,
 	createMeshProvider,
 	createNextPurchaseAction,
@@ -97,21 +99,27 @@ function isLookupDeferred(error: unknown): boolean {
 }
 
 /**
- * Wrap `fetchUTxOs(txHash)` with a single retry after a short delay when the
- * first call returns an empty list. The most common cause is blockfrost not
- * having indexed a freshly-landed tx yet (~5–30s lag after block
- * confirmation). One quick retry covers the common case; if it is STILL
- * empty after the second attempt, we throw the transient sentinel so the
- * caller defers to the next tick instead of marking the request as failed.
+ * Wrap `fetchUTxOs(txHash)` with progressive retries when the first call
+ * returns an empty list. The most common cause is blockfrost not having
+ * indexed a freshly-landed tx yet (5-30s+ lag after block confirmation on
+ * preprod). The 3-step backoff (5s, 10s, 20s) covers the long tail of slow
+ * indexing without burning the whole scheduler tick on a single item; if
+ * STILL empty after the final attempt, we throw the transient sentinel so
+ * the caller defers to the next tick instead of marking the request as
+ * failed.
  */
 async function fetchUTxOsWithDeferOnEmpty(blockchainProvider: BlockfrostProvider, txHash: string): Promise<UTxO[]> {
+	const backoffMs = [5_000, 10_000, 20_000];
 	const first = await blockchainProvider.fetchUTxOs(txHash);
 	if (first.length > 0) return first;
-	await new Promise((resolve) => setTimeout(resolve, 5000));
-	const second = await blockchainProvider.fetchUTxOs(txHash);
-	if (second.length > 0) return second;
+	for (const wait of backoffMs) {
+		await new Promise((resolve) => setTimeout(resolve, wait));
+		const next = await blockchainProvider.fetchUTxOs(txHash);
+		if (next.length > 0) return next;
+	}
+	const totalSeconds = backoffMs.reduce((sum, ms) => sum + ms, 0) / 1000;
 	throw new Error(
-		`${LOOKUP_DEFERRED_PREFIX} fetchUTxOs(${txHash}) returned empty after retry — chain state not visible to blockfrost yet, deferring to tx-sync / next tick`,
+		`${LOOKUP_DEFERRED_PREFIX} fetchUTxOs(${txHash}) returned empty after ${backoffMs.length + 1} attempts (${totalSeconds}s total wait) — chain state not visible to blockfrost yet, deferring to tx-sync / next tick`,
 	);
 }
 
@@ -631,22 +639,37 @@ async function processWalletBatch(
 		return;
 	}
 
+	// V2 batch shared-Transaction pre-submit:
+	// 1. Create ONE Transaction row carrying BlocksWallet → wallet.
+	// 2. Connect every fit item's CurrentTransaction to that shared Tx.
+	// This replaces the N-orphan pattern (one createPendingTransaction per
+	// item) — HotWallet.pendingTransactionId points to the single shared Tx,
+	// so tx-sync's BlocksWallet-driven wallet unlock fires exactly once per
+	// batch regardless of which entry it processes first.
+	let sharedTxId: string;
 	try {
-		await retryOnSerializationConflict(
+		sharedTxId = await retryOnSerializationConflict(
 			() =>
 				prisma.$transaction(
 					async (tx) => {
+						const sharedTx = await tx.transaction.create({
+							data: {
+								status: TransactionStatus.Pending,
+								BlocksWallet: { connect: { id: wallet.id } },
+							},
+						});
 						for (const v of fit) {
 							await tx.purchaseRequest.update({
 								where: { id: v.request.id },
 								data: {
 									...connectPreviousAction(v.request.nextActionId),
 									...createNextPurchaseAction(PurchasingAction.AuthorizeWithdrawalInitiated),
-									...createPendingTransaction(wallet.id),
+									...connectExistingTransaction(sharedTx.id),
 									TransactionHistory: { connect: { id: v.request.CurrentTransaction!.id } },
 								},
 							});
 						}
+						return sharedTx.id;
 					},
 					{ timeout: 30_000 },
 				),
@@ -708,17 +731,18 @@ async function processWalletBatch(
 		});
 	}
 
+	// Post-submit: a SINGLE Transaction row carries the txHash for the whole
+	// batch (because pre-submit created one shared Tx referenced by every
+	// participating PurchaseRequest). One update suffices.
 	try {
 		await retryOnSerializationConflict(
 			() =>
 				prisma.$transaction(
 					async (tx) => {
-						for (const v of fit) {
-							await tx.purchaseRequest.update({
-								where: { id: v.request.id },
-								data: updateCurrentTransactionHash(newTxHash),
-							});
-						}
+						await tx.transaction.update({
+							where: { id: sharedTxId },
+							data: { txHash: newTxHash },
+						});
 					},
 					{ timeout: 30_000 },
 				),
@@ -747,7 +771,6 @@ async function processWalletBatch(
 					data: {
 						...connectPreviousAction(request.nextActionId),
 						...createNextPurchaseAction(PurchasingAction.AuthorizeWithdrawalRequested),
-						SmartContractWallet: { update: { lockedAt: null } },
 					},
 				}),
 			),

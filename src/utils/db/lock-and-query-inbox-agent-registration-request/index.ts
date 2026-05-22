@@ -127,7 +127,7 @@ export async function lockAndQueryInboxAgentRegistrationRequests({
 					}
 					return newPaymentSources;
 				},
-				{ isolationLevel: 'Serializable', timeout: 1000000 },
+				{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
 			),
 		{ label: 'lockAndQueryInboxAgentRegistrationRequests' },
 	);

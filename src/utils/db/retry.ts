@@ -15,6 +15,21 @@ import { logger } from '@masumi/payment-core/logger';
 //   opens a fresh transaction with a fresh consistent snapshot.
 const PRISMA_RETRYABLE_CODES = new Set(['P2034', 'P2028']);
 
+// Postgres SQLSTATE codes we additionally treat as retryable. These surface
+// through `@prisma/adapter-pg` as `DriverAdapterError` (NOT PrismaClient*Error)
+// with `name === 'DriverAdapterError'` and the SQLSTATE on either `error.code`
+// or `error.cause.code` depending on where the adapter intercepted.
+//
+// 40001 — serialization_failure (same root cause as P2034)
+// 40P01 — deadlock_detected
+// 25001 — "SET TRANSACTION ISOLATION LEVEL must be called before any query".
+//   Surfaces when the previous tx on this pooled connection was aborted
+//   mid-flight (e.g. our own $transaction timed out) and the driver tries to
+//   start the next tx on the same connection before it has been reset. The
+//   next attempt typically picks a fresh connection from the pool and
+//   succeeds — so it is retryable.
+const POSTGRES_RETRYABLE_SQLSTATES = new Set(['40001', '40P01', '25001']);
+
 type Logger = Pick<typeof logger, 'debug' | 'info' | 'warn'>;
 
 export type RetryOptions = {
@@ -25,10 +40,68 @@ export type RetryOptions = {
 	logger?: Logger;
 };
 
+// Narrowly-typed shapes for the error inspection below. Defining explicit
+// guards (rather than `Record<string, unknown>`) keeps the codebase rule
+// `local/no-unknown-valued-maps` happy and documents exactly which fields we
+// read from each error layer.
+type ErrorWithCode = { code?: unknown; originalCode?: unknown; name?: unknown };
+type ErrorWithCause = { cause?: unknown };
+type ErrorWithMeta = { meta?: unknown };
+type DriverAdapterShape = { driverAdapterError?: unknown };
+type DriverAdapterCauseShape = { cause?: unknown };
+
+function asObject(value: unknown): object | undefined {
+	return value != null && typeof value === 'object' ? value : undefined;
+}
+
+function readStringField(value: unknown, key: 'code' | 'originalCode' | 'name'): string | undefined {
+	const obj = asObject(value);
+	if (obj == null) return undefined;
+	const v = (obj as ErrorWithCode)[key];
+	return typeof v === 'string' ? v : undefined;
+}
+
+function readSqlstate(value: unknown): string | undefined {
+	return readStringField(value, 'originalCode') ?? readStringField(value, 'code');
+}
+
 function isSerializationConflict(error: unknown): boolean {
-	if (error == null || typeof error !== 'object') return false;
-	const code = (error as { code?: unknown }).code;
-	return typeof code === 'string' && PRISMA_RETRYABLE_CODES.has(code);
+	if (asObject(error) == null) return false;
+
+	// Prisma client errors carry the Prisma code directly on the top-level
+	// `code` field (e.g. 'P2034', 'P2028').
+	const prismaCode = readStringField(error, 'code');
+	if (prismaCode != null && PRISMA_RETRYABLE_CODES.has(prismaCode)) return true;
+
+	// `@prisma/adapter-pg` wraps low-level Postgres errors as
+	// `DriverAdapterError` and exposes the SQLSTATE on either the outer
+	// error's `code`/`originalCode` or on `error.cause.{code,originalCode}`.
+	// Inspect both layers so callers don't have to peel the wrapper.
+	const name = readStringField(error, 'name');
+	const isDriverAdapter = name === 'DriverAdapterError';
+	const outerSqlstate = readSqlstate(error);
+	if (isDriverAdapter && outerSqlstate != null && POSTGRES_RETRYABLE_SQLSTATES.has(outerSqlstate)) {
+		return true;
+	}
+	const cause = (error as ErrorWithCause).cause;
+	const causeSqlstate = readSqlstate(cause);
+	if (causeSqlstate != null && POSTGRES_RETRYABLE_SQLSTATES.has(causeSqlstate)) {
+		return true;
+	}
+
+	// Some PrismaClientKnownRequestError variants stash the driver-adapter
+	// details under `meta.driverAdapterError.cause.{code,originalCode}` —
+	// observed when Prisma rewraps a Postgres 40001 from the pg-adapter.
+	const meta = asObject((error as ErrorWithMeta).meta);
+	const metaDriverError = meta == null ? undefined : (meta as DriverAdapterShape).driverAdapterError;
+	const metaDriverErrorObj = asObject(metaDriverError);
+	const metaCause = metaDriverErrorObj == null ? undefined : (metaDriverErrorObj as DriverAdapterCauseShape).cause;
+	const metaSqlstate = readSqlstate(metaCause);
+	if (metaSqlstate != null && POSTGRES_RETRYABLE_SQLSTATES.has(metaSqlstate)) {
+		return true;
+	}
+
+	return false;
 }
 
 /**

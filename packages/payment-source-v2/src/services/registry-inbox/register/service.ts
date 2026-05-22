@@ -1,4 +1,4 @@
-import { PaymentSourceType, RegistrationState } from '@/generated/prisma/client';
+import { PaymentSourceType, RegistrationState, TransactionStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import type { LanguageVersion, UTxO } from '@meshsdk/core';
@@ -13,6 +13,7 @@ import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { sortUtxosByLovelaceDesc } from '@/utils/utxo';
 import {
+	connectExistingTransaction,
 	createMeshProvider,
 	createPendingTransaction,
 	loadHotWalletSession,
@@ -405,20 +406,32 @@ export async function registerInboxAgentV2() {
 					return;
 				}
 
+				// Pre-submit: create ONE shared Transaction row carrying
+				// BlocksWallet → wallet, then connect every fit item's
+				// CurrentTransaction to that shared Tx so tx-sync's
+				// BlocksWallet-driven wallet unlock fires once per batch.
+				let sharedTxId: string;
 				try {
-					await retryOnSerializationConflict(
+					sharedTxId = await retryOnSerializationConflict(
 						() =>
 							prisma.$transaction(
 								async (tx) => {
+									const sharedTx = await tx.transaction.create({
+										data: {
+											status: TransactionStatus.Pending,
+											BlocksWallet: { connect: { id: firstRequest.SmartContractWallet.id } },
+										},
+									});
 									for (const v of fit) {
 										await tx.inboxAgentRegistrationRequest.update({
 											where: { id: v.request.id },
 											data: {
 												state: RegistrationState.RegistrationInitiated,
-												...createPendingTransaction(v.request.SmartContractWallet.id),
+												...connectExistingTransaction(sharedTx.id),
 											},
 										});
 									}
+									return sharedTx.id;
 								},
 								{ timeout: 30_000 },
 							),
@@ -475,17 +488,22 @@ export async function registerInboxAgentV2() {
 					});
 				}
 
+				// Post-submit: write the txHash to the SHARED Transaction row
+				// and stamp each item's per-request agentIdentifier.
 				try {
 					await retryOnSerializationConflict(
 						() =>
 							prisma.$transaction(
 								async (tx) => {
+									await tx.transaction.update({
+										where: { id: sharedTxId },
+										data: { txHash: newTxHash },
+									});
 									for (const v of fit) {
 										await tx.inboxAgentRegistrationRequest.update({
 											where: { id: v.request.id },
 											data: {
 												agentIdentifier: v.policyId + v.assetName,
-												...updateCurrentTransactionHash(newTxHash),
 											},
 										});
 									}

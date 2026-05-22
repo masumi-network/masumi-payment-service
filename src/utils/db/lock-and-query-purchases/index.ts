@@ -117,7 +117,7 @@ export async function lockAndQueryPurchases({
 						throw error;
 					}
 				},
-				{ isolationLevel: 'Serializable' },
+				{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
 			),
 		{ label: 'lockAndQueryPurchases' },
 	);

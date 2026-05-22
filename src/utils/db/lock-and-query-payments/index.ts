@@ -118,7 +118,7 @@ export async function lockAndQueryPayments({
 					}
 					return newPaymentSources;
 				},
-				{ isolationLevel: 'Serializable', timeout: 10000 },
+				{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
 			),
 		{ label: 'lockAndQueryPayments' },
 	);

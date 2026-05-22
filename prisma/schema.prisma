@@ -143,8 +143,10 @@ model Transaction {
   previousOnChainState          OnChainState?
   newOnChainState               OnChainState?
   BlocksWallet                  HotWallet?
-  PaymentRequestCurrent         PaymentRequest?                 @relation("CurrentPaymentTransaction")
-  PurchaseRequestCurrent        PurchaseRequest?                @relation("CurrentPurchaseTransaction")
+  // V2 batch txs: one Transaction row referenced from N PaymentRequests / PurchaseRequests.
+  // For V1 single-item txs each list still holds at most one entry, so existing code paths are unchanged.
+  PaymentRequestCurrent         PaymentRequest[]                @relation("CurrentPaymentTransaction")
+  PurchaseRequestCurrent        PurchaseRequest[]               @relation("CurrentPurchaseTransaction")
   RegistryRequest               RegistryRequest[]
   InboxAgentRegistrationRequest InboxAgentRegistrationRequest[]
   PaymentRequestHistory         PaymentRequest?                 @relation("PaymentTransactionHistory", fields: [paymentRequestHistoryId], references: [id])
@@ -343,7 +345,10 @@ model PaymentRequest {
   sellerCoolDownTime                            BigInt
   buyerCoolDownTime                             BigInt
   requestedById                                 String
-  currentTransactionId                          String?             @unique
+  // Not @unique: V2 batch transactions reference one shared Transaction row from N PaymentRequests.
+  // Uniqueness was a leftover from the V1 single-item flow; dropping it allows
+  // a multi-redeemer batch tx to be referenced once from each participating request.
+  currentTransactionId                          String?
   collateralReturnLovelace                      BigInt?
   payByTime                                     BigInt?
   buyerReturnAddress                            String?
@@ -420,7 +425,10 @@ model PurchaseRequest {
   nextActionLastChangedAt                       DateTime             @default(now())
   nextActionOrOnChainStateOrResultLastChangedAt DateTime             @default(now())
   requestedById                                 String
-  currentTransactionId                          String?              @unique
+  // Not @unique: V2 batch transactions reference one shared Transaction row from N PurchaseRequests.
+  // Uniqueness was a leftover from the V1 single-item flow; dropping it allows
+  // a multi-redeemer batch tx to be referenced once from each participating request.
+  currentTransactionId                          String?
   collateralReturnLovelace                      BigInt?
   payByTime                                     BigInt?
   buyerReturnAddress                            String?

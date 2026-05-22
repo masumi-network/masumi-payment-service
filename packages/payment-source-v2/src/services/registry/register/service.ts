@@ -1,4 +1,4 @@
-import { PaymentSourceType, RegistrationState, PricingType } from '@/generated/prisma/client';
+import { PaymentSourceType, RegistrationState, PricingType, TransactionStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import type { LanguageVersion, UTxO } from '@meshsdk/core';
@@ -13,6 +13,7 @@ import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { sortUtxosByLovelaceDesc } from '@/utils/utxo';
 import {
+	connectExistingTransaction,
 	createMeshProvider,
 	createPendingTransaction,
 	loadHotWalletSession,
@@ -527,23 +528,34 @@ export async function registerAgentV2() {
 					return;
 				}
 
-				// Pre-submit DB transition: stamp every request with
-				// RegistrationInitiated + its own CurrentTransaction in ONE
-				// $transaction so the rows move atomically together.
+				// Pre-submit DB transition: create ONE shared Transaction row
+				// carrying BlocksWallet → wallet, then connect every fit item's
+				// CurrentTransaction to that shared Tx. Replaces the N-orphan
+				// pattern — HotWallet.pendingTransactionId points to the single
+				// shared Tx, so tx-sync's BlocksWallet-driven wallet unlock
+				// fires exactly once per batch.
+				let sharedTxId: string;
 				try {
-					await retryOnSerializationConflict(
+					sharedTxId = await retryOnSerializationConflict(
 						() =>
 							prisma.$transaction(
 								async (tx) => {
+									const sharedTx = await tx.transaction.create({
+										data: {
+											status: TransactionStatus.Pending,
+											BlocksWallet: { connect: { id: firstRequest.SmartContractWallet.id } },
+										},
+									});
 									for (const v of fit) {
 										await tx.registryRequest.update({
 											where: { id: v.request.id },
 											data: {
 												state: RegistrationState.RegistrationInitiated,
-												...createPendingTransaction(v.request.SmartContractWallet.id),
+												...connectExistingTransaction(sharedTx.id),
 											},
 										});
 									}
+									return sharedTx.id;
 								},
 								{ timeout: 30_000 },
 							),
@@ -597,20 +609,23 @@ export async function registerAgentV2() {
 					logger.warn('V2 register batch projected balance evaluation failed (non-fatal)', { error: balanceError });
 				}
 
-				// All items get the SAME txHash. Update them in one
-				// transaction so the assetIdentifier is set atomically with
-				// the txHash.
+				// Post-submit: write the txHash to the SHARED Transaction row
+				// (a single update covers every participating request) and
+				// stamp each item's per-request agentIdentifier.
 				try {
 					await retryOnSerializationConflict(
 						() =>
 							prisma.$transaction(
 								async (tx) => {
+									await tx.transaction.update({
+										where: { id: sharedTxId },
+										data: { txHash: newTxHash },
+									});
 									for (const v of fit) {
 										await tx.registryRequest.update({
 											where: { id: v.request.id },
 											data: {
 												agentIdentifier: v.policyId + v.assetName,
-												...updateCurrentTransactionHash(newTxHash),
 											},
 										});
 									}
