@@ -41,14 +41,17 @@ export async function backfillTransactionAgentIdentifiers(): Promise<void> {
 		if (chunk.length === 0) break;
 
 		await prisma.$transaction(
-			chunk.map((row) => {
-				const decoded = decodeBlockchainIdentifier(row.blockchainIdentifier);
-				const agentIdentifier = decoded?.agentIdentifier ?? null;
-				return prisma.paymentRequest.update({
-					where: { id: row.id },
-					data: { agentIdentifier, agentIdentifierSyncedAt: syncedAt },
-				});
-			}),
+			async (tx) => {
+				for (const row of chunk) {
+					const decoded = decodeBlockchainIdentifier(row.blockchainIdentifier);
+					const agentIdentifier = decoded?.agentIdentifier ?? null;
+					await tx.paymentRequest.update({
+						where: { id: row.id },
+						data: { agentIdentifier, agentIdentifierSyncedAt: syncedAt },
+					});
+				}
+			},
+			{ timeout: 30_000 },
 		);
 		paymentsDone += chunk.length;
 	}
@@ -63,14 +66,17 @@ export async function backfillTransactionAgentIdentifiers(): Promise<void> {
 		if (chunk.length === 0) break;
 
 		await prisma.$transaction(
-			chunk.map((row) => {
-				const decoded = decodeBlockchainIdentifier(row.blockchainIdentifier);
-				const agentIdentifier = decoded?.agentIdentifier ?? null;
-				return prisma.purchaseRequest.update({
-					where: { id: row.id },
-					data: { agentIdentifier, agentIdentifierSyncedAt: syncedAt },
-				});
-			}),
+			async (tx) => {
+				for (const row of chunk) {
+					const decoded = decodeBlockchainIdentifier(row.blockchainIdentifier);
+					const agentIdentifier = decoded?.agentIdentifier ?? null;
+					await tx.purchaseRequest.update({
+						where: { id: row.id },
+						data: { agentIdentifier, agentIdentifierSyncedAt: syncedAt },
+					});
+				}
+			},
+			{ timeout: 30_000 },
 		);
 		purchasesDone += chunk.length;
 	}

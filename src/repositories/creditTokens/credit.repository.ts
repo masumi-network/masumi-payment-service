@@ -2,6 +2,7 @@ import { prisma } from '@masumi/payment-core/db';
 import { InsufficientFundsError } from '@/utils/errors/insufficient-funds-error';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { Network, PricingType, PurchasingAction, WalletBase, WalletType } from '@/generated/prisma/client';
+import { retryOnSerializationConflict } from '@/utils/db/retry';
 
 async function handlePurchaseCreditInit({
 	id,
@@ -42,194 +43,198 @@ async function handlePurchaseCreditInit({
 	buyerReturnAddress?: string | null;
 	sellerReturnAddress?: string | null;
 }) {
-	return await prisma.$transaction(
-		async (prisma) => {
-			const paymentSource = await prisma.paymentSource.findUnique({
-				where: {
-					network_smartContractAddress: {
-						network: network,
-						smartContractAddress: contractAddress,
-					},
-					deletedAt: null,
-				},
-			});
-			if (!paymentSource) {
-				throw Error('Invalid paymentSource: ' + paymentSource);
-			}
-			let sellerWallet: WalletBase | null = await prisma.walletBase.findUnique({
-				where: {
-					paymentSourceId_walletVkey_walletAddress_type: {
-						paymentSourceId: paymentSource.id,
-						walletVkey: sellerVkey,
-						walletAddress: sellerAddress,
-						type: WalletType.Seller,
-					},
-				},
-			});
-
-			const result = await prisma.apiKey.findUnique({
-				where: { id: id },
-				include: {
-					RemainingUsageCredits: true,
-				},
-			});
-			if (!result) {
-				throw Error('Invalid id: ' + id);
-			}
-			if (!result.canAdmin && !result.networkLimit.includes(network)) {
-				throw Error('No permission for network: ' + network + ' for id: ' + id);
-			}
-
-			if (!sellerWallet) {
-				sellerWallet = await prisma.walletBase.create({
-					data: {
-						walletVkey: sellerVkey,
-						walletAddress: sellerAddress,
-						type: WalletType.Seller,
-						PaymentSource: { connect: { id: paymentSource.id } },
-					},
-				});
-			}
-
-			const remainingAccumulatedUsageCredits: Map<string, bigint> = new Map<string, bigint>();
-
-			// Sum up all purchase amounts
-			result.RemainingUsageCredits.forEach((request) => {
-				if (!remainingAccumulatedUsageCredits.has(request.unit)) {
-					remainingAccumulatedUsageCredits.set(request.unit, 0n);
-				}
-				remainingAccumulatedUsageCredits.set(
-					request.unit,
-					remainingAccumulatedUsageCredits.get(request.unit)! + request.amount,
-				);
-			});
-
-			const totalCost: Map<string, bigint> = new Map<string, bigint>();
-			cost.forEach((amount) => {
-				if (!totalCost.has(amount.unit)) {
-					totalCost.set(amount.unit, 0n);
-				}
-				totalCost.set(amount.unit, totalCost.get(amount.unit)! + amount.amount);
-			});
-			const newRemainingUsageCredits: Map<string, bigint> = remainingAccumulatedUsageCredits;
-
-			if (result.usageLimited) {
-				for (const [unit, amount] of totalCost) {
-					if (!newRemainingUsageCredits.has(unit)) {
-						throw new InsufficientFundsError('Credit unit not found: ' + unit + ' for id: ' + id);
+	return await retryOnSerializationConflict(
+		() =>
+			prisma.$transaction(
+				async (prisma) => {
+					const paymentSource = await prisma.paymentSource.findUnique({
+						where: {
+							network_smartContractAddress: {
+								network: network,
+								smartContractAddress: contractAddress,
+							},
+							deletedAt: null,
+						},
+					});
+					if (!paymentSource) {
+						throw Error('Invalid paymentSource: ' + paymentSource);
 					}
-					newRemainingUsageCredits.set(unit, newRemainingUsageCredits.get(unit)! - amount);
-					if (newRemainingUsageCredits.get(unit)! < 0) {
-						throw new InsufficientFundsError('Not enough ' + unit + ' tokens to handleCreditUsage for id: ' + id);
+					let sellerWallet: WalletBase | null = await prisma.walletBase.findUnique({
+						where: {
+							paymentSourceId_walletVkey_walletAddress_type: {
+								paymentSourceId: paymentSource.id,
+								walletVkey: sellerVkey,
+								walletAddress: sellerAddress,
+								type: WalletType.Seller,
+							},
+						},
+					});
+
+					const result = await prisma.apiKey.findUnique({
+						where: { id: id },
+						include: {
+							RemainingUsageCredits: true,
+						},
+					});
+					if (!result) {
+						throw Error('Invalid id: ' + id);
 					}
-				}
-			}
+					if (!result.canAdmin && !result.networkLimit.includes(network)) {
+						throw Error('No permission for network: ' + network + ' for id: ' + id);
+					}
 
-			// Create new usage amount records with unique IDs
-			const updatedUsageAmounts = Array.from(newRemainingUsageCredits.entries()).map(([unit, amount]) => ({
-				id: `${id}-${unit}`, // Create a unique ID
-				amount: amount,
-				unit: unit,
-			}));
-			if (result.usageLimited) {
-				await prisma.apiKey.update({
-					where: { id: id },
-					data: {
-						RemainingUsageCredits: {
-							set: updatedUsageAmounts,
+					if (!sellerWallet) {
+						sellerWallet = await prisma.walletBase.create({
+							data: {
+								walletVkey: sellerVkey,
+								walletAddress: sellerAddress,
+								type: WalletType.Seller,
+								PaymentSource: { connect: { id: paymentSource.id } },
+							},
+						});
+					}
+
+					const remainingAccumulatedUsageCredits: Map<string, bigint> = new Map<string, bigint>();
+
+					// Sum up all purchase amounts
+					result.RemainingUsageCredits.forEach((request) => {
+						if (!remainingAccumulatedUsageCredits.has(request.unit)) {
+							remainingAccumulatedUsageCredits.set(request.unit, 0n);
+						}
+						remainingAccumulatedUsageCredits.set(
+							request.unit,
+							remainingAccumulatedUsageCredits.get(request.unit)! + request.amount,
+						);
+					});
+
+					const totalCost: Map<string, bigint> = new Map<string, bigint>();
+					cost.forEach((amount) => {
+						if (!totalCost.has(amount.unit)) {
+							totalCost.set(amount.unit, 0n);
+						}
+						totalCost.set(amount.unit, totalCost.get(amount.unit)! + amount.amount);
+					});
+					const newRemainingUsageCredits: Map<string, bigint> = remainingAccumulatedUsageCredits;
+
+					if (result.usageLimited) {
+						for (const [unit, amount] of totalCost) {
+							if (!newRemainingUsageCredits.has(unit)) {
+								throw new InsufficientFundsError('Credit unit not found: ' + unit + ' for id: ' + id);
+							}
+							newRemainingUsageCredits.set(unit, newRemainingUsageCredits.get(unit)! - amount);
+							if (newRemainingUsageCredits.get(unit)! < 0) {
+								throw new InsufficientFundsError('Not enough ' + unit + ' tokens to handleCreditUsage for id: ' + id);
+							}
+						}
+					}
+
+					// Create new usage amount records with unique IDs
+					const updatedUsageAmounts = Array.from(newRemainingUsageCredits.entries()).map(([unit, amount]) => ({
+						id: `${id}-${unit}`, // Create a unique ID
+						amount: amount,
+						unit: unit,
+					}));
+					if (result.usageLimited) {
+						await prisma.apiKey.update({
+							where: { id: id },
+							data: {
+								RemainingUsageCredits: {
+									set: updatedUsageAmounts,
+								},
+							},
+						});
+					}
+
+					const agentIdentifier = decodeBlockchainIdentifier(blockchainIdentifier)?.agentIdentifier ?? null;
+
+					const purchaseRequest = await prisma.purchaseRequest.create({
+						data: {
+							totalBuyerCardanoFees: BigInt(0),
+							totalSellerCardanoFees: BigInt(0),
+							pricingType: pricingType,
+							requestedBy: { connect: { id: id } },
+							PaidFunds: {
+								create: Array.from(totalCost.entries()).map(([unit, amount]) => ({
+									amount: amount,
+									unit: unit,
+								})),
+							},
+							payByTime: payByTime,
+							submitResultTime: submitResultTime,
+							PaymentSource: { connect: { id: paymentSource.id } },
+							resultHash: null,
+							sellerCoolDownTime: 0,
+							buyerCoolDownTime: 0,
+							SellerWallet: {
+								connect: { id: sellerWallet.id },
+							},
+							blockchainIdentifier: blockchainIdentifier,
+							agentIdentifier,
+							agentIdentifierSyncedAt: new Date(),
+							inputHash: inputHash,
+							NextAction: {
+								create: {
+									requestedAction: PurchasingAction.FundsLockingRequested,
+								},
+							},
+							externalDisputeUnlockTime: externalDisputeUnlockTime,
+							unlockTime: unlockTime,
+							collateralReturnLovelace,
+							buyerReturnAddress,
+							sellerReturnAddress,
+							metadata: metadata,
+							isLimitedToHotWallets: walletScopeIds !== null,
+							...(walletScopeIds !== null && walletScopeIds.length > 0
+								? { HotWalletLimit: { connect: walletScopeIds.map((wId) => ({ id: wId })) } }
+								: {}),
 						},
-					},
-				});
-			}
-
-			const agentIdentifier = decodeBlockchainIdentifier(blockchainIdentifier)?.agentIdentifier ?? null;
-
-			const purchaseRequest = await prisma.purchaseRequest.create({
-				data: {
-					totalBuyerCardanoFees: BigInt(0),
-					totalSellerCardanoFees: BigInt(0),
-					pricingType: pricingType,
-					requestedBy: { connect: { id: id } },
-					PaidFunds: {
-						create: Array.from(totalCost.entries()).map(([unit, amount]) => ({
-							amount: amount,
-							unit: unit,
-						})),
-					},
-					payByTime: payByTime,
-					submitResultTime: submitResultTime,
-					PaymentSource: { connect: { id: paymentSource.id } },
-					resultHash: null,
-					sellerCoolDownTime: 0,
-					buyerCoolDownTime: 0,
-					SellerWallet: {
-						connect: { id: sellerWallet.id },
-					},
-					blockchainIdentifier: blockchainIdentifier,
-					agentIdentifier,
-					agentIdentifierSyncedAt: new Date(),
-					inputHash: inputHash,
-					NextAction: {
-						create: {
-							requestedAction: PurchasingAction.FundsLockingRequested,
+						include: {
+							SellerWallet: { select: { id: true, walletVkey: true } },
+							SmartContractWallet: {
+								where: { deletedAt: null },
+								select: { id: true, walletVkey: true, walletAddress: true },
+							},
+							PaymentSource: {
+								select: {
+									id: true,
+									network: true,
+									paymentSourceType: true,
+									smartContractAddress: true,
+									policyId: true,
+								},
+							},
+							PaidFunds: { select: { amount: true, unit: true } },
+							NextAction: {
+								select: {
+									id: true,
+									requestedAction: true,
+									errorType: true,
+									errorNote: true,
+								},
+							},
+							CurrentTransaction: {
+								select: {
+									id: true,
+									txHash: true,
+									status: true,
+									confirmations: true,
+									fees: true,
+									blockHeight: true,
+									blockTime: true,
+								},
+							},
+							WithdrawnForSeller: {
+								select: { id: true, amount: true, unit: true },
+							},
+							WithdrawnForBuyer: { select: { id: true, amount: true, unit: true } },
 						},
-					},
-					externalDisputeUnlockTime: externalDisputeUnlockTime,
-					unlockTime: unlockTime,
-					collateralReturnLovelace,
-					buyerReturnAddress,
-					sellerReturnAddress,
-					metadata: metadata,
-					isLimitedToHotWallets: walletScopeIds !== null,
-					...(walletScopeIds !== null && walletScopeIds.length > 0
-						? { HotWalletLimit: { connect: walletScopeIds.map((wId) => ({ id: wId })) } }
-						: {}),
+					});
+
+					return purchaseRequest;
 				},
-				include: {
-					SellerWallet: { select: { id: true, walletVkey: true } },
-					SmartContractWallet: {
-						where: { deletedAt: null },
-						select: { id: true, walletVkey: true, walletAddress: true },
-					},
-					PaymentSource: {
-						select: {
-							id: true,
-							network: true,
-							paymentSourceType: true,
-							smartContractAddress: true,
-							policyId: true,
-						},
-					},
-					PaidFunds: { select: { amount: true, unit: true } },
-					NextAction: {
-						select: {
-							id: true,
-							requestedAction: true,
-							errorType: true,
-							errorNote: true,
-						},
-					},
-					CurrentTransaction: {
-						select: {
-							id: true,
-							txHash: true,
-							status: true,
-							confirmations: true,
-							fees: true,
-							blockHeight: true,
-							blockTime: true,
-						},
-					},
-					WithdrawnForSeller: {
-						select: { id: true, amount: true, unit: true },
-					},
-					WithdrawnForBuyer: { select: { id: true, amount: true, unit: true } },
-				},
-			});
-
-			return purchaseRequest;
-		},
-		{ isolationLevel: 'Serializable', maxWait: 15000, timeout: 15000 },
+				{ isolationLevel: 'Serializable', maxWait: 30_000, timeout: 30_000 },
+			),
+		{ label: 'credit-repository-purchase-init' },
 	);
 }
 

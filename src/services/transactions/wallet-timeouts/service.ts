@@ -9,6 +9,7 @@ import {
 	PurchaseErrorType,
 } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
+import { retryOnSerializationConflict } from '@/utils/db/retry';
 import { logger } from '@masumi/payment-core/logger';
 import { web3CardanoV1, web3CardanoV2 } from '@/services/payment-source-types';
 import { CONFIG, DEFAULTS } from '@masumi/payment-core/config';
@@ -42,386 +43,409 @@ export async function updateWalletTransactionHash() {
 	const unlockedSellingWalletIds: string[] = [];
 	const unlockedPurchasingWalletIds: string[] = [];
 	try {
-		await prisma.$transaction(async (prisma) => {
-			const result = await prisma.paymentRequest.findMany({
-				where: {
-					NextAction: {
-						requestedAction: {
-							in: [
-								PaymentAction.WithdrawInitiated,
-								PaymentAction.SubmitResultInitiated,
-								PaymentAction.AuthorizeRefundInitiated,
-							],
-						},
-					},
-					OR: [
-						{
-							updatedAt: {
-								lt: new Date(
-									Date.now() -
-										//15 minutes for timeouts, check every tx older than 1 minute
-										CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL,
-								),
-							},
-							CurrentTransaction: null,
-						},
-						{
-							CurrentTransaction: {
-								status: TransactionStatus.Pending,
-								updatedAt: {
-									lt: new Date(
-										Date.now() -
-											//15 minutes for timeouts, check every tx older than 1 minute
-											DEFAULTS.TX_TIMEOUT_INTERVAL,
-									),
+		await retryOnSerializationConflict(
+			() =>
+				prisma.$transaction(
+					async (prisma) => {
+						const result = await prisma.paymentRequest.findMany({
+							where: {
+								NextAction: {
+									requestedAction: {
+										in: [
+											PaymentAction.WithdrawInitiated,
+											PaymentAction.SubmitResultInitiated,
+											PaymentAction.AuthorizeRefundInitiated,
+										],
+									},
 								},
+								OR: [
+									{
+										updatedAt: {
+											lt: new Date(
+												Date.now() -
+													//15 minutes for timeouts, check every tx older than 1 minute
+													CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL,
+											),
+										},
+										CurrentTransaction: null,
+									},
+									{
+										CurrentTransaction: {
+											status: TransactionStatus.Pending,
+											updatedAt: {
+												lt: new Date(
+													Date.now() -
+														//15 minutes for timeouts, check every tx older than 1 minute
+														DEFAULTS.TX_TIMEOUT_INTERVAL,
+												),
+											},
+										},
+									},
+								],
 							},
-						},
-					],
-				},
-				include: { SmartContractWallet: { where: { deletedAt: null } } },
-			});
-			for (const paymentRequest of result) {
-				if (paymentRequest.currentTransactionId == null) {
-					if (
-						paymentRequest.SmartContractWallet != null &&
-						paymentRequest.SmartContractWallet.pendingTransactionId == null &&
-						paymentRequest.SmartContractWallet.lockedAt &&
-						new Date(paymentRequest.SmartContractWallet.lockedAt) <
-							new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
-					)
-						unlockedSellingWalletIds.push(paymentRequest.SmartContractWallet?.id);
+							include: { SmartContractWallet: { where: { deletedAt: null } } },
+						});
+						for (const paymentRequest of result) {
+							if (paymentRequest.currentTransactionId == null) {
+								if (
+									paymentRequest.SmartContractWallet != null &&
+									paymentRequest.SmartContractWallet.pendingTransactionId == null &&
+									paymentRequest.SmartContractWallet.lockedAt &&
+									new Date(paymentRequest.SmartContractWallet.lockedAt) <
+										new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
+								)
+									unlockedSellingWalletIds.push(paymentRequest.SmartContractWallet?.id);
 
-					await prisma.paymentRequest.update({
-						where: { id: paymentRequest.id },
-						data: {
-							SmartContractWallet:
-								paymentRequest.SmartContractWallet == null
-									? undefined
-									: {
-											update: {
-												//we expect there not to be a pending transaction. Otherwise we do not unlock the wallet
-												lockedAt:
-													paymentRequest.SmartContractWallet.pendingTransactionId == null &&
-													paymentRequest.SmartContractWallet.lockedAt &&
-													new Date(paymentRequest.SmartContractWallet.lockedAt) <
-														new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
-														? null
-														: undefined,
-											},
-										},
-							...connectPreviousAction(paymentRequest.nextActionId),
-							...createNextPaymentAction(PaymentAction.WaitingForExternalAction, {
-								errorNote: 'Timeout when locking',
-								errorType: PaymentErrorType.Unknown,
-							}),
-						},
-					});
-				} else {
-					if (
-						(paymentRequest.SmartContractWallet?.pendingTransactionId != null &&
-							paymentRequest.SmartContractWallet?.pendingTransactionId == paymentRequest.currentTransactionId) ||
-						(paymentRequest.SmartContractWallet?.lockedAt &&
-							new Date(paymentRequest.SmartContractWallet.lockedAt) <
-								new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
-					)
-						unlockedSellingWalletIds.push(paymentRequest.SmartContractWallet?.id);
+								await prisma.paymentRequest.update({
+									where: { id: paymentRequest.id },
+									data: {
+										SmartContractWallet:
+											paymentRequest.SmartContractWallet == null
+												? undefined
+												: {
+														update: {
+															//we expect there not to be a pending transaction. Otherwise we do not unlock the wallet
+															lockedAt:
+																paymentRequest.SmartContractWallet.pendingTransactionId == null &&
+																paymentRequest.SmartContractWallet.lockedAt &&
+																new Date(paymentRequest.SmartContractWallet.lockedAt) <
+																	new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
+																	? null
+																	: undefined,
+														},
+													},
+										...connectPreviousAction(paymentRequest.nextActionId),
+										...createNextPaymentAction(PaymentAction.WaitingForExternalAction, {
+											errorNote: 'Timeout when locking',
+											errorType: PaymentErrorType.Unknown,
+										}),
+									},
+								});
+							} else {
+								if (
+									(paymentRequest.SmartContractWallet?.pendingTransactionId != null &&
+										paymentRequest.SmartContractWallet?.pendingTransactionId == paymentRequest.currentTransactionId) ||
+									(paymentRequest.SmartContractWallet?.lockedAt &&
+										new Date(paymentRequest.SmartContractWallet.lockedAt) <
+											new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
+								)
+									unlockedSellingWalletIds.push(paymentRequest.SmartContractWallet?.id);
 
-					await prisma.paymentRequest.update({
-						where: { id: paymentRequest.id },
-						data: {
-							SmartContractWallet:
-								paymentRequest.SmartContractWallet == null
-									? undefined
-									: {
-											update: {
-												//we expect there not to be a pending transaction. Otherwise we do not unlock the wallet
-												lockedAt:
-													(paymentRequest.SmartContractWallet?.pendingTransactionId != null &&
-														paymentRequest.SmartContractWallet?.pendingTransactionId ==
-															paymentRequest.currentTransactionId) ||
-													(paymentRequest.SmartContractWallet?.lockedAt &&
-														new Date(paymentRequest.SmartContractWallet.lockedAt) <
-															new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
-														? null
-														: undefined,
-												pendingTransactionId:
-													(paymentRequest.SmartContractWallet?.pendingTransactionId != null &&
-														paymentRequest.SmartContractWallet?.pendingTransactionId ==
-															paymentRequest.currentTransactionId) ||
-													(paymentRequest.SmartContractWallet?.lockedAt &&
-														new Date(paymentRequest.SmartContractWallet.lockedAt) <
-															new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
-														? null
-														: undefined,
-											},
-										},
-							...updateCurrentTransactionStatus(TransactionStatus.FailedViaTimeout),
-							...connectPreviousAction(paymentRequest.nextActionId),
-							...createNextPaymentAction(PaymentAction.WaitingForExternalAction, {
-								errorNote: 'Timeout when waiting for transaction',
-								errorType: PaymentErrorType.Unknown,
-							}),
-						},
-					});
-				}
-			}
-		});
+								await prisma.paymentRequest.update({
+									where: { id: paymentRequest.id },
+									data: {
+										SmartContractWallet:
+											paymentRequest.SmartContractWallet == null
+												? undefined
+												: {
+														update: {
+															//we expect there not to be a pending transaction. Otherwise we do not unlock the wallet
+															lockedAt:
+																(paymentRequest.SmartContractWallet?.pendingTransactionId != null &&
+																	paymentRequest.SmartContractWallet?.pendingTransactionId ==
+																		paymentRequest.currentTransactionId) ||
+																(paymentRequest.SmartContractWallet?.lockedAt &&
+																	new Date(paymentRequest.SmartContractWallet.lockedAt) <
+																		new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
+																	? null
+																	: undefined,
+															pendingTransactionId:
+																(paymentRequest.SmartContractWallet?.pendingTransactionId != null &&
+																	paymentRequest.SmartContractWallet?.pendingTransactionId ==
+																		paymentRequest.currentTransactionId) ||
+																(paymentRequest.SmartContractWallet?.lockedAt &&
+																	new Date(paymentRequest.SmartContractWallet.lockedAt) <
+																		new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
+																	? null
+																	: undefined,
+														},
+													},
+										...updateCurrentTransactionStatus(TransactionStatus.FailedViaTimeout),
+										...connectPreviousAction(paymentRequest.nextActionId),
+										...createNextPaymentAction(PaymentAction.WaitingForExternalAction, {
+											errorNote: 'Timeout when waiting for transaction',
+											errorType: PaymentErrorType.Unknown,
+										}),
+									},
+								});
+							}
+						}
+					},
+					{ timeout: 30_000 },
+				),
+			{ label: 'wallet-timeouts-0' },
+		);
 	} catch (error) {
 		logger.error('Error updating timed out payment requests', { error: error });
 	}
 	try {
-		await prisma.$transaction(async (prisma) => {
-			const result = await prisma.purchaseRequest.findMany({
-				where: {
-					NextAction: {
-						requestedAction: {
-							in: [
-								PurchasingAction.FundsLockingInitiated,
-								PurchasingAction.WithdrawRefundInitiated,
-								PurchasingAction.SetRefundRequestedInitiated,
-								PurchasingAction.UnSetRefundRequestedInitiated,
-								PurchasingAction.AuthorizeWithdrawalInitiated,
-							],
-						},
-					},
-					OR: [
-						{
-							updatedAt: {
-								lt: new Date(
-									Date.now() -
-										//15 minutes for timeouts, check every tx older than 1 minute
-										CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL,
-								),
-							},
-							CurrentTransaction: null,
-						},
-						{
-							CurrentTransaction: {
-								updatedAt: {
-									lt: new Date(
-										Date.now() -
-											//15 minutes for timeouts, check every tx older than 1 minute
-											DEFAULTS.TX_TIMEOUT_INTERVAL,
-									),
+		await retryOnSerializationConflict(
+			() =>
+				prisma.$transaction(
+					async (prisma) => {
+						const result = await prisma.purchaseRequest.findMany({
+							where: {
+								NextAction: {
+									requestedAction: {
+										in: [
+											PurchasingAction.FundsLockingInitiated,
+											PurchasingAction.WithdrawRefundInitiated,
+											PurchasingAction.SetRefundRequestedInitiated,
+											PurchasingAction.UnSetRefundRequestedInitiated,
+											PurchasingAction.AuthorizeWithdrawalInitiated,
+										],
+									},
 								},
+								OR: [
+									{
+										updatedAt: {
+											lt: new Date(
+												Date.now() -
+													//15 minutes for timeouts, check every tx older than 1 minute
+													CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL,
+											),
+										},
+										CurrentTransaction: null,
+									},
+									{
+										CurrentTransaction: {
+											updatedAt: {
+												lt: new Date(
+													Date.now() -
+														//15 minutes for timeouts, check every tx older than 1 minute
+														DEFAULTS.TX_TIMEOUT_INTERVAL,
+												),
+											},
+										},
+									},
+								],
 							},
-						},
-					],
-				},
-				include: { SmartContractWallet: { where: { deletedAt: null } }, NextAction: true },
-			});
-			for (const purchaseRequest of result) {
-				if (purchaseRequest.currentTransactionId == null) {
-					if (
-						purchaseRequest.SmartContractWallet != null &&
-						purchaseRequest.SmartContractWallet.pendingTransactionId == null &&
-						purchaseRequest.SmartContractWallet.lockedAt &&
-						new Date(purchaseRequest.SmartContractWallet.lockedAt) <
-							new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
-					)
-						unlockedPurchasingWalletIds.push(purchaseRequest.SmartContractWallet?.id);
+							include: { SmartContractWallet: { where: { deletedAt: null } }, NextAction: true },
+						});
+						for (const purchaseRequest of result) {
+							if (purchaseRequest.currentTransactionId == null) {
+								if (
+									purchaseRequest.SmartContractWallet != null &&
+									purchaseRequest.SmartContractWallet.pendingTransactionId == null &&
+									purchaseRequest.SmartContractWallet.lockedAt &&
+									new Date(purchaseRequest.SmartContractWallet.lockedAt) <
+										new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
+								)
+									unlockedPurchasingWalletIds.push(purchaseRequest.SmartContractWallet?.id);
 
-					await prisma.purchaseRequest.update({
-						where: { id: purchaseRequest.id },
-						data: {
-							SmartContractWallet:
-								purchaseRequest.SmartContractWallet == null
-									? undefined
-									: {
-											update: {
-												//we expect there not to be a pending transaction. Otherwise we do not unlock the wallet
-												lockedAt:
-													purchaseRequest.SmartContractWallet.pendingTransactionId == null &&
-													purchaseRequest.SmartContractWallet.lockedAt &&
-													new Date(purchaseRequest.SmartContractWallet.lockedAt) <
-														new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
-														? null
-														: undefined,
-											},
-										},
-							...connectPreviousAction(purchaseRequest.nextActionId),
-							...createNextPurchaseAction(PurchasingAction.WaitingForExternalAction, {
-								errorNote: 'Timeout when locking',
-								errorType: PurchaseErrorType.Unknown,
-							}),
-						},
-					});
-				} else {
-					if (
-						(purchaseRequest.SmartContractWallet?.pendingTransactionId != null &&
-							purchaseRequest.SmartContractWallet?.pendingTransactionId == purchaseRequest.currentTransactionId) ||
-						(purchaseRequest.SmartContractWallet?.lockedAt &&
-							new Date(purchaseRequest.SmartContractWallet.lockedAt) <
-								new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
-					)
-						unlockedPurchasingWalletIds.push(purchaseRequest.SmartContractWallet?.id);
+								await prisma.purchaseRequest.update({
+									where: { id: purchaseRequest.id },
+									data: {
+										SmartContractWallet:
+											purchaseRequest.SmartContractWallet == null
+												? undefined
+												: {
+														update: {
+															//we expect there not to be a pending transaction. Otherwise we do not unlock the wallet
+															lockedAt:
+																purchaseRequest.SmartContractWallet.pendingTransactionId == null &&
+																purchaseRequest.SmartContractWallet.lockedAt &&
+																new Date(purchaseRequest.SmartContractWallet.lockedAt) <
+																	new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
+																	? null
+																	: undefined,
+														},
+													},
+										...connectPreviousAction(purchaseRequest.nextActionId),
+										...createNextPurchaseAction(PurchasingAction.WaitingForExternalAction, {
+											errorNote: 'Timeout when locking',
+											errorType: PurchaseErrorType.Unknown,
+										}),
+									},
+								});
+							} else {
+								if (
+									(purchaseRequest.SmartContractWallet?.pendingTransactionId != null &&
+										purchaseRequest.SmartContractWallet?.pendingTransactionId ==
+											purchaseRequest.currentTransactionId) ||
+									(purchaseRequest.SmartContractWallet?.lockedAt &&
+										new Date(purchaseRequest.SmartContractWallet.lockedAt) <
+											new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
+								)
+									unlockedPurchasingWalletIds.push(purchaseRequest.SmartContractWallet?.id);
 
-					await prisma.purchaseRequest.update({
-						where: { id: purchaseRequest.id },
-						data: {
-							SmartContractWallet:
-								purchaseRequest.SmartContractWallet == null
-									? undefined
-									: {
-											update: {
-												//we expect there not to be a pending transaction. Otherwise we do not unlock the wallet
-												lockedAt:
-													(purchaseRequest.SmartContractWallet?.pendingTransactionId != null &&
-														purchaseRequest.SmartContractWallet?.pendingTransactionId ==
-															purchaseRequest.currentTransactionId) ||
-													(purchaseRequest.SmartContractWallet?.lockedAt &&
-														new Date(purchaseRequest.SmartContractWallet.lockedAt) <
-															new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
-														? null
-														: undefined,
-												pendingTransactionId:
-													(purchaseRequest.SmartContractWallet?.pendingTransactionId != null &&
-														purchaseRequest.SmartContractWallet?.pendingTransactionId ==
-															purchaseRequest.currentTransactionId) ||
-													(purchaseRequest.SmartContractWallet?.lockedAt &&
-														new Date(purchaseRequest.SmartContractWallet.lockedAt) <
-															new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
-														? null
-														: undefined,
-											},
-										},
-							...updateCurrentTransactionStatus(TransactionStatus.FailedViaTimeout),
-							...connectPreviousAction(purchaseRequest.nextActionId),
-							...createNextPurchaseAction(PurchasingAction.WaitingForExternalAction, {
-								errorNote: 'Timeout when waiting for transaction',
-								errorType: PurchaseErrorType.Unknown,
-							}),
-						},
-					});
-				}
-			}
-		});
+								await prisma.purchaseRequest.update({
+									where: { id: purchaseRequest.id },
+									data: {
+										SmartContractWallet:
+											purchaseRequest.SmartContractWallet == null
+												? undefined
+												: {
+														update: {
+															//we expect there not to be a pending transaction. Otherwise we do not unlock the wallet
+															lockedAt:
+																(purchaseRequest.SmartContractWallet?.pendingTransactionId != null &&
+																	purchaseRequest.SmartContractWallet?.pendingTransactionId ==
+																		purchaseRequest.currentTransactionId) ||
+																(purchaseRequest.SmartContractWallet?.lockedAt &&
+																	new Date(purchaseRequest.SmartContractWallet.lockedAt) <
+																		new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
+																	? null
+																	: undefined,
+															pendingTransactionId:
+																(purchaseRequest.SmartContractWallet?.pendingTransactionId != null &&
+																	purchaseRequest.SmartContractWallet?.pendingTransactionId ==
+																		purchaseRequest.currentTransactionId) ||
+																(purchaseRequest.SmartContractWallet?.lockedAt &&
+																	new Date(purchaseRequest.SmartContractWallet.lockedAt) <
+																		new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
+																	? null
+																	: undefined,
+														},
+													},
+										...updateCurrentTransactionStatus(TransactionStatus.FailedViaTimeout),
+										...connectPreviousAction(purchaseRequest.nextActionId),
+										...createNextPurchaseAction(PurchasingAction.WaitingForExternalAction, {
+											errorNote: 'Timeout when waiting for transaction',
+											errorType: PurchaseErrorType.Unknown,
+										}),
+									},
+								});
+							}
+						}
+					},
+					{ timeout: 30_000 },
+				),
+			{ label: 'wallet-timeouts-1' },
+		);
 	} catch (error) {
 		logger.error('Error updating timed out purchasing requests', {
 			error: error,
 		});
 	}
 	try {
-		await prisma.$transaction(async (prisma) => {
-			const result = await prisma.registryRequest.findMany({
-				where: {
-					state: {
-						in: [RegistrationState.RegistrationInitiated, RegistrationState.DeregistrationInitiated],
-					},
-					SmartContractWallet: { deletedAt: null },
-					OR: [
-						{
-							updatedAt: {
-								lt: new Date(
-									Date.now() -
-										//15 minutes for timeouts, check every tx older than 1 minute
-										CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL,
-								),
-							},
-							CurrentTransaction: null,
-						},
-						{
-							CurrentTransaction: {
-								updatedAt: {
-									lt: new Date(
-										Date.now() -
-											//15 minutes for timeouts, check every tx older than 1 minute
-											DEFAULTS.TX_TIMEOUT_INTERVAL,
-									),
+		await retryOnSerializationConflict(
+			() =>
+				prisma.$transaction(
+					async (prisma) => {
+						const result = await prisma.registryRequest.findMany({
+							where: {
+								state: {
+									in: [RegistrationState.RegistrationInitiated, RegistrationState.DeregistrationInitiated],
 								},
+								SmartContractWallet: { deletedAt: null },
+								OR: [
+									{
+										updatedAt: {
+											lt: new Date(
+												Date.now() -
+													//15 minutes for timeouts, check every tx older than 1 minute
+													CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL,
+											),
+										},
+										CurrentTransaction: null,
+									},
+									{
+										CurrentTransaction: {
+											updatedAt: {
+												lt: new Date(
+													Date.now() -
+														//15 minutes for timeouts, check every tx older than 1 minute
+														DEFAULTS.TX_TIMEOUT_INTERVAL,
+												),
+											},
+										},
+									},
+								],
 							},
-						},
-					],
-				},
-				include: { SmartContractWallet: true },
-			});
+							include: { SmartContractWallet: true },
+						});
 
-			for (const registryRequest of result) {
-				if (registryRequest.currentTransactionId == null) {
-					if (
-						registryRequest.SmartContractWallet != null &&
-						registryRequest.SmartContractWallet.pendingTransactionId == null &&
-						registryRequest.SmartContractWallet.lockedAt &&
-						new Date(registryRequest.SmartContractWallet.lockedAt) <
-							new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
-					)
-						unlockedSellingWalletIds.push(registryRequest.SmartContractWallet?.id);
+						for (const registryRequest of result) {
+							if (registryRequest.currentTransactionId == null) {
+								if (
+									registryRequest.SmartContractWallet != null &&
+									registryRequest.SmartContractWallet.pendingTransactionId == null &&
+									registryRequest.SmartContractWallet.lockedAt &&
+									new Date(registryRequest.SmartContractWallet.lockedAt) <
+										new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
+								)
+									unlockedSellingWalletIds.push(registryRequest.SmartContractWallet?.id);
 
-					await prisma.registryRequest.update({
-						where: { id: registryRequest.id },
-						data: {
-							SmartContractWallet:
-								registryRequest.SmartContractWallet == null
-									? undefined
-									: {
-											update: {
-												//we expect there not to be a pending transaction. Otherwise we do not unlock the wallet
-												lockedAt:
-													registryRequest.SmartContractWallet.pendingTransactionId == null &&
-													registryRequest.SmartContractWallet.lockedAt &&
-													new Date(registryRequest.SmartContractWallet.lockedAt) <
-														new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
-														? null
-														: undefined,
-											},
-										},
-							state:
-								registryRequest.state == RegistrationState.RegistrationInitiated
-									? RegistrationState.RegistrationFailed
-									: RegistrationState.DeregistrationFailed,
-							error: 'Timeout, force unlocked',
-						},
-					});
-				} else {
-					if (
-						(registryRequest.SmartContractWallet?.pendingTransactionId != null &&
-							registryRequest.SmartContractWallet?.pendingTransactionId == registryRequest.currentTransactionId) ||
-						(registryRequest.SmartContractWallet?.lockedAt &&
-							new Date(registryRequest.SmartContractWallet.lockedAt) <
-								new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
-					)
-						unlockedSellingWalletIds.push(registryRequest.SmartContractWallet?.id);
+								await prisma.registryRequest.update({
+									where: { id: registryRequest.id },
+									data: {
+										SmartContractWallet:
+											registryRequest.SmartContractWallet == null
+												? undefined
+												: {
+														update: {
+															//we expect there not to be a pending transaction. Otherwise we do not unlock the wallet
+															lockedAt:
+																registryRequest.SmartContractWallet.pendingTransactionId == null &&
+																registryRequest.SmartContractWallet.lockedAt &&
+																new Date(registryRequest.SmartContractWallet.lockedAt) <
+																	new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
+																	? null
+																	: undefined,
+														},
+													},
+										state:
+											registryRequest.state == RegistrationState.RegistrationInitiated
+												? RegistrationState.RegistrationFailed
+												: RegistrationState.DeregistrationFailed,
+										error: 'Timeout, force unlocked',
+									},
+								});
+							} else {
+								if (
+									(registryRequest.SmartContractWallet?.pendingTransactionId != null &&
+										registryRequest.SmartContractWallet?.pendingTransactionId ==
+											registryRequest.currentTransactionId) ||
+									(registryRequest.SmartContractWallet?.lockedAt &&
+										new Date(registryRequest.SmartContractWallet.lockedAt) <
+											new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
+								)
+									unlockedSellingWalletIds.push(registryRequest.SmartContractWallet?.id);
 
-					await prisma.registryRequest.update({
-						where: { id: registryRequest.id },
-						data: {
-							SmartContractWallet:
-								registryRequest.SmartContractWallet == null
-									? undefined
-									: {
-											update: {
-												//we expect there not to be a pending transaction. Otherwise we do not unlock the wallet
-												lockedAt:
-													(registryRequest.SmartContractWallet?.pendingTransactionId != null &&
-														registryRequest.SmartContractWallet?.pendingTransactionId ==
-															registryRequest.currentTransactionId) ||
-													(registryRequest.SmartContractWallet?.lockedAt &&
-														new Date(registryRequest.SmartContractWallet.lockedAt) <
-															new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
-														? null
-														: undefined,
-												pendingTransactionId:
-													(registryRequest.SmartContractWallet?.pendingTransactionId != null &&
-														registryRequest.SmartContractWallet?.pendingTransactionId ==
-															registryRequest.currentTransactionId) ||
-													(registryRequest.SmartContractWallet?.lockedAt &&
-														new Date(registryRequest.SmartContractWallet.lockedAt) <
-															new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
-														? null
-														: undefined,
-											},
-										},
-							...updateCurrentTransactionStatus(TransactionStatus.FailedViaTimeout),
-							state:
-								registryRequest.state == RegistrationState.RegistrationInitiated
-									? RegistrationState.RegistrationFailed
-									: RegistrationState.DeregistrationFailed,
-						},
-					});
-				}
-			}
-		});
+								await prisma.registryRequest.update({
+									where: { id: registryRequest.id },
+									data: {
+										SmartContractWallet:
+											registryRequest.SmartContractWallet == null
+												? undefined
+												: {
+														update: {
+															//we expect there not to be a pending transaction. Otherwise we do not unlock the wallet
+															lockedAt:
+																(registryRequest.SmartContractWallet?.pendingTransactionId != null &&
+																	registryRequest.SmartContractWallet?.pendingTransactionId ==
+																		registryRequest.currentTransactionId) ||
+																(registryRequest.SmartContractWallet?.lockedAt &&
+																	new Date(registryRequest.SmartContractWallet.lockedAt) <
+																		new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
+																	? null
+																	: undefined,
+															pendingTransactionId:
+																(registryRequest.SmartContractWallet?.pendingTransactionId != null &&
+																	registryRequest.SmartContractWallet?.pendingTransactionId ==
+																		registryRequest.currentTransactionId) ||
+																(registryRequest.SmartContractWallet?.lockedAt &&
+																	new Date(registryRequest.SmartContractWallet.lockedAt) <
+																		new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
+																	? null
+																	: undefined,
+														},
+													},
+										...updateCurrentTransactionStatus(TransactionStatus.FailedViaTimeout),
+										state:
+											registryRequest.state == RegistrationState.RegistrationInitiated
+												? RegistrationState.RegistrationFailed
+												: RegistrationState.DeregistrationFailed,
+									},
+								});
+							}
+						}
+					},
+					{ timeout: 30_000 },
+				),
+			{ label: 'wallet-timeouts-2' },
+		);
 	} catch (error) {
 		logger.error('Error updating timed out registry requests', {
 			error: error,

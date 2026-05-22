@@ -42,9 +42,16 @@ function isSerializationConflict(error: unknown): boolean {
  * use is fine — non-conflicting calls never retry.
  */
 export async function retryOnSerializationConflict<T>(fn: () => Promise<T>, options: RetryOptions = {}): Promise<T> {
-	const maxRetries = options.maxRetries ?? 4;
-	const baseDelayMs = options.baseDelayMs ?? 50;
-	const maxDelayMs = options.maxDelayMs ?? 2000;
+	// Defaults sized for Postgres Serializable contention under V1+V2 parallel
+	// schedulers: 8 retries × up to 5s = ~30-40s worst-case before a hard
+	// failure. CI observed 4 retries × 2s (~775ms total) was too tight — a
+	// conflicting tx-sync handler holding HotWallet locks would exhaust the
+	// budget mid-commit and surface P2034/P2028 to the caller, leaving the
+	// affected request stuck because the outer tx-sync per-entry catch
+	// swallows errors per-request.
+	const maxRetries = options.maxRetries ?? 8;
+	const baseDelayMs = options.baseDelayMs ?? 100;
+	const maxDelayMs = options.maxDelayMs ?? 5000;
 	const label = options.label ?? 'serializable-tx';
 	const log = options.logger ?? logger;
 

@@ -4,6 +4,7 @@ import type { UTxO } from '@meshsdk/core';
 import { HotWalletType, Network, PaymentSourceType } from '@/generated/prisma/client';
 import { LowBalanceStatus } from '@/generated/prisma/enums';
 import { prisma } from '@masumi/payment-core/db';
+import { retryOnSerializationConflict } from '@/utils/db/retry';
 import { CONFIG, type LowBalanceDefaultRule } from '@masumi/payment-core/config';
 import { logger } from '@masumi/payment-core/logger';
 import { logWarn } from '@/utils/logs';
@@ -475,90 +476,97 @@ export class WalletLowBalanceMonitorService {
 		const emitAlerts = options?.emitAlerts ?? true;
 		const checkedAt = new Date();
 
-		const alerts = await prisma.$transaction(async (tx) => {
-			const detectedAlerts: WalletLowBalanceAlert[] = [];
+		const alerts = await retryOnSerializationConflict(
+			() =>
+				prisma.$transaction(
+					async (tx) => {
+						const detectedAlerts: WalletLowBalanceAlert[] = [];
 
-			for (const rule of wallet.LowBalanceRules) {
-				const currentAmount = balanceMap.get(rule.assetUnit) ?? 0n;
-				const nextStatus = statusForBalance(currentAmount, rule.thresholdAmount);
-				const commonUpdate = {
-					lastKnownAmount: currentAmount,
-					lastCheckedAt: checkedAt,
-				};
+						for (const rule of wallet.LowBalanceRules) {
+							const currentAmount = balanceMap.get(rule.assetUnit) ?? 0n;
+							const nextStatus = statusForBalance(currentAmount, rule.thresholdAmount);
+							const commonUpdate = {
+								lastKnownAmount: currentAmount,
+								lastCheckedAt: checkedAt,
+							};
 
-				switch (rule.status) {
-					case LowBalanceStatus.Unknown: {
-						await tx.hotWalletLowBalanceRule.updateMany({
-							where: {
-								id: rule.id,
-								status: LowBalanceStatus.Unknown,
-							},
-							data: {
-								...commonUpdate,
-								status: nextStatus,
-								lastAlertedAt: null,
-							},
-						});
-						break;
-					}
-					case LowBalanceStatus.Healthy: {
-						if (nextStatus === LowBalanceStatus.Low) {
-							const result = await tx.hotWalletLowBalanceRule.updateMany({
-								where: {
-									id: rule.id,
-									status: LowBalanceStatus.Healthy,
-								},
-								data: {
-									...commonUpdate,
-									status: LowBalanceStatus.Low,
-									lastAlertedAt: emitAlerts ? checkedAt : null,
-								},
-							});
+							switch (rule.status) {
+								case LowBalanceStatus.Unknown: {
+									await tx.hotWalletLowBalanceRule.updateMany({
+										where: {
+											id: rule.id,
+											status: LowBalanceStatus.Unknown,
+										},
+										data: {
+											...commonUpdate,
+											status: nextStatus,
+											lastAlertedAt: null,
+										},
+									});
+									break;
+								}
+								case LowBalanceStatus.Healthy: {
+									if (nextStatus === LowBalanceStatus.Low) {
+										const result = await tx.hotWalletLowBalanceRule.updateMany({
+											where: {
+												id: rule.id,
+												status: LowBalanceStatus.Healthy,
+											},
+											data: {
+												...commonUpdate,
+												status: LowBalanceStatus.Low,
+												lastAlertedAt: emitAlerts ? checkedAt : null,
+											},
+										});
 
-							if (emitAlerts && result.count === 1) {
-								detectedAlerts.push({
-									ruleId: rule.id,
-									assetUnit: rule.assetUnit,
-									thresholdAmount: rule.thresholdAmount.toString(),
-									currentAmount: currentAmount.toString(),
-									checkedAt,
-									wallet,
-									checkSource,
-								});
+										if (emitAlerts && result.count === 1) {
+											detectedAlerts.push({
+												ruleId: rule.id,
+												assetUnit: rule.assetUnit,
+												thresholdAmount: rule.thresholdAmount.toString(),
+												currentAmount: currentAmount.toString(),
+												checkedAt,
+												wallet,
+												checkSource,
+											});
+										}
+									} else {
+										await tx.hotWalletLowBalanceRule.updateMany({
+											where: {
+												id: rule.id,
+												status: LowBalanceStatus.Healthy,
+											},
+											data: commonUpdate,
+										});
+									}
+									break;
+								}
+								case LowBalanceStatus.Low: {
+									await tx.hotWalletLowBalanceRule.updateMany({
+										where: {
+											id: rule.id,
+											status: LowBalanceStatus.Low,
+										},
+										data: {
+											...commonUpdate,
+											status: nextStatus,
+										},
+									});
+									break;
+								}
+								default: {
+									const exhaustiveStatus: never = rule.status;
+									throw new Error(`Unhandled low balance status: ${String(exhaustiveStatus)}`);
+								}
 							}
-						} else {
-							await tx.hotWalletLowBalanceRule.updateMany({
-								where: {
-									id: rule.id,
-									status: LowBalanceStatus.Healthy,
-								},
-								data: commonUpdate,
-							});
 						}
-						break;
-					}
-					case LowBalanceStatus.Low: {
-						await tx.hotWalletLowBalanceRule.updateMany({
-							where: {
-								id: rule.id,
-								status: LowBalanceStatus.Low,
-							},
-							data: {
-								...commonUpdate,
-								status: nextStatus,
-							},
-						});
-						break;
-					}
-					default: {
-						const exhaustiveStatus: never = rule.status;
-						throw new Error(`Unhandled low balance status: ${String(exhaustiveStatus)}`);
-					}
-				}
-			}
 
-			return detectedAlerts;
-		});
+						return detectedAlerts;
+					},
+					{ timeout: 30_000 },
+				),
+			{ label: 'low-balance-0' },
+		);
 
 		await Promise.all(alerts.map(async (alert) => this.emitLowBalanceAlert(alert)));
 	}
