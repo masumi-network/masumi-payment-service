@@ -45,6 +45,7 @@ import {
 	type BatchInteractionItem,
 	generateMasumiSmartContractBatchInteractionTransactionAutomaticFees,
 } from '../../../builders/batch-interaction';
+import { ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
 
 // V2 authorize-refund sizing. Same Aiken validator as submit-result; per-input
 // budget is similar so 6 fits well within protocol max-ex-units with headroom.
@@ -262,6 +263,28 @@ async function processSinglePaymentRequest(
 	if (utxos.length === 0) {
 		throw new Error('No UTXOs found in the wallet. Wallet is empty.');
 	}
+
+	// Same collateral-readiness gate as the batch path. Throw the
+	// LOOKUP_DEFERRED sentinel when we are NOT ready so the
+	// `fallbackToSingleItems` catch arm in this service routes the item
+	// back to the queue (via the `info`-level defer log) instead of
+	// calling markRequestFailed. The prep tx already locks the wallet
+	// through its shared Tx row; we just need the caller to bail out
+	// without consuming the slot.
+	const collateralCheck = await ensureCollateralReady({
+		walletDbId: request.SmartContractWallet!.id,
+		walletAddress: address,
+		meshWallet: wallet,
+		utxos,
+		blockchainProvider,
+		serviceLabel: 'authorize-refund-single',
+	});
+	if (collateralCheck.status !== 'ready') {
+		throw new Error(
+			`${LOOKUP_DEFERRED_PREFIX} wallet not collateral-ready (${collateralCheck.status}); retry next tick`,
+		);
+	}
+
 	const { script, smartContractAddress } = await getPaymentScriptFromPaymentSourceV2(paymentContract);
 	const txHash = request.CurrentTransaction!.txHash!;
 	const utxoByHash = await fetchUTxOsWithDeferOnEmpty(blockchainProvider, txHash);
@@ -438,6 +461,21 @@ async function processWalletBatch(
 		// pending state still settling). NOT a per-item failure — leave
 		// items queued for the next tick after the wallet has UTxOs.
 		await unlockHotWallet(wallet.id);
+		return;
+	}
+
+	const collateralCheck = await ensureCollateralReady({
+		walletDbId: wallet.id,
+		walletAddress: address,
+		meshWallet,
+		utxos,
+		blockchainProvider,
+		serviceLabel: 'authorize-refund-batch',
+	});
+	if (collateralCheck.status !== 'ready') {
+		// Helper has either submitted a prep tx (deferred — wallet locked
+		// until prep confirms) or hit insufficient_funds / prep_tx_failed.
+		// Either way leave items queued and bail out of this tick.
 		return;
 	}
 

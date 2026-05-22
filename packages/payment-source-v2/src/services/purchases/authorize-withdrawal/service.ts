@@ -45,6 +45,7 @@ import {
 	type BatchInteractionItem,
 	generateMasumiSmartContractBatchInteractionTransactionAutomaticFees,
 } from '../../../builders/batch-interaction';
+import { ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
 
 const AUTHORIZE_WITHDRAWAL_BATCH_SIZE = 7;
 
@@ -463,6 +464,24 @@ async function processWalletBatch(
 		// pending state still settling). NOT a per-item failure — leave
 		// items queued for the next tick after the wallet has UTxOs.
 		await unlockHotWallet(wallet.id);
+		return;
+	}
+
+	// See ensureCollateralReady module note: Cardano disallows the same
+	// UTxO appearing in both `inputs` and `collateral_inputs`. If the
+	// wallet has collapsed to a single UTxO (or has no pure-ADA
+	// collateral candidate), the helper submits a self-send prep tx and
+	// returns 'deferred'; we leave items queued for the next tick (the
+	// wallet stays locked until tx-sync / wallet-timeouts releases it).
+	const collateralCheck = await ensureCollateralReady({
+		walletDbId: wallet.id,
+		walletAddress: address,
+		meshWallet,
+		utxos,
+		blockchainProvider,
+		serviceLabel: 'authorize-withdrawal',
+	});
+	if (collateralCheck.status !== 'ready') {
 		return;
 	}
 

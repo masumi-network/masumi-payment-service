@@ -44,6 +44,7 @@ import {
 	type BatchWithdrawItem,
 	generateMasumiSmartContractBatchWithdrawTransactionAutomaticFees,
 } from '../../../builders/batch-interaction';
+import { ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
 
 const COLLECT_REFUND_BATCH_SIZE = 7;
 
@@ -262,6 +263,23 @@ async function processSingleRefundCollection(
 		throw new Error('No UTXOs found in the wallet. Wallet is empty.');
 	}
 
+	// See ensureCollateralReady module note. Throw the LOOKUP_DEFERRED
+	// sentinel so the fallbackToSingleItems catch arm routes the item
+	// back to the queue instead of marking it failed.
+	const collateralCheck = await ensureCollateralReady({
+		walletDbId: request.SmartContractWallet.id,
+		walletAddress: address,
+		meshWallet: wallet,
+		utxos,
+		blockchainProvider,
+		serviceLabel: 'collect-refund',
+	});
+	if (collateralCheck.status !== 'ready') {
+		throw new Error(
+			`${LOOKUP_DEFERRED_PREFIX} wallet not collateral-ready (${collateralCheck.status}); retry next tick`,
+		);
+	}
+
 	const { script, smartContractAddress } = await getPaymentScriptFromPaymentSourceV2(paymentContract);
 	const validated = await validateAndBuildItem(request, blockchainProvider, network, smartContractAddress, address);
 
@@ -430,6 +448,25 @@ async function processWalletBatch(
 		// pending state still settling). NOT a per-item failure — leave
 		// items queued for the next tick after the wallet has UTxOs.
 		await unlockHotWallet(wallet.id);
+		return;
+	}
+
+	// See ensureCollateralReady module note: Cardano disallows the same
+	// UTxO appearing in both `inputs` and `collateral_inputs`. If the
+	// wallet has collapsed to a single UTxO (or has no pure-ADA
+	// collateral candidate), submit a self-send prep tx and defer the
+	// batch to the next tick. The helper leaves the wallet locked via
+	// its shared Tx row when status != 'ready'; wallet-timeouts /
+	// tx-sync will release it once the prep tx confirms or times out.
+	const collateralCheck = await ensureCollateralReady({
+		walletDbId: wallet.id,
+		walletAddress: address,
+		meshWallet,
+		utxos,
+		blockchainProvider,
+		serviceLabel: 'collect-refund',
+	});
+	if (collateralCheck.status !== 'ready') {
 		return;
 	}
 
