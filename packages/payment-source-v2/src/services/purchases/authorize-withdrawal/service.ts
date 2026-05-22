@@ -14,6 +14,7 @@ import { SmartContractState, smartContractStateEqualsOnChainState } from '@/util
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { DecodedV1ContractDatum, newCooldownTime } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPurchases } from '@/utils/db/lock-and-query-purchases';
+import { retryOnSerializationConflict } from '@/utils/db/retry';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { advancedRetry, delayErrorResolver } from 'advanced-retry';
 import { sortAndLimitUtxos } from '@/utils/utxo';
@@ -631,21 +632,25 @@ async function processWalletBatch(
 	}
 
 	try {
-		await prisma.$transaction(
-			async (tx) => {
-				for (const v of fit) {
-					await tx.purchaseRequest.update({
-						where: { id: v.request.id },
-						data: {
-							...connectPreviousAction(v.request.nextActionId),
-							...createNextPurchaseAction(PurchasingAction.AuthorizeWithdrawalInitiated),
-							...createPendingTransaction(wallet.id),
-							TransactionHistory: { connect: { id: v.request.CurrentTransaction!.id } },
-						},
-					});
-				}
-			},
-			{ timeout: 30_000 },
+		await retryOnSerializationConflict(
+			() =>
+				prisma.$transaction(
+					async (tx) => {
+						for (const v of fit) {
+							await tx.purchaseRequest.update({
+								where: { id: v.request.id },
+								data: {
+									...connectPreviousAction(v.request.nextActionId),
+									...createNextPurchaseAction(PurchasingAction.AuthorizeWithdrawalInitiated),
+									...createPendingTransaction(wallet.id),
+									TransactionHistory: { connect: { id: v.request.CurrentTransaction!.id } },
+								},
+							});
+						}
+					},
+					{ timeout: 30_000 },
+				),
+			{ label: 'authorize-withdrawal-batch-tx' },
 		);
 	} catch (dbError) {
 		logger.error('V2 authorize-withdrawal batch DB pre-submit update failed', { error: dbError });
@@ -663,18 +668,25 @@ async function processWalletBatch(
 					? { message: submitError.message, stack: submitError.stack, name: submitError.name }
 					: submitError,
 		});
-		await Promise.allSettled(
-			fit.map((v) =>
-				prisma.purchaseRequest.update({
-					where: { id: v.request.id },
-					data: {
-						...connectPreviousAction(v.request.nextActionId),
-						...createNextPurchaseAction(PurchasingAction.AuthorizeWithdrawalRequested),
-						CurrentTransaction: { connect: { id: v.request.CurrentTransaction!.id } },
-						TransactionHistory: { disconnect: { id: v.request.CurrentTransaction!.id } },
+		await retryOnSerializationConflict(
+			() =>
+				prisma.$transaction(
+					async (tx) => {
+						for (const v of fit) {
+							await tx.purchaseRequest.update({
+								where: { id: v.request.id },
+								data: {
+									...connectPreviousAction(v.request.nextActionId),
+									...createNextPurchaseAction(PurchasingAction.AuthorizeWithdrawalRequested),
+									CurrentTransaction: { connect: { id: v.request.CurrentTransaction!.id } },
+									TransactionHistory: { disconnect: { id: v.request.CurrentTransaction!.id } },
+								},
+							});
+						}
 					},
-				}),
-			),
+					{ timeout: 30_000 },
+				),
+			{ label: 'authorize-withdrawal-batch-tx' },
 		);
 		await fallbackToSingleItems(
 			validated.map((v) => v.request),
@@ -697,16 +709,20 @@ async function processWalletBatch(
 	}
 
 	try {
-		await prisma.$transaction(
-			async (tx) => {
-				for (const v of fit) {
-					await tx.purchaseRequest.update({
-						where: { id: v.request.id },
-						data: updateCurrentTransactionHash(newTxHash),
-					});
-				}
-			},
-			{ timeout: 30_000 },
+		await retryOnSerializationConflict(
+			() =>
+				prisma.$transaction(
+					async (tx) => {
+						for (const v of fit) {
+							await tx.purchaseRequest.update({
+								where: { id: v.request.id },
+								data: updateCurrentTransactionHash(newTxHash),
+							});
+						}
+					},
+					{ timeout: 30_000 },
+				),
+			{ label: 'authorize-withdrawal-batch-tx' },
 		);
 	} catch (dbError) {
 		logger.error('V2 authorize-withdrawal batch post-submit DB update failed; tx-sync will reconcile next tick', {

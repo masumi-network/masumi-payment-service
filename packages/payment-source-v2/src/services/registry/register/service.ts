@@ -4,6 +4,7 @@ import { logger } from '@masumi/payment-core/logger';
 import type { LanguageVersion, UTxO } from '@meshsdk/core';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { lockAndQueryRegistryRequests } from '@/utils/db/lock-and-query-registry-request';
+import { retryOnSerializationConflict } from '@/utils/db/retry';
 import { DEFAULTS, SERVICE_CONSTANTS } from '@masumi/payment-core/config';
 import { getRegistryScriptFromNetworkHandlerV2 } from '@/utils/generator/contract-generator';
 import { stringToMetadata, cleanMetadata } from '@/utils/converter/metadata-string-convert';
@@ -530,19 +531,23 @@ export async function registerAgentV2() {
 				// RegistrationInitiated + its own CurrentTransaction in ONE
 				// $transaction so the rows move atomically together.
 				try {
-					await prisma.$transaction(
-						async (tx) => {
-							for (const v of fit) {
-								await tx.registryRequest.update({
-									where: { id: v.request.id },
-									data: {
-										state: RegistrationState.RegistrationInitiated,
-										...createPendingTransaction(v.request.SmartContractWallet.id),
-									},
-								});
-							}
-						},
-						{ timeout: 30_000 },
+					await retryOnSerializationConflict(
+						() =>
+							prisma.$transaction(
+								async (tx) => {
+									for (const v of fit) {
+										await tx.registryRequest.update({
+											where: { id: v.request.id },
+											data: {
+												state: RegistrationState.RegistrationInitiated,
+												...createPendingTransaction(v.request.SmartContractWallet.id),
+											},
+										});
+									}
+								},
+								{ timeout: 30_000 },
+							),
+						{ label: 'v2-register-batch-tx' },
 					);
 				} catch (dbError) {
 					logger.error('V2 register batch DB pre-submit update failed', { error: dbError });
@@ -562,18 +567,25 @@ export async function registerAgentV2() {
 					});
 					// Rollback the pre-submit transition so a stale
 					// CurrentTransaction doesn't pin the wallet.
-					await Promise.allSettled(
-						fit.map((v) =>
-							prisma.registryRequest.update({
-								where: { id: v.request.id },
-								data: {
-									state: RegistrationState.RegistrationRequested,
-									CurrentTransaction: v.request.currentTransactionId
-										? { connect: { id: v.request.currentTransactionId } }
-										: { disconnect: true },
+					await retryOnSerializationConflict(
+						() =>
+							prisma.$transaction(
+								async (tx) => {
+									for (const v of fit) {
+										await tx.registryRequest.update({
+											where: { id: v.request.id },
+											data: {
+												state: RegistrationState.RegistrationRequested,
+												CurrentTransaction: v.request.currentTransactionId
+													? { connect: { id: v.request.currentTransactionId } }
+													: { disconnect: true },
+											},
+										});
+									}
 								},
-							}),
-						),
+								{ timeout: 30_000 },
+							),
+						{ label: 'v2-register-batch-tx' },
 					);
 					await fallbackToSingleItems(fit, paymentSource, network, script);
 					return;
@@ -589,19 +601,23 @@ export async function registerAgentV2() {
 				// transaction so the assetIdentifier is set atomically with
 				// the txHash.
 				try {
-					await prisma.$transaction(
-						async (tx) => {
-							for (const v of fit) {
-								await tx.registryRequest.update({
-									where: { id: v.request.id },
-									data: {
-										agentIdentifier: v.policyId + v.assetName,
-										...updateCurrentTransactionHash(newTxHash),
-									},
-								});
-							}
-						},
-						{ timeout: 30_000 },
+					await retryOnSerializationConflict(
+						() =>
+							prisma.$transaction(
+								async (tx) => {
+									for (const v of fit) {
+										await tx.registryRequest.update({
+											where: { id: v.request.id },
+											data: {
+												agentIdentifier: v.policyId + v.assetName,
+												...updateCurrentTransactionHash(newTxHash),
+											},
+										});
+									}
+								},
+								{ timeout: 30_000 },
+							),
+						{ label: 'v2-register-batch-tx' },
 					);
 				} catch (dbError) {
 					logger.error('V2 register batch post-submit DB update failed; rows will reconcile via tx-sync next tick', {

@@ -4,6 +4,7 @@ import { logger } from '@masumi/payment-core/logger';
 import type { BlockfrostProvider as MeshV2BlockfrostProvider, LanguageVersion, UTxO } from '@meshsdk/core';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { lockAndQueryRegistryRequests } from '@/utils/db/lock-and-query-registry-request';
+import { retryOnSerializationConflict } from '@/utils/db/retry';
 import { getRegistryScriptFromNetworkHandlerV2 } from '@/utils/generator/contract-generator';
 import { SERVICE_CONSTANTS } from '@masumi/payment-core/config';
 import { advancedRetry, delayErrorResolver } from 'advanced-retry';
@@ -388,19 +389,23 @@ export async function deRegisterAgentV2() {
 				}
 
 				try {
-					await prisma.$transaction(
-						async (tx) => {
-							for (const v of fit) {
-								await tx.registryRequest.update({
-									where: { id: v.request.id },
-									data: {
-										state: RegistrationState.DeregistrationInitiated,
-										...createPendingTransaction(v.deregistrationWalletId),
-									},
-								});
-							}
-						},
-						{ timeout: 30_000 },
+					await retryOnSerializationConflict(
+						() =>
+							prisma.$transaction(
+								async (tx) => {
+									for (const v of fit) {
+										await tx.registryRequest.update({
+											where: { id: v.request.id },
+											data: {
+												state: RegistrationState.DeregistrationInitiated,
+												...createPendingTransaction(v.deregistrationWalletId),
+											},
+										});
+									}
+								},
+								{ timeout: 30_000 },
+							),
+						{ label: 'v2-deregister-batch-tx' },
 					);
 				} catch (dbError) {
 					logger.error('V2 deregister batch DB pre-submit update failed', { error: dbError });
@@ -421,18 +426,25 @@ export async function deRegisterAgentV2() {
 								? { message: submitError.message, stack: submitError.stack, name: submitError.name }
 								: submitError,
 					});
-					await Promise.allSettled(
-						fit.map((v) =>
-							prisma.registryRequest.update({
-								where: { id: v.request.id },
-								data: {
-									state: RegistrationState.DeregistrationRequested,
-									CurrentTransaction: v.request.currentTransactionId
-										? { connect: { id: v.request.currentTransactionId } }
-										: { disconnect: true },
+					await retryOnSerializationConflict(
+						() =>
+							prisma.$transaction(
+								async (tx) => {
+									for (const v of fit) {
+										await tx.registryRequest.update({
+											where: { id: v.request.id },
+											data: {
+												state: RegistrationState.DeregistrationRequested,
+												CurrentTransaction: v.request.currentTransactionId
+													? { connect: { id: v.request.currentTransactionId } }
+													: { disconnect: true },
+											},
+										});
+									}
 								},
-							}),
-						),
+								{ timeout: 30_000 },
+							),
+						{ label: 'v2-deregister-batch-tx' },
 					);
 					await fallbackToSingleItems(fit, paymentSource, network, script, policyId);
 					return;
@@ -450,16 +462,20 @@ export async function deRegisterAgentV2() {
 				}
 
 				try {
-					await prisma.$transaction(
-						async (tx) => {
-							for (const v of fit) {
-								await tx.registryRequest.update({
-									where: { id: v.request.id },
-									data: updateCurrentTransactionHash(newTxHash),
-								});
-							}
-						},
-						{ timeout: 30_000 },
+					await retryOnSerializationConflict(
+						() =>
+							prisma.$transaction(
+								async (tx) => {
+									for (const v of fit) {
+										await tx.registryRequest.update({
+											where: { id: v.request.id },
+											data: updateCurrentTransactionHash(newTxHash),
+										});
+									}
+								},
+								{ timeout: 30_000 },
+							),
+						{ label: 'v2-deregister-batch-tx' },
 					);
 				} catch (dbError) {
 					logger.error('V2 deregister batch post-submit DB update failed; tx-sync will reconcile next tick', {

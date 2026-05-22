@@ -4,6 +4,7 @@ import { logger } from '@masumi/payment-core/logger';
 import type { LanguageVersion, UTxO } from '@meshsdk/core';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { lockAndQueryInboxAgentRegistrationRequests } from '@/utils/db/lock-and-query-inbox-agent-registration-request';
+import { retryOnSerializationConflict } from '@/utils/db/retry';
 import { DEFAULTS, SERVICE_CONSTANTS } from '@masumi/payment-core/config';
 import { getRegistryScriptFromNetworkHandlerV2 } from '@/utils/generator/contract-generator';
 import { stringToMetadata, cleanMetadata } from '@/utils/converter/metadata-string-convert';
@@ -405,19 +406,23 @@ export async function registerInboxAgentV2() {
 				}
 
 				try {
-					await prisma.$transaction(
-						async (tx) => {
-							for (const v of fit) {
-								await tx.inboxAgentRegistrationRequest.update({
-									where: { id: v.request.id },
-									data: {
-										state: RegistrationState.RegistrationInitiated,
-										...createPendingTransaction(v.request.SmartContractWallet.id),
-									},
-								});
-							}
-						},
-						{ timeout: 30_000 },
+					await retryOnSerializationConflict(
+						() =>
+							prisma.$transaction(
+								async (tx) => {
+									for (const v of fit) {
+										await tx.inboxAgentRegistrationRequest.update({
+											where: { id: v.request.id },
+											data: {
+												state: RegistrationState.RegistrationInitiated,
+												...createPendingTransaction(v.request.SmartContractWallet.id),
+											},
+										});
+									}
+								},
+								{ timeout: 30_000 },
+							),
+						{ label: 'v2-inbox-register-batch-tx' },
 					);
 				} catch (dbError) {
 					logger.error('V2 inbox register batch DB pre-submit update failed', { error: dbError });
@@ -435,18 +440,25 @@ export async function registerInboxAgentV2() {
 								? { message: submitError.message, stack: submitError.stack, name: submitError.name }
 								: submitError,
 					});
-					await Promise.allSettled(
-						fit.map((v) =>
-							prisma.inboxAgentRegistrationRequest.update({
-								where: { id: v.request.id },
-								data: {
-									state: RegistrationState.RegistrationRequested,
-									CurrentTransaction: v.request.currentTransactionId
-										? { connect: { id: v.request.currentTransactionId } }
-										: { disconnect: true },
+					await retryOnSerializationConflict(
+						() =>
+							prisma.$transaction(
+								async (tx) => {
+									for (const v of fit) {
+										await tx.inboxAgentRegistrationRequest.update({
+											where: { id: v.request.id },
+											data: {
+												state: RegistrationState.RegistrationRequested,
+												CurrentTransaction: v.request.currentTransactionId
+													? { connect: { id: v.request.currentTransactionId } }
+													: { disconnect: true },
+											},
+										});
+									}
 								},
-							}),
-						),
+								{ timeout: 30_000 },
+							),
+						{ label: 'v2-inbox-register-batch-tx' },
 					);
 					await fallbackToSingleItems(fit, paymentSource, network, script);
 					return;
@@ -464,19 +476,23 @@ export async function registerInboxAgentV2() {
 				}
 
 				try {
-					await prisma.$transaction(
-						async (tx) => {
-							for (const v of fit) {
-								await tx.inboxAgentRegistrationRequest.update({
-									where: { id: v.request.id },
-									data: {
-										agentIdentifier: v.policyId + v.assetName,
-										...updateCurrentTransactionHash(newTxHash),
-									},
-								});
-							}
-						},
-						{ timeout: 30_000 },
+					await retryOnSerializationConflict(
+						() =>
+							prisma.$transaction(
+								async (tx) => {
+									for (const v of fit) {
+										await tx.inboxAgentRegistrationRequest.update({
+											where: { id: v.request.id },
+											data: {
+												agentIdentifier: v.policyId + v.assetName,
+												...updateCurrentTransactionHash(newTxHash),
+											},
+										});
+									}
+								},
+								{ timeout: 30_000 },
+							),
+						{ label: 'v2-inbox-register-batch-tx' },
 					);
 				} catch (dbError) {
 					logger.error('V2 inbox register batch post-submit DB update failed; tx-sync will reconcile next tick', {
