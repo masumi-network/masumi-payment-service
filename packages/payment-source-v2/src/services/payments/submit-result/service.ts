@@ -11,7 +11,7 @@ import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { sortAndLimitUtxos } from '@/utils/utxo';
 import { delayErrorResolver } from 'advanced-retry';
-import { advancedRetryAll } from 'advanced-retry';
+import { advancedRetry } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import {
@@ -376,29 +376,45 @@ async function fallbackToSingleItems(
 	blockchainProvider: BlockfrostProvider,
 	network: 'mainnet' | 'preprod',
 ): Promise<void> {
-	const results = await advancedRetryAll({
-		errorResolvers: [
-			delayErrorResolver({
-				configuration: {
-					maxRetries: 5,
-					backoffMultiplier: 5,
-					initialDelayMs: 500,
-					maxDelayMs: 7500,
-				},
-			}),
-		],
-		operations: requests.map(
-			(request) => async () => processSinglePaymentRequest(request, paymentContract, blockchainProvider, network),
-		),
-	});
-
-	for (let index = 0; index < results.length; index++) {
-		const result = results[index];
-		const request = requests[index];
-		if (result.success === false || result.result !== true) {
-			await markRequestFailed(request, result.error);
-		}
+	// Process AT MOST ONE item, not all N. Submitting the first item
+	// creates a PendingTransaction that locks the hot wallet, so any
+	// subsequent item in this tick would just race the wallet lock and
+	// fail. The remaining items stay in their queued state — next
+	// scheduler tick (after tx-sync clears the lock) re-picks them up
+	// and batches them again. The fallback exists purely so a single
+	// bad item (invalid datum, expired window, etc.) does not block the
+	// rest forever; it is NOT a parallel retry path. In the happy path
+	// the batch builder above handles everything in one tx and this
+	// function never runs.
+	if (requests.length === 0) return;
+	const request = requests[0];
+	try {
+		await advancedRetry({
+			errorResolvers: [
+				delayErrorResolver({
+					configuration: {
+						maxRetries: 5,
+						backoffMultiplier: 5,
+						initialDelayMs: 500,
+						maxDelayMs: 7500,
+					},
+				}),
+			],
+			operation: async () => {
+				const ok = await processSinglePaymentRequest(request, paymentContract, blockchainProvider, network);
+				if (!ok) throw new Error('processSingle returned false');
+				return ok;
+			},
+		});
+	} catch (error) {
+		await markRequestFailed(request, error);
 	}
+	// requests[1..] are intentionally left untouched — they remain in
+	// their `*Requested` state and the next tick (after the wallet
+	// unlocks) will batch them again. Do NOT call markRequestFailed on
+	// them here: a batch build failure caused by a transient issue
+	// (network blip, blockfrost lag, cost-model sync race) is not a
+	// per-item failure and the items deserve another chance.
 }
 
 async function processWalletBatch(
@@ -556,7 +572,10 @@ async function processWalletBatch(
 		assertTxSizeWithinLimit(unsignedTx, 'v2-submit-result-batch');
 	} catch (batchError) {
 		logger.warn('V2 submit-result batch build failed; falling back to single-item', {
-			error: batchError,
+			error:
+				batchError instanceof Error
+					? { message: batchError.message, stack: batchError.stack, name: batchError.name }
+					: batchError,
 			batchSize: fit.length,
 			walletId: wallet.id,
 		});
@@ -574,7 +593,10 @@ async function processWalletBatch(
 		signedTx = await meshWallet.signTx(unsignedTx);
 	} catch (signError) {
 		logger.warn('V2 submit-result batch sign failed; falling back to single-item', {
-			error: signError,
+			error:
+				signError instanceof Error
+					? { message: signError.message, stack: signError.stack, name: signError.name }
+					: signError,
 			walletId: wallet.id,
 		});
 		await fallbackToSingleItems(
@@ -614,7 +636,10 @@ async function processWalletBatch(
 		newTxHash = await meshWallet.submitTx(signedTx);
 	} catch (submitError) {
 		logger.warn('V2 submit-result batch submit failed; rolling back DB and retrying as single items', {
-			error: submitError,
+			error:
+				submitError instanceof Error
+					? { message: submitError.message, stack: submitError.stack, name: submitError.name }
+					: submitError,
 		});
 		await Promise.allSettled(
 			fit.map((v) =>
@@ -645,7 +670,10 @@ async function processWalletBatch(
 		await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
 	} catch (balanceError) {
 		logger.warn('V2 submit-result batch projected balance evaluation failed (non-fatal)', {
-			error: balanceError,
+			error:
+				balanceError instanceof Error
+					? { message: balanceError.message, stack: balanceError.stack, name: balanceError.name }
+					: balanceError,
 		});
 	}
 
@@ -663,7 +691,8 @@ async function processWalletBatch(
 		);
 	} catch (dbError) {
 		logger.error('V2 submit-result batch post-submit DB update failed; tx-sync will reconcile next tick', {
-			error: dbError,
+			error:
+				dbError instanceof Error ? { message: dbError.message, stack: dbError.stack, name: dbError.name } : dbError,
 			txHash: newTxHash,
 		});
 	}

@@ -485,7 +485,10 @@ export async function registerAgentV2() {
 					assertTxSizeWithinLimit(unsignedTx, 'v2-registry-batch-mint');
 				} catch (batchError) {
 					logger.warn('V2 register batch build failed; falling back to single-item processing', {
-						error: batchError,
+						error:
+							batchError instanceof Error
+								? { message: batchError.message, stack: batchError.stack, name: batchError.name }
+								: batchError,
 						batchSize: fit.length,
 					});
 					await fallbackToSingleItems(fit, paymentSource, network, script);
@@ -497,7 +500,10 @@ export async function registerAgentV2() {
 					signedTx = await wallet.signTx(unsignedTx, true);
 				} catch (signError) {
 					logger.warn('V2 register batch sign failed; falling back to single-item processing', {
-						error: signError,
+						error:
+							signError instanceof Error
+								? { message: signError.message, stack: signError.stack, name: signError.name }
+								: signError,
 					});
 					await fallbackToSingleItems(fit, paymentSource, network, script);
 					return;
@@ -532,7 +538,10 @@ export async function registerAgentV2() {
 					newTxHash = await wallet.submitTx(signedTx);
 				} catch (submitError) {
 					logger.warn('V2 register batch submit failed; rolling back DB and retrying as single items', {
-						error: submitError,
+						error:
+							submitError instanceof Error
+								? { message: submitError.message, stack: submitError.stack, name: submitError.name }
+								: submitError,
 					});
 					// Rollback the pre-submit transition so a stale
 					// CurrentTransaction doesn't pin the wallet.
@@ -577,7 +586,10 @@ export async function registerAgentV2() {
 					);
 				} catch (dbError) {
 					logger.error('V2 register batch post-submit DB update failed; rows will reconcile via tx-sync next tick', {
-						error: dbError,
+						error:
+							dbError instanceof Error
+								? { message: dbError.message, stack: dbError.stack, name: dbError.name }
+								: dbError,
 						txHash: newTxHash,
 					});
 				}
@@ -602,27 +614,33 @@ async function fallbackToSingleItems(
 	network: 'mainnet' | 'preprod',
 	script: { version: LanguageVersion; code: string },
 ): Promise<void> {
-	// Each closure catches its own error, so Promise.all never rejects — we
-	// only need to map per-item failures to a DB transition afterwards.
-	const outcomes = await Promise.all(
-		validated.map(async (v) => {
-			try {
-				await advancedRetry({
-					errorResolvers: [delayErrorResolver({ configuration: SERVICE_CONSTANTS.RETRY })],
-					operation: async () => {
-						await processSingleRegistration(v, paymentSource, network, script);
-						return true;
-					},
-				});
-				return { request: v.request, ok: true as const };
-			} catch (error) {
-				return { request: v.request, ok: false as const, error };
-			}
-		}),
-	);
-	for (const outcome of outcomes) {
-		if (!outcome.ok) {
-			await markRequestFailed(outcome.request, outcome.error);
-		}
+	// Process AT MOST ONE item, not all N. Submitting the first item
+	// creates a PendingTransaction that locks the hot wallet, so any
+	// subsequent item in this tick would just race the wallet lock and
+	// fail. The remaining items stay in their queued state — next
+	// scheduler tick (after tx-sync clears the lock) re-picks them up
+	// and batches them again. The fallback exists purely so a single
+	// bad item (invalid datum, asset UTxO missing, etc.) does not block
+	// the rest forever; it is NOT a parallel retry path. In the happy
+	// path the batch builder above handles everything in one tx and
+	// this function never runs.
+	if (validated.length === 0) return;
+	const v = validated[0];
+	try {
+		await advancedRetry({
+			errorResolvers: [delayErrorResolver({ configuration: SERVICE_CONSTANTS.RETRY })],
+			operation: async () => {
+				await processSingleRegistration(v, paymentSource, network, script);
+				return true;
+			},
+		});
+	} catch (error) {
+		await markRequestFailed(v.request, error);
 	}
+	// validated[1..] intentionally left untouched — they remain in
+	// their `*Requested` state and the next tick (after the wallet
+	// unlocks) will batch them again. Do NOT mark them failed: a batch
+	// build failure caused by a transient issue (network blip,
+	// cost-model sync race) is not a per-item failure and the items
+	// deserve another chance.
 }
