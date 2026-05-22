@@ -265,16 +265,23 @@ jobs:
           # PID is wrong — use a fifo-based redirect like the API server
           # step above so `$!` after the `pnpm exec jest` invocation is
           # unambiguously the jest PID.
+          # Invoke via `pnpm run test:e2e` (NOT `pnpm exec jest` directly).
+          # The npm script wraps jest with `cross-env
+          # NODE_OPTIONS=--experimental-vm-modules`, which jest needs for ESM
+          # in this repo (`"type": "module"` in root package.json + ts-jest's
+          # ESM preset in jest.e2e.config.ts). Calling `pnpm exec jest`
+          # bypasses cross-env, so jest tries to load .ts modules under
+          # CommonJS and fails with "Cannot use import statement outside a
+          # module" or similar — passes locally because devs typically run
+          # `pnpm run test:e2e`, but breaks in CI.
           (
-            TEST_PAYMENT_SOURCE_TYPE=Web3CardanoV1 pnpm exec jest \
-              --config jest.e2e.config.ts --bail --forceExit 2>&1
+            TEST_PAYMENT_SOURCE_TYPE=Web3CardanoV1 pnpm run test:e2e 2>&1
             echo "__E2E_EXIT__=$?"
           ) | sed -u 's/^/[V1] /' > v1.log &
           PID_V1=$!
 
           (
-            TEST_PAYMENT_SOURCE_TYPE=Web3CardanoV2 pnpm exec jest \
-              --config jest.e2e.config.ts --bail --forceExit 2>&1
+            TEST_PAYMENT_SOURCE_TYPE=Web3CardanoV2 pnpm run test:e2e 2>&1
             echo "__E2E_EXIT__=$?"
           ) | sed -u 's/^/[V2] /' > v2.log &
           PID_V2=$!

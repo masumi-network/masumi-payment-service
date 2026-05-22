@@ -108,10 +108,10 @@ function isLookupDeferred(error: unknown): boolean {
  * caller defers to the next tick instead of marking the request as failed.
  */
 async function fetchUTxOsWithDeferOnEmpty(blockchainProvider: BlockfrostProvider, txHash: string): Promise<UTxO[]> {
-	const first = await fetchUTxOsWithDeferOnEmpty(blockchainProvider, txHash);
+	const first = await blockchainProvider.fetchUTxOs(txHash);
 	if (first.length > 0) return first;
 	await new Promise((resolve) => setTimeout(resolve, 5000));
-	const second = await fetchUTxOsWithDeferOnEmpty(blockchainProvider, txHash);
+	const second = await blockchainProvider.fetchUTxOs(txHash);
 	if (second.length > 0) return second;
 	throw new Error(
 		`${LOOKUP_DEFERRED_PREFIX} fetchUTxOs(${txHash}) returned empty after retry — chain state not visible to blockfrost yet, deferring to tx-sync / next tick`,
@@ -539,7 +539,10 @@ async function processWalletBatch(
 		}
 	}
 	if (validated.length === 0) {
-		logger.info('No V2 submit-result items passed validation', { walletId: wallet.id });
+		logger.info(
+			'No V2 submit-result items in this tick reached the batch builder (every item was either deferred for tx-sync to reconcile or marked failed); leaving wallet unlocked',
+			{ walletId: wallet.id },
+		);
 		await unlockHotWallet(wallet.id);
 		return;
 	}
@@ -735,7 +738,8 @@ async function processWalletBatch(
 							errorNote: null,
 							resultHash: v.request.NextAction.resultHash,
 						}),
-						CurrentTransaction: { disconnect: true },
+						CurrentTransaction: { connect: { id: v.request.CurrentTransaction!.id } },
+						TransactionHistory: { disconnect: { id: v.request.CurrentTransaction!.id } },
 					},
 				}),
 			),

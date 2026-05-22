@@ -107,6 +107,24 @@ export function getTestScenarios() {
 /**
  * Generate test environment configuration
  */
+/**
+ * Parse a millisecond timeout from an env var. Empty / unset / non-numeric
+ * values fall back to `fallback`. A literal `0` is honored (means "wait
+ * forever" in our poll helpers — see `pollUntil` in helperFunctions.ts).
+ */
+function parseTimeoutEnv(name: string, fallback: number): number {
+	const raw = process.env[name];
+	if (raw == null || raw === '') return fallback;
+	const parsed = Number(raw);
+	if (!Number.isFinite(parsed) || parsed < 0) {
+		console.warn(
+			`[testData] Ignoring invalid ${name}="${raw}" — expected a non-negative integer (ms); falling back to ${fallback}.`,
+		);
+		return fallback;
+	}
+	return parsed;
+}
+
 export function getTestEnvironment() {
 	return {
 		network: (process.env.TEST_NETWORK as Network) || Network.Preprod,
@@ -114,9 +132,19 @@ export function getTestEnvironment() {
 		apiUrl: process.env.TEST_API_URL || 'http://localhost:3001',
 		apiKey: process.env.TEST_API_KEY || 'DefaultTestApiKey12345',
 		timeout: {
-			api: 30000, // 30 seconds
-			registration: 0, // 0 = infinite wait, change to milliseconds for custom timeout
-			blockchain: 600000, // 10 minutes
+			// `TEST_TIMEOUT_API`: per-HTTP-request timeout. Defaults to 30s.
+			api: parseTimeoutEnv('TEST_TIMEOUT_API', 30_000),
+			// `TEST_TIMEOUT_REGISTRATION`: how long the registration-confirmation
+			// poll waits before giving up. `0` = infinite (default for local
+			// dev so a slow Preprod confirmation does not fail a test by
+			// itself). CI explicitly overrides this — e.g. `1800000` (30 min) —
+			// so a stuck registration tx surfaces as a test timeout rather
+			// than consuming the whole job timeout.
+			registration: parseTimeoutEnv('TEST_TIMEOUT_REGISTRATION', 0),
+			// `TEST_TIMEOUT_BLOCKCHAIN`: generic blockchain wait. Defaults to
+			// 10 min; mostly used by deregister-confirmation polls in
+			// teardown.
+			blockchain: parseTimeoutEnv('TEST_TIMEOUT_BLOCKCHAIN', 600_000),
 		},
 	};
 }

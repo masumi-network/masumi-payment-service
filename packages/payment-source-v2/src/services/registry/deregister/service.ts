@@ -427,7 +427,9 @@ export async function deRegisterAgentV2() {
 								where: { id: v.request.id },
 								data: {
 									state: RegistrationState.DeregistrationRequested,
-									CurrentTransaction: { disconnect: true },
+									CurrentTransaction: v.request.currentTransactionId
+										? { connect: { id: v.request.currentTransactionId } }
+										: { disconnect: true },
 								},
 							}),
 						),

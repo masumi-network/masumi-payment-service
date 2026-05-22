@@ -568,7 +568,9 @@ export async function registerAgentV2() {
 								where: { id: v.request.id },
 								data: {
 									state: RegistrationState.RegistrationRequested,
-									CurrentTransaction: { disconnect: true },
+									CurrentTransaction: v.request.currentTransactionId
+										? { connect: { id: v.request.currentTransactionId } }
+										: { disconnect: true },
 								},
 							}),
 						),
