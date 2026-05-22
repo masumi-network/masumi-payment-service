@@ -20,32 +20,41 @@ function sortUtxosByBloatAsc(utxos: UTxO[]): UTxO[] {
 	return utxos.sort((a, b) => a.output.amount.length - b.output.amount.length);
 }
 
-function filterUtxosByRequiredLovelace(utxos: UTxO[], requiredLovelace: number): UTxO[] {
-	return utxos.filter((utxo) => {
-		const lovelace = parseInt(
-			utxo.output.amount.find((asset) => asset.unit === 'lovelace' || asset.unit === '')?.quantity ?? '0',
-		);
-		return lovelace >= requiredLovelace;
-	});
+function getLovelaceFromUtxo(utxo: UTxO): number {
+	return parseInt(utxo.output.amount.find((asset) => asset.unit === 'lovelace' || asset.unit === '')?.quantity ?? '0');
 }
+
 /**
- * Limits UTXOs to maximum count for transaction size optimization
+ * Picks wallet UTxOs to cover `requiredLovelace` for tx fees and outputs.
+ *
+ * Earlier this function required every candidate UTxO to be >= 5 ADA on its
+ * own, which made sense for the V1 single-item flow where a freshly-funded
+ * buyer wallet always had at least one large change UTxO. The V2 batch flow
+ * spends most of the wallet in one go (N script outputs in a single
+ * batch-payments tx), so by the time the buyer-side actions run the wallet
+ * typically has only sub-5-ADA change UTxOs. The hard 5 ADA per-UTxO filter
+ * then returned an empty set even when the wallet's total balance comfortably
+ * exceeded `requiredLovelace`, and the throw bubbled all the way up out of
+ * `processWalletBatch` — silently aborting every batch tick until the test
+ * timed out.
+ *
+ * Fix: drop the 5 ADA per-UTxO filter and let the accumulator pick whichever
+ * UTxOs cover the requirement. Only completely empty inputs are skipped (the
+ * `lovelace > 0` guard). Mesh's coin-selection downstream rebuilds inputs
+ * anyway, so emitting extra small UTxOs here doesn't expand the tx body.
  */
 function limitUtxos(utxos: UTxO[], requiredLovelace: number): UTxO[] {
-	const filteredUtxos = filterUtxosByRequiredLovelace(utxos, 5000000);
-	if (filteredUtxos.length === 0) {
+	const nonEmpty = utxos.filter((utxo) => getLovelaceFromUtxo(utxo) > 0);
+	if (nonEmpty.length === 0) {
 		throw new Error('No suitable UTXOs found');
 	}
-	const selectedUtxos = [];
+	const selectedUtxos: UTxO[] = [];
 	let accumulatedLovelace = 0;
-	for (const utxo of filteredUtxos) {
+	for (const utxo of nonEmpty) {
 		if (accumulatedLovelace > requiredLovelace) {
 			break;
 		}
-		const utxoLovelace = parseInt(
-			utxo.output.amount.find((asset) => asset.unit === 'lovelace' || asset.unit === '')?.quantity ?? '0',
-		);
-		accumulatedLovelace += utxoLovelace;
+		accumulatedLovelace += getLovelaceFromUtxo(utxo);
 		selectedUtxos.push(utxo);
 	}
 	return selectedUtxos;

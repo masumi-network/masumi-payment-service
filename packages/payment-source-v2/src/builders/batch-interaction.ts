@@ -535,9 +535,9 @@ async function buildBatchWithdrawTx(
 		}
 	}
 
-	for (const utxo of walletUtxos) {
-		txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
-	}
+	// See the matching note in buildBatchInteractionTx: hand the candidate
+	// wallet UTxOs to Mesh's coin selector instead of force-adding every one.
+	txBuilder.selectUtxosFrom(walletUtxos);
 
 	return await txBuilder
 		.requiredSignerHash(deserializedAddress.pubKeyHash)
