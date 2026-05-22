@@ -176,6 +176,17 @@ export async function ensureCollateralReady(params: EnsureCollateralReadyParams)
 						const sharedTx = await tx.transaction.create({
 							data: {
 								status: TransactionStatus.Pending,
+								// `lastCheckedAt: now` is REQUIRED to keep this row visible
+								// to the `wallet-timeouts` cron. Its query filters on
+								// `PendingTransaction.lastCheckedAt: { lte: now - 1min }`
+								// and Prisma's `lte` does NOT match NULL — without a
+								// concrete timestamp the row is never polled, so the wallet
+								// that points at it (via the BlocksWallet connect below)
+								// stays locked forever and the action that requested the
+								// prep tx never resumes. Setting `now` debounces the first
+								// poll by 1 minute, comfortably longer than the
+								// build/sign/submit window (~10-20s in practice).
+								lastCheckedAt: new Date(),
 								BlocksWallet: { connect: { id: walletDbId } },
 							},
 						});
@@ -246,12 +257,31 @@ export async function ensureCollateralReady(params: EnsureCollateralReadyParams)
 	try {
 		await prisma.transaction.update({
 			where: { id: sharedTxId },
-			data: { txHash: prepTxHash },
+			data: {
+				txHash: prepTxHash,
+				// Refresh lastCheckedAt: this is the moment we LEARN the tx is
+				// in-flight on chain. Resetting the debounce here means the next
+				// `wallet-timeouts` poll happens ~1 minute after submission, which
+				// is roughly when blockfrost is first able to confirm a freshly
+				// landed tx — a perfect time to free the wallet on a clean
+				// fetchTxInfo() hit.
+				lastCheckedAt: new Date(),
+			},
 		});
 	} catch (updateError) {
-		// Hash-recording failure is non-fatal: tx-sync sees the BlocksWallet
-		// link and the chain-confirmed tx and will reconcile. Surface it
-		// loudly so we can spot the orphan in logs.
+		// Hash-recording failure is non-fatal but is the SECOND gas-loop hazard
+		// from this helper's audit: with txHash still null in the DB but the
+		// tx already on chain, wallet-timeouts will hit its `txHash == null`
+		// branch (line 489-503 of wallet-timeouts/service.ts) and forcibly
+		// clear the wallet's pendingTransactionId + lockedAt after
+		// WALLET_LOCK_TIMEOUT_INTERVAL. That itself is fine — the on-chain
+		// prep tx propagates UTxOs the next helper invocation will see — BUT
+		// if blockfrost hasn't yet indexed those new UTxOs at the moment the
+		// next action tick runs, the helper would observe the same "no
+		// collateral" state and submit a SECOND prep tx (= second gas burn).
+		// The window is bounded (one extra prep tx) and only triggers on a
+		// rare DB update failure right after a successful chain submit;
+		// logging at WARN so we can spot it in CI.
 		logger.warn('V2 collateral prep post-submit hash update failed [collateral-prep]', {
 			walletDbId,
 			walletAddress,
