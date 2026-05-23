@@ -28,6 +28,7 @@ import {
 } from '@/services/registry/shared';
 import { assertTxSizeWithinLimit, pickBatchCollateral, shrinkBatchToFit } from '../../../builders/batch-helpers';
 import { type BatchRegistryMintItem, generateRegistryBatchMintTransaction } from '../../../builders/batch-registry';
+import { ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
 import { type SupportedPaymentSource } from '@/types/payment-source';
 
 // V2 registry batch sizing. The on-chain `MintAction` validator runs once for
@@ -237,6 +238,27 @@ async function processSingleRegistration(
 		throw new Error('No UTXOs found for the wallet');
 	}
 	const blockchainProvider = await createMeshProvider(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
+	const collateralCheck = await ensureCollateralReady({
+		walletDbId: request.SmartContractWallet.id,
+		walletAddress: address,
+		meshWallet: wallet,
+		utxos,
+		blockchainProvider,
+		serviceLabel: 'registry-register-single',
+	});
+	if (collateralCheck.status !== 'ready') {
+		// IMPORTANT: do NOT throw on a non-ready collateral check from this
+		// single-item path. The caller wraps `processSingleRegistration` in
+		// `advancedRetry` then `markRequestFailed` on the final throw — which
+		// would mark a transient "wallet not collateral-ready yet" condition
+		// as a PERMANENT failure (RegistrationFailed). Returning instead lets
+		// the caller observe success-without-effect; the request stays in
+		// its current queued state and the next scheduler tick re-picks it up
+		// after the prep tx confirms and the wallet is unlocked. The helper
+		// has already logged the deferral / failure at WARN/ERROR level for
+		// the operator.
+		return;
+	}
 	const limitedFilteredUtxos = sortUtxosByLovelaceDesc(utxos);
 	const firstUtxo = limitedFilteredUtxos[0];
 	const collateralUtxo = limitedFilteredUtxos[0];
@@ -372,6 +394,18 @@ export async function registerAgentV2() {
 					// items queued; next tick after wallet has UTxOs
 					// re-batches them.
 					await unlockHotWallet(firstRequest.SmartContractWallet.id);
+					return;
+				}
+
+				const collateralCheck = await ensureCollateralReady({
+					walletDbId: firstRequest.SmartContractWallet.id,
+					walletAddress: address,
+					meshWallet: wallet,
+					utxos,
+					blockchainProvider,
+					serviceLabel: 'registry-register-batch',
+				});
+				if (collateralCheck.status !== 'ready') {
 					return;
 				}
 

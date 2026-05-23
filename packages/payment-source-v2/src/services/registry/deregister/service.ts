@@ -35,6 +35,7 @@ import {
 	type BatchRegistryBurnItem,
 	generateRegistryBatchDeregisterTransactionAutomaticFees,
 } from '../../../builders/batch-registry';
+import { ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
 
 // V2 registry deregister sizing. Burn legs all share one BurnAction redeemer,
 // so per-item cost is dominated by tx-size (each burn pulls in the asset's
@@ -134,6 +135,23 @@ async function processSingleDeregistration(
 		throw new Error('No UTXOs found for the wallet');
 	}
 	const blockchainProvider = await createMeshProvider(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
+	const collateralCheck = await ensureCollateralReady({
+		walletDbId: deregistrationWallet.id,
+		walletAddress: address,
+		meshWallet: wallet,
+		utxos,
+		blockchainProvider,
+		serviceLabel: 'registry-deregister-single',
+	});
+	if (collateralCheck.status !== 'ready') {
+		// IMPORTANT: do NOT throw on a non-ready collateral check from this
+		// single-item path. The caller wraps `processSingleDeregistration` in
+		// `advancedRetry` then `markRequestFailed` on the final throw, which
+		// would mark a transient "wallet not collateral-ready yet" condition
+		// as a PERMANENT failure. Returning leaves the request queued so the
+		// next scheduler tick re-picks it up after the prep tx confirms.
+		return;
+	}
 	if (!request.agentIdentifier) {
 		throw new Error('Agent identifier is required for deregistration');
 	}
@@ -247,6 +265,18 @@ export async function deRegisterAgentV2() {
 					// items queued; next tick after wallet has UTxOs
 					// re-batches them.
 					await unlockHotWallet(deregistrationWallet.id);
+					return;
+				}
+
+				const collateralCheck = await ensureCollateralReady({
+					walletDbId: deregistrationWallet.id,
+					walletAddress: address,
+					meshWallet: wallet,
+					utxos,
+					blockchainProvider,
+					serviceLabel: 'registry-deregister-batch',
+				});
+				if (collateralCheck.status !== 'ready') {
 					return;
 				}
 

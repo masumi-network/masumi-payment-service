@@ -28,6 +28,7 @@ import {
 } from '@/services/registry/shared';
 import { assertTxSizeWithinLimit, pickBatchCollateral, shrinkBatchToFit } from '../../../builders/batch-helpers';
 import { type BatchRegistryMintItem, generateRegistryBatchMintTransaction } from '../../../builders/batch-registry';
+import { ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
 import { INBOX_AGENT_REGISTRATION_METADATA_TYPE } from '../metadata';
 
 // Mirrors the V2 registry register cap. Inbox-agent items carry far less
@@ -132,6 +133,23 @@ async function processSingleRegistration(
 		throw new Error('No UTXOs found for the wallet');
 	}
 	const blockchainProvider = await createMeshProvider(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
+	const collateralCheck = await ensureCollateralReady({
+		walletDbId: request.SmartContractWallet.id,
+		walletAddress: address,
+		meshWallet: wallet,
+		utxos,
+		blockchainProvider,
+		serviceLabel: 'inbox-register-single',
+	});
+	if (collateralCheck.status !== 'ready') {
+		// IMPORTANT: do NOT throw on a non-ready collateral check from this
+		// single-item path. The caller wraps `processSingleRegistration` in
+		// `advancedRetry` then `markRequestFailed` on the final throw, which
+		// would mark a transient "wallet not collateral-ready yet" condition
+		// as a PERMANENT failure. Returning lets the request stay queued; the
+		// next scheduler tick re-picks it up after the prep tx confirms.
+		return;
+	}
 	const limitedFilteredUtxos = sortUtxosByLovelaceDesc(utxos);
 	const firstUtxo = limitedFilteredUtxos[0];
 	const collateralUtxo = limitedFilteredUtxos[0];
@@ -272,6 +290,18 @@ export async function registerInboxAgentV2() {
 					// items queued; next tick after wallet has UTxOs
 					// re-batches them.
 					await unlockHotWallet(firstRequest.SmartContractWallet.id);
+					return;
+				}
+
+				const collateralCheck = await ensureCollateralReady({
+					walletDbId: firstRequest.SmartContractWallet.id,
+					walletAddress: address,
+					meshWallet: wallet,
+					utxos,
+					blockchainProvider,
+					serviceLabel: 'inbox-register-batch',
+				});
+				if (collateralCheck.status !== 'ready') {
 					return;
 				}
 

@@ -397,6 +397,43 @@ jobs:
             echo "✅ No V2 batch fallback usage detected." >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      - name: Detect V2 collateral-prep tx submissions
+        # The V2 ensureCollateralReady helper logs `[collateral-prep]` when it
+        # submits a wallet-bootstrap tx that splits a buyer wallet's single
+        # change UTxO into a collateral-reserve + change pair (otherwise the
+        # action wallet collapses to 1 UTxO and every subsequent script tx
+        # fails because Cardano forbids inputs/collateral_inputs overlap).
+        # Each occurrence costs ~0.18 ADA of preprod fees, so it's worth
+        # surfacing how often the helper had to fire. A handful per run is
+        # expected on a fresh test wallet; consistent re-fires across runs
+        # for the same wallet would indicate a loop bug.
+        if: always()
+        run: |
+          if [ ! -f server.log ]; then
+            echo "server.log not present, skipping collateral-prep scan"
+            exit 0
+          fi
+          COUNT=$(grep -c '\[collateral-prep\]' server.log || true)
+          COUNT=${COUNT:-0}
+          if [ "$COUNT" -gt 0 ]; then
+            echo "::notice title=V2 collateral-prep tx ran::$COUNT collateral-prep log occurrence(s) detected — a wallet-bootstrap tx was submitted to seed a buyer/seller wallet with a pure-ADA collateral UTxO. Expected on cold-start wallets; investigate if you see the same wallet retrying."
+            echo "### V2 collateral-prep tx activity" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "**$COUNT log line(s)** with the \`[collateral-prep]\` tag." >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Each \`V2 collateral prep tx submitted\` entry means the helper found a wallet without a usable collateral candidate and submitted a self-send prep tx to seed one. Subsequent action ticks defer until the prep confirms." >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "<details><summary>Collateral-prep log lines</summary>" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            grep '\[collateral-prep\]' server.log | tail -50 >> "$GITHUB_STEP_SUMMARY" || true
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo "</details>" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No V2 collateral-prep tx detected (no \`[collateral-prep]\` in server.log)."
+            echo "ℹ️ No V2 collateral-prep tx submissions detected." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Upload server.log artifact
         if: always()
         uses: actions/upload-artifact@v4

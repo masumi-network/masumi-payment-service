@@ -30,10 +30,12 @@ import {
 
 const testNetwork = (process.env.TEST_NETWORK as Network) || Network.Preprod;
 
-const allCases = [
-	{ name: 'V1' as const, sourceType: PaymentSourceType.Web3CardanoV1 },
-	{ name: 'V2' as const, sourceType: PaymentSourceType.Web3CardanoV2 },
-];
+// V2 is intentionally NOT covered by this single-item flow test. V2's
+// equivalent action surface is exercised by
+// `tests/e2e/v2/flows/batch-verification.test.ts` via the batch path.
+// Running V2 here just duplicated the assertions through V2's single-item
+// fallback while adding ~10 minutes of on-chain wait time per e2e run.
+const allCases = [{ name: 'V1' as const, sourceType: PaymentSourceType.Web3CardanoV1 }];
 
 // The workflow spawns one jest invocation per source type and pins it via
 // TEST_PAYMENT_SOURCE_TYPE so V1 and V2 can run in parallel against the
