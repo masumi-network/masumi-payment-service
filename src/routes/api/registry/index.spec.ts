@@ -76,10 +76,6 @@ jest.unstable_mockModule('@/utils/blockfrost', () => ({
 	validateAssetsOnChain: jest.fn(),
 }));
 
-jest.unstable_mockModule('@masumi/payment-source-v2/services/registry/supported-payment-sources', () => ({
-	getDefaultSupportedPaymentSources: jest.fn(async () => []),
-}));
-
 jest.unstable_mockModule('@/generated/prisma/client', async () => await import('@/generated/prisma/enums'));
 
 jest.unstable_mockModule('@prisma/client', async () => ({
@@ -299,8 +295,10 @@ describe('registerAgentPost', () => {
 		expect(responseMock.statusCode).toBe(200);
 		expect(mockFindRecipientWallet).not.toHaveBeenCalled();
 		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.RecipientWallet).toBeUndefined();
+		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.SupportedPaymentSources).toBeUndefined();
 		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.sendFundingLovelace).toBeUndefined();
 		expect(responseMock._getJSONData().data.RecipientWallet).toBeNull();
+		expect(responseMock._getJSONData().data.supportedPaymentSources).toBeNull();
 		expect(responseMock._getJSONData().data.sendFundingLovelace).toBeNull();
 	});
 

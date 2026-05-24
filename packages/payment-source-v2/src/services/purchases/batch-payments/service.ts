@@ -67,6 +67,26 @@ type WalletPairing = {
 	batchedRequests: BatchedRequest[];
 };
 
+async function unlockUnusedPurchasingWallets(candidateWalletIds: string[], usedWalletIds: string[]) {
+	const usedWalletIdSet = new Set(usedWalletIds);
+	const unusedWalletIds = candidateWalletIds.filter((walletId) => !usedWalletIdSet.has(walletId));
+	if (unusedWalletIds.length === 0) {
+		return;
+	}
+
+	await prisma.hotWallet.updateMany({
+		where: {
+			id: { in: unusedWalletIds },
+			deletedAt: null,
+			pendingTransactionId: null,
+			type: HotWalletType.Purchasing,
+		},
+		data: {
+			lockedAt: null,
+		},
+	});
+}
+
 const mutex = new Mutex();
 
 async function executeSpecificBatchPayment(
@@ -142,6 +162,9 @@ async function executeSpecificBatchPayment(
 					const sharedTx = await tx.transaction.create({
 						data: {
 							status: TransactionStatus.Pending,
+							// `lastCheckedAt: now` required so wallet-timeouts can poll this row.
+							// See docs/adr/0006 and docs/adr/0007 for the full rationale.
+							lastCheckedAt: new Date(),
 							BlocksWallet: { connect: { id: walletId } },
 						},
 					});
@@ -404,7 +427,7 @@ export async function batchLatestPaymentEntriesV2() {
 						}),
 					);
 					const paymentRequestsRemaining = [...paymentRequests];
-					const walletPairings = [];
+					const walletPairings: WalletPairing[] = [];
 
 					let maxBatchSizeReached = false;
 
@@ -663,6 +686,11 @@ export async function batchLatestPaymentEntriesV2() {
 							}
 						}
 					}
+
+					await unlockUnusedPurchasingWallets(
+						potentialWallets.map((wallet) => wallet.id),
+						walletPairings.map((walletPairing) => walletPairing.walletId),
+					);
 
 					if (walletPairings.length == 0) {
 						logger.info('No purchase requests with funds found, skipping');

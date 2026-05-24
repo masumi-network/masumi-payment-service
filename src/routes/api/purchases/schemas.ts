@@ -237,7 +237,9 @@ export const createPurchaseInitSchemaInput = z
 			.string()
 			.max(250)
 			.optional()
-			.describe('Required for V2 purchases. The configured V2 payment contract address the seller selected.'),
+			.describe(
+				'Optional V2 payment contract address. When omitted, the address is inferred from the signed blockchainIdentifier; when provided, it must match that identifier.',
+			),
 		inputHash: z
 			.string()
 			.max(250)
@@ -284,15 +286,6 @@ export const createPurchaseInitSchemaInput = z
 			.max(26)
 			.describe('The nonce of the purchaser. It must be in hex format'),
 	})
-	.refine(
-		(value) =>
-			value.paymentSourceType !== PaymentSourceType.Web3CardanoV2 ||
-			(value.smartContractAddress != null && value.smartContractAddress.length > 0),
-		{
-			message: 'smartContractAddress is required when paymentSourceType is Web3CardanoV2',
-			path: ['smartContractAddress'],
-		},
-	)
 	.refine(
 		(value) => value.buyerReturnAddress == null || isCardanoAddressForNetwork(value.buyerReturnAddress, value.network),
 		{

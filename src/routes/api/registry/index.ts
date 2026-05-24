@@ -1,7 +1,7 @@
 import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
-import { PaymentSourceType, PricingType, RegistrationState } from '@/generated/prisma/client';
+import { PricingType, RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { DEFAULTS } from '@masumi/payment-core/config';
@@ -11,8 +11,7 @@ import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
 import { getBlockfrostInstance, validateAssetsOnChain } from '@/utils/blockfrost';
 import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { normalizeRequestedRegistryFundingLovelace } from '@/services/registry/shared';
-import { getDefaultSupportedPaymentSources } from '@masumi/payment-source-v2/services/registry/supported-payment-sources';
-import { SupportedPaymentSourceChain, validateSupportedPaymentSourcesOrThrow } from '@/types/payment-source';
+import { validateSupportedPaymentSourcesOrThrow } from '@/types/payment-source';
 import {
 	deleteAgentRegistrationSchemaInput,
 	deleteAgentRegistrationSchemaOutput,
@@ -105,26 +104,15 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 				operation: 'register_agent',
 			});
 			const sendFundingLovelace = normalizeRequestedRegistryFundingLovelace(input.sendFundingLovelace);
-			// Default-advertise the EXACT payment source the selling wallet lives
-			// on. The previous default unconditionally pointed to a derived V2
-			// contract address, which mis-advertises a V1 wallet as accepting V2
-			// payments and breaks buyer-side dispatch.
-			const supportedPaymentSources =
-				input.supportedPaymentSources ??
-				(sellingWallet.PaymentSource.paymentSourceType === PaymentSourceType.Web3CardanoV2
-					? await getDefaultSupportedPaymentSources(input.network)
-					: [
-							{
-								chain: SupportedPaymentSourceChain.Cardano,
-								network: input.network,
-								paymentSourceType: sellingWallet.PaymentSource.paymentSourceType,
-								address: sellingWallet.PaymentSource.smartContractAddress,
-							},
-						]);
-			try {
-				validateSupportedPaymentSourcesOrThrow(supportedPaymentSources, input.network);
-			} catch (error) {
-				throw createHttpError(400, error instanceof Error ? error.message : String(error));
+			// Keep persisted registry payment-source rows opt-in. Mint metadata
+			// still advertises the active payment source from the mint service.
+			const supportedPaymentSources = input.supportedPaymentSources ?? [];
+			if (supportedPaymentSources.length > 0) {
+				try {
+					validateSupportedPaymentSourcesOrThrow(supportedPaymentSources, input.network);
+				} catch (error) {
+					throw createHttpError(400, error instanceof Error ? error.message : String(error));
+				}
 			}
 
 			// Validate pricing assets exist on-chain
@@ -182,16 +170,19 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 							})),
 						},
 					},
-					SupportedPaymentSources: {
-						createMany: {
-							data: supportedPaymentSources.map((source) => ({
-								chain: source.chain,
-								network: source.network,
-								paymentSourceType: source.paymentSourceType,
-								address: source.address,
-							})),
-						},
-					},
+					SupportedPaymentSources:
+						supportedPaymentSources.length > 0
+							? {
+									createMany: {
+										data: supportedPaymentSources.map((source) => ({
+											chain: source.chain,
+											network: source.network,
+											paymentSourceType: source.paymentSourceType,
+											address: source.address,
+										})),
+									},
+								}
+							: undefined,
 					SmartContractWallet: {
 						connect: {
 							id: sellingWallet.id,

@@ -186,9 +186,16 @@ export async function resolvePurchaseCreationContext({
 	if (isV2 && decoded.smartContractAddress == null) {
 		throw createHttpError(400, 'Invalid blockchain identifier, V2 must carry smartContractAddress');
 	}
+	// Defense-in-depth: fast-fail when the identifier's smartContractAddress doesn't match
+	// the resolved paymentSource. The signature check below would also reject this case (the
+	// reconstructed payload uses `decoded.smartContractAddress`, so tampering breaks the hash),
+	// but rejecting before crypto saves a SHA-256 round-trip and gives a clearer error.
 	if (isV2 && decoded.smartContractAddress !== smartContractAddress) {
 		throw createHttpError(400, 'Invalid blockchain identifier, smartContractAddress mismatch');
 	}
+	// Reconstruct using the address carried in the identifier itself (not the looked-up paymentSource
+	// address), so the signature check directly verifies what the buyer submitted — tampering
+	// segment [4] makes the signature verification below fail by construction.
 	const reconstructedBlockchainIdentifier = buildSignedBlockchainIdentifierPayload({
 		inputHash: input.inputHash,
 		agentIdentifier: input.agentIdentifier,
@@ -207,7 +214,7 @@ export async function resolvePurchaseCreationContext({
 		externalDisputeUnlockTime: externalDisputeUnlockTime.toString(),
 		sellerAddress,
 		sellerReturnAddress,
-		smartContractAddress: isV2 ? smartContractAddress : null,
+		smartContractAddress: isV2 ? decoded.smartContractAddress : null,
 		paymentSourceType: resolvedPaymentSourceType,
 	});
 

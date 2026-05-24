@@ -16,6 +16,7 @@ import {
 	connectExistingTransaction,
 	createMeshProvider,
 	createPendingTransaction,
+	disconnectTransactionWallet,
 	loadHotWalletSession,
 	updateCurrentTransactionHash,
 } from '@/services/shared';
@@ -29,6 +30,7 @@ import {
 import { assertTxSizeWithinLimit, pickBatchCollateral, shrinkBatchToFit } from '../../../builders/batch-helpers';
 import { type BatchRegistryMintItem, generateRegistryBatchMintTransaction } from '../../../builders/batch-registry';
 import { ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
+import { unlockHotWalletIfNoPendingTransaction } from '../../wallet-lock-helpers';
 import { INBOX_AGENT_REGISTRATION_METADATA_TYPE } from '../metadata';
 
 // Mirrors the V2 registry register cap. Inbox-agent items carry far less
@@ -449,6 +451,9 @@ export async function registerInboxAgentV2() {
 									const sharedTx = await tx.transaction.create({
 										data: {
 											status: TransactionStatus.Pending,
+											// `lastCheckedAt: now` required so wallet-timeouts can poll this row.
+											// See docs/adr/0006 and docs/adr/0007 for the full rationale.
+											lastCheckedAt: new Date(),
 											BlocksWallet: { connect: { id: firstRequest.SmartContractWallet.id } },
 										},
 									});
@@ -487,6 +492,10 @@ export async function registerInboxAgentV2() {
 						() =>
 							prisma.$transaction(
 								async (tx) => {
+									await tx.transaction.update({
+										where: { id: sharedTxId },
+										data: disconnectTransactionWallet(),
+									});
 									for (const v of fit) {
 										await tx.inboxAgentRegistrationRequest.update({
 											where: { id: v.request.id },
@@ -504,6 +513,13 @@ export async function registerInboxAgentV2() {
 						{ label: 'v2-inbox-register-batch-tx' },
 					);
 					await fallbackToSingleItems(fit, paymentSource, network, script);
+					// Rollback only cleared pendingTransactionId; lockedAt stays set. Conditional
+					// unlock prevents the wallet from orphan-locking when every single-item fallback
+					// deferred — preserves the lock when a single-item submit succeeded.
+					await unlockHotWalletIfNoPendingTransaction(
+						firstRequest.SmartContractWallet.id,
+						'v2-inbox-register-batch-rollback',
+					);
 					return;
 				}
 

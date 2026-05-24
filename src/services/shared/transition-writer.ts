@@ -26,6 +26,14 @@ export function createPendingTransaction(blocksWalletId: string) {
 			create: {
 				txHash: null,
 				status: TransactionStatus.Pending,
+				// wallet-timeouts/service.ts filters by `PendingTransaction.lastCheckedAt: { lte: now-1min }`;
+				// Prisma `lte` does not match NULL. Without an explicit timestamp here the row is
+				// invisible to the cleanup cron and a crash between this create and the post-submit
+				// txHash update would lock the wallet forever (BlocksWallet sets
+				// HotWallet.pendingTransactionId which every `lockAndQueryX` filter requires to be null).
+				// `now` debounces the first poll by 1 minute, comfortably longer than the
+				// build/sign/submit window (~10-20s).
+				lastCheckedAt: new Date(),
 				BlocksWallet: {
 					connect: {
 						id: blocksWalletId,
@@ -59,6 +67,12 @@ export function connectExistingTransaction(transactionId: string) {
 			connect: { id: transactionId },
 		},
 	} satisfies Pick<Prisma.PaymentRequestUpdateInput, 'CurrentTransaction'>;
+}
+
+export function disconnectTransactionWallet() {
+	return {
+		BlocksWallet: { disconnect: true },
+	} satisfies Pick<Prisma.TransactionUpdateInput, 'BlocksWallet'>;
 }
 
 export function updateCurrentTransactionHash(txHash: string) {

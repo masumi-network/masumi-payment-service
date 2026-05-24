@@ -203,7 +203,7 @@ export const registerAgentSchemaInput = z.object({
 	supportedPaymentSources: supportedPaymentSourcesSchema
 		.optional()
 		.describe(
-			'Payment sources to advertise in registry metadata. Defaults to the configured V2 source for the network.',
+			'Payment sources to persist for this registry request. If omitted, mint metadata advertises the active payment source.',
 		),
 	ExampleOutputs: z
 		.array(

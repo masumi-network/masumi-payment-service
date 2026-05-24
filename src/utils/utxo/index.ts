@@ -17,7 +17,10 @@ export function sortUtxosByLovelaceDesc(utxos: UTxO[]): UTxO[] {
 }
 
 function sortUtxosByBloatAsc(utxos: UTxO[]): UTxO[] {
-	return utxos.sort((a, b) => a.output.amount.length - b.output.amount.length);
+	// `.slice()` first so the in-place `.sort()` doesn't mutate the caller's
+	// array. `sortUtxosByLovelaceDesc` above already produces a fresh array via
+	// `.map(...).sort()`; mirror that immutability guarantee here.
+	return utxos.slice().sort((a, b) => a.output.amount.length - b.output.amount.length);
 }
 
 function getLovelaceFromUtxo(utxo: UTxO): number {

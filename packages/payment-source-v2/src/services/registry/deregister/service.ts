@@ -16,6 +16,7 @@ import {
 	connectExistingTransaction,
 	createMeshProvider,
 	createPendingTransaction,
+	disconnectTransactionWallet,
 	loadHotWalletSession,
 	updateCurrentTransactionHash,
 } from '@/services/shared';
@@ -36,6 +37,7 @@ import {
 	generateRegistryBatchDeregisterTransactionAutomaticFees,
 } from '../../../builders/batch-registry';
 import { ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
+import { unlockHotWalletIfNoPendingTransaction } from '../../wallet-lock-helpers';
 
 // V2 registry deregister sizing. Burn legs all share one BurnAction redeemer,
 // so per-item cost is dominated by tx-size (each burn pulls in the asset's
@@ -432,6 +434,9 @@ export async function deRegisterAgentV2() {
 									const sharedTx = await tx.transaction.create({
 										data: {
 											status: TransactionStatus.Pending,
+											// `lastCheckedAt: now` required so wallet-timeouts can poll this row.
+											// See docs/adr/0006 and docs/adr/0007 for the full rationale.
+											lastCheckedAt: new Date(),
 											BlocksWallet: { connect: { id: deregistrationWallet.id } },
 										},
 									});
@@ -473,6 +478,10 @@ export async function deRegisterAgentV2() {
 						() =>
 							prisma.$transaction(
 								async (tx) => {
+									await tx.transaction.update({
+										where: { id: sharedTxId },
+										data: disconnectTransactionWallet(),
+									});
 									for (const v of fit) {
 										await tx.registryRequest.update({
 											where: { id: v.request.id },
@@ -490,6 +499,10 @@ export async function deRegisterAgentV2() {
 						{ label: 'v2-deregister-batch-tx' },
 					);
 					await fallbackToSingleItems(fit, paymentSource, network, script, policyId);
+					// Rollback only cleared pendingTransactionId; lockedAt stays set. Conditional
+					// unlock prevents the wallet from orphan-locking when every single-item fallback
+					// deferred — preserves the lock when a single-item submit succeeded.
+					await unlockHotWalletIfNoPendingTransaction(deregistrationWallet.id, 'v2-deregister-batch-rollback');
 					return;
 				}
 

@@ -12,6 +12,7 @@ import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/u
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { resolvePurchaseCreationContext } from './shared';
+import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import {
 	createPurchaseInitSchemaInput,
 	createPurchaseInitSchemaOutput,
@@ -190,34 +191,55 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 			}
 			const policyId = input.agentIdentifier.substring(0, 56);
 			const isV2 = input.paymentSourceType === PaymentSourceType.Web3CardanoV2;
+			const explicitSmartContractAddress =
+				input.smartContractAddress != null && input.smartContractAddress.length > 0 ? input.smartContractAddress : null;
 
-			const paymentSource = isV2
-				? await prisma.paymentSource.findFirst({
-						where: {
-							network: input.network,
-							smartContractAddress: input.smartContractAddress,
-							paymentSourceType: PaymentSourceType.Web3CardanoV2,
-							deletedAt: null,
-						},
-						include: {
-							PaymentSourceConfig: {
-								select: { rpcProviderApiKey: true, rpcProvider: true },
+			// V2 validation block: narrow `v2SmartContractAddress` to a non-null string
+			// before the lookup so the prisma where clause doesn't need a bang. V1
+			// short-circuits with null since V1 uses policyId for lookup, not address.
+			let v2SmartContractAddress: string | null = null;
+			if (isV2) {
+				const decoded = decodeBlockchainIdentifier(input.blockchainIdentifier);
+				if (decoded == null) {
+					throw createHttpError(400, 'Invalid blockchain identifier, format invalid');
+				}
+				if (decoded.smartContractAddress == null) {
+					throw createHttpError(400, 'Invalid blockchain identifier, V2 must carry smartContractAddress');
+				}
+				if (explicitSmartContractAddress != null && explicitSmartContractAddress !== decoded.smartContractAddress) {
+					throw createHttpError(400, 'Invalid blockchain identifier, smartContractAddress mismatch');
+				}
+				v2SmartContractAddress = decoded.smartContractAddress;
+			}
+
+			const paymentSource =
+				isV2 && v2SmartContractAddress != null
+					? await prisma.paymentSource.findFirst({
+							where: {
+								network: input.network,
+								smartContractAddress: v2SmartContractAddress,
+								paymentSourceType: PaymentSourceType.Web3CardanoV2,
+								deletedAt: null,
 							},
-						},
-					})
-				: await prisma.paymentSource.findFirst({
-						where: {
-							policyId: policyId,
-							network: input.network,
-							paymentSourceType: input.paymentSourceType,
-							deletedAt: null,
-						},
-						include: {
-							PaymentSourceConfig: {
-								select: { rpcProviderApiKey: true, rpcProvider: true },
+							include: {
+								PaymentSourceConfig: {
+									select: { rpcProviderApiKey: true, rpcProvider: true },
+								},
 							},
-						},
-					});
+						})
+					: await prisma.paymentSource.findFirst({
+							where: {
+								policyId: policyId,
+								network: input.network,
+								paymentSourceType: input.paymentSourceType,
+								deletedAt: null,
+							},
+							include: {
+								PaymentSourceConfig: {
+									select: { rpcProviderApiKey: true, rpcProvider: true },
+								},
+							},
+						});
 			const inputHash = input.inputHash;
 			if (validateHexString(inputHash) == false) {
 				recordBusinessEndpointError('/api/v1/purchase', 'POST', 400, 'Input hash is not a valid hex string', {
@@ -239,7 +261,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 					{
 						network: input.network,
 						policy_id: policyId,
-						smart_contract_address: input.smartContractAddress ?? '',
+						smart_contract_address: isV2 ? (v2SmartContractAddress ?? '') : (input.smartContractAddress ?? ''),
 						agent_identifier: input.agentIdentifier,
 						step: 'payment_source_lookup',
 					},

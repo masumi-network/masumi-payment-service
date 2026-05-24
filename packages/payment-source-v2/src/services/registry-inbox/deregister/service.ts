@@ -16,6 +16,7 @@ import {
 	connectExistingTransaction,
 	createMeshProvider,
 	createPendingTransaction,
+	disconnectTransactionWallet,
 	loadHotWalletSession,
 	updateCurrentTransactionHash,
 } from '@/services/shared';
@@ -36,6 +37,7 @@ import {
 	generateRegistryBatchDeregisterTransactionAutomaticFees,
 } from '../../../builders/batch-registry';
 import { ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
+import { unlockHotWalletIfNoPendingTransaction } from '../../wallet-lock-helpers';
 
 const REGISTRY_BATCH_SIZE = 7;
 
@@ -405,6 +407,9 @@ export async function deRegisterInboxAgentV2() {
 									const sharedTx = await tx.transaction.create({
 										data: {
 											status: TransactionStatus.Pending,
+											// `lastCheckedAt: now` required so wallet-timeouts can poll this row.
+											// See docs/adr/0006 and docs/adr/0007 for the full rationale.
+											lastCheckedAt: new Date(),
 											BlocksWallet: { connect: { id: deregistrationWallet.id } },
 										},
 									});
@@ -446,6 +451,10 @@ export async function deRegisterInboxAgentV2() {
 						() =>
 							prisma.$transaction(
 								async (tx) => {
+									await tx.transaction.update({
+										where: { id: sharedTxId },
+										data: disconnectTransactionWallet(),
+									});
 									for (const v of fit) {
 										await tx.inboxAgentRegistrationRequest.update({
 											where: { id: v.request.id },
@@ -463,6 +472,10 @@ export async function deRegisterInboxAgentV2() {
 						{ label: 'v2-inbox-deregister-batch-tx' },
 					);
 					await fallbackToSingleItems(fit, paymentSource, network, script, policyId);
+					// Rollback only cleared pendingTransactionId; lockedAt stays set. Conditional
+					// unlock prevents the wallet from orphan-locking when every single-item fallback
+					// deferred — preserves the lock when a single-item submit succeeded.
+					await unlockHotWalletIfNoPendingTransaction(deregistrationWallet.id, 'v2-inbox-deregister-batch-rollback');
 					return;
 				}
 

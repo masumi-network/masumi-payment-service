@@ -1,4 +1,4 @@
-import { PaymentSourceType, RegistrationState, PricingType } from '@/generated/prisma/client';
+import { Network, PaymentSourceType, RegistrationState, PricingType } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { convertNetwork } from '@/utils/converter/network-convert';
@@ -23,9 +23,15 @@ import {
 	resolveRegistryFundingLovelace,
 	resolveRegistryRecipientWalletAddress,
 } from '@/services/registry/shared';
-import { type SupportedPaymentSource } from '@/types/payment-source';
+import { SupportedPaymentSourceChain, type SupportedPaymentSource } from '@/types/payment-source';
 
 const mutex = new Mutex();
+
+type RegistryMetadataPaymentSource = {
+	network: Network;
+	paymentSourceType: PaymentSourceType;
+	smartContractAddress: string;
+};
 
 function validateRegistrationPricing(request: {
 	Pricing: {
@@ -51,31 +57,44 @@ function validateRegistrationPricing(request: {
 	}
 }
 
-function buildAgentMetadata(request: {
-	name: string;
-	description: string | null;
-	apiBaseUrl: string | null;
-	ExampleOutputs: Array<{ name: string; mimeType: string; url: string }>;
-	capabilityName?: string | null;
-	capabilityVersion?: string | null;
-	authorName: string | null;
-	authorContactEmail: string | null;
-	authorContactOther: string | null;
-	authorOrganization: string | null;
-	privacyPolicy: string | null;
-	terms: string | null;
-	other: string | null;
-	tags: string[];
-	Pricing: {
-		pricingType: PricingType;
-		FixedPricing?: {
-			Amounts: Array<{ unit: string; amount: bigint }>;
-		} | null;
-	};
-	metadataVersion: number;
-	SupportedPaymentSources: SupportedPaymentSource[];
-}): RegistryMetadata {
-	const supportedPaymentSources = request.SupportedPaymentSources.length > 0 ? request.SupportedPaymentSources : null;
+function buildAgentMetadata(
+	request: {
+		name: string;
+		description: string | null;
+		apiBaseUrl: string | null;
+		ExampleOutputs: Array<{ name: string; mimeType: string; url: string }>;
+		capabilityName?: string | null;
+		capabilityVersion?: string | null;
+		authorName: string | null;
+		authorContactEmail: string | null;
+		authorContactOther: string | null;
+		authorOrganization: string | null;
+		privacyPolicy: string | null;
+		terms: string | null;
+		other: string | null;
+		tags: string[];
+		Pricing: {
+			pricingType: PricingType;
+			FixedPricing?: {
+				Amounts: Array<{ unit: string; amount: bigint }>;
+			} | null;
+		};
+		metadataVersion: number;
+		SupportedPaymentSources: SupportedPaymentSource[];
+	},
+	paymentSource: RegistryMetadataPaymentSource,
+): RegistryMetadata {
+	const supportedPaymentSources =
+		request.SupportedPaymentSources.length > 0
+			? request.SupportedPaymentSources
+			: [
+					{
+						chain: SupportedPaymentSourceChain.Cardano,
+						network: paymentSource.network,
+						paymentSourceType: paymentSource.paymentSourceType,
+						address: paymentSource.smartContractAddress,
+					},
+				];
 	const metadata = {
 		name: stringToMetadata(request.name),
 		description: stringToMetadata(request.description),
@@ -120,7 +139,7 @@ function buildAgentMetadata(request: {
 		image: stringToMetadata(DEFAULTS.DEFAULT_IMAGE),
 		metadata_version: request.metadataVersion.toString(),
 		supported_payment_sources:
-			request.metadataVersion >= DEFAULTS.DEFAULT_REGISTRY_METADATA_VERSION && supportedPaymentSources != null
+			request.metadataVersion >= DEFAULTS.DEFAULT_REGISTRY_METADATA_VERSION
 				? supportedPaymentSources.map((source) => ({
 						chain: stringToMetadata(source.chain),
 						network: stringToMetadata(source.network),
@@ -186,7 +205,7 @@ export async function registerAgentV1() {
 						const recipientWalletAddress = resolveRegistryRecipientWalletAddress(request);
 						const fundingLovelace = resolveRegistryFundingLovelace(request);
 						const assetName = generateRegistryAssetName(firstUtxo);
-						const metadata = buildAgentMetadata(request);
+						const metadata = buildAgentMetadata(request, paymentSource);
 						const rpcApiKey = paymentSource.PaymentSourceConfig.rpcProviderApiKey;
 
 						const evaluationTx = await generateRegistryMintTransaction(

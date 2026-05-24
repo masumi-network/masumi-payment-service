@@ -232,9 +232,21 @@ async function handlePurchaseCreditInit({
 
 					return purchaseRequest;
 				},
-				{ isolationLevel: 'Serializable', maxWait: 30_000, timeout: 30_000 },
+				{ isolationLevel: 'Serializable', maxWait: 10_000, timeout: 10_000 },
 			),
-		{ label: 'credit-repository-purchase-init' },
+		// HTTP-path retry budget. The default helper budget (8 retries × up to
+		// 5 s backoff) makes sense for cron-driven callers but is way too long
+		// for a synchronous HTTP request. Cap retries at 3 with a max 500 ms
+		// delay so worst-case total wait stays around ~31 s (3 attempts × 10 s
+		// inner $transaction timeout + 2 backoffs × 500 ms between attempts) —
+		// well within any reasonable HTTP-request budget. Inner $transaction
+		// timeout dropped from 30 s → 10 s for the same reason; the
+		// credit-init tx is small and shouldn't need 30 s of wall-clock.
+		{
+			label: 'credit-repository-purchase-init',
+			maxRetries: 3,
+			maxDelayMs: 500,
+		},
 	);
 }
 

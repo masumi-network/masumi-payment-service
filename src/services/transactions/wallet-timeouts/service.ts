@@ -22,6 +22,7 @@ import {
 	SWAP_CHAIN_SUBMIT_TIMEOUT_MS,
 } from '@/services/integrations';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
+import { markTransactionPhase2Failed } from '@/services/transactions/phase-2-failure';
 import {
 	connectPreviousAction,
 	createMeshProvider,
@@ -452,22 +453,48 @@ export async function updateWalletTransactionHash() {
 		});
 	}
 	try {
+		// Two recovery branches:
+		//   1) wallet has a PendingTransaction whose `lastCheckedAt` is older than 1 min
+		//      AND the wallet's outer `lockedAt` is either stale (past WALLET_LOCK_TIMEOUT_INTERVAL)
+		//      or null. The `lockedAt` AND-guard is crucial: without it, a worker that
+		//      JUST created a PendingTransaction (whose `lastCheckedAt` is seeded to now
+		//      by `createPendingTransaction`) but is still inside its build/sign/submit
+		//      window — possibly >1 min on slow Blockfrost / large batches — would be
+		//      raced by this cron, which would disconnect the PendingTransaction and
+		//      unlock the wallet while the worker is about to write the txHash. A
+		//      second worker picking the wallet up would then collide on the same
+		//      UTxOs.
+		//   2) wallet has NO PendingTransaction but `lockedAt` is older than
+		//      WALLET_LOCK_TIMEOUT_INTERVAL — an orphan lock from a `lockAndQueryX`
+		//      caller that crashed/exited between committing the lock and creating
+		//      its PendingTransaction. Without this branch the wallet stays locked
+		//      forever (the relation filter requires `PendingTransaction != null`).
 		const lockedHotWallets = await prisma.hotWallet.findMany({
 			where: {
-				PendingTransaction: {
-					//if the transaction has been checked in the last 30 seconds, we skip it
-					lastCheckedAt: {
-						lte: new Date(Date.now() - 1000 * 60 * 1),
-					},
-				},
 				deletedAt: null,
 				OR: [
 					{
+						PendingTransaction: {
+							//if the transaction has been checked in the last 30 seconds, we skip it
+							lastCheckedAt: {
+								lte: new Date(Date.now() - 1000 * 60 * 1),
+							},
+						},
+						OR: [
+							{
+								lockedAt: {
+									lt: new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL),
+								},
+							},
+							{ lockedAt: null },
+						],
+					},
+					{
+						pendingTransactionId: null,
 						lockedAt: {
 							lt: new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL),
 						},
 					},
-					{ lockedAt: null },
 				],
 			},
 			include: {
@@ -482,7 +509,21 @@ export async function updateWalletTransactionHash() {
 			lockedHotWallets.map(async (wallet) => {
 				try {
 					if (wallet.PendingTransaction == null) {
-						logger.error(`Wallet ${wallet.id} has no pending transaction when expected. Skipping...`);
+						// Orphan-lock branch: `lockedAt` is older than WALLET_LOCK_TIMEOUT_INTERVAL
+						// and there's no PendingTransaction to poll. A previous caller (typically
+						// inside `lockAndQueryX`) committed the lock then died before connecting
+						// a PendingTransaction. Clear the lock so the next scheduler tick can
+						// re-pick this wallet up.
+						logger.warn(`Wallet ${wallet.id} locked without PendingTransaction past timeout — clearing orphan lock`);
+						await prisma.hotWallet.update({
+							where: { id: wallet.id, deletedAt: null },
+							data: { lockedAt: null },
+						});
+						if (wallet.type == HotWalletType.Selling) {
+							unlockedSellingWalletIds.push(wallet.id);
+						} else if (wallet.type == HotWalletType.Purchasing) {
+							unlockedPurchasingWalletIds.push(wallet.id);
+						}
 						return;
 					}
 					const txHash = wallet.PendingTransaction.txHash;
@@ -506,6 +547,58 @@ export async function updateWalletTransactionHash() {
 					const provider = await createMeshProvider(blockfrostKey);
 					const txInfo = await provider.fetchTxInfo(txHash);
 					if (txInfo) {
+						// Phase-2 detection: the tx landed on chain, but if the script
+						// rejected (collateral consumed, expected outputs not produced),
+						// no UTxO appears at the script address and tx-sync never fires.
+						// Without this, the shared Transaction row keeps `txHash` set and
+						// every dependent PaymentRequest / PurchaseRequest / RegistryRequest
+						// stays in `*Initiated` forever. Mesh's `fetchTxInfo` does not
+						// expose `valid_contract`, so go straight to Blockfrost.
+						let validContract: boolean | null = null;
+						try {
+							const blockfrost = getBlockfrostInstance(wallet.PaymentSource.network, blockfrostKey);
+							const txDetails = await blockfrost.txs(txHash);
+							validContract = txDetails.valid_contract;
+						} catch (err) {
+							// Don't disconnect / unlock the wallet on transient Blockfrost
+							// failures: once the PendingTransaction is detached we can no
+							// longer re-poll this tx, so a flake here would permanently
+							// strand dependents on a phase-2-failed tx. Bump `lastCheckedAt`
+							// to throttle the retry to one per minute and bail out — next
+							// tick re-fetches.
+							//
+							// Escalation: if the tx is older than WALLET_LOCK_TIMEOUT_INTERVAL
+							// (operator-tunable, typically ~30-60 minutes) AND we still cannot
+							// reach blockfrost, log at ERROR so on-call gets paged. We do NOT
+							// auto-propagate phase-2 failure here — blockfrost being down does
+							// not imply the tx failed; marking dependents as failed when really
+							// we just couldn't verify would mis-route real funds. Operator
+							// must intervene (verify off-platform, then manually advance state).
+							const txAgeMs = Date.now() - wallet.PendingTransaction.createdAt.getTime();
+							const escalate = txAgeMs > CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL;
+							const logFn = escalate ? logger.error : logger.warn;
+							logFn.call(logger, `wallet-timeouts: failed to fetch valid_contract for ${txHash}, retrying next tick`, {
+								error: errorToString(err),
+								txAgeMs,
+								escalated: escalate,
+								note: escalate
+									? 'tx older than WALLET_LOCK_TIMEOUT_INTERVAL while blockfrost still failing — operator action required to verify phase-2 outcome off-platform'
+									: undefined,
+							});
+							await prisma.transaction.update({
+								where: { id: wallet.PendingTransaction.id },
+								data: { lastCheckedAt: new Date() },
+							});
+							return;
+						}
+
+						if (validContract === false) {
+							logger.error(`Phase-2 failure detected for tx ${txHash} — propagating failure to dependents`, {
+								txId: wallet.PendingTransaction.id,
+							});
+							await markTransactionPhase2Failed(wallet.PendingTransaction.id, txHash);
+						}
+
 						await prisma.hotWallet.update({
 							where: { id: wallet.id, deletedAt: null },
 							data: {

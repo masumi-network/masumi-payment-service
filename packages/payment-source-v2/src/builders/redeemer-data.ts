@@ -19,15 +19,20 @@
  *   6 AuthorizeRefund
  *
  * `CollectCompleted` is the off-chain label for the `Withdraw` redeemer; both
- * resolve to alternative 0. `CancelRefund` and `AuthorizeWithdrawal` share
- * alternative 2 — labels are distinct so future contract revisions can split
- * them without ambiguity at the call site.
+ * resolve to alternative 0.
+ *
+ * The V1-only `CancelRefund` action is deliberately NOT exposed here — V2's
+ * validator (vested_pay.ak `pub type Action`) has no CancelRefund variant.
+ * Previously this builder mapped `CancelRefund` to alternative 2 (the same as
+ * `AuthorizeWithdrawal`), which would have silently executed a buyer
+ * authorize-withdraw on a Disputed UTxO if any V2 caller used the label.
+ * Adding a real cancel-refund path requires a contract revision; until then
+ * keep V1 callers routed through `src/utils/generator/transaction-generator`.
  */
 export function generateRedeemerData(
 	type:
 		| 'AuthorizeRefund'
 		| 'AuthorizeWithdrawal'
-		| 'CancelRefund'
 		| 'RequestRefund'
 		| 'SubmitResult'
 		| 'CollectCompleted'
@@ -36,7 +41,6 @@ export function generateRedeemerData(
 	switch (type) {
 		case 'AuthorizeRefund':
 			return { alternative: 6, fields: [] };
-		case 'CancelRefund':
 		case 'AuthorizeWithdrawal':
 			return { alternative: 2, fields: [] };
 		case 'RequestRefund':
@@ -47,5 +51,11 @@ export function generateRedeemerData(
 			return { alternative: 0, fields: [] };
 		case 'CollectRefund':
 			return { alternative: 3, fields: [] };
+		default: {
+			// Compile-time exhaustiveness + runtime guard against bypass via `as any`.
+			// Returning `undefined` here previously produced silent CBOR malformation downstream.
+			const _exhaustive: never = type;
+			throw new Error(`Unsupported V2 redeemer action: ${String(_exhaustive)}`);
+		}
 	}
 }

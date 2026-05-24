@@ -145,6 +145,14 @@ export async function ensureCollateralReady(params: EnsureCollateralReadyParams)
 			totalLovelace: classification.totalLovelace.toString(),
 			minRequiredLovelace: PREP_TX_MIN_LOVELACE.toString(),
 		});
+		// The outer caller's `lockAndQueryX` set `lockedAt = now` on this wallet.
+		// We did NOT submit a prep tx (no PendingTransaction was connected), so
+		// `wallet-timeouts` will never pick this wallet up via its query filter
+		// (`PendingTransaction != null` is required). Without an explicit unlock,
+		// the wallet would sit at lockedAt-set/pendingTransactionId-null forever.
+		// Clear lockedAt so the next scheduler tick (after the operator funds
+		// the wallet) can re-pick it up.
+		await unlockWalletLock(walletDbId, serviceLabel);
 		return {
 			status: 'failed',
 			reason: 'insufficient_funds',
@@ -204,6 +212,10 @@ export async function ensureCollateralReady(params: EnsureCollateralReadyParams)
 			error:
 				dbError instanceof Error ? { message: dbError.message, name: dbError.name, stack: dbError.stack } : dbError,
 		});
+		// No PendingTransaction was successfully connected, so the wallet's
+		// `lockedAt` (set by the outer `lockAndQueryX`) won't be cleared by
+		// `wallet-timeouts`. Unlock explicitly so the next tick can retry.
+		await unlockWalletLock(walletDbId, serviceLabel);
 		return {
 			status: 'failed',
 			reason: 'prep_tx_failed',
@@ -221,14 +233,20 @@ export async function ensureCollateralReady(params: EnsureCollateralReadyParams)
 	} catch (submitError) {
 		// Rollback the shared Tx row's wallet lock. The orphan row itself
 		// becomes harmless (nothing references it via CurrentTransaction).
+		// Wrap in retryOnSerializationConflict so a concurrent writer on the
+		// same wallet row doesn't leave the lock stuck.
 		try {
-			await prisma.hotWallet.update({
-				where: { id: walletDbId, deletedAt: null },
-				data: {
-					PendingTransaction: { disconnect: true },
-					lockedAt: null,
-				},
-			});
+			await retryOnSerializationConflict(
+				() =>
+					prisma.hotWallet.update({
+						where: { id: walletDbId, deletedAt: null },
+						data: {
+							PendingTransaction: { disconnect: true },
+							lockedAt: null,
+						},
+					}),
+				{ label: 'collateral-prep-rollback-unlock' },
+			);
 		} catch (rollbackError) {
 			logger.warn('V2 collateral prep rollback failed (non-fatal) [collateral-prep]', {
 				walletDbId,
@@ -271,17 +289,18 @@ export async function ensureCollateralReady(params: EnsureCollateralReadyParams)
 	} catch (updateError) {
 		// Hash-recording failure is non-fatal but is the SECOND gas-loop hazard
 		// from this helper's audit: with txHash still null in the DB but the
-		// tx already on chain, wallet-timeouts will hit its `txHash == null`
-		// branch (line 489-503 of wallet-timeouts/service.ts) and forcibly
-		// clear the wallet's pendingTransactionId + lockedAt after
-		// WALLET_LOCK_TIMEOUT_INTERVAL. That itself is fine — the on-chain
-		// prep tx propagates UTxOs the next helper invocation will see — BUT
-		// if blockfrost hasn't yet indexed those new UTxOs at the moment the
-		// next action tick runs, the helper would observe the same "no
-		// collateral" state and submit a SECOND prep tx (= second gas burn).
-		// The window is bounded (one extra prep tx) and only triggers on a
-		// rare DB update failure right after a successful chain submit;
-		// logging at WARN so we can spot it in CI.
+		// tx already on chain, wallet-timeouts hits its `txHash == null`
+		// branch (see WALLET_LOCK_TIMEOUT_INTERVAL handler in
+		// wallet-timeouts/service.ts) and forcibly clears the wallet's
+		// pendingTransactionId + lockedAt after the timeout. That itself is
+		// fine — the on-chain prep tx propagates UTxOs the next helper
+		// invocation will see — BUT if blockfrost hasn't yet indexed those
+		// new UTxOs at the moment the next action tick runs, the helper
+		// would observe the same "no collateral" state and submit a SECOND
+		// prep tx (= second gas burn). The window is bounded (one extra
+		// prep tx) and only triggers on a rare DB update failure right
+		// after a successful chain submit; logging at WARN so we can spot
+		// it in CI.
 		logger.warn('V2 collateral prep post-submit hash update failed [collateral-prep]', {
 			walletDbId,
 			walletAddress,
@@ -304,4 +323,52 @@ export async function ensureCollateralReady(params: EnsureCollateralReadyParams)
 	});
 
 	return { status: 'deferred', prepTxHash };
+}
+
+/**
+ * Clear the outer `lockedAt` set by `lockAndQueryX` when the helper bails
+ * out without leaving a PendingTransaction behind. Without this, the
+ * `wallet-timeouts` cron has no row to poll (its relation filter requires
+ * `PendingTransaction != null`) and the wallet would stay locked until
+ * `WALLET_LOCK_TIMEOUT_INTERVAL` elapsed AND a future Transaction row
+ * happened to be created on it — which may never come.
+ *
+ * Invariant assumed by every call site: the wallet has NO connected
+ * PendingTransaction at this point. `lockAndQueryX` only sets `lockedAt`;
+ * the prep-tx pre-submit either hasn't run yet (insufficient_funds case)
+ * or failed before connecting BlocksWallet (DB pre-submit failure case).
+ * To keep this helper safe even if a future caller violates that
+ * invariant, also issue `PendingTransaction.disconnect` — Prisma treats
+ * a no-op disconnect on a 1-to-1 relation as a successful nothing-to-do,
+ * so this never throws but DOES release a connection if one accidentally
+ * exists.
+ *
+ * Idempotent and safe to call even when the caller did not pre-lock.
+ */
+/**
+ * Pure builder for the Prisma update payload used by `unlockWalletLock`.
+ * Exported so unit tests can pin the payload shape (both `lockedAt: null`
+ * AND `PendingTransaction.disconnect: true`) without spinning up a DB or
+ * jest module mocks.
+ */
+export function buildUnlockWalletLockData() {
+	return {
+		lockedAt: null,
+		PendingTransaction: { disconnect: true as const },
+	};
+}
+
+async function unlockWalletLock(walletDbId: string, serviceLabel: string): Promise<void> {
+	try {
+		await prisma.hotWallet.update({
+			where: { id: walletDbId, deletedAt: null },
+			data: buildUnlockWalletLockData(),
+		});
+	} catch (error) {
+		logger.warn('V2 collateral prep unlockWalletLock failed (non-fatal) [collateral-prep]', {
+			walletDbId,
+			serviceLabel,
+			error: error instanceof Error ? { name: error.name, message: error.message } : error,
+		});
+	}
 }

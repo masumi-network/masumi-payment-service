@@ -27,6 +27,7 @@ import {
 	createMeshProvider,
 	createNextPurchaseAction,
 	createTxWindow,
+	disconnectTransactionWallet,
 	loadHotWalletSession,
 	updateCurrentTransactionHash,
 } from '@/services/shared';
@@ -45,6 +46,8 @@ import {
 	generateMasumiSmartContractBatchWithdrawTransactionAutomaticFees,
 } from '../../../builders/batch-interaction';
 import { ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
+import { LOOKUP_DEFERRED_PREFIX, isLookupDeferred } from '../../lookup-defer';
+import { unlockHotWalletIfNoPendingTransaction } from '../../wallet-lock-helpers';
 
 const COLLECT_REFUND_BATCH_SIZE = 7;
 
@@ -80,24 +83,12 @@ type ValidatedCollectRefundItem = {
 	window: TxWindowBounds;
 };
 
-// Sentinel prefix used in thrown error messages from validateAndBuildItem
-// to signal that the failure is a CHAIN-LOOKUP miss, not a DB-shape error.
-// The catch site in processWalletBatch recognises this prefix and SKIPS
-// the item — leaves it in its `*Requested` state for the next scheduler
-// tick — instead of calling markRequestFailed.
-//
-// Chain-state authority belongs to the tx-sync service: it watches contract
-// events and rewrites DB state when chain state changes. Marking a request
-// as `WaitingForManualAction` from within an action service races tx-sync
-// (the UTxO might have been spent by an external observer, or blockfrost
-// might just be lagged), and once a request is parked in
-// `WaitingForManualAction` the scheduler will never re-pick it up. Defer
-// the call and let tx-sync drive any terminal transition.
-const LOOKUP_DEFERRED_PREFIX = 'V2_BATCH_LOOKUP_DEFERRED:';
-
-function isLookupDeferred(error: unknown): boolean {
-	return error instanceof Error && error.message.startsWith(LOOKUP_DEFERRED_PREFIX);
-}
+// LOOKUP_DEFERRED_PREFIX / isLookupDeferred imported from ../../lookup-defer.
+// Rationale (see lookup-defer.ts): batch services throw with the sentinel
+// prefix to signal "skip this item, leave it in *Requested for the next tick"
+// rather than parking in WaitingForManualAction. Authority for terminal
+// transitions belongs to tx-sync; action services should never short-circuit
+// chain-state inference based on a transient blockfrost miss.
 
 /**
  * Wrap `fetchUTxOs(txHash)` with progressive retries when the first call
@@ -322,6 +313,12 @@ async function processSingleRefundCollection(
 				update: {
 					txHash: null,
 					status: TransactionStatus.Pending,
+					// Recycling the upstream Transaction row — its existing `lastCheckedAt`
+					// is from the previous lifecycle phase (could be hours stale or NULL).
+					// Reset to now so wallet-timeouts treats this as a freshly-issued
+					// PendingTransaction (1-min debounce). Without this a stale ts would
+					// make the cron fire immediately or a NULL ts hide the row forever.
+					lastCheckedAt: new Date(),
 					BlocksWallet: { connect: { id: request.SmartContractWallet.id } },
 				},
 			},
@@ -696,6 +693,9 @@ async function processWalletBatch(
 						const sharedTx = await tx.transaction.create({
 							data: {
 								status: TransactionStatus.Pending,
+								// `lastCheckedAt: now` required so wallet-timeouts can poll this row.
+								// See docs/adr/0006 and docs/adr/0007 for the full rationale.
+								lastCheckedAt: new Date(),
 								BlocksWallet: { connect: { id: wallet.id } },
 							},
 						});
@@ -736,20 +736,28 @@ async function processWalletBatch(
 			() =>
 				prisma.$transaction(
 					async (tx) => {
+						await tx.transaction.update({
+							where: { id: sharedTxId },
+							data: disconnectTransactionWallet(),
+						});
 						for (const v of fit) {
+							// Skip+log rather than bang-then-throw: a throw here would roll back the
+							// shared-Tx revert above. lockedAt is handled separately by the
+							// post-fallbackToSingleItems unlockHotWalletIfNoPendingTransaction.
+							const currentTxId = v.request.CurrentTransaction?.id;
+							if (currentTxId == null) {
+								logger.error(
+									`V2 collect-refund rollback: request ${v.request.id} missing CurrentTransaction; skipping item revert`,
+								);
+								continue;
+							}
 							await tx.purchaseRequest.update({
 								where: { id: v.request.id },
 								data: {
 									...connectPreviousAction(v.request.nextActionId),
 									...createNextPurchaseAction(PurchasingAction.WithdrawRefundRequested),
-									CurrentTransaction: {
-										update: {
-											txHash: v.request.CurrentTransaction!.txHash,
-											status: v.request.CurrentTransaction!.status,
-											BlocksWallet: { disconnect: true },
-										},
-									},
-									TransactionHistory: { disconnect: { id: v.request.CurrentTransaction!.id } },
+									CurrentTransaction: { connect: { id: currentTxId } },
+									TransactionHistory: { disconnect: { id: currentTxId } },
 								},
 							});
 						}
@@ -764,6 +772,10 @@ async function processWalletBatch(
 			blockchainProvider,
 			network,
 		);
+		// Rollback only cleared pendingTransactionId; lockedAt stays set. Conditional
+		// unlock prevents the wallet from orphan-locking when every single-item fallback
+		// deferred — preserves the lock when a single-item submit succeeded.
+		await unlockHotWalletIfNoPendingTransaction(wallet.id, 'collect-refund-batch-rollback');
 		return;
 	}
 

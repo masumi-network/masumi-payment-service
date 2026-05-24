@@ -16,11 +16,16 @@ describe('generateRedeemerData', () => {
 		expect(generateRedeemerData('AuthorizeWithdrawal')).toEqual({ alternative: 2, fields: [] });
 	});
 
-	it('maps CancelRefund to alternative 2 (shared with AuthorizeWithdrawal)', () => {
-		// Both labels resolve to the same Aiken redeemer. Documented in
-		// redeemer-data.ts; if the contract ever splits them we MUST update
-		// the mapping AND every call site that uses CancelRefund.
-		expect(generateRedeemerData('CancelRefund')).toEqual({ alternative: 2, fields: [] });
+	it('does NOT accept CancelRefund — V2 validator has no such action', () => {
+		// Static guard: `@ts-expect-error` asserts the type union excludes CancelRefund —
+		// if someone re-adds the label, this directive starts failing and forces a review
+		// of vested_pay.ak. Runtime guard: a caller bypassing the type with `as any` must
+		// not silently get `undefined` (which would malform downstream CBOR); the default
+		// branch in generateRedeemerData throws instead.
+		expect(() =>
+			// @ts-expect-error CancelRefund is not part of the V2 redeemer union.
+			generateRedeemerData('CancelRefund'),
+		).toThrow(/Unsupported V2 redeemer action/);
 	});
 
 	it('maps CollectRefund to alternative 3', () => {
@@ -39,7 +44,6 @@ describe('generateRedeemerData', () => {
 		const all = [
 			'AuthorizeRefund',
 			'AuthorizeWithdrawal',
-			'CancelRefund',
 			'RequestRefund',
 			'SubmitResult',
 			'CollectCompleted',
@@ -58,7 +62,6 @@ describe('generateRedeemerData', () => {
 		const all = [
 			'AuthorizeRefund',
 			'AuthorizeWithdrawal',
-			'CancelRefund',
 			'RequestRefund',
 			'SubmitResult',
 			'CollectCompleted',

@@ -101,98 +101,125 @@ export async function updateRolledBackTransaction(rolledBackTx: Array<{ tx_hash:
 			},
 		});
 		for (const transaction of foundTransaction) {
-			await prisma.transaction.update({
-				where: { id: transaction.id },
-				data: {
-					status: TransactionStatus.RolledBack,
-					BlocksWallet: transaction.BlocksWallet ? { disconnect: true } : undefined,
-				},
-			});
-			if (transaction.BlocksWallet != null) {
-				await prisma.hotWallet.update({
-					where: { id: transaction.BlocksWallet.id },
-					data: {
-						lockedAt: null,
-					},
-				});
-			}
+			// Atomic rollback for one Transaction: mark it `RolledBack`, unlock
+			// its BlocksWallet, and flag every PaymentRequest / PurchaseRequest
+			// that references it as `WaitingForManualAction`. Running this as a
+			// single Postgres transaction (with retry-on-serialization-conflict)
+			// guarantees we never end up half-flagged — a partial failure had
+			// the potential to leave the wallet unlocked while some requests
+			// still pointed at the rolled-back Transaction, blocking operator
+			// recovery on those rows. Retry handles the inevitable
+			// contention with concurrent scheduler ticks that touch the same
+			// HotWallet row.
+			await retryOnSerializationConflict(
+				() =>
+					prisma.$transaction(
+						async (innerTx) => {
+							await innerTx.transaction.update({
+								where: { id: transaction.id },
+								data: {
+									status: TransactionStatus.RolledBack,
+									BlocksWallet: transaction.BlocksWallet ? { disconnect: true } : undefined,
+								},
+							});
+							if (transaction.BlocksWallet != null) {
+								await innerTx.hotWallet.update({
+									where: { id: transaction.BlocksWallet.id },
+									data: {
+										lockedAt: null,
+									},
+								});
+							}
 
-			// PaymentRequestCurrent / PurchaseRequestCurrent are arrays since the
-			// V2 batch flow can reference one Transaction from N requests
-			// (currentTransactionId no longer @unique). For each affected request
-			// we move the current NextAction to history and write a new
-			// WaitingForManualAction so the operator can inspect the rollback.
-			//TODO: automatically resync the transaction
-			const paymentRequestsToFlag = [
-				...transaction.PaymentRequestCurrent.map((pr) => ({ id: pr.id, nextActionId: pr.nextActionId })),
-				...(transaction.PaymentRequestHistory != null
-					? [
-							{
-								id: transaction.PaymentRequestHistory.id,
-								nextActionId: transaction.PaymentRequestHistory.nextActionId,
-							},
-						]
-					: []),
-			];
-			for (const pr of paymentRequestsToFlag) {
-				await prisma.paymentRequest.update({
-					where: { id: pr.id },
-					data: {
-						ActionHistory: { connect: { id: pr.nextActionId } },
-						NextAction: {
-							upsert: {
-								update: {
-									requestedAction: PaymentAction.WaitingForManualAction,
-									errorNote:
-										'Rolled back transaction detected. Please check the transaction and manually resolve the issue.',
-									errorType: PaymentErrorType.Unknown,
-								},
-								create: {
-									requestedAction: PaymentAction.WaitingForManualAction,
-									errorNote:
-										'Rolled back transaction detected. Please check the transaction and manually resolve the issue.',
-									errorType: PaymentErrorType.Unknown,
-								},
-							},
+							// PaymentRequestCurrent / PurchaseRequestCurrent are arrays since the
+							// V2 batch flow can reference one Transaction from N requests
+							// (currentTransactionId no longer @unique). For each affected request
+							// we move the current NextAction to history and write a new
+							// WaitingForManualAction so the operator can inspect the rollback.
+							// Automatic resync is intentionally NOT done here — rollbacks may
+							// signal datum drift or external double-spends, neither of which
+							// is safe to retry without operator review.
+							const paymentRequestsToFlag = [
+								...transaction.PaymentRequestCurrent.map((pr) => ({
+									id: pr.id,
+									nextActionId: pr.nextActionId,
+								})),
+								...(transaction.PaymentRequestHistory != null
+									? [
+											{
+												id: transaction.PaymentRequestHistory.id,
+												nextActionId: transaction.PaymentRequestHistory.nextActionId,
+											},
+										]
+									: []),
+							];
+							for (const pr of paymentRequestsToFlag) {
+								await innerTx.paymentRequest.update({
+									where: { id: pr.id },
+									data: {
+										ActionHistory: { connect: { id: pr.nextActionId } },
+										NextAction: {
+											upsert: {
+												update: {
+													requestedAction: PaymentAction.WaitingForManualAction,
+													errorNote:
+														'Rolled back transaction detected. Please check the transaction and manually resolve the issue.',
+													errorType: PaymentErrorType.Unknown,
+												},
+												create: {
+													requestedAction: PaymentAction.WaitingForManualAction,
+													errorNote:
+														'Rolled back transaction detected. Please check the transaction and manually resolve the issue.',
+													errorType: PaymentErrorType.Unknown,
+												},
+											},
+										},
+									},
+								});
+							}
+							const purchaseRequestsToFlag = [
+								...transaction.PurchaseRequestCurrent.map((pr) => ({
+									id: pr.id,
+									nextActionId: pr.nextActionId,
+								})),
+								...(transaction.PurchaseRequestHistory != null
+									? [
+											{
+												id: transaction.PurchaseRequestHistory.id,
+												nextActionId: transaction.PurchaseRequestHistory.nextActionId,
+											},
+										]
+									: []),
+							];
+							for (const pr of purchaseRequestsToFlag) {
+								await innerTx.purchaseRequest.update({
+									where: { id: pr.id },
+									data: {
+										ActionHistory: { connect: { id: pr.nextActionId } },
+										NextAction: {
+											upsert: {
+												update: {
+													requestedAction: PurchasingAction.WaitingForManualAction,
+													errorNote:
+														'Rolled back transaction detected. Please check the transaction and manually resolve the issue.',
+													errorType: PurchaseErrorType.Unknown,
+												},
+												create: {
+													requestedAction: PurchasingAction.WaitingForManualAction,
+													errorNote:
+														'Rolled back transaction detected. Please check the transaction and manually resolve the issue.',
+													errorType: PurchaseErrorType.Unknown,
+												},
+											},
+										},
+									},
+								});
+							}
 						},
-					},
-				});
-			}
-			const purchaseRequestsToFlag = [
-				...transaction.PurchaseRequestCurrent.map((pr) => ({ id: pr.id, nextActionId: pr.nextActionId })),
-				...(transaction.PurchaseRequestHistory != null
-					? [
-							{
-								id: transaction.PurchaseRequestHistory.id,
-								nextActionId: transaction.PurchaseRequestHistory.nextActionId,
-							},
-						]
-					: []),
-			];
-			for (const pr of purchaseRequestsToFlag) {
-				await prisma.purchaseRequest.update({
-					where: { id: pr.id },
-					data: {
-						ActionHistory: { connect: { id: pr.nextActionId } },
-						NextAction: {
-							upsert: {
-								update: {
-									requestedAction: PurchasingAction.WaitingForManualAction,
-									errorNote:
-										'Rolled back transaction detected. Please check the transaction and manually resolve the issue.',
-									errorType: PurchaseErrorType.Unknown,
-								},
-								create: {
-									requestedAction: PurchasingAction.WaitingForManualAction,
-									errorNote:
-										'Rolled back transaction detected. Please check the transaction and manually resolve the issue.',
-									errorType: PurchaseErrorType.Unknown,
-								},
-							},
-						},
-					},
-				});
-			}
+						{ timeout: 30_000 },
+					),
+				{ label: 'tx-sync-rollback' },
+			);
 		}
 	}
 }
@@ -1176,24 +1203,30 @@ export async function updateTransaction(
 	// top of each) so re-processing the whole tx next tick is safe.
 	let paymentHandlerError: unknown;
 	let purchasingHandlerError: unknown;
-	const paymentHandler =
-		paymentContract.paymentSourceType === PaymentSourceType.Web3CardanoV1
-			? handleV1PaymentTransaction
-			: paymentContract.paymentSourceType === PaymentSourceType.Web3CardanoV2
-				? handleV2PaymentTransaction
-				: null;
-	const purchasingHandler =
-		paymentContract.paymentSourceType === PaymentSourceType.Web3CardanoV1
-			? handleV1PurchasingTransaction
-			: paymentContract.paymentSourceType === PaymentSourceType.Web3CardanoV2
-				? handleV2PurchasingTransaction
-				: null;
-	if (paymentHandler == null || purchasingHandler == null) {
-		logger.error(
-			'Unsupported paymentSourceType for tx-sync confirmation handlers. Skipping. tx_hash: ' + tx.tx.tx_hash,
-			{ paymentSourceType: paymentContract.paymentSourceType },
-		);
-		return;
+	// Exhaustive route by paymentSourceType. The `assertNever` default forces
+	// adding a new PaymentSourceType enum value to be a TypeScript compile
+	// error — without it, a future enum addition would silently advance the
+	// tx-sync checkpoint while the new source's confirmations went unprocessed.
+	let paymentHandler: typeof handleV1PaymentTransaction;
+	let purchasingHandler: typeof handleV1PurchasingTransaction;
+	switch (paymentContract.paymentSourceType) {
+		case PaymentSourceType.Web3CardanoV1:
+			paymentHandler = handleV1PaymentTransaction;
+			purchasingHandler = handleV1PurchasingTransaction;
+			break;
+		case PaymentSourceType.Web3CardanoV2:
+			paymentHandler = handleV2PaymentTransaction;
+			purchasingHandler = handleV2PurchasingTransaction;
+			break;
+		default: {
+			const _exhaustive: never = paymentContract.paymentSourceType;
+			logger.error(
+				'Unsupported paymentSourceType for tx-sync confirmation handlers (tsc should have caught this). Skipping. tx_hash: ' +
+					tx.tx.tx_hash,
+				{ paymentSourceType: _exhaustive },
+			);
+			return;
+		}
 	}
 	try {
 		if (inputTxHashMatchPaymentRequest) {

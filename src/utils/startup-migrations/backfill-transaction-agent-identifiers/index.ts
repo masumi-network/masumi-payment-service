@@ -5,6 +5,30 @@ import { logger } from '@masumi/payment-core/logger';
 const BATCH = 250;
 
 /**
+ * Safely decode one row's blockchainIdentifier. Logs and returns null on any
+ * decode error so the caller can still stamp `agentIdentifierSyncedAt` and
+ * avoid re-processing this row on every subsequent boot.
+ *
+ * Without this guard a single malformed `blockchainIdentifier` would throw
+ * inside the per-batch `$transaction` callback, abort the whole batch, and —
+ * because the startup migration is awaited from `initialize()` (src/app.ts) —
+ * crash the boot in a loop on every restart.
+ */
+function safeDecodeAgentIdentifier(row: { id: string; blockchainIdentifier: string }, table: string): string | null {
+	try {
+		return decodeBlockchainIdentifier(row.blockchainIdentifier)?.agentIdentifier ?? null;
+	} catch (error) {
+		logger.warn('backfillTransactionAgentIdentifiers: decode failed for row, stamping null', {
+			component: 'migration',
+			table,
+			rowId: row.id,
+			error: error instanceof Error ? { name: error.name, message: error.message } : error,
+		});
+		return null;
+	}
+}
+
+/**
  * Idempotent startup migration: fills `agentIdentifier` (and `agentIdentifierSyncedAt`) for legacy rows.
  * Uses `agentIdentifierSyncedAt IS NULL` as the pending marker so rows with no agent in the blockchain id
  * (decoded null) are not rescanned on every boot.
@@ -43,8 +67,7 @@ export async function backfillTransactionAgentIdentifiers(): Promise<void> {
 		await prisma.$transaction(
 			async (tx) => {
 				for (const row of chunk) {
-					const decoded = decodeBlockchainIdentifier(row.blockchainIdentifier);
-					const agentIdentifier = decoded?.agentIdentifier ?? null;
+					const agentIdentifier = safeDecodeAgentIdentifier(row, 'paymentRequest');
 					await tx.paymentRequest.update({
 						where: { id: row.id },
 						data: { agentIdentifier, agentIdentifierSyncedAt: syncedAt },
@@ -68,8 +91,7 @@ export async function backfillTransactionAgentIdentifiers(): Promise<void> {
 		await prisma.$transaction(
 			async (tx) => {
 				for (const row of chunk) {
-					const decoded = decodeBlockchainIdentifier(row.blockchainIdentifier);
-					const agentIdentifier = decoded?.agentIdentifier ?? null;
+					const agentIdentifier = safeDecodeAgentIdentifier(row, 'purchaseRequest');
 					await tx.purchaseRequest.update({
 						where: { id: row.id },
 						data: { agentIdentifier, agentIdentifierSyncedAt: syncedAt },
