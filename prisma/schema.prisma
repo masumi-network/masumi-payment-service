@@ -201,9 +201,9 @@ model WalletBase {
 }
 
 model RegistryRequest {
-  id                             String            @id @default(cuid())
-  createdAt                      DateTime          @default(now())
-  updatedAt                      DateTime          @updatedAt
+  id                             String                   @id @default(cuid())
+  createdAt                      DateTime                 @default(now())
+  updatedAt                      DateTime                 @updatedAt
   lastCheckedAt                  DateTime?
   paymentSourceId                String
   smartContractWalletId          String
@@ -224,20 +224,20 @@ model RegistryRequest {
   authorOrganization             String?
   metadataVersion                Int
   tags                           String[]
-  agentPricingId                 String            @unique
-  agentIdentifier                String?           @unique
+  agentPricingId                 String                   @unique
+  agentIdentifier                String?                  @unique
   state                          RegistrationState
-  registrationStateLastChangedAt DateTime          @default(now())
+  registrationStateLastChangedAt DateTime                 @default(now())
   currentTransactionId           String?
   error                          String?
   ExampleOutputs                 ExampleOutput[]
   SupportedPaymentSources        SupportedPaymentSource[]
-  Pricing                        AgentPricing      @relation(fields: [agentPricingId], references: [id])
-  CurrentTransaction             Transaction?      @relation(fields: [currentTransactionId], references: [id])
-  PaymentSource                  PaymentSource     @relation(fields: [paymentSourceId], references: [id])
-  SmartContractWallet            HotWallet         @relation("RegistryRequestMintingWallet", fields: [smartContractWalletId], references: [id])
-  RecipientWallet                HotWallet?        @relation("RegistryRequestRecipientWallet", fields: [recipientHotWalletId], references: [id])
-  DeregistrationHotWallet        HotWallet?        @relation("RegistryRequestDeregistrationWallet", fields: [deregistrationHotWalletId], references: [id])
+  Pricing                        AgentPricing             @relation(fields: [agentPricingId], references: [id])
+  CurrentTransaction             Transaction?             @relation(fields: [currentTransactionId], references: [id])
+  PaymentSource                  PaymentSource            @relation(fields: [paymentSourceId], references: [id])
+  SmartContractWallet            HotWallet                @relation("RegistryRequestMintingWallet", fields: [smartContractWalletId], references: [id])
+  RecipientWallet                HotWallet?               @relation("RegistryRequestRecipientWallet", fields: [recipientHotWalletId], references: [id])
+  DeregistrationHotWallet        HotWallet?               @relation("RegistryRequestDeregistrationWallet", fields: [deregistrationHotWalletId], references: [id])
 
   @@index([recipientHotWalletId])
   @@index([deregistrationHotWalletId])
@@ -379,6 +379,7 @@ model PaymentRequest {
   @@index([paymentSourceId, createdAt])
   @@index([paymentSourceId, onChainState])
   @@index([paymentSourceId, payByTime])
+  @@index([currentTransactionId])
 }
 
 model PaymentActionData {
@@ -456,6 +457,7 @@ model PurchaseRequest {
   @@index([paymentSourceId, createdAt])
   @@index([paymentSourceId, onChainState])
   @@index([paymentSourceId, payByTime])
+  @@index([currentTransactionId])
 }
 
 model PurchaseActionData {
@@ -489,7 +491,11 @@ model PaymentSource {
   lastIdentifierChecked          String?
   syncInProgress                 Boolean                         @default(false)
   paymentSourceType              PaymentSourceType               @default(Web3CardanoV1)
-  requiredAdminSignatures         Int?
+  /// Required for Web3CardanoV2 (must be >= 2) and forbidden for Web3CardanoV1.
+  /// Enforced at the DB layer by a CHECK constraint defined in migration
+  /// 20260524000000_add_payment_source_type_index. Keep this comment in sync if
+  /// the constraint is changed.
+  requiredAdminSignatures        Int?
   smartContractAddress           String
   adminWalletId                  String?
   feeRatePermille                Int
@@ -513,6 +519,7 @@ model PaymentSource {
 
   @@unique([network, smartContractAddress])
   @@index([network, policyId])
+  @@index([paymentSourceType, deletedAt])
 }
 
 model AdminWallet {

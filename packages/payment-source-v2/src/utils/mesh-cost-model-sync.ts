@@ -18,10 +18,19 @@
 
 import { DEFAULT_V1_COST_MODEL_LIST, DEFAULT_V2_COST_MODEL_LIST, DEFAULT_V3_COST_MODEL_LIST } from '@meshsdk/core';
 import { logger } from '@masumi/payment-core/logger';
+import { Mutex } from 'async-mutex';
 import {
 	getCachedRawCostModels,
 	syncMeshCostModelsFromChain as syncSharedMeshCostModels,
 } from '@/utils/mesh-cost-model-sync';
+
+// Guard concurrent in-place mutations of the V1/V2/V3 cost-model arrays. Two
+// builders syncing on overlapping API keys can interleave their replace passes
+// — without the lock, `target.length = 0` from one writer can race with `push`
+// from another and leave the array partially populated, which any tx built in
+// that window would phase-2-fail against. One module-level mutex is sufficient
+// because mutations are infrequent (5-minute TTL) and short.
+const replaceMutex = new Mutex();
 
 function replaceListInPlace(target: number[], next: unknown): boolean {
 	if (!Array.isArray(next)) return false;
@@ -82,19 +91,21 @@ export async function syncMeshCostModelsFromChainV2(
 		return sharedProtocol;
 	}
 
-	const v1Patched = replaceListInPlace(DEFAULT_V1_COST_MODEL_LIST, raw.PlutusV1);
-	const v2Patched = replaceListInPlace(DEFAULT_V2_COST_MODEL_LIST, raw.PlutusV2);
-	const v3Patched = replaceListInPlace(DEFAULT_V3_COST_MODEL_LIST, raw.PlutusV3);
+	await replaceMutex.runExclusive(() => {
+		const v1Patched = replaceListInPlace(DEFAULT_V1_COST_MODEL_LIST, raw.PlutusV1);
+		const v2Patched = replaceListInPlace(DEFAULT_V2_COST_MODEL_LIST, raw.PlutusV2);
+		const v3Patched = replaceListInPlace(DEFAULT_V3_COST_MODEL_LIST, raw.PlutusV3);
 
-	logger.info('Synced mesh-sdk Plutus cost models from chain (V2 mesh line)', {
-		v1: v1Patched,
-		v2: v2Patched,
-		v3: v3Patched,
-		v1Length: DEFAULT_V1_COST_MODEL_LIST.length,
-		v2Length: DEFAULT_V2_COST_MODEL_LIST.length,
-		v3Length: DEFAULT_V3_COST_MODEL_LIST.length,
+		logger.info('Synced mesh-sdk Plutus cost models from chain (V2 mesh line)', {
+			v1: v1Patched,
+			v2: v2Patched,
+			v3: v3Patched,
+			v1Length: DEFAULT_V1_COST_MODEL_LIST.length,
+			v2Length: DEFAULT_V2_COST_MODEL_LIST.length,
+			v3Length: DEFAULT_V3_COST_MODEL_LIST.length,
+		});
+
+		lastV2SyncByKey.set(blockfrostApiKey, { at: now });
 	});
-
-	lastV2SyncByKey.set(blockfrostApiKey, { at: now });
 	return sharedProtocol;
 }

@@ -612,19 +612,30 @@ export async function updateWalletTransactionHash() {
 							// leaving the tx Pending and dependent requests stuck in `*Initiated`
 							// until the next ~1-min cron tick re-discovered the same phase-2
 							// failure.
+							//
+							// Pass the wallet id so the disconnect + lockedAt clear runs INSIDE
+							// the propagation $transaction. Atomic with dependent advance —
+							// previously these were two separate writes and a crash between
+							// them stranded the wallet locked forever.
 							await retryOnSerializationConflict(
-								() => markTransactionPhase2Failed(wallet.PendingTransaction!.id, txHash),
+								() =>
+									markTransactionPhase2Failed(wallet.PendingTransaction!.id, txHash, {
+										walletIdsToUnlock: [wallet.id],
+									}),
 								{ label: 'wallet-timeouts-phase-2-propagate' },
 							);
+						} else {
+							// Tx landed and validContract=true (or null couldn't determine):
+							// just unlock the wallet — no dependents to advance. Kept outside
+							// the propagation transaction because no propagation runs here.
+							await prisma.hotWallet.update({
+								where: { id: wallet.id, deletedAt: null },
+								data: {
+									PendingTransaction: { disconnect: true },
+									lockedAt: null,
+								},
+							});
 						}
-
-						await prisma.hotWallet.update({
-							where: { id: wallet.id, deletedAt: null },
-							data: {
-								PendingTransaction: { disconnect: true },
-								lockedAt: null,
-							},
-						});
 						if (wallet.type == HotWalletType.Selling) {
 							unlockedSellingWalletIds.push(wallet.id);
 						} else if (wallet.type == HotWalletType.Purchasing) {

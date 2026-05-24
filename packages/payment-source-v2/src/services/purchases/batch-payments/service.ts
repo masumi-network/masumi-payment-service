@@ -65,6 +65,15 @@ type WalletPairing = {
 	collectionAddress: string | null;
 	utxos: UTxO[];
 	batchedRequests: BatchedRequest[];
+	// Placeholder Transaction row id created at lock time. The placeholder
+	// already carries `BlocksWallet → wallet` so the wallet's
+	// pendingTransactionId points at it; executeSpecificBatchPayment updates
+	// this row (rather than creating a new sharedTx) since
+	// HotWallet.pendingTransactionId @unique permits one connected Tx at a
+	// time. Null when the upstream lock-and-query path used a wallet that
+	// pre-existed the placeholder convention (defensive fallback for the
+	// transitional upgrade window — should not occur in steady state).
+	placeholderTransactionId: string | null;
 };
 
 async function unlockUnusedPurchasingWallets(candidateWalletIds: string[], usedWalletIds: string[]) {
@@ -74,17 +83,43 @@ async function unlockUnusedPurchasingWallets(candidateWalletIds: string[], usedW
 		return;
 	}
 
-	await prisma.hotWallet.updateMany({
-		where: {
-			id: { in: unusedWalletIds },
-			deletedAt: null,
-			pendingTransactionId: null,
-			type: HotWalletType.Purchasing,
-		},
-		data: {
-			lockedAt: null,
-		},
-	});
+	// Each unused wallet still carries the placeholder Transaction created at
+	// lock time (BlocksWallet → wallet). Mark the placeholder RolledBack and
+	// disconnect it before clearing lockedAt. Without the rollback the
+	// placeholder would sit Pending forever and tx-sync / wallet-timeouts
+	// would re-discover it every tick; without the disconnect the wallet
+	// stays orphan-locked (HotWallet.pendingTransactionId points at a row
+	// with no txHash, no progressing batch). Per-wallet write because
+	// pendingTransactionId is @unique — can't bulk-disconnect via updateMany.
+	await Promise.all(
+		unusedWalletIds.map(async (walletId) => {
+			const wallet = await prisma.hotWallet.findUnique({
+				where: { id: walletId, deletedAt: null },
+				select: { pendingTransactionId: true },
+			});
+			if (wallet?.pendingTransactionId != null) {
+				try {
+					await prisma.transaction.update({
+						where: { id: wallet.pendingTransactionId },
+						data: { status: TransactionStatus.RolledBack },
+					});
+				} catch (rollbackError) {
+					logger.warn('batch-payments unused-wallet placeholder rollback failed (non-fatal)', {
+						walletId,
+						placeholderId: wallet.pendingTransactionId,
+						error: rollbackError instanceof Error ? rollbackError.message : rollbackError,
+					});
+				}
+			}
+			await prisma.hotWallet.update({
+				where: { id: walletId, deletedAt: null },
+				data: {
+					lockedAt: null,
+					PendingTransaction: { disconnect: true },
+				},
+			});
+		}),
+	);
 }
 
 const mutex = new Mutex();
@@ -151,23 +186,48 @@ async function executeSpecificBatchPayment(
 		);
 	}
 
-	// Shared-Transaction pre-submit: ONE Transaction row per batch with
-	// BlocksWallet → wallet. Every batched purchase request connects to it
-	// via CurrentTransaction. Avoids the N-orphan pattern that breaks
-	// HotWallet.pendingTransactionId @unique (only the last create survives).
+	// Shared-Transaction pre-submit: REUSE the placeholder Transaction created
+	// at wallet-lock time (already carries BlocksWallet → wallet). Every
+	// batched purchase request connects to it via CurrentTransaction. Avoids
+	// the N-orphan pattern that breaks HotWallet.pendingTransactionId @unique
+	// (only the last create would survive).
+	//
+	// Falls back to creating a fresh sharedTx if the placeholder is missing —
+	// defensive guard for the transitional upgrade window (e.g. an in-flight
+	// scheduler tick from before this version landed). Should not occur in
+	// steady state.
 	const sharedTxId = await retryOnSerializationConflict(
 		() =>
 			prisma.$transaction(
 				async (tx) => {
-					const sharedTx = await tx.transaction.create({
-						data: {
-							status: TransactionStatus.Pending,
-							// `lastCheckedAt: now` required so wallet-timeouts can poll this row.
-							// See docs/adr/0006 and docs/adr/0007 for the full rationale.
-							lastCheckedAt: new Date(),
-							BlocksWallet: { connect: { id: walletId } },
-						},
-					});
+					let resolvedSharedTxId: string;
+					if (walletPairing.placeholderTransactionId != null) {
+						// Reuse path: bump `lastCheckedAt` so wallet-timeouts'
+						// 1-min debounce resets against the new ts (the placeholder
+						// is now actively progressing through pre-submit / submit /
+						// post-submit) and reaffirm the BlocksWallet connection
+						// defensively in case a competing writer touched it.
+						await tx.transaction.update({
+							where: { id: walletPairing.placeholderTransactionId },
+							data: {
+								status: TransactionStatus.Pending,
+								lastCheckedAt: new Date(),
+								BlocksWallet: { connect: { id: walletId } },
+							},
+						});
+						resolvedSharedTxId = walletPairing.placeholderTransactionId;
+					} else {
+						const sharedTx = await tx.transaction.create({
+							data: {
+								status: TransactionStatus.Pending,
+								// `lastCheckedAt: now` required so wallet-timeouts can poll this row.
+								// See docs/adr/0006 and docs/adr/0007 for the full rationale.
+								lastCheckedAt: new Date(),
+								BlocksWallet: { connect: { id: walletId } },
+							},
+						});
+						resolvedSharedTxId = sharedTx.id;
+					}
 					for (const request of batchedRequests) {
 						logger.info('Batching payments, updating purchase request', {
 							paymentRequestId: request.paymentRequest.id,
@@ -180,14 +240,14 @@ async function executeSpecificBatchPayment(
 								collateralReturnLovelace: request.overpaidLovelace,
 								SmartContractWallet: { connect: { id: walletId } },
 								buyerReturnAddress: request.paymentRequest.buyerReturnAddress ?? walletPairing.collectionAddress,
-								...connectExistingTransaction(sharedTx.id),
+								...connectExistingTransaction(resolvedSharedTxId),
 								TransactionHistory: request.paymentRequest.CurrentTransaction
 									? { connect: { id: request.paymentRequest.CurrentTransaction.id } }
 									: undefined,
 							},
 						});
 					}
-					return sharedTx.id;
+					return resolvedSharedTxId;
 				},
 				{ timeout: 30_000 },
 			),
@@ -399,10 +459,45 @@ export async function batchLatestPaymentEntriesV2() {
 							for (const wallet of paymentContract.HotWallets) {
 								if (!walletsToLock.some((w) => w.id === wallet.id)) {
 									walletsToLock.push(wallet);
+									// Create a placeholder Transaction row BEFORE setting
+									// lockedAt and connect it as the wallet's PendingTransaction
+									// in the same write. Without the placeholder the wallet
+									// orphan-cleanup branch in wallet-timeouts has to wait
+									// WALLET_LOCK_TIMEOUT_INTERVAL to detect the orphan via the
+									// `lockedAt set + no PendingTransaction` arm (the only path
+									// it has for a lock with nothing to poll). With the
+									// placeholder, the standard PendingTransaction polling
+									// branch picks it up after 1 minute and — because txHash
+									// stays null until executeSpecificBatchPayment populates it
+									// — disconnects + marks RolledBack via the early-bail
+									// `txHash == null` branch in wallet-timeouts/service.ts.
+									// `executeSpecificBatchPayment` REUSES this placeholder by
+									// updating its `lastCheckedAt` (rather than creating a new
+									// sharedTx) since HotWallet.pendingTransactionId @unique
+									// allows only one connected Tx at a time.
+									const placeholder = await prisma.transaction.create({
+										data: {
+											status: TransactionStatus.Pending,
+											// lastCheckedAt: now keeps wallet-timeouts' 1-min
+											// debounce honored — without it the polling cron
+											// would fire on the next tick (NULL matches `lte`
+											// in Postgres but wallet-timeouts filters on a
+											// non-null `lastCheckedAt` via `lte: now-1min`).
+											lastCheckedAt: new Date(),
+											BlocksWallet: { connect: { id: wallet.id } },
+										},
+									});
 									await prisma.hotWallet.update({
 										where: { id: wallet.id, deletedAt: null },
 										data: { lockedAt: new Date() },
 									});
+									// Stash the placeholder Tx id on the wallet object so
+									// executeSpecificBatchPayment can reuse it. Wallet is a
+									// generated Prisma type, but the closure flows through
+									// untyped paymentContract.HotWallets — see
+									// loadPlaceholderTxIdForWallet for the read site.
+									(wallet as HotWallet & { placeholderTransactionId?: string }).placeholderTransactionId =
+										placeholder.id;
 								}
 							}
 							if (paymentContract.PurchaseRequests.length > 0) {
@@ -460,6 +555,12 @@ export async function batchLatestPaymentEntriesV2() {
 									unit: unit === 'lovelace' ? '' : unit,
 									quantity,
 								})),
+								// Surface the placeholder Transaction id stashed on the
+								// wallet object inside the outer lock-and-query transaction.
+								// Untyped because HotWallet is generated by Prisma —
+								// see the placeholder create site above.
+								placeholderTransactionId:
+									(wallet as HotWallet & { placeholderTransactionId?: string }).placeholderTransactionId ?? null,
 							};
 						}),
 					);
@@ -665,6 +766,7 @@ export async function batchLatestPaymentEntriesV2() {
 								collectionAddress: walletData.collectionAddress,
 								utxos: walletData.utxos,
 								batchedRequests: batchedPaymentRequests,
+								placeholderTransactionId: walletData.placeholderTransactionId,
 							});
 						}
 					}
@@ -777,6 +879,28 @@ export async function batchLatestPaymentEntriesV2() {
 									});
 								}
 
+								// Mark the placeholder Transaction RolledBack BEFORE disconnecting
+								// it from the wallet. The inner submitTx failure path already
+								// handles this, but pre-submit / post-submit failures land here
+								// with the placeholder still Pending — once disconnected and
+								// lockedAt cleared, neither wallet-timeouts polling branch nor the
+								// orphan-lock branch can find the row again, so without this it
+								// would sit Pending forever and accumulate as DB pollution.
+								if (walletPairing.placeholderTransactionId != null) {
+									try {
+										await prisma.transaction.update({
+											where: { id: walletPairing.placeholderTransactionId },
+											data: { status: TransactionStatus.RolledBack },
+										});
+									} catch (rollbackError) {
+										logger.warn('batch-payments placeholder rollback (outer catch) failed (non-fatal)', {
+											walletId: walletPairing.walletId,
+											placeholderId: walletPairing.placeholderTransactionId,
+											rollbackError: rollbackError instanceof Error ? rollbackError.message : rollbackError,
+										});
+									}
+								}
+
 								await prisma.hotWallet.update({
 									where: { id: walletPairing.walletId, deletedAt: null },
 									data: {
@@ -805,17 +929,42 @@ export async function batchLatestPaymentEntriesV2() {
 						},
 					});
 
-					await prisma.hotWallet.updateMany({
-						where: {
-							id: { in: paymentContract.HotWallets.map((x) => x.id) },
-							deletedAt: null,
-							pendingTransactionId: null,
-							type: HotWalletType.Purchasing,
-						},
-						data: {
-							lockedAt: null,
-						},
-					});
+					// Outer-catch wallet unlock — every wallet that the lock-and-query
+					// step touched now carries a placeholder PendingTransaction, so the
+					// previous `pendingTransactionId: null` filter would match none of
+					// them. Walk each candidate, rollback its placeholder, disconnect,
+					// then clear lockedAt — same pattern as unlockUnusedPurchasingWallets
+					// uses for the un-selected wallets.
+					await Promise.all(
+						paymentContract.HotWallets.map(async (candidateWallet) => {
+							const fresh = await prisma.hotWallet.findUnique({
+								where: { id: candidateWallet.id, deletedAt: null },
+								select: { pendingTransactionId: true, type: true },
+							});
+							if (fresh == null || fresh.type !== HotWalletType.Purchasing) return;
+							if (fresh.pendingTransactionId != null) {
+								try {
+									await prisma.transaction.update({
+										where: { id: fresh.pendingTransactionId },
+										data: { status: TransactionStatus.RolledBack },
+									});
+								} catch (rollbackError) {
+									logger.warn('batch-payments outer-catch placeholder rollback failed (non-fatal)', {
+										walletId: candidateWallet.id,
+										placeholderId: fresh.pendingTransactionId,
+										rollbackError: rollbackError instanceof Error ? rollbackError.message : rollbackError,
+									});
+								}
+							}
+							await prisma.hotWallet.update({
+								where: { id: candidateWallet.id, deletedAt: null },
+								data: {
+									lockedAt: null,
+									PendingTransaction: { disconnect: true },
+								},
+							});
+						}),
+					);
 
 					await Promise.allSettled(
 						failedPurchaseRequests.map(async (x) => {

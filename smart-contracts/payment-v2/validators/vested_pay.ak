@@ -16,6 +16,22 @@ type POSIXTime =
 pub type AssetValue =
   Pairs<ByteArray, Pairs<ByteArray, Int>>
 
+// Minimum fraction of the disputed input (in permille) that must be paid out
+// to buyer + seller combined. The submitter may keep at most 5% as a finder
+// reward; the remaining 95% must be returned to the parties named in the
+// admin-signed payouts.
+const min_dispute_payout_permille: Int = 950
+
+// Minimum length of `reference_signature` in bytes. The field is used as a
+// per-UTxO deduplication key both for script inputs and outputs, so a very
+// short value would make accidental collisions far more likely.
+const min_reference_signature_bytes: Int = 16
+
+// CIP-8 protected headers value pinned to EdDSA (`{1: -8}` = `a10127`). The
+// admin signature payload is a CIP-8 Sig_structure, so accepting only the
+// standard EdDSA headers prevents header divergence between signers.
+const cip8_eddsa_protected_headers: ByteArray = #"a10127"
+
 pub type State {
   FundsLocked
   ResultSubmitted
@@ -112,6 +128,16 @@ validator vested_pay(
       buyer_cooldown_time,
       state,
     }) = datum
+    // Reject malformed datums where the collateral floor is negative; a
+    // negative value would invert the `>= collateral_return_lovelace`
+    // comparisons used in `Withdraw` / `SubmitResult` and could let the
+    // seller withdraw funds without returning the buyer's collateral.
+    expect collateral_return_lovelace >= 0
+    // L5: a short reference_signature would make the per-UTxO dedupe key in
+    // input / output checks below trivially collide; require at least
+    // min_reference_signature_bytes bytes.
+    expect
+      bytearray.length(reference_signature) >= min_reference_signature_bytes
     let Transaction { validity_range, .. } = self
     expect Finite(tx_latest_time) = validity_range.upper_bound.bound_type
     let current_time = tx_latest_time
@@ -170,6 +196,17 @@ validator vested_pay(
     expect
       list.length(list.unique(output_datum_signatures)) == list.length(
         script_output_with_datum,
+      )
+
+    // L5: every script-output datum carrying a reference_signature must meet
+    // the minimum length; the dedupe check above only ensures uniqueness, not
+    // sufficient entropy.
+    expect
+      list.all(
+        output_datum_signatures,
+        fn(signature) {
+          bytearray.length(signature) >= min_reference_signature_bytes
+        },
       )
 
     when redeemer is {
@@ -243,7 +280,16 @@ validator vested_pay(
                 )
               value_bigger_or_equal(value_returned, seller_value_to_return)
             }
-            None -> True
+            // H2: without a seller_return_address the seller has no on-chain
+            // path to receive non-ADA assets, so reject escrows that hold any
+            // policy other than the empty (lovelace) policy. The buyer would
+            // otherwise lose any tokens locked alongside the lovelace.
+            None ->
+              if assets.policies(input.output.value) == [#""] {
+                True
+              } else {
+                fail @"Non-ADA assets in escrow require seller_return_address"
+              }
           }
 
         bytearray.is_empty(result_hash) == False
@@ -448,6 +494,18 @@ validator vested_pay(
 
         expect value_bigger_or_equal(seller_value_returned, seller_value_to_pay)
 
+        // H1: cap the submitter's finder reward. The signed buyer/seller
+        // payouts are MINIMUMS (see note below), so any lovelace held by the
+        // input above the sum of the minimums accrues to the submitter. Bound
+        // that residual to at most (1000 - min_dispute_payout_permille) / 1000
+        // of the input lovelace so admins cannot be tricked into authorizing
+        // settlements that hand the bulk of the escrow to the submitter.
+        let input_lovelace = lovelace_of(input.output.value)
+        let signed_payout_lovelace =
+          lovelace_of_value(buyer_value) + lovelace_of_value(seller_value)
+        expect
+          signed_payout_lovelace * 1000 >= input_lovelace * min_dispute_payout_permille
+
         // INTENTIONAL: the signed buyer_value / seller_value are MINIMUM
         // payouts, not exact amounts. Any escrow value above the sum of the
         // minimums is intentionally left unconstrained on-chain and accrues to
@@ -468,6 +526,11 @@ validator vested_pay(
           )
             |> blake2b_224()
 
+        // H3: bound the work performed per admin vk by the number of admins;
+        // otherwise an attacker could pad `admin_signatures` to force quadratic
+        // ed25519 verification cost (admin_vks × admin_signatures) and DoS the
+        // script.
+        expect list.length(admin_signatures) <= list.length(admin_vks)
         let signedBy =
           list.filter(
             admin_vks,
@@ -639,6 +702,49 @@ fn value_minus_lovelace(value: Value, lovelace: Int) -> Value {
   assets.merge(value, assets.negate(assets.from_lovelace(lovelace)))
 }
 
+// Sum the lovelace component of a raw `AssetValue` (the redeemer-supplied
+// Pairs payload, before it is promoted into a `Value`). The lovelace policy is
+// the empty policy id with the empty asset name.
+fn lovelace_of_value(v: AssetValue) -> Int {
+  list.foldl(
+    v,
+    0,
+    fn(policy_entry, acc) {
+      let Pair(policy_id, assets_under_policy) = policy_entry
+      if policy_id == #"" {
+        list.foldl(
+          assets_under_policy,
+          acc,
+          fn(asset_entry, inner_acc) {
+            let Pair(asset_name, quantity) = asset_entry
+            if asset_name == #"" {
+              inner_acc + quantity
+            } else {
+              inner_acc
+            }
+          },
+        )
+      } else {
+        acc
+      }
+    },
+  )
+}
+
+test lovelace_of_value_sums_only_ada() {
+  let v: AssetValue =
+    [
+      Pair(#"", [Pair(#"", 1_500)]),
+      Pair(#"aabbcc", [Pair(#"deadbeef", 7)]),
+    ]
+  lovelace_of_value(v) == 1_500
+}
+
+test lovelace_of_value_returns_zero_when_no_ada_entry() {
+  let v: AssetValue = [Pair(#"aabbcc", [Pair(#"deadbeef", 7)])]
+  lovelace_of_value(v) == 0
+}
+
 test value_minus_lovelace_subtracts_only_lovelace() {
   let value: Value =
     assets.from_lovelace(100)
@@ -657,6 +763,13 @@ fn has_valid_admin_signature(
   list.any(
     admin_signatures,
     fn(admin_signature) {
+      // L2: pin the CIP-8 protected headers to the standard EdDSA value
+      // (`{1: -8}` = `a10127`). Letting submitters choose `protected_headers`
+      // would let two admins sign syntactically distinct Sig_structures that
+      // an off-chain attacker could splice; enforcing a single canonical
+      // header eliminates that divergence and matches what every standard
+      // Cardano wallet emits.
+      expect admin_signature.protected_headers == cip8_eddsa_protected_headers
       let sig_structure =
         cip8_sig_structure(admin_signature.protected_headers, intent_hash)
       and {
@@ -1001,9 +1114,11 @@ const admin_vk_hash: ByteArray =
 const script_vk_hash: ByteArray =
   #"000000000000000000000000000000000000000000000000000000aa"
 
-const ref_sig_default: ByteArray = #"deadbeef"
+const ref_sig_default: ByteArray =
+  #"deadbeefdeadbeefdeadbeefdeadbeef"
 
-const ref_sig_other: ByteArray = #"cafebabe"
+const ref_sig_other: ByteArray =
+  #"cafebabecafebabecafebabecafebabe"
 
 const result_hash_default: ByteArray = #"aabbccdd"
 

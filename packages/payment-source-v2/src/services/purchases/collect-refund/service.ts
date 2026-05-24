@@ -26,6 +26,7 @@ import {
 	connectPreviousAction,
 	createMeshProvider,
 	createNextPurchaseAction,
+	createPendingTransaction,
 	createTxWindow,
 	disconnectTransactionWallet,
 	loadHotWalletSession,
@@ -304,24 +305,21 @@ async function processSingleRefundCollection(
 	);
 
 	const signedTx = await wallet.signTx(unsignedTx);
+	// Create a FRESH Transaction row per lifecycle phase rather than mutating
+	// the upstream tx in-place. Recycling the prior Transaction row via
+	// `CurrentTransaction.update({ txHash: null, status: Pending })` loses the
+	// terminal status of the previous phase (e.g. the original lock tx is
+	// Confirmed; flipping it back to Pending breaks tx-sync's idempotency
+	// guards) and entangles two distinct on-chain txs in one DB row. Mirrors
+	// the submit-result single-item pattern: createPendingTransaction makes a
+	// new row with BlocksWallet → this wallet, and the prior Transaction id is
+	// pushed onto TransactionHistory so the audit trail still shows the lock.
 	await prisma.purchaseRequest.update({
 		where: { id: request.id },
 		data: {
 			...connectPreviousAction(request.nextActionId),
 			...createNextPurchaseAction(PurchasingAction.WithdrawRefundInitiated, { submittedTxHash: null }),
-			CurrentTransaction: {
-				update: {
-					txHash: null,
-					status: TransactionStatus.Pending,
-					// Recycling the upstream Transaction row — its existing `lastCheckedAt`
-					// is from the previous lifecycle phase (could be hours stale or NULL).
-					// Reset to now so wallet-timeouts treats this as a freshly-issued
-					// PendingTransaction (1-min debounce). Without this a stale ts would
-					// make the cron fire immediately or a NULL ts hide the row forever.
-					lastCheckedAt: new Date(),
-					BlocksWallet: { connect: { id: request.SmartContractWallet.id } },
-				},
-			},
+			...createPendingTransaction(request.SmartContractWallet.id),
 			TransactionHistory: { connect: { id: request.CurrentTransaction!.id } },
 		},
 	});
@@ -877,25 +875,32 @@ export async function collectRefundV2() {
 	}
 
 	try {
-		const paymentContractsWithTimedRefunds = await lockAndQueryPurchases({
+		// Merge the two collect-refund variants — timed (post-submitResultTime
+		// elapse, on-chain RefundRequested|FundsLocked) and authorized (on-chain
+		// RefundAuthorized) — into a single lock-and-query roundtrip. Two
+		// sequential `lockAndQueryPurchases` calls used to serialise: variant A's
+		// transaction would lock the wallet, variant B would then see the wallet
+		// locked and skip it for the entire tick. With both variants in one OR
+		// the same scheduler tick processes both kinds of refund.
+		const paymentContractsWithWalletLocked = await lockAndQueryPurchases({
 			purchasingAction: PurchasingAction.WithdrawRefundRequested,
-			onChainState: { in: [OnChainState.RefundRequested, OnChainState.FundsLocked] },
 			resultHash: null,
-			submitResultTime: { lte: Date.now() - 1000 * 60 * 10 },
 			maxBatchSize: COLLECT_REFUND_BATCH_SIZE,
 			paymentSourceType: PaymentSourceType.Web3CardanoV2,
+			orFilters: [
+				// Variant A: timed refund — submitResultTime has elapsed and the
+				// on-chain UTxO is still in a pre-collection state.
+				{
+					onChainState: { in: [OnChainState.RefundRequested, OnChainState.FundsLocked] },
+					submitResultTime: { lte: Date.now() - 1000 * 60 * 10 },
+				},
+				// Variant B: authorized refund — seller already authorized,
+				// chain has advanced to RefundAuthorized. No time constraint.
+				{
+					onChainState: { in: [OnChainState.RefundAuthorized] },
+				},
+			],
 		});
-		const paymentContractsWithAuthorizedRefunds = await lockAndQueryPurchases({
-			purchasingAction: PurchasingAction.WithdrawRefundRequested,
-			onChainState: { in: [OnChainState.RefundAuthorized] },
-			resultHash: null,
-			paymentSourceType: PaymentSourceType.Web3CardanoV2,
-			maxBatchSize: COLLECT_REFUND_BATCH_SIZE,
-		});
-		const paymentContractsWithWalletLocked = [
-			...paymentContractsWithTimedRefunds,
-			...paymentContractsWithAuthorizedRefunds,
-		];
 
 		await Promise.allSettled(
 			paymentContractsWithWalletLocked.map(async (paymentContract) => {

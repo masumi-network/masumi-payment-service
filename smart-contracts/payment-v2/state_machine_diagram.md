@@ -1,5 +1,34 @@
 # Vested Payment Smart Contract State Machine
 
+## Behavior changes vs V1
+
+Integrators upgrading from V1 must account for the following on-chain behavior changes in V2:
+
+- **AuthorizeRefund expanded source states.** V2 allows `AuthorizeRefund` from
+  `FundsLocked`, `ResultSubmitted`, `RefundRequested`, and `Disputed`. In
+  particular, authorizing a refund from `ResultSubmitted` wipes the
+  previously-submitted `result_hash` as the contract transitions to
+  `RefundAuthorized`. V1 only permitted `AuthorizeRefund` from `Disputed`.
+  Indexers and integrations that cached a non-empty `result_hash` for a
+  payment must handle the case where the same blockchain identifier later
+  reports an empty `result_hash` after a seller-authorized refund.
+- **No `UnSetRefundRequested` action.** V2 removes the V1 path that let a
+  buyer rescind a refund request on-chain. Once a buyer has executed
+  `SetRefundRequested`, there is no on-chain reversal back to `FundsLocked`
+  or `ResultSubmitted`. The contract can only exit the refund-requested or
+  disputed branches via seller `AuthorizeRefund`, buyer `WithdrawRefund`
+  (after `submit_result_time`), buyer `AuthorizeWithdrawal` (from
+  `Disputed`), or admin `WithdrawDisputed` (after
+  `external_dispute_unlock_time`). UI and automation that previously offered
+  a "cancel refund" affordance must remove or hide it for V2 payment
+  sources.
+- **`result_hash` may become empty after being set.** Combined with the
+  above, indexers must not treat the first non-empty `result_hash` they see
+  for a payment as terminal. A subsequent `AuthorizeRefund` clears it as
+  part of moving to `RefundAuthorized`, and downstream reporting (analytics,
+  webhooks, status pages) should reconcile rather than assume monotonic
+  result-hash population.
+
 ## States
 
 - **FundsLocked**: Initial state when funds are locked in the contract

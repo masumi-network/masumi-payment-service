@@ -252,7 +252,7 @@ async function validateAndBuildItem(
 	// Bind the lower bound to the on-chain cooldown so the validator's
 	// start-after check is always satisfied.
 	const { invalidBefore, invalidAfter } = createTxWindow(network, {
-		constrainBeforeMs: Number(decodedContract.buyerCooldownTime),
+		constrainBeforeMs: decodedContract.buyerCooldownTime,
 	});
 	return {
 		request,
@@ -326,7 +326,7 @@ async function processSinglePurchaseRequest(
 		cooldownTime: BigInt(paymentContract.cooldownTime),
 	});
 	const { invalidBefore, invalidAfter } = createTxWindow(network, {
-		constrainBeforeMs: Number(decodedContract.buyerCooldownTime),
+		constrainBeforeMs: decodedContract.buyerCooldownTime,
 	});
 	const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
 

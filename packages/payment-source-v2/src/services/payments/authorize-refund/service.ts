@@ -226,7 +226,7 @@ async function validateAndBuildItem(
 		state: SmartContractState.RefundAuthorized,
 	});
 	const { invalidBefore, invalidAfter } = createTxWindow(network, {
-		constrainBeforeMs: Number(decodedContract.sellerCooldownTime),
+		constrainBeforeMs: decodedContract.sellerCooldownTime,
 	});
 	return {
 		request,
@@ -305,7 +305,7 @@ async function processSinglePaymentRequest(
 	});
 
 	const { invalidBefore, invalidAfter } = createTxWindow(network, {
-		constrainBeforeMs: Number(decodedContract.sellerCooldownTime),
+		constrainBeforeMs: decodedContract.sellerCooldownTime,
 	});
 	const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
 	const unsignedTx = await generateMasumiSmartContractInteractionTransactionAutomaticFees(

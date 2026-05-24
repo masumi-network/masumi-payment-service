@@ -35,12 +35,14 @@ export type DecodedV1ContractDatum = {
 };
 
 function serializeOptionalAddressObj(value: any, networkId: 0 | 1): string | null {
-	if (value == null || value.constructor == null || value.fields == null) {
-		return null;
-	}
+	if (typeof value !== 'object' || value === null) return null;
+	const ctor = (value as { constructor?: unknown }).constructor;
+	if (typeof ctor !== 'number' && typeof ctor !== 'bigint') return null;
+	if (value.fields == null) return null;
 
-	const constructor = value.constructor;
-	if ((constructor === 1 || constructor === 1n) && value.fields.length === 0) {
+	// Plutus Option: ctor 0 = Some, ctor 1 = None. Treat None (and any empty
+	// Some) as a null optional address.
+	if ((ctor === 1 || ctor === 1n) && value.fields.length === 0) {
 		return null;
 	}
 

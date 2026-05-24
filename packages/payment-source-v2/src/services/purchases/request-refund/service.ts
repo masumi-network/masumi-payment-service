@@ -243,8 +243,8 @@ async function validateAndBuildItem(
 		cooldownTime: BigInt(paymentContract.cooldownTime),
 	});
 	const { invalidBefore, invalidAfter } = createTxWindow(network, {
-		constrainAfterMs: Number(decodedContract.unlockTime),
-		constrainBeforeMs: Number(decodedContract.buyerCooldownTime),
+		constrainAfterMs: decodedContract.unlockTime,
+		constrainBeforeMs: decodedContract.buyerCooldownTime,
 	});
 	return {
 		request,
@@ -318,8 +318,8 @@ async function processSinglePurchaseRequest(
 		cooldownTime: BigInt(paymentContract.cooldownTime),
 	});
 	const { invalidBefore, invalidAfter } = createTxWindow(network, {
-		constrainAfterMs: Number(decodedContract.unlockTime),
-		constrainBeforeMs: Number(decodedContract.buyerCooldownTime),
+		constrainAfterMs: decodedContract.unlockTime,
+		constrainBeforeMs: decodedContract.buyerCooldownTime,
 	});
 
 	const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);

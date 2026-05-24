@@ -51,6 +51,14 @@ export function decodeBlockchainIdentifier(blockchainIdentifier: string): Decode
 	const signature = blockchainIdentifierSplit[2];
 	const key = blockchainIdentifierSplit[3];
 	const smartContractAddress = blockchainIdentifierSplit.length === 5 ? blockchainIdentifierSplit[4] : null;
+	if (smartContractAddress != null) {
+		// Cardano bech32 addresses are ~108 chars; allow generous buffer.
+		// Reject anything that does not start with 'addr' (covers 'addr_test1...'
+		// and 'addr1...') to keep the optional 5th segment well-formed.
+		if (smartContractAddress.length > 250 || !smartContractAddress.startsWith('addr')) {
+			return null;
+		}
+	}
 	return {
 		sellerId: sellerId,
 		purchaserId: purchaserId,

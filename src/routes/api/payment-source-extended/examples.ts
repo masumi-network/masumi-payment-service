@@ -171,7 +171,7 @@ export const listPaymentSourceExtendedResponseExample = {
 
 export const createPaymentSourceExtendedBodyExample = {
 	network: Network.Preprod,
-	paymentSourceType: PaymentSourceType.Web3CardanoV1,
+	paymentSourceType: PaymentSourceType.Web3CardanoV2,
 	PaymentSourceConfig: {
 		rpcProviderApiKey: 'rpc_provider_api_key',
 		rpcProvider: RPCProvider.Blockfrost,
@@ -181,8 +181,7 @@ export const createPaymentSourceExtendedBodyExample = {
 		{ walletAddress: 'wallet_address_2' },
 		{ walletAddress: 'wallet_address_3' },
 	],
-	FeeReceiverNetworkWallet: { walletAddress: 'wallet_address' },
-	feeRatePermille: 50,
+	requiredAdminSignatures: 2,
 	PurchasingWallets: [
 		{
 			walletMnemonic: 'wallet mnemonic',

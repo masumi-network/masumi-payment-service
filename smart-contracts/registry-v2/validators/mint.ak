@@ -98,12 +98,30 @@ validator mintUnique {
               )
             },
           )
+        let every_mint_has_a_matching_burn =
+          list.all(
+            minted_assets,
+            fn(minted_asset) {
+              let Pair(minted_asset_name, _quantity) = minted_asset
+              list.any(
+                burned_assets,
+                fn(burned_asset) {
+                  let Pair(burned_asset_name, _quantity) = burned_asset
+                  asset_name_continues_with_next_version(
+                    burned_asset_name,
+                    minted_asset_name,
+                  )
+                },
+              )
+            },
+          )
 
         and {
           minted_count > 0,
           minted_count == burned_count,
           all_entries_are_updates,
           every_burn_has_a_matching_mint,
+          every_mint_has_a_matching_burn,
         }
       }
       // Burn N tokens. Every entry must have qty == -1; possession of the
@@ -140,9 +158,11 @@ fn asset_name_continues_with_next_version(
   burned_asset_name: ByteArray,
   minted_asset_name: ByteArray,
 ) {
-  let burned_prefix = bytearray.slice(burned_asset_name, 0, 28)
+  // The 1-byte nonce + 28-byte root hash (29 bytes total) must match between
+  // the burned and the minted asset; only the 3-byte version may change.
+  let burned_nonce_and_root = bytearray.slice(burned_asset_name, 0, 28)
 
-  if bytearray.starts_with(minted_asset_name, burned_prefix) == False {
+  if bytearray.starts_with(minted_asset_name, burned_nonce_and_root) == False {
     False
   } else {
     let burned_version_bytes = bytearray.slice(burned_asset_name, 29, 31)

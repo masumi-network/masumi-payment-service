@@ -5,3 +5,11 @@
 -- writing, every existing currentTransactionId remains de-facto unique.
 DROP INDEX IF EXISTS "PaymentRequest_currentTransactionId_key";
 DROP INDEX IF EXISTS "PurchaseRequest_currentTransactionId_key";
+
+-- Dropping the @unique above removes the only index supporting joins/lookups
+-- from Transaction back to PaymentRequest / PurchaseRequest via
+-- currentTransactionId. Recreate a non-unique index to keep those queries
+-- (e.g. tx-history reconciliation, batch redeemer fan-out) from regressing to
+-- sequential scans on large tables.
+CREATE INDEX "PaymentRequest_currentTransactionId_idx" ON "PaymentRequest"("currentTransactionId");
+CREATE INDEX "PurchaseRequest_currentTransactionId_idx" ON "PurchaseRequest"("currentTransactionId");

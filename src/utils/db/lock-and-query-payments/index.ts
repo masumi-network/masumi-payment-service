@@ -1,4 +1,4 @@
-import { HotWalletType, OnChainState, PaymentAction, PaymentSourceType } from '@/generated/prisma/client';
+import { HotWalletType, OnChainState, PaymentAction, PaymentSourceType, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { retryOnSerializationConflict } from '@/utils/db/retry';
 
@@ -11,6 +11,7 @@ export async function lockAndQueryPayments({
 	requestedResultHash = undefined,
 	unlockTime = undefined,
 	paymentSourceType = undefined,
+	orFilters = undefined,
 }: {
 	paymentStatus: PaymentAction | { in: PaymentAction[] };
 	submitResultTime?: { lte?: number; gte?: number; lt?: number; gt?: number } | undefined;
@@ -20,6 +21,14 @@ export async function lockAndQueryPayments({
 	unlockTime?: { lte?: number; gte?: number; lt?: number; gt?: number } | undefined;
 	paymentSourceType?: PaymentSourceType;
 	maxBatchSize: number;
+	// Optional disjunction merged into the request `where` clause. Lets a
+	// caller batch two query variants in one tick (e.g. timed-unlock vs
+	// authorized-withdrawal branches that share paymentStatus + wallet
+	// constraints but diverge on onChainState / unlockTime). The
+	// per-variant predicates that vary go in `orFilters`; common
+	// predicates (paymentStatus, resultHash, etc.) stay in the top-level
+	// params and are ANDed with the OR group as usual.
+	orFilters?: Prisma.PaymentRequestWhereInput[];
 }) {
 	// Wrapped in retryOnSerializationConflict so concurrent scheduler ticks
 	// (V1 + V2 share this codepath under different paymentSourceType filters)
@@ -78,6 +87,12 @@ export async function lockAndQueryPayments({
 									//we only want to lock the payment if the cooldown time has passed
 									sellerCoolDownTime: { lt: Date.now() - minCooldownTime },
 									resultHash: resultHash,
+									// Optional OR group — only included when caller supplies
+									// `orFilters`. Each entry is fully ANDed against the
+									// outer predicates, so callers can supply per-variant
+									// onChainState / time-window constraints that differ
+									// across an `OR` axis.
+									...(orFilters != null && orFilters.length > 0 ? { OR: orFilters } : {}),
 								},
 								include: {
 									NextAction: true,

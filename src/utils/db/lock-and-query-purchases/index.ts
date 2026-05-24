@@ -1,4 +1,4 @@
-import { HotWalletType, OnChainState, PaymentSourceType, PurchasingAction } from '@/generated/prisma/client';
+import { HotWalletType, OnChainState, PaymentSourceType, Prisma, PurchasingAction } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { retryOnSerializationConflict } from '@/utils/db/retry';
@@ -11,6 +11,7 @@ export async function lockAndQueryPurchases({
 	submitResultTime = undefined,
 	resultHash = undefined,
 	paymentSourceType = undefined,
+	orFilters = undefined,
 }: {
 	purchasingAction: PurchasingAction;
 	unlockTime?: { lte?: number; gte?: number; lt?: number; gt?: number } | undefined;
@@ -19,6 +20,14 @@ export async function lockAndQueryPurchases({
 	resultHash?: string | null | undefined;
 	paymentSourceType?: PaymentSourceType;
 	maxBatchSize: number;
+	// Optional disjunction merged into the request `where` clause. Lets a
+	// caller batch two query variants in one tick (e.g. timed-refund vs
+	// authorized-refund branches that share purchasingAction + wallet
+	// constraints but diverge on onChainState / submitResultTime). The
+	// per-variant predicates that vary go in `orFilters`; common
+	// predicates (purchasingAction, resultHash, etc.) stay in the
+	// top-level params and are ANDed with the OR group as usual.
+	orFilters?: Prisma.PurchaseRequestWhereInput[];
 }) {
 	// Wrapped in retryOnSerializationConflict — see lockAndQueryPayments for
 	// the rationale. Concurrent V1+V2 scheduler ticks share this codepath
@@ -74,6 +83,12 @@ export async function lockAndQueryPurchases({
 											lockedAt: null,
 											deletedAt: null,
 										},
+										// Optional OR group — only included when caller supplies
+										// `orFilters`. Each entry is fully ANDed against the
+										// outer predicates, so callers can supply per-variant
+										// onChainState / time-window constraints that differ
+										// across an `OR` axis.
+										...(orFilters != null && orFilters.length > 0 ? { OR: orFilters } : {}),
 									},
 									orderBy: {
 										createdAt: 'asc',

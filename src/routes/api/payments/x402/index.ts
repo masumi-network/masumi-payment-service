@@ -12,6 +12,7 @@ import { CONSTANTS } from '@masumi/payment-core/config';
 import { buildX402FundsLockingTransaction as buildX402FundsLockingTransactionV1 } from '@masumi/payment-source-v1/services/purchases/x402-build/service';
 import { buildX402FundsLockingTransactionV2 } from '@masumi/payment-source-v2/services/purchases/x402-build/service';
 import { PaymentSourceType } from '@/generated/prisma/client';
+import { createAuthenticatedRateLimitMiddleware } from '@/utils/middleware/rate-limit';
 import { buildX402TxSchemaInput, buildX402TxSchemaOutput } from './schemas';
 
 export { buildX402TxSchemaInput, buildX402TxSchemaOutput };
@@ -29,7 +30,14 @@ async function getCoinsPerUtxoSize(blockchainProvider: BlockfrostProvider): Prom
 	return coinsPerUtxoSize;
 }
 
-export const buildX402TxPost = readAuthenticatedEndpointFactory.build({
+const x402BuildEndpointFactory = readAuthenticatedEndpointFactory.addMiddleware(
+	createAuthenticatedRateLimitMiddleware({
+		maxRequests: 30,
+		windowMs: 60_000,
+	}),
+);
+
+export const buildX402TxPost = x402BuildEndpointFactory.build({
 	method: 'post',
 	input: buildX402TxSchemaInput,
 	output: buildX402TxSchemaOutput,

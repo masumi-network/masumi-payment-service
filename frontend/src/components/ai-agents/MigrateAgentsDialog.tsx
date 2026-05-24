@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import {
@@ -43,10 +43,10 @@ import {
 } from '@/lib/api/generated';
 import { isV2PaymentSource } from '@/lib/payment-source-type';
 import { fetchWalletBalance } from '@/lib/queries/useWallets';
-import { handleApiCall, shortenAddress } from '@/lib/utils';
+import { cn, handleApiCall, shortenAddress } from '@/lib/utils';
 import { extractApiErrorMessage } from '@/lib/api-error';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
-import { cn } from '@/lib/utils';
+import { appendInclusiveCursorPage } from '@/lib/pagination/cursor-pagination';
 
 const MIN_MIGRATION_BALANCE_LOVELACE = 5_000_000; // ~5 ADA buffer per agent mint
 const REGISTRY_FETCH_LIMIT = 100;
@@ -57,6 +57,10 @@ interface MigrationResult {
   agentId: string;
   status: MigrationStatus;
   error?: string;
+  // Non-fatal: re-register succeeded but the V1 deregister leg failed. Surface
+  // it inline so the user knows the V1 entry is still live and needs manual
+  // cleanup from the AI Agents page.
+  deregisterError?: string;
 }
 
 interface MigrateAgentsDialogProps {
@@ -65,12 +69,44 @@ interface MigrateAgentsDialogProps {
   onSuccess?: () => void;
 }
 
+// Resolves what `recipientWalletAddress` we should send to the V2 register
+// endpoint AND, separately, surfaces any V1 holding address that will be
+// silently dropped because no matching managed wallet exists on the V2
+// source. Single source of truth so `buildRegistryBody` and the row warning
+// can't disagree about whether routing is preserved.
+function resolveV2HoldingAddress(
+  agent: RegistryEntry,
+  v2Source: PaymentSourceExtended | undefined,
+): { v2HoldingAddress: string | undefined; droppedV1HoldingAddress: string | null } {
+  const v1HoldingWallet =
+    agent.RecipientWallet &&
+    agent.RecipientWallet.walletVkey !== agent.SmartContractWallet.walletVkey
+      ? agent.RecipientWallet
+      : null;
+  if (!v1HoldingWallet) {
+    return { v2HoldingAddress: undefined, droppedV1HoldingAddress: null };
+  }
+  if (!v2Source) {
+    return { v2HoldingAddress: undefined, droppedV1HoldingAddress: v1HoldingWallet.walletAddress };
+  }
+  const onV2 = [...(v2Source.SellingWallets ?? []), ...(v2Source.PurchasingWallets ?? [])].some(
+    (w) => w.walletAddress === v1HoldingWallet.walletAddress,
+  );
+  return onV2
+    ? { v2HoldingAddress: v1HoldingWallet.walletAddress, droppedV1HoldingAddress: null }
+    : { v2HoldingAddress: undefined, droppedV1HoldingAddress: v1HoldingWallet.walletAddress };
+}
+
 async function fetchAllRegistryEntries(args: {
   apiClient: ReturnType<typeof useAppContext>['apiClient'];
   network: 'Preprod' | 'Mainnet';
   smartContractAddress: string;
 }) {
-  const entries: RegistryEntry[] = [];
+  // The /registry cursor is inclusive (Prisma `cursor: { id: cursorId }` returns
+  // the cursor row again as the first item of the next page). Dedup across page
+  // boundaries via the shared cursor helper so the migration list never shows
+  // duplicates or re-registers an agent twice.
+  let entries: RegistryEntry[] = [];
   let cursor: string | undefined;
 
   while (true) {
@@ -91,7 +127,7 @@ async function fetchAllRegistryEntries(args: {
 
     const page = response?.data?.data?.Assets ?? [];
     if (page.length === 0) break;
-    entries.push(...page);
+    entries = appendInclusiveCursorPage(entries, page, (a) => a.id);
     if (page.length < REGISTRY_FETCH_LIMIT) break;
     const last = page[page.length - 1];
     if (!last?.id || last.id === cursor) break;
@@ -163,6 +199,18 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
   });
   const v1Agents = useMemo(() => v1AgentsQuery.data ?? [], [v1AgentsQuery.data]);
 
+  // Agents whose V1 holding wallet has no V2 counterpart — funds re-routed to
+  // the V2 selling wallet on migrate. Keyed by agent.id so per-row render and
+  // the selected-count summary share one computation.
+  const droppedHoldingByAgentId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const a of v1Agents) {
+      const { droppedV1HoldingAddress } = resolveV2HoldingAddress(a, v2Source);
+      if (droppedV1HoldingAddress) map.set(a.id, droppedV1HoldingAddress);
+    }
+    return map;
+  }, [v1Agents, v2Source]);
+
   const [selectedAgentIds, setSelectedAgentIds] = useState<Set<string>>(new Set());
   useEffect(() => {
     if (!open) return;
@@ -179,29 +227,41 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
   const [isLoadingBalance, setIsLoadingBalance] = useState(false);
   const [showTopup, setShowTopup] = useState(false);
+  // Epoch counter prevents stale balance writes when the user changes wallet,
+  // closes the dialog, or rapidly clicks Refresh — only the latest in-flight
+  // request is allowed to set state. fetchWalletBalance has no AbortSignal
+  // hook today, so this is the cheapest sound guard.
+  const balanceFetchEpochRef = useRef(0);
 
-  const refreshBalance = async () => {
+  const refreshBalance = useCallback(async () => {
     if (!selectedV2Wallet) {
       setWalletBalance(null);
       return;
     }
+    const epoch = ++balanceFetchEpochRef.current;
+    const targetAddress = selectedV2Wallet.walletAddress;
     setIsLoadingBalance(true);
     try {
-      const result = await fetchWalletBalance(apiClient, network, selectedV2Wallet.walletAddress);
+      const result = await fetchWalletBalance(apiClient, network, targetAddress);
+      if (balanceFetchEpochRef.current !== epoch) return;
       setWalletBalance(parseInt(result.ada || '0', 10) || 0);
     } finally {
-      setIsLoadingBalance(false);
+      if (balanceFetchEpochRef.current === epoch) {
+        setIsLoadingBalance(false);
+      }
     }
-  };
+  }, [apiClient, network, selectedV2Wallet]);
 
   useEffect(() => {
     if (!open || !selectedV2Wallet) {
+      // Invalidate any in-flight fetch so its late response is dropped.
+      balanceFetchEpochRef.current += 1;
       setWalletBalance(null);
+      setIsLoadingBalance(false);
       return;
     }
     void refreshBalance();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, selectedV2Wallet?.walletVkey]);
+  }, [open, selectedV2Wallet, refreshBalance]);
 
   const requiredBalance = Math.max(
     MIN_MIGRATION_BALANCE_LOVELACE,
@@ -272,9 +332,19 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
     if (agent.Author.contactOther) author.contactOther = agent.Author.contactOther;
     if (agent.Author.organization) author.organization = agent.Author.organization;
 
+    // Preserve V1's distinct holding wallet on V2 only when the same address
+    // exists as a managed wallet on the V2 source — otherwise the backend
+    // would reject the unknown address. The dropped case is also surfaced
+    // per-row in the UI so the user can opt out before migrating instead of
+    // silently inheriting the V2 selling wallet as their payout target.
+    const { v2HoldingAddress } = resolveV2HoldingAddress(agent, v2Source);
+
     return {
       network,
       sellingWalletVkey: walletVkey,
+      recipientWalletAddress: v2HoldingAddress,
+      sendFundingLovelace:
+        v2HoldingAddress && agent.sendFundingLovelace ? agent.sendFundingLovelace : undefined,
       name: agent.name,
       description: agent.description ?? agent.name,
       apiBaseUrl: agent.apiBaseUrl,
@@ -318,8 +388,9 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
 
     let successCount = 0;
 
+    const idsToProcess = new Set(selectedAgentIds);
     for (const agent of v1Agents) {
-      if (!selectedAgentIds.has(agent.id)) continue;
+      if (!idsToProcess.has(agent.id)) continue;
 
       setResults((prev) => ({
         ...prev,
@@ -336,21 +407,41 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
           throw new Error(extractApiErrorMessage(response.error, 'Failed to re-register on V2'));
         }
 
-        if (deregisterAfter && agent.agentIdentifier) {
-          await postRegistryDeregister({
-            client: apiClient,
-            body: {
-              network,
-              agentIdentifier: agent.agentIdentifier,
-            },
-          }).catch((err) => {
-            console.warn('Deregister-after-migrate failed for', agent.name, err);
-          });
+        let deregisterError: string | undefined;
+        if (deregisterAfter) {
+          if (!agent.agentIdentifier) {
+            // Confirmed agents always have an agentIdentifier, but be explicit
+            // about why we couldn't deregister in case of edge data.
+            deregisterError =
+              'V1 entry has no agentIdentifier (never minted) — cannot deregister automatically.';
+          } else {
+            try {
+              const deregResp = await postRegistryDeregister({
+                client: apiClient,
+                body: {
+                  network,
+                  agentIdentifier: agent.agentIdentifier,
+                },
+              });
+              if (deregResp.error) {
+                deregisterError = extractApiErrorMessage(
+                  deregResp.error,
+                  'Failed to deregister V1 entry',
+                );
+              }
+            } catch (err) {
+              deregisterError = extractApiErrorMessage(err, 'Failed to deregister V1 entry');
+            }
+          }
         }
 
         setResults((prev) => ({
           ...prev,
-          [agent.id]: { agentId: agent.id, status: 'success' },
+          [agent.id]: {
+            agentId: agent.id,
+            status: 'success',
+            deregisterError,
+          },
         }));
         successCount += 1;
       } catch (err) {
@@ -376,8 +467,14 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
       );
       queryClient.invalidateQueries({ queryKey: ['agents'] });
       queryClient.invalidateQueries({ queryKey: ['payment-sources-all'] });
+      // Invalidate the dialog's own V1 list so deregistered entries disappear
+      // and the user can re-open without seeing stale rows.
+      queryClient.invalidateQueries({ queryKey: ['migrate-v1-agents'] });
       onSuccess?.();
     }
+
+    // Balance dropped after mint(s) — refresh so the user sees current state.
+    void refreshBalance();
   };
 
   const renderBalanceState = () => {
@@ -572,55 +669,102 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
                     No registered V1 agents on this source.
                   </div>
                 ) : (
-                  <div className="max-h-64 overflow-y-auto rounded-lg border divide-y">
-                    {v1Agents.map((agent) => {
-                      const result = results[agent.id];
-                      const isSelected = selectedAgentIds.has(agent.id);
+                  <>
+                    {(() => {
+                      const affectedSelected = [...selectedAgentIds].filter((id) =>
+                        droppedHoldingByAgentId.has(id),
+                      ).length;
+                      if (affectedSelected === 0) return null;
                       return (
-                        <label
-                          key={agent.id}
-                          className={cn(
-                            'flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-muted/30 transition-colors',
-                            result?.status === 'success' && 'bg-green-50 dark:bg-green-950/15',
-                            result?.status === 'failed' && 'bg-red-50 dark:bg-red-950/15',
-                          )}
-                        >
-                          <Checkbox
-                            checked={isSelected}
-                            disabled={isMigrating}
-                            onCheckedChange={() => toggleAgent(agent.id)}
-                          />
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium truncate">{agent.name}</span>
-                              <Badge variant="outline" className="text-xs shrink-0">
-                                {agent.AgentPricing.pricingType}
-                              </Badge>
-                            </div>
-                            {agent.description && (
-                              <p className="text-xs text-muted-foreground truncate">
-                                {agent.description}
-                              </p>
-                            )}
-                            {result?.error && (
-                              <p className="text-xs text-red-600 dark:text-red-400 mt-1 truncate">
-                                {result.error}
-                              </p>
-                            )}
-                          </div>
-                          <div className="shrink-0">
-                            {result?.status === 'running' && <Spinner size={14} />}
-                            {result?.status === 'success' && (
-                              <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-500" />
-                            )}
-                            {result?.status === 'failed' && (
-                              <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-500" />
-                            )}
-                          </div>
-                        </label>
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/20 px-3 py-2 flex items-start gap-2 mb-2">
+                          <AlertTriangle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-300 mt-0.5 shrink-0" />
+                          <p className="text-xs text-amber-900 dark:text-amber-100 leading-snug">
+                            {affectedSelected === 1
+                              ? '1 selected agent uses'
+                              : `${affectedSelected} selected agents use`}{' '}
+                            a custom payout address that isn&apos;t set up on V2. On migrate,
+                            payouts will route to the V2 selling wallet instead. Add the address as
+                            a wallet on the V2 source first to preserve the original routing.
+                          </p>
+                        </div>
                       );
-                    })}
-                  </div>
+                    })()}
+                    <div className="max-h-64 overflow-y-auto rounded-lg border divide-y">
+                      {v1Agents.map((agent) => {
+                        const result = results[agent.id];
+                        const isSelected = selectedAgentIds.has(agent.id);
+                        const droppedHoldingAddress = droppedHoldingByAgentId.get(agent.id);
+                        return (
+                          <label
+                            key={agent.id}
+                            className={cn(
+                              'flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-muted/30 transition-colors',
+                              result?.status === 'success' && 'bg-green-50 dark:bg-green-950/15',
+                              result?.status === 'failed' && 'bg-red-50 dark:bg-red-950/15',
+                            )}
+                          >
+                            <Checkbox
+                              checked={isSelected}
+                              disabled={isMigrating}
+                              onCheckedChange={() => toggleAgent(agent.id)}
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium truncate">{agent.name}</span>
+                                <Badge variant="outline" className="text-xs shrink-0">
+                                  {agent.AgentPricing.pricingType}
+                                </Badge>
+                                {droppedHoldingAddress && (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-xs shrink-0 border-amber-300 text-amber-700 dark:border-amber-700 dark:text-amber-300"
+                                  >
+                                    Payout reroutes
+                                  </Badge>
+                                )}
+                              </div>
+                              {agent.description && (
+                                <p className="text-xs text-muted-foreground truncate">
+                                  {agent.description}
+                                </p>
+                              )}
+                              {droppedHoldingAddress && !result && (
+                                <p className="text-xs text-amber-700 dark:text-amber-400 mt-1 flex items-start gap-1">
+                                  <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
+                                  <span className="truncate">
+                                    Custom V1 payout {shortenAddress(droppedHoldingAddress)} not on
+                                    V2 — funds will route to the selling wallet.
+                                  </span>
+                                </p>
+                              )}
+                              {result?.error && (
+                                <p className="text-xs text-red-600 dark:text-red-400 mt-1 truncate">
+                                  {result.error}
+                                </p>
+                              )}
+                              {result?.status === 'success' && result.deregisterError && (
+                                <p className="text-xs text-amber-700 dark:text-amber-400 mt-1 truncate">
+                                  Re-registered, but V1 deregister failed: {result.deregisterError}
+                                </p>
+                              )}
+                            </div>
+                            <div className="shrink-0">
+                              {result?.status === 'running' && <Spinner size={14} />}
+                              {result?.status === 'success' &&
+                                (result.deregisterError ? (
+                                  <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-500" />
+                                ) : (
+                                  <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-500" />
+                                ))}
+                              {result?.status === 'failed' && (
+                                <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-500" />
+                              )}
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </>
                 )}
               </div>
 

@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore } from 'react';
+import { useCallback, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -10,18 +10,14 @@ import { cn } from '@/lib/utils';
 
 const DISMISSED_KEY_PREFIX = 'masumi_setup_v2_banner_dismissed_';
 
-function getSnapshotFor(network: string) {
-  return () =>
-    typeof window === 'undefined'
-      ? false
-      : localStorage.getItem(DISMISSED_KEY_PREFIX + network) === 'true';
-}
-
 function getServerSnapshot() {
   return true;
 }
 
 function subscribe(callback: () => void) {
+  // useSyncExternalStore only invokes subscribe on the client, but guard
+  // defensively so any future SSR-rendering path doesn't crash on `window`.
+  if (typeof window === 'undefined') return () => {};
   window.addEventListener('storage', callback);
   return () => window.removeEventListener('storage', callback);
 }
@@ -34,11 +30,17 @@ export function SetupV2Banner({ onMigrateClick }: SetupV2BannerProps) {
   const { network } = useAppContext();
   const { paymentSources, isLoading } = usePaymentSourceExtendedAll();
 
-  const isDismissedFromStorage = useSyncExternalStore(
-    subscribe,
-    getSnapshotFor(network),
-    getServerSnapshot,
+  // Stable per-network getSnapshot so useSyncExternalStore doesn't see a new
+  // function on every render. Primitive return value (boolean) is reference-
+  // equal across calls, so React won't re-render in a loop.
+  const getSnapshot = useCallback(
+    () =>
+      typeof window === 'undefined'
+        ? false
+        : localStorage.getItem(DISMISSED_KEY_PREFIX + network) === 'true',
+    [network],
   );
+  const isDismissedFromStorage = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const [dismissed, setDismissed] = useState(false);
 
   const currentNetworkSources = paymentSources.filter((ps) => ps.network === network);
@@ -52,7 +54,11 @@ export function SetupV2Banner({ onMigrateClick }: SetupV2BannerProps) {
 
   const handleDismiss = () => {
     if (typeof window !== 'undefined') {
-      localStorage.setItem(DISMISSED_KEY_PREFIX + network, 'true');
+      try {
+        localStorage.setItem(DISMISSED_KEY_PREFIX + network, 'true');
+      } catch {
+        // Safari private mode / quota exceeded — fall back to in-memory only.
+      }
     }
     setDismissed(true);
   };
@@ -69,6 +75,7 @@ export function SetupV2Banner({ onMigrateClick }: SetupV2BannerProps) {
       )}
     >
       <button
+        type="button"
         onClick={handleDismiss}
         className="absolute top-3 right-3 text-muted-foreground hover:text-foreground transition-colors z-10"
         aria-label="Dismiss"
