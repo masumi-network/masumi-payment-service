@@ -8151,7 +8151,7 @@ export type PostPaymentSourceExtendedData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The payment source type to create. Defaults to Web3CardanoV1 for legacy admin clients.
+         * The payment source type to create. Defaults to Web3CardanoV2 to match the admin UI default.
          */
         paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
         PaymentSourceConfig: {

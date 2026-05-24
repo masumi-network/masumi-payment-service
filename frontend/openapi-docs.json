@@ -17692,8 +17692,8 @@
                                             "Web3CardanoV1",
                                             "Web3CardanoV2"
                                         ],
-                                        "default": "Web3CardanoV1",
-                                        "description": "The payment source type to create. Defaults to Web3CardanoV1 for legacy admin clients."
+                                        "default": "Web3CardanoV2",
+                                        "description": "The payment source type to create. Defaults to Web3CardanoV2 to match the admin UI default."
                                     },
                                     "PaymentSourceConfig": {
                                         "type": "object",
@@ -17842,7 +17842,7 @@
                                 ],
                                 "example": {
                                     "network": "Preprod",
-                                    "paymentSourceType": "Web3CardanoV1",
+                                    "paymentSourceType": "Web3CardanoV2",
                                     "PaymentSourceConfig": {
                                         "rpcProviderApiKey": "rpc_provider_api_key",
                                         "rpcProvider": "Blockfrost"
@@ -17858,10 +17858,7 @@
                                             "walletAddress": "wallet_address_3"
                                         }
                                     ],
-                                    "FeeReceiverNetworkWallet": {
-                                        "walletAddress": "wallet_address"
-                                    },
-                                    "feeRatePermille": 50,
+                                    "requiredAdminSignatures": 2,
                                     "PurchasingWallets": [
                                         {
                                             "walletMnemonic": "wallet mnemonic",
