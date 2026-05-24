@@ -6060,7 +6060,7 @@ export type PostPurchaseData = {
          */
         paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
         /**
-         * Required for V2 purchases. The configured V2 payment contract address the seller selected.
+         * Optional V2 payment contract address. When omitted, the address is inferred from the signed blockchainIdentifier; when provided, it must match that identifier.
          */
         smartContractAddress?: string;
         /**
@@ -7717,7 +7717,7 @@ export type PostRegistryData = {
          */
         sendFundingLovelace?: string;
         /**
-         * Payment sources to advertise in registry metadata. Defaults to the configured V2 source for the network.
+         * Payment sources to persist for this registry request. If omitted, mint metadata advertises the active payment source.
          */
         supportedPaymentSources?: Array<{
             /**

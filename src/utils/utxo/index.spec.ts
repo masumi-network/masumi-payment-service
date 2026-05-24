@@ -45,9 +45,7 @@ describe('sortAndLimitUtxos', () => {
 		// The pre-V2 limitUtxos rejected every UTxO below 5 ADA. The fix dropped
 		// that filter; this test pins the post-fix behaviour so a future
 		// regression that re-introduces the floor would fail loudly.
-		const utxos = Array.from({ length: 50 }, (_, i) =>
-			makeUtxo({ outputIndex: i, amount: [lovelace(1_500_000)] }),
-		);
+		const utxos = Array.from({ length: 50 }, (_, i) => makeUtxo({ outputIndex: i, amount: [lovelace(1_500_000)] }));
 		const result = sortAndLimitUtxos(utxos, 8_000_000);
 		// 8 / 1.5 = 5.33, accumulator continues until > target, so it should
 		// pick ~6 UTxOs (6 × 1.5M = 9M > 8M).
