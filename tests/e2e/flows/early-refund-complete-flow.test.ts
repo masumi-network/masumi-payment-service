@@ -27,6 +27,7 @@ import {
 	waitForDisputed,
 	authorizeRefund,
 } from '../helperFunctions';
+import { describeEachOrSkip } from '../utils/describeForCases';
 
 const testNetwork = (process.env.TEST_NETWORK as Network) || Network.Preprod;
 
@@ -43,7 +44,11 @@ const allCases = [{ name: 'V1' as const, sourceType: PaymentSourceType.Web3Carda
 const envFilter = process.env.TEST_PAYMENT_SOURCE_TYPE as PaymentSourceType | undefined;
 const cases = envFilter ? allCases.filter((c) => c.sourceType === envFilter) : allCases;
 
-describe.each(cases)(`Early Refund Complete Flow E2E Tests — $name (${testNetwork})`, ({ sourceType }) => {
+describeEachOrSkip(
+	cases,
+	`V1-only suite; runner pinned to ${envFilter ?? 'unset'}`,
+	`Early Refund Complete Flow E2E Tests — $name (${testNetwork})`,
+	({ sourceType }) => {
 	const testCleanupData: Array<{
 		agentId?: string;
 		agentIdentifier?: string;
@@ -228,4 +233,5 @@ describe.each(cases)(`Early Refund Complete Flow E2E Tests — $name (${testNetw
 		},
 		20 * 60 * 1000, // 20 minutes timeout
 	);
-});
+	},
+);
