@@ -618,13 +618,12 @@ export function MainLayout({ children }: MainLayoutProps) {
                       />
                     </div>
                     <p className="opacity-85">
-                      Set up V2, migrate your agents, then delete the old source once this network
-                      is deprecated on your side.
+                      Run the one-time V2 setup, then migrate your agents on the dashboard.
                     </p>
                   </div>
                 </div>
-                <Button size="sm" variant="outline" asChild>
-                  <Link href="/payment-sources">Review sources</Link>
+                <Button size="sm" asChild>
+                  <Link href={`/setup?network=${network}`}>Start V2 setup</Link>
                 </Button>
               </div>
             </div>

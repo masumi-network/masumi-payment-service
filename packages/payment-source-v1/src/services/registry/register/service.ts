@@ -1,4 +1,4 @@
-import { Network, PaymentSourceType, RegistrationState, PricingType } from '@/generated/prisma/client';
+import { PaymentSourceType, RegistrationState, PricingType } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { convertNetwork } from '@/utils/converter/network-convert';
@@ -23,15 +23,13 @@ import {
 	resolveRegistryFundingLovelace,
 	resolveRegistryRecipientWalletAddress,
 } from '@/services/registry/shared';
-import { SupportedPaymentSourceChain, type SupportedPaymentSource } from '@/types/payment-source';
+import {
+	SupportedPaymentSourceChain,
+	type RegistryMetadataPaymentSource,
+	type SupportedPaymentSource,
+} from '@/types/payment-source';
 
 const mutex = new Mutex();
-
-type RegistryMetadataPaymentSource = {
-	network: Network;
-	paymentSourceType: PaymentSourceType;
-	smartContractAddress: string;
-};
 
 function validateRegistrationPricing(request: {
 	Pricing: {

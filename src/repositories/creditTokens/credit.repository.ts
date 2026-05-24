@@ -235,17 +235,22 @@ async function handlePurchaseCreditInit({
 				{ isolationLevel: 'Serializable', maxWait: 10_000, timeout: 10_000 },
 			),
 		// HTTP-path retry budget. The default helper budget (8 retries × up to
-		// 5 s backoff) makes sense for cron-driven callers but is way too long
-		// for a synchronous HTTP request. Cap retries at 3 with a max 500 ms
-		// delay so worst-case total wait stays around ~31 s (3 attempts × 10 s
-		// inner $transaction timeout + 2 backoffs × 500 ms between attempts) —
-		// well within any reasonable HTTP-request budget. Inner $transaction
-		// timeout dropped from 30 s → 10 s for the same reason; the
+		// 5 s backoff) is too long for a synchronous HTTP request, but the
+		// previous 3-retry / 500 ms cap was too SHORT under Serializable
+		// isolation: two near-simultaneous POSTs targeting the same `apiKey`
+		// row would deterministically lose the second to `40001 serialization
+		// failure` because the total backoff budget (jittered ~700 ms across
+		// 3 attempts) gave conflict resolution no real headroom. Bumped to
+		// 6 retries with a 1 s max delay — typical happy path still settles
+		// in 1-2 attempts (<1 s), pathological contention now amortises over
+		// ~3.5 s of jittered backoff (~10-15 s total wall-clock worst case
+		// including the 10 s inner timeout), still within any reasonable
+		// HTTP-request budget. Inner $transaction timeout stays at 10 s; the
 		// credit-init tx is small and shouldn't need 30 s of wall-clock.
 		{
 			label: 'credit-repository-purchase-init',
-			maxRetries: 3,
-			maxDelayMs: 500,
+			maxRetries: 6,
+			maxDelayMs: 1000,
 		},
 	);
 }

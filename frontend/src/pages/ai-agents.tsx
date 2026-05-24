@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { Plus, Trash2, ExternalLink, ShieldCheck } from 'lucide-react';
+import { Plus, Trash2, ExternalLink, ShieldCheck, ArrowUpRight } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 
@@ -37,6 +37,8 @@ import { extractApiErrorMessage } from '@/lib/api-error';
 import { useRegistryEntryByAgentIdentifier } from '@/lib/queries/useRegistryEntryByAgentIdentifier';
 import { useAgentDetailsDialog } from '@/lib/contexts/AgentDetailsDialogContext';
 import { findPaymentSourceWalletByVkey } from '@/lib/wallet-lookup';
+import { isV2PaymentSource } from '@/lib/payment-source-type';
+import { MigrateAgentsDialog } from '@/components/ai-agents/MigrateAgentsDialog';
 type AIAgent = RegistryEntry;
 
 const getHoldingWallet = (agent: AIAgent) => agent.RecipientWallet ?? agent.SmartContractWallet;
@@ -71,6 +73,7 @@ export default function AIAgentsPage() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [isRegisterDialogOpen, setIsRegisterDialogOpen] = useState(false);
+  const [isMigrateDialogOpen, setIsMigrateDialogOpen] = useState(false);
   const debouncedSearchQuery = useDebouncedValue(searchQuery);
 
   const [activeTab, setActiveTab] = useState('All');
@@ -150,6 +153,15 @@ export default function AIAgentsPage() {
     () => paymentSources.filter((paymentSource) => paymentSource.network === network),
     [paymentSources, network],
   );
+  const hasV2Source = useMemo(
+    () => currentNetworkPaymentSources.some(isV2PaymentSource),
+    [currentNetworkPaymentSources],
+  );
+  const hasLegacySource = useMemo(
+    () => currentNetworkPaymentSources.some((s) => !isV2PaymentSource(s)),
+    [currentNetworkPaymentSources],
+  );
+  const canMigrate = hasV2Source && hasLegacySource;
   const [selectedAgentForVerification, setSelectedAgentForVerification] = useState<AIAgent | null>(
     null,
   );
@@ -360,6 +372,16 @@ export default function AIAgentsPage() {
                 }}
                 isRefreshing={isFetchingAgents}
               />
+              {canMigrate && (
+                <Button
+                  variant="outline"
+                  className="flex items-center gap-2 btn-hover-lift"
+                  onClick={() => setIsMigrateDialogOpen(true)}
+                >
+                  <ArrowUpRight className="h-4 w-4" />
+                  Migrate to V2
+                </Button>
+              )}
               <Button
                 className="flex items-center gap-2 btn-hover-lift"
                 onClick={() => setIsRegisterDialogOpen(true)}
@@ -697,6 +719,14 @@ export default function AIAgentsPage() {
             isOpen={!!selectedWalletForDetails}
             onClose={() => setSelectedWalletForDetails(null)}
             wallet={selectedWalletForDetails}
+          />
+
+          <MigrateAgentsDialog
+            open={isMigrateDialogOpen}
+            onClose={() => setIsMigrateDialogOpen(false)}
+            onSuccess={() => {
+              setTimeout(() => refetchAll(), 250);
+            }}
           />
         </div>
       </AnimatedPage>

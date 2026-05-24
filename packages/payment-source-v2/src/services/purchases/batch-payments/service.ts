@@ -209,7 +209,44 @@ async function executeSpecificBatchPayment(
 	logger.info('Batching payments, complete tx built');
 	const signedTx = await wallet.signTx(completeTx);
 	logger.info('Batching payments, tx signed');
-	const txHash = await wallet.submitTx(signedTx);
+
+	let txHash: string;
+	try {
+		txHash = await wallet.submitTx(signedTx);
+	} catch (submitError) {
+		// `submitTx` threw — the on-chain submission either never reached the
+		// node or returned an error before broadcast. The outer
+		// `Promise.allSettled` catch will advance every batched request to
+		// `WaitingForManualAction` (intentional: re-batching would risk
+		// double-payment on a timeout-but-tx-actually-landed edge case), but
+		// it does NOT touch the shared Transaction row this function created
+		// pre-submit. Without the mark below, the row would sit `Pending`
+		// forever with no `txHash`, no `BlocksWallet` (the outer catch
+		// disconnects it via `hotWallet.update`), and no `CurrentTransaction`
+		// back-edges that survive the per-request `WaitingForManualAction`
+		// advance — invisible to both wallet-timeouts and tx-sync, accumulating
+		// as DB pollution every time a buyer-side submit fails. Best-effort
+		// retry on serialization conflict, then rethrow so the outer catch
+		// runs the per-request state advance.
+		try {
+			await retryOnSerializationConflict(
+				() =>
+					prisma.transaction.update({
+						where: { id: sharedTxId },
+						data: { status: TransactionStatus.RolledBack },
+					}),
+				{ label: 'batch-payments-v2-rollback-mark' },
+			);
+		} catch (rollbackError) {
+			logger.warn('batch-payments shared Tx rollback mark failed (non-fatal)', {
+				sharedTxId,
+				submitError: submitError instanceof Error ? submitError.message : submitError,
+				rollbackError: rollbackError instanceof Error ? rollbackError.message : rollbackError,
+			});
+		}
+		throw submitError;
+	}
+
 	await walletLowBalanceMonitorService.evaluateProjectedHotWalletById({
 		hotWalletId: walletId,
 		walletAddress: walletPairing.changeAddress,

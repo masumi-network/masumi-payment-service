@@ -1,10 +1,4 @@
-import {
-	Network,
-	PaymentSourceType,
-	RegistrationState,
-	PricingType,
-	TransactionStatus,
-} from '@/generated/prisma/client';
+import { PaymentSourceType, RegistrationState, PricingType, TransactionStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import type { LanguageVersion, UTxO } from '@meshsdk/core';
@@ -37,7 +31,11 @@ import { assertTxSizeWithinLimit, pickBatchCollateral, shrinkBatchToFit } from '
 import { type BatchRegistryMintItem, generateRegistryBatchMintTransaction } from '../../../builders/batch-registry';
 import { ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
 import { unlockHotWalletIfNoPendingTransaction } from '../../wallet-lock-helpers';
-import { SupportedPaymentSourceChain, type SupportedPaymentSource } from '@/types/payment-source';
+import {
+	SupportedPaymentSourceChain,
+	type RegistryMetadataPaymentSource,
+	type SupportedPaymentSource,
+} from '@/types/payment-source';
 
 // V2 registry batch sizing. The on-chain `MintAction` validator runs once for
 // the policy bucket and verifies every minted asset name against the set of
@@ -56,12 +54,6 @@ type ValidatedRegistryItem = {
 	item: BatchRegistryMintItem;
 	assetName: string;
 	policyId: string;
-};
-
-type RegistryMetadataPaymentSource = {
-	network: Network;
-	paymentSourceType: PaymentSourceType;
-	smartContractAddress: string;
 };
 
 function validateRegistrationPricing(request: {
@@ -654,7 +646,16 @@ export async function registerAgentV2() {
 								async (tx) => {
 									await tx.transaction.update({
 										where: { id: sharedTxId },
-										data: disconnectTransactionWallet(),
+										data: {
+											...disconnectTransactionWallet(),
+											// Mark the orphan shared row as RolledBack: the per-item reverts
+											// below restore each request's CurrentTransaction to its pre-batch
+											// value, leaving this row with no back-references. Without an
+											// explicit status update it would sit in `Pending` indefinitely
+											// (no wallet pointer → invisible to wallet-timeouts; no request
+											// pointer → invisible to tx-sync), accumulating as DB pollution.
+											status: TransactionStatus.RolledBack,
+										},
 									});
 									for (const v of fit) {
 										await tx.registryRequest.update({

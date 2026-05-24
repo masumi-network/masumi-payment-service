@@ -137,13 +137,22 @@ export async function ensureCollateralReady(params: EnsureCollateralReadyParams)
 	}
 
 	if (!classification.fundedForPrep) {
-		logger.error('V2 wallet underfunded for collateral prep [collateral-prep]', {
+		// WARN, not ERROR: every scheduler tick that picks this wallet up
+		// re-runs the helper, so an underfunded wallet would otherwise spam
+		// an identical ERROR row every ~30-60 s until operator funds it. No
+		// per-wallet `lastErroredAt` column exists today; if log volume ever
+		// becomes a problem the right next step is adding one and rate-
+		// limiting the WARN to once per hour. CI annotator
+		// (`[collateral-prep]` marker) still surfaces every occurrence in
+		// the GitHub workflow run summary.
+		logger.warn('V2 wallet underfunded for collateral prep [collateral-prep]', {
 			walletDbId,
 			walletAddress,
 			serviceLabel,
 			utxoCount: classification.utxoCount,
 			totalLovelace: classification.totalLovelace.toString(),
 			minRequiredLovelace: PREP_TX_MIN_LOVELACE.toString(),
+			note: 'underfunded — operator must fund wallet; this log repeats every scheduler tick until resolved',
 		});
 		// The outer caller's `lockAndQueryX` set `lockedAt = now` on this wallet.
 		// We did NOT submit a prep tx (no PendingTransaction was connected), so
@@ -231,19 +240,32 @@ export async function ensureCollateralReady(params: EnsureCollateralReadyParams)
 		signedTx = await meshWallet.signTx(unsignedTx);
 		prepTxHash = await meshWallet.submitTx(signedTx);
 	} catch (submitError) {
-		// Rollback the shared Tx row's wallet lock. The orphan row itself
-		// becomes harmless (nothing references it via CurrentTransaction).
-		// Wrap in retryOnSerializationConflict so a concurrent writer on the
-		// same wallet row doesn't leave the lock stuck.
+		// Rollback the shared Tx row's wallet lock AND mark the row as
+		// RolledBack. The wallet update releases `pendingTransactionId` so
+		// the next scheduler tick can re-pick the wallet up; the Tx update
+		// flips status away from `Pending` so the row stops looking like an
+		// in-flight tx during triage (it has no `txHash` and no back-edges
+		// from any request, so without an explicit status change it would
+		// sit as `Pending` forever — invisible to wallet-timeouts after
+		// disconnect and invisible to tx-sync without a CurrentTransaction
+		// edge). Both writes share one $transaction so the wallet is never
+		// observed half-disconnected. Retry on serialization conflict in
+		// case a concurrent writer holds either row.
 		try {
 			await retryOnSerializationConflict(
 				() =>
-					prisma.hotWallet.update({
-						where: { id: walletDbId, deletedAt: null },
-						data: {
-							PendingTransaction: { disconnect: true },
-							lockedAt: null,
-						},
+					prisma.$transaction(async (tx) => {
+						await tx.hotWallet.update({
+							where: { id: walletDbId, deletedAt: null },
+							data: {
+								PendingTransaction: { disconnect: true },
+								lockedAt: null,
+							},
+						});
+						await tx.transaction.update({
+							where: { id: sharedTxId },
+							data: { status: TransactionStatus.RolledBack },
+						});
 					}),
 				{ label: 'collateral-prep-rollback-unlock' },
 			);

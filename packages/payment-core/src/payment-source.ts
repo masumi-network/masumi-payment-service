@@ -28,6 +28,19 @@ export const supportedPaymentSourcesSchema = z
 
 export type SupportedPaymentSource = z.infer<typeof supportedPaymentSourceSchema>;
 
+/**
+ * Minimal payment-source descriptor consumed by registry mint paths when
+ * `SupportedPaymentSources` is empty and a synthetic default row must be
+ * emitted on chain. Lives here rather than next to each register service so
+ * V1 and V2 share one type definition (previously duplicated verbatim in
+ * `packages/payment-source-v{1,2}/src/services/registry/register/service.ts`).
+ */
+export type RegistryMetadataPaymentSource = {
+	network: Network;
+	paymentSourceType: PaymentSourceType;
+	smartContractAddress: string;
+};
+
 const metadataStringSchema = z.string().or(z.array(z.string()).min(1));
 
 function metadataToString(value: string | string[] | undefined) {

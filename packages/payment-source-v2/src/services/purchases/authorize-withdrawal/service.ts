@@ -281,6 +281,26 @@ async function processSinglePurchaseRequest(
 	if (utxos.length === 0) {
 		throw new Error('No UTXOs found in the wallet. Wallet is empty.');
 	}
+
+	// See ensureCollateralReady module note. Throw the LOOKUP_DEFERRED
+	// sentinel so the fallbackToSingleItems catch arm routes the item back
+	// to the queue instead of marking it failed. Mirrors the gate in
+	// collect-refund/submit-result/authorize-refund/request-refund/collection
+	// single-item paths.
+	const collateralCheck = await ensureCollateralReady({
+		walletDbId: purchasingWallet.id,
+		walletAddress: address,
+		meshWallet: wallet,
+		utxos,
+		blockchainProvider,
+		serviceLabel: 'authorize-withdrawal',
+	});
+	if (collateralCheck.status !== 'ready') {
+		throw new Error(
+			`${LOOKUP_DEFERRED_PREFIX} wallet not collateral-ready (${collateralCheck.status}); retry next tick`,
+		);
+	}
+
 	const { script, smartContractAddress } = await getPaymentScriptFromPaymentSourceV2(paymentContract);
 	const txHash = request.CurrentTransaction!.txHash!;
 	const utxoByHash = await fetchUTxOsWithDeferOnEmpty(blockchainProvider, txHash);
@@ -741,7 +761,16 @@ async function processWalletBatch(
 					async (tx) => {
 						await tx.transaction.update({
 							where: { id: sharedTxId },
-							data: disconnectTransactionWallet(),
+							data: {
+								...disconnectTransactionWallet(),
+								// Mark the orphan shared row as RolledBack: the per-item reverts
+								// below restore each request's CurrentTransaction to its pre-batch
+								// value, leaving this row with no back-references. Without an
+								// explicit status update it would sit in `Pending` indefinitely
+								// (no wallet pointer → invisible to wallet-timeouts; no request
+								// pointer → invisible to tx-sync), accumulating as DB pollution.
+								status: TransactionStatus.RolledBack,
+							},
 						});
 						for (const v of fit) {
 							// Skip+log rather than bang-then-throw: a throw here would roll back the

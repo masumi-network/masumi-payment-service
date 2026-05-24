@@ -494,7 +494,16 @@ export async function registerInboxAgentV2() {
 								async (tx) => {
 									await tx.transaction.update({
 										where: { id: sharedTxId },
-										data: disconnectTransactionWallet(),
+										data: {
+											...disconnectTransactionWallet(),
+											// Mark the orphan shared row as RolledBack: the per-item reverts
+											// below restore each request's CurrentTransaction to its pre-batch
+											// value, leaving this row with no back-references. Without an
+											// explicit status update it would sit in `Pending` indefinitely
+											// (no wallet pointer → invisible to wallet-timeouts; no request
+											// pointer → invisible to tx-sync), accumulating as DB pollution.
+											status: TransactionStatus.RolledBack,
+										},
 									});
 									for (const v of fit) {
 										await tx.inboxAgentRegistrationRequest.update({

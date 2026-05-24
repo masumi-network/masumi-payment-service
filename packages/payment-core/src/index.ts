@@ -15,6 +15,7 @@ export {
 	supportedPaymentSourceSchema,
 	supportedPaymentSourcesSchema,
 	validateSupportedPaymentSourcesOrThrow,
+	type RegistryMetadataPaymentSource,
 	type SupportedPaymentSource,
 } from './payment-source';
 export { SmartContractState, smartContractStateEqualsOnChainState } from './smart-contract-state';

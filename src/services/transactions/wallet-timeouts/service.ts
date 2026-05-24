@@ -576,15 +576,23 @@ export async function updateWalletTransactionHash() {
 							// must intervene (verify off-platform, then manually advance state).
 							const txAgeMs = Date.now() - wallet.PendingTransaction.createdAt.getTime();
 							const escalate = txAgeMs > CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL;
-							const logFn = escalate ? logger.error : logger.warn;
-							logFn.call(logger, `wallet-timeouts: failed to fetch valid_contract for ${txHash}, retrying next tick`, {
+							// Winston's `LeveledLogMethod` typing is positional (msg, meta) and
+							// rejects `.call(thisArg, msg, meta)` as 3-arg under strict tsc, so
+							// branch explicitly rather than passing the method by reference.
+							const logMsg = `wallet-timeouts: failed to fetch valid_contract for ${txHash}, retrying next tick`;
+							const logMeta = {
 								error: errorToString(err),
 								txAgeMs,
 								escalated: escalate,
 								note: escalate
 									? 'tx older than WALLET_LOCK_TIMEOUT_INTERVAL while blockfrost still failing — operator action required to verify phase-2 outcome off-platform'
 									: undefined,
-							});
+							};
+							if (escalate) {
+								logger.error(logMsg, logMeta);
+							} else {
+								logger.warn(logMsg, logMeta);
+							}
 							await prisma.transaction.update({
 								where: { id: wallet.PendingTransaction.id },
 								data: { lastCheckedAt: new Date() },
@@ -596,7 +604,18 @@ export async function updateWalletTransactionHash() {
 							logger.error(`Phase-2 failure detected for tx ${txHash} — propagating failure to dependents`, {
 								txId: wallet.PendingTransaction.id,
 							});
-							await markTransactionPhase2Failed(wallet.PendingTransaction.id, txHash);
+							// Wrap in retryOnSerializationConflict for symmetry with every other
+							// $transaction site in the V2 batch services: the helper's internal
+							// $transaction can lose to a concurrent writer (tx-sync confirmation
+							// of a sibling request, the orphan-lock cleanup branch above, etc.),
+							// and without retry the outer catch on line 620 would only log —
+							// leaving the tx Pending and dependent requests stuck in `*Initiated`
+							// until the next ~1-min cron tick re-discovered the same phase-2
+							// failure.
+							await retryOnSerializationConflict(
+								() => markTransactionPhase2Failed(wallet.PendingTransaction!.id, txHash),
+								{ label: 'wallet-timeouts-phase-2-propagate' },
+							);
 						}
 
 						await prisma.hotWallet.update({
