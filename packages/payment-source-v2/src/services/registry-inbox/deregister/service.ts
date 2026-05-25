@@ -58,6 +58,16 @@ function validateDeregistrationRequest(request: { agentIdentifier: string | null
 	}
 }
 
+/**
+ * Terminate a deregister attempt: stamp the failure on the request row, then
+ * release the wallet lock. The two writes are intentionally NOT wrapped in a
+ * `prisma.$transaction` — see the matching helper in
+ * `packages/payment-source-v2/src/services/registry/deregister/service.ts` for
+ * the full rationale. Summary: partial failure (request stamped, wallet
+ * still locked) is recoverable via `wallet-timeouts`; wrapping in a
+ * transaction would roll the failure stamp back too and invite the worker to
+ * retry an error it already classified as terminal.
+ */
 async function markRequestFailed(request: InboxRequestRecord, error: unknown): Promise<void> {
 	const walletToUnlock = request.DeregistrationHotWallet ?? request.SmartContractWallet;
 	logger.error(`Error deregistering V2 inbox agent ${request.id}`, { error });

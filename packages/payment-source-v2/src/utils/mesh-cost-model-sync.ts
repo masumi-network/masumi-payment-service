@@ -24,14 +24,26 @@ import {
 	syncMeshCostModelsFromChain as syncSharedMeshCostModels,
 } from '@/utils/mesh-cost-model-sync';
 
-// Guard concurrent in-place mutations of the V1/V2/V3 cost-model arrays. Two
-// builders syncing on overlapping API keys can interleave their replace passes
-// — without the lock, `target.length = 0` from one writer can race with `push`
-// from another and leave the array partially populated, which any tx built in
-// that window would phase-2-fail against. One module-level mutex is sufficient
-// because mutations are infrequent (5-minute TTL) and short.
+// Guard concurrent in-place mutations of the V1/V2/V3 cost-model arrays. The
+// hot-path concern is two batch builders syncing on overlapping API keys
+// interleaving their replace passes around async boundaries (the
+// `syncSharedMeshCostModels` fetch is awaited above this lock); without the
+// lock, a second writer could begin its swap while the first writer is still
+// in the middle of validating its next-payload. One module-level mutex is
+// sufficient because mutations are infrequent (5-minute TTL) and short.
 const replaceMutex = new Mutex();
 
+/**
+ * Replace `target`'s contents with the validated `next` payload in a single
+ * `splice` call. The splice is synchronous, so any synchronous reader
+ * (`hashScriptData`, mesh's CBOR encoder) sees either the OLD contents or
+ * the NEW contents — never a partial state, never an empty array.
+ *
+ * Validation runs BEFORE the splice: we walk `next`, coerce each entry to a
+ * finite number, and accumulate into a fresh local array. If validation
+ * fails we return `false` and leave `target` untouched. This guarantees we
+ * never leave the cost-model array half-replaced even on bad input.
+ */
 function replaceListInPlace(target: number[], next: unknown): boolean {
 	if (!Array.isArray(next)) return false;
 	const cleaned: number[] = [];
@@ -40,10 +52,10 @@ function replaceListInPlace(target: number[], next: unknown): boolean {
 		if (!Number.isFinite(numeric)) return false;
 		cleaned.push(numeric);
 	}
-	target.length = 0;
-	for (const value of cleaned) {
-		target.push(value);
-	}
+	// Single-statement replacement: splice removes `target.length` items at
+	// position 0 and inserts `cleaned` in their place. No window where a
+	// reader sees an empty or partial array.
+	target.splice(0, target.length, ...cleaned);
 	return true;
 }
 

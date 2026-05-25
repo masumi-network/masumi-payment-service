@@ -97,10 +97,15 @@ export async function resolvePurchaseCreationContext({
 				},
 			})
 		)?.collectionAddress ?? null;
-	const sellerReturnAddress =
-		input.paymentSourceType === PaymentSourceType.Web3CardanoV2
-			? (input.sellerReturnAddress ?? sellerCollectionAddress)
-			: sellerCollectionAddress;
+	// Buyer-supplied `sellerReturnAddress` overrides the seller's stored
+	// collection address for BOTH V1 and V2. Previously V1 silently dropped
+	// the input field and always used `sellerCollectionAddress`, which made
+	// `input.sellerReturnAddress` look like a no-op for V1 callers with no
+	// validation error to signal the silent drop. V1's contract / collection
+	// service already honors `request.sellerReturnAddress` when present
+	// (see packages/payment-source-v1/src/services/payments/collection/service.ts),
+	// so propagating it here is the consistent behavior.
+	const sellerReturnAddress = input.sellerReturnAddress ?? sellerCollectionAddress;
 
 	const assetInfo = await provider.assetsById(input.agentIdentifier);
 	if (!assetInfo.onchain_metadata) {

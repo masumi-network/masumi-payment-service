@@ -101,6 +101,15 @@ BEGIN
     FROM "RegistryRequest" rr
     WHERE rr."paymentSourceId" IS NOT NULL;
 
+    -- Idempotency: target the primary key explicitly so a partial replay
+    -- (this migration interrupted mid-INSERT, then re-run) skips rows that
+    -- already exist by `id` instead of raising a pkey violation. The
+    -- generated id is deterministic (`'sps_' || rr.id`), so a re-run produces
+    -- the SAME id for each registry row and ON CONFLICT ("id") matches.
+    -- A bare `ON CONFLICT DO NOTHING` (no target) requires an arbiter
+    -- constraint to choose; postgres infers one from any unique index that
+    -- the row violates, which is brittle if a future migration adds another
+    -- unique index on this table.
     INSERT INTO "SupportedPaymentSource" ("id", "createdAt", "updatedAt", "registryRequestId", "chain", "network", "paymentSourceType", "address")
     SELECT
         'sps_' || rr.id,
@@ -113,7 +122,7 @@ BEGIN
         ps."smartContractAddress"
     FROM "RegistryRequest" rr
     JOIN "PaymentSource" ps ON rr."paymentSourceId" = ps.id
-    ON CONFLICT DO NOTHING;
+    ON CONFLICT ("id") DO NOTHING;
 
     GET DIAGNOSTICS inserted_count = ROW_COUNT;
     orphan_count := expected_count - inserted_count;

@@ -5,7 +5,7 @@
 // newer mesh line; they import their own copies of these helpers from there
 // rather than depending on this V1-aligned version. Do not bump. See
 // docs/adr/0005-meshsdk-version-pinning-v1-v2.md.
-import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
+import { AddressType, deserializeAddress, resolvePaymentKeyHash, resolveStakeKeyHash } from '@meshsdk/core-cst';
 import { Chain, Network, PaymentSourceType } from '@prisma/client';
 import { z } from './zod';
 
@@ -72,6 +72,30 @@ function validateCardanoAddressForNetwork(address: string, network: Network) {
 export function isCardanoAddressForNetwork(address: string, network: Network): boolean {
 	try {
 		validateCardanoAddressForNetwork(address, network);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function validateCardanoPubKeyBaseAddressForNetwork(address: string, network: Network) {
+	validateCardanoAddressForNetwork(address, network);
+	const parsedAddress = deserializeAddress(address);
+	if (parsedAddress.getType() !== AddressType.BasePaymentKeyStakeKey) {
+		throw new Error('Cardano address must be a base address with payment and stake key credentials');
+	}
+
+	try {
+		resolvePaymentKeyHash(address);
+		resolveStakeKeyHash(address);
+	} catch {
+		throw new Error('Cardano address must include payment and stake key credentials');
+	}
+}
+
+export function isCardanoPubKeyBaseAddressForNetwork(address: string, network: Network): boolean {
+	try {
+		validateCardanoPubKeyBaseAddressForNetwork(address, network);
 		return true;
 	} catch {
 		return false;

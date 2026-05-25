@@ -21,7 +21,91 @@ import { logger } from '@masumi/payment-core/logger';
 import { calculateMinUtxo, calculateTopUpAmount, getLovelaceFromAmounts, getNativeTokenCount } from '@/utils/min-utxo';
 import { getCachedChainProtocolParameters } from '@/utils/mesh-cost-model-sync';
 import { syncMeshCostModelsFromChainV2 } from '../utils/mesh-cost-model-sync';
+import { computeCollateralFromExUnits } from './batch-helpers';
 import { generateRedeemerData } from './redeemer-data';
+
+/**
+ * Per-spend-leg `ex_units` budgets sum across redeemers; the Conway phase-1
+ * required collateral grows linearly with that sum. 3 ADA covers ~2 SPEND
+ * legs at current preprod prices but is insufficient for 5+ legs, which would
+ * phase-1 reject with `InsufficientCollateral`.
+ *
+ * We compute the floor from the actual evaluated budgets via
+ * `computeCollateralFromExUnits`, then apply this safety multiplier as
+ * headroom against protocol-parameter changes mid-flight (priceMem/priceStep
+ * rarely change but `collateralPercentage` has shifted historically).
+ *
+ * Expressed as bigint numerator/denominator to keep the math integer-only.
+ */
+const COLLATERAL_SAFETY_NUM = 150n;
+const COLLATERAL_SAFETY_DEN = 100n;
+
+/**
+ * Floor — even a single-leg tx with tiny budgets must hold this much in
+ * collateral. Matches the V1 single-item builder default and prevents the
+ * derived value from rounding down below mesh's minimum-collateral check.
+ */
+const MIN_TOTAL_COLLATERAL_LOVELACE = 3_000_000n;
+
+/**
+ * Narrow the loosely-typed protocol-parameters bag (mesh's `Protocol` ∪ the
+ * shared cache's `unknown`) into the exact shape `computeCollateralFromExUnits`
+ * expects. Mesh's V2 `Protocol` type names the field `collateralPercent` while
+ * our helper uses `collateralPercentage`; bridge that here. Returns `null` if
+ * any required field is missing — the caller falls back to the static
+ * `MIN_TOTAL_COLLATERAL_LOVELACE` in that case rather than crashing.
+ */
+/**
+ * Shape we accept from any of mesh's `Protocol`, the V1 helper's cached
+ * `Protocol`-like object, or a raw blockfrost protocol-params response.
+ * Fields are optional because the loose `unknown` input we receive may carry
+ * either camelCase (`priceMem`) or snake_case (`price_mem`) keys, and either
+ * `collateralPercent` (mesh) or `collateralPercentage` (our helper's name)
+ * or `collateral_percent` (blockfrost raw).
+ */
+type ProtocolParamCandidate = {
+	priceMem?: number | string;
+	price_mem?: number | string;
+	priceStep?: number | string;
+	price_step?: number | string;
+	collateralPercentage?: number;
+	collateralPercent?: number;
+	collateral_percent?: number;
+};
+
+function extractCollateralProtocolParams(
+	protocolParameters: unknown,
+): { priceMem: number | string; priceStep: number | string; collateralPercentage: number } | null {
+	if (protocolParameters == null || typeof protocolParameters !== 'object') return null;
+	const p = protocolParameters as ProtocolParamCandidate;
+	const priceMem = p.priceMem ?? p.price_mem;
+	const priceStep = p.priceStep ?? p.price_step;
+	const collateralPercentage = p.collateralPercentage ?? p.collateralPercent ?? p.collateral_percent;
+	if (priceMem == null || priceStep == null || collateralPercentage == null) return null;
+	if (typeof priceMem !== 'number' && typeof priceMem !== 'string') return null;
+	if (typeof priceStep !== 'number' && typeof priceStep !== 'string') return null;
+	if (typeof collateralPercentage !== 'number') return null;
+	return { priceMem, priceStep, collateralPercentage };
+}
+
+/**
+ * Derive Conway phase-1 total collateral from per-redeemer exUnits budgets.
+ *
+ * Sums the budgets in `exUnitsByIndex`, runs `computeCollateralFromExUnits`,
+ * applies the safety multiplier, and floors at `MIN_TOTAL_COLLATERAL_LOVELACE`.
+ * Returned as a string in the shape `setTotalCollateral(...)` expects.
+ */
+function deriveTotalCollateral(exUnitsByIndex: Map<number, ExUnits>, protocolParameters: unknown): string {
+	const params = extractCollateralProtocolParams(protocolParameters);
+	if (params == null) {
+		return MIN_TOTAL_COLLATERAL_LOVELACE.toString();
+	}
+	const budgets = Array.from(exUnitsByIndex.values());
+	const raw = computeCollateralFromExUnits(budgets, params);
+	const withSafety = (raw * COLLATERAL_SAFETY_NUM) / COLLATERAL_SAFETY_DEN;
+	const floored = withSafety > MIN_TOTAL_COLLATERAL_LOVELACE ? withSafety : MIN_TOTAL_COLLATERAL_LOVELACE;
+	return floored.toString();
+}
 
 // Mirrors `FALLBACK_COINS_PER_UTXO_SIZE` in @masumi/payment-core/config.
 // Kept inline (rather than imported) because this module is re-exported from
@@ -303,10 +387,18 @@ async function buildBatchInteractionTx(
 			.txInInlineDatumPresent();
 	}
 
-	// Single shared collateral input. Collateral bumping for many-script-input
-	// txs is deferred to a later phase; for now keep at 3 ADA (matches the
-	// V1-pinned single-item builder).
-	txBuilder.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex).setTotalCollateral('3000000');
+	// Single shared collateral input. Conway phase-1 requires
+	// totalCollateral >= sum(scriptFee) * collateralPercentage / 100, where
+	// scriptFee grows linearly with per-leg ex_units. We derive the value from
+	// the actual evaluated budgets in `exUnitsByIndex` (default budgets on the
+	// first build pass, chain-evaluated on the second), apply a safety
+	// multiplier, and floor at 3 ADA. See `deriveTotalCollateral` at the top
+	// of this file for the math; see batch-helpers `computeCollateralFromExUnits`
+	// for the underlying Conway formula.
+	const totalCollateral = deriveTotalCollateral(exUnitsByIndex, protocolParameters);
+	txBuilder
+		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
+		.setTotalCollateral(totalCollateral);
 
 	// Per-input continuation outputs. Each item gets its own
 	// `.txOut(...).txOutInlineDatumValue(item.newInlineDatum)`; we compute the
@@ -500,7 +592,13 @@ async function buildBatchWithdrawTx(
 			.txInInlineDatumPresent();
 	}
 
-	txBuilder.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex).setTotalCollateral('3000000');
+	// Conway phase-1 collateral: derive from evaluated SPEND budgets. See the
+	// comment in `buildBatchInteractionTx` and `deriveTotalCollateral` at the
+	// top of this file for the rationale.
+	const totalCollateral = deriveTotalCollateral(exUnitsByIndex, protocolParameters);
+	txBuilder
+		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
+		.setTotalCollateral(totalCollateral);
 
 	// Per-item collection / fee / collateral-return outputs. Each tagged output
 	// MUST carry THAT item's own_ref — sharing a tag across items would let one

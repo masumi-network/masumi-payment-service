@@ -6,8 +6,10 @@
 // docs/adr/0005-meshsdk-version-pinning-v1-v2.md.
 import { mPubKeyAddress, type Data, type PlutusScript } from '@meshsdk/core';
 import {
+	AddressType,
 	applyParamsToScript,
 	deserializePlutusScript,
+	deserializeAddress,
 	normalizePlutusScript,
 	resolvePaymentKeyHash,
 	resolvePlutusScriptAddress,
@@ -115,7 +117,16 @@ export function getRegistryScriptV2(network: Network) {
 	return Promise.resolve({ script, policyId, smartContractAddress });
 }
 
-function getOptionalPubKeyAddressDatum(address: string | null | undefined) {
+function getPubKeyBaseAddressDatum(address: string, fieldName: string) {
+	const parsedAddress = deserializeAddress(address);
+	if (parsedAddress.getType() !== AddressType.BasePaymentKeyStakeKey) {
+		throw new Error(`${fieldName} must be a Cardano base address with payment and stake key credentials`);
+	}
+
+	return mPubKeyAddress(resolvePaymentKeyHash(address), resolveStakeKeyHash(address));
+}
+
+function getOptionalPubKeyAddressDatum(address: string | null | undefined, fieldName: string) {
 	if (address == null || address === '') {
 		return {
 			alternative: 1,
@@ -125,7 +136,7 @@ function getOptionalPubKeyAddressDatum(address: string | null | undefined) {
 
 	return {
 		alternative: 0,
-		fields: [mPubKeyAddress(resolvePaymentKeyHash(address), resolveStakeKeyHash(address))],
+		fields: [getPubKeyBaseAddressDatum(address, fieldName)],
 	};
 }
 
@@ -233,10 +244,10 @@ export function getDatumV2({
 		value: {
 			alternative: 0,
 			fields: [
-				mPubKeyAddress(resolvePaymentKeyHash(buyerAddress), resolveStakeKeyHash(buyerAddress)),
-				getOptionalPubKeyAddressDatum(buyerReturnAddress),
-				mPubKeyAddress(resolvePaymentKeyHash(sellerAddress), resolveStakeKeyHash(sellerAddress)),
-				getOptionalPubKeyAddressDatum(sellerReturnAddress),
+				getPubKeyBaseAddressDatum(buyerAddress, 'buyerAddress'),
+				getOptionalPubKeyAddressDatum(buyerReturnAddress, 'buyerReturnAddress'),
+				getPubKeyBaseAddressDatum(sellerAddress, 'sellerAddress'),
+				getOptionalPubKeyAddressDatum(sellerReturnAddress, 'sellerReturnAddress'),
 				referenceKey,
 				referenceSignature,
 				sellerNonce,

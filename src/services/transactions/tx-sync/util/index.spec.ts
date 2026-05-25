@@ -1,64 +1,94 @@
-import { OnChainState } from '@/generated/prisma/client';
+import { OnChainState, PaymentSourceType } from '@/generated/prisma/client';
 import { SmartContractState } from '@/utils/generator/contract-generator';
 import { getCardanoFeesBuyer, getCardanoFeesSeller, redeemerToOnChainState } from './index';
 
+const V1 = PaymentSourceType.Web3CardanoV1;
+const V2 = PaymentSourceType.Web3CardanoV2;
+
 describe('getCardanoFeesSeller', () => {
-	// V1: tx fees that benefited the seller are attributed to the seller. The
-	// redeemer versions below mirror the Aiken `Action` enum in
-	// smart-contracts/payment/validators/vested_pay.ak.
-	it('attributes the share to seller for Withdraw (0)', () => {
-		expect(getCardanoFeesSeller(0, 1_000_000n)).toBe(1_000_000n);
+	// Redeemer alts mirror the Aiken `Action` enum in both
+	// smart-contracts/payment/validators/vested_pay.ak (V1) and
+	// smart-contracts/payment-v2/validators/vested_pay.ak (V2).
+	it('attributes the share to seller for Withdraw (0) on V1 and V2', () => {
+		expect(getCardanoFeesSeller(0, 1_000_000n, V1)).toBe(1_000_000n);
+		expect(getCardanoFeesSeller(0, 1_000_000n, V2)).toBe(1_000_000n);
 	});
 
-	it('attributes the share to seller for SubmitResult (5)', () => {
-		expect(getCardanoFeesSeller(5, 1_000_000n)).toBe(1_000_000n);
+	it('attributes the share to seller for SubmitResult (5) on V1 and V2', () => {
+		expect(getCardanoFeesSeller(5, 1_000_000n, V1)).toBe(1_000_000n);
+		expect(getCardanoFeesSeller(5, 1_000_000n, V2)).toBe(1_000_000n);
 	});
 
-	it('attributes the share to seller for AuthorizeRefund (6)', () => {
-		// AuthorizeRefund is initiated by the seller cooperating with a
-		// disputed refund — fee is the seller's responsibility.
-		expect(getCardanoFeesSeller(6, 1_000_000n)).toBe(1_000_000n);
+	it('attributes the share to seller for AuthorizeRefund (6) on V1 and V2', () => {
+		// AuthorizeRefund is the seller cooperating with a disputed refund —
+		// fee is the seller's responsibility in both contract versions.
+		expect(getCardanoFeesSeller(6, 1_000_000n, V1)).toBe(1_000_000n);
+		expect(getCardanoFeesSeller(6, 1_000_000n, V2)).toBe(1_000_000n);
 	});
 
-	it('attributes 0 to seller for buyer-side redeemers', () => {
-		for (const buyerRedeemer of [1, 2, 3, 4]) {
-			expect(getCardanoFeesSeller(buyerRedeemer, 1_000_000n)).toBe(0n);
+	it('attributes the share to seller for AuthorizeWithdrawal (2) on V2 only', () => {
+		// V2 alt 2 = AuthorizeWithdrawal (seller); V1 alt 2 = CancelRefund (buyer).
+		expect(getCardanoFeesSeller(2, 1_000_000n, V2)).toBe(1_000_000n);
+		expect(getCardanoFeesSeller(2, 1_000_000n, V1)).toBe(0n);
+	});
+
+	it('attributes 0 to seller for buyer-side and admin redeemers', () => {
+		// 1 RequestRefund (buyer), 3 WithdrawRefund (buyer), 4 WithdrawDisputed
+		// (admin — admin wallet pays, neither party is debited).
+		for (const otherRedeemer of [1, 3, 4]) {
+			expect(getCardanoFeesSeller(otherRedeemer, 1_000_000n, V1)).toBe(0n);
+			expect(getCardanoFeesSeller(otherRedeemer, 1_000_000n, V2)).toBe(0n);
 		}
 	});
 
 	it('attributes 0 to seller for unknown redeemer versions', () => {
-		expect(getCardanoFeesSeller(99, 1_000_000n)).toBe(0n);
+		expect(getCardanoFeesSeller(99, 1_000_000n, V1)).toBe(0n);
+		expect(getCardanoFeesSeller(99, 1_000_000n, V2)).toBe(0n);
 	});
 
 	it('handles zero share without dividing', () => {
-		expect(getCardanoFeesSeller(0, 0n)).toBe(0n);
+		expect(getCardanoFeesSeller(0, 0n, V1)).toBe(0n);
 	});
 });
 
 describe('getCardanoFeesBuyer', () => {
-	it('attributes the share to buyer for RequestRefund (1)', () => {
-		expect(getCardanoFeesBuyer(1, 1_000_000n)).toBe(1_000_000n);
+	it('attributes the share to buyer for RequestRefund (1) on V1 and V2', () => {
+		expect(getCardanoFeesBuyer(1, 1_000_000n, V1)).toBe(1_000_000n);
+		expect(getCardanoFeesBuyer(1, 1_000_000n, V2)).toBe(1_000_000n);
 	});
 
-	it('attributes the share to buyer for CancelRefund / AuthorizeWithdrawal (2)', () => {
-		expect(getCardanoFeesBuyer(2, 1_000_000n)).toBe(1_000_000n);
+	it('attributes the share to buyer for CancelRefund (2) on V1 only', () => {
+		// V1 alt 2 = CancelRefund (buyer); V2 alt 2 = AuthorizeWithdrawal (seller).
+		expect(getCardanoFeesBuyer(2, 1_000_000n, V1)).toBe(1_000_000n);
+		expect(getCardanoFeesBuyer(2, 1_000_000n, V2)).toBe(0n);
 	});
 
-	it('attributes the share to buyer for WithdrawRefund (3)', () => {
-		expect(getCardanoFeesBuyer(3, 1_000_000n)).toBe(1_000_000n);
+	it('attributes the share to buyer for WithdrawRefund (3) on V1 and V2', () => {
+		expect(getCardanoFeesBuyer(3, 1_000_000n, V1)).toBe(1_000_000n);
+		expect(getCardanoFeesBuyer(3, 1_000_000n, V2)).toBe(1_000_000n);
 	});
 
-	it('attributes the share to buyer for WithdrawDisputed (6 — admin)', () => {
-		// V1 codepath shares redeemer 6 between AuthorizeRefund (seller-side)
-		// and WithdrawDisputed (admin-driven refund payout to buyer). The
-		// admin builder routes via `getCardanoFeesBuyer`. See
-		// docs/adr/0005 / state machine docs for the dual-role of alt=6.
-		expect(getCardanoFeesBuyer(6, 1_000_000n)).toBe(1_000_000n);
+	it('attributes 0 to buyer for WithdrawDisputed (4) on V1 and V2', () => {
+		// Alt 4 is admin-driven; admin wallet pays the on-chain fee. Buyer is
+		// not debited here. Disputed payouts to buyer/seller are derived from
+		// UTxO outputs by calculateValueChange in the DisputedWithdrawn branch.
+		expect(getCardanoFeesBuyer(4, 1_000_000n, V1)).toBe(0n);
+		expect(getCardanoFeesBuyer(4, 1_000_000n, V2)).toBe(0n);
 	});
 
-	it('attributes 0 to buyer for seller-only redeemers (0, 5)', () => {
-		expect(getCardanoFeesBuyer(0, 1_000_000n)).toBe(0n);
-		expect(getCardanoFeesBuyer(5, 1_000_000n)).toBe(0n);
+	it('attributes 0 to buyer for seller-only redeemers (0, 5, 6)', () => {
+		// Alt 6 = AuthorizeRefund (seller). Previously misattributed to buyer
+		// under the false rationale that V1 reused alt 6 for an admin flow —
+		// the contract has a separate alt 4 for admin WithdrawDisputed.
+		for (const sellerRedeemer of [0, 5, 6]) {
+			expect(getCardanoFeesBuyer(sellerRedeemer, 1_000_000n, V1)).toBe(0n);
+			expect(getCardanoFeesBuyer(sellerRedeemer, 1_000_000n, V2)).toBe(0n);
+		}
+	});
+
+	it('attributes 0 to buyer for unknown redeemer versions', () => {
+		expect(getCardanoFeesBuyer(99, 1_000_000n, V1)).toBe(0n);
+		expect(getCardanoFeesBuyer(99, 1_000_000n, V2)).toBe(0n);
 	});
 });
 

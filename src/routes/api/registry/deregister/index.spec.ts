@@ -21,6 +21,7 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 		},
 		paymentSource: {
 			findUnique: mockFindPaymentSource,
+			findFirst: mockFindPaymentSource,
 		},
 		registryRequest: {
 			findUnique: mockFindRegistryRequest,
@@ -67,7 +68,16 @@ jest.unstable_mockModule('@/utils/generator/contract-generator', () => ({
 }));
 
 jest.unstable_mockModule('@meshsdk/core-cst', () => ({
+	AddressType: {
+		BasePaymentKeyStakeKey: 0,
+	},
+	deserializeAddress: jest.fn(() => ({
+		getType: () => 0,
+		pubKeyHash: 'payment-key-hash',
+		stakeCredentialHash: 'stake-key-hash',
+	})),
 	resolvePaymentKeyHash: mockResolvePaymentKeyHash,
+	resolveStakeKeyHash: jest.fn(() => 'stake-key-hash'),
 }));
 
 jest.unstable_mockModule('@/generated/prisma/client', async () => await import('@/generated/prisma/enums'));
@@ -204,6 +214,11 @@ describe('unregisterAgentPost', () => {
 		});
 
 		expect(responseMock.statusCode).toBe(200);
+		expect(mockFindPaymentSource.mock.calls[0]?.[0]?.where).toEqual({
+			network: Network.Preprod,
+			policyId: 'p'.repeat(56),
+			deletedAt: null,
+		});
 		expect(mockUpdateRegistryRequest.mock.calls[0]?.[0]?.data).toEqual({
 			state: RegistrationState.DeregistrationRequested,
 			deregistrationHotWalletId: 'recipient-wallet-id',
@@ -213,6 +228,36 @@ describe('unregisterAgentPost', () => {
 			walletAddress: 'addr_test1recipientwallet',
 		});
 		expect(responseMock._getJSONData().data.sendFundingLovelace).toBe('7500000');
+	});
+
+	it('falls back to the default source address when policy lookup misses', async () => {
+		mockFindPaymentSource.mockResolvedValueOnce(null);
+
+		const { responseMock } = await testEndpoint({
+			endpoint: unregisterAgentPost,
+			requestProps: {
+				method: 'POST',
+				headers: { token: 'valid' },
+				body: {
+					agentIdentifier: 'p'.repeat(56) + 'asset',
+					network: Network.Preprod,
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(200);
+		expect(mockFindPaymentSource.mock.calls[0]?.[0]?.where).toEqual({
+			network: Network.Preprod,
+			policyId: 'p'.repeat(56),
+			deletedAt: null,
+		});
+		expect(mockFindPaymentSource.mock.calls[1]?.[0]?.where).toEqual({
+			network_smartContractAddress: {
+				network: Network.Preprod,
+				smartContractAddress: 'addr_test1default',
+			},
+			deletedAt: null,
+		});
 	});
 
 	it('returns 409 when the asset is no longer held by a managed wallet', async () => {

@@ -9,6 +9,7 @@ export { PaymentSourceType };
 export {
 	SupportedPaymentSourceChain,
 	isCardanoAddressForNetwork,
+	isCardanoPubKeyBaseAddressForNetwork,
 	parseSupportedPaymentSourcesFromMetadata,
 	paymentSourceTypeSchema,
 	supportedPaymentSourceMetadataSchema,

@@ -229,9 +229,8 @@ export const createPurchaseInitSchemaInput = z
 		paymentSourceType: z
 			.nativeEnum(PaymentSourceType)
 			.optional()
-			.default(PaymentSourceType.Web3CardanoV1)
 			.describe(
-				'Payment source type for this purchase. Optional for legacy V1 callers; required when targeting a V2 source so the seller-signed payload can be reconstructed deterministically.',
+				'Optional payment source type hint for this purchase. When omitted, the type is inferred from the blockchainIdentifier shape.',
 			),
 		smartContractAddress: z
 			.string()

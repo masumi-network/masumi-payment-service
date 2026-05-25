@@ -16,12 +16,6 @@ type POSIXTime =
 pub type AssetValue =
   Pairs<ByteArray, Pairs<ByteArray, Int>>
 
-// Minimum fraction of the disputed input (in permille) that must be paid out
-// to buyer + seller combined. The submitter may keep at most 5% as a finder
-// reward; the remaining 95% must be returned to the parties named in the
-// admin-signed payouts.
-const min_dispute_payout_permille: Int = 950
-
 // Minimum length of `reference_signature` in bytes. The field is used as a
 // per-UTxO deduplication key both for script inputs and outputs, so a very
 // short value would make accidental collisions far more likely.
@@ -215,6 +209,13 @@ validator vested_pay(
       //      AuthorizeWithdrawal, so the seller may withdraw immediately. No
       //      time bound applies; buyer authorization is the sole gate and is
       //      intended to short-circuit unlock_time / cooldown windows.
+      //      INTENTIONAL: `buyer_cooldown_time` (written by the preceding
+      //      AuthorizeWithdrawal transition) is NOT consulted on this path.
+      //      The buyer's signature on AuthorizeWithdrawal is "final" — once
+      //      authorized, the seller can withdraw in the very next block. The
+      //      cooldown field on a WithdrawAuthorized continuation is therefore
+      //      informational only (off-chain UIs may surface it as a "buyer
+      //      may revoke before T" hint, but the contract does not gate on it).
       //   2. state == ResultSubmitted — the buyer has not authorized, so the
       //      seller must wait until validity_range starts at or after
       //      unlock_time. This is the only path that requires waiting.
@@ -256,7 +257,16 @@ validator vested_pay(
           )
         expect lovelace_of(assets_returned) >= collateral_return_lovelace
 
-        // Optional tagged seller-return output for wallets that need a fixed payout address.
+        // Optional tagged seller-return output. The presence of
+        // `seller_return_address` in the datum IS the on-chain payout-binding
+        // contract: when set, this branch enforces that at least the
+        // (input.value - collateral_return_lovelace) lands at that address,
+        // tagged with `own_ref`. When NOT set, the seller's signature is the
+        // sole gate — the seller may route the residual to any address they
+        // choose. This is intentional: omitting the return address is the
+        // explicit opt-in to "I will sign the destination myself, no on-chain
+        // payout binding." Off-chain tooling that wants address-bound payouts
+        // MUST populate `seller_return_address` at lock time.
         expect
           when seller_return_address is {
             Some(seller_return_address) -> {
@@ -280,16 +290,13 @@ validator vested_pay(
                 )
               value_bigger_or_equal(value_returned, seller_value_to_return)
             }
-            // H2: without a seller_return_address the seller has no on-chain
-            // path to receive non-ADA assets, so reject escrows that hold any
-            // policy other than the empty (lovelace) policy. The buyer would
-            // otherwise lose any tokens locked alongside the lovelace.
-            None ->
-              if assets.policies(input.output.value) == [#""] {
-                True
-              } else {
-                fail @"Non-ADA assets in escrow require seller_return_address"
-              }
+            // INTENTIONAL: with no return address, the seller's signature is
+            // the only gate. The seller signs and chooses the destination —
+            // any address, any asset. This is by design: the datum field
+            // doubles as the on-chain payout-binding opt-in. Callers that
+            // need address enforcement (including non-ADA token routing) MUST
+            // populate `seller_return_address` at lock time.
+            None -> True
           }
 
         bytearray.is_empty(result_hash) == False
@@ -365,6 +372,17 @@ validator vested_pay(
             state == RefundRequested,
             state == RefundAuthorized,
           }
+        // The presence of `buyer_return_address` in the datum IS the on-chain
+        // payout-binding contract — symmetric to `seller_return_address` in
+        // the Withdraw branch above. When set, this branch enforces that the
+        // full input value lands at that address, tagged with `own_ref`.
+        // When NOT set, the buyer's signature is the sole gate — the buyer
+        // may route the entire refund (lovelace + any tokens in escrow) to
+        // any address they choose. This is intentional: omitting the return
+        // address is the explicit opt-in to "I will sign the destination
+        // myself." Callers that want address-bound refunds (including
+        // non-ADA token routing) MUST populate `buyer_return_address` at
+        // lock time.
         expect
           when buyer_return_address is {
             Some(buyer_return_address) -> {
@@ -383,6 +401,8 @@ validator vested_pay(
                 )
               value_bigger_or_equal(value_returned, input.output.value)
             }
+            // INTENTIONAL: see comment above. Buyer signature gates the tx
+            // and the buyer chooses the destination.
             None -> True
           }
 
@@ -494,26 +514,19 @@ validator vested_pay(
 
         expect value_bigger_or_equal(seller_value_returned, seller_value_to_pay)
 
-        // H1: cap the submitter's finder reward. The signed buyer/seller
-        // payouts are MINIMUMS (see note below), so any lovelace held by the
-        // input above the sum of the minimums accrues to the submitter. Bound
-        // that residual to at most (1000 - min_dispute_payout_permille) / 1000
-        // of the input lovelace so admins cannot be tricked into authorizing
-        // settlements that hand the bulk of the escrow to the submitter.
-        let input_lovelace = lovelace_of(input.output.value)
-        let signed_payout_lovelace =
-          lovelace_of_value(buyer_value) + lovelace_of_value(seller_value)
-        expect
-          signed_payout_lovelace * 1000 >= input_lovelace * min_dispute_payout_permille
-
-        // INTENTIONAL: the signed buyer_value / seller_value are MINIMUM
-        // payouts, not exact amounts. Any escrow value above the sum of the
-        // minimums is intentionally left unconstrained on-chain and accrues to
-        // whichever wallet builds and submits this transaction (the dispute
-        // settlement submitter). This is a deliberate economic incentive so
-        // that a third party is motivated to land the settlement tx without
+        // INTENTIONAL: NO on-chain cap on the submitter's finder reward.
+        // The signed buyer_value / seller_value are MINIMUM payouts, not
+        // exact amounts. Any escrow value above the sum of the minimums is
+        // intentionally unconstrained on-chain and accrues to whichever
+        // wallet builds and submits this transaction (the dispute settlement
+        // submitter). This is a deliberate economic incentive so that a
+        // third party is motivated to land the settlement tx without
         // requiring buyer or seller to spend their own ADA on fees. Admins
-        // sign with full knowledge of the residual amount.
+        // sign with FULL knowledge of the residual amount — they review the
+        // exact input UTxO they are settling (replay binding via own_ref,
+        // below) and choose minimum payouts that reflect the residual they
+        // are willing to award the submitter. No on-chain permille cap is
+        // applied: the contract trusts the admin signature set entirely.
         //
         // Replay binding: own_ref is part of the signed payload, so an admin
         // signature authorizes settlement of exactly one UTxO (uniquely

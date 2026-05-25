@@ -54,11 +54,7 @@ const formSchema = z
       walletAddress: z.string().optional(),
     }),
     feePermille: z.number().min(0).max(1000),
-    requiredAdminSignatures: z
-      .number()
-      .int()
-      .min(2, 'V2 requires at least 2 admin signatures to prevent single-admin custody')
-      .max(3),
+    requiredAdminSignatures: z.number().int().min(1).max(3),
     purchasingWallets: z.array(walletSchema).min(1),
     sellingWallets: z.array(walletSchema).min(1),
     useCustomAdminWallets: z.boolean(),

@@ -111,33 +111,52 @@ export function checkPaymentAmountsMatch(
 // its share. The `share` param accepts a pre-computed slice (e.g.
 // `tx.fees / entries.length` for an even split). Single-redeemer V1 txs pass
 // `share = tx.fees` to preserve the original behavior.
-export function getCardanoFeesSeller(redeemerVersion: number, share: bigint) {
+//
+// Redeemer alts (identical across V1 and V2 — see
+// smart-contracts/payment/validators/vested_pay.ak and
+// smart-contracts/payment-v2/validators/vested_pay.ak):
+//   0 Withdraw            seller
+//   1 SetRefundRequested  buyer
+//   2 UnSetRefundRequested (V1, buyer) | AuthorizeWithdrawal (V2, seller)
+//   3 WithdrawRefund      buyer
+//   4 WithdrawDisputed    admin (admin wallet pays the on-chain fee)
+//   5 SubmitResult        seller
+//   6 AuthorizeRefund     seller
+export function getCardanoFeesSeller(redeemerVersion: number, share: bigint, paymentSourceType: PaymentSourceType) {
 	if (redeemerVersion == 0) {
 		//Withdraw
 		return share;
+	} else if (redeemerVersion == 2) {
+		//V2 only: AuthorizeWithdrawal is seller-initiated. V1 alt 2 is buyer's
+		//CancelRefund (booked in the buyer helper).
+		return paymentSourceType === PaymentSourceType.Web3CardanoV2 ? share : BigInt(0);
 	} else if (redeemerVersion == 5) {
 		//SubmitResult
 		return share;
 	} else if (redeemerVersion == 6) {
-		//AllowRefund
+		//AuthorizeRefund (seller cooperates with a disputed refund)
 		return share;
 	}
 	return BigInt(0);
 }
 
-export function getCardanoFeesBuyer(redeemerVersion: number, share: bigint) {
+export function getCardanoFeesBuyer(redeemerVersion: number, share: bigint, paymentSourceType: PaymentSourceType) {
 	if (redeemerVersion == 1) {
 		//RequestRefund
 		return share;
 	} else if (redeemerVersion == 2) {
-		//CancelRefundRequest
-		return share;
+		//V1 only: CancelRefundRequest is buyer-initiated. V2 alt 2 is seller's
+		//AuthorizeWithdrawal (booked in the seller helper).
+		return paymentSourceType === PaymentSourceType.Web3CardanoV2 ? BigInt(0) : share;
 	} else if (redeemerVersion == 3) {
 		//WithdrawRefund
 		return share;
-	} else if (redeemerVersion == 6) {
-		//WithdrawDisputed
-		return share;
+	} else if (redeemerVersion == 4) {
+		//WithdrawDisputed — admin-only redeemer. The admin wallet signs and
+		//pays the on-chain fee, so neither buyer nor seller is debited here.
+		//Disputed payouts to buyer and seller are derived from UTxO outputs by
+		//`calculateValueChange` in the DisputedWithdrawn branch downstream.
+		return BigInt(0);
 	}
 	return BigInt(0);
 }
@@ -161,17 +180,21 @@ export function redeemerToOnChainState(
 			return OnChainState.RefundRequested;
 		}
 	} else if (redeemerVersion == 2) {
+		//Alt 2 has different meaning per source type:
+		//  V2 → AuthorizeWithdrawal (seller): contract transitions to
+		//       WithdrawAuthorized. We discriminate on the new datum state.
+		//  V1 → UnSetRefundRequested / CancelRefund (buyer): contract reverts to
+		//       the pre-refund-request state (FundsLocked, ResultSubmitted, or
+		//       Disputed depending on whether a result was submitted).
 		if (decodedNewContract?.state == SmartContractState.WithdrawAuthorized) {
 			return OnChainState.WithdrawAuthorized;
 		}
-		//CancelRefundRequest / AuthorizeWithdrawal
 		if (decodedNewContract?.resultHash != null && decodedNewContract?.resultHash != '') {
 			return decodedNewContract.state == SmartContractState.Disputed
 				? OnChainState.Disputed
 				: OnChainState.ResultSubmitted;
 		} else {
 			//Ensure the amounts match, to prevent state change attacks
-
 			return valueMatches == true ? OnChainState.FundsLocked : OnChainState.FundsOrDatumInvalid;
 		}
 	} else if (redeemerVersion == 3) {
@@ -191,7 +214,7 @@ export function redeemerToOnChainState(
 			return OnChainState.ResultSubmitted;
 		}
 	} else if (redeemerVersion == 6) {
-		//AllowRefund / AuthorizeRefund
+		//AuthorizeRefund (seller action)
 		return decodedNewContract?.state == SmartContractState.RefundAuthorized
 			? OnChainState.RefundAuthorized
 			: OnChainState.RefundRequested;

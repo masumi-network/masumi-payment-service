@@ -10,7 +10,7 @@ import {
 } from '@/utils/generator/contract-generator';
 import { DEFAULTS } from '@masumi/payment-core/config';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
-import { extractAssetName } from '@/utils/converter/agent-identifier';
+import { extractAssetName, extractPolicyId } from '@/utils/converter/agent-identifier';
 import { registryRequestOutputSchema } from '@/routes/api/registry';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
@@ -37,27 +37,51 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 	output: unregisterAgentSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof unregisterAgentSchemaInput>; ctx: AuthContext }) => {
 		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
-		const smartContractAddress =
-			input.smartContractAddress ??
-			(input.network == Network.Mainnet
-				? DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_MAINNET
-				: DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_PREPROD);
-		const paymentSource = await prisma.paymentSource.findUnique({
-			where: {
-				network_smartContractAddress: {
-					network: input.network,
-					smartContractAddress: smartContractAddress,
-				},
-				deletedAt: null,
+		const requestedPolicyId = extractPolicyId(input.agentIdentifier);
+		const paymentSourceInclude = {
+			PaymentSourceConfig: { select: { rpcProviderApiKey: true } },
+			HotWallets: {
+				include: { Secret: { select: { encryptedMnemonic: true } } },
+				where: { deletedAt: null },
 			},
-			include: {
-				PaymentSourceConfig: { select: { rpcProviderApiKey: true } },
-				HotWallets: {
-					include: { Secret: { select: { encryptedMnemonic: true } } },
-					where: { deletedAt: null },
+		};
+		let paymentSource =
+			input.smartContractAddress != null
+				? await prisma.paymentSource.findUnique({
+						where: {
+							network_smartContractAddress: {
+								network: input.network,
+								smartContractAddress: input.smartContractAddress,
+							},
+							deletedAt: null,
+						},
+						include: paymentSourceInclude,
+					})
+				: await prisma.paymentSource.findFirst({
+						where: {
+							network: input.network,
+							policyId: requestedPolicyId,
+							deletedAt: null,
+						},
+						include: paymentSourceInclude,
+					});
+
+		if (paymentSource == null && input.smartContractAddress == null) {
+			const smartContractAddress =
+				input.network == Network.Mainnet
+					? DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_MAINNET
+					: DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_PREPROD;
+			paymentSource = await prisma.paymentSource.findUnique({
+				where: {
+					network_smartContractAddress: {
+						network: input.network,
+						smartContractAddress: smartContractAddress,
+					},
+					deletedAt: null,
 				},
-			},
-		});
+				include: paymentSourceInclude,
+			});
+		}
 		if (paymentSource == null) {
 			throw createHttpError(404, 'Network and Address combination not supported');
 		}

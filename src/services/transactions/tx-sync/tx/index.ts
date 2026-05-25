@@ -144,16 +144,12 @@ export async function updateRolledBackTransaction(rolledBackTx: Array<{ tx_hash:
 									id: pr.id,
 									nextActionId: pr.nextActionId,
 								})),
-								...(transaction.PaymentRequestHistory != null
-									? [
-											{
-												id: transaction.PaymentRequestHistory.id,
-												nextActionId: transaction.PaymentRequestHistory.nextActionId,
-											},
-										]
-									: []),
+								...transaction.PaymentRequestHistory.map((pr) => ({
+									id: pr.id,
+									nextActionId: pr.nextActionId,
+								})),
 							];
-							for (const pr of paymentRequestsToFlag) {
+							for (const pr of new Map(paymentRequestsToFlag.map((request) => [request.id, request])).values()) {
 								await innerTx.paymentRequest.update({
 									where: { id: pr.id },
 									data: {
@@ -182,16 +178,12 @@ export async function updateRolledBackTransaction(rolledBackTx: Array<{ tx_hash:
 									id: pr.id,
 									nextActionId: pr.nextActionId,
 								})),
-								...(transaction.PurchaseRequestHistory != null
-									? [
-											{
-												id: transaction.PurchaseRequestHistory.id,
-												nextActionId: transaction.PurchaseRequestHistory.nextActionId,
-											},
-										]
-									: []),
+								...transaction.PurchaseRequestHistory.map((pr) => ({
+									id: pr.id,
+									nextActionId: pr.nextActionId,
+								})),
 							];
-							for (const pr of purchaseRequestsToFlag) {
+							for (const pr of new Map(purchaseRequestsToFlag.map((request) => [request.id, request])).values()) {
 								await innerTx.purchaseRequest.update({
 									where: { id: pr.id },
 									data: {
@@ -234,25 +226,45 @@ export async function updateInitialTransactions(
 	tx: UpdateTransactionInput,
 	rpcProviderApiKey: string,
 ) {
+	// Pre-filter to valid initial outputs (datum present AND decodes against the
+	// payment-source adapter). V2 batch txs emit one continuation output per
+	// locked request, so a single tx can carry N valid outputs. Charging the
+	// full `tx.metadata.fees` to EACH output's buyer would N-times-over-credit
+	// the fee column. Pro-rate the total fee by the number of valid outputs;
+	// the first valid output absorbs any rounding remainder so the sum across
+	// outputs equals the full tx fee exactly. V1 (and non-batch V2) always has
+	// exactly one valid Initial output, so the share equals the full fee and
+	// behavior is unchanged.
+	const adapter = getPaymentSourceContractAdapter(paymentContract.paymentSourceType);
+	const datumNetwork = getDatumNetwork(paymentContract.network);
+	type ValidOutput = {
+		output: (typeof valueOutputs)[number];
+		decodedNewContract: NonNullable<ReturnType<typeof adapter.decodeContractDatum>>;
+	};
+	const validOutputs: ValidOutput[] = [];
 	for (const output of valueOutputs) {
 		const outputDatum = output.inline_datum;
-		if (outputDatum == null) {
-			//invalid transaction
-			continue;
-		}
+		if (outputDatum == null) continue;
 		const decodedOutputDatum: unknown = deserializeDatum(outputDatum);
-		const adapter = getPaymentSourceContractAdapter(paymentContract.paymentSourceType);
 		const decodedNewContract = adapter.decodeContractDatum(
 			decodedOutputDatum,
-			getDatumNetwork(paymentContract.network),
+			datumNetwork,
 			paymentContract.smartContractAddress,
 		);
-		if (decodedNewContract == null) {
-			//invalid transaction
-			continue;
-		}
+		if (decodedNewContract == null) continue;
+		validOutputs.push({ output, decodedNewContract });
+	}
 
-		const buyerCardanoFees = tx.metadata.fees;
+	if (validOutputs.length === 0) return;
+
+	const totalFees = tx.metadata.fees;
+	const validCount = BigInt(validOutputs.length);
+	const baseShare = totalFees / validCount;
+	const remainder = totalFees - baseShare * validCount;
+
+	for (let i = 0; i < validOutputs.length; i++) {
+		const { output, decodedNewContract } = validOutputs[i];
+		const buyerCardanoFees = baseShare + (i === 0 ? remainder : 0n);
 		const sellerCardanoFees = BigInt(0);
 
 		await updateInitialPurchaseTransaction(
@@ -1170,8 +1182,16 @@ export async function updateTransaction(
 		return;
 	}
 
-	const buyerCardanoFees = getCardanoFeesBuyer(entry.redeemerVersion, entry.feesShare);
-	const sellerCardanoFees = getCardanoFeesSeller(entry.redeemerVersion, entry.feesShare);
+	const buyerCardanoFees = getCardanoFeesBuyer(
+		entry.redeemerVersion,
+		entry.feesShare,
+		paymentContract.paymentSourceType,
+	);
+	const sellerCardanoFees = getCardanoFeesSeller(
+		entry.redeemerVersion,
+		entry.feesShare,
+		paymentContract.paymentSourceType,
+	);
 
 	const newState: OnChainState | null = redeemerToOnChainState(
 		entry.redeemerVersion,

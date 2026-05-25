@@ -24,6 +24,7 @@ import {
 } from './schemas';
 import { getPurchasesForQuery } from './queries';
 import { serializePurchasesResponse } from './serializers';
+import { isCardanoPubKeyBaseAddressForNetwork } from '@/types/payment-source';
 
 export {
 	createPurchaseInitSchemaInput,
@@ -190,56 +191,62 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 				});
 			}
 			const policyId = input.agentIdentifier.substring(0, 56);
-			const isV2 = input.paymentSourceType === PaymentSourceType.Web3CardanoV2;
 			const explicitSmartContractAddress =
 				input.smartContractAddress != null && input.smartContractAddress.length > 0 ? input.smartContractAddress : null;
 
-			// V2 validation block: narrow `v2SmartContractAddress` to a non-null string
-			// before the lookup so the prisma where clause doesn't need a bang. V1
-			// short-circuits with null since V1 uses policyId for lookup, not address.
-			let v2SmartContractAddress: string | null = null;
-			if (isV2) {
-				const decoded = decodeBlockchainIdentifier(input.blockchainIdentifier);
-				if (decoded == null) {
-					throw createHttpError(400, 'Invalid blockchain identifier, format invalid');
-				}
-				if (decoded.smartContractAddress == null) {
-					throw createHttpError(400, 'Invalid blockchain identifier, V2 must carry smartContractAddress');
-				}
-				if (explicitSmartContractAddress != null && explicitSmartContractAddress !== decoded.smartContractAddress) {
-					throw createHttpError(400, 'Invalid blockchain identifier, smartContractAddress mismatch');
-				}
-				v2SmartContractAddress = decoded.smartContractAddress;
+			const decodedBlockchainIdentifier = decodeBlockchainIdentifier(input.blockchainIdentifier);
+			if (decodedBlockchainIdentifier == null) {
+				throw createHttpError(400, 'Invalid blockchain identifier, format invalid');
+			}
+			const inferredPaymentSourceType =
+				decodedBlockchainIdentifier.smartContractAddress != null
+					? PaymentSourceType.Web3CardanoV2
+					: PaymentSourceType.Web3CardanoV1;
+			if (input.paymentSourceType != null && input.paymentSourceType !== inferredPaymentSourceType) {
+				throw createHttpError(400, 'Payment source type does not match the blockchain identifier');
 			}
 
-			const paymentSource =
-				isV2 && v2SmartContractAddress != null
-					? await prisma.paymentSource.findFirst({
-							where: {
-								network: input.network,
-								smartContractAddress: v2SmartContractAddress,
-								paymentSourceType: PaymentSourceType.Web3CardanoV2,
-								deletedAt: null,
+			const resolvedPaymentSourceType = input.paymentSourceType ?? inferredPaymentSourceType;
+			const isV2 = resolvedPaymentSourceType === PaymentSourceType.Web3CardanoV2;
+			const v2SmartContractAddress = decodedBlockchainIdentifier.smartContractAddress;
+
+			const paymentSource = await (async () => {
+				if (isV2) {
+					if (v2SmartContractAddress == null) {
+						throw createHttpError(400, 'Invalid blockchain identifier, V2 must carry smartContractAddress');
+					}
+					if (explicitSmartContractAddress != null && explicitSmartContractAddress !== v2SmartContractAddress) {
+						throw createHttpError(400, 'Invalid blockchain identifier, smartContractAddress mismatch');
+					}
+					return prisma.paymentSource.findFirst({
+						where: {
+							network: input.network,
+							smartContractAddress: v2SmartContractAddress,
+							paymentSourceType: PaymentSourceType.Web3CardanoV2,
+							deletedAt: null,
+						},
+						include: {
+							PaymentSourceConfig: {
+								select: { rpcProviderApiKey: true, rpcProvider: true },
 							},
-							include: {
-								PaymentSourceConfig: {
-									select: { rpcProviderApiKey: true, rpcProvider: true },
-								},
-							},
-						})
-					: await prisma.paymentSource.findFirst({
-							where: {
-								policyId: policyId,
-								network: input.network,
-								paymentSourceType: input.paymentSourceType,
-								deletedAt: null,
-							},
-							include: {
-								PaymentSourceConfig: {
-									select: { rpcProviderApiKey: true, rpcProvider: true },
-								},
-							},
-						});
+						},
+					});
+				}
+
+				return prisma.paymentSource.findFirst({
+					where: {
+						policyId: policyId,
+						network: input.network,
+						paymentSourceType: resolvedPaymentSourceType,
+						deletedAt: null,
+					},
+					include: {
+						PaymentSourceConfig: {
+							select: { rpcProviderApiKey: true, rpcProvider: true },
+						},
+					},
+				});
+			})();
 			const inputHash = input.inputHash;
 			if (validateHexString(inputHash) == false) {
 				recordBusinessEndpointError('/api/v1/purchase', 'POST', 400, 'Input hash is not a valid hex string', {
@@ -261,7 +268,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 					{
 						network: input.network,
 						policy_id: policyId,
-						smart_contract_address: isV2 ? (v2SmartContractAddress ?? '') : (input.smartContractAddress ?? ''),
+						smart_contract_address: isV2 ? (v2SmartContractAddress ?? '') : (explicitSmartContractAddress ?? ''),
 						agent_identifier: input.agentIdentifier,
 						step: 'payment_source_lookup',
 					},
@@ -273,7 +280,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 						: 'No payment source found for agent identifiers policy id',
 				);
 			}
-			if (paymentSource.paymentSourceType !== input.paymentSourceType) {
+			if (paymentSource.paymentSourceType !== resolvedPaymentSourceType) {
 				throw createHttpError(400, 'Payment source type does not match the agent identifier policy');
 			}
 
@@ -313,6 +320,17 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 				smartContractAddress: paymentSource.smartContractAddress,
 			});
 			const smartContractAddress = paymentSource.smartContractAddress;
+			if (isV2) {
+				if (
+					input.buyerReturnAddress != null &&
+					!isCardanoPubKeyBaseAddressForNetwork(input.buyerReturnAddress, input.network)
+				) {
+					throw createHttpError(400, 'buyerReturnAddress must be a Cardano base address with a stake credential');
+				}
+				if (sellerReturnAddress != null && !isCardanoPubKeyBaseAddressForNetwork(sellerReturnAddress, input.network)) {
+					throw createHttpError(400, 'sellerReturnAddress must be a Cardano base address with a stake credential');
+				}
+			}
 
 			const initialPurchaseRequest = await handlePurchaseCreditInit({
 				id: ctx.id,

@@ -597,10 +597,22 @@ export async function batchLatestPaymentEntriesV2() {
 								index++;
 								continue;
 							}
-							const originalPaidFundsArray = paymentRequest.PaidFunds.map((f) => ({ ...f }));
+							// Work on a clone of the Prisma-loaded PaidFunds array. The
+							// inner loop augments the lovelace amount with the derived
+							// `overestimatedMinUtxoCost` so downstream tx-build code sees
+							// the value the on-chain output will actually carry. Mutating
+							// `paymentRequest.PaidFunds` directly would persist that
+							// augmentation into the Prisma object — harmless on the happy
+							// path (we'd reassign anyway) but fragile if any future change
+							// reads `paymentRequest.PaidFunds` after a non-fulfilled try,
+							// or stores a reference to the row outside this loop. Cloning
+							// up front and reassigning on success keeps the original array
+							// untouched on the non-fulfilled branch with no explicit
+							// rollback step.
+							const workingPaidFunds = paymentRequest.PaidFunds.map((f) => ({ ...f }));
 							const sellerAddress = paymentRequest.SellerWallet.walletAddress;
 
-							const otherUnits = paymentRequest.PaidFunds.filter(
+							const otherUnits = workingPaidFunds.filter(
 								(amount) => amount.unit.toLowerCase() != '' && amount.unit.toLowerCase() != 'lovelace',
 							).length;
 
@@ -644,7 +656,7 @@ export async function batchLatestPaymentEntriesV2() {
 								}).minUtxoLovelace;
 
 							const paidLovelaceAtThisPoint =
-								paymentRequest.PaidFunds.find((amount) => amount.unit.toLowerCase() === '')?.amount ?? 0n;
+								workingPaidFunds.find((amount) => amount.unit.toLowerCase() === '')?.amount ?? 0n;
 
 							// Pass 1: estimate min-UTxO assuming no collateral return.
 							let overestimatedMinUtxoCost = computeMinUtxoFor(0n);
@@ -663,11 +675,11 @@ export async function batchLatestPaymentEntriesV2() {
 							}
 
 							//set min ada required;
-							const lovelaceRequired = paymentRequest.PaidFunds.findIndex((amount) => amount.unit.toLowerCase() === '');
+							const lovelaceRequired = workingPaidFunds.findIndex((amount) => amount.unit.toLowerCase() === '');
 							let overpaidLovelace = 0n;
 							if (lovelaceRequired == -1) {
 								overpaidLovelace = overestimatedMinUtxoCost;
-								paymentRequest.PaidFunds.push({
+								workingPaidFunds.push({
 									unit: '',
 									amount: overestimatedMinUtxoCost,
 									id: '',
@@ -682,8 +694,8 @@ export async function batchLatestPaymentEntriesV2() {
 									buyerWithdrawnPurchaseRequestId: null,
 									sellerWithdrawnPurchaseRequestId: null,
 								});
-							} else if (paymentRequest.PaidFunds[lovelaceRequired].amount < overestimatedMinUtxoCost) {
-								overpaidLovelace = overestimatedMinUtxoCost - paymentRequest.PaidFunds[lovelaceRequired].amount;
+							} else if (workingPaidFunds[lovelaceRequired].amount < overestimatedMinUtxoCost) {
+								overpaidLovelace = overestimatedMinUtxoCost - workingPaidFunds[lovelaceRequired].amount;
 								if (overpaidLovelace < 0n) {
 									overpaidLovelace = 0n;
 								}
@@ -698,8 +710,8 @@ export async function batchLatestPaymentEntriesV2() {
 									overpaidLovelace = CONSTANTS.MIN_COLLATERAL_LOVELACE;
 								}
 
-								paymentRequest.PaidFunds.splice(lovelaceRequired, 1);
-								paymentRequest.PaidFunds.push({
+								workingPaidFunds.splice(lovelaceRequired, 1);
+								workingPaidFunds.push({
 									unit: '',
 									amount: overestimatedMinUtxoCost,
 									id: '',
@@ -717,7 +729,7 @@ export async function batchLatestPaymentEntriesV2() {
 							}
 							let isFulfilled = true;
 							const needsFeeBuffer = batchedPaymentRequests.length === 0;
-							for (const paymentAmount of paymentRequest.PaidFunds) {
+							for (const paymentAmount of workingPaidFunds) {
 								const walletAmount = amounts.find((amount) => amount.unit == paymentAmount.unit);
 								const isLovelace = paymentAmount.unit === '' || paymentAmount.unit.toLowerCase() === 'lovelace';
 								const requiredAmount =
@@ -731,12 +743,20 @@ export async function batchLatestPaymentEntriesV2() {
 							}
 							if (isFulfilled) {
 								const wasFirstRequest = batchedPaymentRequests.length === 0;
+								// Adopt the augmented array on the Prisma object so
+								// downstream tx-build code (in `executeSpecificBatchPayment`)
+								// reads the lovelace value the lock output will carry.
+								// Replacing the reference (rather than mutating the original
+								// array in-place) keeps the original array object pristine,
+								// so any retry / parallel iteration that re-fetches the row
+								// from Prisma starts from a clean slate.
+								paymentRequest.PaidFunds = workingPaidFunds;
 								batchedPaymentRequests.push({
 									paymentRequest,
 									overpaidLovelace,
 								});
 								//deduct amounts from wallet
-								for (const paymentAmount of paymentRequest.PaidFunds) {
+								for (const paymentAmount of workingPaidFunds) {
 									const walletAmount = amounts.find((amount) => amount.unit == paymentAmount.unit);
 									const isLovelace = paymentAmount.unit === '' || paymentAmount.unit.toLowerCase() === 'lovelace';
 									const deductAmount =
@@ -747,8 +767,8 @@ export async function batchLatestPaymentEntriesV2() {
 								}
 								paymentRequestsRemaining.splice(index, 1);
 							} else {
-								paymentRequest.PaidFunds.length = 0;
-								paymentRequest.PaidFunds.push(...originalPaidFundsArray);
+								// Nothing to roll back — workingPaidFunds is local; the
+								// Prisma object's PaidFunds array was never touched.
 								index++;
 							}
 						}

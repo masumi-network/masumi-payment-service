@@ -61,6 +61,32 @@ function validateDeregistrationRequest(request: { agentIdentifier: string | null
 	}
 }
 
+/**
+ * Terminate a deregister attempt: stamp the failure reason on the request and
+ * release the wallet lock so a fresh attempt (or a manual operator action) can
+ * proceed.
+ *
+ * The two writes are intentionally NOT wrapped in a `prisma.$transaction`:
+ *
+ *  - "Partial failure" here means the first update (request → DeregistrationFailed)
+ *    succeeds but the second update (hotWallet.lockedAt = null) throws — e.g.
+ *    a Prisma connection drop or a serialization conflict on the wallet row.
+ *    The DB ends up with the request marked failed while the wallet stays
+ *    locked. Wrapping in a `$transaction` would roll BOTH back on partial
+ *    failure, leaving the request in its original `DeregistrationRequested`
+ *    state and inviting the worker to retry indefinitely against an error it
+ *    just classified as terminal.
+ *
+ *  - The current shape prefers the "request failure stamped, wallet maybe
+ *    still locked" outcome because the wallet is recoverable by the
+ *    `wallet-timeouts` service: it sweeps wallets whose `lockedAt < threshold`
+ *    AND have no in-flight `PendingTransaction`, and clears the lock. The
+ *    operational consequence of partial failure is therefore a delayed
+ *    unlock (one wallet-timeouts tick), not stuck state.
+ *
+ * If both writes succeed (the happy path), the wallet unlocks immediately and
+ * the worker picks up the next request on the next scheduler tick.
+ */
 async function markRequestFailed(request: RegistryRequestRecord, error: unknown): Promise<void> {
 	const walletToUnlock = request.DeregistrationHotWallet ?? request.SmartContractWallet;
 	logger.error(`Error deregistering V2 agent ${request.id}`, { error });

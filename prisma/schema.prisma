@@ -138,8 +138,6 @@ model Transaction {
   assetMintOrBurnCount          Int?
   redeemerCount                 Int?
   validContract                 Boolean?
-  paymentRequestHistoryId       String?
-  purchaseRequestHistoryId      String?
   previousOnChainState          OnChainState?
   newOnChainState               OnChainState?
   BlocksWallet                  HotWallet?
@@ -149,8 +147,10 @@ model Transaction {
   PurchaseRequestCurrent        PurchaseRequest[]               @relation("CurrentPurchaseTransaction")
   RegistryRequest               RegistryRequest[]
   InboxAgentRegistrationRequest InboxAgentRegistrationRequest[]
-  PaymentRequestHistory         PaymentRequest?                 @relation("PaymentTransactionHistory", fields: [paymentRequestHistoryId], references: [id])
-  PurchaseRequestHistory        PurchaseRequest?                @relation("PurchaseTransactionHistory", fields: [purchaseRequestHistoryId], references: [id])
+  // History is many-to-many because a V2 batch can move one shared Transaction
+  // row through multiple request histories after it leaves CurrentTransaction.
+  PaymentRequestHistory         PaymentRequest[]                @relation("PaymentTransactionHistory")
+  PurchaseRequestHistory        PurchaseRequest[]               @relation("PurchaseTransactionHistory")
 }
 
 model SwapTransaction {
@@ -502,6 +502,9 @@ model PaymentSource {
   cooldownTime                   Int
   paymentSourceConfigId          String                          @unique
   deletedAt                      DateTime?
+  /// Registry policy id. Active rows must be unique per network; soft-deleted
+  /// rows may keep duplicate historical values. Enforced by the partial unique
+  /// index in migration 20260525000000_restore_active_policy_id_uniqueness.
   policyId                       String?
   disablePaymentAt               DateTime?
   disableSyncAt                  DateTime?
@@ -518,6 +521,8 @@ model PaymentSource {
   WebhookEndpoints               WebhookEndpoint[]
 
   @@unique([network, smartContractAddress])
+  // Prisma cannot represent the active-only unique policyId index, so this
+  // remains as the regular lookup index while the migration enforces uniqueness.
   @@index([network, policyId])
   @@index([paymentSourceType, deletedAt])
 }

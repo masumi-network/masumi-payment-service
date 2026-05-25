@@ -34,6 +34,7 @@ import {
 } from './schemas';
 import { getPaymentsForQuery } from './queries';
 import { serializePaymentsResponse } from './serializers';
+import { isCardanoPubKeyBaseAddressForNetwork } from '@/types/payment-source';
 
 export {
 	createPaymentSchemaOutput,
@@ -222,6 +223,13 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 		assertHotWalletInScope(ctx.walletScopeIds, sellingWallet.id);
 		const sellerReturnAddress = input.sellerReturnAddress ?? sellingWallet.collectionAddress;
 		const isV2 = specifiedPaymentContract.paymentSourceType === PaymentSourceType.Web3CardanoV2;
+		if (
+			isV2 &&
+			sellerReturnAddress != null &&
+			!isCardanoPubKeyBaseAddressForNetwork(sellerReturnAddress, input.network)
+		) {
+			throw createHttpError(400, 'sellerReturnAddress must be a Cardano base address with a stake credential');
+		}
 		const sellerCUID = createId();
 		const sellerId = generateSHA256Hash(sellerCUID) + input.agentIdentifier;
 		const blockchainIdentifier = buildSignedBlockchainIdentifierPayload({
