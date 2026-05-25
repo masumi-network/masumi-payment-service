@@ -127,10 +127,20 @@ async function fetchAllRegistryEntries(args: {
 
     const page = response?.data?.data?.Assets ?? [];
     if (page.length === 0) break;
-    entries = appendInclusiveCursorPage(entries, page, (a) => a.id);
+    const beforeLen = entries.length;
+    // Backend `filterStatus: 'Registered'` is inclusive of `DeregistrationFailed`
+    // (see src/routes/api/registry/queries.ts) — exclude those here to avoid
+    // re-attempting bad deregisters during V2 migration and to keep the list
+    // limited to V1 entries that are actually safe to re-register.
+    const filteredPage = page.filter((entry) => entry.state !== 'DeregistrationFailed');
+    entries = appendInclusiveCursorPage(entries, filteredPage, (a) => a.id);
     if (page.length < REGISTRY_FETCH_LIMIT) break;
     const last = page[page.length - 1];
     if (!last?.id || last.id === cursor) break;
+    // If a full page was entirely duplicates (or entirely filtered out) the
+    // cursor would advance to the same id we already used next iteration, so
+    // bail out instead of looping forever on the same cursor.
+    if (entries.length === beforeLen) break;
     cursor = last.id;
   }
 
@@ -245,6 +255,11 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
       const result = await fetchWalletBalance(apiClient, network, targetAddress);
       if (balanceFetchEpochRef.current !== epoch) return;
       setWalletBalance(parseInt(result.ada || '0', 10) || 0);
+    } catch (err) {
+      // Swallow the error so the spinner clears (finally below) — surfacing a
+      // toast on every transient balance-fetch failure would be noisy, but we
+      // still want a trace for debugging.
+      console.error('[MigrateAgentsDialog] fetchWalletBalance failed', err);
     } finally {
       if (balanceFetchEpochRef.current === epoch) {
         setIsLoadingBalance(false);
@@ -275,6 +290,22 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
   const [deregisterAfter, setDeregisterAfter] = useState(false);
   const [isDone, setIsDone] = useState(false);
 
+  // Tracks whether the component is still mounted so the long-running
+  // `runMigration` loop can bail out before calling state setters after unmount.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  // Defer invalidation of the dialog's own V1 list until the user dismisses
+  // the success screen — otherwise the just-migrated rows disappear while the
+  // user is still reading the results. Tracked as a ref so we don't need to
+  // re-render when toggled.
+  const hasPendingV1ListInvalidationRef = useRef(false);
+
   useEffect(() => {
     if (open) {
       setResults({});
@@ -282,6 +313,14 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
       setIsMigrating(false);
     }
   }, [open]);
+
+  const handleClose = useCallback(() => {
+    if (hasPendingV1ListInvalidationRef.current) {
+      hasPendingV1ListInvalidationRef.current = false;
+      queryClient.invalidateQueries({ queryKey: ['migrate-v1-agents'] });
+    }
+    onClose();
+  }, [onClose, queryClient]);
 
   const toggleAgent = (id: string) => {
     setSelectedAgentIds((prev) => {
@@ -390,6 +429,7 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
 
     const idsToProcess = new Set(selectedAgentIds);
     for (const agent of v1Agents) {
+      if (!mountedRef.current) return;
       if (!idsToProcess.has(agent.id)) continue;
 
       setResults((prev) => ({
@@ -435,6 +475,7 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
           }
         }
 
+        if (!mountedRef.current) return;
         setResults((prev) => ({
           ...prev,
           [agent.id]: {
@@ -445,6 +486,7 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
         }));
         successCount += 1;
       } catch (err) {
+        if (!mountedRef.current) return;
         setResults((prev) => ({
           ...prev,
           [agent.id]: {
@@ -456,6 +498,7 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
       }
     }
 
+    if (!mountedRef.current) return;
     setIsMigrating(false);
     setIsDone(true);
 
@@ -465,11 +508,13 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
           ? '1 agent re-registered on V2'
           : `${successCount} agents re-registered on V2`,
       );
+      // Invalidate non-dialog queries immediately so the parent page reflects
+      // the new V2 agents. Defer the dialog's own V1 list invalidation until
+      // `handleClose` so the just-migrated rows stay visible on the success
+      // screen — otherwise they vanish while the user is still reading results.
       queryClient.invalidateQueries({ queryKey: ['agents'] });
       queryClient.invalidateQueries({ queryKey: ['payment-sources-all'] });
-      // Invalidate the dialog's own V1 list so deregistered entries disappear
-      // and the user can re-open without seeing stale rows.
-      queryClient.invalidateQueries({ queryKey: ['migrate-v1-agents'] });
+      hasPendingV1ListInvalidationRef.current = true;
       onSuccess?.();
     }
 
@@ -510,7 +555,7 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
 
   return (
     <>
-      <Dialog open={open} onOpenChange={(o) => !o && !isMigrating && onClose()}>
+      <Dialog open={open} onOpenChange={(o) => !o && !isMigrating && handleClose()}>
         <DialogContent className="sm:max-w-[700px] overflow-y-auto max-h-[90vh]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -797,7 +842,7 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
           <DialogFooter className="gap-2 sm:gap-0">
             {!isDone ? (
               <>
-                <Button variant="outline" onClick={onClose} disabled={isMigrating}>
+                <Button variant="outline" onClick={handleClose} disabled={isMigrating}>
                   Cancel
                 </Button>
                 <Button
@@ -825,7 +870,7 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
                 </Button>
               </>
             ) : (
-              <Button onClick={onClose} className="gap-2">
+              <Button onClick={handleClose} className="gap-2">
                 Done
               </Button>
             )}

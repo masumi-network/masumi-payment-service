@@ -47,6 +47,12 @@ describe('classifyWalletState', () => {
 			hasGoodCollateral: true,
 			utxoCount: 2,
 			totalLovelace: 9_000_000n,
+			pureLovelaceTotal: 9_000_000n,
+			hasPureAdaUtxo: true,
+			utxoAssetSummaries: [
+				{ txHash: 'tx-hash-placeholder', outputIndex: 0, lovelace: '6000000', assetUnits: [] },
+				{ txHash: 'tx-hash-placeholder', outputIndex: 1, lovelace: '3000000', assetUnits: [] },
+			],
 			ready: true,
 			fundedForPrep: true,
 		});
@@ -57,6 +63,7 @@ describe('classifyWalletState', () => {
 		expect(result.hasGoodCollateral).toBe(true);
 		expect(result.utxoCount).toBe(1);
 		expect(result.totalLovelace).toBe(6_000_000n);
+		expect(result.pureLovelaceTotal).toBe(6_000_000n);
 		expect(result.ready).toBe(false);
 		// 6 ADA is below the 7 ADA prep budget — caller cannot self-fund a prep tx.
 		expect(result.fundedForPrep).toBe(false);
@@ -67,14 +74,15 @@ describe('classifyWalletState', () => {
 		expect(result.hasGoodCollateral).toBe(true);
 		expect(result.utxoCount).toBe(1);
 		expect(result.totalLovelace).toBe(8_000_000n);
+		expect(result.pureLovelaceTotal).toBe(8_000_000n);
 		// utxoCount == 1 disqualifies (no second input available for the fee
 		// alongside the collateral input).
 		expect(result.ready).toBe(false);
-		// But >= 7 ADA → prep tx can be built.
+		// But >= 7 ADA pure-ADA → prep tx can be built.
 		expect(result.fundedForPrep).toBe(true);
 	});
 
-	it('refuses ready when both UTxOs carry tokens (no pure-ADA collateral candidate)', () => {
+	it('refuses ready AND fundedForPrep when both UTxOs carry tokens (no pure-ADA pool for prep)', () => {
 		const result = classifyWalletState([
 			makeUtxo({ amount: [lovelace('6000000'), token('100')] }),
 			makeUtxo({ outputIndex: 1, amount: [lovelace('3000000'), token('50')] }),
@@ -82,8 +90,13 @@ describe('classifyWalletState', () => {
 		expect(result.hasGoodCollateral).toBe(false);
 		expect(result.utxoCount).toBe(2);
 		expect(result.totalLovelace).toBe(9_000_000n);
+		// All lovelace is trapped in token-bearing UTxOs — mesh's prep-tx
+		// `sendAssets` cannot peel pure ADA off them, so fundedForPrep is false
+		// even though totalLovelace clears the 7 ADA threshold.
+		expect(result.pureLovelaceTotal).toBe(0n);
+		expect(result.hasPureAdaUtxo).toBe(false);
 		expect(result.ready).toBe(false);
-		expect(result.fundedForPrep).toBe(true);
+		expect(result.fundedForPrep).toBe(false);
 	});
 
 	it('refuses ready when two pure UTxOs each fall below the 5 ADA collateral threshold', () => {
@@ -94,6 +107,7 @@ describe('classifyWalletState', () => {
 		expect(result.hasGoodCollateral).toBe(false);
 		expect(result.utxoCount).toBe(2);
 		expect(result.totalLovelace).toBe(7_000_000n);
+		expect(result.pureLovelaceTotal).toBe(7_000_000n);
 		expect(result.ready).toBe(false);
 		expect(result.fundedForPrep).toBe(true);
 	});
@@ -104,6 +118,9 @@ describe('classifyWalletState', () => {
 			hasGoodCollateral: false,
 			utxoCount: 0,
 			totalLovelace: 0n,
+			pureLovelaceTotal: 0n,
+			hasPureAdaUtxo: false,
+			utxoAssetSummaries: [],
 			ready: false,
 			fundedForPrep: false,
 		});
@@ -114,8 +131,22 @@ describe('classifyWalletState', () => {
 		expect(result.hasGoodCollateral).toBe(false);
 		expect(result.utxoCount).toBe(1);
 		expect(result.totalLovelace).toBe(0n);
+		expect(result.pureLovelaceTotal).toBe(0n);
 		expect(result.ready).toBe(false);
 		expect(result.fundedForPrep).toBe(false);
+	});
+
+	it('reports per-UTxO asset summaries with token units listed for token-bearing UTxOs', () => {
+		const result = classifyWalletState([
+			makeUtxo({ amount: [lovelace('5000000'), token('100')] }),
+			makeUtxo({ outputIndex: 1, amount: [lovelace('3000000')] }),
+		]);
+		expect(result.utxoAssetSummaries).toEqual([
+			{ txHash: 'tx-hash-placeholder', outputIndex: 0, lovelace: '5000000', assetUnits: [TOKEN_UNIT] },
+			{ txHash: 'tx-hash-placeholder', outputIndex: 1, lovelace: '3000000', assetUnits: [] },
+		]);
+		// Only the second (pure) UTxO contributes to pureLovelaceTotal.
+		expect(result.pureLovelaceTotal).toBe(3_000_000n);
 	});
 
 	it('uses the same threshold constants exported from the module', () => {

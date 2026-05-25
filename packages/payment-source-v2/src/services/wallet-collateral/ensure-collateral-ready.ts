@@ -32,6 +32,7 @@ export const PREP_TX_MIN_LOVELACE = 7_000_000n;
 export type EnsureCollateralReadyResult =
 	| { status: 'ready' }
 	| { status: 'deferred'; prepTxHash: string }
+	| { status: 'needs_funding_no_pure_ada_utxos'; details: string }
 	| { status: 'failed'; reason: 'insufficient_funds' | 'prep_tx_failed'; details: string };
 
 export type EnsureCollateralReadyParams = {
@@ -49,6 +50,23 @@ export type WalletStateClassification = {
 	hasGoodCollateral: boolean;
 	utxoCount: number;
 	totalLovelace: bigint;
+	/** Sum of lovelace across UTxOs that hold ONLY lovelace (no other tokens).
+	 *  Mesh's `sendAssets` for the prep tx cannot peel pure ADA off a
+	 *  token-bearing UTxO without explicitly handling the bundled assets, so
+	 *  this is the lovelace pool actually available to fund the prep tx. */
+	pureLovelaceTotal: bigint;
+	/** True when at least one UTxO in the wallet holds nothing but lovelace.
+	 *  Mirrors the per-UTxO purity test used by `pureLovelaceTotal`. */
+	hasPureAdaUtxo: boolean;
+	/** Per-UTxO asset summaries, surfaced so the caller's ERROR log can
+	 *  point an operator at exactly which UTxOs carry tokens vs pure ADA
+	 *  without re-walking the UTxO list. */
+	utxoAssetSummaries: Array<{
+		txHash: string;
+		outputIndex: number;
+		lovelace: string;
+		assetUnits: string[];
+	}>;
 	ready: boolean;
 	fundedForPrep: boolean;
 };
@@ -68,37 +86,75 @@ export type WalletStateClassification = {
  *   - `totalLovelace` — sum of `lovelace` across every UTxO, used to gate
  *     the prep-tx build (insufficient funds bail-out).
  *   - `ready` — composite gate: `hasGoodCollateral && utxoCount >= 2`.
- *   - `fundedForPrep` — `totalLovelace >= PREP_TX_MIN_LOVELACE`. Even when
- *     `ready` is false, the wallet might be so underfunded that we cannot
- *     even build the self-send prep tx — in that case the caller surfaces
- *     a hard failure rather than queueing a doomed submit.
+ *   - `fundedForPrep` — `pureLovelaceTotal >= PREP_TX_MIN_LOVELACE`. Pure-ADA
+ *     only because mesh's `sendAssets` in the prep-tx builder cannot peel 5
+ *     ADA off a token-bearing UTxO without explicitly handling the bundled
+ *     tokens; counting trapped-in-tokens lovelace here would lead the caller
+ *     to submit a doomed prep tx that fails at build time.
+ *   - `pureLovelaceTotal` — sum of `lovelace` across pure-ADA-only UTxOs.
+ *   - `hasPureAdaUtxo` — true when at least one UTxO is pure ADA.
+ *   - `utxoAssetSummaries` — per-UTxO asset summary surfaced so the caller
+ *     can log exactly which UTxOs carry tokens vs pure ADA without re-walking
+ *     the UTxO list.
  */
 export function classifyWalletState(utxos: UTxO[]): WalletStateClassification {
 	let totalLovelace = 0n;
+	let pureLovelaceTotal = 0n;
 	let hasGoodCollateral = false;
+	let hasPureAdaUtxo = false;
+	const utxoAssetSummaries: WalletStateClassification['utxoAssetSummaries'] = [];
 
 	for (const utxo of utxos) {
 		const amounts = utxo.output.amount;
 		let lovelaceForThisUtxo = 0n;
 		let isPureAda = true;
+		const assetUnits: string[] = [];
 		for (const asset of amounts) {
 			if (asset.unit === 'lovelace' || asset.unit === '') {
 				lovelaceForThisUtxo += BigInt(asset.quantity);
 			} else {
 				isPureAda = false;
+				assetUnits.push(asset.unit);
 			}
 		}
 		totalLovelace += lovelaceForThisUtxo;
+		if (isPureAda) {
+			pureLovelaceTotal += lovelaceForThisUtxo;
+			hasPureAdaUtxo = true;
+		}
 		if (isPureAda && lovelaceForThisUtxo >= COLLATERAL_RESERVE_LOVELACE) {
 			hasGoodCollateral = true;
 		}
+		utxoAssetSummaries.push({
+			txHash: utxo.input.txHash,
+			outputIndex: utxo.input.outputIndex,
+			lovelace: lovelaceForThisUtxo.toString(),
+			assetUnits,
+		});
 	}
 
 	const utxoCount = utxos.length;
 	const ready = hasGoodCollateral && utxoCount >= 2;
-	const fundedForPrep = totalLovelace >= PREP_TX_MIN_LOVELACE;
+	// `fundedForPrep` must measure PURE-ADA lovelace only. Mesh's
+	// `sendAssets({...}, [{ unit: 'lovelace', quantity: 5_000_000 }])`
+	// in the prep-tx builder cannot peel 5 ADA out of a token-bearing UTxO
+	// without explicitly handling the bundled tokens; a wallet whose entire
+	// balance lives in token-bearing UTxOs would otherwise pass the funding
+	// gate, then fail the build with a confusing UTxO-selection error.
+	// `pureLovelaceTotal` already excludes token-bearing UTxOs, so this gate
+	// is now a true predicate for "can we build the prep tx".
+	const fundedForPrep = pureLovelaceTotal >= PREP_TX_MIN_LOVELACE;
 
-	return { hasGoodCollateral, utxoCount, totalLovelace, ready, fundedForPrep };
+	return {
+		hasGoodCollateral,
+		utxoCount,
+		totalLovelace,
+		pureLovelaceTotal,
+		hasPureAdaUtxo,
+		utxoAssetSummaries,
+		ready,
+		fundedForPrep,
+	};
 }
 
 /**
@@ -107,18 +163,31 @@ export function classifyWalletState(utxos: UTxO[]): WalletStateClassification {
  * fee input.
  *
  * Outcomes:
- *   - 'ready'           — wallet meets the invariant; caller proceeds.
- *   - 'deferred'        — wallet had enough funds but only one UTxO (or
- *                         no good collateral). We submitted a self-send
- *                         prep tx; caller MUST return without consuming
- *                         the lock. wallet-timeouts (or tx-sync once it
- *                         observes the prep txHash) will clear the lock
- *                         once the prep tx confirms.
- *   - 'failed'          — either the wallet is too underfunded to even
- *                         build a prep tx, or the prep tx itself failed
- *                         to submit. Caller treats this as a transient
- *                         operational error: leave items queued and let
- *                         the next tick re-evaluate.
+ *   - 'ready'                          — wallet meets the invariant;
+ *                                        caller proceeds.
+ *   - 'deferred'                       — wallet had enough pure-ADA funds
+ *                                        but only one UTxO (or no good
+ *                                        collateral). We submitted a self-send
+ *                                        prep tx; caller MUST return without
+ *                                        consuming the lock. wallet-timeouts
+ *                                        (or tx-sync once it observes the
+ *                                        prep txHash) will clear the lock
+ *                                        once the prep tx confirms.
+ *   - 'needs_funding_no_pure_ada_utxos' — wallet has enough TOTAL lovelace
+ *                                        but it is trapped in token-bearing
+ *                                        UTxOs; we did NOT submit a prep tx
+ *                                        (mesh `sendAssets` cannot peel pure
+ *                                        ADA off a token-bearing UTxO).
+ *                                        Wallet lock is released so the next
+ *                                        cycle re-evaluates once the operator
+ *                                        externally splits a pure-ADA UTxO.
+ *   - 'failed'                         — either the wallet is too underfunded
+ *                                        in pure-ADA to even build a prep tx,
+ *                                        or the prep tx itself failed to
+ *                                        submit. Caller treats this as a
+ *                                        transient operational error: leave
+ *                                        items queued and let the next tick
+ *                                        re-evaluate.
  *
  * The prep tx is wired into the same DB-locking pattern as a real script
  * action: a shared Transaction row carrying BlocksWallet → wallet. That
@@ -136,6 +205,44 @@ export async function ensureCollateralReady(params: EnsureCollateralReadyParams)
 		return { status: 'ready' };
 	}
 
+	// Distinguish "no money at all" (totalLovelace < threshold → genuine
+	// insufficient_funds) from "money exists but is trapped inside
+	// token-bearing UTxOs" (pureLovelaceTotal < threshold but totalLovelace
+	// >= threshold). The latter is recoverable — the operator can split a
+	// pure-ADA UTxO off the token-bearing one externally — and we MUST NOT
+	// submit a prep tx in that state because mesh's `sendAssets` for the
+	// prep tx cannot peel pure ADA off a token-bearing UTxO without
+	// explicitly handling the bundled tokens, which the prep builder does
+	// not do. Surface it as its own status so the caller can defer (release
+	// the wallet lock + wait for next cycle) instead of either burning gas
+	// on a doomed prep tx or terminating good requests as insufficient.
+	if (!classification.fundedForPrep && classification.totalLovelace >= PREP_TX_MIN_LOVELACE) {
+		const details = `wallet cannot prep collateral: insufficient pure-ADA UTxOs (walletAddress=${walletAddress}, totalLovelace=${classification.totalLovelace.toString()}, pureLovelaceTotal=${classification.pureLovelaceTotal.toString()}, utxoAssets=${JSON.stringify(classification.utxoAssetSummaries)})`;
+		logger.error(
+			'V2 wallet cannot prep collateral: insufficient pure-ADA UTxOs, awaiting external split [collateral-prep]',
+			{
+				walletDbId,
+				walletAddress,
+				serviceLabel,
+				utxoCount: classification.utxoCount,
+				totalLovelace: classification.totalLovelace.toString(),
+				pureLovelaceTotal: classification.pureLovelaceTotal.toString(),
+				minRequiredLovelace: PREP_TX_MIN_LOVELACE.toString(),
+				utxoAssetSummaries: classification.utxoAssetSummaries,
+				note: 'wallet has enough total lovelace but it is trapped in token-bearing UTxOs; operator must split a pure-ADA UTxO before the next scheduler tick',
+			},
+		);
+		// Same unlock rationale as the insufficient_funds branch below: we did
+		// NOT submit a prep tx so wallet-timeouts will never sweep this wallet.
+		// Clearing lockedAt lets the next scheduler tick re-evaluate once the
+		// operator splits a pure-ADA UTxO out of the token-bearing one.
+		await unlockWalletLock(walletDbId, serviceLabel);
+		return {
+			status: 'needs_funding_no_pure_ada_utxos',
+			details,
+		};
+	}
+
 	if (!classification.fundedForPrep) {
 		// WARN, not ERROR: every scheduler tick that picks this wallet up
 		// re-runs the helper, so an underfunded wallet would otherwise spam
@@ -151,6 +258,7 @@ export async function ensureCollateralReady(params: EnsureCollateralReadyParams)
 			serviceLabel,
 			utxoCount: classification.utxoCount,
 			totalLovelace: classification.totalLovelace.toString(),
+			pureLovelaceTotal: classification.pureLovelaceTotal.toString(),
 			minRequiredLovelace: PREP_TX_MIN_LOVELACE.toString(),
 			note: 'underfunded — operator must fund wallet; this log repeats every scheduler tick until resolved',
 		});
@@ -165,7 +273,7 @@ export async function ensureCollateralReady(params: EnsureCollateralReadyParams)
 		return {
 			status: 'failed',
 			reason: 'insufficient_funds',
-			details: `wallet has ${classification.totalLovelace.toString()} lovelace across ${classification.utxoCount} UTxO(s); need at least ${PREP_TX_MIN_LOVELACE.toString()} to build collateral prep tx`,
+			details: `wallet has ${classification.totalLovelace.toString()} lovelace (pure-ADA ${classification.pureLovelaceTotal.toString()}) across ${classification.utxoCount} UTxO(s); need at least ${PREP_TX_MIN_LOVELACE.toString()} pure-ADA to build collateral prep tx`,
 		};
 	}
 

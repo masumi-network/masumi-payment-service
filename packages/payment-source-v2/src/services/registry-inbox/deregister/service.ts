@@ -1,7 +1,8 @@
 import { PaymentSourceType, RegistrationState, TransactionStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
-import type { BlockfrostProvider as MeshV2BlockfrostProvider, LanguageVersion, UTxO } from '@meshsdk/core';
+import type { LanguageVersion, UTxO } from '@meshsdk/core';
+import { asV2Provider } from '../../provider-cast';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { lockAndQueryInboxAgentRegistrationRequests } from '@/utils/db/lock-and-query-inbox-agent-registration-request';
 import { retryOnSerializationConflict } from '@/utils/db/retry';
@@ -362,7 +363,7 @@ export async function deRegisterInboxAgentV2() {
 					// V1 mesh `BlockfrostProvider` vs V2 cast — see deregister/service.ts
 					// and docs/adr/0005-meshsdk-version-pinning-v1-v2.md.
 					unsignedTx = await generateRegistryBatchDeregisterTransactionAutomaticFees(
-						blockchainProvider as unknown as MeshV2BlockfrostProvider,
+						asV2Provider(blockchainProvider),
 						network,
 						script,
 						address,
@@ -475,13 +476,34 @@ export async function deRegisterInboxAgentV2() {
 										},
 									});
 									for (const v of fit) {
+										// Reconnect to the pre-batch CurrentTransaction only if that
+										// prior Tx is still in an active state (Pending / Confirmed).
+										// If the prior Tx was itself a rolled-back / failed batch
+										// (e.g. this request has cycled through multiple failed
+										// batches), re-connecting would point the request at a dead
+										// Tx — leaving wallet-timeouts and tx-sync to wade through
+										// stale pointers. Disconnecting in that case mirrors the
+										// "no pre-batch active tx" branch and lets the next scheduler
+										// tick pick the request up cleanly.
+										let shouldReconnect = false;
+										if (v.request.currentTransactionId != null) {
+											const priorTx = await tx.transaction.findUnique({
+												where: { id: v.request.currentTransactionId },
+												select: { status: true },
+											});
+											shouldReconnect =
+												priorTx != null &&
+												(priorTx.status === TransactionStatus.Pending ||
+													priorTx.status === TransactionStatus.Confirmed);
+										}
 										await tx.inboxAgentRegistrationRequest.update({
 											where: { id: v.request.id },
 											data: {
 												state: RegistrationState.DeregistrationRequested,
-												CurrentTransaction: v.request.currentTransactionId
-													? { connect: { id: v.request.currentTransactionId } }
-													: { disconnect: true },
+												CurrentTransaction:
+													shouldReconnect && v.request.currentTransactionId != null
+														? { connect: { id: v.request.currentTransactionId } }
+														: { disconnect: true },
 											},
 										});
 									}

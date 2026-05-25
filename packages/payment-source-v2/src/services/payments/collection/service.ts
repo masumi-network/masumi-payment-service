@@ -8,10 +8,11 @@ import {
 } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { Asset, deserializeDatum } from '@meshsdk/core';
-import type { BlockfrostProvider as MeshV2BlockfrostProvider, LanguageVersion, UTxO } from '@meshsdk/core';
+import type { LanguageVersion, UTxO } from '@meshsdk/core';
+import { asV2Provider } from '../../provider-cast';
 import type { BlockfrostProvider } from '@/services/shared';
 import { logger } from '@masumi/payment-core/logger';
-import { smartContractStateEqualsOnChainState } from '@/utils/generator/contract-generator';
+import { SmartContractState, smartContractStateEqualsOnChainState } from '@/utils/generator/contract-generator';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { DecodedV1ContractDatum } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
@@ -30,7 +31,6 @@ import {
 	createTxWindow,
 	disconnectTransactionWallet,
 	loadHotWalletSession,
-	updateCurrentTransactionHash,
 } from '@/services/shared';
 import { getPaymentScriptFromPaymentSourceV2 } from '@masumi/payment-source-v2';
 import { decodeV2ContractDatum } from '@/utils/converter/string-datum-convert';
@@ -48,6 +48,7 @@ import {
 } from '../../../builders/batch-interaction';
 import { ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
 import { LOOKUP_DEFERRED_PREFIX, isLookupDeferred } from '../../lookup-defer';
+import { fetchUTxOsWithDeferOnEmpty } from '../../utxo-fetch-helpers';
 import { unlockHotWalletIfNoPendingTransaction } from '../../wallet-lock-helpers';
 
 // V2 collection sizing. Withdraw legs each produce one Spend redeemer + one
@@ -96,30 +97,8 @@ type ValidatedCollectionItem = {
 // transitions belongs to tx-sync; action services should never short-circuit
 // chain-state inference based on a transient blockfrost miss.
 
-/**
- * Wrap `fetchUTxOs(txHash)` with progressive retries when the first call
- * returns an empty list. The most common cause is blockfrost not having
- * indexed a freshly-landed tx yet (5-30s+ lag after block confirmation on
- * preprod). The 3-step backoff (5s, 10s, 20s) covers the long tail of slow
- * indexing without burning the whole scheduler tick on a single item; if
- * STILL empty after the final attempt, we throw the transient sentinel so
- * the caller defers to the next tick instead of marking the request as
- * failed.
- */
-async function fetchUTxOsWithDeferOnEmpty(blockchainProvider: BlockfrostProvider, txHash: string): Promise<UTxO[]> {
-	const backoffMs = [5_000, 10_000, 20_000];
-	const first = await blockchainProvider.fetchUTxOs(txHash);
-	if (first.length > 0) return first;
-	for (const wait of backoffMs) {
-		await new Promise((resolve) => setTimeout(resolve, wait));
-		const next = await blockchainProvider.fetchUTxOs(txHash);
-		if (next.length > 0) return next;
-	}
-	const totalSeconds = backoffMs.reduce((sum, ms) => sum + ms, 0) / 1000;
-	throw new Error(
-		`${LOOKUP_DEFERRED_PREFIX} fetchUTxOs(${txHash}) returned empty after ${backoffMs.length + 1} attempts (${totalSeconds}s total wait) — chain state not visible to blockfrost yet, deferring to tx-sync / next tick`,
-	);
-}
+// `fetchUTxOsWithDeferOnEmpty` is imported from ../../utxo-fetch-helpers — see
+// that file for the retry/backoff rationale.
 
 const mutex = new Mutex();
 
@@ -253,8 +232,17 @@ async function validateAndBuildItem(
 		collectionAddress = request.SmartContractWallet.walletAddress;
 	}
 
+	// Aiken `Withdraw` requires `must_start_after(validity_range, unlock_time)`
+	// for the timed path (state == ResultSubmitted). When state ==
+	// WithdrawAuthorized the buyer's signature short-circuits the timed gate
+	// and no lower bound is needed. Without this constrainAfterMs the default
+	// `invalidBefore` (~now - 2.5 min) can land earlier than unlock_time when
+	// the scheduler force-advances state, phase-2-failing the tx.
 	const { invalidBefore, invalidAfter } = createTxWindow(network, {
 		constrainBeforeMs: decodedContract.sellerCooldownTime,
+		...(decodedContract.state === SmartContractState.WithdrawAuthorized
+			? {}
+			: { constrainAfterMs: decodedContract.unlockTime }),
 	});
 
 	return {
@@ -360,31 +348,34 @@ async function processSinglePaymentCollection(
 	);
 
 	const signedTx = await wallet.signTx(unsignedTx);
+	// Submit FIRST, then write DB. Previous order (DB row → submitTx) left an
+	// orphan Pending Transaction row holding BlocksWallet → wallet whenever
+	// submitTx threw: the wallet stayed locked via HotWallet.pendingTransactionId
+	// until wallet-timeouts swept it minutes later. With submit-first, a
+	// pre-submit throw leaves NO Tx row to clean up; the caller's catch arm
+	// (markRequestFailed) is responsible for clearing lockedAt. A post-submit
+	// throw leaves the Tx row in place (it points at a real on-chain tx) per
+	// the user's "do NOT revert after successful submit" constraint.
+	//
 	// Create a FRESH Transaction row per lifecycle phase rather than mutating
 	// the upstream tx in-place. Recycling the prior Transaction row via
 	// `CurrentTransaction.update({ txHash: null, status: Pending })` loses the
 	// terminal status of the previous phase (e.g. the original submit-result
 	// tx is Confirmed; flipping it back to Pending breaks tx-sync's
 	// idempotency guards) and entangles two distinct on-chain txs in one DB
-	// row. Mirrors the submit-result single-item pattern:
-	// createPendingTransaction makes a new row with BlocksWallet → this
+	// row. createPendingTransaction makes a new row with BlocksWallet → this
 	// wallet, and the prior Transaction id is pushed onto TransactionHistory
 	// so the audit trail still shows the submit-result tx.
+	const newTxHash = await wallet.submitTx(signedTx);
+	await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
 	await prisma.paymentRequest.update({
 		where: { id: request.id },
 		data: {
 			...connectPreviousAction(request.nextActionId),
 			...createNextPaymentAction(PaymentAction.WithdrawInitiated),
-			...createPendingTransaction(request.SmartContractWallet.id),
+			...createPendingTransaction(request.SmartContractWallet.id, newTxHash),
 			TransactionHistory: { connect: { id: request.CurrentTransaction!.id } },
 		},
-	});
-
-	const newTxHash = await wallet.submitTx(signedTx);
-	await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
-	await prisma.paymentRequest.update({
-		where: { id: request.id },
-		data: updateCurrentTransactionHash(newTxHash),
 	});
 
 	logger.debug(`Created V2 withdrawal transaction:
@@ -677,7 +668,7 @@ async function processWalletBatch(
 	let unsignedTx: string;
 	try {
 		unsignedTx = await generateMasumiSmartContractBatchWithdrawTransactionAutomaticFees(
-			blockchainProvider as unknown as MeshV2BlockfrostProvider,
+			asV2Provider(blockchainProvider),
 			network,
 			script,
 			address,

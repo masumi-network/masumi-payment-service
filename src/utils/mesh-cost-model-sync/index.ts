@@ -215,10 +215,12 @@ export async function syncMeshCostModelsFromChain(
 			lastSyncByKey.set(blockfrostApiKey, { protocolParameters, at: Date.now() });
 			return protocolParameters;
 		} catch (error) {
+			// Re-throw so the caller (typically a scheduler) can log and abort
+			// the current tx build. Silently returning null left the mesh cost
+			// model arrays unpatched, which surfaces downstream as
+			// `PPViewHashesDontMatch` when the tx is submitted.
 			logger.error('Failed to sync mesh-sdk cost models from chain', { error });
-			// Surface a soft failure: caller can still fall through to its own
-			// `provider.fetchProtocolParameters(NaN)` path.
-			return null;
+			throw error;
 		} finally {
 			inFlightByKey.delete(blockfrostApiKey);
 		}

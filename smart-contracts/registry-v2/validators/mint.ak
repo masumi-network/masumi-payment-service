@@ -59,6 +59,27 @@ validator mintUnique {
       // replacements in the same transaction. For every burned asset there must
       // be exactly one minted asset with the same 1-byte nonce and 28-byte root
       // hash, and its 3-byte version must be incremented by exactly one.
+      //
+      // INTENTIONAL — N-to-N pairing rather than strict 1-to-1:
+      // The validator requires that every burn has at least one matching mint
+      // and every mint has at least one matching burn (by `nonce ++ root_hash`
+      // prefix, with +1 version bump). It does NOT enforce a strict 1:1
+      // permutation, so in principle a degenerate batch could pair multiple
+      // burns to the same mint, or multiple mints to the same burn, as long as
+      // every entry has SOME match on the other side and `minted_count ==
+      // burned_count`.
+      //
+      // Why this is safe in practice: `root_hash` is content-addressed —
+      // `blake2b_224(input.tx_id ++ input.output_index_be4)` derived at the
+      // original `MintAction` step, and frozen for the lifetime of the asset.
+      // Two registry entries with the same `nonce ++ root_hash` would require
+      // two distinct UTxOs to share an `(tx_id, output_index)` pair, which is
+      // a collision on a globally-unique OutputReference and impossible on
+      // Cardano. So although the validator allows N-to-N permutations in
+      // theory, in practice every batched (burn, mint) is uniquely paired by
+      // its prefix. Enforcing strict 1:1 here would add cost (more Plutus mem
+      // / cpu units per tx) for a guarantee that the off-chain construction
+      // invariant already provides for free.
       UpdateAction -> {
         let minted_assets =
           list.filter(

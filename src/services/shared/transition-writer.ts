@@ -20,11 +20,11 @@ export function connectPreviousAction(nextActionId: string) {
 	} satisfies Pick<Prisma.PaymentRequestUpdateInput, 'ActionHistory'>;
 }
 
-export function createPendingTransaction(blocksWalletId: string) {
+export function createPendingTransaction(blocksWalletId: string, txHash: string | null = null) {
 	return {
 		CurrentTransaction: {
 			create: {
-				txHash: null,
+				txHash,
 				status: TransactionStatus.Pending,
 				// wallet-timeouts/service.ts filters by `PendingTransaction.lastCheckedAt: { lte: now-1min }`;
 				// Prisma `lte` does not match NULL. Without an explicit timestamp here the row is

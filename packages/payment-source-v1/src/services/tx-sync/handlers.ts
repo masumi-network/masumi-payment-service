@@ -1,5 +1,6 @@
 import { prisma } from '@masumi/payment-core/db';
 import { OnChainState, PaymentAction, Prisma, PurchasingAction, TransactionStatus } from '@/generated/prisma/client';
+// TODO(v1-package-boundary): move logic/state-transitions and db/retry to @masumi/payment-core
 import { convertNewPaymentActionAndError, convertNewPurchasingActionAndError } from '@/utils/logic/state-transitions';
 import { retryOnSerializationConflict } from '@/utils/db/retry';
 import { TransactionMetadata } from '@/services/transactions/tx-sync/blockchain';
@@ -11,8 +12,8 @@ export async function handleV1PaymentTransaction(
 	blockchainIdentifier: string,
 	resultHash: string | null,
 	currentAction: PaymentAction,
-	buyerCooldownTime: number,
-	sellerCooldownTime: number,
+	buyerCooldownTime: bigint,
+	sellerCooldownTime: bigint,
 	sellerWithdrawn: Array<{ unit: string; quantity: bigint }>,
 	buyerWithdrawn: Array<{ unit: string; quantity: bigint }>,
 	confirmations: number,
@@ -184,8 +185,8 @@ export async function handleV1PurchasingTransaction(
 	blockchainIdentifier: string,
 	resultHash: string | null,
 	currentAction: PurchasingAction,
-	buyerCooldownTime: number,
-	sellerCooldownTime: number,
+	buyerCooldownTime: bigint,
+	sellerCooldownTime: bigint,
 	sellerWithdrawn: Array<{ unit: string; quantity: bigint }>,
 	buyerWithdrawn: Array<{ unit: string; quantity: bigint }>,
 	confirmations: number,

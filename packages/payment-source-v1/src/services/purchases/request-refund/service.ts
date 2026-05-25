@@ -2,8 +2,9 @@ import { PaymentSourceType, PurchasingAction, PurchaseErrorType, Prisma } from '
 import { prisma } from '@masumi/payment-core/db';
 import { BlockfrostProvider, deserializeDatum } from '@meshsdk/core';
 import { logger } from '@masumi/payment-core/logger';
-import { SmartContractState, smartContractStateEqualsOnChainState } from '@/utils/generator/contract-generator';
-import { convertNetwork } from '@/utils/converter/network-convert';
+import { SmartContractState, smartContractStateEqualsOnChainState } from '@masumi/payment-core/smart-contract-state';
+import { convertNetwork } from '@masumi/payment-core/network';
+// TODO(v1-package-boundary): move string-datum-convert, lock-and-query-purchases, blockchain-error-interpreter, utxo, transaction-generator to @masumi/payment-core
 import { decodeV1ContractDatum, newCooldownTime } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPurchases } from '@/utils/db/lock-and-query-purchases';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
@@ -215,9 +216,14 @@ export async function requestRefundsV1() {
 	try {
 		const paymentContractsWithWalletLocked = await lockAndQueryPurchases({
 			purchasingAction: PurchasingAction.SetRefundRequestedRequested,
-			// Aiken `must_end_before(unlock_time)` cannot be satisfied when the
-			// tx-window's invalidAfter already overshoots unlock_time. Leave a
-			// comfortable margin so submissions don't hit the ledger boundary.
+			// Aiken `must_end_before(unlock_time)` requires the tx validity
+			// interval's upper bound to be strictly before unlock_time. Because
+			// our tx-window's invalidAfter = now + ~2.5min buffer + slot slack,
+			// we must refuse to enqueue a refund request unless unlock_time is
+			// > now + ~3min — otherwise the tx-window already overshoots
+			// unlock_time at submission and the ledger rejects the redeemer.
+			// (Stricter than the previous `gte: now - 1min`, which let
+			// already-imminent unlocks slip through and fail on-chain.)
 			unlockTime: { gt: Date.now() + 1000 * 60 * 3 },
 			maxBatchSize: 1,
 			paymentSourceType: PaymentSourceType.Web3CardanoV1,

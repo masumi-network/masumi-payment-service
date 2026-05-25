@@ -82,54 +82,50 @@ export async function markTransactionPhase2Failed(
 
 			// 2. PaymentRequests pointing at this tx. Per-row update because each
 			//    row's ActionHistory.connect references a distinct prior
-			//    nextActionId; updateMany cannot express relation writes. Batch via
-			//    Promise.all so the per-row latency overlaps rather than serializes
-			//    inside the outer $transaction.
+			//    nextActionId; updateMany cannot express relation writes.
 			const paymentRequests = await tx.paymentRequest.findMany({
 				where: { currentTransactionId: transactionId },
 				select: { id: true, nextActionId: true },
 			});
-			await Promise.all(
-				paymentRequests.map((request) =>
-					tx.paymentRequest.update({
-						where: { id: request.id },
-						data: {
-							ActionHistory: { connect: { id: request.nextActionId } },
-							NextAction: {
-								create: {
-									requestedAction: PaymentAction.WaitingForManualAction,
-									errorType: PaymentErrorType.Unknown,
-									errorNote: ERROR_NOTE_PHASE_2,
-								},
+			// intentional sequential — Prisma serializes interactive-tx queries on a single connection
+			for (const request of paymentRequests) {
+				await tx.paymentRequest.update({
+					where: { id: request.id },
+					data: {
+						ActionHistory: { connect: { id: request.nextActionId } },
+						NextAction: {
+							create: {
+								requestedAction: PaymentAction.WaitingForManualAction,
+								errorType: PaymentErrorType.Unknown,
+								errorNote: ERROR_NOTE_PHASE_2,
 							},
 						},
-					}),
-				),
-			);
+					},
+				});
+			}
 
 			// 3. PurchaseRequests pointing at this tx. Same per-row constraint as
-			//    PaymentRequests — batched via Promise.all.
+			//    PaymentRequests.
 			const purchaseRequests = await tx.purchaseRequest.findMany({
 				where: { currentTransactionId: transactionId },
 				select: { id: true, nextActionId: true },
 			});
-			await Promise.all(
-				purchaseRequests.map((request) =>
-					tx.purchaseRequest.update({
-						where: { id: request.id },
-						data: {
-							ActionHistory: { connect: { id: request.nextActionId } },
-							NextAction: {
-								create: {
-									requestedAction: PurchasingAction.WaitingForManualAction,
-									errorType: PurchaseErrorType.Unknown,
-									errorNote: ERROR_NOTE_PHASE_2,
-								},
+			// intentional sequential — Prisma serializes interactive-tx queries on a single connection
+			for (const request of purchaseRequests) {
+				await tx.purchaseRequest.update({
+					where: { id: request.id },
+					data: {
+						ActionHistory: { connect: { id: request.nextActionId } },
+						NextAction: {
+							create: {
+								requestedAction: PurchasingAction.WaitingForManualAction,
+								errorType: PurchaseErrorType.Unknown,
+								errorNote: ERROR_NOTE_PHASE_2,
 							},
 						},
-					}),
-				),
-			);
+					},
+				});
+			}
 
 			// 4. RegistryRequests pointing at this tx. The state machine here has no
 			//    "ManualAction" pause: a failed mint/burn is terminal — operator must
@@ -142,79 +138,77 @@ export async function markTransactionPhase2Failed(
 				where: { currentTransactionId: transactionId },
 				select: { id: true, state: true, error: true },
 			});
-			await Promise.all(
-				registryRequests.map(async (request) => {
-					let nextState: RegistrationState | null = null;
-					if (request.state === RegistrationState.RegistrationInitiated) {
-						nextState = RegistrationState.RegistrationFailed;
-					} else if (request.state === RegistrationState.DeregistrationInitiated) {
-						nextState = RegistrationState.DeregistrationFailed;
-					} else {
-						logger.warn(`Phase-2 failure observed on RegistryRequest in unexpected state`, {
-							transactionId,
-							txHash,
-							registryRequestId: request.id,
-							state: request.state,
-							priorError: request.error,
-						});
-					}
-					if (nextState != null) {
-						// Preserve any prior error context — append rather than overwrite — so
-						// operator forensics keep the original failure note when this is the
-						// second failure on the same row.
-						const composedError =
-							request.error && request.error.length > 0
-								? `${ERROR_NOTE_PHASE_2}; prior: ${request.error}`
-								: ERROR_NOTE_PHASE_2;
-						await tx.registryRequest.update({
-							where: { id: request.id },
-							data: {
-								state: nextState,
-								registrationStateLastChangedAt: new Date(),
-								error: composedError,
-							},
-						});
-					}
-				}),
-			);
+			// intentional sequential — Prisma serializes interactive-tx queries on a single connection
+			for (const request of registryRequests) {
+				let nextState: RegistrationState | null = null;
+				if (request.state === RegistrationState.RegistrationInitiated) {
+					nextState = RegistrationState.RegistrationFailed;
+				} else if (request.state === RegistrationState.DeregistrationInitiated) {
+					nextState = RegistrationState.DeregistrationFailed;
+				} else {
+					logger.warn(`Phase-2 failure observed on RegistryRequest in unexpected state`, {
+						transactionId,
+						txHash,
+						registryRequestId: request.id,
+						state: request.state,
+						priorError: request.error,
+					});
+				}
+				if (nextState != null) {
+					// Preserve any prior error context — append rather than overwrite — so
+					// operator forensics keep the original failure note when this is the
+					// second failure on the same row.
+					const composedError =
+						request.error && request.error.length > 0
+							? `${ERROR_NOTE_PHASE_2}; prior: ${request.error}`
+							: ERROR_NOTE_PHASE_2;
+					await tx.registryRequest.update({
+						where: { id: request.id },
+						data: {
+							state: nextState,
+							registrationStateLastChangedAt: new Date(),
+							error: composedError,
+						},
+					});
+				}
+			}
 
 			// 5. InboxAgentRegistrationRequests pointing at this tx — same terminal mapping.
 			const inboxRequests = await tx.inboxAgentRegistrationRequest.findMany({
 				where: { currentTransactionId: transactionId },
 				select: { id: true, state: true, error: true },
 			});
-			await Promise.all(
-				inboxRequests.map(async (request) => {
-					let nextState: RegistrationState | null = null;
-					if (request.state === RegistrationState.RegistrationInitiated) {
-						nextState = RegistrationState.RegistrationFailed;
-					} else if (request.state === RegistrationState.DeregistrationInitiated) {
-						nextState = RegistrationState.DeregistrationFailed;
-					} else {
-						logger.warn(`Phase-2 failure observed on InboxAgentRegistrationRequest in unexpected state`, {
-							transactionId,
-							txHash,
-							inboxRequestId: request.id,
-							state: request.state,
-							priorError: request.error,
-						});
-					}
-					if (nextState != null) {
-						const composedError =
-							request.error && request.error.length > 0
-								? `${ERROR_NOTE_PHASE_2}; prior: ${request.error}`
-								: ERROR_NOTE_PHASE_2;
-						await tx.inboxAgentRegistrationRequest.update({
-							where: { id: request.id },
-							data: {
-								state: nextState,
-								registrationStateLastChangedAt: new Date(),
-								error: composedError,
-							},
-						});
-					}
-				}),
-			);
+			// intentional sequential — Prisma serializes interactive-tx queries on a single connection
+			for (const request of inboxRequests) {
+				let nextState: RegistrationState | null = null;
+				if (request.state === RegistrationState.RegistrationInitiated) {
+					nextState = RegistrationState.RegistrationFailed;
+				} else if (request.state === RegistrationState.DeregistrationInitiated) {
+					nextState = RegistrationState.DeregistrationFailed;
+				} else {
+					logger.warn(`Phase-2 failure observed on InboxAgentRegistrationRequest in unexpected state`, {
+						transactionId,
+						txHash,
+						inboxRequestId: request.id,
+						state: request.state,
+						priorError: request.error,
+					});
+				}
+				if (nextState != null) {
+					const composedError =
+						request.error && request.error.length > 0
+							? `${ERROR_NOTE_PHASE_2}; prior: ${request.error}`
+							: ERROR_NOTE_PHASE_2;
+					await tx.inboxAgentRegistrationRequest.update({
+						where: { id: request.id },
+						data: {
+							state: nextState,
+							registrationStateLastChangedAt: new Date(),
+							error: composedError,
+						},
+					});
+				}
+			}
 
 			// 6. Hot-wallet unlock — atomic with the propagation. Without this, a
 			//    crash between the propagation $transaction commit and the
@@ -230,17 +224,16 @@ export async function markTransactionPhase2Failed(
 			//    Use the same `deletedAt: null` guard as every other hot-wallet
 			//    write site for soft-delete safety.
 			if (options.walletIdsToUnlock && options.walletIdsToUnlock.length > 0) {
-				await Promise.all(
-					options.walletIdsToUnlock.map((walletId) =>
-						tx.hotWallet.update({
-							where: { id: walletId, deletedAt: null },
-							data: {
-								PendingTransaction: { disconnect: true },
-								lockedAt: null,
-							},
-						}),
-					),
-				);
+				// intentional sequential — Prisma serializes interactive-tx queries on a single connection
+				for (const walletId of options.walletIdsToUnlock) {
+					await tx.hotWallet.update({
+						where: { id: walletId, deletedAt: null },
+						data: {
+							PendingTransaction: { disconnect: true },
+							lockedAt: null,
+						},
+					});
+				}
 			}
 
 			logger.error(`Propagated phase-2 failure for tx ${txHash}`, {

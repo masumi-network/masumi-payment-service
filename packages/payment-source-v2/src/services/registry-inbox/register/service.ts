@@ -506,13 +506,34 @@ export async function registerInboxAgentV2() {
 										},
 									});
 									for (const v of fit) {
+										// Reconnect to the pre-batch CurrentTransaction only if that
+										// prior Tx is still in an active state (Pending / Confirmed).
+										// If the prior Tx was itself a rolled-back / failed batch
+										// (e.g. this request has cycled through multiple failed
+										// batches), re-connecting would point the request at a dead
+										// Tx — leaving wallet-timeouts and tx-sync to wade through
+										// stale pointers. Disconnecting in that case mirrors the
+										// "no pre-batch active tx" branch and lets the next scheduler
+										// tick pick the request up cleanly.
+										let shouldReconnect = false;
+										if (v.request.currentTransactionId != null) {
+											const priorTx = await tx.transaction.findUnique({
+												where: { id: v.request.currentTransactionId },
+												select: { status: true },
+											});
+											shouldReconnect =
+												priorTx != null &&
+												(priorTx.status === TransactionStatus.Pending ||
+													priorTx.status === TransactionStatus.Confirmed);
+										}
 										await tx.inboxAgentRegistrationRequest.update({
 											where: { id: v.request.id },
 											data: {
 												state: RegistrationState.RegistrationRequested,
-												CurrentTransaction: v.request.currentTransactionId
-													? { connect: { id: v.request.currentTransactionId } }
-													: { disconnect: true },
+												CurrentTransaction:
+													shouldReconnect && v.request.currentTransactionId != null
+														? { connect: { id: v.request.currentTransactionId } }
+														: { disconnect: true },
 											},
 										});
 									}

@@ -1,7 +1,8 @@
 import { PaymentSourceType, RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
-import { convertNetwork } from '@/utils/converter/network-convert';
+import { convertNetwork } from '@masumi/payment-core/network';
+// TODO(v1-package-boundary): move lock-and-query-registry-request, contract-generator, blockchain-error-interpreter, agent-identifier, utxo to @masumi/payment-core
 import { lockAndQueryRegistryRequests } from '@/utils/db/lock-and-query-registry-request';
 import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contract-generator';
 import { SERVICE_CONSTANTS } from '@masumi/payment-core/config';

@@ -15,64 +15,7 @@ import { SERVICE_CONSTANTS } from '@masumi/payment-core/config';
 import { logger } from '@masumi/payment-core/logger';
 import { getCachedChainProtocolParameters } from '@/utils/mesh-cost-model-sync';
 import { syncMeshCostModelsFromChainV2 } from '../utils/mesh-cost-model-sync';
-import { computeCollateralFromExUnits } from './batch-helpers';
-
-// Conway phase-1 requires `totalCollateral >= sum(scriptFee) * collateralPercentage / 100`.
-// For multi-asset mint/burn batches with non-trivial mem/steps the static 3
-// ADA default is insufficient; we derive the floor from the evaluated MINT
-// budget and apply this safety multiplier for headroom against
-// protocol-parameter drift. Floored at the static V1 default so single-asset
-// batches still hold the minimum collateral mesh expects.
-const COLLATERAL_SAFETY_NUM = 150n;
-const COLLATERAL_SAFETY_DEN = 100n;
-const MIN_TOTAL_COLLATERAL_LOVELACE = 3_000_000n;
-
-/**
- * Narrow the loosely-typed protocol-parameters bag into the field shape
- * `computeCollateralFromExUnits` expects. Mesh names the field
- * `collateralPercent`; our helper uses `collateralPercentage`. Falls back to
- * the static floor if any required field is missing.
- */
-/**
- * Shape we accept from any of mesh's `Protocol`, the V1 helper's cached
- * object, or a raw blockfrost protocol-params response. See the matching
- * type in `batch-interaction.ts` for the full rationale.
- */
-type ProtocolParamCandidate = {
-	priceMem?: number | string;
-	price_mem?: number | string;
-	priceStep?: number | string;
-	price_step?: number | string;
-	collateralPercentage?: number;
-	collateralPercent?: number;
-	collateral_percent?: number;
-};
-
-function extractCollateralProtocolParams(
-	protocolParameters: unknown,
-): { priceMem: number | string; priceStep: number | string; collateralPercentage: number } | null {
-	if (protocolParameters == null || typeof protocolParameters !== 'object') return null;
-	const p = protocolParameters as ProtocolParamCandidate;
-	const priceMem = p.priceMem ?? p.price_mem;
-	const priceStep = p.priceStep ?? p.price_step;
-	const collateralPercentage = p.collateralPercentage ?? p.collateralPercent ?? p.collateral_percent;
-	if (priceMem == null || priceStep == null || collateralPercentage == null) return null;
-	if (typeof priceMem !== 'number' && typeof priceMem !== 'string') return null;
-	if (typeof priceStep !== 'number' && typeof priceStep !== 'string') return null;
-	if (typeof collateralPercentage !== 'number') return null;
-	return { priceMem, priceStep, collateralPercentage };
-}
-
-function deriveTotalCollateral(budgets: ExUnits[], protocolParameters: unknown): string {
-	const params = extractCollateralProtocolParams(protocolParameters);
-	if (params == null) {
-		return MIN_TOTAL_COLLATERAL_LOVELACE.toString();
-	}
-	const raw = computeCollateralFromExUnits(budgets, params);
-	const withSafety = (raw * COLLATERAL_SAFETY_NUM) / COLLATERAL_SAFETY_DEN;
-	const floored = withSafety > MIN_TOTAL_COLLATERAL_LOVELACE ? withSafety : MIN_TOTAL_COLLATERAL_LOVELACE;
-	return floored.toString();
-}
+import { deriveTotalCollateral } from './batch-helpers';
 
 // V2 mint contract `Action` enum: MintAction=0, UpdateAction=1, BurnAction=2.
 // See smart-contracts/registry-v2/validators/mint.ak.

@@ -9,8 +9,9 @@ import {
 import { prisma } from '@masumi/payment-core/db';
 import { BlockfrostProvider, deserializeDatum } from '@meshsdk/core';
 import { logger } from '@masumi/payment-core/logger';
-import { smartContractStateEqualsOnChainState } from '@/utils/generator/contract-generator';
-import { convertNetwork } from '@/utils/converter/network-convert';
+import { smartContractStateEqualsOnChainState } from '@masumi/payment-core/smart-contract-state';
+import { convertNetwork } from '@masumi/payment-core/network';
+// TODO(v1-package-boundary): move lock-and-query-purchases, blockchain-error-interpreter, utxo, transaction-generator, string-datum-convert to @masumi/payment-core
 import { lockAndQueryPurchases } from '@/utils/db/lock-and-query-purchases';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
@@ -154,6 +155,7 @@ async function processSingleRefundCollection(
 		limitedFilteredUtxos,
 		{
 			collectAssets: utxo.output.amount,
+			// buyerReturnAddress validated at route via src/routes/api/purchases/schemas.ts (isCardanoAddressForNetwork superRefine)
 			collectionAddress: request.buyerReturnAddress ?? request.SmartContractWallet.collectionAddress ?? address,
 		},
 		null,

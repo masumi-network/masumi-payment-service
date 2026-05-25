@@ -9,6 +9,7 @@ import { blake2b } from 'ethereum-cryptography/blake2b';
 import { BlockfrostProvider, IFetcher, LanguageVersion, MeshTxBuilder, Network, UTxO } from '@meshsdk/core';
 import { PaymentSourceType } from '@/generated/prisma/client';
 import { getCachedChainProtocolParameters, syncMeshCostModelsFromChain } from '@/utils/mesh-cost-model-sync';
+import { assertNever } from '@/utils/assert-never';
 
 export type RegistryMetadata = {
 	[key: string]: string | string[] | RegistryMetadata | RegistryMetadata[] | undefined;
@@ -28,6 +29,8 @@ export function getBurnRedeemerAlternative(paymentSourceType: PaymentSourceType)
 			return V1_BURN_REDEEMER_ALTERNATIVE;
 		case PaymentSourceType.Web3CardanoV2:
 			return V2_BURN_REDEEMER_ALTERNATIVE;
+		default:
+			return assertNever(paymentSourceType);
 	}
 }
 

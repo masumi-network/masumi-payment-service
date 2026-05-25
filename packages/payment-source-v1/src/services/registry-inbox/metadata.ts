@@ -1,4 +1,5 @@
 import { z } from '@masumi/payment-core/zod';
+// TODO(v1-package-boundary): move metadata-string-convert and inbox-slug to @masumi/payment-core
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { isReservedInboxSlug, normalizeInboxSlug } from '@/utils/inbox-slug';
 

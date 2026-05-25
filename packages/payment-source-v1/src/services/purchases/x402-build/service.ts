@@ -9,8 +9,9 @@ import {
 import { Address, Datum, toPlutusData, toValue, TransactionOutput } from '@meshsdk/core-cst';
 import createHttpError from 'http-errors';
 import { Network, PaymentSourceType } from '@/generated/prisma/client';
-import { SmartContractState } from '@/utils/generator/contract-generator';
-import { convertNetwork } from '@/utils/converter/network-convert';
+import { SmartContractState } from '@masumi/payment-core/smart-contract-state';
+import { convertNetwork } from '@masumi/payment-core/network';
+// TODO(v1-package-boundary): move min-utxo to @masumi/payment-core
 import { calculateMinUtxo, DUMMY_RESULT_HASH, getNativeTokenCount } from '@/utils/min-utxo';
 import { CONSTANTS } from '@masumi/payment-core/config';
 import { logger } from '@masumi/payment-core/logger';

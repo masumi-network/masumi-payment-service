@@ -1,6 +1,6 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { getUtxos, postPaymentSourceExtended, postWallet } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
@@ -168,8 +168,14 @@ export function AddPaymentSourceDialog({
     name: 'sellingWallets',
   });
 
+  // Only reset the full form when the dialog actually opens (false -> true
+  // transition). Re-running this effect when `currentNetwork` or
+  // `defaultPaymentSourceType` change mid-edit would clobber user input
+  // (notably `requiredAdminSignatures`, which the user can adjust between 2
+  // and 3).
+  const previousOpenRef = useRef(false);
   useEffect(() => {
-    if (open) {
+    if (open && !previousOpenRef.current) {
       const feeConfig = getDefaultFeeConfig(currentNetwork);
       reset({
         network: currentNetwork,
@@ -188,6 +194,7 @@ export function AddPaymentSourceDialog({
       });
       queueMicrotask(() => setError(''));
     }
+    previousOpenRef.current = open;
   }, [open, currentNetwork, defaultPaymentSourceType, reset]);
 
   const network = useWatch({ control, name: 'network' });

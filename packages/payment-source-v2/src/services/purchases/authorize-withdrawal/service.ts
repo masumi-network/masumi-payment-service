@@ -8,7 +8,8 @@ import {
 } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { deserializeDatum, UTxO } from '@meshsdk/core';
-import type { BlockfrostProvider as MeshV2BlockfrostProvider, LanguageVersion } from '@meshsdk/core';
+import type { LanguageVersion } from '@meshsdk/core';
+import { asV2Provider } from '../../provider-cast';
 import type { BlockfrostProvider } from '@/services/shared';
 import { logger } from '@masumi/payment-core/logger';
 import { SmartContractState, smartContractStateEqualsOnChainState } from '@/utils/generator/contract-generator';
@@ -48,6 +49,7 @@ import {
 } from '../../../builders/batch-interaction';
 import { ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
 import { LOOKUP_DEFERRED_PREFIX, isLookupDeferred } from '../../lookup-defer';
+import { fetchUTxOsWithDeferOnEmpty } from '../../utxo-fetch-helpers';
 import { unlockHotWalletIfNoPendingTransaction } from '../../wallet-lock-helpers';
 
 const AUTHORIZE_WITHDRAWAL_BATCH_SIZE = 7;
@@ -90,30 +92,8 @@ type ValidatedAuthorizeWithdrawalItem = {
 // transitions belongs to tx-sync; action services should never short-circuit
 // chain-state inference based on a transient blockfrost miss.
 
-/**
- * Wrap `fetchUTxOs(txHash)` with progressive retries when the first call
- * returns an empty list. The most common cause is blockfrost not having
- * indexed a freshly-landed tx yet (5-30s+ lag after block confirmation on
- * preprod). The 3-step backoff (5s, 10s, 20s) covers the long tail of slow
- * indexing without burning the whole scheduler tick on a single item; if
- * STILL empty after the final attempt, we throw the transient sentinel so
- * the caller defers to the next tick instead of marking the request as
- * failed.
- */
-async function fetchUTxOsWithDeferOnEmpty(blockchainProvider: BlockfrostProvider, txHash: string): Promise<UTxO[]> {
-	const backoffMs = [5_000, 10_000, 20_000];
-	const first = await blockchainProvider.fetchUTxOs(txHash);
-	if (first.length > 0) return first;
-	for (const wait of backoffMs) {
-		await new Promise((resolve) => setTimeout(resolve, wait));
-		const next = await blockchainProvider.fetchUTxOs(txHash);
-		if (next.length > 0) return next;
-	}
-	const totalSeconds = backoffMs.reduce((sum, ms) => sum + ms, 0) / 1000;
-	throw new Error(
-		`${LOOKUP_DEFERRED_PREFIX} fetchUTxOs(${txHash}) returned empty after ${backoffMs.length + 1} attempts (${totalSeconds}s total wait) — chain state not visible to blockfrost yet, deferring to tx-sync / next tick`,
-	);
-}
+// `fetchUTxOsWithDeferOnEmpty` is imported from ../../utxo-fetch-helpers — see
+// that file for the retry/backoff rationale.
 
 const mutex = new Mutex();
 
@@ -650,7 +630,7 @@ async function processWalletBatch(
 	let unsignedTx: string;
 	try {
 		unsignedTx = await generateMasumiSmartContractBatchInteractionTransactionAutomaticFees(
-			blockchainProvider as unknown as MeshV2BlockfrostProvider,
+			asV2Provider(blockchainProvider),
 			network,
 			script,
 			address,

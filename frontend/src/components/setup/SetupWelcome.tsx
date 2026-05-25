@@ -33,6 +33,8 @@ import {
   postPaymentSourceExtended,
   postRegistry,
   getPaymentSourceExtended,
+  type PaymentSourceExtended,
+  type SellingWallet,
 } from '@/lib/api/generated';
 import { handleApiCall, shortenAddress } from '@/lib/utils';
 import { WalletLink } from '@/components/ui/wallet-link';
@@ -1137,7 +1139,9 @@ function AddAiAgentScreen({
       }
 
       const paymentSources = response.data?.data?.ExtendedPaymentSources ?? [];
-      const filteredSources = paymentSources.filter((source: any) => source.network == network);
+      const filteredSources = paymentSources.filter(
+        (source: PaymentSourceExtended) => source.network == network,
+      );
 
       if (filteredSources.length === 0) {
         setError('No payment sources found for this network');
@@ -1148,16 +1152,18 @@ function AddAiAgentScreen({
       // fall back to a V2 source, then to whatever's first. Locking to V2 by
       // default silently routes V1-wallet users to a source that doesn't
       // contain their wallet and fails downstream with an opaque vKey error.
-      const sourceContainingWallet = filteredSources.find((source: any) =>
-        source.SellingWallets?.some((s: any) => s.walletAddress === sellingWallet.address),
+      const sourceContainingWallet = filteredSources.find((source: PaymentSourceExtended) =>
+        source.SellingWallets?.some(
+          (s: SellingWallet) => s.walletAddress === sellingWallet.address,
+        ),
       );
       const paymentSource =
         sourceContainingWallet ??
-        filteredSources.find((source: any) => isV2PaymentSource(source)) ??
+        filteredSources.find((source: PaymentSourceExtended) => isV2PaymentSource(source)) ??
         filteredSources[0];
 
       const sellingWalletData = paymentSource.SellingWallets?.find(
-        (s: any) => s.walletAddress === sellingWallet.address,
+        (s: SellingWallet) => s.walletAddress === sellingWallet.address,
       );
 
       if (!sellingWalletData?.walletVkey) {

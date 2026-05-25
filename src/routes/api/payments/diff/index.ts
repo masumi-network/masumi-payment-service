@@ -7,6 +7,7 @@ import createHttpError from 'http-errors';
 import { queryPaymentsSchemaOutput } from '@/routes/api/payments';
 import { transformPaymentGetAmounts, transformPaymentGetTimestamps } from '@/utils/shared/transformers';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { lovelaceToAdaNumberSafe } from '@/utils/lovelace';
 import { ez } from 'express-zod-api';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { exhaustiveFallback } from '@/utils/assert-never';
@@ -244,8 +245,10 @@ async function queryPaymentDiffByMode({
 				...payment,
 				...transformPaymentGetTimestamps(payment),
 				...transformPaymentGetAmounts(payment),
-				totalBuyerCardanoFees: Number(payment.totalBuyerCardanoFees.toString()) / 1_000_000,
-				totalSellerCardanoFees: Number(payment.totalSellerCardanoFees.toString()) / 1_000_000,
+				// safe: response schema is z.number() (ADA). lovelaceToAdaNumberSafe
+				// throws if the lovelace value exceeds Number.MAX_SAFE_INTEGER.
+				totalBuyerCardanoFees: lovelaceToAdaNumberSafe(payment.totalBuyerCardanoFees),
+				totalSellerCardanoFees: lovelaceToAdaNumberSafe(payment.totalSellerCardanoFees),
 				agentIdentifier: decodeBlockchainIdentifier(payment.blockchainIdentifier)?.agentIdentifier ?? null,
 				CurrentTransaction: payment.CurrentTransaction
 					? {

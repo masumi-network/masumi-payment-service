@@ -58,6 +58,8 @@ Requirements:
 - For each burned asset, the matching minted asset's full 3-byte version is incremented by exactly one.
 - The old-to-new relationship is recorded and interpreted off-chain.
 
+Pairing is N-to-N, not strictly 1-to-1: the validator only checks that every burn has at least one matching mint and every mint has at least one matching burn (matched by `nonce ++ root_hash`, with the version bumped by exactly one), plus that `minted_count == burned_count`. Strict 1:1 enforcement is not required because `root_hash` is content-addressed — `blake2b_224(input.tx_id ++ input.output_index_be4)` at the original `MintAction` step — and `OutputReference`s are globally unique on Cardano. Two registry entries with the same `nonce ++ root_hash` are therefore impossible to construct, so the off-chain invariant already provides the 1:1 guarantee that strict on-chain enforcement would cost extra script units to repeat.
+
 ### BurnAction
 
 Burns one or more registry assets.

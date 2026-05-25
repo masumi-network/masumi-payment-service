@@ -7,6 +7,7 @@ import { logger } from '@masumi/payment-core/logger';
 import { ez } from 'express-zod-api';
 import { paymentResponseSchema } from '..';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { lovelaceToAdaNumberSafe } from '@/utils/lovelace';
 import { transformPaymentGetTimestamps, transformPaymentGetAmounts } from '@/utils/shared/transformers';
 import { assertWalletInScope } from '@/utils/shared/wallet-scope';
 import { z } from '@masumi/payment-core/zod';
@@ -209,8 +210,10 @@ export const paymentErrorStateRecoveryPost = payAuthenticatedEndpointFactory.bui
 			...result,
 			...transformPaymentGetTimestamps(result),
 			...transformPaymentGetAmounts(result),
-			totalBuyerCardanoFees: Number(result.totalBuyerCardanoFees.toString()) / 1_000_000,
-			totalSellerCardanoFees: Number(result.totalSellerCardanoFees.toString()) / 1_000_000,
+			// safe: response schema is z.number() (ADA). lovelaceToAdaNumberSafe
+			// throws if the lovelace value exceeds Number.MAX_SAFE_INTEGER.
+			totalBuyerCardanoFees: lovelaceToAdaNumberSafe(result.totalBuyerCardanoFees),
+			totalSellerCardanoFees: lovelaceToAdaNumberSafe(result.totalSellerCardanoFees),
 			agentIdentifier: decoded?.agentIdentifier ?? null,
 			CurrentTransaction: result.CurrentTransaction
 				? {

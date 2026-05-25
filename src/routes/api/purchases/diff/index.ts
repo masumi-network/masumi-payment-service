@@ -6,6 +6,7 @@ import createHttpError from 'http-errors';
 import { queryPurchaseRequestSchemaOutput } from '@/routes/api/purchases';
 import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { lovelaceToAdaNumberSafe } from '@/utils/lovelace';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { exhaustiveFallback } from '@/utils/assert-never';
@@ -244,8 +245,10 @@ async function queryPurchaseDiffByMode({
 				...purchase,
 				...transformPurchaseGetTimestamps(purchase),
 				...transformPurchaseGetAmounts(purchase),
-				totalBuyerCardanoFees: Number(purchase.totalBuyerCardanoFees.toString()) / 1_000_000,
-				totalSellerCardanoFees: Number(purchase.totalSellerCardanoFees.toString()) / 1_000_000,
+				// safe: response schema is z.number() (ADA). lovelaceToAdaNumberSafe
+				// throws if the lovelace value exceeds Number.MAX_SAFE_INTEGER.
+				totalBuyerCardanoFees: lovelaceToAdaNumberSafe(purchase.totalBuyerCardanoFees),
+				totalSellerCardanoFees: lovelaceToAdaNumberSafe(purchase.totalSellerCardanoFees),
 				agentIdentifier: decodeBlockchainIdentifier(purchase.blockchainIdentifier)?.agentIdentifier ?? null,
 				CurrentTransaction: purchase.CurrentTransaction
 					? {

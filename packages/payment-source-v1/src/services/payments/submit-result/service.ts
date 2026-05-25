@@ -2,8 +2,9 @@ import { PaymentAction, PaymentErrorType, PaymentSourceType, Prisma } from '@/ge
 import { prisma } from '@masumi/payment-core/db';
 import { BlockfrostProvider, deserializeDatum, UTxO } from '@meshsdk/core';
 import { logger } from '@masumi/payment-core/logger';
-import { SmartContractState, smartContractStateEqualsOnChainState } from '@/utils/generator/contract-generator';
-import { convertNetwork } from '@/utils/converter/network-convert';
+import { SmartContractState, smartContractStateEqualsOnChainState } from '@masumi/payment-core/smart-contract-state';
+import { convertNetwork } from '@masumi/payment-core/network';
+// TODO(v1-package-boundary): move string-datum-convert, lock-and-query-payments, blockchain-error-interpreter, utxo, transaction-generator to @masumi/payment-core
 import { DecodedV1ContractDatum, decodeV1ContractDatum, newCooldownTime } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';

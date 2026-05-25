@@ -18,6 +18,7 @@ import {
 } from '@/utils/generator/blockchain-identifier-generator';
 import { buildSignedBlockchainIdentifierPayload } from '@/utils/generator/blockchain-identifier-payload';
 import { validateHexString } from '@/utils/validator/hex';
+import { lovelaceToAdaNumberSafe } from '@/utils/lovelace';
 import { transformPaymentGetAmounts, transformPaymentGetTimestamps } from '@/utils/shared/transformers';
 import { extractPolicyId } from '@/utils/converter/agent-identifier';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
@@ -369,8 +370,10 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 			...payment,
 			...transformPaymentGetTimestamps(payment),
 			...transformPaymentGetAmounts(payment),
-			totalBuyerCardanoFees: Number(payment.totalBuyerCardanoFees.toString()) / 1_000_000,
-			totalSellerCardanoFees: Number(payment.totalSellerCardanoFees.toString()) / 1_000_000,
+			// safe: response schema is z.number() (ADA). lovelaceToAdaNumberSafe
+			// throws if the lovelace value exceeds Number.MAX_SAFE_INTEGER.
+			totalBuyerCardanoFees: lovelaceToAdaNumberSafe(payment.totalBuyerCardanoFees),
+			totalSellerCardanoFees: lovelaceToAdaNumberSafe(payment.totalSellerCardanoFees),
 			agentIdentifier:
 				payment.agentIdentifier ?? decodeBlockchainIdentifier(payment.blockchainIdentifier)?.agentIdentifier ?? null,
 			CurrentTransaction: payment.CurrentTransaction

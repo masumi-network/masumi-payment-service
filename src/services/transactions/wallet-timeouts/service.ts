@@ -1,5 +1,6 @@
 import {
 	HotWalletType,
+	PaymentSourceType,
 	RegistrationState,
 	SwapStatus,
 	TransactionStatus,
@@ -43,6 +44,23 @@ export async function updateWalletTransactionHash() {
 	}
 	const unlockedSellingWalletIds: string[] = [];
 	const unlockedPurchasingWalletIds: string[] = [];
+	// Track which payment source types had wallets unlocked so we only kick
+	// the matching scheduler modules below. If type is unknown for any
+	// pushed wallet, both flags are set (conservative — preserve old behavior).
+	let unlockedV1 = false;
+	let unlockedV2 = false;
+	const markUnlockedByType = (type: PaymentSourceType | null | undefined) => {
+		if (type === PaymentSourceType.Web3CardanoV1) {
+			unlockedV1 = true;
+		} else if (type === PaymentSourceType.Web3CardanoV2) {
+			unlockedV2 = true;
+		} else {
+			// Unknown / missing type — fall back to running both module sets so
+			// we never skip work we should have done.
+			unlockedV1 = true;
+			unlockedV2 = true;
+		}
+	};
 	try {
 		await retryOnSerializationConflict(
 			() =>
@@ -84,7 +102,12 @@ export async function updateWalletTransactionHash() {
 									},
 								],
 							},
-							include: { SmartContractWallet: { where: { deletedAt: null } } },
+							include: {
+								SmartContractWallet: {
+									where: { deletedAt: null },
+									include: { PaymentSource: { select: { paymentSourceType: true } } },
+								},
+							},
 						});
 						for (const paymentRequest of result) {
 							if (paymentRequest.currentTransactionId == null) {
@@ -94,8 +117,10 @@ export async function updateWalletTransactionHash() {
 									paymentRequest.SmartContractWallet.lockedAt &&
 									new Date(paymentRequest.SmartContractWallet.lockedAt) <
 										new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
-								)
-									unlockedSellingWalletIds.push(paymentRequest.SmartContractWallet?.id);
+								) {
+									unlockedSellingWalletIds.push(paymentRequest.SmartContractWallet.id);
+									markUnlockedByType(paymentRequest.SmartContractWallet.PaymentSource?.paymentSourceType);
+								}
 
 								await prisma.paymentRequest.update({
 									where: { id: paymentRequest.id },
@@ -124,13 +149,16 @@ export async function updateWalletTransactionHash() {
 								});
 							} else {
 								if (
-									(paymentRequest.SmartContractWallet?.pendingTransactionId != null &&
-										paymentRequest.SmartContractWallet?.pendingTransactionId == paymentRequest.currentTransactionId) ||
-									(paymentRequest.SmartContractWallet?.lockedAt &&
-										new Date(paymentRequest.SmartContractWallet.lockedAt) <
-											new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
-								)
-									unlockedSellingWalletIds.push(paymentRequest.SmartContractWallet?.id);
+									paymentRequest.SmartContractWallet != null &&
+									((paymentRequest.SmartContractWallet.pendingTransactionId != null &&
+										paymentRequest.SmartContractWallet.pendingTransactionId == paymentRequest.currentTransactionId) ||
+										(paymentRequest.SmartContractWallet.lockedAt &&
+											new Date(paymentRequest.SmartContractWallet.lockedAt) <
+												new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL)))
+								) {
+									unlockedSellingWalletIds.push(paymentRequest.SmartContractWallet.id);
+									markUnlockedByType(paymentRequest.SmartContractWallet.PaymentSource?.paymentSourceType);
+								}
 
 								await prisma.paymentRequest.update({
 									where: { id: paymentRequest.id },
@@ -221,7 +249,13 @@ export async function updateWalletTransactionHash() {
 									},
 								],
 							},
-							include: { SmartContractWallet: { where: { deletedAt: null } }, NextAction: true },
+							include: {
+								SmartContractWallet: {
+									where: { deletedAt: null },
+									include: { PaymentSource: { select: { paymentSourceType: true } } },
+								},
+								NextAction: true,
+							},
 						});
 						for (const purchaseRequest of result) {
 							if (purchaseRequest.currentTransactionId == null) {
@@ -231,8 +265,10 @@ export async function updateWalletTransactionHash() {
 									purchaseRequest.SmartContractWallet.lockedAt &&
 									new Date(purchaseRequest.SmartContractWallet.lockedAt) <
 										new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
-								)
-									unlockedPurchasingWalletIds.push(purchaseRequest.SmartContractWallet?.id);
+								) {
+									unlockedPurchasingWalletIds.push(purchaseRequest.SmartContractWallet.id);
+									markUnlockedByType(purchaseRequest.SmartContractWallet.PaymentSource?.paymentSourceType);
+								}
 
 								await prisma.purchaseRequest.update({
 									where: { id: purchaseRequest.id },
@@ -261,14 +297,16 @@ export async function updateWalletTransactionHash() {
 								});
 							} else {
 								if (
-									(purchaseRequest.SmartContractWallet?.pendingTransactionId != null &&
-										purchaseRequest.SmartContractWallet?.pendingTransactionId ==
-											purchaseRequest.currentTransactionId) ||
-									(purchaseRequest.SmartContractWallet?.lockedAt &&
-										new Date(purchaseRequest.SmartContractWallet.lockedAt) <
-											new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
-								)
-									unlockedPurchasingWalletIds.push(purchaseRequest.SmartContractWallet?.id);
+									purchaseRequest.SmartContractWallet != null &&
+									((purchaseRequest.SmartContractWallet.pendingTransactionId != null &&
+										purchaseRequest.SmartContractWallet.pendingTransactionId == purchaseRequest.currentTransactionId) ||
+										(purchaseRequest.SmartContractWallet.lockedAt &&
+											new Date(purchaseRequest.SmartContractWallet.lockedAt) <
+												new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL)))
+								) {
+									unlockedPurchasingWalletIds.push(purchaseRequest.SmartContractWallet.id);
+									markUnlockedByType(purchaseRequest.SmartContractWallet.PaymentSource?.paymentSourceType);
+								}
 
 								await prisma.purchaseRequest.update({
 									where: { id: purchaseRequest.id },
@@ -354,7 +392,11 @@ export async function updateWalletTransactionHash() {
 									},
 								],
 							},
-							include: { SmartContractWallet: true },
+							include: {
+								SmartContractWallet: {
+									include: { PaymentSource: { select: { paymentSourceType: true } } },
+								},
+							},
 						});
 
 						for (const registryRequest of result) {
@@ -365,8 +407,21 @@ export async function updateWalletTransactionHash() {
 									registryRequest.SmartContractWallet.lockedAt &&
 									new Date(registryRequest.SmartContractWallet.lockedAt) <
 										new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
-								)
-									unlockedSellingWalletIds.push(registryRequest.SmartContractWallet?.id);
+								) {
+									if (registryRequest.SmartContractWallet.type === HotWalletType.Selling) {
+										unlockedSellingWalletIds.push(registryRequest.SmartContractWallet.id);
+									} else if (registryRequest.SmartContractWallet.type === HotWalletType.Purchasing) {
+										unlockedPurchasingWalletIds.push(registryRequest.SmartContractWallet.id);
+									} else {
+										logger.debug('Registry wallet has unexpected HotWalletType; unlocking on both lists as fallback', {
+											walletId: registryRequest.SmartContractWallet.id,
+											type: registryRequest.SmartContractWallet.type,
+										});
+										unlockedSellingWalletIds.push(registryRequest.SmartContractWallet.id);
+										unlockedPurchasingWalletIds.push(registryRequest.SmartContractWallet.id);
+									}
+									markUnlockedByType(registryRequest.SmartContractWallet.PaymentSource?.paymentSourceType);
+								}
 
 								await prisma.registryRequest.update({
 									where: { id: registryRequest.id },
@@ -395,14 +450,27 @@ export async function updateWalletTransactionHash() {
 								});
 							} else {
 								if (
-									(registryRequest.SmartContractWallet?.pendingTransactionId != null &&
-										registryRequest.SmartContractWallet?.pendingTransactionId ==
-											registryRequest.currentTransactionId) ||
-									(registryRequest.SmartContractWallet?.lockedAt &&
-										new Date(registryRequest.SmartContractWallet.lockedAt) <
-											new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
-								)
-									unlockedSellingWalletIds.push(registryRequest.SmartContractWallet?.id);
+									registryRequest.SmartContractWallet != null &&
+									((registryRequest.SmartContractWallet.pendingTransactionId != null &&
+										registryRequest.SmartContractWallet.pendingTransactionId == registryRequest.currentTransactionId) ||
+										(registryRequest.SmartContractWallet.lockedAt &&
+											new Date(registryRequest.SmartContractWallet.lockedAt) <
+												new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL)))
+								) {
+									if (registryRequest.SmartContractWallet.type === HotWalletType.Selling) {
+										unlockedSellingWalletIds.push(registryRequest.SmartContractWallet.id);
+									} else if (registryRequest.SmartContractWallet.type === HotWalletType.Purchasing) {
+										unlockedPurchasingWalletIds.push(registryRequest.SmartContractWallet.id);
+									} else {
+										logger.debug('Registry wallet has unexpected HotWalletType; unlocking on both lists as fallback', {
+											walletId: registryRequest.SmartContractWallet.id,
+											type: registryRequest.SmartContractWallet.type,
+										});
+										unlockedSellingWalletIds.push(registryRequest.SmartContractWallet.id);
+										unlockedPurchasingWalletIds.push(registryRequest.SmartContractWallet.id);
+									}
+									markUnlockedByType(registryRequest.SmartContractWallet.PaymentSource?.paymentSourceType);
+								}
 
 								await prisma.registryRequest.update({
 									where: { id: registryRequest.id },
@@ -504,6 +572,9 @@ export async function updateWalletTransactionHash() {
 				},
 			},
 		});
+		// PaymentSource is non-nullable on HotWallet — the relation is required,
+		// so `wallet.PaymentSource.paymentSourceType` is always present and we
+		// can pass it through markUnlockedByType without an optional chain below.
 
 		await Promise.allSettled(
 			lockedHotWallets.map(async (wallet) => {
@@ -524,6 +595,7 @@ export async function updateWalletTransactionHash() {
 						} else if (wallet.type == HotWalletType.Purchasing) {
 							unlockedPurchasingWalletIds.push(wallet.id);
 						}
+						markUnlockedByType(wallet.PaymentSource.paymentSourceType);
 						return;
 					}
 					const txHash = wallet.PendingTransaction.txHash;
@@ -540,6 +612,7 @@ export async function updateWalletTransactionHash() {
 						} else if (wallet.type == HotWalletType.Purchasing) {
 							unlockedPurchasingWalletIds.push(wallet.id);
 						}
+						markUnlockedByType(wallet.PaymentSource.paymentSourceType);
 						return;
 					}
 
@@ -641,6 +714,7 @@ export async function updateWalletTransactionHash() {
 						} else if (wallet.type == HotWalletType.Purchasing) {
 							unlockedPurchasingWalletIds.push(wallet.id);
 						}
+						markUnlockedByType(wallet.PaymentSource.paymentSourceType);
 					} else {
 						await prisma.transaction.update({
 							where: { id: wallet.PendingTransaction.id },
@@ -904,6 +978,7 @@ export async function updateWalletTransactionHash() {
 					} else if (wallet.type == HotWalletType.Purchasing) {
 						unlockedPurchasingWalletIds.push(wallet.id);
 					}
+					markUnlockedByType(wallet.PaymentSource.paymentSourceType);
 				} catch (error) {
 					logger.error(`Error updating timed out wallet: ${errorToString(error)}`);
 				}
@@ -911,9 +986,20 @@ export async function updateWalletTransactionHash() {
 		);
 		const uniqueUnlockedSellingWalletIds = [...new Set(unlockedSellingWalletIds)].filter((id) => id != null);
 		const uniqueUnlockedPurchasingWalletIds = [...new Set(unlockedPurchasingWalletIds)].filter((id) => id != null);
+		// Only kick scheduler modules whose payment source actually had wallets
+		// unlocked above. Iterating both V1 and V2 unconditionally re-scans every
+		// payment source on every tick even when nothing on that side changed.
+		// markUnlockedByType defaults to setting both flags when type is unknown,
+		// so this never under-runs.
+		const sellingModules: Array<typeof web3CardanoV1 | typeof web3CardanoV2> = [];
+		if (unlockedV1) sellingModules.push(web3CardanoV1);
+		if (unlockedV2) sellingModules.push(web3CardanoV2);
+		const purchasingModules: Array<typeof web3CardanoV1 | typeof web3CardanoV2> = [];
+		if (unlockedV1) purchasingModules.push(web3CardanoV1);
+		if (unlockedV2) purchasingModules.push(web3CardanoV2);
 		//TODO: reset initialized actions
 		if (uniqueUnlockedSellingWalletIds.length > 0) {
-			for (const module of [web3CardanoV1, web3CardanoV2]) {
+			for (const module of sellingModules) {
 				try {
 					await module.submitResult();
 				} catch (error) {
@@ -952,7 +1038,7 @@ export async function updateWalletTransactionHash() {
 			}
 		}
 		if (uniqueUnlockedPurchasingWalletIds.length > 0) {
-			for (const module of [web3CardanoV1, web3CardanoV2]) {
+			for (const module of purchasingModules) {
 				try {
 					await module.collectRefund();
 				} catch (error) {
@@ -969,15 +1055,19 @@ export async function updateWalletTransactionHash() {
 					logger.error(`Error initiating batch latest payment entries: ${errorToString(error)}`);
 				}
 			}
-			try {
-				await web3CardanoV1.cancelRefunds();
-			} catch (error) {
-				logger.error(`Error initiating cancel refund: ${errorToString(error)}`);
+			if (unlockedV1) {
+				try {
+					await web3CardanoV1.cancelRefunds();
+				} catch (error) {
+					logger.error(`Error initiating cancel refund: ${errorToString(error)}`);
+				}
 			}
-			try {
-				await web3CardanoV2.authorizeWithdrawals();
-			} catch (error) {
-				logger.error(`Error initiating authorize withdrawal: ${errorToString(error)}`);
+			if (unlockedV2) {
+				try {
+					await web3CardanoV2.authorizeWithdrawals();
+				} catch (error) {
+					logger.error(`Error initiating authorize withdrawal: ${errorToString(error)}`);
+				}
 			}
 		}
 		try {

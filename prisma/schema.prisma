@@ -521,9 +521,11 @@ model PaymentSource {
   WebhookEndpoints               WebhookEndpoint[]
 
   @@unique([network, smartContractAddress])
-  // Prisma cannot represent the active-only unique policyId index, so this
-  // remains as the regular lookup index while the migration enforces uniqueness.
-  @@index([network, policyId])
+  // Active-only uniqueness on (network, policyId) is enforced by the partial
+  // unique index "PaymentSource_network_policyId_active_key" created in
+  // migration 20260525000000_restore_active_policy_id_uniqueness. That index
+  // also covers point lookups, so no plain @@index([network, policyId]) is
+  // needed (and a duplicate b-tree would waste write throughput).
   @@index([paymentSourceType, deletedAt])
 }
 

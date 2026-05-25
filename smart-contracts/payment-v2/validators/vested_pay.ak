@@ -146,6 +146,27 @@ validator vested_pay(
 
     // Multiple script inputs may be spent together, but each must carry a
     // distinct reference_signature to avoid duplicated state entries.
+    //
+    // Malformed-datum handling (intentional): a script input that does not
+    // carry an InlineDatum, or whose inline datum does not parse as `Datum`,
+    // is filtered out of the dedupe set rather than aborting the whole
+    // transaction. The rationale is that anyone can send a UTxO with an
+    // arbitrary datum (or no datum) to a script address (dust attack /
+    // griefing), and a contract spend that happens to include such an input
+    // alongside a legitimate one would otherwise be permanently un-spendable
+    // through this validator. Skipping un-parseable inputs treats them as
+    // "not part of this batch" — the validator still enforces all of its
+    // checks on the parseable inputs, and the un-parseable input must
+    // separately satisfy SOME validator path of its own (which it cannot, so
+    // including it as a script input is itself a tx-builder mistake and the
+    // mistake's blast radius is limited to that one builder).
+    //
+    // O(n²) note on list.unique below: the unique check is quadratic in the
+    // number of parseable script inputs but bounded in practice by Cardano's
+    // ledger-enforced limits on script inputs per tx (currently ~30 effective
+    // for typical Plutus scripts due to CPU / mem units). No explicit
+    // application-level cap is added here — we rely on the ledger-level cap.
+    // If ledger limits are ever raised significantly, revisit this loop.
     let script_inputs =
       list.filter(
         self.inputs,
@@ -153,17 +174,23 @@ validator vested_pay(
       )
     let input_datum_signatures =
       script_inputs
-        |> list.map(
+        |> list.filter_map(
             fn(input) {
-              expect InlineDatum(maybe_datum) = input.output.datum
-              expect old_datum: Datum = maybe_datum
-              old_datum.reference_signature
+              when input.output.datum is {
+                InlineDatum(maybe_datum) ->
+                  if maybe_datum is parsed_datum: Datum {
+                    Some(parsed_datum.reference_signature)
+                  } else {
+                    None
+                  }
+                _ -> None
+              }
             },
           )
 
     expect
       list.length(list.unique(input_datum_signatures)) == list.length(
-        script_inputs,
+        input_datum_signatures,
       )
 
     let script_output_with_datum =
@@ -241,6 +268,20 @@ validator vested_pay(
             },
           }
 
+        // INTENTIONAL — "double-satisfaction" when buyer == seller (or
+        // buyer_return_address == seller_return_address): a single tx output
+        // tagged with `own_ref` and addressed to the shared target satisfies
+        // BOTH the collateral-return filter (below) AND the seller-residual
+        // filter (further below) simultaneously. This is acceptable because
+        // it is not exploitable cross-party — the "victim" and the "winner"
+        // of any aggregated payout are the same on-chain identity (the locked
+        // datum is what binds both legs to the same return address, and the
+        // datum is set by the buyer at lock time). No third party can drain
+        // anyone else's funds via this aggregation; at worst, the tx builder
+        // accounts for a single output as covering two roles. Off-chain tx
+        // builders that want separate accounting MUST split the outputs
+        // explicitly — the validator only enforces economic safety, not
+        // bookkeeping clarity.
         let collateral_return_outputs =
           outputs_with_reference_tag(
             self.outputs,
@@ -481,6 +522,16 @@ validator vested_pay(
         // multiple slots. This is by design — it is the deployer's
         // responsibility (off-chain) to construct admin_vks with the desired
         // weight distribution. The contract does NOT enforce distinctness.
+        //
+        // Worked example: a 5-of-7 weighted multisig where the CEO holds 2
+        // weight slots and each of 5 board members holds 1 slot can be
+        // expressed as `admin_vks = [ceo, ceo, b1, b2, b3, b4, b5]` with
+        // `required_admins_multi_sig = 5`. A single physical signature from
+        // the CEO counts twice, so the CEO + any three board members can
+        // settle. This contrasts with a naive multisig design where duplicate
+        // keys would be a deployment bug. Off-chain tooling MUST construct
+        // `admin_vks` with the correct duplication when modeling weighted
+        // authorities and MUST surface the weights to deployers.
         let countOfAdmins = list.length(admin_vks)
         // Require at least one configured admin.
         expect countOfAdmins >= 1
@@ -492,6 +543,19 @@ validator vested_pay(
         let buyer_value_to_pay = assets.from_asset_list(buyer_value)
         let seller_value_to_pay = assets.from_asset_list(seller_value)
 
+        // INTENTIONAL — "double-satisfaction" symmetry with the Withdraw
+        // branch above: when buyer == seller (or
+        // buyer_return_address == seller_return_address), a single tx output
+        // tagged with `own_ref` and addressed to the shared target satisfies
+        // BOTH `buyer_value_returned` and `seller_value_returned` filters
+        // simultaneously. This is safe because the two return addresses are
+        // pulled from the locked datum (not the redeemer), and when they are
+        // equal the only "victim" of any aggregation is the same party — no
+        // third party can manipulate this. Admins signing buyer_value /
+        // seller_value with full knowledge of the datum should treat any
+        // observed equal-address case as the deployer's intent. Off-chain
+        // builders that need two separate outputs for accounting MUST emit
+        // them explicitly; the validator only enforces value-sufficiency.
         let buyer_value_returned =
           outputs_with_reference_tag(
             self.outputs,
@@ -527,6 +591,16 @@ validator vested_pay(
         // below) and choose minimum payouts that reflect the residual they
         // are willing to award the submitter. No on-chain permille cap is
         // applied: the contract trusts the admin signature set entirely.
+        //
+        // Dust caveat (intentional, operational): anyone can send dust ADA
+        // (or arbitrary tokens) to a script address, so the disputed UTxO's
+        // value at settlement time may exceed the value originally locked.
+        // The validator does not distinguish "original lock" from "later
+        // dust accretion" — the submitter sweeps whatever residual exists
+        // above the signed minimums. This is acceptable economic behavior,
+        // not a bug. Operational note: admins should sign settlements
+        // promptly to avoid dust-pump scenarios if "winner takes the
+        // surplus" is undesirable for a specific deployment.
         //
         // Replay binding: own_ref is part of the signed payload, so an admin
         // signature authorizes settlement of exactly one UTxO (uniquely

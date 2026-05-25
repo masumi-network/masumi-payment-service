@@ -6,6 +6,7 @@ import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { purchaseResponseSchema } from '@/routes/api/purchases';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { lovelaceToAdaNumberSafe } from '@/utils/lovelace';
 import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
 import { assertWalletInScope } from '@/utils/shared/wallet-scope';
 
@@ -151,8 +152,10 @@ export const cancelPurchaseRefundRequestPost = payAuthenticatedEndpointFactory.b
 			...result,
 			...transformPurchaseGetTimestamps(result),
 			...transformPurchaseGetAmounts(result),
-			totalBuyerCardanoFees: Number(result.totalBuyerCardanoFees.toString()) / 1_000_000,
-			totalSellerCardanoFees: Number(result.totalSellerCardanoFees.toString()) / 1_000_000,
+			// safe: response schema is z.number() (ADA). lovelaceToAdaNumberSafe
+			// throws if the lovelace value exceeds Number.MAX_SAFE_INTEGER.
+			totalBuyerCardanoFees: lovelaceToAdaNumberSafe(result.totalBuyerCardanoFees),
+			totalSellerCardanoFees: lovelaceToAdaNumberSafe(result.totalSellerCardanoFees),
 			agentIdentifier: decoded?.agentIdentifier ?? null,
 			CurrentTransaction: result.CurrentTransaction
 				? {

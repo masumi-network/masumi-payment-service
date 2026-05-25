@@ -178,10 +178,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Invalidate payment-source-scoped queries whenever the active source changes.
   // Query keys for transactions/wallets/etc. include the source id; without invalidation
   // the UI can briefly render stale rows from the previous source.
+  // Skip the initial render (and the null->null transition before sources hydrate)
+  // so we don't mass-invalidate on every login / page-load when nothing has actually
+  // changed. Only fire when transitioning from a previous non-null source to a
+  // different one.
+  const previousSelectedPaymentSourceIdRef = useRef<string | null>(null);
   useEffect(() => {
-    queryClient.invalidateQueries({ queryKey: ['transactions'] });
-    queryClient.invalidateQueries({ queryKey: ['wallets'] });
-    queryClient.invalidateQueries({ queryKey: ['payment-source-extended'] });
+    if (
+      previousSelectedPaymentSourceIdRef.current !== null &&
+      previousSelectedPaymentSourceIdRef.current !== selectedPaymentSourceId
+    ) {
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['wallets'] });
+      queryClient.invalidateQueries({ queryKey: ['payment-source-extended'] });
+    }
+    previousSelectedPaymentSourceIdRef.current = selectedPaymentSourceId;
   }, [selectedPaymentSourceId, queryClient]);
 
   const showError = useCallback((error: { code?: number; message: string; details?: unknown }) => {

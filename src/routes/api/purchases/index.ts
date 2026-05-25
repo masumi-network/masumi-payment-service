@@ -8,6 +8,7 @@ import { validateHexString } from '@/utils/validator/hex';
 import { handlePurchaseCreditInit } from '@/services/integrations';
 import { HttpExistsError } from '@masumi/payment-core/http-exists-error';
 import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
+import { lovelaceToAdaNumberSafe } from '@/utils/lovelace';
 import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
@@ -130,8 +131,10 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 			if (existingPurchaseRequest != null) {
 				throw new HttpExistsError('Purchase exists', existingPurchaseRequest.id, {
 					...existingPurchaseRequest,
-					totalBuyerCardanoFees: Number(existingPurchaseRequest.totalBuyerCardanoFees.toString()) / 1_000_000,
-					totalSellerCardanoFees: Number(existingPurchaseRequest.totalSellerCardanoFees.toString()) / 1_000_000,
+					// safe: response schema is z.number() (ADA). lovelaceToAdaNumberSafe
+					// throws if the lovelace value exceeds Number.MAX_SAFE_INTEGER.
+					totalBuyerCardanoFees: lovelaceToAdaNumberSafe(existingPurchaseRequest.totalBuyerCardanoFees),
+					totalSellerCardanoFees: lovelaceToAdaNumberSafe(existingPurchaseRequest.totalSellerCardanoFees),
 					CurrentTransaction: existingPurchaseRequest.CurrentTransaction
 						? {
 								id: existingPurchaseRequest.CurrentTransaction.id,

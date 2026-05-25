@@ -1,3 +1,15 @@
+-- Relax FeeReceiverNetworkWallet FK from CASCADE to SET NULL BEFORE making the
+-- column nullable below. Order matters: dropping NOT NULL on `adminWalletId`
+-- while the FK is still ON DELETE CASCADE would mean any admin-wallet delete
+-- between the two ALTERs wipes the PaymentSource and every dependent row.
+-- (Previously this lived in 20260521000000_relax_fee_receiver_cascade; merged
+-- here to close the cascade window.) IF EXISTS keeps this idempotent on
+-- partial replays.
+ALTER TABLE "PaymentSource" DROP CONSTRAINT IF EXISTS "PaymentSource_adminWalletId_fkey";
+ALTER TABLE "PaymentSource" ADD CONSTRAINT "PaymentSource_adminWalletId_fkey"
+    FOREIGN KEY ("adminWalletId") REFERENCES "AdminWallet"("id")
+    ON DELETE SET NULL ON UPDATE CASCADE;
+
 -- Add canonical source typing for V1/V2 payment-source dispatch.
 -- Postgres doesn't accept `CREATE TYPE IF NOT EXISTS`, so guard with a
 -- duplicate_object catch so re-running this migration on a database that
@@ -16,9 +28,10 @@ ALTER COLUMN "adminWalletId" DROP NOT NULL;
 -- Drop the strict unique on (network, policyId). Active-source uniqueness now lives in
 -- @@unique([network, smartContractAddress]); multiple V2 sources per network are allowed
 -- and disambiguated by smartContractAddress carried in the signed V2 identifier.
+-- The partial unique index "PaymentSource_network_policyId_active_key" added in
+-- 20260525000000_restore_active_policy_id_uniqueness covers lookups for active
+-- rows on (network, policyId), so no plain b-tree index is created here.
 DROP INDEX IF EXISTS "PaymentSource_network_policyId_key";
-CREATE INDEX IF NOT EXISTS "PaymentSource_network_policyId_idx"
-ON "PaymentSource"("network", "policyId");
 
 -- V2 keeps return-address intent with the request rows.
 ALTER TABLE "PaymentRequest"

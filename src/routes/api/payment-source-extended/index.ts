@@ -165,9 +165,11 @@ export const paymentSourceExtendedEndpointPost = adminAuthenticatedEndpointFacto
 
 			const sellingWallets = await Promise.all(
 				sellingWalletsMesh.map(async (sw) => {
+					const unusedAddresses = await sw.wallet.getUnusedAddresses();
+					const walletAddress = unusedAddresses[0];
 					return {
-						walletAddress: (await sw.wallet.getUnusedAddresses())[0],
-						walletVkey: resolvePaymentKeyHash((await sw.wallet.getUnusedAddresses())[0]),
+						walletAddress,
+						walletVkey: resolvePaymentKeyHash(walletAddress),
 						secretId: (
 							await prisma.walletSecret.create({
 								data: { encryptedMnemonic: sw.mnemonicEncrypted },
@@ -182,9 +184,11 @@ export const paymentSourceExtendedEndpointPost = adminAuthenticatedEndpointFacto
 
 			const purchasingWallets = await Promise.all(
 				purchasingWalletsMesh.map(async (pw) => {
+					const unusedAddresses = await pw.wallet.getUnusedAddresses();
+					const walletAddress = unusedAddresses[0];
 					return {
-						walletVkey: resolvePaymentKeyHash((await pw.wallet.getUnusedAddresses())[0]),
-						walletAddress: (await pw.wallet.getUnusedAddresses())[0],
+						walletVkey: resolvePaymentKeyHash(walletAddress),
+						walletAddress,
 						secretId: (
 							await prisma.walletSecret.create({
 								data: { encryptedMnemonic: pw.mnemonicEncrypted },

@@ -30,111 +30,120 @@ export async function lockAndQueryPayments({
 	// params and are ANDed with the OR group as usual.
 	orFilters?: Prisma.PaymentRequestWhereInput[];
 }) {
-	// Wrapped in retryOnSerializationConflict so concurrent scheduler ticks
-	// (V1 + V2 share this codepath under different paymentSourceType filters)
-	// don't surface transient Prisma P2034 / Postgres 40001 errors as failed
-	// jobs. See [retry.ts] for the conflict semantics.
-	return await retryOnSerializationConflict(
-		() =>
-			prisma.$transaction(
-				async (prisma) => {
-					const paymentSources = await prisma.paymentSource.findMany({
-						where: {
-							syncInProgress: false,
-							deletedAt: null,
-							disablePaymentAt: null,
-							paymentSourceType,
-						},
-						include: {
-							HotWallets: {
-								where: {
-									PendingTransaction: { is: null },
-									lockedAt: null,
-									deletedAt: null,
-									type: HotWalletType.Selling,
-								},
-							},
-							AdminWallets: true,
-							FeeReceiverNetworkWallet: true,
-							PaymentSourceConfig: true,
-						},
-						orderBy: {
-							createdAt: 'asc',
-						},
-					});
-
-					const newPaymentSources = [];
-					for (const paymentSource of paymentSources) {
-						const paymentRequests = [];
-						const minCooldownTime = paymentSource.cooldownTime;
-						for (const hotWallet of paymentSource.HotWallets) {
-							const potentialPaymentRequests = await prisma.paymentRequest.findMany({
-								where: {
-									NextAction: {
-										requestedAction: paymentStatus,
-										errorType: null,
-										resultHash: requestedResultHash,
-									},
-									submitResultTime: submitResultTime,
-									unlockTime: unlockTime,
-									SmartContractWallet: {
-										id: hotWallet.id,
-										PendingTransaction: { is: null },
-										lockedAt: null,
-										deletedAt: null,
-									},
-									onChainState: onChainState,
-									//we only want to lock the payment if the cooldown time has passed
-									sellerCoolDownTime: { lt: Date.now() - minCooldownTime },
-									resultHash: resultHash,
-									// Optional OR group — only included when caller supplies
-									// `orFilters`. Each entry is fully ANDed against the
-									// outer predicates, so callers can supply per-variant
-									// onChainState / time-window constraints that differ
-									// across an `OR` axis.
-									...(orFilters != null && orFilters.length > 0 ? { OR: orFilters } : {}),
-								},
-								include: {
-									NextAction: true,
-									CurrentTransaction: true,
-									RequestedFunds: true,
-									BuyerWallet: true,
-									SmartContractWallet: {
-										include: {
-											Secret: true,
-										},
-										where: { deletedAt: null },
-									},
-								},
-								orderBy: {
-									createdAt: 'asc',
-								},
-								take: maxBatchSize,
-							});
-							if (potentialPaymentRequests.length > 0) {
-								const hotWalletResult = await prisma.hotWallet.update({
-									where: { id: hotWallet.id, deletedAt: null },
-									data: { lockedAt: new Date() },
-								});
-								potentialPaymentRequests.forEach((paymentRequest) => {
-									paymentRequest.SmartContractWallet!.pendingTransactionId = hotWalletResult.pendingTransactionId;
-									paymentRequest.SmartContractWallet!.lockedAt = hotWalletResult.lockedAt;
-								});
-								paymentRequests.push(...potentialPaymentRequests);
-							}
-						}
-
-						if (paymentRequests.length > 0) {
-							newPaymentSources.push({
-								...paymentSource,
-								PaymentRequests: paymentRequests,
-							});
-						}
-					}
-					return newPaymentSources;
+	// Step 1: read the candidate payment sources + their unlocked hot wallets
+	// outside any transaction. This is a read-only snapshot used purely to
+	// fan out per-wallet locking transactions below. The per-wallet
+	// transactions take row locks at Serializable isolation, so the actual
+	// concurrency-safety guarantees live there — not in this read.
+	const paymentSources = await prisma.paymentSource.findMany({
+		where: {
+			syncInProgress: false,
+			deletedAt: null,
+			disablePaymentAt: null,
+			paymentSourceType,
+		},
+		include: {
+			HotWallets: {
+				where: {
+					PendingTransaction: { is: null },
+					lockedAt: null,
+					deletedAt: null,
+					type: HotWalletType.Selling,
 				},
-				{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
-			),
-		{ label: 'lockAndQueryPayments' },
+			},
+			AdminWallets: true,
+			FeeReceiverNetworkWallet: true,
+			PaymentSourceConfig: true,
+		},
+		orderBy: {
+			createdAt: 'asc',
+		},
+	});
+
+	// Step 2: for each (paymentSource, hotWallet) pair, run an independent
+	// Serializable transaction in parallel. Wallets hold disjoint row locks
+	// (HotWallet.id is unique per wallet), so parallelizing them avoids
+	// serializing the whole batch on one connection while preserving
+	// retryOnSerializationConflict semantics per wallet.
+	const paymentSourceResults = await Promise.all(
+		paymentSources.map(async (paymentSource) => {
+			const minCooldownTime = paymentSource.cooldownTime;
+			const perWalletResults = await Promise.all(
+				paymentSource.HotWallets.map((hotWallet) =>
+					retryOnSerializationConflict(
+						() =>
+							prisma.$transaction(
+								async (prisma) => {
+									const potentialPaymentRequests = await prisma.paymentRequest.findMany({
+										where: {
+											NextAction: {
+												requestedAction: paymentStatus,
+												errorType: null,
+												resultHash: requestedResultHash,
+											},
+											submitResultTime: submitResultTime,
+											unlockTime: unlockTime,
+											SmartContractWallet: {
+												id: hotWallet.id,
+												PendingTransaction: { is: null },
+												lockedAt: null,
+												deletedAt: null,
+											},
+											onChainState: onChainState,
+											//we only want to lock the payment if the cooldown time has passed
+											sellerCoolDownTime: { lt: Date.now() - minCooldownTime },
+											resultHash: resultHash,
+											// Optional OR group — only included when caller supplies
+											// `orFilters`. Each entry is fully ANDed against the
+											// outer predicates, so callers can supply per-variant
+											// onChainState / time-window constraints that differ
+											// across an `OR` axis.
+											...(orFilters != null && orFilters.length > 0 ? { OR: orFilters } : {}),
+										},
+										include: {
+											NextAction: true,
+											CurrentTransaction: true,
+											RequestedFunds: true,
+											BuyerWallet: true,
+											SmartContractWallet: {
+												include: {
+													Secret: true,
+												},
+												where: { deletedAt: null },
+											},
+										},
+										orderBy: {
+											createdAt: 'asc',
+										},
+										take: maxBatchSize,
+									});
+									if (potentialPaymentRequests.length > 0) {
+										const hotWalletResult = await prisma.hotWallet.update({
+											where: { id: hotWallet.id, deletedAt: null },
+											data: { lockedAt: new Date() },
+										});
+										potentialPaymentRequests.forEach((paymentRequest) => {
+											paymentRequest.SmartContractWallet!.pendingTransactionId = hotWalletResult.pendingTransactionId;
+											paymentRequest.SmartContractWallet!.lockedAt = hotWalletResult.lockedAt;
+										});
+									}
+									return potentialPaymentRequests;
+								},
+								{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
+							),
+						{ label: 'lockAndQueryPayments' },
+					),
+				),
+			);
+			const paymentRequests = perWalletResults.flat();
+			if (paymentRequests.length > 0) {
+				return {
+					...paymentSource,
+					PaymentRequests: paymentRequests,
+				};
+			}
+			return null;
+		}),
 	);
+	return paymentSourceResults.filter((ps): ps is NonNullable<typeof ps> => ps != null);
 }

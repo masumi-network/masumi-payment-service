@@ -15,11 +15,21 @@ CREATE TABLE "_PaymentTransactionHistory" (
 CREATE UNIQUE INDEX "_PaymentTransactionHistory_AB_unique" ON "_PaymentTransactionHistory"("A", "B");
 CREATE INDEX "_PaymentTransactionHistory_B_index" ON "_PaymentTransactionHistory"("B");
 
-INSERT INTO "_PaymentTransactionHistory"("A", "B")
-SELECT "paymentRequestHistoryId", "id"
-FROM "Transaction"
-WHERE "paymentRequestHistoryId" IS NOT NULL
-ON CONFLICT DO NOTHING;
+-- Guard the backfill against partial replay: if this migration was previously
+-- applied past the DROP COLUMN further down, "paymentRequestHistoryId" no
+-- longer exists and a re-run would raise undefined_column. We swallow that
+-- specifically and continue. Pattern matches the duplicate_object guard used
+-- in 20260519120000_add_payment_source_type_v2_registry_metadata.
+DO $$ BEGIN
+    INSERT INTO "_PaymentTransactionHistory"("A", "B")
+    SELECT "paymentRequestHistoryId", "id"
+    FROM "Transaction"
+    WHERE "paymentRequestHistoryId" IS NOT NULL
+    ON CONFLICT DO NOTHING;
+EXCEPTION
+    WHEN undefined_column THEN
+        RAISE NOTICE 'paymentRequestHistoryId column already dropped, skipping backfill';
+END $$;
 
 CREATE TABLE "_PurchaseTransactionHistory" (
     "A" TEXT NOT NULL,
@@ -32,11 +42,16 @@ CREATE TABLE "_PurchaseTransactionHistory" (
 CREATE UNIQUE INDEX "_PurchaseTransactionHistory_AB_unique" ON "_PurchaseTransactionHistory"("A", "B");
 CREATE INDEX "_PurchaseTransactionHistory_B_index" ON "_PurchaseTransactionHistory"("B");
 
-INSERT INTO "_PurchaseTransactionHistory"("A", "B")
-SELECT "purchaseRequestHistoryId", "id"
-FROM "Transaction"
-WHERE "purchaseRequestHistoryId" IS NOT NULL
-ON CONFLICT DO NOTHING;
+DO $$ BEGIN
+    INSERT INTO "_PurchaseTransactionHistory"("A", "B")
+    SELECT "purchaseRequestHistoryId", "id"
+    FROM "Transaction"
+    WHERE "purchaseRequestHistoryId" IS NOT NULL
+    ON CONFLICT DO NOTHING;
+EXCEPTION
+    WHEN undefined_column THEN
+        RAISE NOTICE 'purchaseRequestHistoryId column already dropped, skipping backfill';
+END $$;
 
 ALTER TABLE "Transaction" DROP CONSTRAINT IF EXISTS "Transaction_paymentRequestHistoryId_fkey";
 ALTER TABLE "Transaction" DROP CONSTRAINT IF EXISTS "Transaction_purchaseRequestHistoryId_fkey";

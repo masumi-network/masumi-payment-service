@@ -7,19 +7,13 @@ import {
 	Prisma,
 } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
+// TODO(v1-package-boundary): move db/retry, wallet-generator, blockchain-error-interpreter, min-utxo to @masumi/payment-core
 import { retryOnSerializationConflict } from '@/utils/db/retry';
-import {
-	BlockfrostProvider,
-	MeshWallet,
-	SLOT_CONFIG_NETWORK,
-	Transaction,
-	UTxO,
-	unixTimeToEnclosingSlot,
-} from '@meshsdk/core';
+import { BlockfrostProvider, MeshWallet, Transaction, UTxO } from '@meshsdk/core';
 import { logger } from '@masumi/payment-core/logger';
 import { generateWalletExtended } from '@/utils/generator/wallet-generator';
-import { SmartContractState } from '@/utils/generator/contract-generator';
-import { convertNetwork } from '@/utils/converter/network-convert';
+import { SmartContractState } from '@masumi/payment-core/smart-contract-state';
+import { convertNetwork } from '@masumi/payment-core/network';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { CONSTANTS } from '@masumi/payment-core/config';
@@ -30,6 +24,7 @@ import {
 	createMeshProvider,
 	createNextPurchaseAction,
 	createPendingTransaction,
+	createTxWindow,
 	updateCurrentTransactionHash,
 } from '@/services/shared';
 import { getDatumFromBlockchainIdentifier } from '@masumi/payment-source-v1';
@@ -163,11 +158,9 @@ async function executeSpecificBatchPayment(
 
 	logger.info('Batching payments, purchase request initialized');
 
-	const invalidBefore =
-		unixTimeToEnclosingSlot(Date.now() - 150000, SLOT_CONFIG_NETWORK[convertNetwork(paymentContract.network)]) - 1;
-
-	const invalidAfter =
-		unixTimeToEnclosingSlot(Date.now() + 150000, SLOT_CONFIG_NETWORK[convertNetwork(paymentContract.network)]) + 5;
+	// SERVICE_CONSTANTS.TRANSACTION defaults (timeBufferMs=150000, validitySlotBuffer=5)
+	// produce the same on-chain window as the previous direct invalidBefore/invalidHereafter calls.
+	const { invalidBefore, invalidAfter } = createTxWindow(convertNetwork(paymentContract.network));
 	unsignedTx.setNetwork(convertNetwork(paymentContract.network));
 	unsignedTx.txBuilder.invalidBefore(invalidBefore);
 	unsignedTx.txBuilder.invalidHereafter(invalidAfter);

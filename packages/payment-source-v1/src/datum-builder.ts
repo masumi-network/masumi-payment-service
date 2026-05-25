@@ -1,6 +1,9 @@
 import { getDatumFromBlockchainIdentifier } from './contract-generator';
+// TODO(v1-package-boundary): move DecodedV1ContractDatum / decodeV1ContractDatum to @masumi/payment-core
 import { DecodedV1ContractDatum } from '@/utils/converter/string-datum-convert';
-import { SmartContractState } from '@/utils/generator/contract-generator';
+// Import SmartContractState directly from payment-core to break the
+// V1 → src/utils/generator/contract-generator → @masumi/payment-source-v1 cycle.
+import { SmartContractState } from '@masumi/payment-core/smart-contract-state';
 
 export type V1DatumFromDecodedInput = {
 	decodedContract: DecodedV1ContractDatum;

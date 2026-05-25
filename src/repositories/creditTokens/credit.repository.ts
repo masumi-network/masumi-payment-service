@@ -1,4 +1,5 @@
 import { prisma } from '@masumi/payment-core/db';
+import createHttpError from 'http-errors';
 import { InsufficientFundsError } from '@/utils/errors/insufficient-funds-error';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { Network, PricingType, PurchasingAction, WalletBase, WalletType } from '@/generated/prisma/client';
@@ -57,7 +58,10 @@ async function handlePurchaseCreditInit({
 						},
 					});
 					if (!paymentSource) {
-						throw Error('Invalid paymentSource: ' + paymentSource);
+						throw createHttpError(
+							400,
+							'Invalid paymentSource: ' + JSON.stringify({ network, smartContractAddress: contractAddress }),
+						);
 					}
 					let sellerWallet: WalletBase | null = await prisma.walletBase.findUnique({
 						where: {
@@ -77,10 +81,10 @@ async function handlePurchaseCreditInit({
 						},
 					});
 					if (!result) {
-						throw Error('Invalid id: ' + id);
+						throw createHttpError(404, 'Invalid id: ' + id);
 					}
 					if (!result.canAdmin && !result.networkLimit.includes(network)) {
-						throw Error('No permission for network: ' + network + ' for id: ' + id);
+						throw createHttpError(403, 'No permission for network: ' + network + ' for id: ' + id);
 					}
 
 					if (!sellerWallet) {

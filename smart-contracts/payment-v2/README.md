@@ -254,6 +254,83 @@ Requirements:
 
 The validator allows multiple contract inputs in one transaction only when their `reference_signature` values are unique. Continuing contract outputs must also have unique `reference_signature` values. This keeps batched transitions distinguishable while preventing duplicate processing of the same payment reference.
 
+Inputs at the script address whose datum is missing, not inline, or not parseable as the `Datum` shape are filtered out of the dedupe set rather than aborting the transaction. This protects legitimate spends from a "datum dust" griefing vector where anyone can deposit a UTxO with an arbitrary datum at the script address. Such inputs still have to satisfy some validator path of their own to be spent, so including them is a tx-builder mistake whose blast radius is limited to that builder.
+
+The dedupe check is O(n²) but bounded in practice by Cardano's ledger-enforced limits on script inputs per tx (currently ~30 effective for typical Plutus scripts due to CPU / memory units). No application-level cap is added; the ledger cap is the effective bound. Revisit if ledger limits are raised significantly.
+
+## Design Decisions
+
+This section summarizes the intentional design decisions where the validator
+deliberately leaves something un-enforced because the cost of enforcement is
+not justified by the threat model. Each item is also documented at its
+specific code site in `validators/vested_pay.ak`.
+
+### Double-satisfaction is acceptable when buyer == seller
+
+In the `Withdraw` and `WithdrawDisputed` branches, the collateral-return
+filter and the seller-residual filter are independent. When
+`buyer_return_address == seller_return_address` (or `buyer == seller` when
+either address is omitted), a single tx output tagged with `own_ref` and
+addressed to the shared target satisfies both filters at once. The validator
+accepts this because the return addresses are pulled from the locked datum
+(not the redeemer), so no third party can manipulate the aggregation, and
+the "victim" and the "winner" of the aggregated payout are the same on-chain
+identity. Off-chain tx builders that want separate accounting MUST emit two
+explicit outputs; the validator only checks economic safety, not bookkeeping
+clarity.
+
+### Admin signature dedup is intentional (weighted multi-sig)
+
+`admin_vks` is allowed to contain duplicate entries. Each duplicate
+represents an additional voting slot, and a single physical signature from
+a key listed N times counts N times toward `required_admins_multi_sig`.
+This is the intended weighted-multisig behavior — for example, a 5-of-7
+weighted scheme `[ceo, ceo, b1, b2, b3, b4, b5]` lets the CEO + any three
+board members settle a dispute. This contrasts with naive multisig where
+duplicate keys would be a deployment bug. Off-chain tooling MUST construct
+`admin_vks` with the correct duplication when modeling weighted authorities
+and MUST surface the weights to deployers.
+
+### Dispute settler reward cap is intentional
+
+The validator does NOT cap the residual (surplus) that goes to the
+dispute-settlement transaction builder in `WithdrawDisputed`. The signed
+`buyer_value` / `seller_value` are MINIMUM payouts; any escrow value above
+their sum accrues to the wallet that builds and submits the tx, as a
+"finder's reward" for cleaning up the dispute without requiring buyer or
+seller to spend their own ADA on fees. Admins sign with full knowledge of
+the residual (the signed payload binds `own_ref`, so the admin can review
+the exact UTxO they are settling).
+
+Operational caveat: anyone can send dust ADA or arbitrary tokens to a
+script address. The disputed UTxO's value at settlement time can therefore
+exceed the value originally locked. The submitter sweeps whatever residual
+exists above the signed minimums; the validator does not distinguish
+"original lock" from "later dust accretion". Admins should sign settlements
+promptly to avoid dust-pump scenarios if "winner takes the surplus" is
+undesirable for a specific deployment.
+
+### `list.unique` is O(n²) but ledger-bounded
+
+The per-batch dedupe of `reference_signature` values uses `list.unique`,
+which is quadratic in the number of parseable script inputs (or continuing
+script outputs). Cardano's ledger-enforced limits on script inputs per tx
+(currently ~30 effective for typical Plutus scripts due to CPU / memory
+units) bound this in practice, so no explicit application-level cap is
+added. Revisit if ledger limits are ever raised significantly.
+
+### Malformed-datum inputs are skipped, not fatal
+
+Inputs at the script address whose datum is not inline or does not parse
+as the `Datum` shape are filtered out of the dedupe set via
+`list.filter_map` rather than aborting the transaction. This prevents a
+"datum dust" griefing vector where anyone could attach an unparseable UTxO
+to the script address and freeze any future spend that happens to include
+it. The validator continues to enforce all checks on the parseable inputs;
+the unparseable input must still satisfy some validator path of its own to
+be spent, so including it is a tx-builder mistake whose blast radius stays
+local.
+
 ## Example Scripts
 
 Install dependencies, generate local test wallets, and fund the buyer/admin wallets on the selected network:
