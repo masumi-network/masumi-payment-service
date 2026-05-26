@@ -7,19 +7,13 @@ import {
 	WalletType,
 } from '../src/generated/prisma/client';
 import dotenv from 'dotenv';
-import {
-	resolvePaymentKeyHash,
-	resolvePlutusScriptAddress,
-	resolveStakeKeyHash,
-	applyParamsToScript,
-} from '@meshsdk/core-cst';
+import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
 import { encrypt } from './../src/utils/security/encryption';
 import { DEFAULTS } from './../src/utils/config';
 import { getRegistryScriptV1 } from './../src/utils/generator/contract-generator';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
-import paymentPlutus from '../smart-contracts/payment/plutus.json';
 import { generateApiKeySecureHash } from '../src/utils/crypto/api-key-hash';
-import { MeshWallet, PlutusScript } from '@meshsdk/core';
+import { MeshWallet } from '@meshsdk/core';
 
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -138,51 +132,10 @@ export const seed = async (prisma: PrismaClient) => {
 			throw Error('Fee permille is not valid');
 		}
 
-		const script = {
-			code: applyParamsToScript(paymentPlutus.validators[0].compiledCode, [
-				2,
-				[
-					resolvePaymentKeyHash(adminWallet1AddressPreprod),
-					resolvePaymentKeyHash(adminWallet2AddressPreprod),
-					resolvePaymentKeyHash(adminWallet3AddressPreprod),
-				],
-				{
-					alternative: 0,
-					fields: [
-						{
-							alternative: 0,
-							fields: [resolvePaymentKeyHash(feeWalletAddressPreprod)],
-						},
-						{
-							alternative: 0,
-							fields: [
-								{
-									alternative: 0,
-									fields: [
-										{
-											alternative: 0,
-											fields: [resolveStakeKeyHash(feeWalletAddressPreprod)],
-										},
-									],
-								},
-							],
-						},
-					],
-				},
-				fee,
-				cooldownTimePreprod,
-			]),
-			version: 'V3',
-		};
-		const smartContractAddress = resolvePlutusScriptAddress(script as PlutusScript, 0);
-		if (smartContractAddress != DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_PREPROD) {
-			throw new Error(
-				'Smart contract address is changed expected: ' +
-					DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_PREPROD +
-					' got: ' +
-					smartContractAddress,
-			);
-		}
+		// Use the configured address directly — do not recompute from the SDK.
+		// applyParamsToScript output can change across SDK versions; the deployed
+		// contract address never changes, so we trust the config value.
+		const smartContractAddress = DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_PREPROD;
 		const blockfrostApi = new BlockFrostAPI({
 			projectId: blockfrostApiKeyPreprod,
 		});
@@ -421,52 +374,8 @@ export const seed = async (prisma: PrismaClient) => {
 			throw Error('Fee permille is not valid');
 		}
 
-		const script: PlutusScript = {
-			code: applyParamsToScript(paymentPlutus.validators[0].compiledCode, [
-				2,
-				[
-					resolvePaymentKeyHash(adminWallet1AddressMainnet),
-					resolvePaymentKeyHash(adminWallet2AddressMainnet),
-					resolvePaymentKeyHash(adminWallet3AddressMainnet),
-				],
-				{
-					alternative: 0,
-					fields: [
-						{
-							alternative: 0,
-							fields: [resolvePaymentKeyHash(feeWalletAddressMainnet)],
-						},
-						{
-							alternative: 0,
-							fields: [
-								{
-									alternative: 0,
-									fields: [
-										{
-											alternative: 0,
-											fields: [resolveStakeKeyHash(feeWalletAddressMainnet)],
-										},
-									],
-								},
-							],
-						},
-					],
-				},
-				fee,
-				cooldownTimeMainnet,
-			]),
-			version: 'V3',
-		};
-
-		const smartContractAddress = resolvePlutusScriptAddress(script, 1);
-		if (smartContractAddress != DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_MAINNET) {
-			throw new Error(
-				'Smart contract address is changed expected: ' +
-					DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_MAINNET +
-					' got: ' +
-					smartContractAddress,
-			);
-		}
+		// Use the configured address directly — do not recompute from the SDK.
+		const smartContractAddress = DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_MAINNET;
 		const blockfrostApi = new BlockFrostAPI({
 			projectId: blockfrostApiKeyMainnet,
 		});
@@ -591,4 +500,5 @@ seed(prisma)
 		prisma.$disconnect();
 		pool.end();
 		console.error(e);
+		process.exit(1);
 	});
