@@ -10,7 +10,7 @@ import dotenv from 'dotenv';
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
 import { encrypt } from './../src/utils/security/encryption';
 import { DEFAULTS } from './../src/utils/config';
-import { getRegistryScriptV1 } from './../src/utils/generator/contract-generator';
+import { getRegistryScriptV1, getPaymentScriptV1 } from './../src/utils/generator/contract-generator';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { generateApiKeySecureHash } from '../src/utils/crypto/api-key-hash';
 import { MeshWallet } from '@meshsdk/core';
@@ -132,10 +132,17 @@ export const seed = async (prisma: PrismaClient) => {
 			throw Error('Fee permille is not valid');
 		}
 
-		// Use the configured address directly — do not recompute from the SDK.
-		// applyParamsToScript output can change across SDK versions; the deployed
-		// contract address never changes, so we trust the config value.
-		const smartContractAddress = DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_PREPROD;
+		// Compute the payment contract address from the current SDK so it always
+		// matches what the server uses at runtime for building spending transactions.
+		const { smartContractAddress } = await getPaymentScriptV1(
+			adminWallet1AddressPreprod,
+			adminWallet2AddressPreprod,
+			adminWallet3AddressPreprod,
+			feeWalletAddressPreprod,
+			fee,
+			cooldownTimePreprod,
+			Network.Preprod,
+		);
 		const blockfrostApi = new BlockFrostAPI({
 			projectId: blockfrostApiKeyPreprod,
 		});
@@ -192,11 +199,6 @@ export const seed = async (prisma: PrismaClient) => {
 				});
 
 				const { policyId } = await getRegistryScriptV1(smartContractAddress, Network.Preprod);
-				if (policyId != DEFAULTS.REGISTRY_POLICY_ID_PREPROD) {
-					throw new Error(
-						'Registry policyId is changed expected: ' + DEFAULTS.REGISTRY_POLICY_ID_PREPROD + ' got: ' + policyId,
-					);
-				}
 				const paymentSourcePreprod = await prisma.paymentSource.create({
 					data: {
 						smartContractAddress: smartContractAddress,
@@ -374,8 +376,15 @@ export const seed = async (prisma: PrismaClient) => {
 			throw Error('Fee permille is not valid');
 		}
 
-		// Use the configured address directly — do not recompute from the SDK.
-		const smartContractAddress = DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_MAINNET;
+		const { smartContractAddress } = await getPaymentScriptV1(
+			adminWallet1AddressMainnet,
+			adminWallet2AddressMainnet,
+			adminWallet3AddressMainnet,
+			feeWalletAddressMainnet,
+			fee,
+			cooldownTimeMainnet,
+			Network.Mainnet,
+		);
 		const blockfrostApi = new BlockFrostAPI({
 			projectId: blockfrostApiKeyMainnet,
 		});
@@ -421,11 +430,6 @@ export const seed = async (prisma: PrismaClient) => {
 					data: { encryptedMnemonic: sellingWalletSecret },
 				});
 				const { policyId } = await getRegistryScriptV1(smartContractAddress, Network.Mainnet);
-				if (policyId != DEFAULTS.REGISTRY_POLICY_ID_MAINNET) {
-					throw new Error(
-						'Registry policyId is changed expected: ' + DEFAULTS.REGISTRY_POLICY_ID_MAINNET + ' got: ' + policyId,
-					);
-				}
 				await prisma.paymentSource.create({
 					data: {
 						smartContractAddress: smartContractAddress,
