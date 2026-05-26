@@ -242,12 +242,13 @@ export async function generateRegistryBatchMintTransaction(
 		]);
 	}
 
-	// Wallet "splitter" output — pure-ADA self-send so the minting wallet
-	// retains ≥2 UTxOs after this tx confirms. Mesh's default change is one
-	// output; the splitter is the second guaranteed wallet UTxO and protects
-	// against the single-UTxO trap at `ensureCollateralReady` on the next
-	// script tx. See `batch-helpers.ts WALLET_SPLITTER_LOVELACE`.
-	txBuilder.txOut(mintingWalletAddress, [{ unit: 'lovelace', quantity: WALLET_SPLITTER_LOVELACE.toString() }]);
+	// Conditional wallet "splitter" output — emitted ONLY when the minting
+	// wallet is at the 2-UTxO floor (collateral + at most one other input).
+	// Healthy wallets (3+ UTxOs) skip the splitter so batch txs stay tight.
+	// See `batch-helpers.ts WALLET_SPLITTER_LOVELACE` for full rationale.
+	if (walletUtxosForSelection.length <= 2) {
+		txBuilder.txOut(mintingWalletAddress, [{ unit: 'lovelace', quantity: WALLET_SPLITTER_LOVELACE.toString() }]);
+	}
 
 	return await txBuilder
 		.requiredSignerHash(deserializedAddress.pubKeyHash)
@@ -392,10 +393,12 @@ async function buildBatchDeregisterTx(
 		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
 		.setTotalCollateral(totalCollateral);
 
-	// Wallet "splitter" output — pure-ADA self-send so the burning wallet
-	// retains ≥2 UTxOs after this tx confirms. See
+	// Conditional wallet "splitter" output — emitted ONLY when the burning
+	// wallet is at the 2-UTxO floor. Healthy wallets skip. See
 	// `batch-helpers.ts WALLET_SPLITTER_LOVELACE` for full rationale.
-	txBuilder.txOut(walletAddress, [{ unit: 'lovelace', quantity: WALLET_SPLITTER_LOVELACE.toString() }]);
+	if (walletUtxosForSelection.length <= 2) {
+		txBuilder.txOut(walletAddress, [{ unit: 'lovelace', quantity: WALLET_SPLITTER_LOVELACE.toString() }]);
+	}
 
 	logger.debug('Built V2 batch deregister tx', {
 		policyId,

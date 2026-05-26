@@ -370,13 +370,26 @@ async function buildBatchInteractionTx(
 		txBuilder.txOut(smartContractAddress, outputAmount).txOutInlineDatumValue(item.newInlineDatum);
 	}
 
-	// Wallet "splitter" output: an explicit pure-ADA self-send that guarantees
-	// the wallet retains a second UTxO after this tx confirms. Without this,
-	// a tx that consumes more wallet UTxOs than mesh's default change emits
-	// (1) would degrade the wallet's UTxO count and eventually trip the
-	// single-UTxO trap at `ensureCollateralReady`. See
-	// `batch-helpers.ts WALLET_SPLITTER_LOVELACE` for the lifecycle rationale.
-	txBuilder.txOut(walletAddress, [{ unit: 'lovelace', quantity: WALLET_SPLITTER_LOVELACE.toString() }]);
+	// Conditional wallet "splitter" output: an explicit pure-ADA self-send
+	// emitted ONLY when the wallet is at the 2-UTxO floor (the trap-risk
+	// case). Healthy wallets (3+ UTxOs) skip the splitter so batch txs stay
+	// tight — adding an unconditional output starves wallet selection on
+	// dense batches (3+ script items × per-input continuation outputs) and
+	// causes single-item `[batch-fallback]` regressions.
+	//
+	// The collateral input is already excluded from `walletUtxos` by the
+	// service layer (see the `.filter(...)` walk in each service that
+	// removes `collateralUtxo` before passing here), so a length of <= 2
+	// means the wallet has the collateral + at most one other UTxO — one
+	// degradation step from the single-UTxO trap. The splitter guarantees
+	// the next tx still finds a non-collateral input.
+	//
+	// See `batch-helpers.ts WALLET_SPLITTER_LOVELACE` for the lifecycle
+	// rationale and the cross-module invariant
+	// `WALLET_SPLITTER_LOVELACE >= COLLATERAL_RESERVE_LOVELACE`.
+	if (walletUtxos.length <= 2) {
+		txBuilder.txOut(walletAddress, [{ unit: 'lovelace', quantity: WALLET_SPLITTER_LOVELACE.toString() }]);
+	}
 
 	// Hand the candidate wallet UTxOs to Mesh's coin selector instead of
 	// force-adding every one. Force-adding (a) blows tx size on fragmented
@@ -571,10 +584,12 @@ async function buildBatchWithdrawTx(
 		}
 	}
 
-	// Wallet "splitter" output — same rationale as in buildBatchInteractionTx.
-	// Pure-ADA self-send guarantees the wallet keeps ≥2 UTxOs across script
-	// txs. See `batch-helpers.ts WALLET_SPLITTER_LOVELACE`.
-	txBuilder.txOut(walletAddress, [{ unit: 'lovelace', quantity: WALLET_SPLITTER_LOVELACE.toString() }]);
+	// Conditional wallet "splitter" output — same rationale as in
+	// buildBatchInteractionTx. Emit only when wallet is at the 2-UTxO floor
+	// to avoid starving wallet selection on dense batches.
+	if (walletUtxos.length <= 2) {
+		txBuilder.txOut(walletAddress, [{ unit: 'lovelace', quantity: WALLET_SPLITTER_LOVELACE.toString() }]);
+	}
 
 	// See the matching note in buildBatchInteractionTx: hand the candidate
 	// wallet UTxOs to Mesh's coin selector instead of force-adding every one.
