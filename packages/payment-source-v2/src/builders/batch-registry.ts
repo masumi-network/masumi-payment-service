@@ -212,6 +212,24 @@ export async function generateRegistryBatchMintTransaction(
 		inputRefs.add(key);
 		txBuilder.txIn(item.firstUtxo.input.txHash, item.firstUtxo.input.outputIndex);
 	}
+	// Also exclude the collateral from the coin-selector pool. Two reasons:
+	//   1. Splitter-decision parity with the spend-path builders
+	//      (batch-interaction.ts) where the SERVICE LAYER filters collateral
+	//      out of `walletUtxos` before passing to the builder. The mint
+	//      callers (`registry/register/service.ts`, `registry-inbox/register/service.ts`)
+	//      pass `spendableUtxos` UNFILTERED, so the splitter check below
+	//      would otherwise count the collateral input and over-emit a
+	//      splitter on healthy wallets.
+	//   2. Coin-selection correctness — mesh's `selectUtxosFrom` does NOT
+	//      automatically exclude UTxOs declared via `.txInCollateral(...)`;
+	//      if the wallet is fragmented enough that mesh picks the collateral
+	//      UTxO as a regular fee input, the resulting tx has the same UTxO
+	//      in both `inputs` and `collateral_inputs` and Conway phase-1
+	//      rejects it.
+	// The pre-existing tolerance for `firstUtxo == collateralUtxo` overlap
+	// (see jsdoc on this function) is unaffected: when they coincide, the
+	// ref is already in inputRefs via the firstUtxo add above.
+	inputRefs.add(refKey(collateralUtxo));
 	const walletUtxosForSelection = walletUtxos.filter((u) => !inputRefs.has(refKey(u)));
 	if (walletUtxosForSelection.length > 0) {
 		txBuilder.selectUtxosFrom(walletUtxosForSelection);
@@ -243,10 +261,13 @@ export async function generateRegistryBatchMintTransaction(
 	}
 
 	// Conditional wallet "splitter" output — emitted ONLY when the minting
-	// wallet is at the 2-UTxO floor (collateral + at most one other input).
-	// Healthy wallets (3+ UTxOs) skip the splitter so batch txs stay tight.
-	// See `batch-helpers.ts WALLET_SPLITTER_LOVELACE` for full rationale.
-	if (walletUtxosForSelection.length <= 2) {
+	// wallet has exactly one FEE-ELIGIBLE UTxO (collateral + firstUtxos
+	// excluded via `inputRefs`). Threshold is `=== 1`, not `<= 2`: at
+	// length=2 mesh's natural change-emission already guarantees ≥2 UTxOs
+	// post-tx (collateral untouched + change), so a splitter there is
+	// over-emission. See `batch-helpers.ts WALLET_SPLITTER_LOVELACE` for
+	// full rationale and the precise per-length analysis.
+	if (walletUtxosForSelection.length === 1) {
 		txBuilder.txOut(mintingWalletAddress, [{ unit: 'lovelace', quantity: WALLET_SPLITTER_LOVELACE.toString() }]);
 	}
 
@@ -394,9 +415,12 @@ async function buildBatchDeregisterTx(
 		.setTotalCollateral(totalCollateral);
 
 	// Conditional wallet "splitter" output — emitted ONLY when the burning
-	// wallet is at the 2-UTxO floor. Healthy wallets skip. See
-	// `batch-helpers.ts WALLET_SPLITTER_LOVELACE` for full rationale.
-	if (walletUtxosForSelection.length <= 2) {
+	// wallet has exactly one fee-eligible UTxO (the genuine trap-risk
+	// floor). See `batch-helpers.ts WALLET_SPLITTER_LOVELACE` for full
+	// rationale; the burn caller already filters collateral + assetUtxos
+	// upstream so `walletUtxosForSelection.length` is the fee-eligible
+	// count directly.
+	if (walletUtxosForSelection.length === 1) {
 		txBuilder.txOut(walletAddress, [{ unit: 'lovelace', quantity: WALLET_SPLITTER_LOVELACE.toString() }]);
 	}
 

@@ -44,6 +44,7 @@ import {
 	pickBatchCollateral,
 	shrinkBatchToFit,
 	type TxWindowBounds,
+	WALLET_SPLITTER_LOVELACE,
 } from '../../../builders/batch-helpers';
 import {
 	type BatchInteractionItem,
@@ -392,6 +393,8 @@ async function processSinglePaymentRequest(
 		invalidBefore,
 		invalidAfter,
 		paymentContract.PaymentSourceConfig.rpcProviderApiKey,
+		// V2 single-item splitter — see authorize-refund/service.ts for rationale.
+		WALLET_SPLITTER_LOVELACE,
 	);
 
 	const signedTx = await wallet.signTx(unsignedTx);

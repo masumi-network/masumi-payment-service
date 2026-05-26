@@ -43,6 +43,7 @@ import {
 	pickBatchCollateral,
 	shrinkBatchToFit,
 	type TxWindowBounds,
+	WALLET_SPLITTER_LOVELACE,
 } from '../../../builders/batch-helpers';
 import {
 	type BatchInteractionItem,
@@ -303,6 +304,15 @@ async function processSinglePaymentRequest(
 		invalidBefore,
 		invalidAfter,
 		paymentContract.PaymentSourceConfig.rpcProviderApiKey,
+		// V2 single-item fallback: emit a 5-ADA self-send splitter output so
+		// the wallet retains 3 UTxOs after this tx confirms (collateral +
+		// change + splitter), giving a 1-UTxO buffer above the 2-UTxO
+		// `ensureCollateralReady` floor. Without it the shared generator
+		// would force-consume every walletUtxo (it does
+		// `for (utxo of walletUtxos) txBuilder.txIn(...)`) and leave
+		// the wallet at exactly 2 UTxOs — viable for the next tx but with
+		// zero margin against consolidation or phase-2 failure.
+		WALLET_SPLITTER_LOVELACE,
 	);
 	const signedTx = await wallet.signTx(unsignedTx);
 

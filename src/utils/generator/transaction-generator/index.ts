@@ -44,6 +44,15 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 	invalidBefore: number,
 	invalidAfter: number,
 	rpcApiKey?: string,
+	// Optional V2 single-item fallback support: when set, emit an explicit
+	// self-send "splitter" output of this many lovelace back to walletAddress
+	// before the change output. Raises the post-tx wallet UTxO floor from 2
+	// (collateral + change) to 3 (collateral + change + splitter), matching
+	// the V2 batch-builder splitter semantics. V1 callers MUST NOT pass this —
+	// V1 has no equivalent splitter convention and adding the output would
+	// change tx size + fee for V1 paths. See
+	// `packages/payment-source-v2/src/builders/batch-helpers.ts WALLET_SPLITTER_LOVELACE`.
+	walletSplitterLovelace?: bigint,
 ) {
 	if (rpcApiKey) {
 		// `MeshTxBuilder.protocolParams(...)` accepts a Protocol object that has
@@ -86,6 +95,7 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 		undefined,
 		coinsPerUtxoSize,
 		rpcApiKey,
+		walletSplitterLovelace,
 	);
 
 	const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
@@ -107,6 +117,7 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 		estimatedFee[0].budget,
 		coinsPerUtxoSize,
 		rpcApiKey,
+		walletSplitterLovelace,
 	);
 }
 
@@ -135,6 +146,7 @@ async function generateMasumiSmartContractInteractionTransactionCustomFee(
 
 	coinsPerUtxoSize: number = CONSTANTS.FALLBACK_COINS_PER_UTXO_SIZE,
 	rpcApiKey?: string,
+	walletSplitterLovelace?: bigint,
 ) {
 	// Pull live chain protocol params (incl. cost models) so the computed
 	// script_data_hash matches what the ledger expects. Without this, mesh
@@ -220,6 +232,14 @@ async function generateMasumiSmartContractInteractionTransactionCustomFee(
 
 	for (const utxo of walletUtxos) {
 		txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
+	}
+
+	// Optional self-send splitter for V2 single-item callers. See docstring
+	// on the public AutomaticFees entry point. Emitted BEFORE
+	// `.changeAddress(...)` so mesh's coin selection accounts for it as a
+	// required output. V1 callers omit the param → undefined → no-op.
+	if (walletSplitterLovelace != null) {
+		txBuilder.txOut(walletAddress, [{ unit: 'lovelace', quantity: walletSplitterLovelace.toString() }]);
 	}
 
 	return await txBuilder
@@ -318,6 +338,10 @@ export async function generateMasumiSmartContractWithdrawTransactionAutomaticFee
 	// (otherwise vested_pay.ak rejects the withdraw with value_returned == 0).
 	tagMainOutputAsOwnRef: boolean = false,
 	rpcApiKey?: string,
+	// Optional V2 single-item fallback support — see equivalent param on
+	// `generateMasumiSmartContractInteractionTransactionAutomaticFees`.
+	// V1 callers MUST NOT pass.
+	walletSplitterLovelace?: bigint,
 ) {
 	if (rpcApiKey) {
 		// See cost-model sync comment in the interaction builder above.
@@ -340,6 +364,7 @@ export async function generateMasumiSmartContractWithdrawTransactionAutomaticFee
 		undefined,
 		tagMainOutputAsOwnRef,
 		rpcApiKey,
+		walletSplitterLovelace,
 	);
 
 	const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
@@ -363,6 +388,7 @@ export async function generateMasumiSmartContractWithdrawTransactionAutomaticFee
 		estimatedFee[0].budget,
 		tagMainOutputAsOwnRef,
 		rpcApiKey,
+		walletSplitterLovelace,
 	);
 }
 
@@ -405,6 +431,7 @@ async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 	},
 	tagMainOutputAsOwnRef: boolean = false,
 	rpcApiKey?: string,
+	walletSplitterLovelace?: bigint,
 ) {
 	// See protocolParams comment in the interaction builder above. Reuse the
 	// cached chain params populated by syncMeshCostModelsFromChain to avoid a
@@ -458,6 +485,12 @@ async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 				},
 			])
 			.txOutInlineDatumValue(outputReference);
+	}
+
+	// Optional V2 single-item splitter — see CustomFee equivalent on the
+	// interaction builder for full rationale.
+	if (walletSplitterLovelace != null) {
+		txBuilder.txOut(walletAddress, [{ unit: 'lovelace', quantity: walletSplitterLovelace.toString() }]);
 	}
 
 	return await txBuilder

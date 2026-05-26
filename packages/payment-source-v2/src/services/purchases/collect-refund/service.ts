@@ -43,6 +43,7 @@ import {
 	pickBatchCollateral,
 	shrinkBatchToFit,
 	type TxWindowBounds,
+	WALLET_SPLITTER_LOVELACE,
 } from '../../../builders/batch-helpers';
 import {
 	type BatchWithdrawItem,
@@ -296,6 +297,8 @@ async function processSingleRefundCollection(
 		// when buyer_return_address is Some. Tagging is also safe when None.
 		true,
 		paymentContract.PaymentSourceConfig.rpcProviderApiKey,
+		// V2 single-item splitter — leave wallet at 3 UTxOs post-tx.
+		WALLET_SPLITTER_LOVELACE,
 	);
 
 	const signedTx = await wallet.signTx(unsignedTx);

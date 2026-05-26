@@ -8,20 +8,32 @@ import { logger } from '@masumi/payment-core/logger';
 
 /**
  * Lovelace amount routed into a CONDITIONAL "splitter" output that V2 batch
- * builders emit back to the funding wallet ONLY when `walletUtxos.length <= 2`
- * (the trap-risk case). Mesh's default `.changeAddress(wallet)` produces
- * ONE change output per tx; the splitter is a second wallet-targeted output
- * that, in the low-UTxO case, guarantees the wallet retains at least two
- * UTxOs after each script tx confirms — the precondition for the next
- * script tx (`inputs` vs `collateral_inputs` non-overlap rule, see
- * `services/wallet-collateral/ensure-collateral-ready.ts`).
+ * builders emit back to the funding wallet ONLY when the wallet has
+ * exactly ONE fee-eligible UTxO (`walletUtxos.length === 1`, after
+ * excluding the collateral input and any forced script/asset inputs).
  *
- * Healthy wallets (3+ UTxOs) SKIP the splitter. An unconditional splitter
- * starves wallet selection on dense batches (3+ script items × per-input
- * continuation outputs) and triggers `[batch-fallback]` regressions; the
- * extra output isn't needed because in steady state the script tx's
- * collateral is untouched on phase-1 success AND mesh emits change, so the
- * wallet already retains ≥2 UTxOs across iterations.
+ * Per-length analysis — `walletUtxos` here is the FEE-ELIGIBLE UTxO count
+ * (collateral excluded, mandatory script/asset inputs excluded):
+ *
+ *   - `length === 0` → tx cannot build (no fee input); splitter would not
+ *     help and the build failure is the correct operational signal.
+ *   - `length === 1` → mesh consumes the one fee input and emits one
+ *     change. Without the splitter the wallet ends at
+ *     [collateral, change] — exactly the 2-UTxO floor. Any subsequent
+ *     phase-2 failure or external consolidation drops below 2 and
+ *     re-triggers `ensureCollateralReady` prep. The splitter adds a 3rd
+ *     UTxO so the wallet has a 1-UTxO buffer above the floor.
+ *   - `length >= 2` → mesh's natural change-emission already guarantees
+ *     ≥2 UTxOs post-tx (collateral untouched + change) regardless of how
+ *     many fee inputs mesh consumes. The splitter would be pure
+ *     over-emission AND adds an extra output that competes with the
+ *     script continuation outputs for mesh's wallet selection — the
+ *     symptom that surfaced as `[batch-fallback]` regressions when this
+ *     threshold was previously `<= 2`.
+ *
+ * Mesh's default `.changeAddress(wallet)` produces ONE change output per
+ * tx; the splitter is a second wallet-targeted output that, in the
+ * length=1 case, raises the floor from 2 to 3.
  *
  * Sized at 5 ADA — MUST match `COLLATERAL_RESERVE_LOVELACE` in
  * `ensure-collateral-ready.ts`. When emitted, the splitter UTxO is the
@@ -41,7 +53,13 @@ import { logger } from '@masumi/payment-core/logger';
  * consumed by tx N+1 as part of mesh's coin selection (either as fee input
  * or as collateral), so the wallet does NOT permanently accrete pure-ADA
  * UTxOs across many txs — the splitter is a single-use second-UTxO
- * reservoir that fires only at the trap-risk threshold.
+ * reservoir that fires only at the genuine trap-risk threshold.
+ *
+ * Cross-builder semantic invariant: every splitter call site MUST count
+ * `walletUtxos` as collateral-excluded + mandatory-inputs-excluded.
+ * batch-interaction.ts relies on the service-layer filter; batch-registry.ts
+ * filters internally via `inputRefs.add(refKey(collateralUtxo))` before
+ * deriving `walletUtxosForSelection` (see `generateRegistryBatchMintTransaction`).
  */
 export const WALLET_SPLITTER_LOVELACE = 5_000_000n;
 

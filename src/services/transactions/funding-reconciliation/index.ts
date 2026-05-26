@@ -137,18 +137,38 @@ export async function reconcileOne(tx: ReconcileCandidate): Promise<void> {
 		// then advance request state through the normal `*Initiated → *Confirmed`
 		// machinery the next time it runs. We do NOT advance state here —
 		// keeping the state machine in one place avoids duplicate code paths.
-		logger.info('funding-reconciliation: promoted intendedTxHash → txHash (chain found)', {
-			txId: tx.id,
-			intendedTxHash: tx.intendedTxHash,
-		});
-		await retryOnSerializationConflict(
+		//
+		// Race guard: `updateMany` with `status: Pending, txHash: null`
+		// predicate ensures promote never overwrites a row that has already
+		// been concurrently advanced. Two race scenarios this defends:
+		//   1. A second reconcile observer (or wallet-timeouts delegation)
+		//      promoted first → second promote is a no-op (count=0).
+		//   2. The revert path won the race (chain disagreed between probes,
+		//      e.g. brief indexer rollback) and wrote status=RolledBack →
+		//      promote refuses to clobber the terminal state. Resulting on-
+		//      chain tx becomes operational orphan but no DB inconsistency
+		//      between status and txHash.
+		// `count == 0` is a benign race outcome, not an error — log at INFO
+		// so it doesn't pollute alert pipelines.
+		const promoted = await retryOnSerializationConflict(
 			() =>
-				prisma.transaction.update({
-					where: { id: tx.id },
+				prisma.transaction.updateMany({
+					where: { id: tx.id, status: TransactionStatus.Pending, txHash: null },
 					data: { txHash: tx.intendedTxHash, lastCheckedAt: new Date() },
 				}),
 			{ label: 'funding-reconciliation-promote' },
 		);
+		if (promoted.count === 0) {
+			logger.info('funding-reconciliation: promote race — row already advanced or terminal, skipping', {
+				txId: tx.id,
+				intendedTxHash: tx.intendedTxHash,
+			});
+			return;
+		}
+		logger.info('funding-reconciliation: promoted intendedTxHash → txHash (chain found)', {
+			txId: tx.id,
+			intendedTxHash: tx.intendedTxHash,
+		});
 		return;
 	}
 
@@ -161,12 +181,23 @@ export async function reconcileOne(tx: ReconcileCandidate): Promise<void> {
 			error: chainResult.error,
 		});
 		// Refresh lastCheckedAt so wallet-timeouts doesn't trip on this row
-		// while reconciliation is still actively probing it.
+		// while reconciliation is still actively probing it. Wrap in
+		// `retryOnSerializationConflict` for parity with the promote/revert
+		// sites — tx-sync may concurrently update this row, and a silently-
+		// lost bump means wallet-timeouts could re-probe the row sooner than
+		// intended. Use `updateMany` with a `status: Pending` predicate so
+		// we don't accidentally bump a row that's already moved to a
+		// terminal state (Confirmed / RolledBack) — those rows are no
+		// longer reconciliation candidates anyway.
 		try {
-			await prisma.transaction.update({
-				where: { id: tx.id },
-				data: { lastCheckedAt: new Date() },
-			});
+			await retryOnSerializationConflict(
+				() =>
+					prisma.transaction.updateMany({
+						where: { id: tx.id, status: TransactionStatus.Pending },
+						data: { lastCheckedAt: new Date() },
+					}),
+				{ label: 'funding-reconciliation-bump-transient' },
+			);
 		} catch (updateError) {
 			logger.warn('funding-reconciliation: failed to bump lastCheckedAt on transient', {
 				txId: tx.id,
@@ -208,11 +239,17 @@ export async function reconcileOne(tx: ReconcileCandidate): Promise<void> {
 			grace: RECONCILE_SLOT_GRACE,
 		});
 		// Bump lastCheckedAt to keep wallet-timeouts out of this row.
+		// Same retry + Pending-status-guard rationale as the transient-error
+		// bump above.
 		try {
-			await prisma.transaction.update({
-				where: { id: tx.id },
-				data: { lastCheckedAt: new Date() },
-			});
+			await retryOnSerializationConflict(
+				() =>
+					prisma.transaction.updateMany({
+						where: { id: tx.id, status: TransactionStatus.Pending },
+						data: { lastCheckedAt: new Date() },
+					}),
+				{ label: 'funding-reconciliation-bump-within-ttl' },
+			);
 		} catch (updateError) {
 			logger.warn('funding-reconciliation: failed to bump lastCheckedAt on within-ttl', {
 				txId: tx.id,
@@ -237,6 +274,52 @@ export async function reconcileOne(tx: ReconcileCandidate): Promise<void> {
 			() =>
 				prisma.$transaction(
 					async (txdb) => {
+						// Race guard: re-read the row under Serializable isolation BEFORE
+						// any destructive writes. Two scenarios this defends:
+						//   1. A concurrent observer (this cron's parallel iteration, or
+						//      wallet-timeouts delegating to reconcileOne) promoted
+						//      intendedTxHash → txHash between the outer probe and this
+						//      txn body. txHash is now non-null and the tx IS on-chain.
+						//      Reverting (resetting PurchaseRequests, disconnecting the
+						//      wallet, marking RolledBack) would orphan the on-chain tx
+						//      and trigger a double-lock when the next batch tick re-
+						//      attempts.
+						//   2. A concurrent revert (same race shape) already committed
+						//      status=RolledBack. Repeating the revert is wasted work
+						//      and would issue another PurchaseRequest reset that the
+						//      first revert's state already covers.
+						// Postgres SERIALIZABLE establishes the snapshot at the first
+						// SELECT; concurrent writes that commit after the snapshot but
+						// before our COMMIT trigger 40001 → `retryOnSerializationConflict`
+						// retries → next snapshot sees the new state → bails here. So
+						// Option A (re-check) suffices even without an explicit
+						// updateMany predicate on the terminal write below.
+						const fresh = await txdb.transaction.findUnique({
+							where: { id: tx.id },
+							select: { txHash: true, status: true },
+						});
+						if (fresh == null) {
+							logger.warn('funding-reconciliation: revert race — row disappeared, skipping', {
+								txId: tx.id,
+							});
+							return;
+						}
+						if (fresh.txHash != null) {
+							logger.warn('funding-reconciliation: revert race — concurrent promote set txHash, abandoning revert', {
+								txId: tx.id,
+								observedTxHash: fresh.txHash,
+								intendedTxHash: tx.intendedTxHash,
+							});
+							return;
+						}
+						if (fresh.status !== TransactionStatus.Pending) {
+							logger.warn('funding-reconciliation: revert race — status no longer Pending, abandoning revert', {
+								txId: tx.id,
+								observedStatus: fresh.status,
+							});
+							return;
+						}
+
 						// Invariant: intendedTxHash is only set on Transactions owned by
 						// PurchaseRequest (V2 collateral-prep + batch-payments). The revert
 						// path below only resets PurchaseRequest.currentTransactionId. If a

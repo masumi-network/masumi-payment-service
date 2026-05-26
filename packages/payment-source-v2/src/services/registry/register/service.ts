@@ -27,7 +27,12 @@ import {
 	resolveRegistryFundingLovelace,
 	resolveRegistryRecipientWalletAddress,
 } from '@/services/registry/shared';
-import { assertTxSizeWithinLimit, pickBatchCollateral, shrinkBatchToFit } from '../../../builders/batch-helpers';
+import {
+	assertTxSizeWithinLimit,
+	pickBatchCollateral,
+	shrinkBatchToFit,
+	WALLET_SPLITTER_LOVELACE,
+} from '../../../builders/batch-helpers';
 import { type BatchRegistryMintItem, generateRegistryBatchMintTransaction } from '../../../builders/batch-registry';
 import { ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
 import { unlockHotWalletIfNoPendingTransaction } from '../../wallet-lock-helpers';
@@ -308,6 +313,8 @@ async function processSingleRegistration(
 		metadata,
 		undefined,
 		rpcApiKey,
+		// V2 single-item splitter — see authorize-refund/service.ts.
+		WALLET_SPLITTER_LOVELACE,
 	);
 	const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
 		budget: { mem: number; steps: number };
@@ -327,6 +334,7 @@ async function processSingleRegistration(
 		metadata,
 		estimatedFee[0].budget,
 		rpcApiKey,
+		WALLET_SPLITTER_LOVELACE,
 	);
 	const signedTx = await wallet.signTx(unsignedTx, true);
 	await prisma.registryRequest.update({

@@ -30,6 +30,7 @@ import {
 } from '@/services/shared';
 import { createDatumFromBlockchainIdentifierV2 } from '@masumi/payment-source-v2';
 import { isDefinitiveNodeRejection } from '../../submit-error-classifier';
+import { WALLET_SPLITTER_LOVELACE } from '../../../builders/batch-helpers';
 
 type PaymentSourceWithWallets = Prisma.PaymentSourceGetPayload<{
 	include: {
@@ -236,6 +237,25 @@ async function executeSpecificBatchPayment(
 			})),
 		);
 	}
+
+	// Wallet "splitter" output for the funds-lock tx. Unlike script-spending
+	// txs, the funds-lock has NO collateral declaration — wallet UTxOs are
+	// consumed purely to fund the script outputs + fees, leaving only a
+	// single change output back to the wallet (mesh's default). That drops
+	// the wallet to 1 UTxO post-tx, below the 2-UTxO floor that
+	// `ensureCollateralReady` requires for the NEXT script-spending tx (the
+	// buyer's eventual collect-refund / authorize-withdrawal). Adding an
+	// explicit pure-ADA self-send keeps the wallet at ≥2 outputs after the
+	// lock: [splitter, change]. The splitter is the same constant used by
+	// the V2 batch builders (`WALLET_SPLITTER_LOVELACE = 5 ADA`), sized so
+	// it can serve directly as the collateral input on the next script tx
+	// without scavenging a larger UTxO. See
+	// `packages/payment-source-v2/src/builders/batch-helpers.ts` for the
+	// constant's full lifecycle rationale.
+	const buyerAddress = wallet.getUsedAddress().toBech32() as string;
+	unsignedTx.sendAssets({ address: buyerAddress }, [
+		{ unit: 'lovelace', quantity: WALLET_SPLITTER_LOVELACE.toString() },
+	]);
 
 	// Shared-Transaction pre-submit: REUSE the placeholder Transaction created
 	// at wallet-lock time (already carries BlocksWallet → wallet). Every

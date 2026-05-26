@@ -110,6 +110,11 @@ export async function generateRegistryMintTransaction(
 		steps: number;
 	} = SERVICE_CONSTANTS.SMART_CONTRACT.defaultExUnits,
 	rpcApiKey?: string,
+	// Optional V2 single-item splitter support. When set, emit a self-send
+	// lovelace output back to `mintingWalletAddress` before `.changeAddress`,
+	// raising the post-tx wallet UTxO count from 2 (collateral + change) to 3.
+	// V1 callers MUST NOT pass this (no V1 splitter convention).
+	walletSplitterLovelace?: bigint,
 ) {
 	if (rpcApiKey) {
 		// `protocolParams(...)` below does NOT carry cost models; mesh-sdk
@@ -170,6 +175,11 @@ export async function generateRegistryMintTransaction(
 		txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
 	}
 
+	// Optional V2 single-item splitter — see param docstring above.
+	if (walletSplitterLovelace != null) {
+		txBuilder.txOut(mintingWalletAddress, [{ unit: 'lovelace', quantity: walletSplitterLovelace.toString() }]);
+	}
+
 	return await txBuilder
 		.requiredSignerHash(deserializedAddress.pubKeyHash)
 		.setNetwork(network)
@@ -214,6 +224,9 @@ export async function generateRegistryDeregisterTransactionAutomaticFees(
 	// Resolved via getBurnRedeemerAlternative(paymentSourceType).
 	burnRedeemerAlternative: number = V1_BURN_REDEEMER_ALTERNATIVE,
 	rpcApiKey?: string,
+	// Optional V2 single-item splitter — see equivalent param on
+	// `generateRegistryMintTransaction`. V1 callers omit.
+	walletSplitterLovelace?: bigint,
 ) {
 	const evaluationTx = await generateRegistryDeregisterTransaction(
 		blockchainProvider,
@@ -228,6 +241,7 @@ export async function generateRegistryDeregisterTransactionAutomaticFees(
 		undefined,
 		burnRedeemerAlternative,
 		rpcApiKey,
+		walletSplitterLovelace,
 	);
 	const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
 		budget: { mem: number; steps: number };
@@ -246,6 +260,7 @@ export async function generateRegistryDeregisterTransactionAutomaticFees(
 		estimatedFee[0].budget,
 		burnRedeemerAlternative,
 		rpcApiKey,
+		walletSplitterLovelace,
 	);
 }
 
@@ -271,6 +286,7 @@ async function generateRegistryDeregisterTransaction(
 	},
 	burnRedeemerAlternative: number = V1_BURN_REDEEMER_ALTERNATIVE,
 	rpcApiKey?: string,
+	walletSplitterLovelace?: bigint,
 ) {
 	if (rpcApiKey) {
 		// See cost-model sync comment in generateRegistryMintTransaction above.
@@ -298,6 +314,12 @@ async function generateRegistryDeregisterTransaction(
 		.setTotalCollateral('3000000');
 	for (const utxo of utxos) {
 		txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
+	}
+
+	// Optional V2 single-item splitter — see param docstring on the public
+	// `generateRegistryDeregisterTransactionAutomaticFees` entry above.
+	if (walletSplitterLovelace != null) {
+		txBuilder.txOut(walletAddress, [{ unit: 'lovelace', quantity: walletSplitterLovelace.toString() }]);
 	}
 
 	return await txBuilder

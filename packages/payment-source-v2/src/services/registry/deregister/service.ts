@@ -32,6 +32,7 @@ import {
 	assertTxSizeWithinLimit,
 	pickBatchCollateral,
 	shrinkBatchToFit,
+	WALLET_SPLITTER_LOVELACE,
 } from '../../../builders/batch-helpers';
 import {
 	type BatchRegistryBurnItem,
@@ -223,6 +224,8 @@ async function processSingleDeregistration(
 		limitedFilteredUtxos,
 		getBurnRedeemerAlternative(PaymentSourceType.Web3CardanoV2),
 		paymentSource.PaymentSourceConfig.rpcProviderApiKey,
+		// V2 single-item splitter — see authorize-refund/service.ts.
+		WALLET_SPLITTER_LOVELACE,
 	);
 	const signedTx = await wallet.signTx(unsignedTx);
 	await prisma.registryRequest.update({

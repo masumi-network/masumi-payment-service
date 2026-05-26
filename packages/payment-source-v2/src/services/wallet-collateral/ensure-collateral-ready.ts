@@ -63,13 +63,18 @@ export type WalletStateClassification = {
 	hasGoodCollateral: boolean;
 	utxoCount: number;
 	totalLovelace: bigint;
-	/** Sum of lovelace across UTxOs that hold ONLY lovelace (no other tokens).
-	 *  Mesh's `sendAssets` for the prep tx cannot peel pure ADA off a
-	 *  token-bearing UTxO without explicitly handling the bundled assets, so
-	 *  this is the lovelace pool actually available to fund the prep tx. */
+	/** Diagnostic only — sum of lovelace across UTxOs that hold ONLY lovelace
+	 *  (no other tokens). Not a gate. Babbage (CIP-40) allows mixed-asset
+	 *  UTxOs as collateral, and mesh-SDK 1.9's `sendAssets` for the prep tx
+	 *  transparently peels lovelace off a token-bearing UTxO (the bundled
+	 *  tokens flow into the change output). The classifier no longer
+	 *  differentiates between pure and mixed UTxOs for readiness or
+	 *  prep-funding — `totalLovelace` is the sole funding gate. This field
+	 *  is retained as an operator-facing diagnostic so token-fragmentation
+	 *  state is visible in logs without re-walking the UTxO list. */
 	pureLovelaceTotal: bigint;
-	/** True when at least one UTxO in the wallet holds nothing but lovelace.
-	 *  Mirrors the per-UTxO purity test used by `pureLovelaceTotal`. */
+	/** Diagnostic only — true when at least one UTxO is pure ADA. Not a gate;
+	 *  mixed-asset UTxOs are perfectly valid collateral inputs since Babbage. */
 	hasPureAdaUtxo: boolean;
 	/** Per-UTxO asset summaries, surfaced so the caller's ERROR log can
 	 *  point an operator at exactly which UTxOs carry tokens vs pure ADA
