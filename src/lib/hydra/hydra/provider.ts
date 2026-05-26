@@ -39,6 +39,11 @@ export class HydraProvider implements IFetcher, ISubmitter {
 		return await this._node.fetchProtocolParameters();
 	}
 
+	async fetchCostModels(_epoch?: number): Promise<number[][]> {
+		// Empty array signals MeshTxBuilder to use bundled defaults (no L2 cost model override needed).
+		return [];
+	}
+
 	async fetchUTxOs(hash?: string, index?: number): Promise<UTxO[]> {
 		const snapshotUTxOs = await this._node.snapshotUTxO();
 		const results = hash ? snapshotUTxOs.filter((utxo) => utxo.input.txHash === hash) : snapshotUTxOs;
@@ -58,22 +63,22 @@ export class HydraProvider implements IFetcher, ISubmitter {
 				});
 			}
 		}
-		if (addressesWithQuantity.length === 0 || undefined) {
+		if (addressesWithQuantity.length === 0) {
 			throw new Error(`No address found holding asset: ${asset}`);
 		}
 		return addressesWithQuantity;
 	}
 
 	async fetchCollectionAssets(policyId: string): Promise<{ assets: Asset[] }> {
-		if (policyId.length !== POLICY_ID_LENGTH) {
-			throw new Error('Invalid policyId length: must be a 56-character hexadecimal string');
+		if (policyId.length !== POLICY_ID_LENGTH || !/^[0-9a-f]+$/i.test(policyId)) {
+			throw new Error('Invalid policyId: must be a 56-character hexadecimal string');
 		}
 
 		const utxos = await this.fetchUTxOs();
 		const filteredUtxos = utxos.filter((utxo) =>
 			utxo.output.amount.some((a) => a.unit.slice(0, POLICY_ID_LENGTH) === policyId),
 		);
-		if (filteredUtxos.length === 0 || undefined) {
+		if (filteredUtxos.length === 0) {
 			throw new Error(`No assets found in the head snapshot: ${policyId}`);
 		}
 		return {

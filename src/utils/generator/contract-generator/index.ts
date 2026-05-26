@@ -231,6 +231,16 @@ export function getDatumFromBlockchainIdentifier({
 	});
 }
 
+function tryResolveStakeKeyHash(address: string): string | undefined {
+	try {
+		return resolveStakeKeyHash(address);
+	} catch (e) {
+		const msg = e instanceof Error ? e.message.toLowerCase() : '';
+		if (msg.includes('enterprise') || msg.includes('no staking')) return undefined;
+		throw e;
+	}
+}
+
 function getDatum({
 	buyerAddress,
 	sellerAddress,
@@ -266,8 +276,11 @@ function getDatum({
 	newCooldownTimeBuyer: bigint;
 	state: SmartContractState;
 }) {
-	const buyerPubKeyAddress = mPubKeyAddress(resolvePaymentKeyHash(buyerAddress), resolveStakeKeyHash(buyerAddress));
-	const sellerPubKeyAddress = mPubKeyAddress(resolvePaymentKeyHash(sellerAddress), resolveStakeKeyHash(sellerAddress));
+	const buyerPubKeyAddress = mPubKeyAddress(resolvePaymentKeyHash(buyerAddress), tryResolveStakeKeyHash(buyerAddress));
+	const sellerPubKeyAddress = mPubKeyAddress(
+		resolvePaymentKeyHash(sellerAddress),
+		tryResolveStakeKeyHash(sellerAddress),
+	);
 	//verify that reference_key, reference_signature, seller_nonce, buyer_nonce, input_hash and result hash are valid hex strings
 	if (!validateHexString(referenceKey)) {
 		throw new Error('Reference key is not a valid hex string');

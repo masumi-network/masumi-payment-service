@@ -169,20 +169,28 @@ async function executeSpecificBatchPayment(
 
 	logger.info('Batching payments, purchase request initialized');
 
-	const invalidBefore =
-		unixTimeToEnclosingSlot(Date.now() - 150000, SLOT_CONFIG_NETWORK[convertNetwork(paymentContract.network)]) - 1;
-
-	const invalidAfter =
-		unixTimeToEnclosingSlot(Date.now() + 150000, SLOT_CONFIG_NETWORK[convertNetwork(paymentContract.network)]) + 5;
 	unsignedTx.setNetwork(convertNetwork(paymentContract.network));
-	unsignedTx.txBuilder.invalidBefore(invalidBefore);
-	unsignedTx.txBuilder.invalidHereafter(invalidAfter);
+	if (!isL2) {
+		const invalidBefore =
+			unixTimeToEnclosingSlot(Date.now() - 150000, SLOT_CONFIG_NETWORK[convertNetwork(paymentContract.network)]) - 1;
+		const invalidAfter =
+			unixTimeToEnclosingSlot(Date.now() + 150000, SLOT_CONFIG_NETWORK[convertNetwork(paymentContract.network)]) + 5;
+		unsignedTx.txBuilder.invalidBefore(invalidBefore);
+		unsignedTx.txBuilder.invalidHereafter(invalidAfter);
+	}
 
 	const completeTx = await unsignedTx.build();
 	logger.info('Batching payments, complete tx built');
 	const signedTx = await wallet.signTx(completeTx);
 	logger.info('Batching payments, tx signed');
-	const txHash = await wallet.submitTx(signedTx);
+	const txHash = isL2
+		? await Promise.race([
+				wallet.submitTx(signedTx),
+				new Promise<never>((_, reject) =>
+					setTimeout(() => reject(new Error('L2 transaction submission timed out after 30s')), 30_000),
+				),
+			])
+		: await wallet.submitTx(signedTx);
 	await walletLowBalanceMonitorService.evaluateProjectedHotWalletById({
 		hotWalletId: walletId,
 		walletAddress: walletPairing.changeAddress,
