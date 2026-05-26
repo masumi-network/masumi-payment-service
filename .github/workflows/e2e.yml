@@ -174,6 +174,22 @@ jobs:
           DATABASE_URL: ${{ steps.create-branch.outputs.connection_uri }}
           BLOCKFROST_API_KEY_PREPROD: ${{ secrets.BLOCKFROST_API_KEY_PREPROD }}
 
+      - name: Dump Server Log
+        if: always()
+        run: |
+          echo "=== Full server.log (tail 2000) ==="
+          tail -n 2000 server.log || echo "server.log not found"
+          echo "=== End server.log ==="
+
+      - name: Upload Server Log Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-server-log
+          path: server.log
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Stop API Server
         if: always()
         run: |
