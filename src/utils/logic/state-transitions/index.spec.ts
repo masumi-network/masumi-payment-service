@@ -53,4 +53,38 @@ describe('V2 payment source state transitions', () => {
 			errorType: null,
 		});
 	});
+
+	it('treats UnSetRefundRequestedRequested+FundsLocked as the success target', () => {
+		// V1 contract UnSetRefundRequested → FundsLocked when result_hash empty
+		// (smart-contracts/payment/validators/vested_pay.ak:277-282). Symmetric
+		// with UnSetRefundRequestedInitiated+FundsLocked (success), so the
+		// Requested case should also resume external-action wait — NOT flag a
+		// manual action.
+		const result = convertNewPurchasingActionAndError(
+			PurchasingAction.UnSetRefundRequestedRequested,
+			OnChainState.FundsLocked,
+		);
+
+		expect(result).toEqual({
+			action: PurchasingAction.WaitingForExternalAction,
+			errorNote: null,
+			errorType: null,
+		});
+	});
+
+	it('treats UnSetRefundRequestedRequested+ResultSubmitted as the success target', () => {
+		// V1 contract UnSetRefundRequested → ResultSubmitted when result_hash
+		// non-empty (smart-contracts/payment/validators/vested_pay.ak:280-282).
+		// Same rationale as the FundsLocked case above.
+		const result = convertNewPurchasingActionAndError(
+			PurchasingAction.UnSetRefundRequestedRequested,
+			OnChainState.ResultSubmitted,
+		);
+
+		expect(result).toEqual({
+			action: PurchasingAction.WaitingForExternalAction,
+			errorNote: null,
+			errorType: null,
+		});
+	});
 });

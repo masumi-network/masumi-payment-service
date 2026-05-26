@@ -140,6 +140,17 @@ model Transaction {
   validContract                 Boolean?
   previousOnChainState          OnChainState?
   newOnChainState               OnChainState?
+  /// Deterministic txHash (blake2b_256 of the signed tx body) computed BEFORE
+  /// broadcast. Set during pre-submit alongside invalidHereafterSlot so the
+  /// reconciliation worker can resolve an ambiguous submit (e.g. submit threw
+  /// after the node accepted the tx) by querying the chain for this hash. After
+  /// successful broadcast txHash and intendedTxHash MUST match.
+  intendedTxHash                String?
+  /// The tx's `invalid_hereafter` slot. Once the current slot passes this
+  /// (with a small grace), the ledger can never accept the txBody — reconciliation
+  /// uses this as the safe boundary to mark an ambiguous Pending tx as
+  /// RolledBack and free the wallet without risking double-spend.
+  invalidHereafterSlot          BigInt?
   BlocksWallet                  HotWallet?
   // V2 batch txs: one Transaction row referenced from N PaymentRequests / PurchaseRequests.
   // For V1 single-item txs each list still holds at most one entry, so existing code paths are unchanged.
@@ -151,6 +162,20 @@ model Transaction {
   // row through multiple request histories after it leaves CurrentTransaction.
   PaymentRequestHistory         PaymentRequest[]                @relation("PaymentTransactionHistory")
   PurchaseRequestHistory        PurchaseRequest[]               @relation("PurchaseTransactionHistory")
+
+  // Schema-declared full index on intendedTxHash. Migration
+  // 20260526002000_add_transaction_intended_tx_hash creates an additional
+  // PARTIAL index (`Transaction_intended_pending_idx`) with the predicate
+  // `WHERE "txHash" IS NULL AND "intendedTxHash" IS NOT NULL` — that one is
+  // the hot-path index for the funding-reconciliation poll and is smaller /
+  // tighter than this full index. Prisma cannot express partial indexes in
+  // schema.prisma; declaring this full index here ensures `prisma migrate
+  // dev` from the schema never silently DROPs index coverage on
+  // `intendedTxHash` (it would only drop the partial it doesn't know about
+  // and then re-create a full one under a different name). Both indexes
+  // co-exist; write cost is acceptable since only ambiguous-funding rows
+  // populate this column.
+  @@index([intendedTxHash])
 }
 
 model SwapTransaction {
@@ -491,12 +516,17 @@ model PaymentSource {
   lastIdentifierChecked          String?
   syncInProgress                 Boolean                         @default(false)
   paymentSourceType              PaymentSourceType               @default(Web3CardanoV1)
-  /// Required for Web3CardanoV2 (must be >= 2) and forbidden for Web3CardanoV1.
+  /// Required for Web3CardanoV2 (must be >= 1) and forbidden for Web3CardanoV1.
   /// Enforced at the DB layer by a CHECK constraint defined in migration
   /// 20260524000000_add_payment_source_type_index. Keep this comment in sync if
   /// the constraint is changed.
   requiredAdminSignatures        Int?
   smartContractAddress           String
+  /// V1: required fee-receiver (NOT NULL enforced by CHECK
+  /// `PaymentSource_v1_admin_wallet_required` in migration
+  /// 20260526001000_harden_admin_wallet_constraints).
+  /// V2: must be NULL — V2 has no V1-style fee receiver. Enforced by CHECK
+  /// `PaymentSource_v2_no_singular_admin` in the same migration.
   adminWalletId                  String?
   feeRatePermille                Int
   cooldownTime                   Int
@@ -535,8 +565,18 @@ model AdminWallet {
   updatedAt                DateTime        @updatedAt
   walletAddress            String
   paymentSourceAdminId     String?
+  /// Canonical V2 admin signing order. Must be unique per
+  /// paymentSourceAdminId so the off-chain ordering matches the on-chain
+  /// admin_vks list exactly. Enforced by partial unique index
+  /// `AdminWallet_paymentSourceAdminId_order_active_key` in migration
+  /// 20260526001000_harden_admin_wallet_constraints.
   order                    Int
-  PaymentSourceAdmin       PaymentSource?  @relation("AdminWallets", fields: [paymentSourceAdminId], references: [id])
+  /// V2 admin-set membership. FK is ON DELETE RESTRICT (migration
+  /// 20260526001000_harden_admin_wallet_constraints) so an admin must be
+  /// detached (paymentSourceAdminId set to NULL) before deletion. A
+  /// deferrable trigger also enforces count(AdminWallets) >=
+  /// requiredAdminSignatures for V2 PaymentSources.
+  PaymentSourceAdmin       PaymentSource?  @relation("AdminWallets", fields: [paymentSourceAdminId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   PaymentSourceFeeReceiver PaymentSource[] @relation("FeeReceiverNetworkWallet")
 }
 

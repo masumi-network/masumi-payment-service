@@ -233,7 +233,14 @@ export function getDatumV2({
 	if (agentIdentifier != null && agentIdentifier !== '' && !validateHexString(agentIdentifier)) {
 		throw new Error('Agent identifier is not a valid hex string');
 	}
-	if (inputHash != null && !validateHexString(inputHash)) {
+	// Treat empty-string `inputHash` as null for symmetry with the decoder at
+	// src/utils/converter/string-datum-convert/index.ts, which normalises an
+	// on-chain empty bytestring to null. Without this normalisation, a caller
+	// (or a DB row) feeding `inputHash = ''` would fall through to
+	// `validateHexString('')`, which returns false (the `+` quantifier requires
+	// ≥1 hex char), and the builder would reject a legitimate "no input hash"
+	// case with "Invalid hex".
+	if (inputHash != null && inputHash !== '' && !validateHexString(inputHash)) {
 		throw new Error('Input hash is not a valid hex string');
 	}
 	if (resultHash != null && resultHash.length > 0 && !validateHexString(resultHash)) {

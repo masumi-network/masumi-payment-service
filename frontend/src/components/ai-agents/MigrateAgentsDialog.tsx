@@ -127,7 +127,6 @@ async function fetchAllRegistryEntries(args: {
 
     const page = response?.data?.data?.Assets ?? [];
     if (page.length === 0) break;
-    const beforeLen = entries.length;
     // Backend `filterStatus: 'Registered'` is inclusive of `DeregistrationFailed`
     // (see src/routes/api/registry/queries.ts) — exclude those here to avoid
     // re-attempting bad deregisters during V2 migration and to keep the list
@@ -137,10 +136,11 @@ async function fetchAllRegistryEntries(args: {
     if (page.length < REGISTRY_FETCH_LIMIT) break;
     const last = page[page.length - 1];
     if (!last?.id || last.id === cursor) break;
-    // If a full page was entirely duplicates (or entirely filtered out) the
-    // cursor would advance to the same id we already used next iteration, so
-    // bail out instead of looping forever on the same cursor.
-    if (entries.length === beforeLen) break;
+    // NOTE: we do NOT break here when `filteredPage` was empty even though
+    // `page` was full. A full page of nothing-but-`DeregistrationFailed`
+    // entries is legitimate and the NEXT cursor advance can still surface
+    // valid `Registered` entries. The cursor-equality check above handles
+    // the only real infinite-loop risk (server returns the same id).
     cursor = last.id;
   }
 

@@ -268,6 +268,7 @@ async function processSingleRegistration(
 		meshWallet: wallet,
 		utxos,
 		blockchainProvider,
+		network,
 		serviceLabel: 'registry-register-single',
 	});
 	if (collateralCheck.status !== 'ready') {
@@ -427,6 +428,7 @@ export async function registerAgentV2() {
 					meshWallet: wallet,
 					utxos,
 					blockchainProvider,
+					network,
 					serviceLabel: 'registry-register-batch',
 				});
 				if (collateralCheck.status !== 'ready') {

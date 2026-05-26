@@ -28,10 +28,19 @@ ALTER COLUMN "adminWalletId" DROP NOT NULL;
 -- Drop the strict unique on (network, policyId). Active-source uniqueness now lives in
 -- @@unique([network, smartContractAddress]); multiple V2 sources per network are allowed
 -- and disambiguated by smartContractAddress carried in the signed V2 identifier.
--- The partial unique index "PaymentSource_network_policyId_active_key" added in
--- 20260525000000_restore_active_policy_id_uniqueness covers lookups for active
--- rows on (network, policyId), so no plain b-tree index is created here.
+--
+-- The partial unique index replacement is created in the SAME migration step
+-- below so there is no window between this DROP and the new index in which
+-- two active sources on the same network could be inserted with the same
+-- policyId. A duplicate of this CREATE lives in
+-- 20260525000000_restore_active_policy_id_uniqueness to keep the canonical
+-- index definition in its own migration (idempotent via IF NOT EXISTS) —
+-- both points are safe replays.
 DROP INDEX IF EXISTS "PaymentSource_network_policyId_key";
+
+CREATE UNIQUE INDEX IF NOT EXISTS "PaymentSource_network_policyId_active_key"
+ON "PaymentSource"("network", "policyId")
+WHERE "deletedAt" IS NULL AND "policyId" IS NOT NULL;
 
 -- V2 keeps return-address intent with the request rows.
 ALTER TABLE "PaymentRequest"

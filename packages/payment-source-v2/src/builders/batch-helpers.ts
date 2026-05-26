@@ -4,6 +4,7 @@
 // one — kept consistent with the rest of the V2 builders. See
 // docs/adr/0005-meshsdk-version-pinning-v1-v2.md.
 import type { UTxO } from '@meshsdk/core';
+import { logger } from '@masumi/payment-core/logger';
 
 /**
  * A per-tx validity window. Mirrors the `(invalidBefore, invalidAfter)` pair
@@ -58,7 +59,18 @@ function getLovelace(utxo: UTxO): bigint {
 	if (lovelaceAsset == null) return 0n;
 	try {
 		return BigInt(lovelaceAsset.quantity);
-	} catch {
+	} catch (parseError) {
+		// A malformed `quantity` string here means blockfrost returned data that
+		// violates our expectations; previously we silently treated the UTxO as
+		// zero-lovelace, which made it look like an invalid collateral
+		// candidate (it got skipped) without any diagnostic. Log loudly so an
+		// operator can investigate; still return 0n so the helper stays total.
+		logger.warn('getLovelace: malformed quantity string on UTxO; treating as 0 [batch-helpers]', {
+			txHash: utxo.input.txHash,
+			outputIndex: utxo.input.outputIndex,
+			rawQuantity: lovelaceAsset.quantity,
+			error: parseError instanceof Error ? parseError.message : parseError,
+		});
 		return 0n;
 	}
 }

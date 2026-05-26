@@ -11,5 +11,8 @@ DROP INDEX IF EXISTS "PurchaseRequest_currentTransactionId_key";
 -- currentTransactionId. Recreate a non-unique index to keep those queries
 -- (e.g. tx-history reconciliation, batch redeemer fan-out) from regressing to
 -- sequential scans on large tables.
-CREATE INDEX "PaymentRequest_currentTransactionId_idx" ON "PaymentRequest"("currentTransactionId");
-CREATE INDEX "PurchaseRequest_currentTransactionId_idx" ON "PurchaseRequest"("currentTransactionId");
+-- IF NOT EXISTS for replay safety: if a previous attempt of this migration
+-- crashed between the DROP and the CREATE, a rerun would otherwise fail with
+-- "relation already exists" on the second-pass CREATE.
+CREATE INDEX IF NOT EXISTS "PaymentRequest_currentTransactionId_idx" ON "PaymentRequest"("currentTransactionId");
+CREATE INDEX IF NOT EXISTS "PurchaseRequest_currentTransactionId_idx" ON "PurchaseRequest"("currentTransactionId");

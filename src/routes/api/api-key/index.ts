@@ -8,6 +8,7 @@ import { encrypt, decrypt } from '@/utils/security/encryption';
 import { CONSTANTS } from '@masumi/payment-core/config';
 import { logger } from '@masumi/payment-core/logger';
 import { transformBigIntAmounts } from '@/utils/shared/transformers';
+import { withSerializableSlot } from '@/utils/db/serializable-semaphore';
 import { z } from '@masumi/payment-core/zod';
 import {
 	addAPIKeySchemaInput,
@@ -185,112 +186,117 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 		const newTokenHash = input.token !== undefined ? await generateApiKeySecureHash(input.token) : undefined;
 		const newMaskedToken = input.token !== undefined ? '*****' + input.token.slice(-4) : undefined;
 
-		const apiKey = await prisma.$transaction(
-			async (prisma) => {
-				const apiKey = await prisma.apiKey.findUnique({
-					where: { id: input.id },
-					include: {
-						RemainingUsageCredits: {
-							select: { id: true, amount: true, unit: true },
+		// Gate Serializable $transaction through the shared semaphore so
+		// concurrent HTTP requests don't exhaust the pg connection pool.
+		// See `src/utils/db/serializable-semaphore.ts`.
+		const apiKey = await withSerializableSlot(() =>
+			prisma.$transaction(
+				async (prisma) => {
+					const apiKey = await prisma.apiKey.findUnique({
+						where: { id: input.id },
+						include: {
+							RemainingUsageCredits: {
+								select: { id: true, amount: true, unit: true },
+							},
 						},
-					},
-				});
-				if (!apiKey) {
-					throw createHttpError(404, 'API key not found');
-				}
-				if (input.UsageCreditsToAddOrRemove) {
-					for (const usageCredit of input.UsageCreditsToAddOrRemove) {
-						const parsedAmount = BigInt(usageCredit.amount);
-						const existingCredit = apiKey.RemainingUsageCredits.find((credit) => credit.unit == usageCredit.unit);
-						if (existingCredit) {
-							existingCredit.amount += parsedAmount;
-							if (existingCredit.amount == 0n) {
-								await prisma.unitValue.delete({
-									where: { id: existingCredit.id },
-								});
-							} else if (existingCredit.amount < 0) {
-								throw createHttpError(400, 'Invalid amount');
+					});
+					if (!apiKey) {
+						throw createHttpError(404, 'API key not found');
+					}
+					if (input.UsageCreditsToAddOrRemove) {
+						for (const usageCredit of input.UsageCreditsToAddOrRemove) {
+							const parsedAmount = BigInt(usageCredit.amount);
+							const existingCredit = apiKey.RemainingUsageCredits.find((credit) => credit.unit == usageCredit.unit);
+							if (existingCredit) {
+								existingCredit.amount += parsedAmount;
+								if (existingCredit.amount == 0n) {
+									await prisma.unitValue.delete({
+										where: { id: existingCredit.id },
+									});
+								} else if (existingCredit.amount < 0) {
+									throw createHttpError(400, 'Invalid amount');
+								} else {
+									await prisma.unitValue.update({
+										where: { id: existingCredit.id },
+										data: { amount: existingCredit.amount },
+									});
+								}
 							} else {
-								await prisma.unitValue.update({
-									where: { id: existingCredit.id },
-									data: { amount: existingCredit.amount },
+								if (parsedAmount <= 0) {
+									throw createHttpError(400, 'Invalid amount');
+								}
+								await prisma.unitValue.create({
+									data: {
+										unit: usageCredit.unit,
+										amount: parsedAmount,
+										apiKeyId: apiKey.id,
+										agentFixedPricingId: null,
+										paymentRequestId: null,
+										purchaseRequestId: null,
+									},
 								});
 							}
-						} else {
-							if (parsedAmount <= 0) {
-								throw createHttpError(400, 'Invalid amount');
-							}
-							await prisma.unitValue.create({
-								data: {
-									unit: usageCredit.unit,
-									amount: parsedAmount,
-									apiKeyId: apiKey.id,
-									agentFixedPricingId: null,
-									paymentRequestId: null,
-									purchaseRequestId: null,
-								},
+						}
+					}
+
+					// Determine new flag values
+					const newCanRead = input.canRead !== undefined ? input.canRead : apiKey.canRead;
+					const newCanPay = input.canPay !== undefined ? input.canPay : apiKey.canPay;
+					const newCanAdmin = input.canAdmin !== undefined ? input.canAdmin : apiKey.canAdmin;
+
+					const resultingWalletScopeEnabled = input.walletScopeEnabled ?? apiKey.walletScopeEnabled;
+					if (newCanAdmin && resultingWalletScopeEnabled) {
+						throw createHttpError(400, 'Admin API keys cannot have wallet scope enabled');
+					}
+					if (newCanAdmin && input.usageLimited) {
+						throw createHttpError(400, 'Admin API keys cannot have usage limits');
+					}
+
+					if (input.WalletScopeHotWalletIds !== undefined) {
+						await prisma.apiKeyWalletScope.deleteMany({
+							where: { apiKeyId: input.id },
+						});
+						if (input.WalletScopeHotWalletIds.length > 0) {
+							await prisma.apiKeyWalletScope.createMany({
+								data: input.WalletScopeHotWalletIds.map((hotWalletId) => ({
+									apiKeyId: input.id,
+									hotWalletId,
+								})),
 							});
 						}
 					}
-				}
 
-				// Determine new flag values
-				const newCanRead = input.canRead !== undefined ? input.canRead : apiKey.canRead;
-				const newCanPay = input.canPay !== undefined ? input.canPay : apiKey.canPay;
-				const newCanAdmin = input.canAdmin !== undefined ? input.canAdmin : apiKey.canAdmin;
-
-				const resultingWalletScopeEnabled = input.walletScopeEnabled ?? apiKey.walletScopeEnabled;
-				if (newCanAdmin && resultingWalletScopeEnabled) {
-					throw createHttpError(400, 'Admin API keys cannot have wallet scope enabled');
-				}
-				if (newCanAdmin && input.usageLimited) {
-					throw createHttpError(400, 'Admin API keys cannot have usage limits');
-				}
-
-				if (input.WalletScopeHotWalletIds !== undefined) {
-					await prisma.apiKeyWalletScope.deleteMany({
-						where: { apiKeyId: input.id },
+					const result = await prisma.apiKey.update({
+						where: { id: input.id },
+						data: {
+							...(input.token !== undefined
+								? {
+										encryptedToken: newEncryptedToken,
+										tokenHash: newTokenHash,
+										token: newMaskedToken,
+									}
+								: {}),
+							usageLimited: input.usageLimited,
+							status: input.status,
+							networkLimit: input.NetworkLimit,
+							walletScopeEnabled: input.walletScopeEnabled,
+							canRead: newCanRead,
+							canPay: newCanPay,
+							canAdmin: newCanAdmin,
+						},
+						include: {
+							RemainingUsageCredits: { select: { amount: true, unit: true } },
+							WalletScopes: { select: { hotWalletId: true } },
+						},
 					});
-					if (input.WalletScopeHotWalletIds.length > 0) {
-						await prisma.apiKeyWalletScope.createMany({
-							data: input.WalletScopeHotWalletIds.map((hotWalletId) => ({
-								apiKeyId: input.id,
-								hotWalletId,
-							})),
-						});
-					}
-				}
-
-				const result = await prisma.apiKey.update({
-					where: { id: input.id },
-					data: {
-						...(input.token !== undefined
-							? {
-									encryptedToken: newEncryptedToken,
-									tokenHash: newTokenHash,
-									token: newMaskedToken,
-								}
-							: {}),
-						usageLimited: input.usageLimited,
-						status: input.status,
-						networkLimit: input.NetworkLimit,
-						walletScopeEnabled: input.walletScopeEnabled,
-						canRead: newCanRead,
-						canPay: newCanPay,
-						canAdmin: newCanAdmin,
-					},
-					include: {
-						RemainingUsageCredits: { select: { amount: true, unit: true } },
-						WalletScopes: { select: { hotWalletId: true } },
-					},
-				});
-				return result;
-			},
-			{
-				timeout: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
-				maxWait: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
-				isolationLevel: 'Serializable',
-			},
+					return result;
+				},
+				{
+					timeout: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
+					maxWait: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
+					isolationLevel: 'Serializable',
+				},
+			),
 		);
 		return mapApiKeyOutput(apiKey);
 	},

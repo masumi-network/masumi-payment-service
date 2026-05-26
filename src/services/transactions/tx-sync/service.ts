@@ -21,6 +21,7 @@ import {
 } from './tx';
 import { createApiClient, withJobLock } from '@/services/shared';
 import { retryOnSerializationConflict } from '@/utils/db/retry';
+import { withSerializableSlot } from '@/utils/db/serializable-semaphore';
 
 type PaymentSourceWithConfig = PaymentSource & {
 	PaymentSourceConfig: PaymentSourceConfig;
@@ -248,56 +249,61 @@ async function unlockPaymentSources(paymentContractIds: string[]) {
 }
 
 async function queryAndLockPaymentSourcesForSync() {
-	return await retryOnSerializationConflict(
-		() =>
-			prisma.$transaction(
-				async (prisma) => {
-					const paymentContracts = await prisma.paymentSource.findMany({
-						where: {
-							deletedAt: null,
-							disableSyncAt: null,
-							OR: [
-								{ syncInProgress: false },
-								{
-									syncInProgress: true,
-									updatedAt: {
-										lte: new Date(
-											Date.now() -
-												//3 minutes
-												CONFIG.SYNC_LOCK_TIMEOUT_INTERVAL,
-										),
+	// Gate Serializable $transaction through the shared semaphore so the pg
+	// connection pool isn't exhausted under scheduler fan-out. See
+	// `src/utils/db/serializable-semaphore.ts`.
+	return await withSerializableSlot(() =>
+		retryOnSerializationConflict(
+			() =>
+				prisma.$transaction(
+					async (prisma) => {
+						const paymentContracts = await prisma.paymentSource.findMany({
+							where: {
+								deletedAt: null,
+								disableSyncAt: null,
+								OR: [
+									{ syncInProgress: false },
+									{
+										syncInProgress: true,
+										updatedAt: {
+											lte: new Date(
+												Date.now() -
+													//3 minutes
+													CONFIG.SYNC_LOCK_TIMEOUT_INTERVAL,
+											),
+										},
 									},
-								},
-							],
-						},
-						include: {
-							PaymentSourceConfig: true,
-						},
-					});
-					if (paymentContracts.length == 0) {
-						logger.warn(
-							'No payment contracts found, skipping update. It could be that an other instance is already syncing',
-						);
-						return null;
-					}
+								],
+							},
+							include: {
+								PaymentSourceConfig: true,
+							},
+						});
+						if (paymentContracts.length == 0) {
+							logger.warn(
+								'No payment contracts found, skipping update. It could be that an other instance is already syncing',
+							);
+							return null;
+						}
 
-					await prisma.paymentSource.updateMany({
-						where: {
-							id: { in: paymentContracts.map((x) => x.id) },
-							deletedAt: null,
-						},
-						data: { syncInProgress: true },
-					});
-					return paymentContracts.map((x) => {
-						return { ...x, syncInProgress: true };
-					});
-				},
-				{
-					isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-					timeout: 30_000,
-					maxWait: 30_000,
-				},
-			),
-		{ label: 'tx-sync-query-and-lock-payment-sources' },
+						await prisma.paymentSource.updateMany({
+							where: {
+								id: { in: paymentContracts.map((x) => x.id) },
+								deletedAt: null,
+							},
+							data: { syncInProgress: true },
+						});
+						return paymentContracts.map((x) => {
+							return { ...x, syncInProgress: true };
+						});
+					},
+					{
+						isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+						timeout: 30_000,
+						maxWait: 30_000,
+					},
+				),
+			{ label: 'tx-sync-query-and-lock-payment-sources' },
+		),
 	);
 }

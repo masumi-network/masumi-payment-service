@@ -34,6 +34,20 @@ import { logger } from '@masumi/payment-core/logger';
 
 const ERROR_NOTE_PHASE_2 = 'On-chain phase-2 validation failed (script rejected, collateral consumed)';
 
+// Hard cap on composed-error length. State machine should bound the chain to
+// ~2-3 cycles per row before reaching a terminal state, but a buggy state
+// transition could let the prepend chain grow unbounded. Cap defensively;
+// truncate from the OLD end (keep the most recent failure context) and append
+// a marker so it's obvious history was elided.
+const MAX_COMPOSED_ERROR_LEN = 2000;
+function composePhase2Error(priorError: string | null): string {
+	if (priorError == null || priorError.length === 0) return ERROR_NOTE_PHASE_2;
+	const composed = `${ERROR_NOTE_PHASE_2}; prior: ${priorError}`;
+	if (composed.length <= MAX_COMPOSED_ERROR_LEN) return composed;
+	const ellipsis = '… [truncated]';
+	return composed.slice(0, MAX_COMPOSED_ERROR_LEN - ellipsis.length) + ellipsis;
+}
+
 /**
  * Mark a Transaction row + every dependent request as phase-2-failed.
  *
@@ -157,17 +171,14 @@ export async function markTransactionPhase2Failed(
 				if (nextState != null) {
 					// Preserve any prior error context — append rather than overwrite — so
 					// operator forensics keep the original failure note when this is the
-					// second failure on the same row.
-					const composedError =
-						request.error && request.error.length > 0
-							? `${ERROR_NOTE_PHASE_2}; prior: ${request.error}`
-							: ERROR_NOTE_PHASE_2;
+					// second failure on the same row. Capped via composePhase2Error so a
+					// runaway state-transition bug can't unbounded-grow the field.
 					await tx.registryRequest.update({
 						where: { id: request.id },
 						data: {
 							state: nextState,
 							registrationStateLastChangedAt: new Date(),
-							error: composedError,
+							error: composePhase2Error(request.error),
 						},
 					});
 				}
@@ -195,16 +206,12 @@ export async function markTransactionPhase2Failed(
 					});
 				}
 				if (nextState != null) {
-					const composedError =
-						request.error && request.error.length > 0
-							? `${ERROR_NOTE_PHASE_2}; prior: ${request.error}`
-							: ERROR_NOTE_PHASE_2;
 					await tx.inboxAgentRegistrationRequest.update({
 						where: { id: request.id },
 						data: {
 							state: nextState,
 							registrationStateLastChangedAt: new Date(),
-							error: composedError,
+							error: composePhase2Error(request.error),
 						},
 					});
 				}
@@ -224,8 +231,15 @@ export async function markTransactionPhase2Failed(
 			//    Use the same `deletedAt: null` guard as every other hot-wallet
 			//    write site for soft-delete safety.
 			if (options.walletIdsToUnlock && options.walletIdsToUnlock.length > 0) {
+				// Dedup defensively: callers can collect ids from overlapping
+				// sources (the failing tx's BlocksWallet plus dependent
+				// requests' SmartContractWallet relations) and the same id can
+				// appear more than once. Issuing two updates against the same
+				// row inside a single interactive transaction is wasted work
+				// and risks confusing audit trails.
+				const uniqueWalletIds = Array.from(new Set(options.walletIdsToUnlock));
 				// intentional sequential — Prisma serializes interactive-tx queries on a single connection
-				for (const walletId of options.walletIdsToUnlock) {
+				for (const walletId of uniqueWalletIds) {
 					await tx.hotWallet.update({
 						where: { id: walletId, deletedAt: null },
 						data: {

@@ -342,10 +342,14 @@ export function convertNewPurchasingActionAndError(
 						ERROR_MESSAGES.UNEXPECTED_STATE_CHANGE_TIMEOUT,
 					);
 				case OnChainState.FundsLocked:
-					return generatePurchasingActionAndErrorResult(
-						PurchasingAction.WaitingForManualAction,
-						ERROR_MESSAGES.UNEXPECTED_STATE_CHANGE_TIMEOUT,
-					);
+					// V1 UnSetRefundRequested contract path: when result_hash is
+					// empty, the validator transitions back to FundsLocked
+					// (smart-contracts/payment/validators/vested_pay.ak:277-282).
+					// This is the canonical success target of an unset, so the
+					// purchase resumes the normal external-action wait — mirrors
+					// the `Initiated` case above where the chain has already
+					// observed the unset confirmation.
+					return generatePurchasingActionAndErrorResult(PurchasingAction.WaitingForExternalAction);
 				case OnChainState.FundsOrDatumInvalid:
 					return generatePurchasingActionAndErrorResult(
 						PurchasingAction.WaitingForManualAction,
@@ -359,10 +363,11 @@ export function convertNewPurchasingActionAndError(
 						ERROR_MESSAGES.UNEXPECTED_STATE_CHANGE_TIMEOUT,
 					);
 				case OnChainState.ResultSubmitted:
-					return generatePurchasingActionAndErrorResult(
-						PurchasingAction.WaitingForManualAction,
-						ERROR_MESSAGES.UNEXPECTED_STATE_CHANGE_TIMEOUT,
-					);
+					// V1 UnSetRefundRequested contract path: when result_hash is
+					// non-empty, the validator transitions to ResultSubmitted
+					// (smart-contracts/payment/validators/vested_pay.ak:280-282).
+					// Legitimate success target; resume external-action wait.
+					return generatePurchasingActionAndErrorResult(PurchasingAction.WaitingForExternalAction);
 				case OnChainState.Withdrawn:
 					return generatePurchasingActionAndErrorResult(
 						PurchasingAction.WaitingForManualAction,

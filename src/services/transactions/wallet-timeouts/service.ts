@@ -24,6 +24,7 @@ import {
 } from '@/services/integrations';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { markTransactionPhase2Failed } from '@/services/transactions/phase-2-failure';
+import { reconcileOne, type ReconcileCandidate } from '@/services/transactions/funding-reconciliation';
 import {
 	connectPreviousAction,
 	createMeshProvider,
@@ -543,10 +544,21 @@ export async function updateWalletTransactionHash() {
 				OR: [
 					{
 						PendingTransaction: {
-							//if the transaction has been checked in the last 30 seconds, we skip it
-							lastCheckedAt: {
-								lte: new Date(Date.now() - 1000 * 60 * 1),
-							},
+							// Prisma `lte` does NOT match NULL — without the explicit null branch
+							// below, a PendingTransaction whose lastCheckedAt is NULL (any historical
+							// row predating `createPendingTransaction`'s mandatory seed, plus any
+							// direct prisma.pendingTransaction.create() bypass) would be invisible
+							// here AND to the orphan-lock branch below (which requires
+							// pendingTransactionId == null), leaving the wallet stranded.
+							// The sibling swap-tx branch in this same file (~L730) uses the same pattern.
+							OR: [
+								{
+									lastCheckedAt: {
+										lte: new Date(Date.now() - 1000 * 60 * 1),
+									},
+								},
+								{ lastCheckedAt: null },
+							],
 						},
 						OR: [
 							{
@@ -600,6 +612,75 @@ export async function updateWalletTransactionHash() {
 					}
 					const txHash = wallet.PendingTransaction.txHash;
 					if (txHash == null) {
+						// Ambiguous-funding safety net. If the row was written by the V2
+						// collateral-prep / batch-payments path it carries an
+						// `intendedTxHash` (and `invalidHereafterSlot`) — meaning a tx
+						// body WAS signed and possibly broadcast, but the submitTx
+						// outcome was ambiguous. Blindly disconnecting here would
+						// strand a potentially on-chain tx and double-spend the inputs
+						// on the next batch.
+						//
+						// Delegate to the funding-reconciliation worker's per-row
+						// logic. It queries Blockfrost using `intendedTxHash`,
+						// promotes intended → txHash on a hit, and only reverts
+						// (disconnect + clear lock + mark RolledBack) once the TTL
+						// has provably elapsed. wallet-timeouts thus becomes the
+						// unified safety net while the dedicated reconciler cron
+						// remains the fast path.
+						//
+						// The funding-reconciliation revert path itself disconnects
+						// the wallet inside its Serializable $transaction, so if
+						// reconcileOne resolves the row (either promote or revert)
+						// the wallet is freed atomically. If reconcileOne returns
+						// without resolving (still within TTL, transient indexer
+						// error, etc.) we bump lastCheckedAt and bail — next
+						// wallet-timeouts tick re-evaluates.
+						const intendedTxHash = wallet.PendingTransaction.intendedTxHash;
+						if (intendedTxHash != null) {
+							try {
+								const candidate: ReconcileCandidate = {
+									id: wallet.PendingTransaction.id,
+									intendedTxHash,
+									invalidHereafterSlot: wallet.PendingTransaction.invalidHereafterSlot,
+									BlocksWallet: {
+										id: wallet.id,
+										PaymentSource: {
+											network: wallet.PaymentSource.network,
+											PaymentSourceConfig: {
+												rpcProviderApiKey: wallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
+											},
+										},
+									},
+								};
+								await reconcileOne(candidate);
+								// reconcileOne is idempotent and may have updated/freed the
+								// wallet inside its own $transaction. Re-read tally below
+								// from a fresh hotWallet query at next tick. Don't
+								// double-count unlocks here.
+							} catch (err) {
+								// Treat as transient — leave Pending, do NOT disconnect.
+								// Next tick (either this cron or the dedicated reconciler)
+								// will retry. Bump lastCheckedAt to throttle the retry.
+								logger.warn('wallet-timeouts: reconcileOne threw, leaving row Pending', {
+									txId: wallet.PendingTransaction.id,
+									intendedTxHash,
+									error: errorToString(err),
+								});
+								try {
+									await prisma.transaction.update({
+										where: { id: wallet.PendingTransaction.id },
+										data: { lastCheckedAt: new Date() },
+									});
+								} catch {
+									// best-effort throttle
+								}
+							}
+							return;
+						}
+						// No intendedTxHash → genuine orphan (e.g. legacy V1 path that
+						// signed but never recorded an intended hash). Preserve the
+						// previous blind-disconnect behavior; nothing on chain we
+						// could be stranding.
 						await prisma.hotWallet.update({
 							where: { id: wallet.id, deletedAt: null },
 							data: {

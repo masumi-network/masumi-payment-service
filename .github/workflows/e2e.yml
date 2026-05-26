@@ -367,9 +367,11 @@ jobs:
         # is the design intent; a fallback usually signals a transient chain /
         # blockfrost / scheduler issue (still recoverable on the next tick),
         # but it is worth surfacing so we can investigate why the batch did
-        # not land. Emit a GitHub Actions warning annotation per occurrence
-        # plus a summary line so the run shows up with a yellow "warning"
-        # banner without failing the build.
+        # not land. Emit a GitHub Actions ERROR annotation and fail the job if
+        # any [batch-fallback] occurrences are present — silent degradation
+        # used to hide real batching regressions behind a yellow warning.
+        # Override with BATCH_FALLBACK_ALLOWED=N to permit up to N occurrences
+        # while investigating a known issue.
         if: always()
         run: |
           if [ ! -f server.log ]; then
@@ -378,11 +380,11 @@ jobs:
           fi
           COUNT=$(grep -c '\[batch-fallback\]' server.log || true)
           COUNT=${COUNT:-0}
+          ALLOWED=${BATCH_FALLBACK_ALLOWED:-0}
           if [ "$COUNT" -gt 0 ]; then
-            echo "::warning title=V2 batch fallback used::$COUNT batch-fallback occurrence(s) detected in server.log — batches degraded to single-item processing. Inspect the dumped log for the preceding error context."
             echo "### V2 batch fallback usage" >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "**$COUNT occurrence(s)** of \`[batch-fallback]\` in server.log." >> "$GITHUB_STEP_SUMMARY"
+            echo "**$COUNT occurrence(s)** of \`[batch-fallback]\` in server.log (allowed: $ALLOWED)." >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
             echo "Each occurrence means a V2 batch builder pass failed and the service degraded to single-item processing for one item; remaining items wait for the next scheduler tick." >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
@@ -392,6 +394,12 @@ jobs:
             grep '\[batch-fallback\]' server.log | tail -50 >> "$GITHUB_STEP_SUMMARY" || true
             echo '```' >> "$GITHUB_STEP_SUMMARY"
             echo "</details>" >> "$GITHUB_STEP_SUMMARY"
+            if [ "$COUNT" -gt "$ALLOWED" ]; then
+              echo "::error title=V2 batch fallback exceeded threshold::$COUNT batch-fallback occurrence(s) in server.log (allowed: $ALLOWED). Inspect the dumped log for the preceding error context."
+              exit 1
+            else
+              echo "::warning title=V2 batch fallback (within allowed threshold)::$COUNT occurrence(s), allowed: $ALLOWED."
+            fi
           else
             echo "No V2 batch fallback detected (server.log is clean of [batch-fallback])."
             echo "✅ No V2 batch fallback usage detected." >> "$GITHUB_STEP_SUMMARY"

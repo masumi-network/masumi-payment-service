@@ -141,6 +141,7 @@ async function processSingleRegistration(
 		meshWallet: wallet,
 		utxos,
 		blockchainProvider,
+		network,
 		serviceLabel: 'inbox-register-single',
 	});
 	if (collateralCheck.status !== 'ready') {
@@ -301,6 +302,7 @@ export async function registerInboxAgentV2() {
 					meshWallet: wallet,
 					utxos,
 					blockchainProvider,
+					network,
 					serviceLabel: 'inbox-register-batch',
 				});
 				if (collateralCheck.status !== 'ready') {

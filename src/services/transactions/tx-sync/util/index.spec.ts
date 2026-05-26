@@ -26,16 +26,21 @@ describe('getCardanoFeesSeller', () => {
 		expect(getCardanoFeesSeller(6, 1_000_000n, V2)).toBe(1_000_000n);
 	});
 
-	it('attributes the share to seller for AuthorizeWithdrawal (2) on V2 only', () => {
-		// V2 alt 2 = AuthorizeWithdrawal (seller); V1 alt 2 = CancelRefund (buyer).
-		expect(getCardanoFeesSeller(2, 1_000_000n, V2)).toBe(1_000_000n);
+	it('attributes 0 to seller for alt 2 on both source types (buyer-paid)', () => {
+		// V1 alt 2 = CancelRefund (buyer-signed). V2 alt 2 = AuthorizeWithdrawal
+		// (also buyer-signed; see smart-contracts/payment-v2/validators/
+		// vested_pay.ak:491-492 `must_be_signed_by(buyer_vk)`). Both flows are
+		// driven from the purchases/ services so the buyer's hot wallet
+		// supplies the inputs and pays the on-chain fee.
 		expect(getCardanoFeesSeller(2, 1_000_000n, V1)).toBe(0n);
+		expect(getCardanoFeesSeller(2, 1_000_000n, V2)).toBe(0n);
 	});
 
 	it('attributes 0 to seller for buyer-side and admin redeemers', () => {
-		// 1 RequestRefund (buyer), 3 WithdrawRefund (buyer), 4 WithdrawDisputed
-		// (admin — admin wallet pays, neither party is debited).
-		for (const otherRedeemer of [1, 3, 4]) {
+		// 1 RequestRefund (buyer), 2 CancelRefund/AuthorizeWithdrawal (buyer),
+		// 3 WithdrawRefund (buyer), 4 WithdrawDisputed (admin — admin wallet
+		// pays, neither party is debited).
+		for (const otherRedeemer of [1, 2, 3, 4]) {
 			expect(getCardanoFeesSeller(otherRedeemer, 1_000_000n, V1)).toBe(0n);
 			expect(getCardanoFeesSeller(otherRedeemer, 1_000_000n, V2)).toBe(0n);
 		}
@@ -57,10 +62,12 @@ describe('getCardanoFeesBuyer', () => {
 		expect(getCardanoFeesBuyer(1, 1_000_000n, V2)).toBe(1_000_000n);
 	});
 
-	it('attributes the share to buyer for CancelRefund (2) on V1 only', () => {
-		// V1 alt 2 = CancelRefund (buyer); V2 alt 2 = AuthorizeWithdrawal (seller).
+	it('attributes the share to buyer for alt 2 on both source types', () => {
+		// V1 alt 2 = CancelRefund (buyer-signed). V2 alt 2 = AuthorizeWithdrawal
+		// (also buyer-signed; see smart-contracts/payment-v2/validators/
+		// vested_pay.ak:491-492 `must_be_signed_by(buyer_vk)`).
 		expect(getCardanoFeesBuyer(2, 1_000_000n, V1)).toBe(1_000_000n);
-		expect(getCardanoFeesBuyer(2, 1_000_000n, V2)).toBe(0n);
+		expect(getCardanoFeesBuyer(2, 1_000_000n, V2)).toBe(1_000_000n);
 	});
 
 	it('attributes the share to buyer for WithdrawRefund (3) on V1 and V2', () => {

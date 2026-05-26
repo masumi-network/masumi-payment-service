@@ -23,6 +23,7 @@ import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import {
+	connectExistingNextPurchaseAction,
 	connectExistingTransaction,
 	connectPreviousAction,
 	createMeshProvider,
@@ -31,7 +32,7 @@ import {
 	createTxWindow,
 	disconnectTransactionWallet,
 	loadHotWalletSession,
-	updateCurrentTransactionHash,
+	safeDeleteOrphanNextPurchaseAction,
 } from '@/services/shared';
 import { createDatumFromDecodedContractV2, getPaymentScriptFromPaymentSourceV2 } from '@masumi/payment-source-v2';
 import { decodeV2ContractDatum } from '@/utils/converter/string-datum-convert';
@@ -273,6 +274,7 @@ async function processSinglePurchaseRequest(
 		meshWallet: wallet,
 		utxos,
 		blockchainProvider,
+		network,
 		serviceLabel: 'authorize-withdrawal',
 	});
 	if (collateralCheck.status !== 'ready') {
@@ -325,23 +327,32 @@ async function processSinglePurchaseRequest(
 		paymentContract.PaymentSourceConfig.rpcProviderApiKey,
 	);
 	const signedTx = await wallet.signTx(unsignedTx);
-
-	await prisma.purchaseRequest.update({
-		where: { id: request.id },
-		data: {
-			...connectPreviousAction(request.nextActionId),
-			...createNextPurchaseAction(PurchasingAction.AuthorizeWithdrawalInitiated),
-			...createPendingTransaction(purchasingWallet.id),
-			TransactionHistory: { connect: { id: request.CurrentTransaction!.id } },
-		},
-	});
-
+	// Submit FIRST, then write DB. Previous order (DB row → submitTx) left an
+	// orphan Pending Transaction row holding BlocksWallet → wallet whenever
+	// submitTx threw: the wallet stayed locked via HotWallet.pendingTransactionId
+	// until wallet-timeouts swept it minutes later. With submit-first, a
+	// pre-submit throw leaves NO Tx row to clean up; the caller's catch arm
+	// (markRequestFailed / advancedRetry) is responsible for clearing
+	// lockedAt. A post-submit throw leaves the new Tx row in place (it points
+	// at a real on-chain tx) per the user's "do NOT revert after successful
+	// submit" constraint. Mirrors the submit-first pattern used in
+	// packages/payment-source-v2/src/services/payments/collection/service.ts
+	// and payments/{authorize-refund,submit-result}.
 	const newTxHash = await wallet.submitTx(signedTx);
 	await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
-	await prisma.purchaseRequest.update({
-		where: { id: request.id },
-		data: updateCurrentTransactionHash(newTxHash),
-	});
+	await retryOnSerializationConflict(
+		() =>
+			prisma.purchaseRequest.update({
+				where: { id: request.id },
+				data: {
+					...connectPreviousAction(request.nextActionId),
+					...createNextPurchaseAction(PurchasingAction.AuthorizeWithdrawalInitiated),
+					...createPendingTransaction(purchasingWallet.id, newTxHash),
+					TransactionHistory: { connect: { id: request.CurrentTransaction!.id } },
+				},
+			}),
+		{ label: 'v2-authorize-withdrawal-single-post-submit' },
+	);
 
 	logger.debug(`Created V2 authorize-withdrawal transaction:
               Tx ID: ${newTxHash}
@@ -470,6 +481,7 @@ async function processWalletBatch(
 		meshWallet,
 		utxos,
 		blockchainProvider,
+		network,
 		serviceLabel: 'authorize-withdrawal',
 	});
 	if (collateralCheck.status !== 'ready') {
@@ -688,11 +700,13 @@ async function processWalletBatch(
 	// so tx-sync's BlocksWallet-driven wallet unlock fires exactly once per
 	// batch regardless of which entry it processes first.
 	let sharedTxId: string;
+	const initiatedByRequestId = new Map<string, string>();
 	try {
 		sharedTxId = await retryOnSerializationConflict(
 			() =>
 				prisma.$transaction(
 					async (tx) => {
+						initiatedByRequestId.clear();
 						const sharedTx = await tx.transaction.create({
 							data: {
 								status: TransactionStatus.Pending,
@@ -703,15 +717,19 @@ async function processWalletBatch(
 							},
 						});
 						for (const v of fit) {
+							const initiated = await tx.purchaseActionData.create({
+								data: { requestedAction: PurchasingAction.AuthorizeWithdrawalInitiated },
+							});
 							await tx.purchaseRequest.update({
 								where: { id: v.request.id },
 								data: {
 									...connectPreviousAction(v.request.nextActionId),
-									...createNextPurchaseAction(PurchasingAction.AuthorizeWithdrawalInitiated),
+									...connectExistingNextPurchaseAction(initiated.id),
 									...connectExistingTransaction(sharedTx.id),
 									TransactionHistory: { connect: { id: v.request.CurrentTransaction!.id } },
 								},
 							});
+							initiatedByRequestId.set(v.request.id, initiated.id);
 						}
 						return sharedTx.id;
 					},
@@ -763,15 +781,34 @@ async function processWalletBatch(
 								);
 								continue;
 							}
+							const expectedInitiatedId = initiatedByRequestId.get(v.request.id);
+							const fresh = await tx.purchaseRequest.findUnique({
+								where: { id: v.request.id },
+								select: { nextActionId: true },
+							});
+							if (expectedInitiatedId == null || fresh == null || fresh.nextActionId !== expectedInitiatedId) {
+								logger.warn(
+									'V2 authorize-withdrawal rollback: nextAction drifted after pre-submit; leaving Initiated row, skipping revert',
+									{ requestId: v.request.id, expectedInitiatedId, actualNextAction: fresh?.nextActionId },
+								);
+								continue;
+							}
 							await tx.purchaseRequest.update({
 								where: { id: v.request.id },
 								data: {
-									...connectPreviousAction(v.request.nextActionId),
 									...createNextPurchaseAction(PurchasingAction.AuthorizeWithdrawalRequested),
 									CurrentTransaction: { connect: { id: currentTxId } },
 									TransactionHistory: { disconnect: { id: currentTxId } },
 								},
 							});
+							const result = await safeDeleteOrphanNextPurchaseAction(tx, expectedInitiatedId);
+							if (!result.deleted) {
+								logger.warn('V2 authorize-withdrawal rollback: leaked orphan Initiated row (refused to delete)', {
+									requestId: v.request.id,
+									orphanActionId: expectedInitiatedId,
+									reason: result.reason,
+								});
+							}
 						}
 					},
 					{ timeout: 30_000 },

@@ -1,4 +1,5 @@
 import {
+	OnChainState,
 	PaymentSourceType,
 	Prisma,
 	PurchaseErrorType,
@@ -22,6 +23,7 @@ import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import {
+	connectExistingNextPurchaseAction,
 	connectExistingTransaction,
 	connectPreviousAction,
 	createMeshProvider,
@@ -30,7 +32,7 @@ import {
 	createTxWindow,
 	disconnectTransactionWallet,
 	loadHotWalletSession,
-	updateCurrentTransactionHash,
+	safeDeleteOrphanNextPurchaseAction,
 } from '@/services/shared';
 import { createDatumFromDecodedContractV2, getPaymentScriptFromPaymentSourceV2 } from '@masumi/payment-source-v2';
 import { decodeV2ContractDatum } from '@/utils/converter/string-datum-convert';
@@ -267,6 +269,7 @@ async function processSinglePurchaseRequest(
 		meshWallet: wallet,
 		utxos,
 		blockchainProvider,
+		network,
 		serviceLabel: 'request-refund',
 	});
 	if (collateralCheck.status !== 'ready') {
@@ -324,23 +327,28 @@ async function processSinglePurchaseRequest(
 	);
 
 	const signedTx = await wallet.signTx(unsignedTx);
-
-	await prisma.purchaseRequest.update({
-		where: { id: request.id },
-		data: {
-			...connectPreviousAction(request.nextActionId),
-			...createNextPurchaseAction(PurchasingAction.SetRefundRequestedInitiated),
-			...createPendingTransaction(purchasingWallet.id),
-			TransactionHistory: { connect: { id: request.CurrentTransaction!.id } },
-		},
-	});
-
+	// Submit FIRST, then write DB. See submit-first rationale in
+	// packages/payment-source-v2/src/services/payments/collection/service.ts.
+	// Brief recap: pre-submit DB row → submit pattern strands the wallet
+	// (Pending Tx row with BlocksWallet → wallet, no txHash) whenever
+	// submitTx throws, leaving cleanup to wallet-timeouts minutes later.
+	// Mirrors the pattern already used in V2 payments/{authorize-refund,
+	// collection,submit-result}.
 	const newTxHash = await wallet.submitTx(signedTx);
 	await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
-	await prisma.purchaseRequest.update({
-		where: { id: request.id },
-		data: updateCurrentTransactionHash(newTxHash),
-	});
+	await retryOnSerializationConflict(
+		() =>
+			prisma.purchaseRequest.update({
+				where: { id: request.id },
+				data: {
+					...connectPreviousAction(request.nextActionId),
+					...createNextPurchaseAction(PurchasingAction.SetRefundRequestedInitiated),
+					...createPendingTransaction(purchasingWallet.id, newTxHash),
+					TransactionHistory: { connect: { id: request.CurrentTransaction!.id } },
+				},
+			}),
+		{ label: 'v2-request-refund-single-post-submit' },
+	);
 
 	logger.debug(`Created refund request transaction:
               Tx ID: ${newTxHash}
@@ -473,6 +481,7 @@ async function processWalletBatch(
 		meshWallet,
 		utxos,
 		blockchainProvider,
+		network,
 		serviceLabel: 'request-refund',
 	});
 	if (collateralCheck.status !== 'ready') {
@@ -717,11 +726,13 @@ async function processWalletBatch(
 	// so tx-sync's BlocksWallet-driven wallet unlock fires exactly once per
 	// batch regardless of which entry it processes first.
 	let sharedTxId: string;
+	const initiatedByRequestId = new Map<string, string>();
 	try {
 		sharedTxId = await retryOnSerializationConflict(
 			() =>
 				prisma.$transaction(
 					async (tx) => {
+						initiatedByRequestId.clear();
 						const sharedTx = await tx.transaction.create({
 							data: {
 								status: TransactionStatus.Pending,
@@ -732,15 +743,19 @@ async function processWalletBatch(
 							},
 						});
 						for (const v of fit) {
+							const initiated = await tx.purchaseActionData.create({
+								data: { requestedAction: PurchasingAction.SetRefundRequestedInitiated },
+							});
 							await tx.purchaseRequest.update({
 								where: { id: v.request.id },
 								data: {
 									...connectPreviousAction(v.request.nextActionId),
-									...createNextPurchaseAction(PurchasingAction.SetRefundRequestedInitiated),
+									...connectExistingNextPurchaseAction(initiated.id),
 									...connectExistingTransaction(sharedTx.id),
 									TransactionHistory: { connect: { id: v.request.CurrentTransaction!.id } },
 								},
 							});
+							initiatedByRequestId.set(v.request.id, initiated.id);
 						}
 						return sharedTx.id;
 					},
@@ -792,15 +807,34 @@ async function processWalletBatch(
 								);
 								continue;
 							}
+							const expectedInitiatedId = initiatedByRequestId.get(v.request.id);
+							const fresh = await tx.purchaseRequest.findUnique({
+								where: { id: v.request.id },
+								select: { nextActionId: true },
+							});
+							if (expectedInitiatedId == null || fresh == null || fresh.nextActionId !== expectedInitiatedId) {
+								logger.warn(
+									'V2 request-refund rollback: nextAction drifted after pre-submit; leaving Initiated row, skipping revert',
+									{ requestId: v.request.id, expectedInitiatedId, actualNextAction: fresh?.nextActionId },
+								);
+								continue;
+							}
 							await tx.purchaseRequest.update({
 								where: { id: v.request.id },
 								data: {
-									...connectPreviousAction(v.request.nextActionId),
 									...createNextPurchaseAction(PurchasingAction.SetRefundRequestedRequested),
 									CurrentTransaction: { connect: { id: currentTxId } },
 									TransactionHistory: { disconnect: { id: currentTxId } },
 								},
 							});
+							const result = await safeDeleteOrphanNextPurchaseAction(tx, expectedInitiatedId);
+							if (!result.deleted) {
+								logger.warn('V2 request-refund rollback: leaked orphan Initiated row (refused to delete)', {
+									requestId: v.request.id,
+									orphanActionId: expectedInitiatedId,
+									reason: result.reason,
+								});
+							}
 						}
 					},
 					{ timeout: 30_000 },
@@ -918,6 +952,15 @@ export async function requestRefundsV2() {
 			// now. Filter to leave a comfortable margin so submissions don't
 			// hit the ledger boundary and fail with `OutsideValidityIntervalUTxO`.
 			unlockTime: { gt: Date.now() + 1000 * 60 * 3 },
+			// Aiken `SetRefundRequested` is only legal from FundsLocked, ResultSubmitted,
+			// or Disputed. Pre-filtering at the lock-and-query level avoids needlessly
+			// locking wallets for rows whose on-chain state has advanced past these
+			// (e.g. RefundRequested already, RefundAuthorized, WithdrawAuthorized) —
+			// downstream `smartContractStateEqualsOnChainState` would skip them anyway
+			// but only after we paid the lock + Blockfrost UTxO lookup cost.
+			onChainState: {
+				in: [OnChainState.FundsLocked, OnChainState.ResultSubmitted, OnChainState.Disputed],
+			},
 			maxBatchSize: REQUEST_REFUND_BATCH_SIZE,
 			paymentSourceType: PaymentSourceType.Web3CardanoV2,
 		});

@@ -23,6 +23,7 @@ import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, tryAcquire, MutexInterface } from 'async-mutex';
 import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import {
+	connectExistingNextPaymentAction,
 	connectExistingTransaction,
 	connectPreviousAction,
 	createMeshProvider,
@@ -31,6 +32,7 @@ import {
 	createTxWindow,
 	disconnectTransactionWallet,
 	loadHotWalletSession,
+	safeDeleteOrphanNextPaymentAction,
 } from '@/services/shared';
 import { createDatumFromDecodedContractV2, getPaymentScriptFromPaymentSourceV2 } from '@masumi/payment-source-v2';
 import { decodeV2ContractDatum } from '@/utils/converter/string-datum-convert';
@@ -247,6 +249,7 @@ async function processSinglePaymentRequest(
 		meshWallet: wallet,
 		utxos,
 		blockchainProvider,
+		network,
 		serviceLabel: 'authorize-refund-single',
 	});
 	if (collateralCheck.status !== 'ready') {
@@ -313,15 +316,21 @@ async function processSinglePaymentRequest(
 	// the user's "do NOT revert after successful submit" constraint.
 	const newTxHash = await wallet.submitTx(signedTx);
 	await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
-	await prisma.paymentRequest.update({
-		where: { id: request.id },
-		data: {
-			...connectPreviousAction(request.nextActionId),
-			...createNextPaymentAction(PaymentAction.AuthorizeRefundInitiated),
-			...createPendingTransaction(request.SmartContractWallet!.id, newTxHash),
-			TransactionHistory: { connect: { id: request.CurrentTransaction!.id } },
-		},
-	});
+	// retryOnSerializationConflict — see #24 note in V2 collection:
+	// post-submit conflict bubbling to advancedRetry would re-submit.
+	await retryOnSerializationConflict(
+		() =>
+			prisma.paymentRequest.update({
+				where: { id: request.id },
+				data: {
+					...connectPreviousAction(request.nextActionId),
+					...createNextPaymentAction(PaymentAction.AuthorizeRefundInitiated),
+					...createPendingTransaction(request.SmartContractWallet!.id, newTxHash),
+					TransactionHistory: { connect: { id: request.CurrentTransaction!.id } },
+				},
+			}),
+		{ label: 'v2-authorize-refund-single-post-submit' },
+	);
 
 	logger.debug(`Created V2 authorize-refund transaction:
               Tx ID: ${newTxHash}
@@ -444,6 +453,7 @@ async function processWalletBatch(
 		meshWallet,
 		utxos,
 		blockchainProvider,
+		network,
 		serviceLabel: 'authorize-refund-batch',
 	});
 	if (collateralCheck.status !== 'ready') {
@@ -663,11 +673,16 @@ async function processWalletBatch(
 	// so tx-sync's BlocksWallet-driven wallet unlock fires exactly once per
 	// batch regardless of which entry it processes first.
 	let sharedTxId: string;
+	// Captured *Initiated NextAction ids; rollback path below uses them to
+	// safely delete orphans without risking deletion of a row referenced
+	// elsewhere. See #6 audit-trail leak design.
+	const initiatedByRequestId = new Map<string, string>();
 	try {
 		sharedTxId = await retryOnSerializationConflict(
 			() =>
 				prisma.$transaction(
 					async (tx) => {
+						initiatedByRequestId.clear();
 						const sharedTx = await tx.transaction.create({
 							data: {
 								status: TransactionStatus.Pending,
@@ -678,15 +693,19 @@ async function processWalletBatch(
 							},
 						});
 						for (const v of fit) {
+							const initiated = await tx.paymentActionData.create({
+								data: { requestedAction: PaymentAction.AuthorizeRefundInitiated },
+							});
 							await tx.paymentRequest.update({
 								where: { id: v.request.id },
 								data: {
 									...connectPreviousAction(v.request.nextActionId),
-									...createNextPaymentAction(PaymentAction.AuthorizeRefundInitiated),
+									...connectExistingNextPaymentAction(initiated.id),
 									...connectExistingTransaction(sharedTx.id),
 									TransactionHistory: { connect: { id: v.request.CurrentTransaction!.id } },
 								},
 							});
+							initiatedByRequestId.set(v.request.id, initiated.id);
 						}
 						return sharedTx.id;
 					},
@@ -740,15 +759,40 @@ async function processWalletBatch(
 								);
 								continue;
 							}
+							// Drift check: only revert + delete if NextAction is still OUR *Initiated.
+							const expectedInitiatedId = initiatedByRequestId.get(v.request.id);
+							const fresh = await tx.paymentRequest.findUnique({
+								where: { id: v.request.id },
+								select: { nextActionId: true },
+							});
+							if (expectedInitiatedId == null || fresh == null || fresh.nextActionId !== expectedInitiatedId) {
+								logger.warn(
+									'V2 authorize-refund rollback: nextAction drifted after pre-submit; leaving Initiated row, skipping revert',
+									{
+										requestId: v.request.id,
+										expectedInitiatedId,
+										actualNextAction: fresh?.nextActionId,
+									},
+								);
+								continue;
+							}
 							await tx.paymentRequest.update({
 								where: { id: v.request.id },
 								data: {
-									...connectPreviousAction(v.request.nextActionId),
+									// NOTE: pre-submit already connected OLD *Requested into ActionHistory.
 									...createNextPaymentAction(PaymentAction.AuthorizeRefundRequested),
 									CurrentTransaction: { connect: { id: currentTxId } },
 									TransactionHistory: { disconnect: { id: currentTxId } },
 								},
 							});
+							const result = await safeDeleteOrphanNextPaymentAction(tx, expectedInitiatedId);
+							if (!result.deleted) {
+								logger.warn('V2 authorize-refund rollback: leaked orphan Initiated row (refused to delete)', {
+									requestId: v.request.id,
+									orphanActionId: expectedInitiatedId,
+									reason: result.reason,
+								});
+							}
 						}
 					},
 					{ timeout: 30_000 },

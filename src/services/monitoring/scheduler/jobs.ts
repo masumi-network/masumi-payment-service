@@ -1,6 +1,10 @@
 import { CONFIG } from '@masumi/payment-core/config';
 import { web3CardanoV1, web3CardanoV2 } from '@/services/payment-source-types';
-import { checkLatestTransactions, updateWalletTransactionHash } from '@/services/transactions';
+import {
+	checkLatestTransactions,
+	reconcileAmbiguousFundingV2,
+	updateWalletTransactionHash,
+} from '@/services/transactions';
 import { walletLowBalanceMonitorService } from '@/services/wallets';
 import { webhookQueueService } from '@/services/webhooks';
 import type { JobDefinition } from '@/services/shared';
@@ -115,6 +119,22 @@ export const scheduledJobs: JobDefinition[] = [
 		startMessage: 'Starting to check for wallet transactions and wallets to unlock',
 		finishMessage: 'Finished to check for wallet transactions and wallets to unlock',
 		run: updateWalletTransactionHash,
+	},
+	{
+		// V2 funding-tx reconciliation: resolves Pending shared Transactions
+		// whose submit outcome was ambiguous (network/transport throw, late
+		// gateway response). Promotes intendedTxHash → txHash on chain hit
+		// OR reverts batched PurchaseRequests + frees the wallet after the
+		// invalidHereafterSlot TTL has provably elapsed. Closes the funding
+		// double-lock window — see docs/adr (TBD) and the design in
+		// `src/services/transactions/funding-reconciliation/index.ts`.
+		// Same cadence as wallet-timeouts so an ambiguous row gets at most
+		// ~CHECK_WALLET_TRANSACTION_HASH_INTERVAL of stuck time.
+		initialDelayMs: 37500,
+		intervalMs: CONFIG.CHECK_WALLET_TRANSACTION_HASH_INTERVAL * 1000,
+		startMessage: 'Starting V2 funding-tx reconciliation',
+		finishMessage: 'Finished V2 funding-tx reconciliation',
+		run: reconcileAmbiguousFundingV2,
 	},
 	{
 		initialDelayMs: 40000,

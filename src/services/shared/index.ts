@@ -35,12 +35,16 @@ export { loadHotWalletSession } from './wallet-session';
 export type { TxWindow } from './tx-window';
 export { createTxWindow } from './tx-window';
 export {
+	connectExistingNextPaymentAction,
+	connectExistingNextPurchaseAction,
 	connectExistingTransaction,
 	connectPreviousAction,
 	createNextPaymentAction,
 	createNextPurchaseAction,
 	createPendingTransaction,
 	disconnectTransactionWallet,
+	safeDeleteOrphanNextPaymentAction,
+	safeDeleteOrphanNextPurchaseAction,
 	updateCurrentTransactionHash,
 	updateCurrentTransactionStatus,
 } from './transition-writer';

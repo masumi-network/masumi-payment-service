@@ -111,9 +111,13 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 		if (specifiedPaymentContract == null) {
 			throw createHttpError(404, 'Network and policyId combination not supported');
 		}
-		if (input.paymentSourceType != null && specifiedPaymentContract.paymentSourceType !== input.paymentSourceType) {
-			throw createHttpError(400, 'Payment source type does not match the agent identifier policy');
-		}
+		// No post-fetch paymentSourceType guard needed: when the caller supplies
+		// `input.paymentSourceType`, the `findFirst` above already filters by
+		// that exact value, so a mismatching row cannot be returned. Active-row
+		// uniqueness on `(network, policyId)` is enforced by the partial unique
+		// index `PaymentSource_network_policyId_active_key` (migration
+		// 20260519120000_add_payment_source_type_v2_registry_metadata), so the
+		// lookup is deterministic even when `paymentSourceType` is omitted.
 		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 		const purchaserId = input.identifierFromPurchaser;
 		if (validateHexString(purchaserId) == false) {

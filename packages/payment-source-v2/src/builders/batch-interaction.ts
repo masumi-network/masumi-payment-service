@@ -185,9 +185,18 @@ export async function generateMasumiSmartContractBatchInteractionTransactionAuto
 		await syncMeshCostModelsFromChainV2(rpcApiKey);
 	}
 
+	// Re-use the mesh-format protocol params just populated by
+	// `syncMeshCostModelsFromChainV2` above; the inner builder also reads the
+	// same cache. Previously this branch unconditionally hit
+	// `fetchProtocolParameters()` AGAIN — a second Blockfrost roundtrip when
+	// the cache was already warm from the line just above. Cache miss falls
+	// back to the same live fetch, but the steady-state common case is a
+	// cheap memory read.
 	let coinsPerUtxoSize: number = FALLBACK_COINS_PER_UTXO_SIZE;
 	try {
-		const protocolParams = await blockchainProvider.fetchProtocolParameters();
+		const cached = rpcApiKey == null ? null : getCachedChainProtocolParameters(rpcApiKey);
+		const protocolParams =
+			cached != null ? (cached as { coinsPerUtxoSize?: number }) : await blockchainProvider.fetchProtocolParameters();
 		if (protocolParams.coinsPerUtxoSize != null) {
 			coinsPerUtxoSize = protocolParams.coinsPerUtxoSize;
 		}
@@ -361,10 +370,14 @@ async function buildBatchInteractionTx(
 		txBuilder.txOut(smartContractAddress, outputAmount).txOutInlineDatumValue(item.newInlineDatum);
 	}
 
-	// Pure wallet inputs for fee / change. Same loop as the single-item builder.
-	for (const utxo of walletUtxos) {
-		txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
-	}
+	// Hand the candidate wallet UTxOs to Mesh's coin selector instead of
+	// force-adding every one. Force-adding (a) blows tx size on fragmented
+	// wallets and (b) bypasses caller-supplied exclusion lists (e.g.
+	// `pickBatchCollateral`'s `excludeSpendingInputs`) — the service layer
+	// pre-filters `walletUtxos` to exclude collateral + spending refs so
+	// passing the full list to `selectUtxosFrom` is safe and lets Mesh pick
+	// only what's needed for fees + change.
+	txBuilder.selectUtxosFrom(walletUtxos);
 
 	return await txBuilder
 		.requiredSignerHash(deserializedAddress.pubKeyHash)

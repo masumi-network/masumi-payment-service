@@ -4,7 +4,9 @@ import { TransactionStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { retryOnSerializationConflict } from '@/utils/db/retry';
-import type { UTxO } from '@meshsdk/core';
+import { resolveTxHash, SLOT_CONFIG_NETWORK, unixTimeToEnclosingSlot } from '@meshsdk/core';
+import type { Network, UTxO } from '@meshsdk/core';
+import { isDefinitiveNodeRejection } from '../submit-error-classifier';
 
 /**
  * Required wallet shape for collateral readiness:
@@ -41,6 +43,14 @@ export type EnsureCollateralReadyParams = {
 	meshWallet: MeshWallet;
 	utxos: UTxO[];
 	blockchainProvider: BlockfrostProvider;
+	/**
+	 * Mesh-style network ('mainnet' | 'preprod'). Required so we can pick an
+	 * explicit `invalidHereafter` slot for the prep tx — the slot is persisted
+	 * alongside `intendedTxHash` and the funding-reconciliation worker uses it
+	 * as the TTL boundary past which an unfound Pending row is provably lost
+	 * and can be safely reverted.
+	 */
+	network: Network;
 	/** Short label for log lines so a single grep can attribute prep calls to
 	 *  the service that triggered them (e.g. 'request-refund'). */
 	serviceLabel: string;
@@ -198,7 +208,7 @@ export function classifyWalletState(utxos: UTxO[]): WalletStateClassification {
  * settle.
  */
 export async function ensureCollateralReady(params: EnsureCollateralReadyParams): Promise<EnsureCollateralReadyResult> {
-	const { walletDbId, walletAddress, meshWallet, utxos, serviceLabel } = params;
+	const { walletDbId, walletAddress, meshWallet, utxos, serviceLabel, network } = params;
 	const classification = classifyWalletState(utxos);
 
 	if (classification.ready) {
@@ -292,6 +302,51 @@ export async function ensureCollateralReady(params: EnsureCollateralReadyParams)
 		{ unit: 'lovelace', quantity: COLLATERAL_RESERVE_LOVELACE.toString() },
 	]);
 
+	// Explicit invalid_hereafter ~5 minutes ahead so we can persist it as the
+	// TTL boundary for `funding-reconciliation`. Without an explicit TTL the
+	// prep txBody could remain submittable indefinitely, defeating the
+	// reconciliation worker's "after TTL elapsed, safe to revert" logic.
+	const invalidHereafterSlot = unixTimeToEnclosingSlot(Date.now() + 5 * 60 * 1000, SLOT_CONFIG_NETWORK[network]) + 5;
+	meshTx.setTimeToExpire(invalidHereafterSlot.toString());
+
+	// Build + sign FIRST so we can compute the deterministic txHash and
+	// persist it alongside `invalidHereafterSlot` BEFORE broadcasting. On an
+	// ambiguous submit failure (network/transport throw with unknown chain
+	// outcome) the funding-reconciliation worker queries the chain for this
+	// exact hash and either promotes it to txHash or — after the TTL slot
+	// provably elapsed — reverts safely. Without this pre-recording, a
+	// timeout-but-tx-actually-landed edge case would silently free the
+	// wallet, and the next ensureCollateralReady tick could submit a SECOND
+	// prep tx with different UTxOs, burning duplicate fees (~0.5-1 ADA per
+	// occurrence). Same root cause as the funding double-lock window (#2)
+	// but lower-stakes; mitigated identically via intendedTxHash + TTL.
+	let unsignedTx: string;
+	let signedTx: string;
+	let intendedTxHash: string;
+	try {
+		unsignedTx = await meshTx.build();
+		signedTx = await meshWallet.signTx(unsignedTx);
+		intendedTxHash = resolveTxHash(signedTx);
+	} catch (buildError) {
+		logger.error('V2 collateral prep build/sign failed [collateral-prep]', {
+			walletDbId,
+			walletAddress,
+			serviceLabel,
+			error:
+				buildError instanceof Error
+					? { message: buildError.message, name: buildError.name, stack: buildError.stack }
+					: buildError,
+		});
+		// No DB row was created and no tx left the host — unlock the outer
+		// `lockAndQueryX` lock so the next tick can retry.
+		await unlockWalletLock(walletDbId, serviceLabel);
+		return {
+			status: 'failed',
+			reason: 'prep_tx_failed',
+			details: buildError instanceof Error ? buildError.message : String(buildError),
+		};
+	}
+
 	let sharedTxId: string;
 	try {
 		sharedTxId = await retryOnSerializationConflict(
@@ -312,6 +367,10 @@ export async function ensureCollateralReady(params: EnsureCollateralReadyParams)
 								// poll by 1 minute, comfortably longer than the
 								// build/sign/submit window (~10-20s in practice).
 								lastCheckedAt: new Date(),
+								// Pre-recording these BEFORE submit is the core of the
+								// double-fee-burn fix — see funding-reconciliation worker.
+								intendedTxHash,
+								invalidHereafterSlot: BigInt(invalidHereafterSlot),
 								BlocksWallet: { connect: { id: walletDbId } },
 							},
 						});
@@ -329,9 +388,8 @@ export async function ensureCollateralReady(params: EnsureCollateralReadyParams)
 			error:
 				dbError instanceof Error ? { message: dbError.message, name: dbError.name, stack: dbError.stack } : dbError,
 		});
-		// No PendingTransaction was successfully connected, so the wallet's
-		// `lockedAt` (set by the outer `lockAndQueryX`) won't be cleared by
-		// `wallet-timeouts`. Unlock explicitly so the next tick can retry.
+		// No PendingTransaction was successfully connected — tx has NOT been
+		// broadcast yet. Unlock explicitly so the next tick can retry.
 		await unlockWalletLock(walletDbId, serviceLabel);
 		return {
 			status: 'failed',
@@ -340,36 +398,61 @@ export async function ensureCollateralReady(params: EnsureCollateralReadyParams)
 		};
 	}
 
-	let unsignedTx: string;
-	let signedTx: string;
 	let prepTxHash: string;
 	try {
-		unsignedTx = await meshTx.build();
-		signedTx = await meshWallet.signTx(unsignedTx);
 		prepTxHash = await meshWallet.submitTx(signedTx);
 	} catch (submitError) {
-		// Rollback the shared Tx row's wallet lock AND mark the row as
-		// RolledBack. The wallet update releases `pendingTransactionId` so
-		// the next scheduler tick can re-pick the wallet up; the Tx update
-		// flips status away from `Pending` so the row stops looking like an
-		// in-flight tx during triage (it has no `txHash` and no back-edges
-		// from any request, so without an explicit status change it would
-		// sit as `Pending` forever — invisible to wallet-timeouts after
-		// disconnect and invisible to tx-sync without a CurrentTransaction
-		// edge). Both writes share one $transaction so the wallet is never
-		// observed half-disconnected. Retry on serialization conflict in
-		// case a concurrent writer holds either row.
+		const definitive = isDefinitiveNodeRejection(submitError);
+		if (!definitive) {
+			// AMBIGUOUS — the tx MAY be on chain. Do NOT mark RolledBack, do
+			// NOT free the wallet. Leave the row Pending with
+			// `intendedTxHash` + `invalidHereafterSlot` set; the
+			// `funding-reconciliation` worker will resolve it:
+			//   - chain says found → promote to txHash; wallet-timeouts'
+			//     confirmation path unlocks the wallet on confirmation
+			//   - chain says not-found AND past TTL slot → safely revert
+			//     (mark RolledBack, free wallet via updateMany predicate)
+			// Walking through the funding-reconciliation revert code:
+			// it iterates `purchaseRequest.findMany({ currentTransactionId })`
+			// which returns 0 rows for prep txs (no PurchaseRequest points
+			// at the prep Tx), then frees the wallet + marks RolledBack —
+			// exactly what we want for the prep-tx revert case.
+			logger.warn('V2 collateral prep submit AMBIGUOUS; leaving for funding-reconciliation [collateral-prep]', {
+				walletDbId,
+				walletAddress,
+				serviceLabel,
+				sharedTxId,
+				intendedTxHash,
+				invalidHereafterSlot,
+				error: submitError instanceof Error ? { message: submitError.message, name: submitError.name } : submitError,
+			});
+			return {
+				status: 'deferred',
+				prepTxHash: intendedTxHash,
+			};
+		}
+
+		// DEFINITIVE rejection — the node returned a ledger-side validation
+		// error before broadcasting. Safe to revert state and free the wallet.
 		try {
 			await retryOnSerializationConflict(
 				() =>
 					prisma.$transaction(async (tx) => {
-						await tx.hotWallet.update({
-							where: { id: walletDbId, deletedAt: null },
+						// Guard against clobbering a concurrent batch's pendingTransactionId:
+						// only disconnect if the wallet still points at OUR sharedTxId.
+						const updated = await tx.hotWallet.updateMany({
+							where: { id: walletDbId, deletedAt: null, pendingTransactionId: sharedTxId },
 							data: {
-								PendingTransaction: { disconnect: true },
+								pendingTransactionId: null,
 								lockedAt: null,
 							},
 						});
+						if (updated.count === 0) {
+							logger.warn(
+								'V2 collateral prep rollback: HotWallet.pendingTransactionId no longer matches sharedTxId; skipping wallet disconnect (race with concurrent writer) [collateral-prep]',
+								{ walletDbId, sharedTxId },
+							);
+						}
 						await tx.transaction.update({
 							where: { id: sharedTxId },
 							data: { status: TransactionStatus.RolledBack },
@@ -385,7 +468,7 @@ export async function ensureCollateralReady(params: EnsureCollateralReadyParams)
 					rollbackError instanceof Error ? { message: rollbackError.message, name: rollbackError.name } : rollbackError,
 			});
 		}
-		logger.error('V2 collateral prep tx failed [collateral-prep]', {
+		logger.error('V2 collateral prep tx definitively rejected [collateral-prep]', {
 			walletDbId,
 			walletAddress,
 			serviceLabel,
@@ -402,20 +485,44 @@ export async function ensureCollateralReady(params: EnsureCollateralReadyParams)
 		};
 	}
 
-	try {
-		await prisma.transaction.update({
-			where: { id: sharedTxId },
-			data: {
-				txHash: prepTxHash,
-				// Refresh lastCheckedAt: this is the moment we LEARN the tx is
-				// in-flight on chain. Resetting the debounce here means the next
-				// `wallet-timeouts` poll happens ~1 minute after submission, which
-				// is roughly when blockfrost is first able to confirm a freshly
-				// landed tx — a perfect time to free the wallet on a clean
-				// fetchTxInfo() hit.
-				lastCheckedAt: new Date(),
-			},
+	// Node returned the hash — assert it matches our deterministic intent.
+	if (prepTxHash !== intendedTxHash) {
+		logger.error('V2 collateral prep: node returned divergent txHash; treating as ambiguous [collateral-prep]', {
+			walletDbId,
+			sharedTxId,
+			intendedTxHash,
+			nodeTxHash: prepTxHash,
 		});
+		// Treat as ambiguous — reconciliation will resolve.
+		return {
+			status: 'deferred',
+			prepTxHash: intendedTxHash,
+		};
+	}
+
+	try {
+		// Wrap the post-submit hash update in retryOnSerializationConflict so a
+		// transient pool / serialization failure doesn't drop us into the
+		// gas-loop hazard below. The retry's bounded backoff covers the common
+		// transient case (concurrent writer, P2028, brief pool pressure); the
+		// updateError catch arm below remains the last-resort fallback.
+		await retryOnSerializationConflict(
+			() =>
+				prisma.transaction.update({
+					where: { id: sharedTxId },
+					data: {
+						txHash: prepTxHash,
+						// Refresh lastCheckedAt: this is the moment we LEARN the tx is
+						// in-flight on chain. Resetting the debounce here means the next
+						// `wallet-timeouts` poll happens ~1 minute after submission, which
+						// is roughly when blockfrost is first able to confirm a freshly
+						// landed tx — a perfect time to free the wallet on a clean
+						// fetchTxInfo() hit.
+						lastCheckedAt: new Date(),
+					},
+				}),
+			{ label: 'collateral-prep-post-submit-hash' },
+		);
 	} catch (updateError) {
 		// Hash-recording failure is non-fatal but is the SECOND gas-loop hazard
 		// from this helper's audit: with txHash still null in the DB but the
@@ -427,11 +534,9 @@ export async function ensureCollateralReady(params: EnsureCollateralReadyParams)
 		// invocation will see — BUT if blockfrost hasn't yet indexed those
 		// new UTxOs at the moment the next action tick runs, the helper
 		// would observe the same "no collateral" state and submit a SECOND
-		// prep tx (= second gas burn). The window is bounded (one extra
-		// prep tx) and only triggers on a rare DB update failure right
-		// after a successful chain submit; logging at WARN so we can spot
-		// it in CI.
-		logger.warn('V2 collateral prep post-submit hash update failed [collateral-prep]', {
+		// prep tx (= second gas burn). The retry-wrapped update above covers
+		// the common transient case; this arm logs the rare residual.
+		logger.warn('V2 collateral prep post-submit hash update failed after retries [collateral-prep]', {
 			walletDbId,
 			walletAddress,
 			serviceLabel,

@@ -23,6 +23,7 @@ import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractWithdrawTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import {
+	connectExistingNextPurchaseAction,
 	connectExistingTransaction,
 	connectPreviousAction,
 	createMeshProvider,
@@ -31,7 +32,7 @@ import {
 	createTxWindow,
 	disconnectTransactionWallet,
 	loadHotWalletSession,
-	updateCurrentTransactionHash,
+	safeDeleteOrphanNextPurchaseAction,
 } from '@/services/shared';
 import { getPaymentScriptFromPaymentSourceV2 } from '@masumi/payment-source-v2';
 import { decodeV2ContractDatum } from '@/utils/converter/string-datum-convert';
@@ -256,6 +257,7 @@ async function processSingleRefundCollection(
 		meshWallet: wallet,
 		utxos,
 		blockchainProvider,
+		network,
 		serviceLabel: 'collect-refund',
 	});
 	if (collateralCheck.status !== 'ready') {
@@ -297,31 +299,32 @@ async function processSingleRefundCollection(
 	);
 
 	const signedTx = await wallet.signTx(unsignedTx);
-	// Create a FRESH Transaction row per lifecycle phase rather than mutating
-	// the upstream tx in-place. Recycling the prior Transaction row via
-	// `CurrentTransaction.update({ txHash: null, status: Pending })` loses the
-	// terminal status of the previous phase (e.g. the original lock tx is
-	// Confirmed; flipping it back to Pending breaks tx-sync's idempotency
-	// guards) and entangles two distinct on-chain txs in one DB row. Mirrors
-	// the submit-result single-item pattern: createPendingTransaction makes a
-	// new row with BlocksWallet → this wallet, and the prior Transaction id is
-	// pushed onto TransactionHistory so the audit trail still shows the lock.
-	await prisma.purchaseRequest.update({
-		where: { id: request.id },
-		data: {
-			...connectPreviousAction(request.nextActionId),
-			...createNextPurchaseAction(PurchasingAction.WithdrawRefundInitiated, { submittedTxHash: null }),
-			...createPendingTransaction(request.SmartContractWallet.id),
-			TransactionHistory: { connect: { id: request.CurrentTransaction!.id } },
-		},
-	});
-
+	// Submit FIRST, then write DB. See submit-first rationale in
+	// packages/payment-source-v2/src/services/payments/collection/service.ts.
+	// Brief recap: pre-submit DB row → submit pattern strands the wallet
+	// (Pending Tx row with BlocksWallet → wallet, no txHash) whenever
+	// submitTx throws, leaving cleanup to wallet-timeouts minutes later.
+	// Submit-first leaves NO Tx row on a pre-submit throw; the caller's
+	// catch arm (markRequestFailed) clears lockedAt. Mirrors the pattern
+	// already used in V2 payments/{authorize-refund,collection,submit-result}.
 	const newTxHash = await wallet.submitTx(signedTx);
 	await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
-	await prisma.purchaseRequest.update({
-		where: { id: request.id },
-		data: updateCurrentTransactionHash(newTxHash),
-	});
+	// Snapshot the wallet id before the closure — TS narrowing of
+	// request.SmartContractWallet doesn't survive into the arrow function.
+	const smartContractWalletId = request.SmartContractWallet.id;
+	await retryOnSerializationConflict(
+		() =>
+			prisma.purchaseRequest.update({
+				where: { id: request.id },
+				data: {
+					...connectPreviousAction(request.nextActionId),
+					...createNextPurchaseAction(PurchasingAction.WithdrawRefundInitiated, { submittedTxHash: null }),
+					...createPendingTransaction(smartContractWalletId, newTxHash),
+					TransactionHistory: { connect: { id: request.CurrentTransaction!.id } },
+				},
+			}),
+		{ label: 'v2-collect-refund-single-post-submit' },
+	);
 
 	logger.debug(`Created V2 refund-collection transaction:
               Tx ID: ${newTxHash}
@@ -451,6 +454,7 @@ async function processWalletBatch(
 		meshWallet,
 		utxos,
 		blockchainProvider,
+		network,
 		serviceLabel: 'collect-refund',
 	});
 	if (collateralCheck.status !== 'ready') {
@@ -675,11 +679,13 @@ async function processWalletBatch(
 	// so tx-sync's BlocksWallet-driven wallet unlock fires exactly once per
 	// batch regardless of which entry it processes first.
 	let sharedTxId: string;
+	const initiatedByRequestId = new Map<string, string>();
 	try {
 		sharedTxId = await retryOnSerializationConflict(
 			() =>
 				prisma.$transaction(
 					async (tx) => {
+						initiatedByRequestId.clear();
 						const sharedTx = await tx.transaction.create({
 							data: {
 								status: TransactionStatus.Pending,
@@ -690,15 +696,19 @@ async function processWalletBatch(
 							},
 						});
 						for (const v of fit) {
+							const initiated = await tx.purchaseActionData.create({
+								data: { requestedAction: PurchasingAction.WithdrawRefundInitiated, submittedTxHash: null },
+							});
 							await tx.purchaseRequest.update({
 								where: { id: v.request.id },
 								data: {
 									...connectPreviousAction(v.request.nextActionId),
-									...createNextPurchaseAction(PurchasingAction.WithdrawRefundInitiated, { submittedTxHash: null }),
+									...connectExistingNextPurchaseAction(initiated.id),
 									...connectExistingTransaction(sharedTx.id),
 									TransactionHistory: { connect: { id: v.request.CurrentTransaction!.id } },
 								},
 							});
+							initiatedByRequestId.set(v.request.id, initiated.id);
 						}
 						return sharedTx.id;
 					},
@@ -750,15 +760,34 @@ async function processWalletBatch(
 								);
 								continue;
 							}
+							const expectedInitiatedId = initiatedByRequestId.get(v.request.id);
+							const fresh = await tx.purchaseRequest.findUnique({
+								where: { id: v.request.id },
+								select: { nextActionId: true },
+							});
+							if (expectedInitiatedId == null || fresh == null || fresh.nextActionId !== expectedInitiatedId) {
+								logger.warn(
+									'V2 collect-refund rollback: nextAction drifted after pre-submit; leaving Initiated row, skipping revert',
+									{ requestId: v.request.id, expectedInitiatedId, actualNextAction: fresh?.nextActionId },
+								);
+								continue;
+							}
 							await tx.purchaseRequest.update({
 								where: { id: v.request.id },
 								data: {
-									...connectPreviousAction(v.request.nextActionId),
 									...createNextPurchaseAction(PurchasingAction.WithdrawRefundRequested),
 									CurrentTransaction: { connect: { id: currentTxId } },
 									TransactionHistory: { disconnect: { id: currentTxId } },
 								},
 							});
+							const result = await safeDeleteOrphanNextPurchaseAction(tx, expectedInitiatedId);
+							if (!result.deleted) {
+								logger.warn('V2 collect-refund rollback: leaked orphan Initiated row (refused to delete)', {
+									requestId: v.request.id,
+									orphanActionId: expectedInitiatedId,
+									reason: result.reason,
+								});
+							}
 						}
 					},
 					{ timeout: 30_000 },

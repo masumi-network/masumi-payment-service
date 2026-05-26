@@ -189,6 +189,7 @@ async function processSingleDeregistration(
 		meshWallet: wallet,
 		utxos,
 		blockchainProvider,
+		network,
 		serviceLabel: 'registry-deregister-single',
 	});
 	if (collateralCheck.status !== 'ready') {
@@ -322,6 +323,7 @@ export async function deRegisterAgentV2() {
 					meshWallet: wallet,
 					utxos,
 					blockchainProvider,
+					network,
 					serviceLabel: 'registry-deregister-batch',
 				});
 				if (collateralCheck.status !== 'ready') {

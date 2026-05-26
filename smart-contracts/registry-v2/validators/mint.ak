@@ -19,6 +19,26 @@ pub type Action {
 // asset-label prefixes, which reserve the 00..0f first-byte range.
 // This policy is intentionally permissionless and does not bind mints to a
 // payment source or admin signer; trust and scoping are enforced off-chain.
+//
+// Asset identifier uniqueness:
+// The full on-chain asset identifier is `policyId ++ asset_name`. Uniqueness
+// at that level is what callers and indexers rely on, and is guaranteed by
+// construction:
+//   * `root_hash = blake2b_224(input.tx_id ++ input.output_index_be4)` is
+//     content-addressed against a globally unique OutputReference. Two
+//     distinct mints can only share a `root_hash` if they consume the same
+//     UTxO, which Cardano disallows.
+//   * `nonce` is chosen per-mint by the spender. Off-chain we fix `nonce =
+//     0x10` (src/services/registry/shared.ts) so legitimate flows produce a
+//     single canonical asset; a malicious owner could in principle mint
+//     additional assets at different nonce values from the same input, but
+//     each such asset has its own distinct 32-byte name and therefore its
+//     own asset identifier — no collision with the canonical entry, and no
+//     trust gained over it (off-chain consumers verify `policyId ++
+//     asset_name`, not `root_hash` alone).
+// The validator therefore does NOT need to constrain `nonce` further or
+// enforce `list.unique(asset_root_hashes)` across `policy_assets`; the
+// asset-identifier uniqueness invariant holds without those checks.
 validator mintUnique {
   mint(redeemer: Action, policy_id: PolicyId, self: Transaction) {
     let Transaction { inputs, mint, .. } = self

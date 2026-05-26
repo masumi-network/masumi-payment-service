@@ -2,6 +2,7 @@ import { HotWalletType, OnChainState, PaymentSourceType, Prisma, PurchasingActio
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { retryOnSerializationConflict } from '@/utils/db/retry';
+import { withSerializableSlot } from '@/utils/db/serializable-semaphore';
 
 export async function lockAndQueryPurchases({
 	purchasingAction,
@@ -67,66 +68,71 @@ export async function lockAndQueryPurchases({
 				const minCooldownTime = paymentSource.cooldownTime;
 				const perWalletResults = await Promise.all(
 					paymentSource.HotWallets.map((hotWallet) =>
-						retryOnSerializationConflict(
-							() =>
-								prisma.$transaction(
-									async (prisma) => {
-										const potentialPurchasingRequests = await prisma.purchaseRequest.findMany({
-											where: {
-												buyerCoolDownTime: { lt: Date.now() - minCooldownTime },
-												submitResultTime: submitResultTime,
-												unlockTime: unlockTime,
-												NextAction: {
-													requestedAction: purchasingAction,
-													errorType: null,
+						// Gate every Serializable transaction through the shared semaphore so the
+						// per-wallet fan-out across sources cannot exhaust the pg connection pool.
+						// See `src/utils/db/serializable-semaphore.ts` for sizing rationale.
+						withSerializableSlot(() =>
+							retryOnSerializationConflict(
+								() =>
+									prisma.$transaction(
+										async (prisma) => {
+											const potentialPurchasingRequests = await prisma.purchaseRequest.findMany({
+												where: {
+													buyerCoolDownTime: { lt: Date.now() - minCooldownTime },
+													submitResultTime: submitResultTime,
+													unlockTime: unlockTime,
+													NextAction: {
+														requestedAction: purchasingAction,
+														errorType: null,
+													},
+													resultHash: resultHash,
+													onChainState: onChainState,
+													SmartContractWallet: {
+														id: hotWallet.id,
+														PendingTransaction: { is: null },
+														lockedAt: null,
+														deletedAt: null,
+													},
+													// Optional OR group — only included when caller supplies
+													// `orFilters`. Each entry is fully ANDed against the
+													// outer predicates, so callers can supply per-variant
+													// onChainState / time-window constraints that differ
+													// across an `OR` axis.
+													...(orFilters != null && orFilters.length > 0 ? { OR: orFilters } : {}),
 												},
-												resultHash: resultHash,
-												onChainState: onChainState,
-												SmartContractWallet: {
-													id: hotWallet.id,
-													PendingTransaction: { is: null },
-													lockedAt: null,
-													deletedAt: null,
+												orderBy: {
+													createdAt: 'asc',
 												},
-												// Optional OR group — only included when caller supplies
-												// `orFilters`. Each entry is fully ANDed against the
-												// outer predicates, so callers can supply per-variant
-												// onChainState / time-window constraints that differ
-												// across an `OR` axis.
-												...(orFilters != null && orFilters.length > 0 ? { OR: orFilters } : {}),
-											},
-											orderBy: {
-												createdAt: 'asc',
-											},
-											include: {
-												NextAction: true,
-												CurrentTransaction: true,
-												PaidFunds: true,
-												SellerWallet: true,
-												SmartContractWallet: {
-													include: {
-														Secret: true,
+												include: {
+													NextAction: true,
+													CurrentTransaction: true,
+													PaidFunds: true,
+													SellerWallet: true,
+													SmartContractWallet: {
+														include: {
+															Secret: true,
+														},
 													},
 												},
-											},
-											take: maxBatchSize,
-										});
-										if (potentialPurchasingRequests.length > 0) {
-											const hotWalletResult = await prisma.hotWallet.update({
-												where: { id: hotWallet.id, deletedAt: null },
-												data: { lockedAt: new Date() },
+												take: maxBatchSize,
 											});
-											potentialPurchasingRequests.forEach((purchasingRequest) => {
-												purchasingRequest.SmartContractWallet!.pendingTransactionId =
-													hotWalletResult.pendingTransactionId;
-												purchasingRequest.SmartContractWallet!.lockedAt = hotWalletResult.lockedAt;
-											});
-										}
-										return potentialPurchasingRequests;
-									},
-									{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
-								),
-							{ label: 'lockAndQueryPurchases' },
+											if (potentialPurchasingRequests.length > 0) {
+												const hotWalletResult = await prisma.hotWallet.update({
+													where: { id: hotWallet.id, deletedAt: null },
+													data: { lockedAt: new Date() },
+												});
+												potentialPurchasingRequests.forEach((purchasingRequest) => {
+													purchasingRequest.SmartContractWallet!.pendingTransactionId =
+														hotWalletResult.pendingTransactionId;
+													purchasingRequest.SmartContractWallet!.lockedAt = hotWalletResult.lockedAt;
+												});
+											}
+											return potentialPurchasingRequests;
+										},
+										{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
+									),
+								{ label: 'lockAndQueryPurchases' },
+							),
 						),
 					),
 				);

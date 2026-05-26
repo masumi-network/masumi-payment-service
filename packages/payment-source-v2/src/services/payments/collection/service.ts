@@ -23,6 +23,7 @@ import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractWithdrawTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import {
+	connectExistingNextPaymentAction,
 	connectExistingTransaction,
 	connectPreviousAction,
 	createMeshProvider,
@@ -31,6 +32,7 @@ import {
 	createTxWindow,
 	disconnectTransactionWallet,
 	loadHotWalletSession,
+	safeDeleteOrphanNextPaymentAction,
 } from '@/services/shared';
 import { getPaymentScriptFromPaymentSourceV2 } from '@masumi/payment-source-v2';
 import { decodeV2ContractDatum } from '@/utils/converter/string-datum-convert';
@@ -302,6 +304,7 @@ async function processSinglePaymentCollection(
 		meshWallet: wallet,
 		utxos,
 		blockchainProvider,
+		network,
 		serviceLabel: 'collection-single',
 	});
 	if (collateralCheck.status !== 'ready') {
@@ -368,15 +371,29 @@ async function processSinglePaymentCollection(
 	// so the audit trail still shows the submit-result tx.
 	const newTxHash = await wallet.submitTx(signedTx);
 	await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
-	await prisma.paymentRequest.update({
-		where: { id: request.id },
-		data: {
-			...connectPreviousAction(request.nextActionId),
-			...createNextPaymentAction(PaymentAction.WithdrawInitiated),
-			...createPendingTransaction(request.SmartContractWallet.id, newTxHash),
-			TransactionHistory: { connect: { id: request.CurrentTransaction!.id } },
-		},
-	});
+	// Post-submit DB update: wrap in retryOnSerializationConflict so a transient
+	// serialization conflict (concurrent tx-sync writer that just saw this tx
+	// land, recovery cron, manual API touch) doesn't bubble up to the outer
+	// `advancedRetry` and cause it to re-invoke processSinglePaymentCollection
+	// — which would build & submit a SECOND on-chain tx for the same request
+	// (input UTxO already consumed → phase-2 fail + ex-units burn). Bare
+	// update was the post-submit single-item analog of #2 funding double-lock.
+	// Snapshot the wallet id before the closure — TS narrowing of
+	// request.SmartContractWallet doesn't survive into the arrow function.
+	const smartContractWalletId = request.SmartContractWallet.id;
+	await retryOnSerializationConflict(
+		() =>
+			prisma.paymentRequest.update({
+				where: { id: request.id },
+				data: {
+					...connectPreviousAction(request.nextActionId),
+					...createNextPaymentAction(PaymentAction.WithdrawInitiated),
+					...createPendingTransaction(smartContractWalletId, newTxHash),
+					TransactionHistory: { connect: { id: request.CurrentTransaction!.id } },
+				},
+			}),
+		{ label: 'v2-collection-single-post-submit' },
+	);
 
 	logger.debug(`Created V2 withdrawal transaction:
         Tx ID: ${newTxHash}
@@ -499,6 +516,7 @@ async function processWalletBatch(
 		meshWallet,
 		utxos,
 		blockchainProvider,
+		network,
 		serviceLabel: 'collection-batch',
 	});
 	if (collateralCheck.status !== 'ready') {
@@ -726,11 +744,15 @@ async function processWalletBatch(
 	// so tx-sync's BlocksWallet-driven wallet unlock fires exactly once per
 	// batch regardless of which entry it processes first.
 	let sharedTxId: string;
+	// Captured *Initiated NextAction ids; rollback path below uses them to
+	// safely delete orphans. See #6 audit-trail leak design.
+	const initiatedByRequestId = new Map<string, string>();
 	try {
 		sharedTxId = await retryOnSerializationConflict(
 			() =>
 				prisma.$transaction(
 					async (tx) => {
+						initiatedByRequestId.clear();
 						const sharedTx = await tx.transaction.create({
 							data: {
 								status: TransactionStatus.Pending,
@@ -741,15 +763,19 @@ async function processWalletBatch(
 							},
 						});
 						for (const v of fit) {
+							const initiated = await tx.paymentActionData.create({
+								data: { requestedAction: PaymentAction.WithdrawInitiated },
+							});
 							await tx.paymentRequest.update({
 								where: { id: v.request.id },
 								data: {
 									...connectPreviousAction(v.request.nextActionId),
-									...createNextPaymentAction(PaymentAction.WithdrawInitiated),
+									...connectExistingNextPaymentAction(initiated.id),
 									...connectExistingTransaction(sharedTx.id),
 									TransactionHistory: { connect: { id: v.request.CurrentTransaction!.id } },
 								},
 							});
+							initiatedByRequestId.set(v.request.id, initiated.id);
 						}
 						return sharedTx.id;
 					},
@@ -801,15 +827,34 @@ async function processWalletBatch(
 								);
 								continue;
 							}
+							const expectedInitiatedId = initiatedByRequestId.get(v.request.id);
+							const fresh = await tx.paymentRequest.findUnique({
+								where: { id: v.request.id },
+								select: { nextActionId: true },
+							});
+							if (expectedInitiatedId == null || fresh == null || fresh.nextActionId !== expectedInitiatedId) {
+								logger.warn(
+									'V2 collection rollback: nextAction drifted after pre-submit; leaving Initiated row, skipping revert',
+									{ requestId: v.request.id, expectedInitiatedId, actualNextAction: fresh?.nextActionId },
+								);
+								continue;
+							}
 							await tx.paymentRequest.update({
 								where: { id: v.request.id },
 								data: {
-									...connectPreviousAction(v.request.nextActionId),
 									...createNextPaymentAction(PaymentAction.WithdrawRequested),
 									CurrentTransaction: { connect: { id: currentTxId } },
 									TransactionHistory: { disconnect: { id: currentTxId } },
 								},
 							});
+							const result = await safeDeleteOrphanNextPaymentAction(tx, expectedInitiatedId);
+							if (!result.deleted) {
+								logger.warn('V2 collection rollback: leaked orphan Initiated row (refused to delete)', {
+									requestId: v.request.id,
+									orphanActionId: expectedInitiatedId,
+									reason: result.reason,
+								});
+							}
 						}
 					},
 					{ timeout: 30_000 },

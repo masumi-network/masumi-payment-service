@@ -198,19 +198,23 @@ export async function generateRegistryBatchMintTransaction(
 		version: '1',
 	});
 
-	// Every `firstUtxo` must be a tx input. De-dupe against walletUtxos and
-	// against itself to avoid emitting the same `.txIn(...)` twice (mesh
-	// rejects duplicate inputs).
+	// Every `firstUtxo` MUST be a tx input — the validator derives each minted
+	// asset's root_hash from `blake2b_224(firstUtxo.txId ++ output_index)`, so
+	// excluding it would change the derived root_hash and fail the mint check.
+	// Force-add only those; let Mesh's coin selector pick the remaining wallet
+	// UTxOs needed for fees + change (avoids the previous pattern of force-adding
+	// every wallet UTxO, which blew tx size on fragmented wallets and could
+	// duplicate-spend with collateral refs).
 	const inputRefs = new Set<string>();
-	for (const utxo of walletUtxos) {
-		inputRefs.add(refKey(utxo));
-		txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
-	}
 	for (const item of items) {
 		const key = refKey(item.firstUtxo);
 		if (inputRefs.has(key)) continue;
 		inputRefs.add(key);
 		txBuilder.txIn(item.firstUtxo.input.txHash, item.firstUtxo.input.outputIndex);
+	}
+	const walletUtxosForSelection = walletUtxos.filter((u) => !inputRefs.has(refKey(u)));
+	if (walletUtxosForSelection.length > 0) {
+		txBuilder.selectUtxosFrom(walletUtxosForSelection);
 	}
 
 	// Conway phase-1 collateral derived from the single shared MINT redeemer
@@ -364,11 +368,14 @@ async function buildBatchDeregisterTx(
 		.mintingScript(script.code)
 		.mintRedeemerValue({ alternative: V2_BURN_REDEEMER_ALTERNATIVE, fields: [] }, 'Mesh', exUnits);
 
-	for (const utxo of walletUtxos) {
-		const key = refKey(utxo);
-		if (inputRefs.has(key)) continue;
-		inputRefs.add(key);
-		txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
+	// Hand remaining wallet UTxOs to Mesh's coin selector instead of force-adding
+	// every one. Anything already declared as a `.txIn` above (via inputRefs) is
+	// excluded so the selector doesn't try to add a duplicate. Same rationale as
+	// the mint builder above — avoid bloated tx size and double-spend overlap
+	// with collateral on fragmented wallets.
+	const walletUtxosForSelection = walletUtxos.filter((u) => !inputRefs.has(refKey(u)));
+	if (walletUtxosForSelection.length > 0) {
+		txBuilder.selectUtxosFrom(walletUtxosForSelection);
 	}
 
 	// Conway phase-1 collateral derived from the shared BurnAction MINT-tag

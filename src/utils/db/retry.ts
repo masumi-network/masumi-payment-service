@@ -32,6 +32,12 @@ const POSTGRES_RETRYABLE_SQLSTATES = new Set(['40001', '40P01', '25001']);
 
 type Logger = Pick<typeof logger, 'debug' | 'info' | 'warn'>;
 
+function readErrorCodeForLog(error: unknown): string | undefined {
+	if (error == null || typeof error !== 'object') return undefined;
+	const code = (error as { code?: unknown }).code;
+	return typeof code === 'string' ? code : undefined;
+}
+
 export type RetryOptions = {
 	maxRetries?: number;
 	baseDelayMs?: number;
@@ -131,7 +137,16 @@ export async function retryOnSerializationConflict<T>(fn: () => Promise<T>, opti
 	let lastError: unknown;
 	for (let attempt = 0; attempt <= maxRetries; attempt++) {
 		try {
-			return await fn();
+			const result = await fn();
+			// Surface successful retries at INFO so operators can spot retry
+			// activity in default-level logs. Silent on first-try success.
+			if (attempt > 0) {
+				log.info('Serializable transaction succeeded after retry', {
+					label,
+					attempt,
+				});
+			}
+			return result;
 		} catch (error) {
 			lastError = error;
 			if (!isSerializationConflict(error)) throw error;
@@ -140,6 +155,7 @@ export async function retryOnSerializationConflict<T>(fn: () => Promise<T>, opti
 					label,
 					attempt,
 					maxRetries,
+					errorCode: readErrorCodeForLog(error),
 				});
 				throw error;
 			}
@@ -148,11 +164,27 @@ export async function retryOnSerializationConflict<T>(fn: () => Promise<T>, opti
 			// from concurrent contestants to avoid lockstep collisions.
 			const cap = Math.min(maxDelayMs, baseDelayMs * Math.pow(2, attempt));
 			const delay = Math.floor(Math.random() * cap);
-			log.debug('Retrying serializable transaction after conflict', {
-				label,
-				attempt,
-				nextDelayMs: delay,
-			});
+			// First retry attempt logs at INFO with the error code so a real
+			// non-conflict bug masquerading as P2028 surfaces in default logs
+			// (the P2028 catch-all could otherwise hide programmer bugs for
+			// up to maxRetries × maxDelayMs of silent stalling). Subsequent
+			// retries on the same call stay at DEBUG to avoid log spam during
+			// genuine contention bursts.
+			if (attempt === 0) {
+				log.info('Retrying serializable transaction after conflict', {
+					label,
+					attempt,
+					nextDelayMs: delay,
+					errorCode: readErrorCodeForLog(error),
+				});
+			} else {
+				log.debug('Retrying serializable transaction after conflict', {
+					label,
+					attempt,
+					nextDelayMs: delay,
+					errorCode: readErrorCodeForLog(error),
+				});
+			}
 			await new Promise((resolve) => setTimeout(resolve, delay));
 		}
 	}

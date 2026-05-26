@@ -9,7 +9,8 @@ import {
 } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { retryOnSerializationConflict } from '@/utils/db/retry';
-import { SLOT_CONFIG_NETWORK, UTxO, unixTimeToEnclosingSlot } from '@meshsdk/core';
+import { withSerializableSlot } from '@/utils/db/serializable-semaphore';
+import { SLOT_CONFIG_NETWORK, UTxO, unixTimeToEnclosingSlot, resolveTxHash } from '@meshsdk/core';
 import type { BlockfrostProvider, MeshWallet } from '@/services/shared';
 import { Transaction } from '@/services/shared';
 import { logger } from '@masumi/payment-core/logger';
@@ -28,6 +29,7 @@ import {
 	createNextPurchaseAction,
 } from '@/services/shared';
 import { createDatumFromBlockchainIdentifierV2 } from '@masumi/payment-source-v2';
+import { isDefinitiveNodeRejection } from '../../submit-error-classifier';
 
 type PaymentSourceWithWallets = Prisma.PaymentSourceGetPayload<{
 	include: {
@@ -124,11 +126,60 @@ async function unlockUnusedPurchasingWallets(candidateWalletIds: string[], usedW
 
 const mutex = new Mutex();
 
+/**
+ * Structured outcome per wallet-pairing in a batch.
+ *
+ * Funding txs MUST NOT silently regress request state on ambiguous submit
+ * outcomes (a submit that threw AFTER the node accepted the tx will land on
+ * chain; reverting requests to FundsLockingRequested risks a second lock).
+ * This type makes the per-pairing decision explicit so the outer aggregator
+ * can route succeeded / definitively-rejected / ambiguous outcomes
+ * differently.
+ *
+ * See `funding-reconciliation` worker — it resolves `submit-ambiguous` rows
+ * by querying the chain for `intendedTxHash` once the tx's
+ * `invalidHereafterSlot` has demonstrably passed.
+ */
+export type BatchPairingOutcome =
+	| { status: 'succeeded'; walletId: string; sharedTxId: string; txHash: string; requestIds: string[] }
+	| {
+			status: 'pre-submit-failed';
+			walletId: string;
+			sharedTxId: string | null;
+			requestIds: string[];
+			error: unknown;
+	  }
+	| {
+			status: 'submit-rejected';
+			walletId: string;
+			sharedTxId: string;
+			intendedTxHash: string;
+			requestIds: string[];
+			error: unknown;
+	  }
+	| {
+			status: 'submit-ambiguous';
+			walletId: string;
+			sharedTxId: string;
+			intendedTxHash: string;
+			invalidHereafterSlot: number;
+			requestIds: string[];
+			error: unknown;
+	  }
+	| {
+			status: 'post-submit-db-failed';
+			walletId: string;
+			sharedTxId: string;
+			txHash: string;
+			requestIds: string[];
+			error: unknown;
+	  };
+
 async function executeSpecificBatchPayment(
 	walletPairing: WalletPairing,
 	paymentContract: PaymentSourceWithWallets,
 	blockchainProvider: BlockfrostProvider,
-): Promise<boolean> {
+): Promise<BatchPairingOutcome> {
 	const wallet = walletPairing.wallet;
 	const walletId = walletPairing.walletId;
 	const batchedRequests = walletPairing.batchedRequests;
@@ -270,41 +321,113 @@ async function executeSpecificBatchPayment(
 	const signedTx = await wallet.signTx(completeTx);
 	logger.info('Batching payments, tx signed');
 
+	const requestIds = batchedRequests.map((b) => b.paymentRequest.id);
+
+	// Funding double-lock guarantee (see #2 + #7 design): compute the
+	// deterministic txHash + invalid_hereafter slot from the SIGNED txBody and
+	// persist them BEFORE broadcast. If `submitTx` later throws ambiguously
+	// (network/transport failure with unknown chain outcome), the
+	// reconciliation worker queries the chain for this exact hash and either
+	// promotes it to txHash (tx landed) or waits for `invalidHereafterSlot` to
+	// pass before declaring the tx provably lost.
+	const intendedTxHash = resolveTxHash(signedTx);
+	const invalidHereafterSlot = invalidAfter;
+	try {
+		await retryOnSerializationConflict(
+			() =>
+				prisma.transaction.update({
+					where: { id: sharedTxId },
+					data: {
+						intendedTxHash,
+						invalidHereafterSlot: BigInt(invalidHereafterSlot),
+						lastCheckedAt: new Date(),
+					},
+				}),
+			{ label: 'batch-payments-v2-record-intended' },
+		);
+	} catch (recordError) {
+		// Could not write the deterministic hash. We have NOT broadcast yet —
+		// safe to revert and bail. Without intendedTxHash, the reconciliation
+		// worker cannot resolve an ambiguous outcome, so we MUST NOT broadcast.
+		logger.error('batch-payments could not record intendedTxHash; aborting submit', {
+			sharedTxId,
+			intendedTxHash,
+			error: recordError instanceof Error ? recordError.message : recordError,
+		});
+		return {
+			status: 'pre-submit-failed',
+			walletId,
+			sharedTxId,
+			requestIds,
+			error: recordError,
+		};
+	}
+
 	let txHash: string;
 	try {
 		txHash = await wallet.submitTx(signedTx);
 	} catch (submitError) {
-		// `submitTx` threw — the on-chain submission either never reached the
-		// node or returned an error before broadcast. The outer
-		// `Promise.allSettled` catch will advance every batched request to
-		// `WaitingForManualAction` (intentional: re-batching would risk
-		// double-payment on a timeout-but-tx-actually-landed edge case), but
-		// it does NOT touch the shared Transaction row this function created
-		// pre-submit. Without the mark below, the row would sit `Pending`
-		// forever with no `txHash`, no `BlocksWallet` (the outer catch
-		// disconnects it via `hotWallet.update`), and no `CurrentTransaction`
-		// back-edges that survive the per-request `WaitingForManualAction`
-		// advance — invisible to both wallet-timeouts and tx-sync, accumulating
-		// as DB pollution every time a buyer-side submit fails. Best-effort
-		// retry on serialization conflict, then rethrow so the outer catch
-		// runs the per-request state advance.
-		try {
-			await retryOnSerializationConflict(
-				() =>
-					prisma.transaction.update({
-						where: { id: sharedTxId },
-						data: { status: TransactionStatus.RolledBack },
-					}),
-				{ label: 'batch-payments-v2-rollback-mark' },
-			);
-		} catch (rollbackError) {
-			logger.warn('batch-payments shared Tx rollback mark failed (non-fatal)', {
+		// Classify the throw:
+		//   - Definitive node rejection (Mesh/Blockfrost says ledger rejected
+		//     this txBody pre-broadcast) → SAFE to revert state.
+		//   - Anything else (HTTP 5xx, ECONNRESET, timeouts) → ambiguous. DO
+		//     NOT touch request state, DO NOT mark RolledBack. Leave the row
+		//     Pending with `intendedTxHash` set; the reconciliation worker
+		//     resolves it once the chain reports definitively (found → promote,
+		//     not-found AND past invalidHereafterSlot → safely revert).
+		const definitive = isDefinitiveNodeRejection(submitError);
+		if (definitive) {
+			logger.warn('batch-payments submit definitively rejected by node', {
 				sharedTxId,
-				submitError: submitError instanceof Error ? submitError.message : submitError,
-				rollbackError: rollbackError instanceof Error ? rollbackError.message : rollbackError,
+				intendedTxHash,
+				error: submitError instanceof Error ? submitError.message : submitError,
 			});
+			return {
+				status: 'submit-rejected',
+				walletId,
+				sharedTxId,
+				intendedTxHash,
+				requestIds,
+				error: submitError,
+			};
 		}
-		throw submitError;
+		logger.warn('batch-payments submit AMBIGUOUS; leaving Pending for reconciliation', {
+			sharedTxId,
+			intendedTxHash,
+			invalidHereafterSlot,
+			error: submitError instanceof Error ? submitError.message : submitError,
+		});
+		return {
+			status: 'submit-ambiguous',
+			walletId,
+			sharedTxId,
+			intendedTxHash,
+			invalidHereafterSlot,
+			requestIds,
+			error: submitError,
+		};
+	}
+
+	// Node responded with a txHash — that means the tx is on chain (or at least
+	// the node has it). Assert it matches the deterministic intendedTxHash we
+	// computed; a mismatch is a Mesh/Cardano bug we must not silently swallow,
+	// because we'd record the wrong hash and reconciliation would never resolve
+	// the row.
+	if (txHash !== intendedTxHash) {
+		logger.error('batch-payments node returned divergent txHash; treating as ambiguous', {
+			sharedTxId,
+			intendedTxHash,
+			nodeTxHash: txHash,
+		});
+		return {
+			status: 'submit-ambiguous',
+			walletId,
+			sharedTxId,
+			intendedTxHash,
+			invalidHereafterSlot,
+			requestIds,
+			error: new Error(`Node returned divergent txHash ${txHash} vs intended ${intendedTxHash}`),
+		};
 	}
 
 	await walletLowBalanceMonitorService.evaluateProjectedHotWalletById({
@@ -320,14 +443,38 @@ async function executeSpecificBatchPayment(
 	});
 
 	// Post-submit: single shared Transaction row receives the txHash. No
-	// per-request loop required.
-	await prisma.transaction.update({
-		where: { id: sharedTxId },
-		data: { txHash },
-	});
+	// per-request loop required. Wrapped in retry — if it still fails the tx
+	// IS on chain (intendedTxHash will catch it via reconciliation), so we
+	// surface as `post-submit-db-failed` so the outer aggregator can attempt
+	// one more direct update before falling through to reconciliation.
+	try {
+		await retryOnSerializationConflict(
+			() =>
+				prisma.transaction.update({
+					where: { id: sharedTxId },
+					data: { txHash },
+				}),
+			{ label: 'batch-payments-v2-post-submit-hash' },
+		);
+	} catch (postSubmitError) {
+		return {
+			status: 'post-submit-db-failed',
+			walletId,
+			sharedTxId,
+			txHash,
+			requestIds,
+			error: postSubmitError,
+		};
+	}
 	logger.info('Batching payments, purchase request updated');
 
-	return true;
+	return {
+		status: 'succeeded',
+		walletId,
+		sharedTxId,
+		txHash,
+		requestIds,
+	};
 }
 
 export async function batchLatestPaymentEntriesV2() {
@@ -342,173 +489,177 @@ export async function batchLatestPaymentEntriesV2() {
 	}
 
 	try {
-		const paymentContractsWithWalletLocked = await retryOnSerializationConflict(
-			() =>
-				prisma.$transaction(
-					async (prisma) => {
-						const payByTime = new Date().getTime() + 1000 * 57;
-						const paymentContracts = await prisma.paymentSource.findMany({
-							where: {
-								deletedAt: null,
-								paymentSourceType: PaymentSourceType.Web3CardanoV2,
-								HotWallets: {
-									some: {
-										PendingTransaction: null,
-										type: HotWalletType.Purchasing,
-										deletedAt: null,
-									},
-								},
-							},
-							include: {
-								PurchaseRequests: {
-									where: {
-										NextAction: {
-											requestedAction: PurchasingAction.FundsLockingRequested,
-											errorType: null,
+		// Gate Serializable $transaction through the shared semaphore so the pg
+		// connection pool isn't exhausted under scheduler fan-out.
+		const paymentContractsWithWalletLocked = await withSerializableSlot(() =>
+			retryOnSerializationConflict(
+				() =>
+					prisma.$transaction(
+						async (prisma) => {
+							const payByTime = new Date().getTime() + 1000 * 57;
+							const paymentContracts = await prisma.paymentSource.findMany({
+								where: {
+									deletedAt: null,
+									paymentSourceType: PaymentSourceType.Web3CardanoV2,
+									HotWallets: {
+										some: {
+											PendingTransaction: null,
+											type: HotWalletType.Purchasing,
+											deletedAt: null,
 										},
-										CurrentTransaction: { is: null },
-										onChainState: null,
-										payByTime: { gte: payByTime },
-									},
-									include: {
-										PaidFunds: true,
-										SellerWallet: true,
-										SmartContractWallet: { where: { deletedAt: null } },
-										NextAction: true,
-										CurrentTransaction: true,
-										HotWalletLimit: { select: { id: true } },
-									},
-									orderBy: {
-										createdAt: 'asc',
-									},
-									take: maxBatchSize,
-								},
-								PaymentSourceConfig: true,
-								HotWallets: {
-									where: {
-										PendingTransaction: null,
-										lockedAt: null,
-										type: HotWalletType.Purchasing,
-										deletedAt: null,
-									},
-									include: {
-										Secret: true,
 									},
 								},
-							},
-						});
+								include: {
+									PurchaseRequests: {
+										where: {
+											NextAction: {
+												requestedAction: PurchasingAction.FundsLockingRequested,
+												errorType: null,
+											},
+											CurrentTransaction: { is: null },
+											onChainState: null,
+											payByTime: { gte: payByTime },
+										},
+										include: {
+											PaidFunds: true,
+											SellerWallet: true,
+											SmartContractWallet: { where: { deletedAt: null } },
+											NextAction: true,
+											CurrentTransaction: true,
+											HotWalletLimit: { select: { id: true } },
+										},
+										orderBy: {
+											createdAt: 'asc',
+										},
+										take: maxBatchSize,
+									},
+									PaymentSourceConfig: true,
+									HotWallets: {
+										where: {
+											PendingTransaction: null,
+											lockedAt: null,
+											type: HotWalletType.Purchasing,
+											deletedAt: null,
+										},
+										include: {
+											Secret: true,
+										},
+									},
+								},
+							});
 
-						const walletsToLock: HotWallet[] = [];
-						const paymentContractsToUse = [];
-						for (const paymentContract of paymentContracts) {
-							const purchaseRequests = [];
-							for (const purchaseRequest of paymentContract.PurchaseRequests) {
-								//if the purchase request times out in less than 5 minutes, we ignore it
-								const maxSubmitResultTime = Date.now() - 1000 * 60 * 5;
-								if (purchaseRequest.inputHash == null) {
-									logger.info('Purchase request has no input hash, ignoring', {
-										purchaseRequest: purchaseRequest,
-									});
-									await prisma.purchaseRequest.update({
-										where: { id: purchaseRequest.id },
-										data: {
-											ActionHistory: {
-												connect: {
-													id: purchaseRequest.nextActionId,
+							const walletsToLock: HotWallet[] = [];
+							const paymentContractsToUse = [];
+							for (const paymentContract of paymentContracts) {
+								const purchaseRequests = [];
+								for (const purchaseRequest of paymentContract.PurchaseRequests) {
+									//if the purchase request times out in less than 5 minutes, we ignore it
+									const maxSubmitResultTime = Date.now() - 1000 * 60 * 5;
+									if (purchaseRequest.inputHash == null) {
+										logger.info('Purchase request has no input hash, ignoring', {
+											purchaseRequest: purchaseRequest,
+										});
+										await prisma.purchaseRequest.update({
+											where: { id: purchaseRequest.id },
+											data: {
+												ActionHistory: {
+													connect: {
+														id: purchaseRequest.nextActionId,
+													},
+												},
+												NextAction: {
+													create: {
+														requestedAction: PurchasingAction.WaitingForManualAction,
+														errorType: PurchaseErrorType.Unknown,
+														errorNote: 'Purchase request has no input hash',
+													},
 												},
 											},
-											NextAction: {
-												create: {
-													requestedAction: PurchasingAction.WaitingForManualAction,
-													errorType: PurchaseErrorType.Unknown,
-													errorNote: 'Purchase request has no input hash',
+										});
+										continue;
+									} else if (purchaseRequest.submitResultTime < maxSubmitResultTime) {
+										logger.info('Purchase request times out in less than 5 minutes, ignoring', {
+											purchaseRequest: purchaseRequest,
+										});
+										await prisma.purchaseRequest.update({
+											where: { id: purchaseRequest.id },
+											data: {
+												ActionHistory: {
+													connect: {
+														id: purchaseRequest.nextActionId,
+													},
+												},
+												NextAction: {
+													create: {
+														requestedAction: PurchasingAction.FundsLockingRequested,
+														errorType: PurchaseErrorType.Unknown,
+														errorNote: 'Transaction timeout before sending',
+													},
 												},
 											},
-										},
-									});
-									continue;
-								} else if (purchaseRequest.submitResultTime < maxSubmitResultTime) {
-									logger.info('Purchase request times out in less than 5 minutes, ignoring', {
-										purchaseRequest: purchaseRequest,
-									});
-									await prisma.purchaseRequest.update({
-										where: { id: purchaseRequest.id },
-										data: {
-											ActionHistory: {
-												connect: {
-													id: purchaseRequest.nextActionId,
-												},
-											},
-											NextAction: {
-												create: {
-													requestedAction: PurchasingAction.FundsLockingRequested,
-													errorType: PurchaseErrorType.Unknown,
-													errorNote: 'Transaction timeout before sending',
-												},
-											},
-										},
-									});
+										});
+										continue;
+									}
+									purchaseRequests.push(purchaseRequest);
+								}
+								if (purchaseRequests.length == 0) {
 									continue;
 								}
-								purchaseRequests.push(purchaseRequest);
-							}
-							if (purchaseRequests.length == 0) {
-								continue;
-							}
-							paymentContract.PurchaseRequests = purchaseRequests;
-							for (const wallet of paymentContract.HotWallets) {
-								if (!walletsToLock.some((w) => w.id === wallet.id)) {
-									walletsToLock.push(wallet);
-									// Create a placeholder Transaction row BEFORE setting
-									// lockedAt and connect it as the wallet's PendingTransaction
-									// in the same write. Without the placeholder the wallet
-									// orphan-cleanup branch in wallet-timeouts has to wait
-									// WALLET_LOCK_TIMEOUT_INTERVAL to detect the orphan via the
-									// `lockedAt set + no PendingTransaction` arm (the only path
-									// it has for a lock with nothing to poll). With the
-									// placeholder, the standard PendingTransaction polling
-									// branch picks it up after 1 minute and — because txHash
-									// stays null until executeSpecificBatchPayment populates it
-									// — disconnects + marks RolledBack via the early-bail
-									// `txHash == null` branch in wallet-timeouts/service.ts.
-									// `executeSpecificBatchPayment` REUSES this placeholder by
-									// updating its `lastCheckedAt` (rather than creating a new
-									// sharedTx) since HotWallet.pendingTransactionId @unique
-									// allows only one connected Tx at a time.
-									const placeholder = await prisma.transaction.create({
-										data: {
-											status: TransactionStatus.Pending,
-											// lastCheckedAt: now keeps wallet-timeouts' 1-min
-											// debounce honored — without it the polling cron
-											// would fire on the next tick (NULL matches `lte`
-											// in Postgres but wallet-timeouts filters on a
-											// non-null `lastCheckedAt` via `lte: now-1min`).
-											lastCheckedAt: new Date(),
-											BlocksWallet: { connect: { id: wallet.id } },
-										},
-									});
-									await prisma.hotWallet.update({
-										where: { id: wallet.id, deletedAt: null },
-										data: { lockedAt: new Date() },
-									});
-									// Stash the placeholder Tx id on the wallet object so
-									// executeSpecificBatchPayment can reuse it. Wallet is a
-									// generated Prisma type, but the closure flows through
-									// untyped paymentContract.HotWallets — see
-									// loadPlaceholderTxIdForWallet for the read site.
-									(wallet as HotWallet & { placeholderTransactionId?: string }).placeholderTransactionId =
-										placeholder.id;
+								paymentContract.PurchaseRequests = purchaseRequests;
+								for (const wallet of paymentContract.HotWallets) {
+									if (!walletsToLock.some((w) => w.id === wallet.id)) {
+										walletsToLock.push(wallet);
+										// Create a placeholder Transaction row BEFORE setting
+										// lockedAt and connect it as the wallet's PendingTransaction
+										// in the same write. Without the placeholder the wallet
+										// orphan-cleanup branch in wallet-timeouts has to wait
+										// WALLET_LOCK_TIMEOUT_INTERVAL to detect the orphan via the
+										// `lockedAt set + no PendingTransaction` arm (the only path
+										// it has for a lock with nothing to poll). With the
+										// placeholder, the standard PendingTransaction polling
+										// branch picks it up after 1 minute and — because txHash
+										// stays null until executeSpecificBatchPayment populates it
+										// — disconnects + marks RolledBack via the early-bail
+										// `txHash == null` branch in wallet-timeouts/service.ts.
+										// `executeSpecificBatchPayment` REUSES this placeholder by
+										// updating its `lastCheckedAt` (rather than creating a new
+										// sharedTx) since HotWallet.pendingTransactionId @unique
+										// allows only one connected Tx at a time.
+										const placeholder = await prisma.transaction.create({
+											data: {
+												status: TransactionStatus.Pending,
+												// lastCheckedAt: now keeps wallet-timeouts' 1-min
+												// debounce honored — without it the polling cron
+												// would fire on the next tick (NULL matches `lte`
+												// in Postgres but wallet-timeouts filters on a
+												// non-null `lastCheckedAt` via `lte: now-1min`).
+												lastCheckedAt: new Date(),
+												BlocksWallet: { connect: { id: wallet.id } },
+											},
+										});
+										await prisma.hotWallet.update({
+											where: { id: wallet.id, deletedAt: null },
+											data: { lockedAt: new Date() },
+										});
+										// Stash the placeholder Tx id on the wallet object so
+										// executeSpecificBatchPayment can reuse it. Wallet is a
+										// generated Prisma type, but the closure flows through
+										// untyped paymentContract.HotWallets — see
+										// loadPlaceholderTxIdForWallet for the read site.
+										(wallet as HotWallet & { placeholderTransactionId?: string }).placeholderTransactionId =
+											placeholder.id;
+									}
+								}
+								if (paymentContract.PurchaseRequests.length > 0) {
+									paymentContractsToUse.push(paymentContract);
 								}
 							}
-							if (paymentContract.PurchaseRequests.length > 0) {
-								paymentContractsToUse.push(paymentContract);
-							}
-						}
-						return paymentContractsToUse;
-					},
-					{ isolationLevel: 'Serializable', maxWait: 10000, timeout: 10000 },
-				),
-			{ label: 'batch-payments-0' },
+							return paymentContractsToUse;
+						},
+						{ isolationLevel: 'Serializable', maxWait: 10000, timeout: 10000 },
+					),
+				{ label: 'batch-payments-0' },
+			),
 		);
 
 		await Promise.allSettled(
@@ -628,6 +779,29 @@ export async function batchLatestPaymentEntriesV2() {
 							// practice (the size difference between 0n and ~6M is at
 							// most 4 bytes; the second pass's overpaidLovelace is in the
 							// same size class as the first, so its CBOR size matches).
+							//
+							// INTENTIONAL `state: ResultSubmitted` + `resultHash: DUMMY_RESULT_HASH`
+							// (not `FundsLocked` + null). The actual lock datum will be
+							// FundsLocked + null (~33 bytes smaller). We deliberately
+							// over-size the lock for the LARGER ResultSubmitted datum
+							// because the validator's `output_value_is_preserved` uses
+							// `>=` (vested_pay.ak L743) — the lock UTxO's value cannot
+							// shrink across transitions but CAN grow. The ledger's
+							// per-output min-UTxO check applies to the NEW datum at
+							// SubmitResult time, so without pre-funding the seller would
+							// need to top up the continuation from their own wallet
+							// inputs (extra fees, extra UTxO selection, possible failure
+							// on a near-empty seller wallet). Pre-funding ~0.14 ADA per
+							// lock (32 bytes × coinsPerUtxoSize) eliminates that
+							// failure mode; the over-pre-funded amount is recorded as
+							// `collateralReturnLovelace` and is returned to the buyer at
+							// settlement, so no funds are lost — just briefly siloed.
+							//
+							// TODO(verify-on-chain): add an e2e regression that sizes a
+							// lock for `FundsLocked + null` and confirms the seller's
+							// SubmitResult fails without a wallet top-up. Confirms this
+							// trade-off is real before any future capital-efficiency
+							// micro-optimization is considered.
 							const buildEstimateDatum = (collateralReturnLovelace: bigint) =>
 								createDatumFromBlockchainIdentifierV2({
 									buyerAddress: walletData.changeAddress,
@@ -856,83 +1030,176 @@ export async function batchLatestPaymentEntriesV2() {
 						return;
 					}
 
+					// Map walletId → walletPairing so the outcome-dispatch loop below
+					// can look the original pairing up by id (walletPairings array is
+					// not closed over per-outcome iteration).
+					const pairingByWalletId = new Map<string, (typeof walletPairings)[number]>(
+						walletPairings.map((p) => [p.walletId, p]),
+					);
+
 					logger.info(`Batching ${walletPairings.length} payments for payment source ${paymentContract.id}`);
-					//do not retry, we want to fail if anything goes wrong. There should not be a possibility to pay twice
-					await Promise.allSettled(
-						walletPairings.map(async (walletPairing) => {
+					// Per-pairing structured outcomes — see BatchPairingOutcome. We
+					// removed the previous `Promise.race(30s, executeSpecificBatchPayment)`
+					// pattern: the timeout rejected the wrapper but did NOT cancel the
+					// in-flight `submitTx`, so a late successful broadcast could land on
+					// chain while the outer catch had already advanced every batched
+					// request to `WaitingForManualAction`. Operator clearing the manual-
+					// action state would then risk a second lock against funds already on
+					// chain. Per-tick mutex (`mutex` above) is the overlap defense; a
+					// single batch that exceeds 30s now logs but completes, and ambiguous
+					// outcomes are routed to `funding-reconciliation` for chain-truth
+					// resolution rather than guessing locally.
+					const outcomes = await Promise.allSettled(
+						walletPairings.map(async (walletPairing): Promise<BatchPairingOutcome> => {
 							try {
-								return await Promise.race([
-									new Promise<boolean>((_, reject) => {
-										setTimeout(
-											() => {
-												reject(new Error('Timeout batching purchase requests'));
-											},
-											//30 seconds timeout
-											30000,
-										);
-									}),
-									executeSpecificBatchPayment(walletPairing, paymentContract, blockchainProvider),
-								]);
-							} catch (error) {
-								logger.error('Error batching payments', {
-									error: error,
-									walletPairing: walletPairing.batchedRequests,
+								return await executeSpecificBatchPayment(walletPairing, paymentContract, blockchainProvider);
+							} catch (uncaught) {
+								// executeSpecificBatchPayment SHOULD always return a structured outcome.
+								// An uncaught throw is a programmer bug — treat as ambiguous to keep the
+								// double-lock guarantee (don't auto-revert request state).
+								logger.error('batch-payments inner threw instead of returning outcome — treating as ambiguous', {
 									walletId: walletPairing.walletId,
+									error: uncaught instanceof Error ? { message: uncaught.message, stack: uncaught.stack } : uncaught,
 								});
-								for (const batchedRequest of walletPairing.batchedRequests) {
+								return {
+									status: 'submit-ambiguous',
+									walletId: walletPairing.walletId,
+									sharedTxId: walletPairing.placeholderTransactionId ?? '',
+									intendedTxHash: '',
+									invalidHereafterSlot: 0,
+									requestIds: walletPairing.batchedRequests.map((b) => b.paymentRequest.id),
+									error: uncaught,
+								};
+							}
+						}),
+					);
+
+					for (const settled of outcomes) {
+						// Inner function always returns structured outcomes, so settled is
+						// always 'fulfilled'. Defense-in-depth: handle rejected anyway.
+						if (settled.status === 'rejected') {
+							const reason: unknown = settled.reason;
+							logger.error('batch-payments unexpected outer rejection', {
+								reason: reason instanceof Error ? reason.message : String(reason),
+							});
+							continue;
+						}
+						const outcome = settled.value;
+						switch (outcome.status) {
+							case 'succeeded':
+								// Wallet stays locked until tx-sync sees the confirmation;
+								// that's the existing behavior. Nothing to do.
+								logger.info('batch-payments pairing succeeded', {
+									walletId: outcome.walletId,
+									sharedTxId: outcome.sharedTxId,
+									txHash: outcome.txHash,
+									requestCount: outcome.requestIds.length,
+								});
+								break;
+
+							case 'post-submit-db-failed':
+								// txHash IS on chain and known; one last attempt to persist
+								// the hash. If THIS fails too, reconciliation handles it via
+								// intendedTxHash already stored pre-submit.
+								logger.warn('batch-payments post-submit DB failed; retrying txHash persistence', {
+									walletId: outcome.walletId,
+									sharedTxId: outcome.sharedTxId,
+									txHash: outcome.txHash,
+									error: outcome.error instanceof Error ? outcome.error.message : outcome.error,
+								});
+								try {
+									await retryOnSerializationConflict(
+										() =>
+											prisma.transaction.update({
+												where: { id: outcome.sharedTxId },
+												data: { txHash: outcome.txHash },
+											}),
+										{ label: 'batch-payments-v2-post-submit-retry-outer' },
+									);
+								} catch (retryError) {
+									logger.error(
+										'batch-payments post-submit DB retry also failed; reconciliation will resolve via intendedTxHash',
+										{ walletId: outcome.walletId, sharedTxId: outcome.sharedTxId, error: retryError },
+									);
+								}
+								break;
+
+							case 'submit-rejected':
+							case 'pre-submit-failed': {
+								// Definitive failure with no on-chain effect (or no broadcast attempted).
+								// SAFE to revert request state and unlock the wallet.
+								const errNote =
+									outcome.status === 'submit-rejected'
+										? 'Batching payments rejected by node: ' + interpretBlockchainError(outcome.error)
+										: 'Batching payments pre-submit DB error: ' +
+											(outcome.error instanceof Error ? outcome.error.message : String(outcome.error));
+								logger.warn(`batch-payments pairing ${outcome.status}; reverting + unlocking`, {
+									walletId: outcome.walletId,
+									sharedTxId: outcome.sharedTxId,
+								});
+								const originalPairing = pairingByWalletId.get(outcome.walletId);
+								const batchedRequestsForRevert = originalPairing?.batchedRequests ?? [];
+								for (const batchedRequest of batchedRequestsForRevert) {
 									await prisma.purchaseRequest.update({
 										where: { id: batchedRequest.paymentRequest.id },
 										data: {
 											ActionHistory: {
-												connect: {
-													id: batchedRequest.paymentRequest.nextActionId,
-												},
+												connect: { id: batchedRequest.paymentRequest.nextActionId },
 											},
 											NextAction: {
 												create: {
 													requestedAction: PurchasingAction.WaitingForManualAction,
 													errorType: PurchaseErrorType.Unknown,
-													errorNote: 'Batching payments failed: ' + interpretBlockchainError(error),
+													errorNote: errNote,
 												},
 											},
 										},
 									});
 								}
-
-								// Mark the placeholder Transaction RolledBack BEFORE disconnecting
-								// it from the wallet. The inner submitTx failure path already
-								// handles this, but pre-submit / post-submit failures land here
-								// with the placeholder still Pending — once disconnected and
-								// lockedAt cleared, neither wallet-timeouts polling branch nor the
-								// orphan-lock branch can find the row again, so without this it
-								// would sit Pending forever and accumulate as DB pollution.
-								if (walletPairing.placeholderTransactionId != null) {
+								if (outcome.sharedTxId != null) {
 									try {
 										await prisma.transaction.update({
-											where: { id: walletPairing.placeholderTransactionId },
+											where: { id: outcome.sharedTxId },
 											data: { status: TransactionStatus.RolledBack },
 										});
 									} catch (rollbackError) {
-										logger.warn('batch-payments placeholder rollback (outer catch) failed (non-fatal)', {
-											walletId: walletPairing.walletId,
-											placeholderId: walletPairing.placeholderTransactionId,
-											rollbackError: rollbackError instanceof Error ? rollbackError.message : rollbackError,
+										logger.warn('batch-payments rollback mark failed (non-fatal)', {
+											sharedTxId: outcome.sharedTxId,
+											error: rollbackError instanceof Error ? rollbackError.message : rollbackError,
 										});
 									}
 								}
-
 								await prisma.hotWallet.update({
-									where: { id: walletPairing.walletId, deletedAt: null },
+									where: { id: outcome.walletId, deletedAt: null },
 									data: {
 										lockedAt: null,
 										PendingTransaction: { disconnect: true },
 									},
 								});
-
-								throw error;
+								break;
 							}
-						}),
-					);
+
+							case 'submit-ambiguous':
+								// CRITICAL: do NOT revert request state, do NOT mark
+								// RolledBack, do NOT unlock the wallet. The tx MAY be on
+								// chain. The shared Transaction row keeps `intendedTxHash`
+								// + `invalidHereafterSlot` set; `funding-reconciliation`
+								// resolves it once the chain reports definitively.
+								//
+								// Wallet stays locked → wallet-timeouts cannot recover it
+								// until reconciliation flips the Transaction's status (or
+								// confirms it on chain via tx-sync).
+								logger.warn('batch-payments pairing AMBIGUOUS; leaving for funding-reconciliation', {
+									walletId: outcome.walletId,
+									sharedTxId: outcome.sharedTxId,
+									intendedTxHash: outcome.intendedTxHash,
+									invalidHereafterSlot: outcome.invalidHereafterSlot,
+									requestCount: outcome.requestIds.length,
+									error: outcome.error instanceof Error ? outcome.error.message : outcome.error,
+								});
+								break;
+						}
+					}
 				} catch (error) {
 					logger.error('Error batching payments outer', { error: error });
 

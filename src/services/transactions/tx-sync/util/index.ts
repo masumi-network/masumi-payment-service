@@ -117,19 +117,25 @@ export function checkPaymentAmountsMatch(
 // smart-contracts/payment-v2/validators/vested_pay.ak):
 //   0 Withdraw            seller
 //   1 SetRefundRequested  buyer
-//   2 UnSetRefundRequested (V1, buyer) | AuthorizeWithdrawal (V2, seller)
+//   2 UnSetRefundRequested (V1, buyer) | AuthorizeWithdrawal (V2, buyer)
+//                         Both validators `expect must_be_signed_by(buyer_vk)`
+//                         (V1: vested_pay.ak:259-260; V2: vested_pay.ak:491-492)
+//                         and the V2 service lives under purchases/
+//                         (packages/payment-source-v2/src/services/purchases/
+//                         authorize-withdrawal/service.ts), so the buyer's
+//                         hot wallet supplies the inputs and pays the fee on
+//                         both source types.
 //   3 WithdrawRefund      buyer
 //   4 WithdrawDisputed    admin (admin wallet pays the on-chain fee)
 //   5 SubmitResult        seller
 //   6 AuthorizeRefund     seller
-export function getCardanoFeesSeller(redeemerVersion: number, share: bigint, paymentSourceType: PaymentSourceType) {
+//
+// `paymentSourceType` is retained on both helpers for forward-compatibility:
+// future redeemer alts may diverge between V1 and V2.
+export function getCardanoFeesSeller(redeemerVersion: number, share: bigint, _paymentSourceType: PaymentSourceType) {
 	if (redeemerVersion == 0) {
 		//Withdraw
 		return share;
-	} else if (redeemerVersion == 2) {
-		//V2 only: AuthorizeWithdrawal is seller-initiated. V1 alt 2 is buyer's
-		//CancelRefund (booked in the buyer helper).
-		return paymentSourceType === PaymentSourceType.Web3CardanoV2 ? share : BigInt(0);
 	} else if (redeemerVersion == 5) {
 		//SubmitResult
 		return share;
@@ -140,14 +146,14 @@ export function getCardanoFeesSeller(redeemerVersion: number, share: bigint, pay
 	return BigInt(0);
 }
 
-export function getCardanoFeesBuyer(redeemerVersion: number, share: bigint, paymentSourceType: PaymentSourceType) {
+export function getCardanoFeesBuyer(redeemerVersion: number, share: bigint, _paymentSourceType: PaymentSourceType) {
 	if (redeemerVersion == 1) {
 		//RequestRefund
 		return share;
 	} else if (redeemerVersion == 2) {
-		//V1 only: CancelRefundRequest is buyer-initiated. V2 alt 2 is seller's
-		//AuthorizeWithdrawal (booked in the seller helper).
-		return paymentSourceType === PaymentSourceType.Web3CardanoV2 ? BigInt(0) : share;
+		//V1 CancelRefundRequest and V2 AuthorizeWithdrawal are both
+		//buyer-signed and buyer-paid.
+		return share;
 	} else if (redeemerVersion == 3) {
 		//WithdrawRefund
 		return share;

@@ -30,6 +30,14 @@ async function getCoinsPerUtxoSize(blockchainProvider: BlockfrostProvider): Prom
 	return coinsPerUtxoSize;
 }
 
+// Intentional read-tier auth on a POST verb: this endpoint builds an
+// unsigned transaction for the caller to sign — it reads payment-source
+// metadata, queries Blockfrost, and returns CBOR. No DB writes, no
+// state-changing on-chain submit. POST is used because the input is a
+// structured payload that doesn't fit comfortably in a query string, not
+// because the operation mutates server state. Keeping this on
+// `readAuthenticatedEndpointFactory` ensures the action stays available to
+// read-only API keys, which matches the build/preview semantics.
 const x402BuildEndpointFactory = readAuthenticatedEndpointFactory.addMiddleware(
 	createAuthenticatedRateLimitMiddleware({
 		maxRequests: 30,

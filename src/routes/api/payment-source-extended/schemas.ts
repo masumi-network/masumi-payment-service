@@ -123,14 +123,24 @@ export const paymentSourceExtendedCreateSchemaInput = z
 			)
 			.min(1)
 			.max(50)
-			.describe('The wallet addresses of the admin wallets. V2 allows repeated addresses as weighted voting slots.'),
+			.describe(
+				'V2 admin wallet slots. Repeated addresses ARE permitted and intentional: each entry is an independent voting slot, ' +
+					'so the same Cardano address can be added multiple times to give that key proportionally more weight in the M-of-N quorum. ' +
+					'Example: [addrA, addrA, addrB] with requiredAdminSignatures=2 means addrA alone satisfies the quorum (2 weighted slots) ' +
+					'while addrB alone does not. No distinct-address check is enforced server-side — duplicates are by design, not a bug. ' +
+					'Auditing operators must reason about effective vote weight, not raw row count.',
+			),
 		requiredAdminSignatures: z.coerce
 			.number()
 			.int()
 			.min(1)
 			.max(50)
 			.optional()
-			.describe('Required weighted admin signatures for Web3CardanoV2 dispute settlement'),
+			.describe(
+				'Required weighted admin signatures for Web3CardanoV2 dispute settlement. Minimum 1 (single-admin custody is allowed by design — ' +
+					'operators choosing this trade fast settlement for centralized control). Weight is counted by AdminWallets row position, ' +
+					'so duplicate addresses inflate effective weight; see AdminWallets docs.',
+			),
 		FeeReceiverNetworkWallet: z
 			.object({
 				walletAddress: z.string().max(250).describe('Cardano address that receives network fees'),
@@ -200,11 +210,11 @@ export const paymentSourceExtendedCreateSchemaInput = z
 			});
 		}
 		if (input.paymentSourceType === PaymentSourceType.Web3CardanoV2) {
-			if (input.AdminWallets.length < 3) {
+			if (input.AdminWallets.length < 1) {
 				ctx.addIssue({
 					code: z.ZodIssueCode.custom,
 					path: ['AdminWallets'],
-					message: 'Web3CardanoV2 payment sources require at least 3 admin wallet slots',
+					message: 'Web3CardanoV2 payment sources require at least 1 admin wallet slot',
 				});
 			}
 			if (input.requiredAdminSignatures == null) {
@@ -213,11 +223,15 @@ export const paymentSourceExtendedCreateSchemaInput = z
 					path: ['requiredAdminSignatures'],
 					message: 'requiredAdminSignatures is required for Web3CardanoV2 payment sources',
 				});
-			} else if (input.requiredAdminSignatures < 2) {
+			} else if (input.requiredAdminSignatures < 1) {
+				// Lower bound is 1, not 2: single-admin custody is an intentional configuration
+				// (fast settlement, centralized control). Operators choosing M>=2 must pick that
+				// trade-off explicitly. Repeated AdminWallets addresses count as weighted slots
+				// (see AdminWallets describe) — server does NOT enforce distinct addresses.
 				ctx.addIssue({
 					code: z.ZodIssueCode.custom,
 					path: ['requiredAdminSignatures'],
-					message: 'requiredAdminSignatures must be at least 2 to prevent single-admin custody',
+					message: 'requiredAdminSignatures must be at least 1',
 				});
 			} else if (input.requiredAdminSignatures > input.AdminWallets.length) {
 				ctx.addIssue({

@@ -689,6 +689,22 @@ validator vested_pay(
       }
 
       AuthorizeRefund -> {
+        // INTENTIONAL — no upper-bound `must_end_before` check.
+        //
+        // `AuthorizeRefund` is the seller voluntarily cooperating with a
+        // refund: it forfeits the seller's withdrawal claim and pays the
+        // buyer instead. The validator must allow this at any time, including
+        // after `unlock_time` (when the seller could otherwise `Withdraw`
+        // from `ResultSubmitted`) and after `external_dispute_unlock_time`
+        // (when admins could otherwise `WithdrawDisputed`). Adding an upper
+        // bound here would create a window in which a cooperative seller
+        // could no longer hand the funds back even though they want to —
+        // strictly worse for the buyer with no security upside (the seller
+        // is the only signer required, and the action is buyer-favorable).
+        //
+        // Lower bound `must_start_after(validity_range, seller_cooldown_time)`
+        // below remains enforced for double-satisfaction symmetry with the
+        // Withdraw / SubmitResult paths.
         let output_and_datum =
           script_output_with_datum
             |> list.find(
