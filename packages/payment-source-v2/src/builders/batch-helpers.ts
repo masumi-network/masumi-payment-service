@@ -7,6 +7,38 @@ import type { UTxO } from '@meshsdk/core';
 import { logger } from '@masumi/payment-core/logger';
 
 /**
+ * Lovelace amount routed into an explicit "splitter" output that every V2
+ * batch builder emits back to the funding wallet. Mesh's default
+ * `.changeAddress(wallet)` produces ONE change output per tx; adding this
+ * second wallet-targeted output guarantees the wallet retains at least two
+ * UTxOs after each script tx confirms, which is the precondition for the
+ * next script tx (`inputs` vs `collateral_inputs` non-overlap rule, see
+ * `services/wallet-collateral/ensure-collateral-ready.ts`).
+ *
+ * Sized at 5 ADA — MUST match `COLLATERAL_RESERVE_LOVELACE` in
+ * `ensure-collateral-ready.ts`. The splitter UTxO is the wallet's "second
+ * UTxO reservoir" and is the obvious candidate for the NEXT batch tx's
+ * collateral input (`pickBatchCollateral` prefers the smallest qualifying
+ * pure-ADA UTxO with ≥ 5 ADA). If we sized it below 5 ADA, the next tx
+ * would need to scavenge collateral elsewhere — typically promoting a
+ * larger change UTxO to collateral and burning excess lovelace on
+ * `total_collateral`. 5 ADA hits the minimum that makes the splitter
+ * collateral-eligible while remaining cheap (~5 ADA temporarily pinned in
+ * the splitter UTxO between txs).
+ *
+ * The splitter is pure ADA so it can serve directly as the collateral input
+ * for the NEXT batch tx (under Babbage, mixed UTxOs also qualify, but a
+ * pure-ADA UTxO keeps `collateral_return_output` empty and minimizes
+ * total_collateral computation overhead).
+ *
+ * Lifecycle: the splitter output from tx N is typically consumed by tx N+1
+ * as part of mesh's coin selection (either as fee input or as collateral),
+ * so the wallet does NOT permanently accrete pure-ADA UTxOs across many txs
+ * — the splitter is a continuously-recycled second-UTxO reservoir.
+ */
+export const WALLET_SPLITTER_LOVELACE = 5_000_000n;
+
+/**
  * A per-tx validity window. Mirrors the `(invalidBefore, invalidAfter)` pair
  * the mesh tx builder accepts via `.invalidBefore(...) / .invalidHereafter(...)`.
  *

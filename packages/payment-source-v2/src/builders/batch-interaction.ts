@@ -21,7 +21,7 @@ import { logger } from '@masumi/payment-core/logger';
 import { calculateMinUtxo, calculateTopUpAmount, getLovelaceFromAmounts, getNativeTokenCount } from '@/utils/min-utxo';
 import { getCachedChainProtocolParameters } from '@/utils/mesh-cost-model-sync';
 import { syncMeshCostModelsFromChainV2 } from '../utils/mesh-cost-model-sync';
-import { deriveTotalCollateral } from './batch-helpers';
+import { deriveTotalCollateral, WALLET_SPLITTER_LOVELACE } from './batch-helpers';
 import { generateRedeemerData } from './redeemer-data';
 
 // Mirrors `FALLBACK_COINS_PER_UTXO_SIZE` in @masumi/payment-core/config.
@@ -370,6 +370,14 @@ async function buildBatchInteractionTx(
 		txBuilder.txOut(smartContractAddress, outputAmount).txOutInlineDatumValue(item.newInlineDatum);
 	}
 
+	// Wallet "splitter" output: an explicit pure-ADA self-send that guarantees
+	// the wallet retains a second UTxO after this tx confirms. Without this,
+	// a tx that consumes more wallet UTxOs than mesh's default change emits
+	// (1) would degrade the wallet's UTxO count and eventually trip the
+	// single-UTxO trap at `ensureCollateralReady`. See
+	// `batch-helpers.ts WALLET_SPLITTER_LOVELACE` for the lifecycle rationale.
+	txBuilder.txOut(walletAddress, [{ unit: 'lovelace', quantity: WALLET_SPLITTER_LOVELACE.toString() }]);
+
 	// Hand the candidate wallet UTxOs to Mesh's coin selector instead of
 	// force-adding every one. Force-adding (a) blows tx size on fragmented
 	// wallets and (b) bypasses caller-supplied exclusion lists (e.g.
@@ -562,6 +570,11 @@ async function buildBatchWithdrawTx(
 			}
 		}
 	}
+
+	// Wallet "splitter" output — same rationale as in buildBatchInteractionTx.
+	// Pure-ADA self-send guarantees the wallet keeps ≥2 UTxOs across script
+	// txs. See `batch-helpers.ts WALLET_SPLITTER_LOVELACE`.
+	txBuilder.txOut(walletAddress, [{ unit: 'lovelace', quantity: WALLET_SPLITTER_LOVELACE.toString() }]);
 
 	// See the matching note in buildBatchInteractionTx: hand the candidate
 	// wallet UTxOs to Mesh's coin selector instead of force-adding every one.

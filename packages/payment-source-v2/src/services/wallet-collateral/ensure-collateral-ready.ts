@@ -10,7 +10,11 @@ import { isDefinitiveNodeRejection } from '../submit-error-classifier';
 
 /**
  * Required wallet shape for collateral readiness:
- *   - one pure-ADA UTxO of ≥ COLLATERAL_RESERVE_LOVELACE for collateral input
+ *   - one UTxO of ≥ COLLATERAL_RESERVE_LOVELACE for collateral input. Tokens
+ *     on the same UTxO are FINE — Babbage added `collateral_return_output` +
+ *     `total_collateral` (CIP-40), and Mesh-SDK 1.9 auto-emits the return
+ *     output when a token-bearing UTxO is declared as collateral, so the
+ *     ledger accepts mixed-asset collateral inputs natively.
  *   - AT LEAST ONE additional UTxO so the fee input does not OVERLAP the
  *     collateral input.
  *
@@ -34,7 +38,6 @@ export const PREP_TX_MIN_LOVELACE = 7_000_000n;
 export type EnsureCollateralReadyResult =
 	| { status: 'ready' }
 	| { status: 'deferred'; prepTxHash: string }
-	| { status: 'needs_funding_no_pure_ada_utxos'; details: string }
 	| { status: 'failed'; reason: 'insufficient_funds' | 'prep_tx_failed'; details: string };
 
 export type EnsureCollateralReadyParams = {
@@ -86,23 +89,29 @@ export type WalletStateClassification = {
  * readiness invariant. Extracted as a free function so the decision logic
  * is unit-testable without mocking mesh's Transaction class.
  *
- *   - `hasGoodCollateral` — at least one UTxO is pure-ADA (only `lovelace`
- *     asset) AND has ≥ COLLATERAL_RESERVE_LOVELACE. Tokens-on-the-same-UTxO
- *     disqualify it for collateral use: Cardano requires collateral to be
- *     a single, simple pay-to-pubkey-hash output and many ledger
- *     implementations further restrict it to lovelace-only.
+ *   - `hasGoodCollateral` — at least one UTxO holds ≥ COLLATERAL_RESERVE_LOVELACE.
+ *     Token-bearing UTxOs ARE acceptable since Babbage: the ledger accepts
+ *     them as collateral inputs as long as the tx body declares a
+ *     `collateral_return_output` for the non-ADA assets and a `total_collateral`
+ *     field for the ADA portion (CIP-40). Mesh-SDK 1.9 emits both automatically
+ *     when a token-bearing UTxO is selected for collateral, so no special
+ *     handling is required at this layer.
  *   - `utxoCount` — total UTxOs in the wallet (the second UTxO requirement
  *     is the whole reason this module exists; see the module-level note).
  *   - `totalLovelace` — sum of `lovelace` across every UTxO, used to gate
  *     the prep-tx build (insufficient funds bail-out).
  *   - `ready` — composite gate: `hasGoodCollateral && utxoCount >= 2`.
- *   - `fundedForPrep` — `pureLovelaceTotal >= PREP_TX_MIN_LOVELACE`. Pure-ADA
- *     only because mesh's `sendAssets` in the prep-tx builder cannot peel 5
- *     ADA off a token-bearing UTxO without explicitly handling the bundled
- *     tokens; counting trapped-in-tokens lovelace here would lead the caller
- *     to submit a doomed prep tx that fails at build time.
+ *   - `fundedForPrep` — `totalLovelace >= PREP_TX_MIN_LOVELACE`. Mesh's
+ *     `sendAssets({...}, [{ unit: 'lovelace', quantity: 5_000_000 }])` works
+ *     fine over token-bearing UTxOs: the explicit output carries only 5 ADA,
+ *     and mesh's coin selector emits a change output that captures the
+ *     remaining lovelace AND the bundled tokens. The previous pure-ADA-only
+ *     gate was overly conservative.
  *   - `pureLovelaceTotal` — sum of `lovelace` across pure-ADA-only UTxOs.
- *   - `hasPureAdaUtxo` — true when at least one UTxO is pure ADA.
+ *     Retained as a diagnostic so operators can see token-fragmentation
+ *     state, but NOT used as a gate.
+ *   - `hasPureAdaUtxo` — true when at least one UTxO is pure ADA. Diagnostic
+ *     only; mixed-asset UTxOs are perfectly valid collateral inputs.
  *   - `utxoAssetSummaries` — per-UTxO asset summary surfaced so the caller
  *     can log exactly which UTxOs carry tokens vs pure ADA without re-walking
  *     the UTxO list.
@@ -132,7 +141,9 @@ export function classifyWalletState(utxos: UTxO[]): WalletStateClassification {
 			pureLovelaceTotal += lovelaceForThisUtxo;
 			hasPureAdaUtxo = true;
 		}
-		if (isPureAda && lovelaceForThisUtxo >= COLLATERAL_RESERVE_LOVELACE) {
+		// Mixed-asset UTxOs ARE valid collateral inputs since Babbage (CIP-40);
+		// drop the previous purity gate. The lovelace floor still applies.
+		if (lovelaceForThisUtxo >= COLLATERAL_RESERVE_LOVELACE) {
 			hasGoodCollateral = true;
 		}
 		utxoAssetSummaries.push({
@@ -145,15 +156,13 @@ export function classifyWalletState(utxos: UTxO[]): WalletStateClassification {
 
 	const utxoCount = utxos.length;
 	const ready = hasGoodCollateral && utxoCount >= 2;
-	// `fundedForPrep` must measure PURE-ADA lovelace only. Mesh's
-	// `sendAssets({...}, [{ unit: 'lovelace', quantity: 5_000_000 }])`
-	// in the prep-tx builder cannot peel 5 ADA out of a token-bearing UTxO
-	// without explicitly handling the bundled tokens; a wallet whose entire
-	// balance lives in token-bearing UTxOs would otherwise pass the funding
-	// gate, then fail the build with a confusing UTxO-selection error.
-	// `pureLovelaceTotal` already excludes token-bearing UTxOs, so this gate
-	// is now a true predicate for "can we build the prep tx".
-	const fundedForPrep = pureLovelaceTotal >= PREP_TX_MIN_LOVELACE;
+	// Use TOTAL lovelace (not pure-only). Mesh's `sendAssets` selects coverage
+	// across any UTxOs the wallet holds, including token-bearing ones; the
+	// explicit 5-ADA output is satisfied first, and the remaining lovelace +
+	// bundled tokens flow into the change output. The previous purity gate
+	// was a misreading of mesh's behavior — it could peel ADA off a token-
+	// bearing UTxO all along.
+	const fundedForPrep = totalLovelace >= PREP_TX_MIN_LOVELACE;
 
 	return {
 		hasGoodCollateral,
@@ -169,30 +178,26 @@ export function classifyWalletState(utxos: UTxO[]): WalletStateClassification {
 
 /**
  * Before each V2 script-spending action: confirm the wallet has both a
- * pure-ADA collateral UTxO and at least one additional UTxO to feed the
- * fee input.
+ * collateral-eligible UTxO (≥ COLLATERAL_RESERVE_LOVELACE, tokens permitted)
+ * and at least one additional UTxO to feed the fee input.
  *
  * Outcomes:
  *   - 'ready'                          — wallet meets the invariant;
  *                                        caller proceeds.
- *   - 'deferred'                       — wallet had enough pure-ADA funds
- *                                        but only one UTxO (or no good
- *                                        collateral). We submitted a self-send
- *                                        prep tx; caller MUST return without
- *                                        consuming the lock. wallet-timeouts
- *                                        (or tx-sync once it observes the
- *                                        prep txHash) will clear the lock
- *                                        once the prep tx confirms.
- *   - 'needs_funding_no_pure_ada_utxos' — wallet has enough TOTAL lovelace
- *                                        but it is trapped in token-bearing
- *                                        UTxOs; we did NOT submit a prep tx
- *                                        (mesh `sendAssets` cannot peel pure
- *                                        ADA off a token-bearing UTxO).
- *                                        Wallet lock is released so the next
- *                                        cycle re-evaluates once the operator
- *                                        externally splits a pure-ADA UTxO.
+ *   - 'deferred'                       — wallet had enough total lovelace but
+ *                                        only one UTxO (or no UTxO ≥ 5 ADA).
+ *                                        We submitted a self-send prep tx;
+ *                                        caller MUST return without consuming
+ *                                        the lock. wallet-timeouts (or
+ *                                        tx-sync once it observes the prep
+ *                                        txHash) will clear the lock once
+ *                                        the prep tx confirms. Mixed-asset
+ *                                        UTxOs feed the prep tx fine — mesh
+ *                                        emits a change output that carries
+ *                                        any bundled tokens.
  *   - 'failed'                         — either the wallet is too underfunded
- *                                        in pure-ADA to even build a prep tx,
+ *                                        in total lovelace to even build a
+ *                                        prep tx,
  *                                        or the prep tx itself failed to
  *                                        submit. Caller treats this as a
  *                                        transient operational error: leave
@@ -215,43 +220,15 @@ export async function ensureCollateralReady(params: EnsureCollateralReadyParams)
 		return { status: 'ready' };
 	}
 
-	// Distinguish "no money at all" (totalLovelace < threshold → genuine
-	// insufficient_funds) from "money exists but is trapped inside
-	// token-bearing UTxOs" (pureLovelaceTotal < threshold but totalLovelace
-	// >= threshold). The latter is recoverable — the operator can split a
-	// pure-ADA UTxO off the token-bearing one externally — and we MUST NOT
-	// submit a prep tx in that state because mesh's `sendAssets` for the
-	// prep tx cannot peel pure ADA off a token-bearing UTxO without
-	// explicitly handling the bundled tokens, which the prep builder does
-	// not do. Surface it as its own status so the caller can defer (release
-	// the wallet lock + wait for next cycle) instead of either burning gas
-	// on a doomed prep tx or terminating good requests as insufficient.
-	if (!classification.fundedForPrep && classification.totalLovelace >= PREP_TX_MIN_LOVELACE) {
-		const details = `wallet cannot prep collateral: insufficient pure-ADA UTxOs (walletAddress=${walletAddress}, totalLovelace=${classification.totalLovelace.toString()}, pureLovelaceTotal=${classification.pureLovelaceTotal.toString()}, utxoAssets=${JSON.stringify(classification.utxoAssetSummaries)})`;
-		logger.error(
-			'V2 wallet cannot prep collateral: insufficient pure-ADA UTxOs, awaiting external split [collateral-prep]',
-			{
-				walletDbId,
-				walletAddress,
-				serviceLabel,
-				utxoCount: classification.utxoCount,
-				totalLovelace: classification.totalLovelace.toString(),
-				pureLovelaceTotal: classification.pureLovelaceTotal.toString(),
-				minRequiredLovelace: PREP_TX_MIN_LOVELACE.toString(),
-				utxoAssetSummaries: classification.utxoAssetSummaries,
-				note: 'wallet has enough total lovelace but it is trapped in token-bearing UTxOs; operator must split a pure-ADA UTxO before the next scheduler tick',
-			},
-		);
-		// Same unlock rationale as the insufficient_funds branch below: we did
-		// NOT submit a prep tx so wallet-timeouts will never sweep this wallet.
-		// Clearing lockedAt lets the next scheduler tick re-evaluate once the
-		// operator splits a pure-ADA UTxO out of the token-bearing one.
-		await unlockWalletLock(walletDbId, serviceLabel);
-		return {
-			status: 'needs_funding_no_pure_ada_utxos',
-			details,
-		};
-	}
+	// Previously this branch existed to surface "money trapped in token-bearing
+	// UTxOs" as a separate status, because the prep tx was thought to need
+	// pure-ADA inputs. Babbage (CIP-40) + mesh-SDK 1.9 dispelled both halves
+	// of that assumption: (a) mixed-asset UTxOs ARE valid collateral inputs
+	// with auto-emitted collateral_return_output, and (b) mesh's `sendAssets`
+	// transparently peels lovelace off a token-bearing UTxO and routes the
+	// bundled tokens into the change output. The branch is removed; the
+	// `fundedForPrep` gate below now uses `totalLovelace` and treats mixed
+	// and pure UTxOs equivalently.
 
 	if (!classification.fundedForPrep) {
 		// WARN, not ERROR: every scheduler tick that picks this wallet up
@@ -269,8 +246,9 @@ export async function ensureCollateralReady(params: EnsureCollateralReadyParams)
 			utxoCount: classification.utxoCount,
 			totalLovelace: classification.totalLovelace.toString(),
 			pureLovelaceTotal: classification.pureLovelaceTotal.toString(),
+			hasPureAdaUtxo: classification.hasPureAdaUtxo,
 			minRequiredLovelace: PREP_TX_MIN_LOVELACE.toString(),
-			note: 'underfunded — operator must fund wallet; this log repeats every scheduler tick until resolved',
+			note: 'wallet does not hold enough TOTAL lovelace to fund a collateral-prep tx. Mixed-asset UTxOs are acceptable inputs; this log repeats every scheduler tick until operator funds the wallet.',
 		});
 		// The outer caller's `lockAndQueryX` set `lockedAt = now` on this wallet.
 		// We did NOT submit a prep tx (no PendingTransaction was connected), so
@@ -283,7 +261,7 @@ export async function ensureCollateralReady(params: EnsureCollateralReadyParams)
 		return {
 			status: 'failed',
 			reason: 'insufficient_funds',
-			details: `wallet has ${classification.totalLovelace.toString()} lovelace (pure-ADA ${classification.pureLovelaceTotal.toString()}) across ${classification.utxoCount} UTxO(s); need at least ${PREP_TX_MIN_LOVELACE.toString()} pure-ADA to build collateral prep tx`,
+			details: `wallet has ${classification.totalLovelace.toString()} lovelace across ${classification.utxoCount} UTxO(s); need at least ${PREP_TX_MIN_LOVELACE.toString()} total lovelace to build collateral prep tx (mixed-asset UTxOs accepted)`,
 		};
 	}
 

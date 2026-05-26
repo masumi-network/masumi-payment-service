@@ -5,6 +5,7 @@ import {
 	COLLATERAL_RESERVE_LOVELACE,
 	PREP_TX_MIN_LOVELACE,
 } from './ensure-collateral-ready';
+import { WALLET_SPLITTER_LOVELACE } from '../../builders/batch-helpers';
 
 // Integration tests for the side-effecting `ensureCollateralReady` path
 // (insufficient_funds / prep_tx_failed branches that mutate DB + on-chain)
@@ -82,21 +83,41 @@ describe('classifyWalletState', () => {
 		expect(result.fundedForPrep).toBe(true);
 	});
 
-	it('refuses ready AND fundedForPrep when both UTxOs carry tokens (no pure-ADA pool for prep)', () => {
+	it('accepts mixed-asset UTxOs as collateral candidates (Babbage CIP-40)', () => {
+		// Both UTxOs carry tokens, but the lovelace floor (≥ 5 ADA) is met by the
+		// first UTxO and the total (≥ 7 ADA) covers the prep-tx budget. Babbage
+		// added `collateral_return_output` + `total_collateral` (CIP-40), so the
+		// ledger accepts mixed-asset collateral inputs natively; mesh-SDK 1.9
+		// auto-emits the return output. The classifier therefore reports the
+		// wallet as fully ready/prep-funded despite zero pure-ADA UTxOs.
 		const result = classifyWalletState([
 			makeUtxo({ amount: [lovelace('6000000'), token('100')] }),
 			makeUtxo({ outputIndex: 1, amount: [lovelace('3000000'), token('50')] }),
 		]);
-		expect(result.hasGoodCollateral).toBe(false);
+		expect(result.hasGoodCollateral).toBe(true);
 		expect(result.utxoCount).toBe(2);
 		expect(result.totalLovelace).toBe(9_000_000n);
-		// All lovelace is trapped in token-bearing UTxOs — mesh's prep-tx
-		// `sendAssets` cannot peel pure ADA off them, so fundedForPrep is false
-		// even though totalLovelace clears the 7 ADA threshold.
+		// Diagnostic fields surface the zero pure-ADA pool for operator visibility,
+		// but they no longer gate readiness.
 		expect(result.pureLovelaceTotal).toBe(0n);
 		expect(result.hasPureAdaUtxo).toBe(false);
+		expect(result.ready).toBe(true);
+		expect(result.fundedForPrep).toBe(true);
+	});
+
+	it('refuses ready when only one mixed-asset UTxO is present (single-UTxO trap still applies)', () => {
+		// Mixed-asset UTxO is acceptable for collateral, but the
+		// inputs/collateral_inputs overlap rule requires a SECOND UTxO for the
+		// fee input. The single-UTxO trap is unchanged by Babbage.
+		const result = classifyWalletState([makeUtxo({ amount: [lovelace('8000000'), token('100')] })]);
+		expect(result.hasGoodCollateral).toBe(true);
+		expect(result.utxoCount).toBe(1);
+		expect(result.totalLovelace).toBe(8_000_000n);
+		expect(result.pureLovelaceTotal).toBe(0n);
 		expect(result.ready).toBe(false);
-		expect(result.fundedForPrep).toBe(false);
+		// Prep tx can still be built — mesh peels 5 ADA off the mixed input and
+		// routes the bundled tokens into the change output.
+		expect(result.fundedForPrep).toBe(true);
 	});
 
 	it('refuses ready when two pure UTxOs each fall below the 5 ADA collateral threshold', () => {
@@ -153,6 +174,16 @@ describe('classifyWalletState', () => {
 		// Guard against silent threshold drift in tests vs production logic.
 		expect(COLLATERAL_RESERVE_LOVELACE).toBe(5_000_000n);
 		expect(PREP_TX_MIN_LOVELACE).toBe(7_000_000n);
+	});
+
+	it('keeps WALLET_SPLITTER_LOVELACE >= COLLATERAL_RESERVE_LOVELACE so the splitter is collateral-eligible', () => {
+		// Cross-module invariant. The splitter UTxO emitted by every V2 batch
+		// builder is the wallet's "second UTxO reservoir" and is the obvious
+		// candidate for the NEXT batch tx's collateral input. If the splitter
+		// ever drops below the 5 ADA collateral floor, the next tx must
+		// scavenge a larger UTxO for collateral and burn excess lovelace on
+		// `total_collateral`. This test catches accidental drift.
+		expect(WALLET_SPLITTER_LOVELACE).toBeGreaterThanOrEqual(COLLATERAL_RESERVE_LOVELACE);
 	});
 });
 
