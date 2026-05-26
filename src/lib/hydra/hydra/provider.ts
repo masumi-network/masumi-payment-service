@@ -71,7 +71,7 @@ export class HydraProvider implements IFetcher, ISubmitter {
 
 	async fetchCollectionAssets(policyId: string): Promise<{ assets: Asset[] }> {
 		if (policyId.length !== POLICY_ID_LENGTH || !/^[0-9a-f]+$/i.test(policyId)) {
-			throw new Error('Invalid policyId: must be a 56-character hexadecimal string');
+			throw new Error('Invalid policyId length: must be a 56-character hexadecimal string');
 		}
 
 		const utxos = await this.fetchUTxOs();

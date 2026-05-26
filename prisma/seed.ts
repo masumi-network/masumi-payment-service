@@ -202,198 +202,204 @@ export const seed = async (prisma: PrismaClient) => {
 			);
 		}
 
-		try {
-			const purchasingWallet = new MeshWallet({
-				networkId: 0,
-				key: {
-					type: 'mnemonic',
-					words: purchaseWalletPreprodMnemonic.split(' '),
-				},
-			});
-			const sellingWallet = new MeshWallet({
-				networkId: 0,
-				key: {
-					type: 'mnemonic',
-					words: sellingWalletPreprodMnemonic.split(' '),
-				},
-			});
+		const existingPreprod = await prisma.paymentSource.findUnique({
+			where: { network_smartContractAddress: { network: Network.Preprod, smartContractAddress } },
+		});
 
-			console.log('Mnemonics: ', {
-				purchasingMnemonic: purchaseWalletPreprodMnemonic,
-				sellingMnemonic: sellingWalletPreprodMnemonic,
-			});
-			const purchasingWalletSecret = encrypt(purchaseWalletPreprodMnemonic);
-			const sellingWalletSecret = encrypt(sellingWalletPreprodMnemonic);
-			const purchasingWalletSecretId = await prisma.walletSecret.create({
-				data: { encryptedMnemonic: purchasingWalletSecret },
-			});
-			const sellingWalletSecretId = await prisma.walletSecret.create({
-				data: { encryptedMnemonic: sellingWalletSecret },
-			});
+		if (existingPreprod) {
+			console.log('PaymentSource (Preprod) already exists, skipping creation. id=' + existingPreprod.id);
+		} else {
+			try {
+				const purchasingWallet = new MeshWallet({
+					networkId: 0,
+					key: {
+						type: 'mnemonic',
+						words: purchaseWalletPreprodMnemonic.split(' '),
+					},
+				});
+				const sellingWallet = new MeshWallet({
+					networkId: 0,
+					key: {
+						type: 'mnemonic',
+						words: sellingWalletPreprodMnemonic.split(' '),
+					},
+				});
 
-			const { policyId } = await getRegistryScriptV1(smartContractAddress, Network.Preprod);
-			if (policyId != DEFAULTS.REGISTRY_POLICY_ID_PREPROD) {
-				throw new Error(
-					'Registry policyId is changed expected: ' + DEFAULTS.REGISTRY_POLICY_ID_PREPROD + ' got: ' + policyId,
-				);
-			}
-			const paymentSourcePreprod = await prisma.paymentSource.create({
-				data: {
-					smartContractAddress: smartContractAddress,
-					policyId: policyId,
-					network: Network.Preprod,
-					PaymentSourceConfig: {
-						create: {
-							rpcProviderApiKey: blockfrostApiKeyPreprod,
-							rpcProvider: RPCProvider.Blockfrost,
+				console.log('Mnemonics: ', {
+					purchasingMnemonic: purchaseWalletPreprodMnemonic,
+					sellingMnemonic: sellingWalletPreprodMnemonic,
+				});
+				const purchasingWalletSecret = encrypt(purchaseWalletPreprodMnemonic);
+				const sellingWalletSecret = encrypt(sellingWalletPreprodMnemonic);
+				const purchasingWalletSecretId = await prisma.walletSecret.create({
+					data: { encryptedMnemonic: purchasingWalletSecret },
+				});
+				const sellingWalletSecretId = await prisma.walletSecret.create({
+					data: { encryptedMnemonic: sellingWalletSecret },
+				});
+
+				const { policyId } = await getRegistryScriptV1(smartContractAddress, Network.Preprod);
+				if (policyId != DEFAULTS.REGISTRY_POLICY_ID_PREPROD) {
+					throw new Error(
+						'Registry policyId is changed expected: ' + DEFAULTS.REGISTRY_POLICY_ID_PREPROD + ' got: ' + policyId,
+					);
+				}
+				const paymentSourcePreprod = await prisma.paymentSource.create({
+					data: {
+						smartContractAddress: smartContractAddress,
+						policyId: policyId,
+						network: Network.Preprod,
+						PaymentSourceConfig: {
+							create: {
+								rpcProviderApiKey: blockfrostApiKeyPreprod,
+								rpcProvider: RPCProvider.Blockfrost,
+							},
 						},
-					},
-					syncInProgress: false,
-					lastIdentifierChecked: latestTx && latestTx.length > 0 ? latestTx[0].tx_hash : null,
-					FeeReceiverNetworkWallet: {
-						create: {
-							walletAddress: feeWalletAddressPreprod,
-							order: 1,
+						syncInProgress: false,
+						lastIdentifierChecked: latestTx && latestTx.length > 0 ? latestTx[0].tx_hash : null,
+						FeeReceiverNetworkWallet: {
+							create: {
+								walletAddress: feeWalletAddressPreprod,
+								order: 1,
+							},
 						},
-					},
-					feeRatePermille: fee,
-					AdminWallets: {
-						create: [
-							{ walletAddress: adminWallet1AddressPreprod, order: 1 },
-							{ walletAddress: adminWallet2AddressPreprod, order: 2 },
-							{ walletAddress: adminWallet3AddressPreprod, order: 3 },
-						],
-					},
-					HotWallets: {
-						createMany: {
-							data: [
-								{
-									walletVkey: resolvePaymentKeyHash((await purchasingWallet.getUnusedAddresses())[0]),
-									walletAddress: (await purchasingWallet.getUnusedAddresses())[0],
-									note: 'Created by seeding',
-									type: HotWalletType.Purchasing,
-									secretId: purchasingWalletSecretId.id,
-								},
-								{
-									walletVkey: resolvePaymentKeyHash((await sellingWallet.getUnusedAddresses())[0]),
-									walletAddress: (await sellingWallet.getUnusedAddresses())[0],
-									note: 'Created by seeding',
-									type: HotWalletType.Selling,
-									secretId: sellingWalletSecretId.id,
-									collectionAddress: collectionWalletPreprodAddress,
-								},
+						feeRatePermille: fee,
+						AdminWallets: {
+							create: [
+								{ walletAddress: adminWallet1AddressPreprod, order: 1 },
+								{ walletAddress: adminWallet2AddressPreprod, order: 2 },
+								{ walletAddress: adminWallet3AddressPreprod, order: 3 },
 							],
 						},
+						HotWallets: {
+							createMany: {
+								data: [
+									{
+										walletVkey: resolvePaymentKeyHash((await purchasingWallet.getUnusedAddresses())[0]),
+										walletAddress: (await purchasingWallet.getUnusedAddresses())[0],
+										note: 'Created by seeding',
+										type: HotWalletType.Purchasing,
+										secretId: purchasingWalletSecretId.id,
+									},
+									{
+										walletVkey: resolvePaymentKeyHash((await sellingWallet.getUnusedAddresses())[0]),
+										walletAddress: (await sellingWallet.getUnusedAddresses())[0],
+										note: 'Created by seeding',
+										type: HotWalletType.Selling,
+										secretId: sellingWalletSecretId.id,
+										collectionAddress: collectionWalletPreprodAddress,
+									},
+								],
+							},
+						},
+						cooldownTime: cooldownTimePreprod,
 					},
-					cooldownTime: cooldownTimePreprod,
-				},
-			});
+				});
 
-			console.log('Contract seeded on preprod: ' + smartContractAddress + ' added. Registry policyId: ' + policyId);
+				console.log('Contract seeded on preprod: ' + smartContractAddress + ' added. Registry policyId: ' + policyId);
 
-			// --- Hydra L2 seeding (preprod) ---
-			const hydraNodeUrl = process.env.HYDRA_NODE_URL;
-			const hydraRemoteNodeUrl = process.env.HYDRA_REMOTE_NODE_URL;
-			const hydraRemoteWalletAddress = process.env.HYDRA_REMOTE_WALLET_ADDRESS;
-			const hydraRemoteWalletVkey = process.env.HYDRA_REMOTE_WALLET_VKEY;
-			const hydraLocalSK = process.env.HYDRA_SK;
-			const hydraRemoteVK = process.env.HYDRA_REMOTE_VK;
-			const hydraLocalWalletType = process.env.HYDRA_LOCAL_WALLET_TYPE;
+				// --- Hydra L2 seeding (preprod) ---
+				const hydraNodeUrl = process.env.HYDRA_NODE_URL;
+				const hydraRemoteNodeUrl = process.env.HYDRA_REMOTE_NODE_URL;
+				const hydraRemoteWalletAddress = process.env.HYDRA_REMOTE_WALLET_ADDRESS;
+				const hydraRemoteWalletVkey = process.env.HYDRA_REMOTE_WALLET_VKEY;
+				const hydraLocalSK = process.env.HYDRA_SK;
+				const hydraRemoteVK = process.env.HYDRA_REMOTE_VK;
+				const hydraLocalWalletType = process.env.HYDRA_LOCAL_WALLET_TYPE;
 
-			if (
-				hydraNodeUrl &&
-				hydraRemoteNodeUrl &&
-				hydraLocalWalletType &&
-				hydraLocalSK &&
-				hydraRemoteWalletAddress &&
-				hydraRemoteWalletVkey &&
-				hydraRemoteVK
-			) {
-				try {
-					const hydraNodeHttpUrl =
-						process.env.HYDRA_NODE_HTTP_URL ||
-						hydraNodeUrl.replace(/^ws:\/\//, 'http://').replace(/^wss:\/\//, 'https://');
-					const hydraRemoteNodeHttpUrl =
-						process.env.HYDRA_REMOTE_NODE_HTTP_URL ||
-						hydraRemoteNodeUrl.replace(/^ws:\/\//, 'http://').replace(/^wss:\/\//, 'https://');
+				if (
+					hydraNodeUrl &&
+					hydraRemoteNodeUrl &&
+					hydraLocalWalletType &&
+					hydraLocalSK &&
+					hydraRemoteWalletAddress &&
+					hydraRemoteWalletVkey &&
+					hydraRemoteVK
+				) {
+					try {
+						const hydraNodeHttpUrl =
+							process.env.HYDRA_NODE_HTTP_URL ||
+							hydraNodeUrl.replace(/^ws:\/\//, 'http://').replace(/^wss:\/\//, 'https://');
+						const hydraRemoteNodeHttpUrl =
+							process.env.HYDRA_REMOTE_NODE_HTTP_URL ||
+							hydraRemoteNodeUrl.replace(/^ws:\/\//, 'http://').replace(/^wss:\/\//, 'https://');
 
-					const [localWalletType, remoteWalletType] =
-						hydraLocalWalletType === 'Selling'
-							? [HotWalletType.Selling, WalletType.Buyer]
-							: [HotWalletType.Purchasing, WalletType.Seller];
-					const localHotWallet = await prisma.hotWallet.findFirstOrThrow({
-						where: { paymentSourceId: paymentSourcePreprod.id, type: localWalletType },
-					});
+						const [localWalletType, remoteWalletType] =
+							hydraLocalWalletType === 'Selling'
+								? [HotWalletType.Selling, WalletType.Buyer]
+								: [HotWalletType.Purchasing, WalletType.Seller];
+						const localHotWallet = await prisma.hotWallet.findFirstOrThrow({
+							where: { paymentSourceId: paymentSourcePreprod.id, type: localWalletType },
+						});
 
-					const remoteWalletBase = await prisma.walletBase.create({
-						data: {
-							walletVkey: hydraRemoteWalletVkey,
-							walletAddress: hydraRemoteWalletAddress,
-							type: remoteWalletType,
-							paymentSourceId: paymentSourcePreprod.id,
-							note: 'Hydra remote counterparty (created by seeding)',
-						},
-					});
-
-					const hydraRelation = await prisma.hydraRelation.create({
-						data: {
-							network: Network.Preprod,
-							localHotWalletId: localHotWallet.id,
-							remoteWalletId: remoteWalletBase.id,
-						},
-					});
-
-					const localParticipant = await prisma.hydraLocalParticipant.create({
-						data: {
-							Wallet: { connect: { id: localHotWallet.id } },
-							nodeUrl: hydraNodeUrl,
-							nodeHttpUrl: hydraNodeHttpUrl,
-							HydraSecretKey: {
-								create: { hydraSK: encrypt(hydraLocalSK) },
+						const remoteWalletBase = await prisma.walletBase.create({
+							data: {
+								walletVkey: hydraRemoteWalletVkey,
+								walletAddress: hydraRemoteWalletAddress,
+								type: remoteWalletType,
+								paymentSourceId: paymentSourcePreprod.id,
+								note: 'Hydra remote counterparty (created by seeding)',
 							},
-						},
-					});
+						});
 
-					const remoteParticipant = await prisma.hydraRemoteParticipant.create({
-						data: {
-							Wallet: { connect: { id: remoteWalletBase.id } },
-							nodeUrl: hydraRemoteNodeUrl,
-							nodeHttpUrl: hydraRemoteNodeHttpUrl,
-							HydraVerificationKey: {
-								create: { hydraVK: encrypt(hydraRemoteVK) },
+						const hydraRelation = await prisma.hydraRelation.create({
+							data: {
+								network: Network.Preprod,
+								localHotWalletId: localHotWallet.id,
+								remoteWalletId: remoteWalletBase.id,
 							},
-						},
-					});
+						});
 
-					const hydraHead = await prisma.hydraHead.create({
-						data: {
-							HydraRelation: { connect: { id: hydraRelation.id } },
-							LocalParticipant: { connect: { id: localParticipant.id } },
-							RemoteParticipants: { connect: [{ id: remoteParticipant.id }] },
-						},
-					});
+						const localParticipant = await prisma.hydraLocalParticipant.create({
+							data: {
+								Wallet: { connect: { id: localHotWallet.id } },
+								nodeUrl: hydraNodeUrl,
+								nodeHttpUrl: hydraNodeHttpUrl,
+								HydraSecretKey: {
+									create: { hydraSK: encrypt(hydraLocalSK) },
+								},
+							},
+						});
 
-					console.log('[Hydra] Preprod seed complete (local wallet: ' + localWalletType + '):');
-					console.log('  LocalHotWallet:            ' + localHotWallet.id);
-					console.log('  WalletBase (remote):       ' + remoteWalletBase.id);
-					console.log('  HydraRelation:             ' + hydraRelation.id);
-					console.log('  HydraLocalParticipant:     ' + localParticipant.id);
-					console.log('  HydraRemoteParticipant:    ' + remoteParticipant.id);
-					console.log('  HydraHead:                 ' + hydraHead.id);
-				} catch (hydraError) {
-					console.error('[Hydra] Error seeding Hydra models on preprod:', hydraError);
+						const remoteParticipant = await prisma.hydraRemoteParticipant.create({
+							data: {
+								Wallet: { connect: { id: remoteWalletBase.id } },
+								nodeUrl: hydraRemoteNodeUrl,
+								nodeHttpUrl: hydraRemoteNodeHttpUrl,
+								HydraVerificationKey: {
+									create: { hydraVK: encrypt(hydraRemoteVK) },
+								},
+							},
+						});
+
+						const hydraHead = await prisma.hydraHead.create({
+							data: {
+								HydraRelation: { connect: { id: hydraRelation.id } },
+								LocalParticipant: { connect: { id: localParticipant.id } },
+								RemoteParticipants: { connect: [{ id: remoteParticipant.id }] },
+							},
+						});
+
+						console.log('[Hydra] Preprod seed complete (local wallet: ' + localWalletType + '):');
+						console.log('  LocalHotWallet:            ' + localHotWallet.id);
+						console.log('  WalletBase (remote):       ' + remoteWalletBase.id);
+						console.log('  HydraRelation:             ' + hydraRelation.id);
+						console.log('  HydraLocalParticipant:     ' + localParticipant.id);
+						console.log('  HydraRemoteParticipant:    ' + remoteParticipant.id);
+						console.log('  HydraHead:                 ' + hydraHead.id);
+					} catch (hydraError) {
+						console.error('[Hydra] Error seeding Hydra models on preprod:', hydraError);
+					}
+				} else {
+					console.log(
+						'[Hydra] Skipping Hydra seeding on preprod. Provide HYDRA_NODE_URL, HYDRA_REMOTE_NODE_URL, HYDRA_REMOTE_WALLET_ADDRESS, and HYDRA_REMOTE_WALLET_VKEY in .env',
+					);
 				}
-			} else {
-				console.log(
-					'[Hydra] Skipping Hydra seeding on preprod. Provide HYDRA_NODE_URL, HYDRA_REMOTE_NODE_URL, HYDRA_REMOTE_WALLET_ADDRESS, and HYDRA_REMOTE_WALLET_VKEY in .env',
-				);
+			} catch (error) {
+				console.error('Error when seeding preprod PaymentSource:', error);
+				throw error;
 			}
-		} catch (error) {
-			console.error(
-				'Error when seeding preprod, ensure you succeed with seeding, the following error occurred: ',
-				error,
-			);
-		}
+		} // end else (PaymentSource did not exist)
 	} else {
 		console.log(
 			'Smart contract preprod to monitor is not seeded. Provide ENCRYPTION_KEY and BLOCKFROST_API_KEY_PREPROD in .env',
@@ -475,94 +481,100 @@ export const seed = async (prisma: PrismaClient) => {
 		} catch (error) {
 			console.warn('Smart contract address mainnet has no transactions. ', error);
 		}
-		try {
-			const purchasingWallet = new MeshWallet({
-				networkId: 1,
-				key: {
-					type: 'mnemonic',
-					words: purchaseWalletMainnetMnemonic.split(' '),
-				},
-			});
-			const sellingWallet = new MeshWallet({
-				networkId: 1,
-				key: {
-					type: 'mnemonic',
-					words: sellingWalletMainnetMnemonic.split(' '),
-				},
-			});
-			const purchasingWalletSecret = encrypt(purchaseWalletMainnetMnemonic);
-			const sellingWalletSecret = encrypt(sellingWalletMainnetMnemonic);
-			const purchasingWalletSecretId = await prisma.walletSecret.create({
-				data: { encryptedMnemonic: purchasingWalletSecret },
-			});
-			const sellingWalletSecretId = await prisma.walletSecret.create({
-				data: { encryptedMnemonic: sellingWalletSecret },
-			});
-			const { policyId } = await getRegistryScriptV1(smartContractAddress, Network.Mainnet);
-			if (policyId != DEFAULTS.REGISTRY_POLICY_ID_MAINNET) {
-				throw new Error(
-					'Registry policyId is changed expected: ' + DEFAULTS.REGISTRY_POLICY_ID_MAINNET + ' got: ' + policyId,
-				);
-			}
-			await prisma.paymentSource.create({
-				data: {
-					smartContractAddress: smartContractAddress,
-					policyId: policyId,
-					lastIdentifierChecked: latestTx && latestTx.length > 0 ? latestTx[0].tx_hash : null,
-					network: Network.Mainnet,
-					PaymentSourceConfig: {
-						create: {
-							rpcProviderApiKey: blockfrostApiKeyMainnet,
-							rpcProvider: RPCProvider.Blockfrost,
+		const existingMainnet = await prisma.paymentSource.findUnique({
+			where: { network_smartContractAddress: { network: Network.Mainnet, smartContractAddress } },
+		});
+
+		if (existingMainnet) {
+			console.log('PaymentSource (Mainnet) already exists, skipping creation. id=' + existingMainnet.id);
+		} else {
+			try {
+				const purchasingWallet = new MeshWallet({
+					networkId: 1,
+					key: {
+						type: 'mnemonic',
+						words: purchaseWalletMainnetMnemonic.split(' '),
+					},
+				});
+				const sellingWallet = new MeshWallet({
+					networkId: 1,
+					key: {
+						type: 'mnemonic',
+						words: sellingWalletMainnetMnemonic.split(' '),
+					},
+				});
+				const purchasingWalletSecret = encrypt(purchaseWalletMainnetMnemonic);
+				const sellingWalletSecret = encrypt(sellingWalletMainnetMnemonic);
+				const purchasingWalletSecretId = await prisma.walletSecret.create({
+					data: { encryptedMnemonic: purchasingWalletSecret },
+				});
+				const sellingWalletSecretId = await prisma.walletSecret.create({
+					data: { encryptedMnemonic: sellingWalletSecret },
+				});
+				const { policyId } = await getRegistryScriptV1(smartContractAddress, Network.Mainnet);
+				if (policyId != DEFAULTS.REGISTRY_POLICY_ID_MAINNET) {
+					throw new Error(
+						'Registry policyId is changed expected: ' + DEFAULTS.REGISTRY_POLICY_ID_MAINNET + ' got: ' + policyId,
+					);
+				}
+				await prisma.paymentSource.create({
+					data: {
+						smartContractAddress: smartContractAddress,
+						policyId: policyId,
+						lastIdentifierChecked: latestTx && latestTx.length > 0 ? latestTx[0].tx_hash : null,
+						network: Network.Mainnet,
+						PaymentSourceConfig: {
+							create: {
+								rpcProviderApiKey: blockfrostApiKeyMainnet,
+								rpcProvider: RPCProvider.Blockfrost,
+							},
 						},
-					},
-					syncInProgress: false,
-					FeeReceiverNetworkWallet: {
-						create: {
-							walletAddress: feeWalletAddressMainnet,
-							order: 1,
+						syncInProgress: false,
+						FeeReceiverNetworkWallet: {
+							create: {
+								walletAddress: feeWalletAddressMainnet,
+								order: 1,
+							},
 						},
-					},
-					feeRatePermille: fee,
-					AdminWallets: {
-						create: [
-							{ walletAddress: adminWallet1AddressMainnet, order: 1 },
-							{ walletAddress: adminWallet2AddressMainnet, order: 2 },
-							{ walletAddress: adminWallet3AddressMainnet, order: 3 },
-						],
-					},
-					HotWallets: {
-						createMany: {
-							data: [
-								{
-									walletVkey: resolvePaymentKeyHash((await purchasingWallet.getUnusedAddresses())[0]),
-									walletAddress: (await purchasingWallet.getUnusedAddresses())[0],
-									note: 'Created by seeding',
-									type: HotWalletType.Purchasing,
-									secretId: purchasingWalletSecretId.id,
-								},
-								{
-									walletVkey: resolvePaymentKeyHash((await sellingWallet.getUnusedAddresses())[0]),
-									walletAddress: (await sellingWallet.getUnusedAddresses())[0],
-									note: 'Created by seeding',
-									type: HotWalletType.Selling,
-									secretId: sellingWalletSecretId.id,
-									collectionAddress: collectionWalletMainnetAddress,
-								},
+						feeRatePermille: fee,
+						AdminWallets: {
+							create: [
+								{ walletAddress: adminWallet1AddressMainnet, order: 1 },
+								{ walletAddress: adminWallet2AddressMainnet, order: 2 },
+								{ walletAddress: adminWallet3AddressMainnet, order: 3 },
 							],
 						},
+						HotWallets: {
+							createMany: {
+								data: [
+									{
+										walletVkey: resolvePaymentKeyHash((await purchasingWallet.getUnusedAddresses())[0]),
+										walletAddress: (await purchasingWallet.getUnusedAddresses())[0],
+										note: 'Created by seeding',
+										type: HotWalletType.Purchasing,
+										secretId: purchasingWalletSecretId.id,
+									},
+									{
+										walletVkey: resolvePaymentKeyHash((await sellingWallet.getUnusedAddresses())[0]),
+										walletAddress: (await sellingWallet.getUnusedAddresses())[0],
+										note: 'Created by seeding',
+										type: HotWalletType.Selling,
+										secretId: sellingWalletSecretId.id,
+										collectionAddress: collectionWalletMainnetAddress,
+									},
+								],
+							},
+						},
+						cooldownTime: cooldownTimeMainnet,
 					},
-					cooldownTime: cooldownTimeMainnet,
-				},
-			});
+				});
 
-			console.log('Contract seeded on mainnet: ' + smartContractAddress + ' added. Registry policyId: ' + policyId);
-		} catch (error) {
-			console.error(
-				'Error when seeding mainnet, ensure you succeed with seeding, the following error occurred: ',
-				error,
-			);
-		}
+				console.log('Contract seeded on mainnet: ' + smartContractAddress + ' added. Registry policyId: ' + policyId);
+			} catch (error) {
+				console.error('Error when seeding mainnet PaymentSource:', error);
+				throw error;
+			}
+		} // end else (PaymentSource did not exist)
 	} else {
 		console.log(
 			'Smart contract mainnet to monitor is not seeded. Provide ENCRYPTION_KEY and BLOCKFROST_API_KEY_MAINNET in .env',
