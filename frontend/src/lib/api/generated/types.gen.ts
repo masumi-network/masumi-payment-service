@@ -8173,7 +8173,7 @@ export type PostPaymentSourceExtendedData = {
          */
         cooldownTime?: number | null;
         /**
-         * The wallet addresses of the admin wallets. V2 allows repeated addresses as weighted voting slots.
+         * V2 admin wallet slots. Repeated addresses ARE permitted and intentional: each entry is an independent voting slot, so the same Cardano address can be added multiple times to give that key proportionally more weight in the M-of-N quorum. Example: [addrA, addrA, addrB] with requiredAdminSignatures=2 means addrA alone satisfies the quorum (2 weighted slots) while addrB alone does not. No distinct-address check is enforced server-side — duplicates are by design, not a bug. Auditing operators must reason about effective vote weight, not raw row count.
          */
         AdminWallets: Array<{
             /**
@@ -8182,7 +8182,7 @@ export type PostPaymentSourceExtendedData = {
             walletAddress: string;
         }>;
         /**
-         * Required weighted admin signatures for Web3CardanoV2 dispute settlement
+         * Required weighted admin signatures for Web3CardanoV2 dispute settlement. Minimum 1 (single-admin custody is allowed by design — operators choosing this trade fast settlement for centralized control). Weight is counted by AdminWallets row position, so duplicate addresses inflate effective weight; see AdminWallets docs.
          */
         requiredAdminSignatures?: number;
         /**
