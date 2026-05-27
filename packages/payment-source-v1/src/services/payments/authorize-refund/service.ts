@@ -244,7 +244,7 @@ export async function authorizeRefundV1() {
 			}),
 		);
 	} catch (error) {
-		logger.error('Error submitting result', { error: error });
+		logger.error('Error authorizing refund', { error: error });
 	} finally {
 		release();
 	}

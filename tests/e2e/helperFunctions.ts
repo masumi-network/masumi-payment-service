@@ -46,11 +46,13 @@ async function pollUntil(
 		timeoutMs?: number; // 0 or undefined => infinite
 		intervalMs?: number;
 		label?: string;
+		signal?: AbortSignal;
 	},
 ): Promise<void> {
 	const intervalMs = options?.intervalMs ?? 5000;
 	const timeoutMs = options?.timeoutMs ?? 0;
 	const label = options?.label ? ` (${options.label})` : '';
+	const signal = options?.signal;
 
 	const startedAt = Date.now();
 	const isInfinite = timeoutMs === 0;
@@ -60,6 +62,9 @@ async function pollUntil(
 	let pollCount = 0;
 
 	while (isInfinite || Date.now() < deadline) {
+		if (signal?.aborted) {
+			throw new Error(`Aborted${label} (polls=${pollCount}): ${signal.reason ?? 'signal aborted'}`);
+		}
 		pollCount++;
 		try {
 			await check();
@@ -131,6 +136,7 @@ export interface TimingConfig {
 export async function registerAndConfirmAgent(
 	network: Network,
 	paymentSourceType?: PaymentSourceType,
+	signal?: AbortSignal,
 ): Promise<ConfirmedAgent> {
 	const resolvedPaymentSourceType = paymentSourceType ?? global.testConfig.paymentSourceType;
 	console.log('📝 E2E: starting agent registration and confirmation...');
@@ -213,6 +219,7 @@ export async function registerAndConfirmAgent(
 			timeoutMs: registrationTimeout,
 			intervalMs: 5000,
 			label: 'registration confirmation',
+			signal,
 		},
 	);
 
@@ -254,7 +261,7 @@ export async function registerAndConfirmAgent(
 			console.log(`⚠️ E2E: agent identifier not yet available for registration ${registrationResponse.id}`);
 			throw new Error(`Agent identifier not yet available`);
 		},
-		{ timeoutMs: 60000, intervalMs: 5000, label: 'agent identifier' },
+		{ timeoutMs: 60000, intervalMs: 5000, label: 'agent identifier', signal },
 	);
 
 	const registrationMinutes = Math.floor((Date.now() - startTime) / 60000);

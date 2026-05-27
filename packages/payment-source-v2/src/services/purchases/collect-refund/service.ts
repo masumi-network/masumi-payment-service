@@ -204,15 +204,17 @@ async function validateAndBuildItem(
 	// Aiken `WithdrawRefund` requires `must_start_after(validity_range,
 	// submit_result_time)` for the timed path (state in FundsLocked |
 	// RefundRequested). When state == RefundAuthorized the seller's signature
-	// short-circuits the timed gate and no lower bound is needed. Without
-	// this constrainAfterMs the default `invalidBefore` (~now - 2.5 min) can
-	// land earlier than submit_result_time when the scheduler force-advances
-	// state, phase-2-failing the tx.
+	// short-circuits the timed gate and no lower bound is needed. We push the
+	// deadline into the `constrainBeforeMs` floor so `invalidBefore` is
+	// forced past submit_result_time (the contract's lower-bound check) —
+	// NOT into `constrainAfterMs`, which would lower the upper bound and
+	// produce an invalid window when resultTime is already in the past
+	// (steady-state given the `resultTime <= now - 10min` query filter).
 	const { invalidBefore, invalidAfter } = createTxWindow(
 		network,
 		decodedContract.state === SmartContractState.RefundAuthorized
 			? {}
-			: { constrainAfterMs: decodedContract.resultTime },
+			: { constrainBeforeMs: decodedContract.resultTime },
 	);
 
 	return {
@@ -246,7 +248,11 @@ async function processSingleRefundCollection(
 	});
 	const { wallet, utxos, address } = walletSession;
 	if (utxos.length === 0) {
-		throw new Error('No UTXOs found in the wallet. Wallet is empty.');
+		// WithdrawRefund has no on-chain upper deadline once the contract is
+		// in RefundAuthorized state, and from RefundRequested it only
+		// requires `must_start_after(submit_result_time)` (no upper bound).
+		// Empty wallet is purely transient. Defer until funder cron tops up.
+		throw new Error(`${LOOKUP_DEFERRED_PREFIX} wallet has no UTXOs; awaiting topup, retry next tick`);
 	}
 
 	// See ensureCollateralReady module note. Throw the LOOKUP_DEFERRED
@@ -618,7 +624,6 @@ async function processWalletBatch(
 		// portion) via the single collection output; there is no separate
 		// collateral-return output to attach here.
 		collateralReturn: null,
-		tagOutputsWithOwnRef: true,
 	}));
 
 	let unsignedTx: string;

@@ -402,6 +402,7 @@ async function buildBatchDeregisterTx(
 	// excluded so the selector doesn't try to add a duplicate. Same rationale as
 	// the mint builder above — avoid bloated tx size and double-spend overlap
 	// with collateral on fragmented wallets.
+	inputRefs.add(refKey(collateralUtxo));
 	const walletUtxosForSelection = walletUtxos.filter((u) => !inputRefs.has(refKey(u)));
 	if (walletUtxosForSelection.length > 0) {
 		txBuilder.selectUtxosFrom(walletUtxosForSelection);

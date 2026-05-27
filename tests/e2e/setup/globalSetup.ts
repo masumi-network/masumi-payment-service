@@ -21,6 +21,12 @@ import { PaymentSourceType } from '@/generated/prisma/enums';
  */
 export default async function globalSetup() {
 	const GLOBAL_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+	// AbortController cancels in-flight registrations when the global timeout
+	// fires. Without this, the timeout rejection wins the Promise.race but
+	// per-agent on-chain registrations keep running to completion in the
+	// background — and never get persisted to state.agents because the parent
+	// process has already failed. Teardown then leaks those orphans on chain.
+	const abortController = new AbortController();
 	const setupPromise = (async () => {
 		console.log('🚀 [globalSetup] Setting up E2E test environment (once)...');
 
@@ -134,16 +140,32 @@ And accessible at: ${config.apiUrl}
 		}
 
 		console.log(`🧑‍💻 [globalSetup] Registering shared E2E agents in parallel for: ${uniqueSourceTypes.join(', ')}`);
-		const registrationResults = await Promise.all(
+		// Promise.allSettled (not Promise.all) so a single source's failure
+		// doesn't strand the other source's on-chain registration as an
+		// orphan. We persist whatever succeeded BEFORE throwing so teardown
+		// can deregister succeeded agents. Pass the signal so per-agent
+		// pollUntil loops bail out when the global timeout fires instead of
+		// continuing on-chain work whose result will be discarded.
+		const registrationResults = await Promise.allSettled(
 			uniqueSourceTypes.map(async (sourceType) => {
-				const agent = await registerAndConfirmAgent(config.network, sourceType);
+				const agent = await registerAndConfirmAgent(config.network, sourceType, abortController.signal);
 				return [sourceType, agent] as const;
 			}),
 		);
 
 		const agents: Partial<Record<PaymentSourceType, ConfirmedAgent>> = {};
-		for (const [sourceType, agent] of registrationResults) {
-			agents[sourceType] = agent;
+		const failures: { sourceType: PaymentSourceType; error: string }[] = [];
+		for (let i = 0; i < registrationResults.length; i++) {
+			const result = registrationResults[i];
+			if (result.status === 'fulfilled') {
+				const [sourceType, agent] = result.value;
+				agents[sourceType] = agent;
+			} else {
+				failures.push({
+					sourceType: uniqueSourceTypes[i],
+					error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+				});
+			}
 		}
 
 		const state: E2EGlobalState = {
@@ -152,20 +174,45 @@ And accessible at: ${config.apiUrl}
 			createdAt: new Date().toISOString(),
 		};
 
+		// Persist BEFORE potentially throwing so teardown can read the partial
+		// state and deregister the agents that did succeed.
 		process.env[E2E_GLOBAL_STATE_ENV_KEY] = encodeE2EGlobalState(state);
 
+		if (failures.length > 0) {
+			console.error('❌ [globalSetup] One or more agent registrations failed:');
+			for (const { sourceType, error } of failures) {
+				console.error(`   - ${sourceType}: ${error}`);
+			}
+			console.error(
+				`✅ [globalSetup] ${Object.keys(agents).length} succeeded — teardown will deregister those if reached.`,
+			);
+			throw new Error(
+				`Agent registration failed for ${failures.length} of ${uniqueSourceTypes.length} source types`,
+			);
+		}
+
 		console.log('✅ [globalSetup] Shared agents ready:');
-		for (const [sourceType, agent] of registrationResults) {
-			console.log(`    - ${sourceType}: ${agent.name} (${agent.agentIdentifier})`);
+		for (const sourceType of uniqueSourceTypes) {
+			const agent = agents[sourceType];
+			if (agent != null) {
+				console.log(`    - ${sourceType}: ${agent.name} (${agent.agentIdentifier})`);
+			}
 		}
 	})();
 
+	let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
 	const timeoutPromise = new Promise<never>((_, reject) => {
-		const t = setTimeout(() => {
-			clearTimeout(t);
+		timeoutHandle = setTimeout(() => {
+			// Signal in-flight pollUntil loops to abort so they don't keep
+			// the event loop alive after the parent has failed.
+			abortController.abort(new Error('globalSetup timeout'));
 			reject(new Error(`[globalSetup] Timed out after ${GLOBAL_TIMEOUT_MS}ms (10 minutes)`));
 		}, GLOBAL_TIMEOUT_MS);
 	});
 
-	await Promise.race([setupPromise, timeoutPromise]);
+	try {
+		await Promise.race([setupPromise, timeoutPromise]);
+	} finally {
+		if (timeoutHandle != null) clearTimeout(timeoutHandle);
+	}
 }

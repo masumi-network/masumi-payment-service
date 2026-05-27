@@ -254,7 +254,19 @@ async function processSinglePurchaseRequest(
 	});
 	const { wallet, utxos, address } = walletSession;
 	if (utxos.length === 0) {
-		throw new Error('No UTXOs found in the wallet. Wallet is empty.');
+		// Wallet empty — check if the buyer's on-chain refund-request
+		// deadline has passed. Aiken `SetRefundRequested` requires
+		// `must_end_before(validity_range, unlock_time)`, so past this
+		// point the buyer cannot raise a refund anymore. Topup won't help;
+		// park for manual intervention.
+		const requestDeadlineMs = Number(request.unlockTime);
+		if (Number.isFinite(requestDeadlineMs) && Date.now() > requestDeadlineMs) {
+			throw new Error(
+				'Wallet empty and on-chain unlockTime deadline passed for refund request; manual intervention required',
+			);
+		}
+		// Deadline still ahead — defer to wait for funder cron topup.
+		throw new Error(`${LOOKUP_DEFERRED_PREFIX} wallet has no UTXOs; awaiting topup, retry next tick`);
 	}
 
 	// Same collateral-readiness gate as the batch path. Throw the

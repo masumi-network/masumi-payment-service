@@ -234,7 +234,12 @@ async function processSinglePaymentRequest(
 	});
 	const { wallet, utxos, address } = walletSession;
 	if (utxos.length === 0) {
-		throw new Error('No UTXOs found in the wallet. Wallet is empty.');
+		// AuthorizeRefund has no on-chain time gate (Aiken accepts
+		// state == FundsLocked or ResultSubmitted with no must_end_before),
+		// so an empty wallet is purely transient until the funder cron tops
+		// up. Defer so the request stays queued instead of being parked in
+		// WaitingForManualAction.
+		throw new Error(`${LOOKUP_DEFERRED_PREFIX} wallet has no UTXOs; awaiting topup, retry next tick`);
 	}
 
 	// Same collateral-readiness gate as the batch path. Throw the

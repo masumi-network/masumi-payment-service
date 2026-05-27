@@ -116,18 +116,37 @@ export async function reconcileAmbiguousFundingV2(): Promise<void> {
  * `(walletId, pendingTransactionId)`, so a duplicate revert is a no-op.
  */
 export async function reconcileOne(tx: ReconcileCandidate): Promise<void> {
-	if (tx.BlocksWallet?.PaymentSource == null) {
-		// The Transaction has no associated wallet relation we can use to
-		// derive a Blockfrost API key. This row predates the
-		// intendedTxHash convention and has no reconciliation context —
-		// skip. (Should not happen for rows we created post-#2 fix.)
-		logger.warn('funding-reconciliation: skipping row without BlocksWallet relation', { txId: tx.id });
-		return;
+	// Resolve network + Blockfrost key. Preferred path is the direct
+	// BlocksWallet → PaymentSource walk. If BlocksWallet was orphaned by a
+	// defensive cleanup elsewhere (e.g. the invalid-state branch in
+	// wallet-timeouts that force-disconnects wallets with `lockedAt: null`
+	// but `PendingTransaction: not null`), fall back to ANY dependent
+	// request's PaymentSource — every request shares the same source as the
+	// blocking wallet did. Without this fallback the row would stay Pending
+	// forever (intendedTxHash never queried), and any on-chain prep tx
+	// would be operationally orphaned.
+	let resolved: { network: 'Mainnet' | 'Preprod'; apiKey: string } | null = null;
+	if (tx.BlocksWallet?.PaymentSource != null) {
+		resolved = {
+			network: tx.BlocksWallet.PaymentSource.network,
+			apiKey: tx.BlocksWallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
+		};
+	} else {
+		const fallbackSource = await resolvePaymentSourceForOrphanTx(tx.id);
+		if (fallbackSource == null) {
+			logger.warn(
+				'funding-reconciliation: skipping row — no BlocksWallet and no dependent request relation to resolve PaymentSource',
+				{ txId: tx.id },
+			);
+			return;
+		}
+		logger.warn('funding-reconciliation: BlocksWallet null, resolved PaymentSource via dependent request fallback', {
+			txId: tx.id,
+		});
+		resolved = fallbackSource;
 	}
 
-	const network = tx.BlocksWallet.PaymentSource.network;
-	const apiKey = tx.BlocksWallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey;
-	const blockfrost = getBlockfrostInstance(network, apiKey);
+	const blockfrost = getBlockfrostInstance(resolved.network, resolved.apiKey);
 
 	// Step 1: query the chain for the intended hash.
 	const chainResult = await safeFetchTx(blockfrost, tx.intendedTxHash);
@@ -413,4 +432,69 @@ async function safeFetchCurrentSlot(blockfrost: ReturnType<typeof getBlockfrostI
 		});
 		return null;
 	}
+}
+
+/**
+ * Fallback PaymentSource resolution for orphaned Transactions whose
+ * BlocksWallet relation was severed (e.g. by the invalid-state cleanup in
+ * wallet-timeouts that disconnects wallets where `lockedAt: null` but
+ * `PendingTransaction: not null`). Every dependent request (payment,
+ * purchase, registry, inbox) carries the same PaymentSource as the blocking
+ * wallet did, so the first match is sufficient. Returns null if no
+ * dependent request points at this tx — at that point the row is
+ * unrecoverable and must be operator-cleaned.
+ */
+async function resolvePaymentSourceForOrphanTx(
+	txId: string,
+): Promise<{ network: 'Mainnet' | 'Preprod'; apiKey: string } | null> {
+	// All four request models have a direct PaymentSource relation, so walk
+	// straight to the source instead of through SmartContractWallet (which
+	// may itself be null on PaymentRequest).
+	const sourceInclude = { PaymentSource: { include: { PaymentSourceConfig: true } } } as const;
+
+	const paymentReq = await prisma.paymentRequest.findFirst({
+		where: { currentTransactionId: txId },
+		select: sourceInclude,
+	});
+	if (paymentReq?.PaymentSource?.PaymentSourceConfig != null) {
+		return {
+			network: paymentReq.PaymentSource.network,
+			apiKey: paymentReq.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
+		};
+	}
+
+	const purchaseReq = await prisma.purchaseRequest.findFirst({
+		where: { currentTransactionId: txId },
+		select: sourceInclude,
+	});
+	if (purchaseReq?.PaymentSource?.PaymentSourceConfig != null) {
+		return {
+			network: purchaseReq.PaymentSource.network,
+			apiKey: purchaseReq.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
+		};
+	}
+
+	const registryReq = await prisma.registryRequest.findFirst({
+		where: { currentTransactionId: txId },
+		select: sourceInclude,
+	});
+	if (registryReq?.PaymentSource?.PaymentSourceConfig != null) {
+		return {
+			network: registryReq.PaymentSource.network,
+			apiKey: registryReq.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
+		};
+	}
+
+	const inboxReq = await prisma.inboxAgentRegistrationRequest.findFirst({
+		where: { currentTransactionId: txId },
+		select: sourceInclude,
+	});
+	if (inboxReq?.PaymentSource?.PaymentSourceConfig != null) {
+		return {
+			network: inboxReq.PaymentSource.network,
+			apiKey: inboxReq.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
+		};
+	}
+
+	return null;
 }

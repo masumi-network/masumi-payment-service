@@ -203,9 +203,22 @@ export function AddPaymentSourceDialog({
   const feePermille = useWatch({ control, name: 'feePermille' });
   const isV2Source = paymentSourceType === 'Web3CardanoV2';
 
-  // Clear percent input when custom config is disabled so re-enabling shows derived value
+  // Clear percent input only on the meaningful TRANSITIONS:
+  //   - custom config toggles OFF (so re-enabling shows the derived value)
+  //   - V2 is selected (V2 has no fee percent)
+  // Without these transition guards, the effect re-fired on every render where
+  // either flag was truthy and discarded the user's typed value even when
+  // nothing changed — most visibly on a momentary V1→V2→V1 round-trip.
+  const prevUseCustomAdminWalletsRef = useRef(useCustomAdminWallets);
+  const prevIsV2SourceRef = useRef(isV2Source);
   useEffect(() => {
-    if (!useCustomAdminWallets || isV2Source) queueMicrotask(() => setFeePercentInput(''));
+    const customWentOff = prevUseCustomAdminWalletsRef.current && !useCustomAdminWallets;
+    const v2WentOn = !prevIsV2SourceRef.current && isV2Source;
+    if (customWentOff || v2WentOn) {
+      queueMicrotask(() => setFeePercentInput(''));
+    }
+    prevUseCustomAdminWalletsRef.current = useCustomAdminWallets;
+    prevIsV2SourceRef.current = isV2Source;
   }, [isV2Source, useCustomAdminWallets]);
 
   useEffect(() => {

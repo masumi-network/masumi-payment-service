@@ -89,26 +89,33 @@ async function pollForValue<T>(
 	const startedAt = Date.now();
 	const deadline = startedAt + options.timeoutMs;
 	let lastValue: T | undefined;
+	let lastError: unknown = undefined;
 
 	while (Date.now() < deadline) {
 		try {
 			lastValue = await fetch();
+			lastError = undefined;
 			if (predicate(lastValue)) {
 				return lastValue;
 			}
-		} catch {
-			// transient — swallow and retry
+		} catch (err) {
+			// transient — capture and retry; surfaced in the timeout error
+			// message below so a stuck CI run isn't hiding the real cause
+			// (auth failure, 5xx, network drop) behind `lastValue=undefined`.
+			lastError = err;
 		}
 		await sleep(options.intervalMs);
 	}
 
-	// Include a structured summary of the last observed value so a timeout
-	// failure in CI is self-diagnostic: we see whether the request was stuck
-	// in `WaitingForManualAction` (validation failed), still in its initial
-	// `*Requested` state (scheduler never got to it), or transitioned to
-	// `*Initiated` but `CurrentTransaction.txHash` was still null.
+	// Include a structured summary of the last observed value AND the last
+	// error so a timeout failure in CI is self-diagnostic: we see whether
+	// the request was stuck in `WaitingForManualAction` (validation failed),
+	// still in its initial `*Requested` state (scheduler never got to it),
+	// transitioned to `*Initiated` but `CurrentTransaction.txHash` was still
+	// null, or the API was throwing all along.
+	const lastErrorMsg = lastError instanceof Error ? lastError.message : String(lastError ?? 'none');
 	throw new Error(
-		`pollForValue timed out after ${Math.floor((Date.now() - startedAt) / 1000)}s (${options.label}); lastValue=${describeLastValue(lastValue)}`,
+		`pollForValue timed out after ${Math.floor((Date.now() - startedAt) / 1000)}s (${options.label}); lastValue=${describeLastValue(lastValue)}; lastError=${lastErrorMsg}`,
 	);
 }
 
@@ -116,22 +123,24 @@ async function fetchPaymentByBlockchainIdentifier(
 	blockchainIdentifier: string,
 	network: Network,
 ): Promise<PaymentResponse | undefined> {
-	const response = await global.testApiClient.queryPayments({
+	// Use the dedicated resolve endpoint instead of paginating queryPayments
+	// — accumulated CI history can push the target row past the default
+	// page size, making `.find()` return undefined indefinitely even though
+	// the row exists.
+	return await global.testApiClient.resolvePaymentByBlockchainIdentifier({
+		blockchainIdentifier,
 		network,
-		filterPaymentSourceType: PaymentSourceType.Web3CardanoV2,
 	});
-	return response.Payments.find((p) => p.blockchainIdentifier === blockchainIdentifier);
 }
 
 async function fetchPurchaseByBlockchainIdentifier(
 	blockchainIdentifier: string,
 	network: Network,
 ): Promise<PurchaseResponse | undefined> {
-	const response = await global.testApiClient.queryPurchases({
+	return await global.testApiClient.resolvePurchaseByBlockchainIdentifier({
+		blockchainIdentifier,
 		network,
-		filterPaymentSourceType: PaymentSourceType.Web3CardanoV2,
 	});
-	return response.Purchases.find((p) => p.blockchainIdentifier === blockchainIdentifier);
 }
 
 /**

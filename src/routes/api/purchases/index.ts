@@ -225,6 +225,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 						where: {
 							network: input.network,
 							smartContractAddress: v2SmartContractAddress,
+							policyId: policyId,
 							paymentSourceType: PaymentSourceType.Web3CardanoV2,
 							deletedAt: null,
 						},

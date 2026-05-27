@@ -261,7 +261,12 @@ async function processSinglePurchaseRequest(
 	});
 	const { wallet, utxos, address } = walletSession;
 	if (utxos.length === 0) {
-		throw new Error('No UTXOs found in the wallet. Wallet is empty.');
+		// AuthorizeWithdrawal has no on-chain time gate (Aiken requires
+		// state == ResultSubmitted with no must_end_before), so an empty
+		// wallet is purely transient until the funder cron tops up. Defer
+		// so the request stays queued instead of parking in
+		// WaitingForManualAction.
+		throw new Error(`${LOOKUP_DEFERRED_PREFIX} wallet has no UTXOs; awaiting topup, retry next tick`);
 	}
 
 	// See ensureCollateralReady module note. Throw the LOOKUP_DEFERRED

@@ -468,19 +468,25 @@ export async function ensureCollateralReady(params: EnsureCollateralReadyParams)
 		};
 	}
 
-	// Node returned the hash — assert it matches our deterministic intent.
+	// Node returned the hash. We log loudly if it diverges from our
+	// deterministic intent (signals an upstream hash-computation mismatch
+	// between our offline build and mesh/cardano-node) but TRUST THE NODE
+	// as ground truth: the node-returned hash IS the hash that landed on
+	// chain. Returning the intended hash here would mis-track the tx in
+	// funding-reconciliation (it queries `intendedTxHash` on chain), which
+	// would TTL-revert the row and re-attempt with the same already-spent
+	// inputs on the next tick. Falling through to the normal write path
+	// records `txHash = prepTxHash` so tx-sync picks it up directly.
 	if (prepTxHash !== intendedTxHash) {
-		logger.error('V2 collateral prep: node returned divergent txHash; treating as ambiguous [collateral-prep]', {
-			walletDbId,
-			sharedTxId,
-			intendedTxHash,
-			nodeTxHash: prepTxHash,
-		});
-		// Treat as ambiguous — reconciliation will resolve.
-		return {
-			status: 'deferred',
-			prepTxHash: intendedTxHash,
-		};
+		logger.error(
+			'V2 collateral prep: node returned divergent txHash; trusting node and writing as txHash [collateral-prep]',
+			{
+				walletDbId,
+				sharedTxId,
+				intendedTxHash,
+				nodeTxHash: prepTxHash,
+			},
+		);
 	}
 
 	try {

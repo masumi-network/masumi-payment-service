@@ -199,7 +199,16 @@ CREATE CONSTRAINT TRIGGER trg_v2_admin_quorum_adminwallet
     FOR EACH ROW EXECUTE FUNCTION enforce_v2_admin_quorum();
 
 DROP TRIGGER IF EXISTS trg_v2_admin_quorum_paymentsource ON "PaymentSource";
+-- Fires on INSERT as well so a V2 PaymentSource created without any
+-- AdminWallets in the same tx is rejected at commit. Without INSERT
+-- coverage, a `paymentSource.create({ data: { paymentSourceType: 'V2',
+-- requiredAdminSignatures: 2 } })` (no nested AdminWallet creates) would
+-- commit silently and leave Disputed UTxOs permanently unspendable
+-- (M-of-N from a 0-admin set can never be met). The trigger is
+-- DEFERRABLE INITIALLY DEFERRED, so Prisma's nested
+-- `AdminWallets: { create: [...] }` still passes because the check fires
+-- at commit time AFTER all admin rows are inserted.
 CREATE CONSTRAINT TRIGGER trg_v2_admin_quorum_paymentsource
-    AFTER UPDATE OF "requiredAdminSignatures", "paymentSourceType" ON "PaymentSource"
+    AFTER INSERT OR UPDATE OF "requiredAdminSignatures", "paymentSourceType" ON "PaymentSource"
     DEFERRABLE INITIALLY DEFERRED
     FOR EACH ROW EXECUTE FUNCTION enforce_v2_admin_quorum();

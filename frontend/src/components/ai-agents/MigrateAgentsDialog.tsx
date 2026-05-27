@@ -419,18 +419,31 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
 
     setIsMigrating(true);
     setIsDone(false);
+
+    // Pre-filter the selection against the current v1Agents list. Between
+    // the user picking agents and clicking Migrate, the query can refetch
+    // (window-focus, manual invalidate, concurrent tab, server-side mutation)
+    // and drop entries. Iterating over v1Agents AFTER setting every selected
+    // id to `pending` would leave dropped ids stuck on `pending` forever
+    // and undercount successCount.
+    const validAgents = v1Agents.filter((a) => selectedAgentIds.has(a.id));
+    const droppedCount = selectedAgentIds.size - validAgents.length;
+    if (droppedCount > 0) {
+      toast.warning(
+        `${droppedCount} selected agent(s) are no longer present in the V1 registry and were skipped`,
+      );
+    }
+
     const initial: Record<string, MigrationResult> = {};
-    for (const id of selectedAgentIds) {
-      initial[id] = { agentId: id, status: 'pending' };
+    for (const agent of validAgents) {
+      initial[agent.id] = { agentId: agent.id, status: 'pending' };
     }
     setResults(initial);
 
     let successCount = 0;
 
-    const idsToProcess = new Set(selectedAgentIds);
-    for (const agent of v1Agents) {
+    for (const agent of validAgents) {
       if (!mountedRef.current) return;
-      if (!idsToProcess.has(agent.id)) continue;
 
       setResults((prev) => ({
         ...prev,

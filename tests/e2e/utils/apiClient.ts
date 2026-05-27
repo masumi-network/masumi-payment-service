@@ -432,11 +432,17 @@ export class ApiClient {
 				return jsonResponse as T;
 			} catch (error) {
 				clearTimeout(timeoutId);
+				// Match transient socket errors via MESSAGE CONTENT only — checking
+				// `error.name === 'TypeError'` alone would also retry programmer
+				// bugs like "x is not a function" which we want to surface
+				// immediately. Undici wraps low-level socket errors as
+				// `TypeError('fetch failed')`, so the 'fetch failed' fragment in
+				// the message catches the intended case.
+				const transientFragments = /fetch failed|SocketError|ECONNRESET|EPIPE|other side closed/i;
 				const isTransient =
 					error instanceof Error &&
-					(error.name === 'TypeError' || // undici wraps low-level socket errors as TypeError('fetch failed')
-						/SocketError|ECONNRESET|EPIPE|other side closed/i.test(error.message) ||
-						/SocketError|ECONNRESET|EPIPE|other side closed/i.test(String((error as { cause?: unknown }).cause ?? ''))) &&
+					(transientFragments.test(error.message) ||
+						transientFragments.test(String((error as { cause?: unknown }).cause ?? ''))) &&
 					!/HTTP \d{3}:/.test(error.message);
 				if (isTransient && attempt < maxRetries) {
 					// Exponential backoff with jitter: 100ms, 250ms, 600ms (max).
@@ -567,5 +573,74 @@ export class ApiClient {
 		const endpoint = queryString ? `/api/v1/payment-source-extended?${queryString}` : '/api/v1/payment-source-extended';
 
 		return this.makeRequest<QueryPaymentSourcesResponse>(endpoint);
+	}
+
+	/**
+	 * Resolve a single payment by `blockchainIdentifier` via the dedicated
+	 * resolve endpoint. Prefer this over `queryPayments(...).find(...)` in
+	 * tests — paginated listings can drop the target row as CI history
+	 * accumulates. Returns `undefined` on 404 so the polling callers can
+	 * treat the "not yet present" case uniformly.
+	 */
+	async resolvePaymentByBlockchainIdentifier(params: {
+		blockchainIdentifier: string;
+		network: Network;
+		filterSmartContractAddress?: string;
+		includeHistory?: boolean;
+	}): Promise<PaymentResponse | undefined> {
+		const body: Record<string, unknown> = {
+			blockchainIdentifier: params.blockchainIdentifier,
+			network: params.network,
+		};
+		if (params.filterSmartContractAddress != null) {
+			body.filterSmartContractAddress = params.filterSmartContractAddress;
+		}
+		if (params.includeHistory != null) {
+			body.includeHistory = params.includeHistory ? 'true' : 'false';
+		}
+		try {
+			return await this.makeRequest<PaymentResponse>('/api/v1/payment/resolve-blockchain-identifier', {
+				method: 'POST',
+				body: JSON.stringify(body),
+			});
+		} catch (err) {
+			if (err instanceof Error && /HTTP 404:/.test(err.message)) {
+				return undefined;
+			}
+			throw err;
+		}
+	}
+
+	/**
+	 * Resolve a single purchase by `blockchainIdentifier`. See
+	 * `resolvePaymentByBlockchainIdentifier` for rationale.
+	 */
+	async resolvePurchaseByBlockchainIdentifier(params: {
+		blockchainIdentifier: string;
+		network: Network;
+		filterSmartContractAddress?: string;
+		includeHistory?: boolean;
+	}): Promise<PurchaseResponse | undefined> {
+		const body: Record<string, unknown> = {
+			blockchainIdentifier: params.blockchainIdentifier,
+			network: params.network,
+		};
+		if (params.filterSmartContractAddress != null) {
+			body.filterSmartContractAddress = params.filterSmartContractAddress;
+		}
+		if (params.includeHistory != null) {
+			body.includeHistory = params.includeHistory ? 'true' : 'false';
+		}
+		try {
+			return await this.makeRequest<PurchaseResponse>('/api/v1/purchase/resolve-blockchain-identifier', {
+				method: 'POST',
+				body: JSON.stringify(body),
+			});
+		} catch (err) {
+			if (err instanceof Error && /HTTP 404:/.test(err.message)) {
+				return undefined;
+			}
+			throw err;
+		}
 	}
 }

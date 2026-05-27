@@ -33,7 +33,7 @@ export async function handleAutomaticDecisions() {
 				await handleInitializeAutoWithdrawRefunds(paymentSources);
 			}
 		} catch (error) {
-			logger.error(`Error updating wallet transaction hash`, { error: error });
+			logger.error(`Error handling automatic decisions`, { error: error });
 		}
 	});
 }

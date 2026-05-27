@@ -110,31 +110,53 @@ export const seed = async (prisma: PrismaClient) => {
 	}
 
 	const adminKeyHash = await generateApiKeySecureHash(adminKey);
-	await prisma.apiKey.upsert({
-		create: {
-			encryptedToken: encrypt(adminKey),
-			tokenHash: adminKeyHash,
-			token: '*****' + adminKey.slice(-4),
-			// Flag-based permissions (new system)
-			canRead: true,
-			canPay: true,
-			canAdmin: true,
-			status: ApiKeyStatus.Active,
-		},
-		update: {
-			encryptedToken: encrypt(adminKey),
-			token: '*****' + adminKey.slice(-4),
-			canRead: true,
-			canPay: true,
-			canAdmin: true,
-			status: ApiKeyStatus.Active,
-		},
-		where: { tokenHash: adminKeyHash },
-	});
+	// SECURITY: Refuse to seed the public DEFAULT_ADMIN_KEY when an admin
+	// already exists. Without this guard, an operator who provisioned a real
+	// ADMIN_KEY, then later ran the seed script without that env var set,
+	// would silently add a SECOND admin key (the public default) alongside
+	// their real one — creating a public backdoor. The default is intended
+	// as a bootstrap convenience for first-time empty deployments only.
+	let skipAdminKeyUpsert = false;
 	if (usedDefaultAdminKey) {
-		console.log('Seeded with DEFAULT_ADMIN_KEY');
-	} else {
-		console.log('ADMIN_KEY seeded successfully');
+		const existingAdminCount = await prisma.apiKey.count({
+			where: { canAdmin: true, status: ApiKeyStatus.Active },
+		});
+		if (existingAdminCount > 0) {
+			console.warn('****************************************************');
+			console.warn('**  REFUSING to seed DEFAULT_ADMIN_KEY — an admin **');
+			console.warn('**  key already exists. Set ADMIN_KEY in .env to  **');
+			console.warn('**  manage admin credentials explicitly.          **');
+			console.warn('****************************************************');
+			skipAdminKeyUpsert = true;
+		}
+	}
+	if (!skipAdminKeyUpsert) {
+		await prisma.apiKey.upsert({
+			create: {
+				encryptedToken: encrypt(adminKey),
+				tokenHash: adminKeyHash,
+				token: '*****' + adminKey.slice(-4),
+				// Flag-based permissions (new system)
+				canRead: true,
+				canPay: true,
+				canAdmin: true,
+				status: ApiKeyStatus.Active,
+			},
+			update: {
+				encryptedToken: encrypt(adminKey),
+				token: '*****' + adminKey.slice(-4),
+				canRead: true,
+				canPay: true,
+				canAdmin: true,
+				status: ApiKeyStatus.Active,
+			},
+			where: { tokenHash: adminKeyHash },
+		});
+		if (usedDefaultAdminKey) {
+			console.log('Seeded with DEFAULT_ADMIN_KEY');
+		} else {
+			console.log('ADMIN_KEY seeded successfully');
+		}
 	}
 
 	let collectionWalletPreprodAddress: string | null | undefined = process.env.COLLECTION_WALLET_PREPROD_ADDRESS;

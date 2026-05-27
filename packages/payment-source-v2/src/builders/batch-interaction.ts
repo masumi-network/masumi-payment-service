@@ -430,12 +430,17 @@ async function buildBatchInteractionTx(
  *   - one optional fee output (V2 has none → always `null`),
  *   - one optional collateral-return output to the buyer.
  *
- * When `tagOutputsWithOwnRef === true`, each collection / fee / collateral-return
- * output's inline datum is `mOutputReference(item.smartContractUtxo.input.txHash, item.smartContractUtxo.input.outputIndex)`.
+ * Every collection / fee / collateral-return output's inline datum is
+ * `mOutputReference(item.smartContractUtxo.input.txHash, item.smartContractUtxo.input.outputIndex)`.
  * The V2 validator's `outputs_with_reference_tag(self.outputs, own_ref, default, return_addr)`
  * filters outputs by `output.datum == own_ref` AND `output.address == expected`,
  * which is what ties each tagged output back to its specific spending input
  * even when N inputs share the same script and the same return-address shape.
+ *
+ * Tagging is unconditional in V2 — emitting outputs without the tag would
+ * leave them invisible to the validator's output filter and break per-input
+ * value accounting. If a future flow needs untagged outputs it should use a
+ * separate builder.
  */
 export type BatchWithdrawItem = {
 	type: 'CollectCompleted' | 'CollectRefund';
@@ -444,8 +449,6 @@ export type BatchWithdrawItem = {
 	/** V2 has no protocol fee — pass `null`. The field stays general so future flows can attach one. */
 	fee: { feeAssets: Asset[]; feeAddress: string } | null;
 	collateralReturn: { lovelace: bigint; address: string } | null;
-	/** V2: true. Required when the on-chain datum has buyer/seller return addresses; safe to leave on otherwise. */
-	tagOutputsWithOwnRef: boolean;
 };
 
 export async function generateMasumiSmartContractBatchWithdrawTransactionAutomaticFees(
@@ -571,15 +574,11 @@ async function buildBatchWithdrawTx(
 		const ownRefDatum = mOutputReference(item.smartContractUtxo.input.txHash, item.smartContractUtxo.input.outputIndex);
 
 		txBuilder.txOut(item.collection.collectionAddress, item.collection.collectAssets);
-		if (item.tagOutputsWithOwnRef) {
-			txBuilder.txOutInlineDatumValue(ownRefDatum);
-		}
+		txBuilder.txOutInlineDatumValue(ownRefDatum);
 
 		if (item.fee != null) {
 			txBuilder.txOut(item.fee.feeAddress, item.fee.feeAssets);
-			if (item.tagOutputsWithOwnRef) {
-				txBuilder.txOutInlineDatumValue(ownRefDatum);
-			}
+			txBuilder.txOutInlineDatumValue(ownRefDatum);
 		}
 
 		if (item.collateralReturn != null && item.collateralReturn.lovelace > 0n) {
@@ -589,9 +588,7 @@ async function buildBatchWithdrawTx(
 					quantity: item.collateralReturn.lovelace.toString(),
 				},
 			]);
-			if (item.tagOutputsWithOwnRef) {
-				txBuilder.txOutInlineDatumValue(ownRefDatum);
-			}
+			txBuilder.txOutInlineDatumValue(ownRefDatum);
 		}
 	}
 

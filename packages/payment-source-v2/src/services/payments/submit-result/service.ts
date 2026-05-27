@@ -156,6 +156,10 @@ async function markRequestFailed(request: PaymentRequestWithRelations, error: un
 		data: {
 			...connectPreviousAction(request.nextActionId),
 			...createNextPaymentAction(PaymentAction.WaitingForManualAction, {
+				// Carry forward the seller-supplied result hash so operator forensics
+				// preserve the originally-attempted submission. Without this the
+				// hash is lost when the request parks in WaitingForManualAction.
+				resultHash: request.NextAction?.resultHash ?? null,
 				errorType: PaymentErrorType.Unknown,
 				errorNote: 'Submitting result failed: ' + interpretBlockchainError(error),
 			}),
@@ -322,7 +326,17 @@ async function processSinglePaymentRequest(
 	const { wallet, utxos, address } = walletSession;
 
 	if (utxos.length === 0) {
-		throw new Error('No UTXOs found in the wallet. Wallet is empty.');
+		// Wallet empty — check if the on-chain submission deadline has passed
+		// before deferring. Aiken `SubmitResult` requires
+		// `must_end_before(validity_range, submit_result_time)`, so past this
+		// point the seller cannot submit anymore. Topup won't help; park for
+		// manual intervention.
+		const submitDeadlineMs = Number(request.submitResultTime);
+		if (Number.isFinite(submitDeadlineMs) && Date.now() > submitDeadlineMs) {
+			throw new Error('Wallet empty and on-chain submitResultTime deadline passed; manual intervention required');
+		}
+		// Deadline still ahead — defer to wait for funder cron topup.
+		throw new Error(`${LOOKUP_DEFERRED_PREFIX} wallet has no UTXOs; awaiting topup, retry next tick`);
 	}
 
 	// Same collateral-readiness gate as the batch path. Throw the

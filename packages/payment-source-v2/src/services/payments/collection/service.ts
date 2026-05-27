@@ -238,14 +238,20 @@ async function validateAndBuildItem(
 	// Aiken `Withdraw` requires `must_start_after(validity_range, unlock_time)`
 	// for the timed path (state == ResultSubmitted). When state ==
 	// WithdrawAuthorized the buyer's signature short-circuits the timed gate
-	// and no lower bound is needed. Without this constrainAfterMs the default
-	// `invalidBefore` (~now - 2.5 min) can land earlier than unlock_time when
-	// the scheduler force-advances state, phase-2-failing the tx.
+	// and no lower bound is needed. We push the deadline into the
+	// `constrainBeforeMs` floor so `invalidBefore` is forced past unlock_time
+	// (the contract's lower-bound check) — NOT into `constrainAfterMs`, which
+	// would lower the upper bound and produce an invalid window when the
+	// deadline is already in the past (which is the steady-state case given
+	// the `unlockTime <= now - 10min` query filter).
+	const lowerBoundMs =
+		decodedContract.state === SmartContractState.WithdrawAuthorized
+			? decodedContract.sellerCooldownTime
+			: decodedContract.sellerCooldownTime > decodedContract.unlockTime
+				? decodedContract.sellerCooldownTime
+				: decodedContract.unlockTime;
 	const { invalidBefore, invalidAfter } = createTxWindow(network, {
-		constrainBeforeMs: decodedContract.sellerCooldownTime,
-		...(decodedContract.state === SmartContractState.WithdrawAuthorized
-			? {}
-			: { constrainAfterMs: decodedContract.unlockTime }),
+		constrainBeforeMs: lowerBoundMs,
 	});
 
 	return {
@@ -289,7 +295,11 @@ async function processSinglePaymentCollection(
 	const { wallet, utxos, address } = walletSession;
 
 	if (utxos.length === 0) {
-		throw new Error('No UTXOs found in the wallet. Wallet is empty.');
+		// Collection (Withdraw) has no on-chain upper deadline once unlockTime
+		// passes — seller can withdraw indefinitely. Empty wallet is purely
+		// transient until the funder cron tops up. Defer so the request
+		// stays queued instead of parking in WaitingForManualAction.
+		throw new Error(`${LOOKUP_DEFERRED_PREFIX} wallet has no UTXOs; awaiting topup, retry next tick`);
 	}
 
 	// Same collateral-readiness gate as the batch path. Throw the
@@ -680,10 +690,6 @@ async function processWalletBatch(
 			lovelace: v.collateralReturn.lovelace,
 			address: v.collateralReturn.address,
 		},
-		// V2 contract requires per-input outputs (collection + collateral
-		// return) to be tagged with own_ref so the validator can match each
-		// tagged output to its specific spending input.
-		tagOutputsWithOwnRef: true,
 	}));
 
 	let unsignedTx: string;
