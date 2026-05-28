@@ -19,7 +19,6 @@ import {
 	createPendingTransaction,
 	disconnectTransactionWallet,
 	loadHotWalletSession,
-	updateCurrentTransactionHash,
 } from '@/services/shared';
 import {
 	findRegistryTokenUtxo,
