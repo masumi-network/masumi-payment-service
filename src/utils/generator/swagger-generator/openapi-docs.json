@@ -5562,7 +5562,9 @@
                                 "properties": {
                                     "walletVkey": {
                                         "type": "string",
-                                        "minLength": 1,
+                                        "minLength": 56,
+                                        "maxLength": 56,
+                                        "pattern": "^[0-9a-fA-F]{56}$",
                                         "description": "Wallet verification key (vKey) to identify the wallet"
                                     },
                                     "amount": {
@@ -5620,6 +5622,9 @@
                                     },
                                     "poolId": {
                                         "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 120,
+                                        "pattern": "^[0-9a-zA-Z]+$",
                                         "description": "SundaeSwap pool identifier"
                                     },
                                     "slippage": {
@@ -5713,7 +5718,9 @@
                     {
                         "schema": {
                             "type": "string",
-                            "minLength": 1,
+                            "minLength": 64,
+                            "maxLength": 64,
+                            "pattern": "^[0-9a-fA-F]{64}$",
                             "description": "Transaction hash to check"
                         },
                         "required": true,
@@ -5724,7 +5731,9 @@
                     {
                         "schema": {
                             "type": "string",
-                            "minLength": 1,
+                            "minLength": 56,
+                            "maxLength": 56,
+                            "pattern": "^[0-9a-fA-F]{56}$",
                             "description": "Wallet verification key (vKey) that submitted the swap"
                         },
                         "required": true,
@@ -5805,7 +5814,9 @@
                     {
                         "schema": {
                             "type": "string",
-                            "minLength": 1,
+                            "minLength": 56,
+                            "maxLength": 56,
+                            "pattern": "^[0-9a-fA-F]{56}$",
                             "description": "Wallet verification key (vKey) to filter swap transactions"
                         },
                         "required": true,
@@ -5829,6 +5840,7 @@
                     {
                         "schema": {
                             "type": "string",
+                            "maxLength": 64,
                             "description": "Cursor ID for pagination"
                         },
                         "required": false,
@@ -5986,6 +5998,8 @@
                     {
                         "schema": {
                             "type": "string",
+                            "maxLength": 56,
+                            "pattern": "^[0-9a-fA-F]*$",
                             "description": "Policy ID of the source token. Use empty string \"\" for ADA"
                         },
                         "required": true,
@@ -5996,6 +6010,8 @@
                     {
                         "schema": {
                             "type": "string",
+                            "maxLength": 64,
+                            "pattern": "^[0-9a-fA-F]*$",
                             "description": "Asset name (hex) of the source token. Use empty string \"\" for ADA"
                         },
                         "required": true,
@@ -6006,6 +6022,8 @@
                     {
                         "schema": {
                             "type": "string",
+                            "maxLength": 56,
+                            "pattern": "^[0-9a-fA-F]*$",
                             "description": "Policy ID of the destination token. Use empty string \"\" for ADA"
                         },
                         "required": true,
@@ -6016,6 +6034,8 @@
                     {
                         "schema": {
                             "type": "string",
+                            "maxLength": 64,
+                            "pattern": "^[0-9a-fA-F]*$",
                             "description": "Asset name (hex) of the destination token. Use empty string \"\" for ADA"
                         },
                         "required": true,
@@ -6027,6 +6047,8 @@
                         "schema": {
                             "type": "string",
                             "minLength": 1,
+                            "maxLength": 120,
+                            "pattern": "^[0-9a-zA-Z]+$",
                             "description": "SundaeSwap pool identifier"
                         },
                         "required": true,
@@ -6106,12 +6128,15 @@
                                 "properties": {
                                     "walletVkey": {
                                         "type": "string",
-                                        "minLength": 1,
+                                        "minLength": 56,
+                                        "maxLength": 56,
+                                        "pattern": "^[0-9a-fA-F]{56}$",
                                         "description": "Wallet verification key (vKey) of the wallet that placed the order"
                                     },
                                     "swapTransactionId": {
                                         "type": "string",
                                         "minLength": 1,
+                                        "maxLength": 64,
                                         "description": "ID of the SwapTransaction to cancel"
                                     }
                                 },
@@ -6186,12 +6211,15 @@
                                 "properties": {
                                     "walletVkey": {
                                         "type": "string",
-                                        "minLength": 1,
+                                        "minLength": 56,
+                                        "maxLength": 56,
+                                        "pattern": "^[0-9a-fA-F]{56}$",
                                         "description": "Wallet verification key (vKey) of the wallet"
                                     },
                                     "swapTransactionId": {
                                         "type": "string",
                                         "minLength": 1,
+                                        "maxLength": 64,
                                         "description": "ID of the timed-out SwapTransaction"
                                     }
                                 },
@@ -8080,11 +8108,14 @@
                                     },
                                     "submitResultHash": {
                                         "type": "string",
-                                        "maxLength": 250,
+                                        "minLength": 64,
+                                        "maxLength": 64,
+                                        "pattern": "^[0-9a-fA-F]{64}$",
                                         "description": "The hash of the AI agent result to be submitted, should be sha256 hash of the result, therefore needs to be in hex string format"
                                     },
                                     "blockchainIdentifier": {
                                         "type": "string",
+                                        "minLength": 1,
                                         "maxLength": 8000,
                                         "description": "The identifier of the payment"
                                     }
@@ -9314,6 +9345,7 @@
                                     "blockchainIdentifier": {
                                         "type": "string",
                                         "minLength": 1,
+                                        "maxLength": 8000,
                                         "description": "The blockchain identifier of the payment request"
                                     },
                                     "network": {
@@ -9964,6 +9996,7 @@
                                     "blockchainIdentifier": {
                                         "type": "string",
                                         "minLength": 1,
+                                        "maxLength": 8000,
                                         "description": "The blockchain identifier of the purchase request"
                                     },
                                     "network": {
@@ -14376,12 +14409,14 @@
                                     "blockchainIdentifier": {
                                         "type": "string",
                                         "minLength": 1,
+                                        "maxLength": 8000,
                                         "description": "The blockchainIdentifier from the PaymentRequest"
                                     },
                                     "buyerAddress": {
                                         "type": "string",
-                                        "minLength": 40,
-                                        "maxLength": 200,
+                                        "minLength": 58,
+                                        "maxLength": 120,
+                                        "pattern": "^(addr1|addr_test1)[0-9a-z]+$",
                                         "description": "The buyer's bech32 Cardano wallet address. UTxOs fetched from this address to build the unsigned tx."
                                     }
                                 },
@@ -15681,6 +15716,8 @@
                                 "properties": {
                                     "blockchainIdentifier": {
                                         "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 8000,
                                         "description": "The blockchain identifier to resolve"
                                     },
                                     "network": {
@@ -15826,6 +15863,8 @@
                                 "properties": {
                                     "blockchainIdentifier": {
                                         "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 8000,
                                         "description": "The blockchain identifier to resolve"
                                     },
                                     "network": {
@@ -16445,17 +16484,21 @@
                                     },
                                     "sellingWalletVkey": {
                                         "type": "string",
-                                        "maxLength": 250,
+                                        "minLength": 56,
+                                        "maxLength": 56,
+                                        "pattern": "^[0-9a-fA-F]{56}$",
                                         "description": "The payment key of a specific wallet used for the registration"
                                     },
                                     "recipientWalletAddress": {
                                         "type": "string",
-                                        "maxLength": 250,
+                                        "minLength": 58,
+                                        "maxLength": 120,
+                                        "pattern": "^(addr1|addr_test1)[0-9a-z]+$",
                                         "description": "Optional managed hot wallet address on the same payment source that should receive the minted registry NFT. If omitted, the minting wallet receives it."
                                     },
                                     "sendFundingLovelace": {
                                         "type": "string",
-                                        "maxLength": 25,
+                                        "maxLength": 17,
                                         "pattern": "^\\d+$",
                                         "description": "Optional lovelace amount to include with the minted NFT output. If provided below the minimum NFT funding, the current minimum is still used."
                                     },
@@ -17228,6 +17271,7 @@
                                         "type": "string",
                                         "minLength": 57,
                                         "maxLength": 250,
+                                        "pattern": "^[0-9a-fA-F]+$",
                                         "description": "The identifier of the registration (asset) to be deregistered"
                                     },
                                     "network": {
@@ -17240,7 +17284,9 @@
                                     },
                                     "smartContractAddress": {
                                         "type": "string",
-                                        "maxLength": 250,
+                                        "minLength": 58,
+                                        "maxLength": 120,
+                                        "pattern": "^(addr1|addr_test1)[0-9a-z]+$",
                                         "description": "The smart contract address of the payment contract to which the registration belongs"
                                     }
                                 },
