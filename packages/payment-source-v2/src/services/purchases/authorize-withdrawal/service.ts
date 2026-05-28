@@ -13,6 +13,7 @@ import type { LanguageVersion } from '@meshsdk/core';
 import { asV2Provider } from '../../provider-cast';
 import type { BlockfrostProvider } from '@/services/shared';
 import { logger } from '@masumi/payment-core/logger';
+import { recordV2BatchHashDivergence } from '@masumi/payment-core/metrics';
 import { SmartContractState, smartContractStateEqualsOnChainState } from '@/utils/generator/contract-generator';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { DecodedV1ContractDatum, newCooldownTime } from '@/utils/converter/string-datum-convert';
@@ -904,6 +905,22 @@ async function processWalletBatch(
 		// deferred — preserves the lock when a single-item submit succeeded.
 		await unlockHotWalletIfNoPendingTransaction(wallet.id, 'authorize-withdrawal-batch-rollback');
 		return;
+	}
+
+	// Divergence check: if mesh returned a hash different from the
+	// deterministically-computed intendedTxHash, the tx IS still on chain at
+	// the node-returned hash (the node is authoritative), but the discrepancy
+	// signals a hash-computation drift — investigate cost-model staleness,
+	// mesh-version drift, or protocol-parameter desync. Log loudly and bump
+	// the dedicated metric for alerting.
+	if (newTxHash !== intendedTxHash) {
+		logger.error('V2 authorize-withdrawal batch: node returned divergent txHash — investigate', {
+			sharedTxId,
+			intendedTxHash,
+			nodeTxHash: newTxHash,
+			requestIds: fit.map((v) => v.request.id),
+		});
+		recordV2BatchHashDivergence('authorize-withdrawal', { source_id: paymentContract.id });
 	}
 
 	try {

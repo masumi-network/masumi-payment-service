@@ -109,7 +109,11 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 			const supportedPaymentSources = input.supportedPaymentSources ?? [];
 			if (supportedPaymentSources.length > 0) {
 				try {
-					validateSupportedPaymentSourcesOrThrow(supportedPaymentSources, input.network);
+					validateSupportedPaymentSourcesOrThrow(
+						supportedPaymentSources,
+						input.network,
+						sellingWallet.PaymentSource.paymentSourceType,
+					);
 				} catch (error) {
 					throw createHttpError(400, error instanceof Error ? error.message : String(error));
 				}

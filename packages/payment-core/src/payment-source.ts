@@ -105,6 +105,20 @@ export function isCardanoPubKeyBaseAddressForNetwork(address: string, network: N
 export function validateSupportedPaymentSourcesOrThrow(
 	supportedPaymentSources: SupportedPaymentSource[],
 	expectedNetwork: Network,
+	// Type of the payment source that the registry entry is being minted
+	// against. The rule is asymmetric — by design — between V1 and V2:
+	//   - V2 entries (the canonical going-forward type) MUST advertise
+	//     only V2 payment sources. Advertising a Legacy V1 source on a
+	//     V2 mint confuses on-chain consumers about which contract
+	//     family the agent actually targets.
+	//   - V1 entries (Legacy Payment Source Type) MAY advertise any
+	//     payment-source type, including V2. This lets a legacy entry
+	//     cross-list to V2 as a "migration breadcrumb" without rebuilding
+	//     it from scratch.
+	// Caller may pass `undefined` only on early-boot / off-route
+	// validation paths where the registering type is not yet bound;
+	// in that case the asymmetric rule is skipped.
+	registeringPaymentSourceType?: PaymentSourceType,
 ) {
 	for (const supportedPaymentSource of supportedPaymentSources) {
 		if (supportedPaymentSource.network !== expectedNetwork) {
@@ -113,6 +127,15 @@ export function validateSupportedPaymentSourcesOrThrow(
 
 		if (supportedPaymentSource.chain !== Chain.Cardano) {
 			throw new Error('Unsupported payment source chain');
+		}
+
+		if (
+			registeringPaymentSourceType === PaymentSourceType.Web3CardanoV2 &&
+			supportedPaymentSource.paymentSourceType !== PaymentSourceType.Web3CardanoV2
+		) {
+			throw new Error(
+				'V2 registry entries may only advertise V2 payment sources. Legacy V1 sources cannot be listed on a V2 mint.',
+			);
 		}
 
 		validateCardanoAddressForNetwork(supportedPaymentSource.address, expectedNetwork);

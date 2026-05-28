@@ -108,6 +108,22 @@ const getV2CollateralPrepHashDivergenceCounter = (): Counter => {
 	return v2CollateralPrepHashDivergenceCounter;
 };
 
+// Generic divergence counter for V2 batch-service submits (submit-result,
+// collection, authorize-refund, authorize-withdrawal, collect-refund,
+// request-refund). Same semantics as the collateral-prep counter above
+// but with a `service` label so operators can attribute divergences to
+// the specific code path that produced them.
+let v2BatchHashDivergenceCounter: Counter | null = null;
+const getV2BatchHashDivergenceCounter = (): Counter => {
+	if (!v2BatchHashDivergenceCounter) {
+		v2BatchHashDivergenceCounter = getMeter().createCounter('v2_batch_submit_hash_divergence_total', {
+			description:
+				'V2 batch services: count of submits where the node-returned txHash diverged from our deterministically-computed intendedTxHash, by service. Non-zero values indicate the offline-build hash computation drifted from mesh/cardano-node — investigate cost-model sync, parameter staleness, or mesh-version drift.',
+		});
+	}
+	return v2BatchHashDivergenceCounter;
+};
+
 // Business Endpoint Types
 type BusinessEndpoint = 'purchase' | 'registry' | 'wallet' | 'unknown';
 
@@ -393,4 +409,20 @@ export const recordV2CollateralPrepHashDivergence = (attributes: Record<string, 
 	// must NOT be passed in as label values (high-cardinality → metric storage
 	// explosion). Use the logger.error call site for the full hash detail.
 	getV2CollateralPrepHashDivergenceCounter().add(1, attributes);
+};
+
+export const recordV2BatchHashDivergence = (
+	service:
+		| 'submit-result'
+		| 'collection'
+		| 'authorize-refund'
+		| 'authorize-withdrawal'
+		| 'collect-refund'
+		| 'request-refund',
+	attributes: Record<string, string | number> = {},
+) => {
+	// `service` is a low-cardinality discriminator (closed enum) — safe as a
+	// metric label. Same cardinality rule as the collateral-prep counter:
+	// hashes go in logs, not labels.
+	getV2BatchHashDivergenceCounter().add(1, { service, ...attributes });
 };
