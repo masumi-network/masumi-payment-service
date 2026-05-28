@@ -116,7 +116,7 @@ function buildSellingWallet() {
 	return {
 		id: 'selling-wallet-id',
 		paymentSourceId: 'payment-source-1',
-		walletVkey: 'selling-wallet-vkey',
+		walletVkey: 'b'.repeat(56),
 		walletAddress: 'addr_test1sellingwallet',
 		PaymentSource: {
 			paymentSourceType: PaymentSourceType.Web3CardanoV2,
@@ -161,7 +161,7 @@ function buildRegistryRequestResponse(
 		},
 		sendFundingLovelace,
 		SmartContractWallet: {
-			walletVkey: 'selling-wallet-vkey',
+			walletVkey: 'b'.repeat(56),
 			walletAddress: 'addr_test1sellingwallet',
 		},
 		RecipientWallet: recipientWallet,
@@ -272,7 +272,7 @@ describe('registerAgentPost', () => {
 				headers: { token: 'valid' },
 				body: {
 					network: Network.Preprod,
-					sellingWalletVkey: 'selling-wallet-vkey',
+					sellingWalletVkey: 'b'.repeat(56),
 					name: 'Test Agent',
 					description: 'Agent description',
 					apiBaseUrl: 'https://example.com/agent',
@@ -306,12 +306,12 @@ describe('registerAgentPost', () => {
 		mockFindRecipientWallet.mockResolvedValue({
 			id: 'recipient-wallet-id',
 			walletVkey: 'recipient-wallet-vkey',
-			walletAddress: 'addr_test1recipientwallet',
+			walletAddress: 'addr_test1qrecipientwallet000000000000000000000000000000000',
 		});
 		mockCreateRegistryRequest.mockResolvedValue(
 			buildRegistryRequestResponse({
 				walletVkey: 'recipient-wallet-vkey',
-				walletAddress: 'addr_test1recipientwallet',
+				walletAddress: 'addr_test1qrecipientwallet000000000000000000000000000000000',
 			}),
 		);
 
@@ -322,8 +322,8 @@ describe('registerAgentPost', () => {
 				headers: { token: 'valid' },
 				body: {
 					network: Network.Preprod,
-					sellingWalletVkey: 'selling-wallet-vkey',
-					recipientWalletAddress: 'addr_test1recipientwallet',
+					sellingWalletVkey: 'b'.repeat(56),
+					recipientWalletAddress: 'addr_test1qrecipientwallet000000000000000000000000000000000',
 					name: 'Test Agent',
 					description: 'Agent description',
 					apiBaseUrl: 'https://example.com/agent',
@@ -346,7 +346,7 @@ describe('registerAgentPost', () => {
 		expect(responseMock.statusCode).toBe(200);
 		expect(mockFindRecipientWallet).toHaveBeenCalledWith({
 			where: {
-				walletAddress: 'addr_test1recipientwallet',
+				walletAddress: 'addr_test1qrecipientwallet000000000000000000000000000000000',
 				paymentSourceId: 'payment-source-1',
 				deletedAt: null,
 			},
@@ -363,7 +363,7 @@ describe('registerAgentPost', () => {
 		});
 		expect(responseMock._getJSONData().data.RecipientWallet).toEqual({
 			walletVkey: 'recipient-wallet-vkey',
-			walletAddress: 'addr_test1recipientwallet',
+			walletAddress: 'addr_test1qrecipientwallet000000000000000000000000000000000',
 		});
 	});
 
@@ -377,7 +377,7 @@ describe('registerAgentPost', () => {
 				headers: { token: 'valid' },
 				body: {
 					network: Network.Preprod,
-					sellingWalletVkey: 'selling-wallet-vkey',
+					sellingWalletVkey: 'b'.repeat(56),
 					sendFundingLovelace: '2000000',
 					name: 'Test Agent',
 					description: 'Agent description',
@@ -408,7 +408,7 @@ describe('registerAgentPost', () => {
 		mockFindRecipientWallet.mockResolvedValue({
 			id: 'recipient-wallet-id',
 			walletVkey: 'recipient-wallet-vkey',
-			walletAddress: 'addr_test1recipientwallet',
+			walletAddress: 'addr_test1qrecipientwallet000000000000000000000000000000000',
 		});
 
 		const { responseMock } = await testEndpoint({
@@ -418,8 +418,8 @@ describe('registerAgentPost', () => {
 				headers: { token: 'valid' },
 				body: {
 					network: Network.Preprod,
-					sellingWalletVkey: 'selling-wallet-vkey',
-					recipientWalletAddress: 'addr_test1recipientwallet',
+					sellingWalletVkey: 'b'.repeat(56),
+					recipientWalletAddress: 'addr_test1qrecipientwallet000000000000000000000000000000000',
 					name: 'Test Agent',
 					description: 'Agent description',
 					apiBaseUrl: 'https://example.com/agent',

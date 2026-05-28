@@ -137,7 +137,7 @@ function buildRegistryUpdateResponse() {
 		createdAt: new Date('2026-04-12T10:00:00.000Z'),
 		updatedAt: new Date('2026-04-12T10:00:00.000Z'),
 		lastCheckedAt: null,
-		agentIdentifier: 'p'.repeat(56) + 'asset',
+		agentIdentifier: 'a'.repeat(56) + 'a55e7',
 		ExampleOutputs: [],
 		Pricing: {
 			pricingType: PricingType.Free,
@@ -161,7 +161,7 @@ describe('unregisterAgentPost', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
 		mockFindApiKey.mockResolvedValue(asApiKey());
-		mockGetRegistryScript.mockResolvedValue({ policyId: 'p'.repeat(56) });
+		mockGetRegistryScript.mockResolvedValue({ policyId: 'a'.repeat(56) });
 		mockResolvePaymentKeyHash.mockImplementation((address: string) => {
 			if (address === 'addr_test1recipientwallet') {
 				return 'recipient-wallet-vkey';
@@ -207,7 +207,7 @@ describe('unregisterAgentPost', () => {
 				method: 'POST',
 				headers: { token: 'valid' },
 				body: {
-					agentIdentifier: 'p'.repeat(56) + 'asset',
+					agentIdentifier: 'a'.repeat(56) + 'a55e7',
 					network: Network.Preprod,
 				},
 			},
@@ -216,7 +216,7 @@ describe('unregisterAgentPost', () => {
 		expect(responseMock.statusCode).toBe(200);
 		expect(mockFindPaymentSource.mock.calls[0]?.[0]?.where).toEqual({
 			network: Network.Preprod,
-			policyId: 'p'.repeat(56),
+			policyId: 'a'.repeat(56),
 			deletedAt: null,
 		});
 		expect(mockUpdateRegistryRequest.mock.calls[0]?.[0]?.data).toEqual({
@@ -239,7 +239,7 @@ describe('unregisterAgentPost', () => {
 				method: 'POST',
 				headers: { token: 'valid' },
 				body: {
-					agentIdentifier: 'p'.repeat(56) + 'asset',
+					agentIdentifier: 'a'.repeat(56) + 'a55e7',
 					network: Network.Preprod,
 				},
 			},
@@ -248,7 +248,7 @@ describe('unregisterAgentPost', () => {
 		expect(responseMock.statusCode).toBe(200);
 		expect(mockFindPaymentSource.mock.calls[0]?.[0]?.where).toEqual({
 			network: Network.Preprod,
-			policyId: 'p'.repeat(56),
+			policyId: 'a'.repeat(56),
 			deletedAt: null,
 		});
 		expect(mockFindPaymentSource.mock.calls[1]?.[0]?.where).toEqual({
@@ -282,7 +282,7 @@ describe('unregisterAgentPost', () => {
 				method: 'POST',
 				headers: { token: 'valid' },
 				body: {
-					agentIdentifier: 'p'.repeat(56) + 'asset',
+					agentIdentifier: 'a'.repeat(56) + 'a55e7',
 					network: Network.Preprod,
 				},
 			},
