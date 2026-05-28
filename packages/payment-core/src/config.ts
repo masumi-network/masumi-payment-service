@@ -201,6 +201,18 @@ export const CONFIG = {
 	// Prisma span filtering: only export outlier (slow) queries and cap volume
 	OTEL_PRISMA_OUTLIER_THRESHOLD_MS: Number(process.env.OTEL_PRISMA_OUTLIER_THRESHOLD_MS ?? '100'),
 	OTEL_PRISMA_MAX_SPANS_PER_MINUTE: Number(process.env.OTEL_PRISMA_MAX_SPANS_PER_MINUTE ?? '60'),
+	// Orphan-action cleanup cron. Periodically prunes PaymentActionData /
+	// PurchaseActionData rows that were created by a batch service's
+	// pre-submit then orphaned by a rollback drift-check that refused to
+	// delete them (per the "leak the row, do not corrupt history" safety
+	// rule in the rollback paths). Daily by default; minimum-age guard
+	// keeps in-flight requests from being clobbered.
+	ORPHAN_ACTION_CLEANUP_INTERVAL_SECONDS: Math.max(
+		3600,
+		Number(process.env.ORPHAN_ACTION_CLEANUP_INTERVAL_SECONDS ?? String(24 * 3600)),
+	),
+	ORPHAN_ACTION_CLEANUP_MIN_AGE_HOURS: Math.max(1, Number(process.env.ORPHAN_ACTION_CLEANUP_MIN_AGE_HOURS ?? '72')),
+	ORPHAN_ACTION_CLEANUP_BATCH_SIZE: Math.max(10, Number(process.env.ORPHAN_ACTION_CLEANUP_BATCH_SIZE ?? '500')),
 };
 
 export const CONSTANTS = {

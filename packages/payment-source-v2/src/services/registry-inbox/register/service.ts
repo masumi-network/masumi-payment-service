@@ -478,7 +478,7 @@ export async function registerInboxAgentV2() {
 									}
 									return sharedTx.id;
 								},
-								{ timeout: 30_000 },
+								{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
 							),
 						{ label: 'v2-inbox-register-batch-tx' },
 					);
@@ -548,7 +548,7 @@ export async function registerInboxAgentV2() {
 										});
 									}
 								},
-								{ timeout: 30_000 },
+								{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
 							),
 						{ label: 'v2-inbox-register-batch-tx' },
 					);
@@ -594,7 +594,7 @@ export async function registerInboxAgentV2() {
 										});
 									}
 								},
-								{ timeout: 30_000 },
+								{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
 							),
 						{ label: 'v2-inbox-register-batch-tx' },
 					);

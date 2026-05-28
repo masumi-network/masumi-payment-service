@@ -68,6 +68,15 @@ export function convertNewPurchasingActionAndError(
 			case PurchasingAction.AuthorizeWithdrawalRequested:
 			case PurchasingAction.WaitingForExternalAction:
 				return generatePurchasingActionAndErrorResult(PurchasingAction.WaitingForExternalAction);
+			// V2 dispute→authorize→withdraw path: buyer raised `WithdrawRefund`
+			// but the dispute resolved to seller-favored `AuthorizeWithdrawal`.
+			// The buyer-side `WithdrawRefund*` action should fall back to
+			// passive waiting; the chain has moved on and the buyer's refund
+			// path is no longer reachable from this UTxO. (Mirrors the
+			// `RefundAuthorized` branch below for symmetry.)
+			case PurchasingAction.WithdrawRefundInitiated:
+			case PurchasingAction.WithdrawRefundRequested:
+				return generatePurchasingActionAndErrorResult(PurchasingAction.WaitingForExternalAction);
 			case PurchasingAction.WaitingForManualAction:
 				return generatePurchasingActionAndErrorResult(
 					PurchasingAction.WaitingForManualAction,
@@ -270,8 +279,15 @@ export function convertNewPurchasingActionAndError(
 			break;
 		case PurchasingAction.SetRefundRequestedRequested:
 			switch (newState) {
+				// Chain reports `Disputed` — that IS the success state for
+				// `SetRefundRequested`. The buyer's refund request landed and
+				// the contract is now disputed. Match the Initiated branch
+				// above (line 250) which already returns WaitingForExternalAction.
+				// Previously this returned SetRefundRequestedRequested,
+				// which is a self-loop (the row sits in the same state until
+				// something else flips it manually).
 				case OnChainState.Disputed:
-					return generatePurchasingActionAndErrorResult(PurchasingAction.SetRefundRequestedRequested);
+					return generatePurchasingActionAndErrorResult(PurchasingAction.WaitingForExternalAction);
 				case OnChainState.DisputedWithdrawn:
 					return generatePurchasingActionAndErrorResult(
 						PurchasingAction.WaitingForManualAction,
@@ -560,6 +576,13 @@ export function convertNewPurchasingActionAndError(
 			}
 			break;
 	}
+	// Runtime safety net for un-handled (currentAction, newState) combinations.
+	// Today the inner switches are not exhaustive over OnChainState — adding
+	// `assertNever(newState)` would surface compile-time errors for those
+	// holes (good in principle) but only after exhaustive handling lands
+	// across every currentAction case (~100 LOC each). Tracked as follow-up.
+	// Until then, this throw catches additions of new OnChainState variants
+	// at runtime via the integration tests + manual recovery flow.
 	throw new Error(`Invalid state transition for ${currentAction} and ${newState}`);
 }
 
@@ -943,5 +966,12 @@ export function convertNewPaymentActionAndError(
 			}
 			break;
 	}
+	// Runtime safety net for un-handled (currentAction, newState) combinations.
+	// Today the inner switches are not exhaustive over OnChainState — adding
+	// `assertNever(newState)` would surface compile-time errors for those
+	// holes (good in principle) but only after exhaustive handling lands
+	// across every currentAction case (~100 LOC each). Tracked as follow-up.
+	// Until then, this throw catches additions of new OnChainState variants
+	// at runtime via the integration tests + manual recovery flow.
 	throw new Error(`Invalid state transition for ${currentAction} and ${newState}`);
 }

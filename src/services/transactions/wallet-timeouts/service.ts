@@ -201,7 +201,7 @@ export async function updateWalletTransactionHash() {
 							}
 						}
 					},
-					{ timeout: 30_000 },
+					{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
 				),
 			{ label: 'wallet-timeouts-0' },
 		);
@@ -349,7 +349,7 @@ export async function updateWalletTransactionHash() {
 							}
 						}
 					},
-					{ timeout: 30_000 },
+					{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
 				),
 			{ label: 'wallet-timeouts-1' },
 		);
@@ -512,7 +512,7 @@ export async function updateWalletTransactionHash() {
 							}
 						}
 					},
-					{ timeout: 30_000 },
+					{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
 				),
 			{ label: 'wallet-timeouts-2' },
 		);
@@ -560,6 +560,22 @@ export async function updateWalletTransactionHash() {
 								{ lastCheckedAt: null },
 							],
 						},
+						// lockedAt sub-OR:
+						//  - `lockedAt < timeout`: standard stale-lock orphan.
+						//  - `lockedAt: null`: corrupt half-state — wallet still
+						//    references a PendingTransaction but the lock was
+						//    cleared (e.g., by a partial revert mid-flow). We
+						//    sweep this so the dangling FK is cleaned up. The
+						//    `lastCheckedAt` outer filter above already excludes
+						//    fresh transactions, so this only matches when the
+						//    referenced Tx is genuinely stale.
+						//    Narrow false-positive: a transaction with
+						//    `lastCheckedAt: null` (legacy seed bypass) on a
+						//    wallet whose lock was just cleared would be swept
+						//    even though the Tx may still be in flight. Accepted
+						//    risk — the alternative (skipping the null branch)
+						//    leaves corrupt half-states stranded indefinitely,
+						//    which is worse for operators.
 						OR: [
 							{
 								lockedAt: {
@@ -671,8 +687,17 @@ export async function updateWalletTransactionHash() {
 										where: { id: wallet.PendingTransaction.id },
 										data: { lastCheckedAt: new Date() },
 									});
-								} catch {
-									// best-effort throttle
+								} catch (bumpError) {
+									// Best-effort throttle; if this consistently fails (DB
+									// outage, row deleted concurrently) the wallet-timeouts
+									// scheduler hot-loops the same row every tick. Log at
+									// warn so operators see the cause instead of a silent
+									// loop.
+									logger.warn('wallet-timeouts: failed to bump lastCheckedAt on intendedTxHash candidate', {
+										transactionId: wallet.PendingTransaction.id,
+										walletId: wallet.id,
+										error: bumpError instanceof Error ? bumpError.message : String(bumpError),
+									});
 								}
 							}
 							return;

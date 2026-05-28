@@ -20,6 +20,7 @@ let blockchainStateTransitionDuration: Histogram | null = null;
 let blockchainJourneyDuration: Histogram | null = null;
 let blockchainStateTransitionCounter: Counter | null = null;
 let walletLowBalanceAlertCounter: Counter | null = null;
+let v2CollateralPrepHashDivergenceCounter: Counter | null = null;
 
 const getBusinessEndpointErrorCounter = (): Counter => {
 	if (!businessEndpointErrorCounter) {
@@ -95,6 +96,16 @@ const getWalletLowBalanceAlertCounter = (): Counter => {
 		});
 	}
 	return walletLowBalanceAlertCounter;
+};
+
+const getV2CollateralPrepHashDivergenceCounter = (): Counter => {
+	if (!v2CollateralPrepHashDivergenceCounter) {
+		v2CollateralPrepHashDivergenceCounter = getMeter().createCounter('v2_collateral_prep_hash_divergence_total', {
+			description:
+				'V2 collateral prep: count of submits where the node-returned txHash diverged from our deterministically-computed intendedTxHash. Non-zero values indicate a hash-computation mismatch between the offline build and the live mesh/cardano-node — operators should investigate.',
+		});
+	}
+	return v2CollateralPrepHashDivergenceCounter;
 };
 
 // Business Endpoint Types
@@ -375,4 +386,11 @@ export const recordBlockchainJourney = (
 export const recordWalletLowBalanceAlert = (attributes: Record<string, string | number> = {}) => {
 	const safeAttrs = filterToAllowlist(attributes, WALLET_LOW_BALANCE_METRIC_ATTRIBUTE_KEYS);
 	getWalletLowBalanceAlertCounter().add(1, safeAttrs);
+};
+
+export const recordV2CollateralPrepHashDivergence = (attributes: Record<string, string | number> = {}) => {
+	// Keep attribute cardinality bounded — wallet/source ids OK, raw hashes
+	// must NOT be passed in as label values (high-cardinality → metric storage
+	// explosion). Use the logger.error call site for the full hash detail.
+	getV2CollateralPrepHashDivergenceCounter().add(1, attributes);
 };

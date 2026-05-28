@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { generateBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { generateBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import { SmartContractState } from '@/utils/generator/contract-generator';
 import { logger } from '@masumi/payment-core/logger';
 import { serializeAddressObj } from '@meshsdk/core';

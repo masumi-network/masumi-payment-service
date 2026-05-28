@@ -32,6 +32,7 @@
 // MeshTxBuilder, or migrate off mesh-sdk for tx building.
 
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
+import { Mutex } from 'async-mutex';
 // `@meshsdk/core` re-exports `@meshsdk/common`'s symbols (`export * from
 // '@meshsdk/common'`), so we can import from core to avoid adding
 // `@meshsdk/common` as a direct workspace dep. The arrays we mutate ARE the
@@ -63,8 +64,110 @@ type CachedSync = {
 // the per-key tracking only fixes the "did we sync at all" question; if two
 // networks alternate, the arrays are last-writer-wins. Single-network
 // deployments are unaffected.
+//
+// DEPLOYMENT REQUIREMENT (multi-network):
+// Because the mutated arrays are process-global, single-process deployments
+// that serve more than one Cardano network (mainnet + preprod) have a race
+// window between a sync for network A and a tx build for network B: A's
+// sync can overwrite the cost-model arrays mid-build for B, corrupting
+// B's `script_data_hash` and producing intermittent `PPViewHashesDontMatch`
+// errors at submission. Mitigations, in order of preference:
+//
+//  1. Run mainnet and preprod in separate processes (recommended for
+//     production). Process-global is then naturally per-network and no
+//     race exists. Most operational setups already deploy this way.
+//  2. If a single-process multi-network deployment is required, the
+//     operator must accept that under contention `PPViewHashesDontMatch`
+//     submissions will retry via the standard retry path (a corrupted
+//     build re-queues and re-syncs on the next tick). This is correct
+//     but wastes fees and adds latency under sustained cross-network
+//     load.
+//
+// Same-paymentSource serialization: a per-rpcApiKey mutex (see
+// `withMeshCostModelLock` below) wraps sync + build + sign so two builds
+// using the SAME payment-source's cost-model arrays cannot interleave.
+// This closes the race between (a) call N+1's sync reading
+// `lastSyncByKey` as cached and skipping the patch, while call N is still
+// in the middle of its `txBuilder.complete()` that captured the array
+// reference; and (b) any direct mutation of the global lists between
+// build and sign. Cross-paymentSource (different rpcApiKey) builds remain
+// parallel and are safe IFF they target the same network — which is the
+// supported single-process deployment shape (see DEPLOYMENT REQUIREMENT
+// above). Cross-NETWORK single-process is still last-writer-wins on the
+// globals; redeploy with one process per network for that case.
 const inFlightByKey = new Map<string, Promise<unknown>>();
 const lastSyncByKey = new Map<string, CachedSync>();
+
+// Per-rpcApiKey async mutex. `Mutex` from `async-mutex` is FIFO and
+// reentrant-unsafe (don't call `withMeshCostModelLock` again inside its
+// own closure for the same key — it will deadlock). rpcApiKey is unique
+// per PaymentSource, so this is equivalent to per-paymentSourceId
+// keying. Storing the Mutex objects on the module is intentional: same
+// process, same lifetime as the cost-model globals they protect.
+const buildMutexByKey = new Map<string, Mutex>();
+function getBuildMutex(blockfrostApiKey: string): Mutex {
+	let mutex = buildMutexByKey.get(blockfrostApiKey);
+	if (mutex == null) {
+		mutex = new Mutex();
+		buildMutexByKey.set(blockfrostApiKey, mutex);
+	}
+	return mutex;
+}
+
+/**
+ * Serialize cost-model sync + tx build + sign for a given payment source
+ * (keyed by Blockfrost API key, which is unique per PaymentSource).
+ *
+ * Callers MUST wrap the WHOLE block that depends on the synced cost
+ * models — including `syncMeshCostModelsFromChain(...)` AND the
+ * subsequent `txBuilder.complete()` / `wallet.signTx(...)`. Releasing
+ * the mutex any earlier reintroduces the race window.
+ *
+ * Holding the mutex through `signTx` is sufficient because mesh's
+ * internal hashScriptData captures the cost-model arrays at
+ * `complete()` time; once the tx is signed, the script_data_hash is
+ * baked into the signed body and subsequent global mutations do not
+ * affect it. `submitTx` is OUTSIDE the critical section.
+ */
+export async function withMeshCostModelLock<T>(blockfrostApiKey: string, operation: () => Promise<T>): Promise<T> {
+	return await getBuildMutex(blockfrostApiKey).runExclusive(operation);
+}
+
+/**
+ * Acquire-and-return-release variant of {@link withMeshCostModelLock}.
+ *
+ * Use this when the build / sign critical section spans multiple
+ * try/catch blocks that don't fit cleanly inside a single closure. The
+ * caller is responsible for ALWAYS calling the returned `release()`
+ * function (use `try/finally`). The release is idempotent — calling it
+ * twice is a no-op — but forgetting to call it strands the mutex
+ * indefinitely.
+ *
+ * Prefer `withMeshCostModelLock(...)` (closure form) where the critical
+ * section can be expressed as one async function — it cannot leak the
+ * lock on error.
+ *
+ * Example:
+ *
+ *   const release = await acquireMeshCostModelLock(apiKey);
+ *   try {
+ *     const unsignedTx = await generateMasumiSmartContract...(...);
+ *     const signedTx = await wallet.signTx(unsignedTx);
+ *     // ... post-sign work, intent recording, etc. — release first
+ *   } finally {
+ *     release();
+ *   }
+ *   // submitTx OUTSIDE the lock
+ */
+export async function acquireMeshCostModelLock(blockfrostApiKey: string): Promise<() => void> {
+	const release = await getBuildMutex(blockfrostApiKey).acquire();
+	let released = false;
+	return () => {
+		if (released) return;
+		released = true;
+		release();
+	};
+}
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 

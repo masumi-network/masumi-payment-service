@@ -31,6 +31,53 @@ import {
 import { createDatumFromBlockchainIdentifierV2 } from '@masumi/payment-source-v2';
 import { isDefinitiveNodeRejection } from '../../submit-error-classifier';
 import { WALLET_SPLITTER_LOVELACE } from '../../../builders/batch-helpers';
+import { syncMeshCostModelsFromChainV2 } from '../../../utils/mesh-cost-model-sync';
+import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
+
+/**
+ * --- V2 batch-payments: defensive submit invariant ---
+ *
+ * Money-safety overrides ergonomic state recovery. This service handles
+ * BUYER funding (FundsLockingRequested → FundsLocked) — submitting the same
+ * lock twice means double-paying the seller. So the invariant here is:
+ *
+ *   On ANY ambiguous submitTx outcome (transport error, 5xx, timeout, etc.),
+ *   we MUST NOT regress request state back to FundsLockingRequested.
+ *   Worst case: the tx already landed on chain. A second attempt would lock
+ *   the same buyer's funds twice into the contract.
+ *
+ * The framework that enforces this:
+ *   1. Compute deterministic `intendedTxHash = resolveTxHash(signedTx)`
+ *      from the signed body.
+ *   2. Persist `intendedTxHash` + `invalidHereafterSlot` to the shared
+ *      Transaction row BEFORE calling `submitTx`. If this fails we abort
+ *      pre-submit and revert is safe (the tx body has not been broadcast).
+ *   3. Call `submitTx`. On throw:
+ *        - `isDefinitiveNodeRejection(err) == true`  → safe to revert DB.
+ *          The node has demonstrably refused (bad UTxO, signature error,
+ *          duplicate-tx rejection, etc.); the tx cannot land on chain.
+ *        - `isDefinitiveNodeRejection(err) == false` → AMBIGUOUS. Leave the
+ *          Transaction Pending with `intendedTxHash` set. The
+ *          `funding-reconciliation` cron resolves by querying the chain for
+ *          `intendedTxHash`; if not found after the tx's invalid_hereafter
+ *          slot has demonstrably passed, the ledger CAN NEVER accept the
+ *          signed body and the row is marked RolledBack — only then is a
+ *          retry safe.
+ *   4. On node-returned txHash divergence from `intendedTxHash`, treat as
+ *      ambiguous and route through reconciliation rather than trusting
+ *      either hash.
+ *
+ * This invariant is the reason every funding-side `submitTx` is wrapped in
+ * the structured `BatchPairingOutcome` discriminated union (see below). DO
+ * NOT collapse the outcome union back to a boolean; the `submit-ambiguous`
+ * arm is a distinct, mandatory state.
+ *
+ * Other V2 services (collection, refund, etc.) that spend FROM the contract
+ * (rather than lock into it) have different trade-offs: a missed collection
+ * costs the seller a retry, not double-spend. They currently DO rollback on
+ * ambiguous submit. Extending this defensive pattern to those services is
+ * tracked as merge-gate item #5.
+ */
 
 type PaymentSourceWithWallets = Prisma.PaymentSourceGetPayload<{
 	include: {
@@ -320,7 +367,7 @@ async function executeSpecificBatchPayment(
 					}
 					return resolvedSharedTxId;
 				},
-				{ timeout: 30_000 },
+				{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
 			),
 		{ label: 'batch-payments-v2-presubmit' },
 	);
@@ -336,10 +383,27 @@ async function executeSpecificBatchPayment(
 	unsignedTx.txBuilder.invalidBefore(invalidBefore);
 	unsignedTx.txBuilder.invalidHereafter(invalidAfter);
 
-	const completeTx = await unsignedTx.build();
-	logger.info('Batching payments, complete tx built');
-	const signedTx = await wallet.signTx(completeTx);
-	logger.info('Batching payments, tx signed');
+	const rpcApiKey = paymentContract.PaymentSourceConfig.rpcProviderApiKey;
+	// Wrap cost-model sync + build + sign in the per-paymentSource mutex so
+	// two concurrent batch builds for the same payment source cannot
+	// interleave their mutations of mesh's process-global
+	// DEFAULT_V*_COST_MODEL_LIST arrays. Without this, a second build that
+	// hits the 5-minute sync cache and skips the patch can call
+	// `unsignedTx.build()` while the FIRST build is mid-flight (between
+	// its sync and its `.build()`), and the script_data_hash captured by
+	// mesh's hashScriptData drifts. See `src/utils/mesh-cost-model-sync`
+	// for the full design note. The mutex is released as soon as `signTx`
+	// returns — at that point the hash is baked into the signed body and
+	// later global mutations cannot affect it. `submitTx` is outside the
+	// critical section.
+	const { completeTx, signedTx } = await withMeshCostModelLock(rpcApiKey, async () => {
+		await syncMeshCostModelsFromChainV2(rpcApiKey);
+		const completeTx = await unsignedTx.build();
+		logger.info('Batching payments, complete tx built');
+		const signedTx = await wallet.signTx(completeTx);
+		logger.info('Batching payments, tx signed');
+		return { completeTx, signedTx };
+	});
 
 	const requestIds = batchedRequests.map((b) => b.paymentRequest.id);
 

@@ -3,6 +3,7 @@ import { z } from '@masumi/payment-core/zod';
 import { HotWalletType, PaymentAction, PaymentSourceType, PricingType } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
+import { HttpExistsError } from '@masumi/payment-core/http-exists-error';
 import { createId } from '@paralleldrive/cuid2';
 import { MeshWallet, resolvePaymentKeyHash } from '@meshsdk/core';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
@@ -12,10 +13,7 @@ import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { generateSHA256Hash } from '@/utils/crypto';
 import stringify from 'canonical-json';
 import { fetchAssetInWalletAndMetadata } from '@/services/integrations/asset-metadata';
-import {
-	decodeBlockchainIdentifier,
-	generateBlockchainIdentifier,
-} from '@/utils/generator/blockchain-identifier-generator';
+import { decodeBlockchainIdentifier, generateBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import { buildSignedBlockchainIdentifierPayload } from '@/utils/generator/blockchain-identifier-payload';
 import { validateHexString } from '@/utils/validator/hex';
 import { lovelaceToAdaNumberSafe } from '@/utils/lovelace';
@@ -280,6 +278,92 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 			input.identifierFromPurchaser,
 			isV2 ? specifiedPaymentContract.smartContractAddress : null,
 		);
+
+		// Idempotency: PaymentRequest.blockchainIdentifier is @unique in the
+		// schema, so duplicate POSTs with identical inputs would otherwise
+		// surface a raw Prisma P2002 as an opaque 500. Mirror the purchase
+		// route's HttpExistsError pattern (purchases/index.ts:88-194): if a
+		// row with this exact blockchainIdentifier already exists, return it
+		// with HttpExistsError so the caller can pick up the in-flight
+		// payment rather than crash on retry.
+		const existingPaymentRequest = await prisma.paymentRequest.findUnique({
+			where: {
+				blockchainIdentifier: compressedEncodedBlockchainIdentifier,
+				PaymentSource: { deletedAt: null, network: input.network },
+			},
+			include: {
+				BuyerWallet: { select: { id: true, walletVkey: true } },
+				SmartContractWallet: {
+					where: { deletedAt: null },
+					select: { id: true, walletVkey: true, walletAddress: true },
+				},
+				RequestedFunds: { select: { id: true, amount: true, unit: true } },
+				NextAction: {
+					select: {
+						id: true,
+						requestedAction: true,
+						errorType: true,
+						errorNote: true,
+						resultHash: true,
+					},
+				},
+				PaymentSource: {
+					select: {
+						id: true,
+						network: true,
+						paymentSourceType: true,
+						smartContractAddress: true,
+						policyId: true,
+					},
+				},
+				CurrentTransaction: {
+					select: {
+						id: true,
+						createdAt: true,
+						updatedAt: true,
+						fees: true,
+						blockHeight: true,
+						blockTime: true,
+						txHash: true,
+						status: true,
+						previousOnChainState: true,
+						newOnChainState: true,
+						confirmations: true,
+					},
+				},
+				WithdrawnForSeller: { select: { id: true, amount: true, unit: true } },
+				WithdrawnForBuyer: { select: { id: true, amount: true, unit: true } },
+			},
+		});
+		if (existingPaymentRequest != null) {
+			const decoded = decodeBlockchainIdentifier(existingPaymentRequest.blockchainIdentifier);
+			// Spread + transformer overrides produce a JSON-safe shape (BigInt
+			// fields converted to strings). HttpExistsError's `allowedObject`
+			// type is too narrow to express the structural-merge result, so
+			// cast to `any` (same pattern used by the purchase route's
+			// HttpExistsError call at purchases/index.ts:132).
+			const serialized = {
+				...existingPaymentRequest,
+				...transformPaymentGetTimestamps(existingPaymentRequest),
+				...transformPaymentGetAmounts(existingPaymentRequest),
+				// safe: response schema is z.number() (ADA). lovelaceToAdaNumberSafe
+				// throws if the lovelace value exceeds Number.MAX_SAFE_INTEGER.
+				totalBuyerCardanoFees: lovelaceToAdaNumberSafe(existingPaymentRequest.totalBuyerCardanoFees),
+				totalSellerCardanoFees: lovelaceToAdaNumberSafe(existingPaymentRequest.totalSellerCardanoFees),
+				agentIdentifier: decoded?.agentIdentifier ?? null,
+				CurrentTransaction: existingPaymentRequest.CurrentTransaction
+					? {
+							...existingPaymentRequest.CurrentTransaction,
+							fees: existingPaymentRequest.CurrentTransaction.fees?.toString() ?? null,
+						}
+					: null,
+			};
+			// `as never` to bypass HttpExistsError's narrow `allowedObject`
+			// constraint — the merged shape is JSON-safe after the transformer
+			// overrides above, but TS can't structurally prove it. The
+			// purchase route uses the same pragmatic shape.
+			throw new HttpExistsError('Payment exists', existingPaymentRequest.id, serialized as never);
+		}
 
 		const payment = await prisma.paymentRequest.create({
 			data: {

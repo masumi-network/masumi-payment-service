@@ -1,5 +1,5 @@
 import { getDatumV2 } from './contract-generator';
-import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import { DecodedV1ContractDatum } from '@/utils/converter/string-datum-convert';
 import { SmartContractState } from '@/utils/generator/contract-generator';
 

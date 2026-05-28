@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { Eye, EyeOff } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { patchPaymentSourceExtended, postWallet, getUtxos } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
@@ -55,6 +56,13 @@ export function AddWalletDialog({ open, onClose, onSuccess }: AddWalletDialogPro
   const [type, setType] = useState<'Purchasing' | 'Selling'>('Purchasing');
   const [isLoading, setIsLoading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  // Mnemonic textarea defaults to masked-by-CSS so a typed/pasted seed
+  // phrase isn't visible to over-shoulder readers, screen-share, or
+  // screenshots while the dialog is open. User explicitly reveals via
+  // the eye toggle. `<textarea>` has no native `type="password"`, so we
+  // apply `-webkit-text-security: disc` / `text-security: disc` via an
+  // inline style when hidden.
+  const [showMnemonic, setShowMnemonic] = useState(false);
   const [error, setError] = useState<string>('');
   const [paymentSourceId, setPaymentSourceId] = useState<string | null>(null);
   const { apiClient, network, selectedPaymentSourceId } = useAppContext();
@@ -306,12 +314,33 @@ export function AddWalletDialog({ open, onClose, onSuccess }: AddWalletDialogPro
                 {isGenerating ? <Spinner size={16} /> : 'Generate'}
               </Button>
             </div>
-            <Textarea
-              {...register('mnemonic')}
-              placeholder="Enter your mnemonic phrase"
-              required
-              className="min-h-[100px] font-mono"
-            />
+            <div className="relative">
+              <Textarea
+                {...register('mnemonic')}
+                placeholder="Enter your mnemonic phrase"
+                required
+                className="min-h-[100px] font-mono pr-10"
+                spellCheck={false}
+                autoComplete="off"
+                style={
+                  showMnemonic
+                    ? undefined
+                    : ({
+                        WebkitTextSecurity: 'disc',
+                        textSecurity: 'disc',
+                      } as React.CSSProperties)
+                }
+              />
+              <button
+                type="button"
+                onClick={() => setShowMnemonic((v) => !v)}
+                className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
+                aria-label={showMnemonic ? 'Hide mnemonic' : 'Show mnemonic'}
+                tabIndex={-1}
+              >
+                {showMnemonic ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
             {errors.mnemonic && (
               <p className="text-xs text-destructive mt-1">{errors.mnemonic.message}</p>
             )}

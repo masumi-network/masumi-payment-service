@@ -6,7 +6,7 @@ import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/p
 import createHttpError from 'http-errors';
 import { queryPaymentsSchemaOutput } from '@/routes/api/payments';
 import { transformPaymentGetAmounts, transformPaymentGetTimestamps } from '@/utils/shared/transformers';
-import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import { lovelaceToAdaNumberSafe } from '@/utils/lovelace';
 import { ez } from 'express-zod-api';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';

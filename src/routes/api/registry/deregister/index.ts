@@ -20,11 +20,16 @@ export const unregisterAgentSchemaInput = z.object({
 		.string()
 		.min(57)
 		.max(250)
+		// PolicyId (56 hex) + assetName (1..64 hex). Reject non-hex up front so
+		// downstream `extractPolicyId` / Blockfrost calls cannot be fed garbage.
+		.regex(/^[0-9a-fA-F]+$/, 'agentIdentifier must be a hex string (policyId + assetName)')
 		.describe('The identifier of the registration (asset) to be deregistered'),
 	network: z.nativeEnum(Network).describe('The network the registration was made on'),
 	smartContractAddress: z
 		.string()
-		.max(250)
+		.min(58)
+		.max(120)
+		.regex(/^(addr1|addr_test1)[0-9a-z]+$/, 'smartContractAddress must be a bech32 Cardano address')
 		.optional()
 		.describe('The smart contract address of the payment contract to which the registration belongs'),
 });
@@ -115,6 +120,12 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 		});
 		if (registryRequest == null) {
 			throw createHttpError(404, 'Registration not found');
+		}
+		// Tenant scope: the requesting key must own the row, or be admin.
+		// Legacy rows (created before the requestedById column existed) have
+		// NULL and are admin-only.
+		if (!ctx.canAdmin && (registryRequest.requestedById == null || registryRequest.requestedById !== ctx.id)) {
+			throw createHttpError(403, 'You are not authorized to deregister this agent');
 		}
 		const result = await prisma.registryRequest.update({
 			where: {

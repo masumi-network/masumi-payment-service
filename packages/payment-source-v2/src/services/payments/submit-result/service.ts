@@ -7,7 +7,8 @@ import {
 	TransactionStatus,
 } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
-import { deserializeDatum, UTxO } from '@meshsdk/core';
+import { deserializeDatum, resolveTxHash, UTxO } from '@meshsdk/core';
+import { isDefinitiveNodeRejection } from '../../submit-error-classifier';
 import type { LanguageVersion } from '@meshsdk/core';
 import { asV2Provider } from '../../provider-cast';
 import type { BlockfrostProvider } from '@/services/shared';
@@ -17,6 +18,7 @@ import { convertNetwork } from '@/utils/converter/network-convert';
 import { DecodedV1ContractDatum, newCooldownTime } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
 import { retryOnSerializationConflict } from '@/utils/db/retry';
+import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { sortAndLimitUtxos } from '@/utils/utxo';
 import { delayErrorResolver } from 'advanced-retry';
@@ -332,7 +334,12 @@ async function processSinglePaymentRequest(
 		// point the seller cannot submit anymore. Topup won't help; park for
 		// manual intervention.
 		const submitDeadlineMs = Number(request.submitResultTime);
-		if (Number.isFinite(submitDeadlineMs) && Date.now() > submitDeadlineMs) {
+		// Require a positive finite timestamp; treat 0/negative as a
+		// data-integrity bug (deadline never set) rather than "passed".
+		// Without the `> 0` guard, `Date.now() > 0` is always true and a
+		// row with an uninitialised deadline silently falls into manual
+		// intervention.
+		if (Number.isFinite(submitDeadlineMs) && submitDeadlineMs > 0 && Date.now() > submitDeadlineMs) {
 			throw new Error('Wallet empty and on-chain submitResultTime deadline passed; manual intervention required');
 		}
 		// Deadline still ahead — defer to wait for funder cron topup.
@@ -394,21 +401,25 @@ async function processSinglePaymentRequest(
 
 	const limitedUtxos = sortAndLimitUtxos(utxos, 8000000);
 
-	const unsignedTx = await generateMasumiSmartContractInteractionTransactionAutomaticFees(
-		'SubmitResult',
-		blockchainProvider,
-		network,
-		script,
-		address,
-		utxo,
-		limitedUtxos[0],
-		limitedUtxos,
-		datum.value,
-		invalidBefore,
-		invalidAfter,
+	const unsignedTx = await withMeshCostModelLock(
 		paymentContract.PaymentSourceConfig.rpcProviderApiKey,
-		// V2 single-item splitter — see authorize-refund/service.ts for rationale.
-		WALLET_SPLITTER_LOVELACE,
+		async () =>
+			await generateMasumiSmartContractInteractionTransactionAutomaticFees(
+				'SubmitResult',
+				blockchainProvider,
+				network,
+				script,
+				address,
+				utxo,
+				limitedUtxos[0],
+				limitedUtxos,
+				datum.value,
+				invalidBefore,
+				invalidAfter,
+				paymentContract.PaymentSourceConfig.rpcProviderApiKey,
+				// V2 single-item splitter — see authorize-refund/service.ts for rationale.
+				WALLET_SPLITTER_LOVELACE,
+			),
 	);
 
 	const signedTx = await wallet.signTx(unsignedTx);
@@ -765,17 +776,21 @@ async function processWalletBatch(
 	try {
 		// See note on cross-mesh-version type alias in
 		// packages/payment-source-v2/src/services/registry/deregister/service.ts.
-		unsignedTx = await generateMasumiSmartContractBatchInteractionTransactionAutomaticFees(
-			asV2Provider(blockchainProvider),
-			network,
-			script,
-			address,
-			collateralUtxo,
-			limitedFilteredUtxos,
-			items,
-			composed.invalidBefore,
-			composed.invalidAfter,
+		unsignedTx = await withMeshCostModelLock(
 			paymentContract.PaymentSourceConfig.rpcProviderApiKey,
+			async () =>
+				await generateMasumiSmartContractBatchInteractionTransactionAutomaticFees(
+					asV2Provider(blockchainProvider),
+					network,
+					script,
+					address,
+					collateralUtxo,
+					limitedFilteredUtxos,
+					items,
+					composed.invalidBefore,
+					composed.invalidAfter,
+					paymentContract.PaymentSourceConfig.rpcProviderApiKey,
+				),
 		);
 		assertTxSizeWithinLimit(unsignedTx, 'v2-submit-result-batch');
 	} catch (batchError) {
@@ -864,7 +879,7 @@ async function processWalletBatch(
 						}
 						return sharedTx.id;
 					},
-					{ timeout: 30_000 },
+					{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
 				),
 			{ label: 'submit-result-batch-tx' },
 		);
@@ -874,11 +889,71 @@ async function processWalletBatch(
 		return;
 	}
 
+	// Defensive: record `intendedTxHash` + `invalidHereafterSlot` on the
+	// shared Transaction row BEFORE broadcast. If submit later throws
+	// AMBIGUOUSLY (transport error, 5xx, timeout — unknown chain outcome)
+	// we leave the row Pending; funding-reconciliation resolves it by
+	// querying the chain for `intendedTxHash` once `invalidHereafterSlot`
+	// has passed. Without the hash recorded, reconciliation cannot resolve
+	// and the Pending row sits until wallet-timeouts forces a manual sweep.
+	// See batch-payments service header for the full invariant.
+	const intendedTxHash = resolveTxHash(signedTx);
+	const invalidHereafterSlot = composed.invalidAfter;
+	let recordIntentFailed = false;
+	try {
+		await retryOnSerializationConflict(
+			() =>
+				prisma.transaction.update({
+					where: { id: sharedTxId },
+					data: {
+						intendedTxHash,
+						invalidHereafterSlot: BigInt(invalidHereafterSlot),
+						lastCheckedAt: new Date(),
+					},
+				}),
+			{ label: 'submit-result-batch-record-intended' },
+		);
+	} catch (recordError) {
+		logger.error('V2 submit-result batch could not record intendedTxHash; will rollback pre-submit DB', {
+			sharedTxId,
+			intendedTxHash,
+			error: recordError instanceof Error ? recordError.message : recordError,
+		});
+		recordIntentFailed = true;
+	}
+
 	let newTxHash: string;
 	try {
+		if (recordIntentFailed) {
+			// Skip broadcast and go to rollback. We have NOT submitted, so DB
+			// rollback is safe and the rollback branch below handles it.
+			throw new Error('PRE_SUBMIT_RECORD_INTENT_FAILED');
+		}
 		newTxHash = await meshWallet.submitTx(signedTx);
 	} catch (submitError) {
-		logger.warn('V2 submit-result batch submit failed; rolling back DB and retrying as single items', {
+		// Classify: definitive node rejection → safe to rollback DB state.
+		// Ambiguous (transport error, network glitch, 5xx) → tx body may be
+		// on chain. Leave the shared Transaction Pending with intendedTxHash
+		// set; funding-reconciliation resolves once chain reports
+		// definitively (found → promote, not-found AND past
+		// invalidHereafterSlot → RolledBack).
+		// recordIntentFailed forces the rollback branch (we never broadcast).
+		const definitive = recordIntentFailed || isDefinitiveNodeRejection(submitError);
+		if (!definitive) {
+			logger.warn('V2 submit-result batch submit AMBIGUOUS; leaving Pending for reconciliation', {
+				sharedTxId,
+				intendedTxHash,
+				invalidHereafterSlot,
+				error:
+					submitError instanceof Error
+						? { message: submitError.message, stack: submitError.stack, name: submitError.name }
+						: submitError,
+			});
+			// Wallet stays locked; PendingTransaction stays attached. The
+			// funding-reconciliation worker handles the row from here.
+			return;
+		}
+		logger.warn('V2 submit-result batch submit definitively rejected; rolling back DB and retrying as single items', {
 			error:
 				submitError instanceof Error
 					? { message: submitError.message, stack: submitError.stack, name: submitError.name }
@@ -964,7 +1039,7 @@ async function processWalletBatch(
 							}
 						}
 					},
-					{ timeout: 30_000 },
+					{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
 				),
 			{ label: 'submit-result-batch-tx' },
 		);
@@ -1005,7 +1080,7 @@ async function processWalletBatch(
 							data: { txHash: newTxHash },
 						});
 					},
-					{ timeout: 30_000 },
+					{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
 				),
 			{ label: 'submit-result-batch-tx' },
 		);

@@ -1,12 +1,13 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { Plus, Trash2, Edit2, Wand2, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { Plus, Trash2, Edit2, Wand2, AlertTriangle, ShieldCheck, Eye, EyeOff } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useEffect, useMemo } from 'react';
 import { AddPaymentSourceDialog } from '@/components/payment-sources/AddPaymentSourceDialog';
 import { PaymentSourceDialog } from '@/components/payment-sources/PaymentSourceDialog';
 import Link from 'next/link';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
   deletePaymentSourceExtended,
@@ -63,6 +64,11 @@ function UpdatePaymentSourceDialog({
 }: UpdatePaymentSourceDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [apiKey, setApiKey] = useState(currentApiKey);
+  // Blockfrost API key is a long-lived secret. Mask by default; user reveals
+  // explicitly via the eye toggle. Without this the existing key renders in
+  // plaintext as the dialog opens — visible to screen-share, screenshots,
+  // and over-the-shoulder readers.
+  const [showApiKey, setShowApiKey] = useState(false);
   const { apiClient } = useAppContext();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -112,14 +118,28 @@ function UpdatePaymentSourceDialog({
             >
               Blockfrost API Key
             </label>
-            <Input
-              id="apiKey"
-              type="text"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder="Enter Blockfrost API key"
-              required
-            />
+            <div className="relative">
+              <Input
+                id="apiKey"
+                type={showApiKey ? 'text' : 'password'}
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="Enter Blockfrost API key"
+                autoComplete="off"
+                spellCheck={false}
+                required
+                className="pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowApiKey((v) => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                aria-label={showApiKey ? 'Hide API key' : 'Show API key'}
+                tabIndex={-1}
+              >
+                {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
           </div>
 
           <div className="flex justify-end gap-3">
@@ -150,6 +170,7 @@ export default function PaymentSourcesPage() {
   const { apiClient, selectedPaymentSourceId, network, setSelectedPaymentSourceId } =
     useAppContext();
   const { paymentSources: ps, isLoading, refetch } = usePaymentSourceExtendedAll();
+  const queryClient = useQueryClient();
 
   const paymentSources = useMemo(() => ps.filter((p) => p.network === network), [ps, network]);
 
@@ -201,6 +222,16 @@ export default function PaymentSourcesPage() {
         onSuccess: async () => {
           toast.success('Payment source deleted successfully');
           refetch();
+          // Dashboard cards keyed by selectedPaymentSourceId continue
+          // rendering against caches that no longer match a live source.
+          // Invalidate sibling queries so wallets / transactions / agents
+          // refetch against whatever source the user selects next instead
+          // of showing rows from the deleted one until the next ~25s tick.
+          queryClient.invalidateQueries({ queryKey: ['payment-sources-all'] });
+          queryClient.invalidateQueries({ queryKey: ['wallets'] });
+          queryClient.invalidateQueries({ queryKey: ['transactions'] });
+          queryClient.invalidateQueries({ queryKey: ['agents'] });
+          queryClient.invalidateQueries({ queryKey: ['payment-source-extended'] });
         },
         onError: (error: any) => {
           console.error('Error deleting payment source:', error);

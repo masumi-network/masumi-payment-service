@@ -279,7 +279,15 @@ export default function Transactions() {
         ];
       });
 
-      return [headers, ...rows].map((row) => row.map((field) => `"${field}"`).join(',')).join('\n');
+      // RFC 4180: embed a literal `"` by doubling it, and wrap any field
+      // containing `,`, `"`, `\r`, or `\n` in surrounding quotes. We wrap
+      // every field unconditionally for consistency, so only the `"`
+      // doubling is strictly required here — without it, an agent name
+      // or note containing a quote breaks the CSV (parsers see it as a
+      // field terminator and split that row into extra columns).
+      const escapeCsvField = (value: unknown): string =>
+        `"${String(value ?? '').replace(/"/g, '""')}"`;
+      return [headers, ...rows].map((row) => row.map(escapeCsvField).join(',')).join('\n');
     },
     [selectedPaymentSource?.feeRatePermille, network],
   );

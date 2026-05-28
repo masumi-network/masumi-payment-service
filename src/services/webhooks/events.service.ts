@@ -3,7 +3,7 @@ import { logger } from '@masumi/payment-core/logger';
 import { prisma } from '@masumi/payment-core/db';
 import { WebhookEventType } from '@/generated/prisma/client';
 import type { WebhookPayloadDataByEvent } from '@/types/webhook-payloads';
-import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 
 type PaymentWebhookEvent = 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_ERROR';
 type PurchaseWebhookEvent = 'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR';

@@ -381,7 +381,10 @@ export const getSwapConfirmEndpointGet = adminAuthenticatedEndpointFactory.build
 							walletId: wallet.id,
 							error: unlockError instanceof Error ? unlockError.message : String(unlockError),
 						});
-						throw createHttpError(500, 'State transition succeeded but wallet unlock failed. Please retry.');
+						throw createHttpError(
+							500,
+							'State transition succeeded but wallet unlock failed. The wallet-timeouts sweep will release the lock on its next tick; no client-side retry required (a retry will fail until the lock clears).',
+						);
 					}
 
 					return {
@@ -446,7 +449,10 @@ export const getSwapConfirmEndpointGet = adminAuthenticatedEndpointFactory.build
 							walletId: wallet.id,
 							error: unlockError instanceof Error ? unlockError.message : String(unlockError),
 						});
-						throw createHttpError(500, 'State transition succeeded but wallet unlock failed. Please retry.');
+						throw createHttpError(
+							500,
+							'State transition succeeded but wallet unlock failed. The wallet-timeouts sweep will release the lock on its next tick; no client-side retry required (a retry will fail until the lock clears).',
+						);
 					}
 
 					return {
@@ -492,7 +498,10 @@ export const getSwapConfirmEndpointGet = adminAuthenticatedEndpointFactory.build
 							txHash: input.txHash,
 							error: unlockError instanceof Error ? unlockError.message : String(unlockError),
 						});
-						throw createHttpError(500, 'State transition succeeded but wallet unlock failed. Please retry.');
+						throw createHttpError(
+							500,
+							'State transition succeeded but wallet unlock failed. The wallet-timeouts sweep will release the lock on its next tick; no client-side retry required (a retry will fail until the lock clears).',
+						);
 					}
 				}
 
@@ -546,7 +555,10 @@ export const getSwapConfirmEndpointGet = adminAuthenticatedEndpointFactory.build
 									walletId: wallet.id,
 									error: unlockError instanceof Error ? unlockError.message : String(unlockError),
 								});
-								throw createHttpError(500, 'State transition succeeded but wallet unlock failed. Please retry.');
+								throw createHttpError(
+									500,
+									'State transition succeeded but wallet unlock failed. The wallet-timeouts sweep will release the lock on its next tick; no client-side retry required (a retry will fail until the lock clears).',
+								);
 							}
 							return {
 								status: 'NotFound' as const,

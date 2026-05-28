@@ -21,7 +21,7 @@ import {
 	PREPROD_USDM_UNIT,
 } from '@/utils/invoice/template';
 import { detectInvoiceChanges, getOriginalInvoiceInfo } from '@/utils/invoice/comparison';
-import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
 import { CONFIG } from '@masumi/payment-core/config';
 import Coingecko from '@coingecko/coingecko-typescript';

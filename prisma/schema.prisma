@@ -27,6 +27,7 @@ model ApiKey {
   deletedAt             DateTime?
   PaymentRequest        PaymentRequest[]
   PurchaseRequest       PurchaseRequest[]
+  RegistryRequest       RegistryRequest[]
   RemainingUsageCredits UnitValue[]
   CreatedWebhooks       WebhookEndpoint[]
   WalletScopes          ApiKeyWalletScope[]
@@ -255,6 +256,9 @@ model RegistryRequest {
   registrationStateLastChangedAt DateTime                 @default(now())
   currentTransactionId           String?
   error                          String?
+  // Nullable: legacy rows created before this column existed have NULL.
+  // Deregister/mutate routes treat NULL-owner rows as admin-only.
+  requestedById                  String?
   ExampleOutputs                 ExampleOutput[]
   SupportedPaymentSources        SupportedPaymentSource[]
   Pricing                        AgentPricing             @relation(fields: [agentPricingId], references: [id])
@@ -263,9 +267,11 @@ model RegistryRequest {
   SmartContractWallet            HotWallet                @relation("RegistryRequestMintingWallet", fields: [smartContractWalletId], references: [id])
   RecipientWallet                HotWallet?               @relation("RegistryRequestRecipientWallet", fields: [recipientHotWalletId], references: [id])
   DeregistrationHotWallet        HotWallet?               @relation("RegistryRequestDeregistrationWallet", fields: [deregistrationHotWalletId], references: [id])
+  RequestedBy                    ApiKey?                  @relation(fields: [requestedById], references: [id])
 
   @@index([recipientHotWalletId])
   @@index([deregistrationHotWalletId])
+  @@index([requestedById])
 }
 
 model SupportedPaymentSource {

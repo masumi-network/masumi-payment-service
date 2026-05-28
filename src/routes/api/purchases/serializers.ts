@@ -1,5 +1,5 @@
 import { PurchasingAction, PurchaseErrorType } from '@/generated/prisma/client';
-import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import { lovelaceToAdaNumberSafe } from '@/utils/lovelace';
 import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
 import type { PurchaseListRecord } from './queries';

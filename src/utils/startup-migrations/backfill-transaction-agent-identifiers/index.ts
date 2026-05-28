@@ -1,5 +1,5 @@
 import { prisma } from '@masumi/payment-core/db';
-import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import { logger } from '@masumi/payment-core/logger';
 
 const BATCH = 250;
@@ -74,7 +74,7 @@ export async function backfillTransactionAgentIdentifiers(): Promise<void> {
 					});
 				}
 			},
-			{ timeout: 30_000 },
+			{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
 		);
 		paymentsDone += chunk.length;
 	}
@@ -98,7 +98,7 @@ export async function backfillTransactionAgentIdentifiers(): Promise<void> {
 					});
 				}
 			},
-			{ timeout: 30_000 },
+			{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
 		);
 		purchasesDone += chunk.length;
 	}

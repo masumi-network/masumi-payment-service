@@ -5,7 +5,7 @@ import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/p
 import createHttpError from 'http-errors';
 import { queryPurchaseRequestSchemaOutput } from '@/routes/api/purchases';
 import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
-import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import { lovelaceToAdaNumberSafe } from '@/utils/lovelace';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';

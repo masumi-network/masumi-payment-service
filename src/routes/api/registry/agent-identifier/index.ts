@@ -216,13 +216,21 @@ export const queryAgentByIdentifierGet = readAuthenticatedEndpointFactory.build(
 		try {
 			assetInfo = await blockfrost.assetsById(input.agentIdentifier);
 		} catch (error) {
-			// Use comprehensive 404 detection pattern from src/utils/blockfrost/index.ts
-			if (
+			// Prefer the structured status_code field that @blockfrost/blockfrost-js
+			// attaches to its error objects; fall back to the string-shape
+			// checks for SDK versions / error paths that don't surface it.
+			// The OR combination keeps existing detections working even if
+			// the structured field is missing on a given error shape.
+			const structuredStatus =
+				typeof error === 'object' && error != null && 'status_code' in error
+					? (error as { status_code?: unknown }).status_code
+					: undefined;
+			const messageHints =
 				error instanceof Error &&
 				(error.message.includes('404') ||
 					error.message.toLocaleLowerCase().includes('not found') ||
-					error.message.toLocaleLowerCase().includes('not been found'))
-			) {
+					error.message.toLocaleLowerCase().includes('not been found'));
+			if (structuredStatus === 404 || messageHints) {
 				throw createHttpError(404, 'Agent identifier not found');
 			}
 			// Log the actual error for debugging before throwing generic 500

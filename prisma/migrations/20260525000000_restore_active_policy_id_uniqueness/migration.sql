@@ -1,10 +1,14 @@
--- Enforce deterministic PaymentSource resolution by registry policy id.
+-- No-op: this migration originally recreated
+--   PaymentSource_network_policyId_active_key
+-- but that index was already created (idempotently, via IF NOT EXISTS) by
+-- the earlier migration 20260519120000_add_payment_source_type_v2_registry_metadata.
+-- The recreate was harmless (IF NOT EXISTS short-circuits on second run)
+-- but cluttered the migration history. The migration directory is kept so
+-- Prisma's `_prisma_migrations` table on already-deployed databases
+-- continues to find a matching entry (deleting the dir would surface as
+-- "drift" on next `prisma migrate status`).
 --
--- Soft-deleted sources may keep their historical policyId so audit/history rows
--- remain intact, but two active sources on the same network must not advertise
--- the same policyId. Prisma cannot model partial unique indexes, so this
--- invariant is maintained as a manual SQL migration and documented on the
--- PaymentSource model.
-CREATE UNIQUE INDEX IF NOT EXISTS "PaymentSource_network_policyId_active_key"
-ON "PaymentSource"("network", "policyId")
-WHERE "deletedAt" IS NULL AND "policyId" IS NOT NULL;
+-- The canonical definition of the index lives in
+--   prisma/migrations/20260519120000_add_payment_source_type_v2_registry_metadata/migration.sql
+-- (search: PaymentSource_network_policyId_active_key)
+SELECT 1;

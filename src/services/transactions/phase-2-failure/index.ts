@@ -259,6 +259,6 @@ export async function markTransactionPhase2Failed(
 				walletsUnlocked: options.walletIdsToUnlock?.length ?? 0,
 			});
 		},
-		{ timeout: 30_000 },
+		{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
 	);
 }

@@ -51,6 +51,19 @@ const decryptTokenSafe = (encryptedToken: string | null): string => {
 	}
 };
 
+/**
+ * Serialize an ApiKey row to the API response shape.
+ *
+ * `options.revealToken` controls whether the response contains the
+ * decrypted plaintext token (`true`) or the pre-masked `*****xxxx`
+ * form (`false`, default). The reveal path is only safe for endpoints
+ * where the admin is creating a new key and MUST see the value once
+ * (it cannot be recovered later by design — the DB only stores the
+ * encrypted form). List/update/delete responses MUST mask, so an
+ * admin-token leak does not cascade into a full plaintext dump of
+ * every API key on the system, and so monitoring/log aggregation
+ * never captures plaintext via response logging.
+ */
 export const mapApiKeyOutput = <
 	T extends {
 		canRead: boolean;
@@ -65,12 +78,24 @@ export const mapApiKeyOutput = <
 	},
 >(
 	data: T,
+	options: { revealToken?: boolean } = {},
 ) => {
 	// Explicitly destructure all sensitive/internal fields so they never reach the API response
-	const { networkLimit, RemainingUsageCredits, encryptedToken, token: _token, tokenHash: _tokenHash, ...rest } = data;
+	const {
+		networkLimit,
+		RemainingUsageCredits,
+		encryptedToken,
+		token: storedMaskedToken,
+		tokenHash: _tokenHash,
+		...rest
+	} = data;
 	return {
 		...rest,
-		token: decryptTokenSafe(encryptedToken),
+		// Response schema expects `string`. Coalesce null (legacy row missing
+		// the stored masked form, or decrypt failure) to '*****' so the
+		// non-null contract holds. Real rows always populate `token` at
+		// create time (see addAPIKeyEndpointPost above).
+		token: (options.revealToken === true ? decryptTokenSafe(encryptedToken) : storedMaskedToken) ?? '*****',
 		permission: computePermissionFromFlags(data.canRead, data.canPay, data.canAdmin),
 		NetworkLimit: networkLimit,
 		RemainingUsageCredits: transformBigIntAmounts(RemainingUsageCredits),
@@ -172,7 +197,10 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 				WalletScopes: { select: { hotWalletId: true } },
 			},
 		});
-		return mapApiKeyOutput(result);
+		// Reveal-on-create: the admin must see the freshly-minted token once
+		// because the DB only stores the encrypted form afterwards. List,
+		// update, and delete endpoints below default to the masked form.
+		return mapApiKeyOutput(result, { revealToken: true });
 	},
 });
 

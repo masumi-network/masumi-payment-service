@@ -23,6 +23,8 @@ import {
   Sparkles,
   ShieldCheck,
   Check,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { useRouter } from 'next/router';
 import { Spinner } from '@/components/ui/spinner';
@@ -170,6 +172,13 @@ function SeedPhrasesScreen({
     address: string;
     mnemonic: string;
   } | null>(null);
+  // Seed phrases are blurred by default. The user explicitly reveals to
+  // copy/screenshot, which keeps mnemonics out of the DOM-visible tree
+  // for casual screen-sharing / over-shoulder / screenshots taken while
+  // navigating the rest of the wizard. Per-wallet flag because the user
+  // may want to reveal one and not the other.
+  const [showBuyingMnemonic, setShowBuyingMnemonic] = useState(false);
+  const [showSellingMnemonic, setShowSellingMnemonic] = useState(false);
   const [error, setError] = useState<string>('');
 
   useEffect(() => {
@@ -177,7 +186,8 @@ function SeedPhrasesScreen({
       setIsGenerating(true);
       setError('');
 
-      const buyingResponse: any = await handleApiCall(
+      // Type inferred from postWallet via handleApiCall's generic T.
+      const buyingResponse = await handleApiCall(
         () =>
           postWallet({
             client: apiClient,
@@ -186,7 +196,7 @@ function SeedPhrasesScreen({
             },
           }),
         {
-          onError: (error: any) => {
+          onError: (error: unknown) => {
             setError(extractApiErrorMessage(error, 'Failed to generate buying wallet'));
             toast.error('Failed to generate buying wallet');
           },
@@ -213,7 +223,8 @@ function SeedPhrasesScreen({
         mnemonic: buyingResponse.data.data.walletMnemonic,
       });
 
-      const sellingResponse: any = await handleApiCall(
+      // Type inferred from postWallet via handleApiCall's generic T.
+      const sellingResponse = await handleApiCall(
         () =>
           postWallet({
             client: apiClient,
@@ -222,7 +233,7 @@ function SeedPhrasesScreen({
             },
           }),
         {
-          onError: (error: any) => {
+          onError: (error: unknown) => {
             setError(extractApiErrorMessage(error, 'Failed to generate selling wallet'));
             toast.error('Failed to generate selling wallet');
           },
@@ -340,12 +351,45 @@ function SeedPhrasesScreen({
                     <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                       Seed phrase
                     </p>
-                    <div className="rounded-lg bg-muted/30 p-3 border border-dashed">
-                      <p className="font-mono text-xs text-foreground/80 break-all leading-relaxed">
+                    <div className="relative rounded-lg bg-muted/30 p-3 border border-dashed">
+                      <p
+                        className={cn(
+                          'font-mono text-xs text-foreground/80 break-all leading-relaxed transition-[filter] select-none',
+                          !showBuyingMnemonic && 'blur-md',
+                        )}
+                        aria-hidden={!showBuyingMnemonic}
+                      >
                         {buyingWallet.mnemonic}
                       </p>
+                      {!showBuyingMnemonic && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="absolute inset-0 m-auto h-7 w-fit px-3 gap-1.5"
+                          onClick={() => setShowBuyingMnemonic(true)}
+                        >
+                          <Eye className="h-3.5 w-3.5" /> Reveal seed phrase
+                        </Button>
+                      )}
                     </div>
                     <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5"
+                        onClick={() => setShowBuyingMnemonic((v) => !v)}
+                      >
+                        {showBuyingMnemonic ? (
+                          <>
+                            <EyeOff className="h-3.5 w-3.5" /> Hide
+                          </>
+                        ) : (
+                          <>
+                            <Eye className="h-3.5 w-3.5" /> Show
+                          </>
+                        )}
+                      </Button>
                       <Button
                         variant="outline"
                         size="sm"
@@ -359,6 +403,14 @@ function SeedPhrasesScreen({
                         size="sm"
                         className="gap-1.5 flex-1"
                         onClick={() => {
+                          // Explicit consent before writing a plaintext
+                          // seed phrase to disk — the file persists with
+                          // no encryption and survives until the user
+                          // shreds it.
+                          const ok = window.confirm(
+                            'This downloads your seed phrase as an unencrypted .txt file. Anyone with access to the file can spend your funds. Continue?',
+                          );
+                          if (!ok) return;
                           const blob = new Blob([buyingWallet.mnemonic], {
                             type: 'text/plain',
                           });
@@ -429,12 +481,45 @@ function SeedPhrasesScreen({
                     <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                       Seed phrase
                     </p>
-                    <div className="rounded-lg bg-muted/30 p-3 border border-dashed">
-                      <p className="font-mono text-xs text-foreground/80 break-all leading-relaxed">
+                    <div className="relative rounded-lg bg-muted/30 p-3 border border-dashed">
+                      <p
+                        className={cn(
+                          'font-mono text-xs text-foreground/80 break-all leading-relaxed transition-[filter] select-none',
+                          !showSellingMnemonic && 'blur-md',
+                        )}
+                        aria-hidden={!showSellingMnemonic}
+                      >
                         {sellingWallet.mnemonic}
                       </p>
+                      {!showSellingMnemonic && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="absolute inset-0 m-auto h-7 w-fit px-3 gap-1.5"
+                          onClick={() => setShowSellingMnemonic(true)}
+                        >
+                          <Eye className="h-3.5 w-3.5" /> Reveal seed phrase
+                        </Button>
+                      )}
                     </div>
                     <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5"
+                        onClick={() => setShowSellingMnemonic((v) => !v)}
+                      >
+                        {showSellingMnemonic ? (
+                          <>
+                            <EyeOff className="h-3.5 w-3.5" /> Hide
+                          </>
+                        ) : (
+                          <>
+                            <Eye className="h-3.5 w-3.5" /> Show
+                          </>
+                        )}
+                      </Button>
                       <Button
                         variant="outline"
                         size="sm"
@@ -448,6 +533,13 @@ function SeedPhrasesScreen({
                         size="sm"
                         className="gap-1.5 flex-1"
                         onClick={() => {
+                          // Explicit consent before writing a plaintext
+                          // seed phrase to disk — see buying-wallet block
+                          // for full rationale.
+                          const ok = window.confirm(
+                            'This downloads your seed phrase as an unencrypted .txt file. Anyone with access to the file can spend your funds. Continue?',
+                          );
+                          if (!ok) return;
                           const blob = new Blob([sellingWallet.mnemonic], {
                             type: 'text/plain',
                           });
@@ -1881,7 +1973,16 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
       localStorage.setItem('userIgnoredSetup', 'true');
     }
     setIsSetupMode(false);
+    // Wallets, agents, transactions all keyed against the previous (often
+    // empty) source set during setup. Invalidate the full set so the
+    // dashboard the user lands on reflects what setup just created
+    // (especially a step-3 AI agent that would otherwise be invisible
+    // until the next refetch tick).
     queryClient.invalidateQueries({ queryKey: ['payment-sources-all'] });
+    queryClient.invalidateQueries({ queryKey: ['payment-source-extended'] });
+    queryClient.invalidateQueries({ queryKey: ['wallets'] });
+    queryClient.invalidateQueries({ queryKey: ['agents'] });
+    queryClient.invalidateQueries({ queryKey: ['transactions'] });
     router.push('/');
   };
 

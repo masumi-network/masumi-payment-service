@@ -13,7 +13,7 @@ import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/u
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { resolvePurchaseCreationContext } from './shared';
-import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import {
 	createPurchaseInitSchemaInput,
 	createPurchaseInitSchemaOutput,
@@ -334,6 +334,19 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 				if (sellerReturnAddress != null && !isCardanoPubKeyBaseAddressForNetwork(sellerReturnAddress, input.network)) {
 					throw createHttpError(400, 'sellerReturnAddress must be a Cardano base address with a stake credential');
 				}
+			}
+			// V2 contract trap: `address_to_verification_key(seller)` returns None
+			// for script-credential addresses. The `sellerAddress` resolved above
+			// is the on-chain holder of the agent NFT — if a seller transferred
+			// their NFT to a script-credential address, every contract redeemer
+			// referencing the seller principal would fail and funds locked
+			// against this seller would be permanently unspendable. Reject
+			// before constructing the purchase request.
+			if (isV2 && !isCardanoPubKeyBaseAddressForNetwork(sellerAddress, input.network)) {
+				throw createHttpError(
+					400,
+					'Seller principal address (resolved from agent NFT holder) must be a Cardano base address with a verification-key payment credential. Script-credential addresses (smart wallets, multisig wrappers) cannot interact with the escrow contract; the seller must move the agent NFT to a verification-key address before purchases can be processed.',
+				);
 			}
 
 			const initialPurchaseRequest = await handlePurchaseCreditInit({

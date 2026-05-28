@@ -17,7 +17,7 @@ import {
 	decodeV1ContractDatum,
 	decodeV2ContractDatum,
 } from '@/utils/converter/string-datum-convert';
-import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import { SmartContractState } from '@/utils/generator/contract-generator';
 import { assertNever } from '@/utils/assert-never';
 
@@ -102,6 +102,22 @@ const v1ContractAdapter = {
 	decodeContractDatum: decodeV1ContractDatum,
 	createDatumFromBlockchainIdentifier: getDatumFromBlockchainIdentifier,
 	createDatumFromDecodedContract(input: ContractDatumFromDecodedInput) {
+		// V1 contract has no buyer/seller-return-address concept (the v2
+		// vested_pay validator added them). Silently dropping caller-passed
+		// values would let bugs upstream go undetected: a caller that
+		// branches "v1 vs v2" incorrectly would think the routing field
+		// was honored. Fail loudly so the wrong-branch bug surfaces at
+		// the boundary instead of as a wrong-routing on-chain payout.
+		if (input.buyerReturnAddress != null) {
+			throw new Error(
+				'v1ContractAdapter.createDatumFromDecodedContract: V1 contracts do not support buyerReturnAddress; caller is mis-routing a V2 input through the V1 adapter',
+			);
+		}
+		if (input.sellerReturnAddress != null) {
+			throw new Error(
+				'v1ContractAdapter.createDatumFromDecodedContract: V1 contracts do not support sellerReturnAddress; caller is mis-routing a V2 input through the V1 adapter',
+			);
+		}
 		return getDatumFromBlockchainIdentifier({
 			buyerAddress: input.buyerAddress ?? input.decodedContract.buyerAddress,
 			sellerAddress: input.sellerAddress ?? input.decodedContract.sellerAddress,

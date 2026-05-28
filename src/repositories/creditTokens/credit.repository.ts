@@ -1,7 +1,7 @@
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { InsufficientFundsError } from '@/utils/errors/insufficient-funds-error';
-import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import { Network, PricingType, PurchasingAction, WalletBase, WalletType } from '@/generated/prisma/client';
 import { retryOnSerializationConflict } from '@/utils/db/retry';
 import { withSerializableSlot } from '@/utils/db/serializable-semaphore';

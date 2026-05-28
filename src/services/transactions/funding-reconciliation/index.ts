@@ -178,10 +178,22 @@ export async function reconcileOne(tx: ReconcileCandidate): Promise<void> {
 			{ label: 'funding-reconciliation-promote' },
 		);
 		if (promoted.count === 0) {
-			logger.info('funding-reconciliation: promote race — row already advanced or terminal, skipping', {
-				txId: tx.id,
-				intendedTxHash: tx.intendedTxHash,
-			});
+			// Race outcome where the chain says the tx IS landed but the
+			// DB row was concurrently advanced by another path (typically
+			// the revert path winning a competing reconcile). DB stays
+			// consistent (predicate-guarded), but the on-chain tx is now
+			// an operational orphan — funds may be locked under a contract
+			// whose request the DB has marked as RolledBack. Surface at
+			// WARN so operators can manually reconcile via the
+			// error-state-recovery endpoint or out-of-band fixup. INFO is
+			// too quiet for an orphan-fund scenario.
+			logger.warn(
+				'funding-reconciliation: chain reports tx landed but DB row already advanced or terminal — possible on-chain orphan',
+				{
+					txId: tx.id,
+					intendedTxHash: tx.intendedTxHash,
+				},
+			);
 			return;
 		}
 		logger.info('funding-reconciliation: promoted intendedTxHash → txHash (chain found)', {

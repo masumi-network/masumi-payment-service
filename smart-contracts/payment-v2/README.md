@@ -70,6 +70,35 @@ pub type Datum {
 }
 ```
 
+Principal addresses (`buyer`, `seller`) vs payout addresses
+(`buyer_return_address`, `seller_return_address`):
+
+- **Principal addresses MUST be verification-key credentials.** Every
+  redeemer that mutates contract state dereferences the buyer or seller
+  principal via `address_to_verification_key(...)` to derive a vkey hash
+  used for required-signer checks (lines 257, 388, 409, 491, 677, 738 in
+  the validator). That helper returns `None` for a script-credential
+  address, and the surrounding `expect Some(...)` then aborts the redeemer.
+  A payment locked with a script-credential `buyer` or `seller` is
+  PERMANENTLY UNSPENDABLE: no `Withdraw`, no `WithdrawRefund`, no
+  `WithdrawDisputed`, no `SetRefundRequested` — every branch needs the
+  vkey. Off-chain locking tooling MUST reject script-credential addresses
+  (smart wallets, multisig wrappers, hardware-wallet abstractions) for
+  these two fields before broadcasting a lock. This service rejects them
+  at the API boundary on the `POST /payment/x402/build-tx` and
+  `POST /purchase` endpoints (after resolving the seller principal from
+  the on-chain agent-NFT holder).
+- **Payout / return addresses can be ANY address shape.** The validator
+  only ever uses `buyer_return_address` and `seller_return_address` as
+  output destinations (`output.address == expected`), never dereferencing
+  them for a vkey. Script-credential addresses are valid here — buyers
+  and sellers may legitimately want refund / withdrawal funds routed to a
+  smart wallet, multisig vault, or any other script destination. The
+  current API additionally restricts return addresses to base addresses
+  with stake credentials as a UX guard; that restriction is not a
+  validator requirement and can be relaxed if integrators need script
+  payouts.
+
 Return-address behavior:
 
 - If a return address is `None`, the validator does not enforce a tagged payout
@@ -148,6 +177,21 @@ Requirements:
 - Next state is `WithdrawAuthorized`.
 - Once `WithdrawAuthorized`, the seller can use `Withdraw` without waiting for `unlock_time`.
 
+**Intentionally irrevocable.** V2 deliberately dropped the V1
+`UnSetRefundRequested` transition for this branch. Once the buyer signs
+`AuthorizeWithdrawal`, the contract transitions to `WithdrawAuthorized` and
+there is no on-chain path back: the seller can `Withdraw` at any time
+afterwards with no upper time bound, and the buyer cannot rescind. This is
+by design — `AuthorizeWithdrawal` is the buyer's explicit, final decision
+to release escrowed funds to the seller (typically when the dispute has
+been resolved in the seller's favor off chain). Integrators MUST surface
+this irrevocability in the buyer-facing UI before requesting the signature
+(confirmation dialog, summary of consequences, no "undo" affordance).
+Wallet-key compromise vectors (drainers, social engineering, mis-click on
+an auto-approving UI) therefore have full settlement authority — operators
+should treat `AuthorizeWithdrawal` signatures with the same key-hygiene
+posture as a direct fund transfer.
+
 ### WithdrawRefund
 
 Buyer withdraws a refund after the seller misses `submit_result_time`, or immediately after seller authorization.
@@ -197,12 +241,43 @@ Requirements:
 
 Admin signing runbook (mandatory off-chain process):
 
-- **Hash-pin the result_hash.** The seller can keep updating `result_hash` via
-  `SubmitResult` until `external_dispute_unlock_time`. Admins must therefore
-  inspect and pin the current `result_hash` on the target UTxO BEFORE
-  collecting signatures. Once `external_dispute_unlock_time` passes,
-  `SubmitResult` is rejected, so the pinned hash is stable. Admins should
-  refuse to sign before that timestamp.
+- **Admins MUST NOT sign before `external_dispute_unlock_time`.** This is the
+  single hard rule that makes the dispute outcome safe to reason about. The
+  validator allows the seller to call `SubmitResult` and rotate `result_hash`
+  on the disputed UTxO right up until `external_dispute_unlock_time`. The
+  admin-signed `DisputeWithdrawal` payload binds `own_ref` (the spent
+  UTxO's tx hash + output index) but does NOT bind `result_hash`, so any
+  signature collected during the rotation window remains technically valid
+  against a later state of the same UTxO. If admins sign while rotation is
+  still possible, the seller can swap `result_hash` between admin review
+  and tx settlement — admins would have signed for hash `H1` while the
+  buyer ultimately sees `H2` on chain, undermining the dispute outcome.
+
+  The on-chain `must_start_after(external_dispute_unlock_time)` gate on
+  `WithdrawDisputed` (vested_pay.ak: enforced via the time bound checks in
+  the dispute branch) closes the seller's `SubmitResult` window
+  simultaneously with opening the dispute settlement window. Once the
+  external dispute timeout has passed:
+
+  - The contract REJECTS any further `SubmitResult` on the disputed UTxO.
+  - The on-chain `result_hash` is therefore frozen for as long as the UTxO
+    remains in the disputed state.
+  - Admins reading the on-chain hash at this point can be sure it cannot
+    change before their settlement tx lands.
+
+  Operationally: admin tooling MUST refuse to issue a signature whose
+  signing-time wall clock is earlier than `external_dispute_unlock_time` of
+  the target disputed UTxO. Settlement-submission tooling SHOULD re-verify
+  on-chain `result_hash` immediately before broadcast as a defense-in-depth
+  cross-check; this matters less once the timeout has passed (rotation is
+  impossible) but catches operator errors where signing was issued
+  prematurely.
+
+- **Hash-pin the result_hash for the audit record.** Even with the timeout
+  rule above honored, admin tooling should capture the on-chain
+  `result_hash` at signing time and persist it alongside the signature for
+  audit/forensic purposes. The pinned hash MUST equal the hash present on
+  chain at the time of settlement broadcast.
 - **Use canonical CBOR encoding when serializing the signing payload.**
   `DisputeWithdrawal { own_ref, buyer_value, seller_value }` is hashed via
   `cbor.serialise |> blake2b_224` on-chain. Two equivalent payloads with
@@ -291,7 +366,7 @@ duplicate keys would be a deployment bug. Off-chain tooling MUST construct
 `admin_vks` with the correct duplication when modeling weighted authorities
 and MUST surface the weights to deployers.
 
-### Dispute settler reward cap is intentional
+### Dispute settler reward cap is intentional (INTENDED DESIGN)
 
 The validator does NOT cap the residual (surplus) that goes to the
 dispute-settlement transaction builder in `WithdrawDisputed`. The signed
@@ -309,6 +384,22 @@ exists above the signed minimums; the validator does not distinguish
 "original lock" from "later dust accretion". Admins should sign settlements
 promptly to avoid dust-pump scenarios if "winner takes the surplus" is
 undesirable for a specific deployment.
+
+Front-running threat model: a mempool-monitoring attacker who notices a
+disputed UTxO approaching settlement can deliberately inflate its value
+(send ADA to the script address) before the admin-signed settlement tx
+lands, then submit the settlement themselves to capture the inflated
+residual. Mitigations off-chain:
+
+- The settlement submitter (typically operator tooling) SHOULD compute the
+  expected residual at signing time (`disputed_utxo_value - buyer_value -
+  seller_value`) and refuse to broadcast if the actual residual at submit
+  time exceeds that by more than a configured tolerance.
+- High-value disputes can mitigate this entirely by having admins sign
+  exact-payout payloads where `buyer_value + seller_value = disputed_utxo_value`,
+  leaving zero residual. The validator allows this.
+- A v2.1 contract revision could cap the residual via an admin-signed
+  `max_submitter_reward` field; this is tracked but out of scope for v2.0.
 
 ### `list.unique` is O(n²) but ledger-bounded
 

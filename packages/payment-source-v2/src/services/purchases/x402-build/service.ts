@@ -141,6 +141,14 @@ export async function buildX402FundsLockingTransactionV2({
 
 	const meshNetwork = convertNetwork(network);
 	const invalidBefore = unixTimeToEnclosingSlot(Date.now() - 300_000, SLOT_CONFIG_NETWORK[meshNetwork]) - 1;
+	// `unixTimeToEnclosingSlot` accepts `number`, but `payByTime` is `bigint`
+	// in our DB. ms-since-epoch fits inside `Number.MAX_SAFE_INTEGER` for any
+	// realistic deadline (~285k years), so the BigInt→Number coerce is safe
+	// — but guard explicitly so a malformed or attacker-supplied value
+	// surfaces loudly instead of silently rounding to a slot we didn't intend.
+	if (buildData.payByTime > BigInt(Number.MAX_SAFE_INTEGER)) {
+		throw createHttpError(400, 'payByTime exceeds safe integer range');
+	}
 	const invalidAfterMs = Number(buildData.payByTime);
 	const invalidAfter = unixTimeToEnclosingSlot(invalidAfterMs, SLOT_CONFIG_NETWORK[meshNetwork]) + 5;
 

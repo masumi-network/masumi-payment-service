@@ -124,15 +124,13 @@ export function PaymentSourceDialog({ open, onClose, paymentSource }: PaymentSou
             </button>
             {expandedSections.admin && (
               <div className="space-y-3 pl-4">
-                {paymentSource.AdminWallets?.map((wallet: any, index: number) => (
+                {paymentSource.AdminWallets?.map((wallet, index) => (
                   <div key={index} className="p-3 border rounded-md space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium">Admin Wallet {index + 1}</span>
-                      {wallet.note && (
-                        <Badge variant="secondary" className="text-xs">
-                          {wallet.note}
-                        </Badge>
-                      )}
+                      {/* AdminWallet generated type has no `note` field
+                          (unlike Purchasing/Selling); the API doesn't
+                          return one for admin wallets. */}
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-muted-foreground">Address:</span>
@@ -164,7 +162,7 @@ export function PaymentSourceDialog({ open, onClose, paymentSource }: PaymentSou
             </button>
             {expandedSections.purchasing && (
               <div className="space-y-3 pl-4">
-                {paymentSource.PurchasingWallets?.map((wallet: any, index: number) => (
+                {paymentSource.PurchasingWallets?.map((wallet, index) => (
                   <div key={index} className="p-3 border rounded-md space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium">Purchasing Wallet {index + 1}</span>
@@ -224,7 +222,7 @@ export function PaymentSourceDialog({ open, onClose, paymentSource }: PaymentSou
             </button>
             {expandedSections.selling && (
               <div className="space-y-3 pl-4">
-                {paymentSource.SellingWallets?.map((wallet: any, index: number) => (
+                {paymentSource.SellingWallets?.map((wallet, index) => (
                   <div key={index} className="p-3 border rounded-md space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium">Selling Wallet {index + 1}</span>

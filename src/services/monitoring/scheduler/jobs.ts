@@ -2,6 +2,7 @@ import { CONFIG } from '@masumi/payment-core/config';
 import { web3CardanoV1, web3CardanoV2 } from '@/services/payment-source-types';
 import {
 	checkLatestTransactions,
+	cleanupOrphanActionData,
 	reconcileAmbiguousFundingV2,
 	updateWalletTransactionHash,
 } from '@/services/transactions';
@@ -252,5 +253,17 @@ export const scheduledJobs: JobDefinition[] = [
 		startMessage: 'Starting webhook cleanup',
 		finishMessage: 'Finished webhook cleanup',
 		run: () => webhookQueueService.cleanupOldDeliveries(),
+	},
+	{
+		// Daily-ish prune of PaymentActionData / PurchaseActionData rows
+		// that were orphaned by the V2 rollback drift-check's "leak the
+		// row, do not corrupt history" rule. Long initial delay so
+		// startup-burst load is not impacted; recurrence governed by
+		// ORPHAN_ACTION_CLEANUP_INTERVAL_SECONDS env (default 24h).
+		initialDelayMs: 60000,
+		intervalMs: CONFIG.ORPHAN_ACTION_CLEANUP_INTERVAL_SECONDS * 1000,
+		startMessage: 'Starting orphan action-data cleanup',
+		finishMessage: 'Finished orphan action-data cleanup',
+		run: cleanupOrphanActionData,
 	},
 ];

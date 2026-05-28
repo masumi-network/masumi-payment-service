@@ -1,5 +1,5 @@
 import createHttpError from 'http-errors';
-import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import { logger } from '@masumi/payment-core/logger';
 
 export function parseDateRange(

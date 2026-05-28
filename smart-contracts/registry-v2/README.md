@@ -30,9 +30,52 @@ Updates keep the same `root_hash` and `nonce`, and increment the full 3-byte `ve
 
 ## Trust Model
 
-V2 is intentionally permissionless. The minting policy has no payment-source parameter, admin signer, or registry owner check, so any wallet can mint a registry asset under this policy if it spends a UTxO that authorizes the asset-name prefix rule.
+V2 is intentionally permissionless (INTENDED DESIGN). The minting policy has no payment-source parameter, admin signer, or registry owner check, so any wallet can mint a registry asset under this policy if it spends a UTxO that authorizes the asset-name prefix rule. This is a deliberate trade-off — the on-chain policy is a content-addressing layer; trust is enforced off-chain by indexers and the operator API.
 
 The on-chain policy only guarantees asset-name uniqueness and the mint/update/burn quantity rules. It does not certify that metadata was created by a Masumi operator, belongs to a specific payment source, or should be shown as trusted. Any payment-source scoping, allowlisting, moderation, metadata validation, or trust labeling must be handled off-chain by indexers and applications that consume the registry.
+
+### Required off-chain enforcement for integrators
+
+Because the policy is permissionless, the on-chain `policyId` ALONE is not
+a sufficient trust marker. Any integrator querying the chain for "Masumi
+agents" MUST apply an off-chain allowlist before treating an asset as
+legitimate. Concretely:
+
+- **Do NOT filter by `policyId` alone.** An attacker spending 2 ADA in
+  fees can mint arbitrary `(policyId, asset_name)` pairs under the same
+  policy, embed phishing metadata, and have them appear in any indexer
+  that filters only by `policyId`.
+- **Filter by `(policyId, asset_name)` against a known-good list.** The
+  authoritative source for which assets are "real" Masumi agents is the
+  operator's API (e.g. this service's `GET /api/v1/registry` endpoint,
+  which returns rows from the `RegistryRequest` table that were minted
+  through the API). Indexers and third-party UIs that want to display
+  Masumi agents should cross-reference asset names against that endpoint
+  rather than scanning the chain directly.
+- **Or scope by the operator's selling-wallet vkey.** Each Masumi
+  payment-source has a known set of selling wallets; legitimate registry
+  mints originate from those wallets. Filter on-chain queries by the
+  minting tx's input wallet (`tx.outputs[i].addr ∈ known_selling_wallets`)
+  to drop spam mints from unrelated wallets.
+
+### Update authority
+
+`UpdateAction` has no signer check beyond the input UTxO's spending
+condition. The registry asset's "owner" is therefore whoever currently
+holds the UTxO containing the asset:
+
+- If the asset is held at a verification-key address, only the holder of
+  that key can spend the UTxO (and thus update the registry entry). This
+  is the expected ownership model for normal seller wallets.
+- If the asset is held at a script address (e.g. the seller moved it
+  there for custody), update authority delegates to whatever spending
+  conditions that script enforces. Operators relying on the
+  vkey-signature ownership model should verify the asset's current
+  holder address before trusting an update.
+- A briefly-compromised holder (drained wallet, smart-wallet
+  vulnerability) can both update and burn at will. Sellers should treat
+  the registry-NFT-holding wallet with the same key-hygiene posture as a
+  funds-holding wallet.
 
 ## Actions
 

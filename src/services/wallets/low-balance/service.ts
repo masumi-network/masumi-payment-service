@@ -563,7 +563,7 @@ export class WalletLowBalanceMonitorService {
 
 						return detectedAlerts;
 					},
-					{ timeout: 30_000 },
+					{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
 				),
 			{ label: 'low-balance-0' },
 		);

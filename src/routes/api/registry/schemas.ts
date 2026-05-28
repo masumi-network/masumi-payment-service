@@ -184,10 +184,16 @@ export const queryRegistryCountSchemaOutput = z.object({
 
 export const registerAgentSchemaInput = z.object({
 	network: z.nativeEnum(Network).describe('The Cardano network used to register the agent on'),
-	sellingWalletVkey: z.string().max(250).describe('The payment key of a specific wallet used for the registration'),
+	sellingWalletVkey: z
+		.string()
+		.length(56)
+		.regex(/^[0-9a-fA-F]{56}$/, 'sellingWalletVkey must be a 56-char hex blake2b-224 payment-key hash')
+		.describe('The payment key of a specific wallet used for the registration'),
 	recipientWalletAddress: z
 		.string()
-		.max(250)
+		.min(58)
+		.max(120)
+		.regex(/^(addr1|addr_test1)[0-9a-z]+$/, 'recipientWalletAddress must be a bech32 Cardano address')
 		.optional()
 		.describe(
 			'Optional managed hot wallet address on the same payment source that should receive the minted registry NFT. If omitted, the minting wallet receives it.',
@@ -195,7 +201,10 @@ export const registerAgentSchemaInput = z.object({
 	sendFundingLovelace: z
 		.string()
 		.regex(/^\d+$/)
-		.max(25)
+		// Cardano max supply is ~45e15 lovelace (16 digits). Reject inputs
+		// beyond what could ever exist on chain so downstream BigInt math
+		// has a sane upper bound.
+		.max(17)
 		.optional()
 		.describe(
 			'Optional lovelace amount to include with the minted NFT output. If provided below the minimum NFT funding, the current minimum is still used.',

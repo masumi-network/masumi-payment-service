@@ -3,6 +3,7 @@ import { Transaction as MeshTransaction } from '@/services/shared';
 import { TransactionStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
+import { recordV2CollateralPrepHashDivergence } from '@masumi/payment-core/metrics';
 import { retryOnSerializationConflict } from '@/utils/db/retry';
 import { resolveTxHash, SLOT_CONFIG_NETWORK, unixTimeToEnclosingSlot } from '@meshsdk/core';
 import type { Network, UTxO } from '@meshsdk/core';
@@ -359,7 +360,7 @@ export async function ensureCollateralReady(params: EnsureCollateralReadyParams)
 						});
 						return sharedTx.id;
 					},
-					{ timeout: 30_000 },
+					{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
 				),
 			{ label: 'collateral-prep-presubmit' },
 		);
@@ -487,6 +488,13 @@ export async function ensureCollateralReady(params: EnsureCollateralReadyParams)
 				nodeTxHash: prepTxHash,
 			},
 		);
+		// Emit a dedicated alerting metric. Non-zero values here indicate a
+		// hash-computation mismatch between our offline build and the live
+		// mesh/cardano-node; operators should investigate (likely root cause
+		// is mesh cost-model arrays out of sync with chain, see
+		// `mesh-cost-model-sync`). Logger noise alone is easy to filter
+		// past; metric+alert wires this into PagerDuty / on-call rotation.
+		recordV2CollateralPrepHashDivergence({ wallet_db_id: walletDbId });
 	}
 
 	try {

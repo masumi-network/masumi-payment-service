@@ -805,48 +805,24 @@ fn value_minus_lovelace(value: Value, lovelace: Int) -> Value {
   assets.merge(value, assets.negate(assets.from_lovelace(lovelace)))
 }
 
-// Sum the lovelace component of a raw `AssetValue` (the redeemer-supplied
-// Pairs payload, before it is promoted into a `Value`). The lovelace policy is
-// the empty policy id with the empty asset name.
-fn lovelace_of_value(v: AssetValue) -> Int {
-  list.foldl(
-    v,
-    0,
-    fn(policy_entry, acc) {
-      let Pair(policy_id, assets_under_policy) = policy_entry
-      if policy_id == #"" {
-        list.foldl(
-          assets_under_policy,
-          acc,
-          fn(asset_entry, inner_acc) {
-            let Pair(asset_name, quantity) = asset_entry
-            if asset_name == #"" {
-              inner_acc + quantity
-            } else {
-              inner_acc
-            }
-          },
-        )
-      } else {
-        acc
-      }
-    },
-  )
-}
-
-test lovelace_of_value_sums_only_ada() {
-  let v: AssetValue =
-    [
-      Pair(#"", [Pair(#"", 1_500)]),
-      Pair(#"aabbcc", [Pair(#"deadbeef", 7)]),
-    ]
-  lovelace_of_value(v) == 1_500
-}
-
-test lovelace_of_value_returns_zero_when_no_ada_entry() {
-  let v: AssetValue = [Pair(#"aabbcc", [Pair(#"deadbeef", 7)])]
-  lovelace_of_value(v) == 0
-}
+// `lovelace_of_value` (formerly here) was removed as dead code: no
+// validator branch ever called it. Removal changed `compiledCode` (Aiken
+// does NOT dead-code-eliminate unused functions), which changes the
+// script hash and therefore the contract address. Deployments must
+// follow a migration plan: any UTxO still locked under the old script
+// hash is unreachable with the new script. See README ("Building" +
+// "Deployment configuration") for the migration runbook before
+// upgrading mainnet / preprod deployments.
+//
+// KNOWN-ISSUE (deferred): asymmetric input vs output handling.
+// `script_output_with_datum` uses strict `expect output.reference_script
+// == None` and `expect InlineDatum(_)` on every script-address output.
+// The matching input-side handling uses `filter_map` to skip malformed
+// inputs. A legitimate continuing output PLUS an unrelated dust UTxO
+// at the same script address (anyone can send dust + bad datum to a
+// script address on Cardano) aborts the whole tx. Tx-builder footgun,
+// not a fund-safety issue. Fix requires symmetrising to `filter_map`
+// on the output side too — contract change, deferred to v2.1.
 
 test value_minus_lovelace_subtracts_only_lovelace() {
   let value: Value =

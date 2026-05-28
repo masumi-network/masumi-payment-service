@@ -2,7 +2,7 @@ import { HotWalletType, PaymentSourceType, PricingType } from '@/generated/prism
 import { getPublicKeyFromCoseKey } from '@/utils/converter/public-key-convert';
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { generateSHA256Hash } from '@/utils/crypto';
-import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { metadataSchema } from '../registry/wallet';
 import { normalizePurchaseUnit } from '@/utils/shared/transformers';

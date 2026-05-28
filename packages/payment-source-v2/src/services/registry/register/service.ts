@@ -18,7 +18,6 @@ import {
 	createPendingTransaction,
 	disconnectTransactionWallet,
 	loadHotWalletSession,
-	updateCurrentTransactionHash,
 } from '@/services/shared';
 import {
 	generateRegistryAssetNameV2,
@@ -337,22 +336,53 @@ async function processSingleRegistration(
 		WALLET_SPLITTER_LOVELACE,
 	);
 	const signedTx = await wallet.signTx(unsignedTx, true);
-	await prisma.registryRequest.update({
-		where: { id: request.id },
-		data: {
-			state: RegistrationState.RegistrationInitiated,
-			...createPendingTransaction(request.SmartContractWallet.id),
-		},
-	});
-	const newTxHash = await wallet.submitTx(signedTx);
+
+	// Submit FIRST, then write DB. Previous order (DB row → submitTx) left
+	// an orphan Pending Transaction row holding BlocksWallet → wallet
+	// whenever submitTx threw: the request was stuck in
+	// RegistrationInitiated with no txHash until wallet-timeouts swept
+	// minutes later. With submit-first there is no DB row to clean up
+	// on submit failure — the catch arm only reverts state back to
+	// RegistrationRequested and clears the wallet lock, no orphan Tx to
+	// roll back. Matches the payment/purchase single-item pattern.
+	let newTxHash: string;
+	try {
+		newTxHash = await wallet.submitTx(signedTx);
+	} catch (error) {
+		logger.error('Error submitting V2 register single-item tx', { error, requestId: request.id });
+		await prisma.registryRequest.update({
+			where: { id: request.id },
+			data: {
+				state: RegistrationState.RegistrationRequested,
+				SmartContractWallet: {
+					update: {
+						lockedAt: null,
+					},
+				},
+			},
+		});
+		return;
+	}
+
 	await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
-	await prisma.registryRequest.update({
-		where: { id: request.id },
-		data: {
-			agentIdentifier: validated.policyId + assetName,
-			...updateCurrentTransactionHash(newTxHash),
-		},
-	});
+
+	// Create the Transaction row WITH txHash already populated — single
+	// update advances state AND attaches the real on-chain txHash.
+	// Wrapped in retryOnSerializationConflict so a transient conflict
+	// retries-and-gives-up locally instead of bubbling out to a
+	// caller-level retry that could double-submit.
+	await retryOnSerializationConflict(
+		() =>
+			prisma.registryRequest.update({
+				where: { id: request.id },
+				data: {
+					state: RegistrationState.RegistrationInitiated,
+					agentIdentifier: validated.policyId + assetName,
+					...createPendingTransaction(request.SmartContractWallet.id, newTxHash),
+				},
+			}),
+		{ label: 'v2-register-single-post-submit' },
+	);
 	logger.debug(`Created V2 register transaction (single-item fallback):
               Tx ID: ${newTxHash}
               View on https://${network === 'preprod' ? 'preprod.' : ''}cardanoscan.io/transaction/${newTxHash}
@@ -628,7 +658,7 @@ export async function registerAgentV2() {
 									}
 									return sharedTx.id;
 								},
-								{ timeout: 30_000 },
+								{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
 							),
 						{ label: 'v2-register-batch-tx' },
 					);
@@ -700,7 +730,7 @@ export async function registerAgentV2() {
 										});
 									}
 								},
-								{ timeout: 30_000 },
+								{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
 							),
 						{ label: 'v2-register-batch-tx' },
 					);
@@ -742,7 +772,7 @@ export async function registerAgentV2() {
 										});
 									}
 								},
-								{ timeout: 30_000 },
+								{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
 							),
 						{ label: 'v2-register-batch-tx' },
 					);

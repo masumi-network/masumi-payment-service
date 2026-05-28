@@ -7,6 +7,7 @@ import {
 	TransactionStatus,
 } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
+import { resolveTxHash } from '@meshsdk/core';
 import { deserializeDatum, UTxO } from '@meshsdk/core';
 import type { LanguageVersion } from '@meshsdk/core';
 import { asV2Provider } from '../../provider-cast';
@@ -17,6 +18,8 @@ import { convertNetwork } from '@/utils/converter/network-convert';
 import { DecodedV1ContractDatum, newCooldownTime } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
 import { retryOnSerializationConflict } from '@/utils/db/retry';
+import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
+import { isDefinitiveNodeRejection } from '../../submit-error-classifier';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { advancedRetry, delayErrorResolver } from 'advanced-retry';
 import { sortAndLimitUtxos } from '@/utils/utxo';
@@ -296,28 +299,32 @@ async function processSinglePaymentRequest(
 		constrainBeforeMs: decodedContract.sellerCooldownTime,
 	});
 	const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
-	const unsignedTx = await generateMasumiSmartContractInteractionTransactionAutomaticFees(
-		'AuthorizeRefund',
-		blockchainProvider,
-		network,
-		script,
-		address,
-		utxo,
-		limitedFilteredUtxos[0],
-		limitedFilteredUtxos,
-		datum.value,
-		invalidBefore,
-		invalidAfter,
+	const unsignedTx = await withMeshCostModelLock(
 		paymentContract.PaymentSourceConfig.rpcProviderApiKey,
-		// V2 single-item fallback: emit a 5-ADA self-send splitter output so
-		// the wallet retains 3 UTxOs after this tx confirms (collateral +
-		// change + splitter), giving a 1-UTxO buffer above the 2-UTxO
-		// `ensureCollateralReady` floor. Without it the shared generator
-		// would force-consume every walletUtxo (it does
-		// `for (utxo of walletUtxos) txBuilder.txIn(...)`) and leave
-		// the wallet at exactly 2 UTxOs — viable for the next tx but with
-		// zero margin against consolidation or phase-2 failure.
-		WALLET_SPLITTER_LOVELACE,
+		async () =>
+			await generateMasumiSmartContractInteractionTransactionAutomaticFees(
+				'AuthorizeRefund',
+				blockchainProvider,
+				network,
+				script,
+				address,
+				utxo,
+				limitedFilteredUtxos[0],
+				limitedFilteredUtxos,
+				datum.value,
+				invalidBefore,
+				invalidAfter,
+				paymentContract.PaymentSourceConfig.rpcProviderApiKey,
+				// V2 single-item fallback: emit a 5-ADA self-send splitter output so
+				// the wallet retains 3 UTxOs after this tx confirms (collateral +
+				// change + splitter), giving a 1-UTxO buffer above the 2-UTxO
+				// `ensureCollateralReady` floor. Without it the shared generator
+				// would force-consume every walletUtxo (it does
+				// `for (utxo of walletUtxos) txBuilder.txIn(...)`) and leave
+				// the wallet at exactly 2 UTxOs — viable for the next tx but with
+				// zero margin against consolidation or phase-2 failure.
+				WALLET_SPLITTER_LOVELACE,
+			),
 	);
 	const signedTx = await wallet.signTx(unsignedTx);
 
@@ -629,17 +636,21 @@ async function processWalletBatch(
 
 	let unsignedTx: string;
 	try {
-		unsignedTx = await generateMasumiSmartContractBatchInteractionTransactionAutomaticFees(
-			asV2Provider(blockchainProvider),
-			network,
-			script,
-			address,
-			collateralUtxo,
-			limitedFilteredUtxos,
-			items,
-			composed.invalidBefore,
-			composed.invalidAfter,
+		unsignedTx = await withMeshCostModelLock(
 			paymentContract.PaymentSourceConfig.rpcProviderApiKey,
+			async () =>
+				await generateMasumiSmartContractBatchInteractionTransactionAutomaticFees(
+					asV2Provider(blockchainProvider),
+					network,
+					script,
+					address,
+					collateralUtxo,
+					limitedFilteredUtxos,
+					items,
+					composed.invalidBefore,
+					composed.invalidAfter,
+					paymentContract.PaymentSourceConfig.rpcProviderApiKey,
+				),
 		);
 		assertTxSizeWithinLimit(unsignedTx, 'v2-authorize-refund-batch');
 	} catch (batchError) {
@@ -724,7 +735,7 @@ async function processWalletBatch(
 						}
 						return sharedTx.id;
 					},
-					{ timeout: 30_000 },
+					{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
 				),
 			{ label: 'authorize-refund-batch-tx' },
 		);
@@ -734,16 +745,75 @@ async function processWalletBatch(
 		return;
 	}
 
+	// Defensive: record `intendedTxHash` + `invalidHereafterSlot` on the
+	// shared Transaction row BEFORE broadcast. If submit later throws
+	// AMBIGUOUSLY (transport error, 5xx, timeout — unknown chain outcome)
+	// we leave the row Pending; funding-reconciliation resolves it by
+	// querying the chain for `intendedTxHash` once `invalidHereafterSlot`
+	// has passed. See batch-payments service header for full invariant.
+	const intendedTxHash = resolveTxHash(signedTx);
+	const invalidHereafterSlot = composed.invalidAfter;
+	let recordIntentFailed = false;
+	try {
+		await retryOnSerializationConflict(
+			() =>
+				prisma.transaction.update({
+					where: { id: sharedTxId },
+					data: {
+						intendedTxHash,
+						invalidHereafterSlot: BigInt(invalidHereafterSlot),
+						lastCheckedAt: new Date(),
+					},
+				}),
+			{ label: 'authorize-refund-batch-record-intended' },
+		);
+	} catch (recordError) {
+		logger.error('V2 authorize-refund batch could not record intendedTxHash; will rollback pre-submit DB', {
+			sharedTxId,
+			intendedTxHash,
+			error: recordError instanceof Error ? recordError.message : recordError,
+		});
+		recordIntentFailed = true;
+	}
+
 	let newTxHash: string;
 	try {
+		if (recordIntentFailed) {
+			// Skip broadcast and go to rollback. We have NOT submitted, so DB
+			// rollback is safe and the rollback branch below handles it.
+			throw new Error('PRE_SUBMIT_RECORD_INTENT_FAILED');
+		}
 		newTxHash = await meshWallet.submitTx(signedTx);
 	} catch (submitError) {
-		logger.warn('V2 authorize-refund batch submit failed; rolling back DB and retrying as single items', {
-			error:
-				submitError instanceof Error
-					? { message: submitError.message, stack: submitError.stack, name: submitError.name }
-					: submitError,
-		});
+		// Classify: definitive node rejection → safe to rollback DB state.
+		// Ambiguous (transport error, network glitch, 5xx) → tx body may be
+		// on chain. Leave the shared Transaction Pending with intendedTxHash
+		// set; funding-reconciliation resolves once chain reports
+		// definitively. recordIntentFailed forces rollback (never broadcast).
+		const definitive = recordIntentFailed || isDefinitiveNodeRejection(submitError);
+		if (!definitive) {
+			logger.warn('V2 authorize-refund batch submit AMBIGUOUS; leaving Pending for reconciliation', {
+				sharedTxId,
+				intendedTxHash,
+				invalidHereafterSlot,
+				error:
+					submitError instanceof Error
+						? { message: submitError.message, stack: submitError.stack, name: submitError.name }
+						: submitError,
+			});
+			// Wallet stays locked; PendingTransaction stays attached. The
+			// funding-reconciliation worker handles the row from here.
+			return;
+		}
+		logger.warn(
+			'V2 authorize-refund batch submit definitively rejected; rolling back DB and retrying as single items',
+			{
+				error:
+					submitError instanceof Error
+						? { message: submitError.message, stack: submitError.stack, name: submitError.name }
+						: submitError,
+			},
+		);
 		await retryOnSerializationConflict(
 			() =>
 				prisma.$transaction(
@@ -810,7 +880,7 @@ async function processWalletBatch(
 							}
 						}
 					},
-					{ timeout: 30_000 },
+					{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
 				),
 			{ label: 'authorize-refund-batch-tx' },
 		);
@@ -847,7 +917,7 @@ async function processWalletBatch(
 							data: { txHash: newTxHash },
 						});
 					},
-					{ timeout: 30_000 },
+					{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
 				),
 			{ label: 'authorize-refund-batch-tx' },
 		);

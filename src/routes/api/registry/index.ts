@@ -161,6 +161,14 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 					state: RegistrationState.RegistrationRequested,
 					agentIdentifier: null,
 					metadataVersion: DEFAULTS.DEFAULT_REGISTRY_METADATA_VERSION,
+					// Tenant ownership — enforced on subsequent mutate routes
+					// (deregister, future update flows) so a key cannot mutate
+					// registrations another key created on the same payment
+					// source. Legacy rows pre-dating this column carry NULL
+					// and are admin-only.
+					RequestedBy: {
+						connect: { id: ctx.id },
+					},
 					ExampleOutputs: {
 						createMany: {
 							data: input.ExampleOutputs.map((exampleOutput) => ({

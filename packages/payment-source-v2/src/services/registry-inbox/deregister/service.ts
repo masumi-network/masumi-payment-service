@@ -440,7 +440,7 @@ export async function deRegisterInboxAgentV2() {
 									}
 									return sharedTx.id;
 								},
-								{ timeout: 30_000 },
+								{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
 							),
 						{ label: 'v2-inbox-deregister-batch-tx' },
 					);
@@ -513,7 +513,7 @@ export async function deRegisterInboxAgentV2() {
 										});
 									}
 								},
-								{ timeout: 30_000 },
+								{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
 							),
 						{ label: 'v2-inbox-deregister-batch-tx' },
 					);
@@ -549,7 +549,7 @@ export async function deRegisterInboxAgentV2() {
 										data: { txHash: newTxHash },
 									});
 								},
-								{ timeout: 30_000 },
+								{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
 							),
 						{ label: 'v2-inbox-deregister-batch-tx' },
 					);

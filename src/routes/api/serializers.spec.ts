@@ -23,7 +23,7 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 let HotWalletType: typeof import('@/generated/prisma/client').HotWalletType;
 let PricingType: typeof import('@/generated/prisma/client').PricingType;
 let TransactionStatus: typeof import('@/generated/prisma/client').TransactionStatus;
-let generateBlockchainIdentifier: typeof import('@/utils/generator/blockchain-identifier-generator').generateBlockchainIdentifier;
+let generateBlockchainIdentifier: typeof import('@masumi/payment-core/blockchain-identifier').generateBlockchainIdentifier;
 let serializePaymentSourceEntry: typeof import('./payment-source/serializers').serializePaymentSourceEntry;
 let serializePaymentListEntry: typeof import('./payments/serializers').serializePaymentListEntry;
 let serializeRegistryEntry: typeof import('./registry/serializers').serializeRegistryEntry;
@@ -33,7 +33,7 @@ let serializeSwapTransaction: typeof import('./swap/serializers').serializeSwapT
 describe('route serializers', () => {
 	beforeAll(async () => {
 		({ HotWalletType, PricingType, TransactionStatus } = await import('@/generated/prisma/client'));
-		({ generateBlockchainIdentifier } = await import('@/utils/generator/blockchain-identifier-generator'));
+		({ generateBlockchainIdentifier } = await import('@masumi/payment-core/blockchain-identifier'));
 		({ serializePaymentSourceEntry } = await import('./payment-source/serializers'));
 		({ serializePaymentListEntry } = await import('./payments/serializers'));
 		({ serializeRegistryEntry } = await import('./registry/serializers'));

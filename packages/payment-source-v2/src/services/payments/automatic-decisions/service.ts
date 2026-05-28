@@ -84,7 +84,7 @@ async function handleInitializeAutoWithdrawPayments(paymentSources: PaymentSourc
 									}),
 								);
 							},
-							{ timeout: 30_000 },
+							{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
 						),
 					{ label: 'v2-automatic-decisions-0' },
 				);
@@ -146,7 +146,7 @@ async function handleInitializeAutoWithdrawRefunds(paymentSources: PaymentSource
 									}),
 								);
 							},
-							{ timeout: 30_000 },
+							{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
 						),
 					{ label: 'v2-automatic-decisions-1' },
 				);

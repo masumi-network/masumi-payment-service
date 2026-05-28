@@ -289,6 +289,15 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
   const [isMigrating, setIsMigrating] = useState(false);
   const [deregisterAfter, setDeregisterAfter] = useState(false);
   const [isDone, setIsDone] = useState(false);
+  // Two-step Confirm before kicking off the multi-tx batch. Each successful
+  // V2 re-mint produces a new on-chain agentIdentifier and spends ~5 ADA in
+  // fees; a mis-click on "Migrate N agents" must not silently start the run.
+  const [confirmPending, setConfirmPending] = useState(false);
+  // User-driven abort flag; the loop polls this between agents and bails
+  // gracefully (the in-flight agent's request still completes, but no
+  // further agents are processed). Ref because the value must be read
+  // inside the async loop's closure without triggering re-renders.
+  const cancelRef = useRef(false);
 
   // Tracks whether the component is still mounted so the long-running
   // `runMigration` loop can bail out before calling state setters after unmount.
@@ -339,6 +348,17 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
     }
   };
 
+  // Constructs the V2 mint payload from a V1 RegistryEntry.
+  //
+  // INTENTIONAL OMISSION: `agent.supportedPaymentSources` is NOT forwarded
+  // to the V2 entry. V1 supportedPaymentSources advertise compatibility
+  // with V1 contracts; carrying them onto a V2 mint would publish a V2
+  // agent that claims V1 contract support, which is incorrect — V2 agents
+  // must only advertise V2-contract compatibility. The V2 registry's
+  // default behavior (advertise the active V2 payment source if no
+  // explicit list is supplied) is the right shape here. Do NOT add a
+  // `supportedPaymentSources:` line below without re-evaluating the
+  // V1/V2 contract-compatibility model.
   const buildRegistryBody = (agent: RegistryEntry, walletVkey: string) => {
     const pricing = (() => {
       if (agent.AgentPricing.pricingType === 'Free') {
@@ -403,6 +423,26 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
     };
   };
 
+  const startMigration = () => {
+    if (!selectedV2Wallet) {
+      toast.error('Select a V2 selling wallet first');
+      return;
+    }
+    if (selectedAgentIds.size === 0) {
+      toast.error('Select at least one agent to migrate');
+      return;
+    }
+    if (!hasEnoughBalance) {
+      toast.error('V2 wallet balance is too low; top up first');
+      return;
+    }
+    // Two-step Confirm: first click flips into the confirm preview; second
+    // click on "Confirm migration" triggers `runMigration`. Prevents
+    // accidental kickoff of an irreversible multi-tx batch on a single
+    // mis-click. (`runMigration` itself re-checks the gates.)
+    setConfirmPending(true);
+  };
+
   const runMigration = async () => {
     if (!selectedV2Wallet) {
       toast.error('Select a V2 selling wallet first');
@@ -417,6 +457,8 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
       return;
     }
 
+    setConfirmPending(false);
+    cancelRef.current = false;
     setIsMigrating(true);
     setIsDone(false);
 
@@ -434,16 +476,43 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
       );
     }
 
-    const initial: Record<string, MigrationResult> = {};
-    for (const agent of validAgents) {
-      initial[agent.id] = { agentId: agent.id, status: 'pending' };
-    }
-    setResults(initial);
+    // Re-run idempotency: preserve any prior `success` results so a re-run
+    // (e.g. after a partial failure) does not re-mint already-migrated
+    // agents. Each successful re-mint creates a fresh on-chain
+    // agentIdentifier; reprocessing duplicates them and wastes ~5 ADA in
+    // fees per duplicate. Read the latest results snapshot via setResults's
+    // updater so this works even if `runMigration` is called twice in
+    // rapid succession.
+    let priorResults: Record<string, MigrationResult> = {};
+    setResults((prev) => {
+      priorResults = prev;
+      const next: Record<string, MigrationResult> = {};
+      for (const agent of validAgents) {
+        next[agent.id] =
+          prev[agent.id]?.status === 'success'
+            ? prev[agent.id]
+            : { agentId: agent.id, status: 'pending' };
+      }
+      return next;
+    });
 
     let successCount = 0;
+    let skippedAlreadySuccessfulCount = 0;
 
     for (const agent of validAgents) {
       if (!mountedRef.current) return;
+      if (cancelRef.current) {
+        // User aborted between agents. The agents still showing 'pending'
+        // are left as-is; the user can re-open Migrate and continue from
+        // where it left off (the prior-results preservation above will skip
+        // anything that already succeeded).
+        break;
+      }
+      if (priorResults[agent.id]?.status === 'success') {
+        // Already migrated in a prior run; skip without resubmitting.
+        skippedAlreadySuccessfulCount += 1;
+        continue;
+      }
 
       setResults((prev) => ({
         ...prev,
@@ -527,6 +596,12 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
       // screen — otherwise they vanish while the user is still reading results.
       queryClient.invalidateQueries({ queryKey: ['agents'] });
       queryClient.invalidateQueries({ queryKey: ['payment-sources-all'] });
+      // Each successful re-mint debits ~5 ADA from the V2 selling wallet.
+      // The wallet-balance / transactions caches would otherwise show
+      // stale balances until the next ~25s refetch tick, surprising the
+      // operator who just kicked off a multi-agent batch.
+      queryClient.invalidateQueries({ queryKey: ['wallets'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
       hasPendingV1ListInvalidationRef.current = true;
       onSuccess?.();
     }
@@ -852,35 +927,79 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
             </div>
           )}
 
+          {confirmPending && !isMigrating && (
+            <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm space-y-1">
+              <p className="font-medium">Confirm before migrating</p>
+              <p className="text-xs text-muted-foreground">
+                This will mint {selectedAgentIds.size} new on-chain agent registration
+                {selectedAgentIds.size === 1 ? '' : 's'} on V2 and spend ~
+                {(requiredBalance / 1).toFixed(0)} ADA in fees.
+                {deregisterAfter &&
+                  ' Selected V1 entries will be deregistered after each successful mint.'}{' '}
+                This action cannot be undone on chain. Already-successful agents from a previous run
+                will be skipped.
+              </p>
+            </div>
+          )}
+
           <DialogFooter className="gap-2 sm:gap-0">
             {!isDone ? (
               <>
-                <Button variant="outline" onClick={handleClose} disabled={isMigrating}>
-                  Cancel
-                </Button>
-                <Button
-                  onClick={runMigration}
-                  disabled={
-                    isMigrating ||
-                    !v2Source ||
-                    !selectedV2Wallet ||
-                    selectedAgentIds.size === 0 ||
-                    !hasEnoughBalance
-                  }
-                  className="gap-2"
-                >
-                  {isMigrating ? (
-                    <>
-                      <Spinner size={14} /> Migrating…
-                    </>
-                  ) : (
-                    <>
-                      Migrate {selectedAgentIds.size > 0 ? `${selectedAgentIds.size} ` : ''}
-                      agent{selectedAgentIds.size === 1 ? '' : 's'}
-                      <ArrowRight className="h-4 w-4" />
-                    </>
-                  )}
-                </Button>
+                {/* Cancel-during-run: flips the `cancelRef` flag the loop
+                    polls between agents. The currently in-flight agent's
+                    request still completes; subsequent agents are skipped.
+                    Disabled when not migrating — close the dialog via the
+                    Cancel button to the left instead. */}
+                {isMigrating ? (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      cancelRef.current = true;
+                      toast.info('Stopping after current agent completes…');
+                    }}
+                  >
+                    Stop migration
+                  </Button>
+                ) : confirmPending ? (
+                  <Button variant="outline" onClick={() => setConfirmPending(false)}>
+                    Back
+                  </Button>
+                ) : (
+                  <Button variant="outline" onClick={handleClose}>
+                    Cancel
+                  </Button>
+                )}
+                {confirmPending ? (
+                  <Button onClick={runMigration} className="gap-2" variant="destructive">
+                    Confirm migration of {selectedAgentIds.size} agent
+                    {selectedAgentIds.size === 1 ? '' : 's'}
+                    <ArrowRight className="h-4 w-4" />
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={startMigration}
+                    disabled={
+                      isMigrating ||
+                      !v2Source ||
+                      !selectedV2Wallet ||
+                      selectedAgentIds.size === 0 ||
+                      !hasEnoughBalance
+                    }
+                    className="gap-2"
+                  >
+                    {isMigrating ? (
+                      <>
+                        <Spinner size={14} /> Migrating…
+                      </>
+                    ) : (
+                      <>
+                        Migrate {selectedAgentIds.size > 0 ? `${selectedAgentIds.size} ` : ''}
+                        agent{selectedAgentIds.size === 1 ? '' : 's'}
+                        <ArrowRight className="h-4 w-4" />
+                      </>
+                    )}
+                  </Button>
+                )}
               </>
             ) : (
               <Button onClick={handleClose} className="gap-2">

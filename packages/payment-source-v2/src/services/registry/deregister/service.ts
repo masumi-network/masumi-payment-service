@@ -228,19 +228,43 @@ async function processSingleDeregistration(
 		WALLET_SPLITTER_LOVELACE,
 	);
 	const signedTx = await wallet.signTx(unsignedTx);
-	await prisma.registryRequest.update({
-		where: { id: request.id },
-		data: {
-			state: RegistrationState.DeregistrationInitiated,
-			...createPendingTransaction(deregistrationWallet.id),
-		},
-	});
-	const newTxHash = await wallet.submitTx(signedTx);
+
+	// Submit FIRST, then write DB. See register/service.ts single-item
+	// path for full rationale. On submit failure, no orphan Transaction
+	// row to clean up; just revert state back to DeregistrationRequested
+	// and clear the wallet lock so the next tick can retry.
+	let newTxHash: string;
+	try {
+		newTxHash = await wallet.submitTx(signedTx);
+	} catch (error) {
+		logger.error('Error submitting V2 deregister single-item tx', { error, requestId: request.id });
+		await prisma.registryRequest.update({
+			where: { id: request.id },
+			data: {
+				state: RegistrationState.DeregistrationRequested,
+				DeregistrationHotWallet: {
+					update: {
+						lockedAt: null,
+					},
+				},
+			},
+		});
+		return;
+	}
+
 	await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
-	await prisma.registryRequest.update({
-		where: { id: request.id },
-		data: updateCurrentTransactionHash(newTxHash),
-	});
+
+	await retryOnSerializationConflict(
+		() =>
+			prisma.registryRequest.update({
+				where: { id: request.id },
+				data: {
+					state: RegistrationState.DeregistrationInitiated,
+					...createPendingTransaction(deregistrationWallet.id, newTxHash),
+				},
+			}),
+		{ label: 'v2-deregister-single-post-submit' },
+	);
 	logger.debug(`Created V2 deregister transaction (single-item fallback):
               Tx ID: ${newTxHash}
               View on https://${network === 'preprod' ? 'preprod.' : ''}cardanoscan.io/transaction/${newTxHash}
@@ -502,7 +526,7 @@ export async function deRegisterAgentV2() {
 									}
 									return sharedTx.id;
 								},
-								{ timeout: 30_000 },
+								{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
 							),
 						{ label: 'v2-deregister-batch-tx' },
 					);
@@ -575,7 +599,7 @@ export async function deRegisterAgentV2() {
 										});
 									}
 								},
-								{ timeout: 30_000 },
+								{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
 							),
 						{ label: 'v2-deregister-batch-tx' },
 					);
@@ -611,7 +635,7 @@ export async function deRegisterAgentV2() {
 										data: { txHash: newTxHash },
 									});
 								},
-								{ timeout: 30_000 },
+								{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
 							),
 						{ label: 'v2-deregister-batch-tx' },
 					);

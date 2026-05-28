@@ -4,8 +4,33 @@ import { z } from '@masumi/payment-core/zod';
  * Schema-only module for swap API. Kept separate so OpenAPI/swagger generator
  * can import it without loading @sundaeswap runtime (which has ESM/dependency issues in tsx).
  */
+/**
+ * Common validators. `walletVkey` is a 28-byte blake2b-224 payment-key hash
+ * encoded as 56 hex chars. `txHash` is a 32-byte blake2b-256 tx body hash
+ * encoded as 64 hex chars. Both are reused across multiple swap endpoints.
+ */
+const walletVkeySchema = z
+	.string()
+	.length(56)
+	.regex(/^[0-9a-fA-F]{56}$/, 'walletVkey must be a 56-char hex blake2b-224 payment-key hash');
+
+const txHashSchema = z
+	.string()
+	.length(64)
+	.regex(/^[0-9a-fA-F]{64}$/, 'txHash must be a 64-char hex blake2b-256 transaction hash');
+
+const swapTransactionIdSchema = z.string().min(1).max(64);
+
+const sundaeswapPoolIdSchema = z
+	.string()
+	.min(1)
+	.max(120)
+	// SundaeSwap pool ids are bech32-ish or hex of the pool script hash.
+	// Cap length and restrict to alphanumeric to block injection-style inputs.
+	.regex(/^[0-9a-zA-Z]+$/, 'poolId must be alphanumeric');
+
 export const swapTokensSchemaInput = z.object({
-	walletVkey: z.string().min(1).describe('Wallet verification key (vKey) to identify the wallet'),
+	walletVkey: walletVkeySchema.describe('Wallet verification key (vKey) to identify the wallet'),
 	amount: z
 		.number()
 		.positive()
@@ -25,7 +50,7 @@ export const swapTokensSchemaInput = z.object({
 			name: z.string().describe('Name of the destination token'),
 		})
 		.describe('Destination token information'),
-	poolId: z.string().describe('SundaeSwap pool identifier'),
+	poolId: sundaeswapPoolIdSchema.describe('SundaeSwap pool identifier'),
 	slippage: z.number().min(0).max(1).optional().describe('Slippage tolerance (0-1, default: 0.03 for 3%)'),
 });
 
@@ -35,13 +60,13 @@ export const swapTokensSchemaOutput = z.object({
 });
 
 export const getSwapConfirmSchemaInput = z.object({
-	txHash: z.string().min(1).describe('Transaction hash to check'),
-	walletVkey: z.string().min(1).describe('Wallet verification key (vKey) that submitted the swap'),
+	txHash: txHashSchema.describe('Transaction hash to check'),
+	walletVkey: walletVkeySchema.describe('Wallet verification key (vKey) that submitted the swap'),
 });
 
 export const cancelSwapSchemaInput = z.object({
-	walletVkey: z.string().min(1).describe('Wallet verification key (vKey) of the wallet that placed the order'),
-	swapTransactionId: z.string().min(1).describe('ID of the SwapTransaction to cancel'),
+	walletVkey: walletVkeySchema.describe('Wallet verification key (vKey) of the wallet that placed the order'),
+	swapTransactionId: swapTransactionIdSchema.describe('ID of the SwapTransaction to cancel'),
 });
 
 export const cancelSwapSchemaOutput = z.object({
@@ -49,8 +74,8 @@ export const cancelSwapSchemaOutput = z.object({
 });
 
 export const acknowledgeSwapTimeoutSchemaInput = z.object({
-	walletVkey: z.string().min(1).describe('Wallet verification key (vKey) of the wallet'),
-	swapTransactionId: z.string().min(1).describe('ID of the timed-out SwapTransaction'),
+	walletVkey: walletVkeySchema.describe('Wallet verification key (vKey) of the wallet'),
+	swapTransactionId: swapTransactionIdSchema.describe('ID of the timed-out SwapTransaction'),
 });
 
 export const acknowledgeSwapTimeoutSchemaOutput = z.object({
@@ -59,9 +84,9 @@ export const acknowledgeSwapTimeoutSchemaOutput = z.object({
 });
 
 export const getSwapTransactionsSchemaInput = z.object({
-	walletVkey: z.string().min(1).describe('Wallet verification key (vKey) to filter swap transactions'),
+	walletVkey: walletVkeySchema.describe('Wallet verification key (vKey) to filter swap transactions'),
 	limit: z.coerce.number().min(1).max(100).default(10).describe('Number of swap transactions to return'),
-	cursorId: z.string().optional().describe('Cursor ID for pagination'),
+	cursorId: z.string().max(64).optional().describe('Cursor ID for pagination'),
 });
 
 export const swapTransactionSchema = z.object({
@@ -89,11 +114,27 @@ export const getSwapTransactionsSchemaOutput = z.object({
 });
 
 export const getSwapEstimateSchemaInput = z.object({
-	fromPolicyId: z.string().describe('Policy ID of the source token. Use empty string "" for ADA'),
-	fromAssetName: z.string().describe('Asset name (hex) of the source token. Use empty string "" for ADA'),
-	toPolicyId: z.string().describe('Policy ID of the destination token. Use empty string "" for ADA'),
-	toAssetName: z.string().describe('Asset name (hex) of the destination token. Use empty string "" for ADA'),
-	poolId: z.string().min(1).describe('SundaeSwap pool identifier'),
+	fromPolicyId: z
+		.string()
+		.max(56)
+		.regex(/^[0-9a-fA-F]*$/, 'fromPolicyId must be empty or a hex policy id')
+		.describe('Policy ID of the source token. Use empty string "" for ADA'),
+	fromAssetName: z
+		.string()
+		.max(64)
+		.regex(/^[0-9a-fA-F]*$/, 'fromAssetName must be empty or hex')
+		.describe('Asset name (hex) of the source token. Use empty string "" for ADA'),
+	toPolicyId: z
+		.string()
+		.max(56)
+		.regex(/^[0-9a-fA-F]*$/, 'toPolicyId must be empty or a hex policy id')
+		.describe('Policy ID of the destination token. Use empty string "" for ADA'),
+	toAssetName: z
+		.string()
+		.max(64)
+		.regex(/^[0-9a-fA-F]*$/, 'toAssetName must be empty or hex')
+		.describe('Asset name (hex) of the destination token. Use empty string "" for ADA'),
+	poolId: sundaeswapPoolIdSchema.describe('SundaeSwap pool identifier'),
 });
 
 export const getSwapEstimateSchemaOutput = z.object({

@@ -5,13 +5,13 @@ import createHttpError from 'http-errors';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { transformPurchaseGetTimestamps, transformPurchaseGetAmounts } from '@/utils/shared/transformers';
-import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import { lovelaceToAdaNumberSafe } from '@/utils/lovelace';
 import { purchaseResponseSchema } from '@/routes/api/purchases';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 
 export const postPurchaseRequestSchemaInput = z.object({
-	blockchainIdentifier: z.string().describe('The blockchain identifier to resolve'),
+	blockchainIdentifier: z.string().min(1).max(8000).describe('The blockchain identifier to resolve'),
 	network: z.nativeEnum(Network).describe('The network the purchases were made on'),
 	filterSmartContractAddress: z
 		.string()

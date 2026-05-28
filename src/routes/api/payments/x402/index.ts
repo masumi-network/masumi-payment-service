@@ -14,6 +14,7 @@ import { buildX402FundsLockingTransactionV2 } from '@masumi/payment-source-v2/se
 import { PaymentSourceType } from '@/generated/prisma/client';
 import { createAuthenticatedRateLimitMiddleware } from '@/utils/middleware/rate-limit';
 import { buildX402TxSchemaInput, buildX402TxSchemaOutput } from './schemas';
+import { isCardanoPubKeyBaseAddressForNetwork } from '@/types/payment-source';
 
 export { buildX402TxSchemaInput, buildX402TxSchemaOutput };
 
@@ -76,6 +77,21 @@ export const buildX402TxPost = x402BuildEndpointFactory.build({
 		}
 		if (payment.payByTime == null || BigInt(payment.payByTime) <= BigInt(Date.now())) {
 			throw createHttpError(400, 'Payment has expired');
+		}
+
+		// V2 contract trap: `address_to_verification_key(buyer)` returns None
+		// for script-credential addresses, and every redeemer branch that
+		// touches the buyer principal does `expect Some(...)`. Funds locked
+		// with a script-credential buyer address are permanently unspendable
+		// — no `Withdraw`, no `WithdrawRefund`, no `WithdrawDisputed`. Reject
+		// at the API boundary before broadcasting the lock tx. (The same
+		// restriction is enforced in V1 for symmetry; V1's principal-vkey
+		// dereference is structurally similar.)
+		if (!isCardanoPubKeyBaseAddressForNetwork(input.buyerAddress, input.network)) {
+			throw createHttpError(
+				400,
+				'buyerAddress must be a Cardano base address with a verification-key payment credential. Script-credential addresses (smart wallets, multisig wrappers) cannot interact with the escrow contract; locked funds would be permanently unspendable.',
+			);
 		}
 
 		const blockchainProvider = await createMeshProvider(payment.PaymentSource.PaymentSourceConfig.rpcProviderApiKey);

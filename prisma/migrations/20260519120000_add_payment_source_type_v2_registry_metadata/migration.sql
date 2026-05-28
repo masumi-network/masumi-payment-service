@@ -51,12 +51,10 @@ ALTER TABLE "PurchaseRequest"
 ADD COLUMN IF NOT EXISTS "buyerReturnAddress" TEXT,
 ADD COLUMN IF NOT EXISTS "sellerReturnAddress" TEXT;
 
--- V2 contract state/action extensions.
-ALTER TYPE "OnChainState" ADD VALUE IF NOT EXISTS 'WithdrawAuthorized';
-ALTER TYPE "OnChainState" ADD VALUE IF NOT EXISTS 'RefundAuthorized';
-
-ALTER TYPE "PurchasingAction" ADD VALUE IF NOT EXISTS 'AuthorizeWithdrawalRequested';
-ALTER TYPE "PurchasingAction" ADD VALUE IF NOT EXISTS 'AuthorizeWithdrawalInitiated';
+-- V2 contract state/action extensions are added in the sibling migration
+-- `20260519110000_add_v2_enum_values` so the `ALTER TYPE ... ADD VALUE`
+-- statements run in their own transaction block (Postgres < 12 forbids
+-- ADD VALUE inside a transaction; Prisma runs each migration in one tx).
 
 -- Supported payment sources advertised by a registry entry: persisted as rows in a
 -- dedicated child table, not as JSON. Mirrors the on-chain registry metadata.

@@ -1,19 +1,39 @@
 import { UTxO } from '@meshsdk/core';
 
 /**
- * Sorts UTXOs by lovelace amount in descending order (O(n log n))
+ * Reads the lovelace quantity off a UTxO as `bigint`.
+ *
+ * Cardano lovelace quantities can exceed `Number.MAX_SAFE_INTEGER`
+ * (2^53 - 1 ≈ 9.0e15). Mainnet has individual whale UTxOs above this
+ * boundary, and the protocol-allowed maximum (~45e15 lovelace = 45M ADA
+ * per UTxO with the current supply) cannot fit in a JS Number without
+ * truncation. Project rule (CLAUDE.md): use BigInt for all monetary
+ * amounts; never use Number for lovelace values.
+ */
+function getLovelaceFromUtxo(utxo: UTxO): bigint {
+	return BigInt(utxo.output.amount.find((asset) => asset.unit === 'lovelace' || asset.unit === '')?.quantity ?? '0');
+}
+
+/**
+ * Sorts UTXOs by lovelace amount in descending order (O(n log n)).
+ *
+ * Uses BigInt comparisons throughout — see `getLovelaceFromUtxo`. The
+ * comparator cannot return `bigint`, so it converts the sign of the
+ * BigInt diff to `-1 / 0 / 1`.
  */
 export function sortUtxosByLovelaceDesc(utxos: UTxO[]): UTxO[] {
-	// Extract lovelace amounts once for better performance
 	const utxosWithLovelace = utxos.map((utxo) => ({
 		utxo,
-		lovelace: parseInt(
-			utxo.output.amount.find((asset) => asset.unit === 'lovelace' || asset.unit === '')?.quantity ?? '0',
-		),
+		lovelace: getLovelaceFromUtxo(utxo),
 	}));
 
-	// Sort by lovelace amount (descending)
-	return utxosWithLovelace.sort((a, b) => b.lovelace - a.lovelace).map((item) => item.utxo);
+	return utxosWithLovelace
+		.sort((a, b) => {
+			if (b.lovelace > a.lovelace) return 1;
+			if (b.lovelace < a.lovelace) return -1;
+			return 0;
+		})
+		.map((item) => item.utxo);
 }
 
 function sortUtxosByBloatAsc(utxos: UTxO[]): UTxO[] {
@@ -21,10 +41,6 @@ function sortUtxosByBloatAsc(utxos: UTxO[]): UTxO[] {
 	// array. `sortUtxosByLovelaceDesc` above already produces a fresh array via
 	// `.map(...).sort()`; mirror that immutability guarantee here.
 	return utxos.slice().sort((a, b) => a.output.amount.length - b.output.amount.length);
-}
-
-function getLovelaceFromUtxo(utxo: UTxO): number {
-	return parseInt(utxo.output.amount.find((asset) => asset.unit === 'lovelace' || asset.unit === '')?.quantity ?? '0');
 }
 
 /**
@@ -47,14 +63,19 @@ function getLovelaceFromUtxo(utxo: UTxO): number {
  * anyway, so emitting extra small UTxOs here doesn't expand the tx body.
  */
 function limitUtxos(utxos: UTxO[], requiredLovelace: number): UTxO[] {
-	const nonEmpty = utxos.filter((utxo) => getLovelaceFromUtxo(utxo) > 0);
+	const nonEmpty = utxos.filter((utxo) => getLovelaceFromUtxo(utxo) > 0n);
 	if (nonEmpty.length === 0) {
 		throw new Error('No suitable UTXOs found');
 	}
 	const selectedUtxos: UTxO[] = [];
-	let accumulatedLovelace = 0;
+	let accumulatedLovelace = 0n;
+	// requiredLovelace stays `number` for caller ergonomics — callers pass
+	// small literals like 8_000_000 (8 ADA). BigInt comparisons require both
+	// sides to be bigint, so coerce once up front. requiredLovelace is well
+	// inside safe range so no precision loss.
+	const requiredLovelaceBig = BigInt(requiredLovelace);
 	for (const utxo of nonEmpty) {
-		if (accumulatedLovelace > requiredLovelace) {
+		if (accumulatedLovelace > requiredLovelaceBig) {
 			break;
 		}
 		accumulatedLovelace += getLovelaceFromUtxo(utxo);

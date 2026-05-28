@@ -338,7 +338,7 @@ export async function updateRolledBackTransaction(rolledBackTx: Array<{ tx_hash:
 								});
 							}
 						},
-						{ timeout: 30_000 },
+						{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
 					),
 				{ label: 'tx-sync-rollback' },
 			);
@@ -521,74 +521,99 @@ async function updateInitialPurchaseTransaction(
 							});
 							return;
 						}
+
+						// Symmetric with `updateInitialPaymentTransaction` payment-side
+						// (line ~861): every spoofing-style validation failure flips
+						// `newAction` to WaitingForManualAction + `newState` to
+						// FundsOrDatumInvalid and accumulates a human-readable error
+						// note. Previously these branches `return`ed silently, leaving
+						// purchase rows stuck in FundsLockingInitiated indefinitely
+						// after a spoofing attempt (operator could never see them in
+						// any actionable queue).
+						let newAction: PurchasingAction = PurchasingAction.WaitingForExternalAction;
+						let newState: OnChainState = OnChainState.FundsLocked;
+						const errorNote: string[] = [];
+
 						if (output.reference_script_hash != null) {
-							//no reference script allowed
-							logger.warn('Reference script hash is not null, this should not be set', {
-								tx: tx.tx.tx_hash,
-							});
-							return;
+							const errorMessage =
+								'Reference script hash is not null, this should not be set. This likely is a spoofing attempt.';
+							logger.warn(errorMessage, { tx: tx.tx.tx_hash, purchaseRequest: dbEntry });
+							newAction = PurchasingAction.WaitingForManualAction;
+							newState = OnChainState.FundsOrDatumInvalid;
+							errorNote.push(errorMessage);
 						}
 						if (dbEntry.inputHash !== decodedNewContract.inputHash) {
-							logger.error(
-								'Purchase request input hash does not match input hash in contract. This is likely a spoofing attempt.',
-								{
-									purchaseRequest: dbEntry,
-									inputHash: dbEntry.inputHash,
-									inputHashContract: decodedNewContract.inputHash,
-								},
-							);
-							return;
+							const errorMessage =
+								'Purchase request input hash does not match input hash in contract. This is likely a spoofing attempt.';
+							logger.error(errorMessage, {
+								purchaseRequest: dbEntry,
+								inputHash: dbEntry.inputHash,
+								inputHashContract: decodedNewContract.inputHash,
+							});
+							newAction = PurchasingAction.WaitingForManualAction;
+							newState = OnChainState.FundsOrDatumInvalid;
+							errorNote.push(errorMessage);
 						}
 
-						//We soft ignore those transactions
 						if (
 							decodedNewContract.sellerVkey != dbEntry.SellerWallet.walletVkey ||
 							decodedNewContract.sellerAddress != dbEntry.SellerWallet.walletAddress
 						) {
-							logger.warn('Seller does not match seller in db. This likely is a spoofing attempt.', {
+							const errorMessage = 'Seller does not match seller in db. This likely is a spoofing attempt.';
+							logger.warn(errorMessage, {
 								purchaseRequest: dbEntry,
 								sender: decodedNewContract.sellerVkey,
 								senderAddress: decodedNewContract.sellerAddress,
 								senderDb: dbEntry.SmartContractWallet?.walletVkey,
 								senderDbAddress: dbEntry.SmartContractWallet?.walletAddress,
 							});
-							return;
+							newAction = PurchasingAction.WaitingForManualAction;
+							newState = OnChainState.FundsOrDatumInvalid;
+							errorNote.push(errorMessage);
 						}
 						if (tx.utxos.inputs.find((x) => x.address == decodedNewContract.buyerAddress) == null) {
-							logger.warn('Buyer address not found in inputs, this likely is a spoofing attempt.', {
+							const errorMessage = 'Buyer address not found in inputs, this likely is a spoofing attempt.';
+							logger.warn(errorMessage, {
 								purchaseRequest: dbEntry,
 								buyerAddress: decodedNewContract.buyerAddress,
 							});
-							return;
+							newAction = PurchasingAction.WaitingForManualAction;
+							newState = OnChainState.FundsOrDatumInvalid;
+							errorNote.push(errorMessage);
 						}
 
 						if (BigInt(decodedNewContract.collateralReturnLovelace) != dbEntry.collateralReturnLovelace) {
-							logger.warn(
-								'Collateral return lovelace does not match collateral return lovelace in db. This likely is a spoofing attempt.',
-								{
-									purchaseRequest: dbEntry,
-									collateralReturnLovelace: decodedNewContract.collateralReturnLovelace,
-									collateralReturnLovelaceDb: dbEntry.collateralReturnLovelace,
-								},
-							);
-							return;
+							const errorMessage =
+								'Collateral return lovelace does not match collateral return lovelace in db. This likely is a spoofing attempt.';
+							logger.warn(errorMessage, {
+								purchaseRequest: dbEntry,
+								collateralReturnLovelace: decodedNewContract.collateralReturnLovelace,
+								collateralReturnLovelaceDb: dbEntry.collateralReturnLovelace,
+							});
+							newAction = PurchasingAction.WaitingForManualAction;
+							newState = OnChainState.FundsOrDatumInvalid;
+							errorNote.push(errorMessage);
 						}
 
 						if (BigInt(decodedNewContract.payByTime) != dbEntry.payByTime) {
-							logger.warn('Pay by time does not match pay by time in db. This likely is a spoofing attempt.', {
-								purchaseRequest: dbEntry,
-							});
-							return;
+							const errorMessage = 'Pay by time does not match pay by time in db. This likely is a spoofing attempt.';
+							logger.warn(errorMessage, { purchaseRequest: dbEntry });
+							newAction = PurchasingAction.WaitingForManualAction;
+							newState = OnChainState.FundsOrDatumInvalid;
+							errorNote.push(errorMessage);
 						}
 
 						const blockTime = tx.blockTime;
 						if (blockTime * 1000 > decodedNewContract.payByTime) {
-							logger.warn('Block time is after pay by time. This is a timed out purchase.', {
+							const errorMessage = 'Block time is after pay by time. This is a timed out purchase.';
+							logger.warn(errorMessage, {
 								purchaseRequest: dbEntry,
 								blockTime: blockTime * 1000,
 								payByTime: decodedNewContract.payByTime,
 							});
-							return;
+							newAction = PurchasingAction.WaitingForManualAction;
+							newState = OnChainState.FundsOrDatumInvalid;
+							errorNote.push(errorMessage);
 						}
 
 						const expectedBuyerVkey = dbEntry.SmartContractWallet?.walletVkey;
@@ -597,83 +622,109 @@ async function updateInitialPurchaseTransaction(
 						const isBuyerAddressMismatch =
 							expectedBuyerAddress != null && decodedNewContract.buyerAddress !== expectedBuyerAddress;
 						if (isBuyerVkeyMismatch || isBuyerAddressMismatch) {
-							logger.warn('Buyer does not match buyer in db. This likely is a spoofing attempt.', {
+							const errorMessage = 'Buyer does not match buyer in db. This likely is a spoofing attempt.';
+							logger.warn(errorMessage, {
 								purchaseRequest: dbEntry,
 								buyer: decodedNewContract.buyerVkey,
 								buyerAddress: decodedNewContract.buyerAddress,
 								buyerDb: expectedBuyerVkey,
 								buyerDbAddress: expectedBuyerAddress,
 							});
-							return;
+							newAction = PurchasingAction.WaitingForManualAction;
+							newState = OnChainState.FundsOrDatumInvalid;
+							errorNote.push(errorMessage);
 						}
 						if (decodedNewContract.state != SmartContractState.FundsLocked) {
-							logger.warn('State is not funds locked. This likely is a spoofing attempt.', {
+							const errorMessage = 'State is not funds locked. This likely is a spoofing attempt.';
+							logger.warn(errorMessage, {
 								purchaseRequest: dbEntry,
 								state: decodedNewContract.state,
 							});
-							return;
+							newAction = PurchasingAction.WaitingForManualAction;
+							newState = OnChainState.FundsOrDatumInvalid;
+							errorNote.push(errorMessage);
 						}
 						if (decodedNewContract.resultHash != null) {
-							logger.warn('Result hash was set. This likely is a spoofing attempt.', {
+							const errorMessage = 'Result hash was set. This likely is a spoofing attempt.';
+							logger.warn(errorMessage, {
 								purchaseRequest: dbEntry,
 								resultHash: decodedNewContract.resultHash,
 							});
-							return;
+							newAction = PurchasingAction.WaitingForManualAction;
+							newState = OnChainState.FundsOrDatumInvalid;
+							errorNote.push(errorMessage);
 						}
 						if (BigInt(decodedNewContract.resultTime) != dbEntry.submitResultTime) {
-							logger.warn('Result time is not the agreed upon time. This likely is a spoofing attempt.', {
+							const errorMessage = 'Result time is not the agreed upon time. This likely is a spoofing attempt.';
+							logger.warn(errorMessage, {
 								purchaseRequest: dbEntry,
 								resultTime: decodedNewContract.resultTime,
 								resultTimeDb: dbEntry.submitResultTime,
 							});
-							return;
+							newAction = PurchasingAction.WaitingForManualAction;
+							newState = OnChainState.FundsOrDatumInvalid;
+							errorNote.push(errorMessage);
 						}
 						if (decodedNewContract.unlockTime < dbEntry.unlockTime) {
-							logger.warn('Unlock time is before the agreed upon time. This likely is a spoofing attempt.', {
+							const errorMessage = 'Unlock time is before the agreed upon time. This likely is a spoofing attempt.';
+							logger.warn(errorMessage, {
 								purchaseRequest: dbEntry,
 								unlockTime: decodedNewContract.unlockTime,
 								unlockTimeDb: dbEntry.unlockTime,
 							});
-							return;
+							newAction = PurchasingAction.WaitingForManualAction;
+							newState = OnChainState.FundsOrDatumInvalid;
+							errorNote.push(errorMessage);
 						}
 						if (BigInt(decodedNewContract.externalDisputeUnlockTime) != dbEntry.externalDisputeUnlockTime) {
-							logger.warn(
-								'External dispute unlock time is not the agreed upon time. This likely is a spoofing attempt.',
-								{
-									purchaseRequest: dbEntry,
-									externalDisputeUnlockTime: decodedNewContract.externalDisputeUnlockTime,
-									externalDisputeUnlockTimeDb: dbEntry.externalDisputeUnlockTime,
-								},
-							);
-							return;
+							const errorMessage =
+								'External dispute unlock time is not the agreed upon time. This likely is a spoofing attempt.';
+							logger.warn(errorMessage, {
+								purchaseRequest: dbEntry,
+								externalDisputeUnlockTime: decodedNewContract.externalDisputeUnlockTime,
+								externalDisputeUnlockTimeDb: dbEntry.externalDisputeUnlockTime,
+							});
+							newAction = PurchasingAction.WaitingForManualAction;
+							newState = OnChainState.FundsOrDatumInvalid;
+							errorNote.push(errorMessage);
 						}
 						if (BigInt(decodedNewContract.buyerCooldownTime) != BigInt(0)) {
-							logger.warn('Buyer cooldown time is not 0. This likely is a spoofing attempt.', {
+							const errorMessage = 'Buyer cooldown time is not 0. This likely is a spoofing attempt.';
+							logger.warn(errorMessage, {
 								purchaseRequest: dbEntry,
 								buyerCooldownTime: decodedNewContract.buyerCooldownTime,
 							});
-							return;
+							newAction = PurchasingAction.WaitingForManualAction;
+							newState = OnChainState.FundsOrDatumInvalid;
+							errorNote.push(errorMessage);
 						}
 						if (BigInt(decodedNewContract.sellerCooldownTime) != BigInt(0)) {
-							logger.warn('Seller cooldown time is not 0. This likely is a spoofing attempt.', {
+							const errorMessage = 'Seller cooldown time is not 0. This likely is a spoofing attempt.';
+							logger.warn(errorMessage, {
 								purchaseRequest: dbEntry,
 								sellerCooldownTime: decodedNewContract.sellerCooldownTime,
 							});
-							return;
+							newAction = PurchasingAction.WaitingForManualAction;
+							newState = OnChainState.FundsOrDatumInvalid;
+							errorNote.push(errorMessage);
 						}
 						if (
 							paymentContract.paymentSourceType === PaymentSourceType.Web3CardanoV2 &&
 							(!nullableStringEquals(decodedNewContract.buyerReturnAddress, dbEntry.buyerReturnAddress) ||
 								!nullableStringEquals(decodedNewContract.sellerReturnAddress, dbEntry.sellerReturnAddress))
 						) {
-							logger.warn('Return addresses do not match return addresses in db. This likely is a spoofing attempt.', {
+							const errorMessage =
+								'Return addresses do not match return addresses in db. This likely is a spoofing attempt.';
+							logger.warn(errorMessage, {
 								purchaseRequest: dbEntry,
 								buyerReturnAddress: decodedNewContract.buyerReturnAddress,
 								buyerReturnAddressDb: dbEntry.buyerReturnAddress,
 								sellerReturnAddress: decodedNewContract.sellerReturnAddress,
 								sellerReturnAddressDb: dbEntry.sellerReturnAddress,
 							});
-							return;
+							newAction = PurchasingAction.WaitingForManualAction;
+							newState = OnChainState.FundsOrDatumInvalid;
+							errorNote.push(errorMessage);
 						}
 						//TODO: optional check amounts
 						await prisma.purchaseRequest.update({
@@ -688,7 +739,9 @@ async function updateInitialPurchaseTransaction(
 								},
 								NextAction: {
 									create: {
-										requestedAction: PurchasingAction.WaitingForExternalAction,
+										requestedAction: newAction,
+										errorNote: errorNote.length > 0 ? errorNote.join(';\n ') : undefined,
+										errorType: errorNote.length > 0 ? PurchaseErrorType.Unknown : undefined,
 									},
 								},
 								CurrentTransaction: dbEntry.currentTransactionId
@@ -698,7 +751,7 @@ async function updateInitialPurchaseTransaction(
 												status: TransactionStatus.Confirmed,
 												confirmations: tx.block.confirmations,
 												previousOnChainState: null,
-												newOnChainState: OnChainState.FundsLocked,
+												newOnChainState: newState,
 												fees: metadata.fees,
 												blockHeight: metadata.block_height,
 												blockTime: metadata.block_time,
@@ -716,7 +769,7 @@ async function updateInitialPurchaseTransaction(
 												status: TransactionStatus.Confirmed,
 												confirmations: tx.block.confirmations,
 												previousOnChainState: null,
-												newOnChainState: OnChainState.FundsLocked,
+												newOnChainState: newState,
 												fees: metadata.fees,
 												blockHeight: metadata.block_height,
 												blockTime: metadata.block_time,
@@ -728,7 +781,7 @@ async function updateInitialPurchaseTransaction(
 												validContract: metadata.valid_contract,
 											},
 										},
-								onChainState: OnChainState.FundsLocked,
+								onChainState: newState,
 								resultHash: decodedNewContract.resultHash,
 							},
 						});
@@ -1401,12 +1454,16 @@ export async function updateTransaction(
 			break;
 		default: {
 			const _exhaustive: never = paymentContract.paymentSourceType;
-			logger.error(
-				'Unsupported paymentSourceType for tx-sync confirmation handlers (tsc should have caught this). Skipping. tx_hash: ' +
-					tx.tx.tx_hash,
-				{ paymentSourceType: _exhaustive },
+			// Throw, do NOT silently return. The outer tx-sync loop catches
+			// throws and HALTS the per-source checkpoint advance, which is
+			// the only safe outcome here: a new PaymentSourceType variant
+			// added to Prisma without a matching handler arm above would
+			// otherwise silently skip confirmation processing for that
+			// source's txs while the checkpoint advanced past them
+			// — irrecoverable without a re-sync from scratch.
+			throw new Error(
+				`Unsupported paymentSourceType '${String(_exhaustive)}' for tx-sync confirmation handlers; checkpoint advance HALTED to prevent silent skip. tx_hash=${tx.tx.tx_hash}`,
 			);
-			return;
 		}
 	}
 	try {
@@ -1460,6 +1517,17 @@ export async function updateTransaction(
 		logger.error('Error handling purchasing transaction', {
 			error: error,
 		});
+	}
+	// Both handlers ran independently. When BOTH failed, surface both
+	// causes via AggregateError so the outer scheduler log captures the
+	// payment-side AND purchase-side error chains. Previously the second
+	// throw discarded the payment-side error and operators had to
+	// reconstruct half the failure from earlier log lines.
+	if (paymentHandlerError != null && purchasingHandlerError != null) {
+		throw new AggregateError(
+			[paymentHandlerError, purchasingHandlerError],
+			'Both payment-side and purchase-side handlers failed for tx-sync entry',
+		);
 	}
 	if (paymentHandlerError != null) {
 		throw paymentHandlerError as Error;

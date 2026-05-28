@@ -14,7 +14,21 @@ let jobsInitializationToken = 0;
 async function runScheduledJob(job: JobDefinition) {
 	logger.info(job.startMessage);
 	const start = Date.now();
-	await job.run();
+	try {
+		await job.run();
+	} catch (error) {
+		// Swallow with loud log: an uncaught throw bubbles into
+		// AsyncInterval's tick handler. Depending on the AsyncInterval
+		// implementation, a throw can either skip the next iteration or
+		// stop scheduling entirely for that job — neither is acceptable
+		// since the scheduler MUST keep running. We surface the error so
+		// operators see it, but keep the interval alive.
+		logger.error(`Scheduled job '${job.startMessage}' threw; interval kept alive`, {
+			error: error instanceof Error ? { message: error.message, stack: error.stack } : error,
+			durationMs: Date.now() - start,
+		});
+		return;
+	}
 	if (job.finishMessage) {
 		logger.info(job.finishMessage + ' in ' + (Date.now() - start) / 1000 + 's');
 	}

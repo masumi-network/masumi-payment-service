@@ -2,9 +2,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { useEffect, useRef, useState } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
+import { useQueryClient } from '@tanstack/react-query';
 import { getUtxos, postPaymentSourceExtended, postWallet } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
-import { X, Copy, Check } from 'lucide-react';
+import { X, Copy, Check, Eye, EyeOff } from 'lucide-react';
 import {
   shortenAddress,
   cn,
@@ -104,6 +105,7 @@ export function AddPaymentSourceDialog({
   defaultPaymentSourceType = DEFAULT_PAYMENT_SOURCE_TYPE,
 }: AddPaymentSourceDialogProps) {
   const { apiClient, network: currentNetwork } = useAppContext();
+  const queryClient = useQueryClient();
   const [error, setError] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [copiedAddresses, setCopiedAddresses] = useState<{
@@ -117,6 +119,10 @@ export function AddPaymentSourceDialog({
   }>({});
   const [walletGenError, setWalletGenError] = useState<string>('');
   const [feePercentInput, setFeePercentInput] = useState('');
+  // Blockfrost API key is a long-lived secret. Mask in the DOM by default;
+  // user can click the eye toggle to reveal. Prevents accidental disclosure
+  // via screen share / over-the-shoulder / screenshots.
+  const [showApiKey, setShowApiKey] = useState(false);
 
   const {
     register,
@@ -387,10 +393,19 @@ export function AddPaymentSourceDialog({
       {
         onSuccess: () => {
           toast.success('Payment source created successfully');
+          // Dashboard cards keyed against the previous payment-source set
+          // continue rendering against stale caches until the next refetch
+          // tick. Invalidate the sibling queries so the new source's
+          // wallets/agents/transactions are visible immediately.
+          queryClient.invalidateQueries({ queryKey: ['payment-sources-all'] });
+          queryClient.invalidateQueries({ queryKey: ['payment-source-extended'] });
+          queryClient.invalidateQueries({ queryKey: ['wallets'] });
+          queryClient.invalidateQueries({ queryKey: ['agents'] });
+          queryClient.invalidateQueries({ queryKey: ['transactions'] });
           onSuccess();
           onClose();
         },
-        onError: (error: any) => {
+        onError: (error: unknown) => {
           setError(extractApiErrorMessage(error, 'Failed to create payment source'));
         },
         onFinally: () => {
@@ -412,17 +427,20 @@ export function AddPaymentSourceDialog({
           body: { network: getValues('network') },
         }),
       {
-        onSuccess: (response: any) => {
-          if (response.data?.data?.walletMnemonic) {
+        // `response` type inferred from postWallet's PostWalletResponses
+        // via handleApiCall's generic T.
+        onSuccess: (response) => {
+          const mnemonic = response.data?.data?.walletMnemonic;
+          if (mnemonic) {
             // Set the mnemonic in the form
             const fieldName = `purchasingWallets.${index}.walletMnemonic` as const;
-            setValue(fieldName, response.data.data.walletMnemonic);
+            setValue(fieldName, mnemonic);
           } else {
             setWalletGenError('Failed to generate mnemonic phrase');
             toast.error('Failed to generate mnemonic phrase');
           }
         },
-        onError: (error: any) => {
+        onError: (error: unknown) => {
           const errorMessage = extractApiErrorMessage(error, 'Failed to generate mnemonic');
           setWalletGenError(errorMessage);
           toast.error(errorMessage);
@@ -445,16 +463,19 @@ export function AddPaymentSourceDialog({
           body: { network: getValues('network') },
         }),
       {
-        onSuccess: (response: any) => {
-          if (response.data?.data?.walletMnemonic) {
+        // `response` type inferred from postWallet's PostWalletResponses
+        // via handleApiCall's generic T.
+        onSuccess: (response) => {
+          const mnemonic = response.data?.data?.walletMnemonic;
+          if (mnemonic) {
             const fieldName = `sellingWallets.${index}.walletMnemonic` as const;
-            setValue(fieldName, response.data.data.walletMnemonic);
+            setValue(fieldName, mnemonic);
           } else {
             setWalletGenError('Failed to generate mnemonic phrase');
             toast.error('Failed to generate mnemonic phrase');
           }
         },
-        onError: (error: any) => {
+        onError: (error: unknown) => {
           const errorMessage = extractApiErrorMessage(error, 'Failed to generate mnemonic');
           setWalletGenError(errorMessage);
           toast.error(errorMessage);
@@ -602,12 +623,25 @@ export function AddPaymentSourceDialog({
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <input
-                  type="text"
-                  className="w-full p-2 rounded-md bg-background border"
-                  {...register('blockfrostApiKey')}
-                  placeholder="Enter your Blockfrost API key"
-                />
+                <div className="relative">
+                  <input
+                    type={showApiKey ? 'text' : 'password'}
+                    className="w-full p-2 pr-10 rounded-md bg-background border"
+                    autoComplete="off"
+                    spellCheck={false}
+                    {...register('blockfrostApiKey')}
+                    placeholder="Enter your Blockfrost API key"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowApiKey((v) => !v)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    aria-label={showApiKey ? 'Hide API key' : 'Show API key'}
+                    tabIndex={-1}
+                  >
+                    {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
                 {errors.blockfrostApiKey && (
                   <p className="text-xs text-destructive mt-1">{errors.blockfrostApiKey.message}</p>
                 )}
