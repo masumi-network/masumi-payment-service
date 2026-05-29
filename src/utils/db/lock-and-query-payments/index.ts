@@ -1,8 +1,7 @@
 import { HotWalletType, OnChainState, PaymentAction, PaymentSourceType, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
-import { retryOnSerializationConflict } from '@/utils/db/retry';
-import { withSerializableSlot } from '@/utils/db/serializable-semaphore';
+import { withSerializableSlotRetry } from '@/utils/db/serializable-semaphore';
 
 export async function lockAndQueryPayments({
 	paymentStatus,
@@ -82,68 +81,68 @@ export async function lockAndQueryPayments({
 					// per-wallet fan-out across sources cannot exhaust the pg connection pool.
 					// See `src/utils/db/serializable-semaphore.ts` for sizing rationale.
 					withSerializableSlotRetry(
-							() =>
-								prisma.$transaction(
-									async (prisma) => {
-										const potentialPaymentRequests = await prisma.paymentRequest.findMany({
-											where: {
-												NextAction: {
-													requestedAction: paymentStatus,
-													errorType: null,
-													resultHash: requestedResultHash,
-												},
-												submitResultTime: submitResultTime,
-												unlockTime: unlockTime,
-												SmartContractWallet: {
-													id: hotWallet.id,
-													PendingTransaction: { is: null },
-													lockedAt: null,
-													deletedAt: null,
-												},
-												onChainState: onChainState,
-												//we only want to lock the payment if the cooldown time has passed
-												sellerCoolDownTime: { lt: Date.now() - minCooldownTime },
-												resultHash: resultHash,
-												// Optional OR group — only included when caller supplies
-												// `orFilters`. Each entry is fully ANDed against the
-												// outer predicates, so callers can supply per-variant
-												// onChainState / time-window constraints that differ
-												// across an `OR` axis.
-												...(orFilters != null && orFilters.length > 0 ? { OR: orFilters } : {}),
+						() =>
+							prisma.$transaction(
+								async (prisma) => {
+									const potentialPaymentRequests = await prisma.paymentRequest.findMany({
+										where: {
+											NextAction: {
+												requestedAction: paymentStatus,
+												errorType: null,
+												resultHash: requestedResultHash,
 											},
-											include: {
-												NextAction: true,
-												CurrentTransaction: true,
-												RequestedFunds: true,
-												BuyerWallet: true,
-												SmartContractWallet: {
-													include: {
-														Secret: true,
-													},
-													where: { deletedAt: null },
+											submitResultTime: submitResultTime,
+											unlockTime: unlockTime,
+											SmartContractWallet: {
+												id: hotWallet.id,
+												PendingTransaction: { is: null },
+												lockedAt: null,
+												deletedAt: null,
+											},
+											onChainState: onChainState,
+											//we only want to lock the payment if the cooldown time has passed
+											sellerCoolDownTime: { lt: Date.now() - minCooldownTime },
+											resultHash: resultHash,
+											// Optional OR group — only included when caller supplies
+											// `orFilters`. Each entry is fully ANDed against the
+											// outer predicates, so callers can supply per-variant
+											// onChainState / time-window constraints that differ
+											// across an `OR` axis.
+											...(orFilters != null && orFilters.length > 0 ? { OR: orFilters } : {}),
+										},
+										include: {
+											NextAction: true,
+											CurrentTransaction: true,
+											RequestedFunds: true,
+											BuyerWallet: true,
+											SmartContractWallet: {
+												include: {
+													Secret: true,
 												},
+												where: { deletedAt: null },
 											},
-											orderBy: {
-												createdAt: 'asc',
-											},
-											take: maxBatchSize,
+										},
+										orderBy: {
+											createdAt: 'asc',
+										},
+										take: maxBatchSize,
+									});
+									if (potentialPaymentRequests.length > 0) {
+										const hotWalletResult = await prisma.hotWallet.update({
+											where: { id: hotWallet.id, deletedAt: null },
+											data: { lockedAt: new Date() },
 										});
-										if (potentialPaymentRequests.length > 0) {
-											const hotWalletResult = await prisma.hotWallet.update({
-												where: { id: hotWallet.id, deletedAt: null },
-												data: { lockedAt: new Date() },
-											});
-											potentialPaymentRequests.forEach((paymentRequest) => {
-												paymentRequest.SmartContractWallet!.pendingTransactionId = hotWalletResult.pendingTransactionId;
-												paymentRequest.SmartContractWallet!.lockedAt = hotWalletResult.lockedAt;
-											});
-										}
-										return potentialPaymentRequests;
-									},
-									{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
-								),
-							{ label: 'lockAndQueryPayments' },
-						),
+										potentialPaymentRequests.forEach((paymentRequest) => {
+											paymentRequest.SmartContractWallet!.pendingTransactionId = hotWalletResult.pendingTransactionId;
+											paymentRequest.SmartContractWallet!.lockedAt = hotWalletResult.lockedAt;
+										});
+									}
+									return potentialPaymentRequests;
+								},
+								{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
+							),
+						{ label: 'lockAndQueryPayments' },
+					),
 				),
 			);
 			// Keep order-aligned with HotWallets so a rejected slot can be traced

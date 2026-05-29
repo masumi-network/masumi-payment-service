@@ -301,118 +301,118 @@ export async function reconcileOne(tx: ReconcileCandidate): Promise<void> {
 	});
 
 	await withSerializableSlotRetry(
-			() =>
-				prisma.$transaction(
-					async (txdb) => {
-						// Race guard: re-read the row under Serializable isolation BEFORE
-						// any destructive writes. Two scenarios this defends:
-						//   1. A concurrent observer (this cron's parallel iteration, or
-						//      wallet-timeouts delegating to reconcileOne) promoted
-						//      intendedTxHash → txHash between the outer probe and this
-						//      txn body. txHash is now non-null and the tx IS on-chain.
-						//      Reverting (resetting PurchaseRequests, disconnecting the
-						//      wallet, marking RolledBack) would orphan the on-chain tx
-						//      and trigger a double-lock when the next batch tick re-
-						//      attempts.
-						//   2. A concurrent revert (same race shape) already committed
-						//      status=RolledBack. Repeating the revert is wasted work
-						//      and would issue another PurchaseRequest reset that the
-						//      first revert's state already covers.
-						// Postgres SERIALIZABLE establishes the snapshot at the first
-						// SELECT; concurrent writes that commit after the snapshot but
-						// before our COMMIT trigger 40001 → `retryOnSerializationConflict`
-						// retries → next snapshot sees the new state → bails here. So
-						// Option A (re-check) suffices even without an explicit
-						// updateMany predicate on the terminal write below.
-						const fresh = await txdb.transaction.findUnique({
-							where: { id: tx.id },
-							select: { txHash: true, status: true },
+		() =>
+			prisma.$transaction(
+				async (txdb) => {
+					// Race guard: re-read the row under Serializable isolation BEFORE
+					// any destructive writes. Two scenarios this defends:
+					//   1. A concurrent observer (this cron's parallel iteration, or
+					//      wallet-timeouts delegating to reconcileOne) promoted
+					//      intendedTxHash → txHash between the outer probe and this
+					//      txn body. txHash is now non-null and the tx IS on-chain.
+					//      Reverting (resetting PurchaseRequests, disconnecting the
+					//      wallet, marking RolledBack) would orphan the on-chain tx
+					//      and trigger a double-lock when the next batch tick re-
+					//      attempts.
+					//   2. A concurrent revert (same race shape) already committed
+					//      status=RolledBack. Repeating the revert is wasted work
+					//      and would issue another PurchaseRequest reset that the
+					//      first revert's state already covers.
+					// Postgres SERIALIZABLE establishes the snapshot at the first
+					// SELECT; concurrent writes that commit after the snapshot but
+					// before our COMMIT trigger 40001 → `retryOnSerializationConflict`
+					// retries → next snapshot sees the new state → bails here. So
+					// Option A (re-check) suffices even without an explicit
+					// updateMany predicate on the terminal write below.
+					const fresh = await txdb.transaction.findUnique({
+						where: { id: tx.id },
+						select: { txHash: true, status: true },
+					});
+					if (fresh == null) {
+						logger.warn('funding-reconciliation: revert race — row disappeared, skipping', {
+							txId: tx.id,
 						});
-						if (fresh == null) {
-							logger.warn('funding-reconciliation: revert race — row disappeared, skipping', {
-								txId: tx.id,
-							});
-							return;
-						}
-						if (fresh.txHash != null) {
-							logger.warn('funding-reconciliation: revert race — concurrent promote set txHash, abandoning revert', {
-								txId: tx.id,
-								observedTxHash: fresh.txHash,
-								intendedTxHash: tx.intendedTxHash,
-							});
-							return;
-						}
-						if (fresh.status !== TransactionStatus.Pending) {
-							logger.warn('funding-reconciliation: revert race — status no longer Pending, abandoning revert', {
-								txId: tx.id,
-								observedStatus: fresh.status,
-							});
-							return;
-						}
+						return;
+					}
+					if (fresh.txHash != null) {
+						logger.warn('funding-reconciliation: revert race — concurrent promote set txHash, abandoning revert', {
+							txId: tx.id,
+							observedTxHash: fresh.txHash,
+							intendedTxHash: tx.intendedTxHash,
+						});
+						return;
+					}
+					if (fresh.status !== TransactionStatus.Pending) {
+						logger.warn('funding-reconciliation: revert race — status no longer Pending, abandoning revert', {
+							txId: tx.id,
+							observedStatus: fresh.status,
+						});
+						return;
+					}
 
-						// Invariant: intendedTxHash is only set on Transactions owned by
-						// PurchaseRequest (V2 collateral-prep + batch-payments). The revert
-						// path below only resets PurchaseRequest.currentTransactionId. If a
-						// future caller ever sets intendedTxHash on a Transaction also
-						// referenced by PaymentRequest or RegistryRequest, this assert fires
-						// so the orphan-FK is caught at runtime instead of silently
-						// stranding rows. To extend the flow, generalize the revert below
-						// to disconnect all three request types.
-						const dependentPayments = await txdb.paymentRequest.count({
-							where: { currentTransactionId: tx.id },
-						});
-						const dependentRegistries = await txdb.registryRequest.count({
-							where: { currentTransactionId: tx.id },
-						});
-						if (dependentPayments > 0 || dependentRegistries > 0) {
-							throw new Error(
-								`funding-reconciliation: invariant violated for Transaction ${tx.id} — ` +
-									`intendedTxHash is currently a purchase-only flow but found ` +
-									`${dependentPayments} dependent PaymentRequest(s) and ${dependentRegistries} dependent RegistryRequest(s). ` +
-									`Generalize the revert to handle these request types before extending the flow.`,
-							);
-						}
-						// Reset every PurchaseRequest whose CurrentTransaction points at this row.
-						const dependentPurchases = await txdb.purchaseRequest.findMany({
-							where: { currentTransactionId: tx.id },
-							select: { id: true, nextActionId: true },
-						});
-						for (const pr of dependentPurchases) {
-							await txdb.purchaseRequest.update({
-								where: { id: pr.id },
-								data: {
-									ActionHistory: { connect: { id: pr.nextActionId } },
-									NextAction: {
-										create: {
-											requestedAction: PurchasingAction.FundsLockingRequested,
-											errorType: null,
-											errorNote: null,
-										},
-									},
-									CurrentTransaction: { disconnect: true },
-								},
-							});
-						}
-						// Disconnect wallet + free the lock.
-						if (tx.BlocksWallet != null) {
-							await txdb.hotWallet.updateMany({
-								where: { id: tx.BlocksWallet.id, deletedAt: null, pendingTransactionId: tx.id },
-								data: { pendingTransactionId: null, lockedAt: null },
-							});
-						}
-						// Mark the row terminal.
-						await txdb.transaction.update({
-							where: { id: tx.id },
+					// Invariant: intendedTxHash is only set on Transactions owned by
+					// PurchaseRequest (V2 collateral-prep + batch-payments). The revert
+					// path below only resets PurchaseRequest.currentTransactionId. If a
+					// future caller ever sets intendedTxHash on a Transaction also
+					// referenced by PaymentRequest or RegistryRequest, this assert fires
+					// so the orphan-FK is caught at runtime instead of silently
+					// stranding rows. To extend the flow, generalize the revert below
+					// to disconnect all three request types.
+					const dependentPayments = await txdb.paymentRequest.count({
+						where: { currentTransactionId: tx.id },
+					});
+					const dependentRegistries = await txdb.registryRequest.count({
+						where: { currentTransactionId: tx.id },
+					});
+					if (dependentPayments > 0 || dependentRegistries > 0) {
+						throw new Error(
+							`funding-reconciliation: invariant violated for Transaction ${tx.id} — ` +
+								`intendedTxHash is currently a purchase-only flow but found ` +
+								`${dependentPayments} dependent PaymentRequest(s) and ${dependentRegistries} dependent RegistryRequest(s). ` +
+								`Generalize the revert to handle these request types before extending the flow.`,
+						);
+					}
+					// Reset every PurchaseRequest whose CurrentTransaction points at this row.
+					const dependentPurchases = await txdb.purchaseRequest.findMany({
+						where: { currentTransactionId: tx.id },
+						select: { id: true, nextActionId: true },
+					});
+					for (const pr of dependentPurchases) {
+						await txdb.purchaseRequest.update({
+							where: { id: pr.id },
 							data: {
-								status: TransactionStatus.RolledBack,
-								// Keep intendedTxHash for forensic value; clear lastCheckedAt
-								// not needed (status != Pending excludes from polls).
+								ActionHistory: { connect: { id: pr.nextActionId } },
+								NextAction: {
+									create: {
+										requestedAction: PurchasingAction.FundsLockingRequested,
+										errorType: null,
+										errorNote: null,
+									},
+								},
+								CurrentTransaction: { disconnect: true },
 							},
 						});
-					},
-					{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
-				),
-			{ label: 'funding-reconciliation-revert' },
+					}
+					// Disconnect wallet + free the lock.
+					if (tx.BlocksWallet != null) {
+						await txdb.hotWallet.updateMany({
+							where: { id: tx.BlocksWallet.id, deletedAt: null, pendingTransactionId: tx.id },
+							data: { pendingTransactionId: null, lockedAt: null },
+						});
+					}
+					// Mark the row terminal.
+					await txdb.transaction.update({
+						where: { id: tx.id },
+						data: {
+							status: TransactionStatus.RolledBack,
+							// Keep intendedTxHash for forensic value; clear lastCheckedAt
+							// not needed (status != Pending excludes from polls).
+						},
+					});
+				},
+				{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
+			),
+		{ label: 'funding-reconciliation-revert' },
 	);
 }
 

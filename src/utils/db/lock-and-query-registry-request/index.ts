@@ -60,88 +60,88 @@ export async function lockAndQueryRegistryRequests({
 					// per-wallet fan-out across sources cannot exhaust the pg connection pool.
 					// See `src/utils/db/serializable-semaphore.ts` for sizing rationale.
 					withSerializableSlotRetry(
-							() =>
-								prisma.$transaction(
-									async (prisma) => {
-										const potentialRegistryRequests = await prisma.registryRequest.findMany({
-											where: {
-												state: state,
-												...(locksSellingWallet
-													? {
-															SmartContractWallet: {
-																id: hotWallet.id,
-																deletedAt: null,
-																PendingTransaction: { is: null },
-																lockedAt: null,
-															},
-														}
-													: {
-															OR: [
-																{
-																	DeregistrationHotWallet: {
-																		is: {
-																			id: hotWallet.id,
-																			deletedAt: null,
-																			PendingTransaction: { is: null },
-																			lockedAt: null,
-																		},
-																	},
-																},
-																{
-																	deregistrationHotWalletId: null,
-																	SmartContractWallet: {
+						() =>
+							prisma.$transaction(
+								async (prisma) => {
+									const potentialRegistryRequests = await prisma.registryRequest.findMany({
+										where: {
+											state: state,
+											...(locksSellingWallet
+												? {
+														SmartContractWallet: {
+															id: hotWallet.id,
+															deletedAt: null,
+															PendingTransaction: { is: null },
+															lockedAt: null,
+														},
+													}
+												: {
+														OR: [
+															{
+																DeregistrationHotWallet: {
+																	is: {
 																		id: hotWallet.id,
 																		deletedAt: null,
 																		PendingTransaction: { is: null },
 																		lockedAt: null,
 																	},
 																},
-															],
-														}),
-											},
-											include: {
-												SmartContractWallet: {
-													include: {
-														Secret: true,
-													},
+															},
+															{
+																deregistrationHotWalletId: null,
+																SmartContractWallet: {
+																	id: hotWallet.id,
+																	deletedAt: null,
+																	PendingTransaction: { is: null },
+																	lockedAt: null,
+																},
+															},
+														],
+													}),
+										},
+										include: {
+											SmartContractWallet: {
+												include: {
+													Secret: true,
 												},
-												RecipientWallet: true,
-												DeregistrationHotWallet: {
-													include: {
-														Secret: true,
-													},
-												},
-												Pricing: {
-													include: { FixedPricing: { include: { Amounts: true } } },
-												},
-												ExampleOutputs: true,
-												SupportedPaymentSources: true,
 											},
-											orderBy: {
-												createdAt: 'asc',
+											RecipientWallet: true,
+											DeregistrationHotWallet: {
+												include: {
+													Secret: true,
+												},
 											},
-											take: maxBatchSize,
+											Pricing: {
+												include: { FixedPricing: { include: { Amounts: true } } },
+											},
+											ExampleOutputs: true,
+											SupportedPaymentSources: true,
+										},
+										orderBy: {
+											createdAt: 'asc',
+										},
+										take: maxBatchSize,
+									});
+									if (potentialRegistryRequests.length > 0) {
+										const hotWalletResult = await prisma.hotWallet.update({
+											where: { id: hotWallet.id, deletedAt: null },
+											data: { lockedAt: new Date() },
 										});
-										if (potentialRegistryRequests.length > 0) {
-											const hotWalletResult = await prisma.hotWallet.update({
-												where: { id: hotWallet.id, deletedAt: null },
-												data: { lockedAt: new Date() },
-											});
-											potentialRegistryRequests.forEach((registryRequest) => {
-												const walletToLock =
-													locksSellingWallet || registryRequest.DeregistrationHotWallet == null
-														? registryRequest.SmartContractWallet
-														: registryRequest.DeregistrationHotWallet;
-												walletToLock.pendingTransactionId = hotWalletResult.pendingTransactionId;
-												walletToLock.lockedAt = hotWalletResult.lockedAt;
-											});
-										}
-										return potentialRegistryRequests;
-									},
-									{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
-								),
-							{ label: 'lockAndQueryRegistryRequests' },
-						),
+										potentialRegistryRequests.forEach((registryRequest) => {
+											const walletToLock =
+												locksSellingWallet || registryRequest.DeregistrationHotWallet == null
+													? registryRequest.SmartContractWallet
+													: registryRequest.DeregistrationHotWallet;
+											walletToLock.pendingTransactionId = hotWalletResult.pendingTransactionId;
+											walletToLock.lockedAt = hotWalletResult.lockedAt;
+										});
+									}
+									return potentialRegistryRequests;
+								},
+								{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
+							),
+						{ label: 'lockAndQueryRegistryRequests' },
+					),
 				),
 			);
 			// Keep order-aligned with HotWallets so a rejected slot can be traced
