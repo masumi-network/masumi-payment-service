@@ -15,6 +15,7 @@ export { buildX402FundsLockingTransactionV2 as buildX402FundsLockingTransaction 
 
 export { registerAgentV2 as registerAgent } from './registry/register/service';
 export { deRegisterAgentV2 as deRegisterAgent } from './registry/deregister/service';
+export { updateAgentV2 as updateAgent } from './registry/update/service';
 export { checkRegistryTransactionsV2 as checkRegistryTransactions } from './registry/tx-sync/service';
 
 export { registerInboxAgentV2 as registerInboxAgent } from './registry-inbox/register/service';

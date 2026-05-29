@@ -619,6 +619,10 @@ enum RegistrationState {
   DeregistrationInitiated
   DeregistrationConfirmed
   DeregistrationFailed
+  UpdateRequested
+  UpdateInitiated
+  UpdateConfirmed
+  UpdateFailed
 }
 
 enum PricingType {

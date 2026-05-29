@@ -10,7 +10,11 @@ export type RegistryListQueryInput = z.infer<typeof queryRegistryRequestSchemaIn
 
 function buildRegistryStateFilter(filterStatus?: FilterStatus): RegistrationState[] | undefined {
 	if (filterStatus === FilterStatus.Registered) {
-		return [RegistrationState.RegistrationConfirmed];
+		// UpdateConfirmed represents an in-place version bump that left a
+		// fresh asset on chain, so it stays in the Registered bucket. Mid-
+		// flight UpdateRequested/Initiated rows fall into Pending (see
+		// below) because their on-chain state is not yet committed.
+		return [RegistrationState.RegistrationConfirmed, RegistrationState.UpdateConfirmed];
 	}
 
 	if (filterStatus === FilterStatus.Deregistered) {
@@ -18,11 +22,20 @@ function buildRegistryStateFilter(filterStatus?: FilterStatus): RegistrationStat
 	}
 
 	if (filterStatus === FilterStatus.Pending) {
-		return [RegistrationState.RegistrationRequested, RegistrationState.DeregistrationRequested];
+		return [
+			RegistrationState.RegistrationRequested,
+			RegistrationState.DeregistrationRequested,
+			RegistrationState.UpdateRequested,
+			RegistrationState.UpdateInitiated,
+		];
 	}
 
 	if (filterStatus === FilterStatus.Failed) {
-		return [RegistrationState.RegistrationFailed, RegistrationState.DeregistrationFailed];
+		return [
+			RegistrationState.RegistrationFailed,
+			RegistrationState.DeregistrationFailed,
+			RegistrationState.UpdateFailed,
+		];
 	}
 
 	return undefined;

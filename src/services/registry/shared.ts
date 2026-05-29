@@ -62,6 +62,9 @@ export function generateRegistryAssetName(firstUtxo: UTxO): string {
 // version field starts at 0 and increments by 1 on every UpdateAction.
 const V2_REGISTRY_INITIAL_NONCE = '10'; // 0x10 — first byte strictly > 0x0f
 const V2_REGISTRY_INITIAL_VERSION = '000000'; // 3 bytes BE, starts at 0
+const V2_REGISTRY_ASSET_NAME_HEX_LENGTH = 64; // 32 bytes
+const V2_REGISTRY_VERSION_MAX = 0xffffff;
+const V2_UPDATE_REDEEMER_ALTERNATIVE = 1;
 
 export function generateRegistryAssetNameV2(firstUtxo: UTxO): string {
 	const txId = firstUtxo.input.txHash;
@@ -72,6 +75,34 @@ export function generateRegistryAssetNameV2(firstUtxo: UTxO): string {
 	const rootHashBytes = blake2b(serializedOutputUint8Array, 28);
 	const rootHashHex = Buffer.from(rootHashBytes).toString('hex');
 	return V2_REGISTRY_INITIAL_NONCE + rootHashHex + V2_REGISTRY_INITIAL_VERSION;
+}
+
+// Compute the next-version V2 asset name for an UpdateAction. The on-chain
+// validator (smart-contracts/registry-v2/validators/mint.ak) requires the new
+// asset name to share the burned asset's 1-byte nonce + 28-byte root_hash and
+// to carry a 3-byte version that is the burned version + 1. Version overflow
+// past 0xFFFFFF is rejected explicitly because the chain check uses big-endian
+// from_int + 1 and a wrap-around there would produce the contract's own
+// `update_asset_rejects_max_version_overflow` failure mode.
+export function bumpRegistryAssetNameVersionV2(assetNameHex: string): string {
+	if (assetNameHex.length !== V2_REGISTRY_ASSET_NAME_HEX_LENGTH) {
+		throw new Error(
+			`V2 registry asset name must be ${V2_REGISTRY_ASSET_NAME_HEX_LENGTH} hex chars, got ${assetNameHex.length}`,
+		);
+	}
+	const noncePart = assetNameHex.slice(0, 2);
+	const rootHashPart = assetNameHex.slice(2, 58);
+	const versionPart = assetNameHex.slice(58, 64);
+	const currentVersion = parseInt(versionPart, 16);
+	if (!Number.isFinite(currentVersion)) {
+		throw new Error(`V2 registry asset name has non-hex version segment: ${versionPart}`);
+	}
+	const nextVersion = currentVersion + 1;
+	if (nextVersion > V2_REGISTRY_VERSION_MAX) {
+		throw new Error('V2 registry asset version would overflow 0xFFFFFF');
+	}
+	const nextVersionHex = nextVersion.toString(16).padStart(6, '0');
+	return noncePart + rootHashPart + nextVersionHex;
 }
 
 export function resolveRegistryRecipientWalletAddress(request: {
@@ -262,6 +293,166 @@ export async function generateRegistryDeregisterTransactionAutomaticFees(
 		rpcApiKey,
 		walletSplitterLovelace,
 	);
+}
+
+// Build a single-item V2 registry UpdateAction transaction. The on-chain
+// validator atomically pairs the burned asset with a freshly minted asset
+// sharing the same nonce + root_hash but with version+1; the same
+// `UpdateAction` redeemer (alternative=1) covers both the burn leg and the
+// mint leg under one policy bucket. This helper performs the two-pass
+// `evaluateTx` cycle and returns the unsigned tx ready for the caller to
+// sign and submit.
+//
+// V2-only by construction — the V1 mint contract has no UpdateAction
+// (Action enum is `MintAction | BurnAction`). The route layer rejects V1
+// payment sources before this is ever reached.
+export async function generateRegistryUpdateTransactionAutomaticFees(
+	blockchainProvider: BlockfrostProvider,
+	network: Network,
+	script: {
+		version: LanguageVersion;
+		code: string;
+	},
+	walletAddress: string,
+	recipientWalletAddress: string,
+	fundingLovelace: string,
+	policyId: string,
+	oldAssetName: string,
+	newAssetName: string,
+	assetUtxo: UTxO,
+	collateralUtxo: UTxO,
+	utxos: UTxO[],
+	metadata: RegistryMetadata,
+	rpcApiKey?: string,
+	walletSplitterLovelace?: bigint,
+) {
+	const evaluationTx = await generateRegistryUpdateTransaction(
+		blockchainProvider,
+		network,
+		script,
+		walletAddress,
+		recipientWalletAddress,
+		fundingLovelace,
+		policyId,
+		oldAssetName,
+		newAssetName,
+		assetUtxo,
+		collateralUtxo,
+		utxos,
+		metadata,
+		undefined,
+		rpcApiKey,
+		walletSplitterLovelace,
+	);
+	const evaluated = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
+		tag?: string;
+		budget: { mem: number; steps: number };
+	}>;
+	// One shared MINT redeemer covers the burn+mint pair under the single
+	// UpdateAction policy bucket; pick the MINT entry if tagged, else the
+	// first action returned (`evaluateTx` ordering varies across providers).
+	const mintBudget = evaluated.find((action) => action.tag === 'MINT')?.budget ?? evaluated[0]?.budget;
+	if (mintBudget == null) {
+		throw new Error('evaluateTx returned no MINT budget for V2 registry UpdateAction');
+	}
+
+	return await generateRegistryUpdateTransaction(
+		blockchainProvider,
+		network,
+		script,
+		walletAddress,
+		recipientWalletAddress,
+		fundingLovelace,
+		policyId,
+		oldAssetName,
+		newAssetName,
+		assetUtxo,
+		collateralUtxo,
+		utxos,
+		metadata,
+		mintBudget,
+		rpcApiKey,
+		walletSplitterLovelace,
+	);
+}
+
+async function generateRegistryUpdateTransaction(
+	blockchainProvider: IFetcher,
+	network: Network,
+	script: {
+		version: LanguageVersion;
+		code: string;
+	},
+	walletAddress: string,
+	recipientWalletAddress: string,
+	fundingLovelace: string,
+	policyId: string,
+	oldAssetName: string,
+	newAssetName: string,
+	assetUtxo: UTxO,
+	collateralUtxo: UTxO,
+	utxos: UTxO[],
+	metadata: RegistryMetadata,
+	exUnits: {
+		mem: number;
+		steps: number;
+	} = SERVICE_CONSTANTS.SMART_CONTRACT.defaultExUnits,
+	rpcApiKey?: string,
+	walletSplitterLovelace?: bigint,
+) {
+	if (rpcApiKey) {
+		await syncMeshCostModelsFromChain(rpcApiKey);
+	}
+	const cachedParams = rpcApiKey == null ? null : getCachedChainProtocolParameters(rpcApiKey);
+	const protocolParameters = cachedParams ?? (await blockchainProvider.fetchProtocolParameters(Number.NaN));
+	const txBuilder = new MeshTxBuilder({
+		fetcher: blockchainProvider,
+	});
+	txBuilder.protocolParams(protocolParameters);
+	const deserializedAddress = txBuilder.serializer.deserializer.key.deserializeAddress(walletAddress);
+
+	txBuilder
+		.txIn(assetUtxo.input.txHash, assetUtxo.input.outputIndex)
+		.mintPlutusScript(script.version)
+		.mint('-1', policyId, oldAssetName)
+		.mint(SERVICE_CONSTANTS.SMART_CONTRACT.mintQuantity, policyId, newAssetName)
+		.mintingScript(script.code)
+		.mintRedeemerValue({ alternative: V2_UPDATE_REDEEMER_ALTERNATIVE, fields: [] }, 'Mesh', exUnits)
+		.metadataValue(SERVICE_CONSTANTS.METADATA.nftLabel, {
+			[policyId]: {
+				[newAssetName]: metadata,
+			},
+			version: '1',
+		})
+		.txIn(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
+		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
+		.setTotalCollateral(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount)
+		.txOut(recipientWalletAddress, [
+			{
+				unit: policyId + newAssetName,
+				quantity: SERVICE_CONSTANTS.SMART_CONTRACT.mintQuantity,
+			},
+			{
+				unit: SERVICE_CONSTANTS.CARDANO.NATIVE_TOKEN,
+				quantity: fundingLovelace,
+			},
+		]);
+	for (const utxo of utxos) {
+		txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
+	}
+
+	if (walletSplitterLovelace != null) {
+		txBuilder.txOut(walletAddress, [{ unit: 'lovelace', quantity: walletSplitterLovelace.toString() }]);
+	}
+
+	return await txBuilder
+		.requiredSignerHash(deserializedAddress.pubKeyHash)
+		.setNetwork(network)
+		.metadataValue(SERVICE_CONSTANTS.METADATA.masumiLabel, {
+			msg: ['Masumi', 'UpdateAgent'],
+		})
+		.changeAddress(walletAddress)
+		.complete();
 }
 
 async function generateRegistryDeregisterTransaction(

@@ -60,7 +60,7 @@ type ValidatedRegistryItem = {
 	policyId: string;
 };
 
-function validateRegistrationPricing(request: {
+export function validateRegistrationPricing(request: {
 	Pricing: {
 		pricingType: PricingType;
 		FixedPricing: { Amounts: Array<{ unit: string; amount: bigint }> } | null;
@@ -84,7 +84,7 @@ function validateRegistrationPricing(request: {
 	}
 }
 
-function buildAgentMetadata(
+export function buildAgentMetadata(
 	request: {
 		name: string;
 		description: string | null;

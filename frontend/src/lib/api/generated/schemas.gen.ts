@@ -2343,7 +2343,11 @@ export const RegistryEntrySchema = {
                 'DeregistrationRequested',
                 'DeregistrationInitiated',
                 'DeregistrationConfirmed',
-                'DeregistrationFailed'
+                'DeregistrationFailed',
+                'UpdateRequested',
+                'UpdateInitiated',
+                'UpdateConfirmed',
+                'UpdateFailed'
             ],
             description: 'Current state of the registration process'
         },
@@ -3456,7 +3460,11 @@ export const RegistryInboxEntrySchema = {
                 'DeregistrationRequested',
                 'DeregistrationInitiated',
                 'DeregistrationConfirmed',
-                'DeregistrationFailed'
+                'DeregistrationFailed',
+                'UpdateRequested',
+                'UpdateInitiated',
+                'UpdateConfirmed',
+                'UpdateFailed'
             ],
             description: 'Current state of the inbox registration process'
         },

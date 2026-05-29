@@ -166,6 +166,62 @@ async function syncRegistryRequests(
 						},
 					});
 				}
+			} else if (registryRequest.state == RegistrationState.UpdateInitiated) {
+				// UpdateAction atomically burns the prior asset and mints the
+				// next-version asset. The DB row's `agentIdentifier` was
+				// flipped to the new (bumped-version) value at submit time,
+				// so the same blockfrost asset lookup as the registration
+				// check applies: "does the NEW asset exist on chain?". If
+				// yes, the update tx landed.
+				if (owner.length >= 1 && owner[0].quantity == '1') {
+					if (registryRequest.CurrentTransaction == undefined || registryRequest.CurrentTransaction.txHash == null) {
+						throw new Error('Update request has no tx hash');
+					}
+					const tx = await blockfrost.txs(registryRequest.CurrentTransaction.txHash);
+					const block = await blockfrost.blocks(tx.block);
+					const confirmations = block.confirmations;
+					await prisma.registryRequest.update({
+						where: { id: registryRequest.id },
+						data: {
+							state: RegistrationState.UpdateConfirmed,
+							CurrentTransaction: {
+								update: {
+									status: TransactionStatus.Confirmed,
+									confirmations: confirmations,
+									fees: BigInt(tx.fees),
+									blockHeight: tx.block_height,
+									blockTime: tx.block_time,
+									outputAmount: JSON.stringify(tx.output_amount),
+									utxoCount: tx.utxo_count,
+									withdrawalCount: tx.withdrawal_count,
+									assetMintOrBurnCount: tx.asset_mint_or_burn_count,
+									redeemerCount: tx.redeemer_count,
+									validContract: tx.valid_contract,
+									BlocksWallet:
+										registryRequest.CurrentTransaction?.BlocksWallet != null ? { disconnect: true } : undefined,
+								},
+							},
+						},
+					});
+					if (registryRequest.CurrentTransaction?.BlocksWallet != null) {
+						await prisma.hotWallet.update({
+							where: {
+								id: registryRequest.CurrentTransaction.BlocksWallet.id,
+								deletedAt: null,
+							},
+							data: {
+								lockedAt: null,
+							},
+						});
+					}
+				} else {
+					await prisma.registryRequest.update({
+						where: { id: registryRequest.id },
+						data: {
+							updatedAt: new Date(),
+						},
+					});
+				}
 			}
 		}),
 		errorResolvers: [
@@ -195,7 +251,11 @@ async function getRegistrationRequestsToSync(paymentContractId: string) {
 				id: paymentContractId,
 			},
 			state: {
-				in: [RegistrationState.RegistrationInitiated, RegistrationState.DeregistrationInitiated],
+				in: [
+					RegistrationState.RegistrationInitiated,
+					RegistrationState.DeregistrationInitiated,
+					RegistrationState.UpdateInitiated,
+				],
 			},
 			CurrentTransaction: {
 				isNot: null,

@@ -543,6 +543,10 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
                 body: {
                   network,
                   agentIdentifier: agent.agentIdentifier,
+                  // V1 source — explicit address required because the
+                  // default fallback resolves to V1 anyway but is
+                  // unambiguous when threaded through.
+                  smartContractAddress: selectedV1Source!.smartContractAddress,
                 },
               });
               if (deregResp.error) {

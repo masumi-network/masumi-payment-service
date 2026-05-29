@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { Plus, Trash2, ExternalLink, ShieldCheck, ArrowUpRight } from 'lucide-react';
+import { Plus, Pencil, Trash2, ExternalLink, ShieldCheck, ArrowUpRight } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 
@@ -146,6 +146,7 @@ export default function AIAgentsPage() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedAgentToDelete, setSelectedAgentToDelete] = useState<AIAgent | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [selectedAgentToUpdate, setSelectedAgentToUpdate] = useState<AIAgent | null>(null);
   const { apiClient, network, selectedPaymentSourceId, selectedPaymentSource } = useAppContext();
   const { paymentSources } = usePaymentSourceExtendedAll();
 
@@ -253,6 +254,21 @@ export default function AIAgentsPage() {
     setIsDeleteDialogOpen(true);
   };
 
+  const handleUpdateClick = (agent: AIAgent) => {
+    if (!selectedPaymentSource?.smartContractAddress) {
+      toast.error('Cannot update agent: Missing payment source');
+      return;
+    }
+    if (!isV2PaymentSource(selectedPaymentSource)) {
+      // The Update button is hidden in the row UI for non-V2 sources, but
+      // guard here too in case the selected source flipped between click
+      // and handler dispatch.
+      toast.error('Update is only supported for Web3CardanoV2 payment sources');
+      return;
+    }
+    setSelectedAgentToUpdate(agent);
+  };
+
   const handleDeleteConfirm = async () => {
     if (
       selectedAgentToDelete?.state === 'RegistrationFailed' ||
@@ -289,6 +305,10 @@ export default function AIAgentsPage() {
         toast.error('Cannot deregister agent: Missing identifier');
         return;
       }
+      if (!selectedPaymentSource?.smartContractAddress) {
+        toast.error('Cannot deregister agent: Missing payment source');
+        return;
+      }
       setIsDeleting(true);
       await handleApiCall(
         () =>
@@ -297,6 +317,7 @@ export default function AIAgentsPage() {
             body: {
               agentIdentifier: selectedAgentToDelete.agentIdentifier!,
               network: network,
+              smartContractAddress: selectedPaymentSource.smartContractAddress,
             },
           }),
         {
@@ -623,6 +644,21 @@ export default function AIAgentsPage() {
                                 >
                                   <ExternalLink className="h-4 w-4" />
                                 </Button>
+                                {selectedPaymentSource &&
+                                  isV2PaymentSource(selectedPaymentSource) && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleUpdateClick(agent);
+                                      }}
+                                      className="text-primary hover:text-primary hover:bg-primary/10"
+                                      title="Update agent metadata (V2)"
+                                    >
+                                      <Pencil className="h-4 w-4" />
+                                    </Button>
+                                  )}
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -678,6 +714,19 @@ export default function AIAgentsPage() {
               }
             }}
             onSuccess={() => {
+              setTimeout(() => {
+                refetchAll();
+              }, 250);
+            }}
+          />
+
+          <RegisterAIAgentDialog
+            open={!!selectedAgentToUpdate}
+            editingAgent={selectedAgentToUpdate}
+            editingAgentSmartContractAddress={selectedPaymentSource?.smartContractAddress}
+            onClose={() => setSelectedAgentToUpdate(null)}
+            onSuccess={() => {
+              setSelectedAgentToUpdate(null);
               setTimeout(() => {
                 refetchAll();
               }, 250);

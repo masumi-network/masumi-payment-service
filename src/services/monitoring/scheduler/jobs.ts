@@ -227,6 +227,19 @@ export const scheduledJobs: JobDefinition[] = [
 		run: web3CardanoV2.deRegisterInboxAgent,
 	},
 	{
+		// V2 registry UpdateAction tick. Updates re-use the
+		// REGISTER_AGENT_INTERVAL cadence — they are register-like in
+		// flow (burn + mint in one tx) and frequency on a given wallet
+		// is bounded by chain confirmation time anyway. Offset by
+		// 33500ms so the staggered startup keeps each tick on its own
+		// scheduler slot.
+		initialDelayMs: 33500,
+		intervalMs: CONFIG.REGISTER_AGENT_INTERVAL * 1000,
+		startMessage: 'Starting to check for V2 agent update',
+		finishMessage: 'Finished to check for V2 agent update',
+		run: web3CardanoV2.updateAgent,
+	},
+	{
 		initialDelayMs: 45500,
 		intervalMs: CONFIG.CHECK_SUBMIT_RESULT_INTERVAL * 1000,
 		startMessage: 'Starting to check for V2 submit result',

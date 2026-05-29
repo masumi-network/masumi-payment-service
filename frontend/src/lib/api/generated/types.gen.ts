@@ -1251,7 +1251,7 @@ export type RegistryEntry = {
     /**
      * Current state of the registration process
      */
-    state: 'RegistrationRequested' | 'RegistrationInitiated' | 'RegistrationConfirmed' | 'RegistrationFailed' | 'DeregistrationRequested' | 'DeregistrationInitiated' | 'DeregistrationConfirmed' | 'DeregistrationFailed';
+    state: 'RegistrationRequested' | 'RegistrationInitiated' | 'RegistrationConfirmed' | 'RegistrationFailed' | 'DeregistrationRequested' | 'DeregistrationInitiated' | 'DeregistrationConfirmed' | 'DeregistrationFailed' | 'UpdateRequested' | 'UpdateInitiated' | 'UpdateConfirmed' | 'UpdateFailed';
     /**
      * List of tags categorizing the agent
      */
@@ -1898,7 +1898,7 @@ export type RegistryInboxEntry = {
     /**
      * Current state of the inbox registration process
      */
-    state: 'RegistrationRequested' | 'RegistrationInitiated' | 'RegistrationConfirmed' | 'RegistrationFailed' | 'DeregistrationRequested' | 'DeregistrationInitiated' | 'DeregistrationConfirmed' | 'DeregistrationFailed';
+    state: 'RegistrationRequested' | 'RegistrationInitiated' | 'RegistrationConfirmed' | 'RegistrationFailed' | 'DeregistrationRequested' | 'DeregistrationInitiated' | 'DeregistrationConfirmed' | 'DeregistrationFailed' | 'UpdateRequested' | 'UpdateInitiated' | 'UpdateConfirmed' | 'UpdateFailed';
     /**
      * Timestamp when the inbox registration request was created
      */
@@ -7963,6 +7963,183 @@ export type PostRegistryDeregisterResponses = {
 };
 
 export type PostRegistryDeregisterResponse = PostRegistryDeregisterResponses[keyof PostRegistryDeregisterResponses];
+
+export type PostRegistryUpdateData = {
+    body?: {
+        /**
+         * The Cardano network used to register the agent on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * Optional managed hot wallet address on the same payment source that should receive the minted registry NFT. If omitted, the minting wallet receives it.
+         */
+        recipientWalletAddress?: string;
+        /**
+         * Optional lovelace amount to include with the minted NFT output. If provided below the minimum NFT funding, the current minimum is still used.
+         */
+        sendFundingLovelace?: string;
+        /**
+         * Payment sources to persist for this registry request. If omitted, mint metadata advertises the active payment source.
+         */
+        supportedPaymentSources?: Array<{
+            /**
+             * The blockchain this payment source is available on
+             */
+            chain: 'Cardano';
+            /**
+             * The blockchain network this payment source is available on
+             */
+            network: 'Preprod' | 'Mainnet';
+            /**
+             * The configured payment source type
+             */
+            paymentSourceType: 'Web3CardanoV1' | 'Web3CardanoV2';
+            /**
+             * The escrow smart contract address for this payment source
+             */
+            address: string;
+        }>;
+        /**
+         * List of example outputs from the agent
+         */
+        ExampleOutputs: Array<{
+            /**
+             * Name of the example output
+             */
+            name: string;
+            /**
+             * URL to the example output
+             */
+            url: string;
+            /**
+             * MIME type of the example output (e.g., image/png, text/plain)
+             */
+            mimeType: string;
+        }>;
+        /**
+         * Tags used in the registry metadata
+         */
+        Tags: Array<string>;
+        /**
+         * Name of the agent
+         */
+        name: string;
+        /**
+         * Base URL of the agent, to request interactions
+         */
+        apiBaseUrl: string;
+        /**
+         * Description of the agent
+         */
+        description: string;
+        /**
+         * Provide information about the used AI model and version
+         */
+        Capability: {
+            /**
+             * Name of the AI model/capability
+             */
+            name: string;
+            /**
+             * Version of the AI model/capability
+             */
+            version: string;
+        };
+        /**
+         * Pricing information for the agent
+         */
+        AgentPricing: {
+            /**
+             * Pricing type for the agent
+             */
+            pricingType: 'Fixed';
+            /**
+             * Price for a default interaction
+             */
+            Pricing: Array<{
+                /**
+                 * Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)
+                 */
+                unit: string;
+                /**
+                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+                 */
+                amount: string;
+            }>;
+        } | {
+            /**
+             * Pricing type for the agent
+             */
+            pricingType: 'Free';
+        } | {
+            /**
+             * Pricing type for the agent. Amounts are provided per payment/purchase request
+             */
+            pricingType: 'Dynamic';
+        };
+        /**
+         * Legal information about the agent
+         */
+        Legal?: {
+            /**
+             * URL to the privacy policy
+             */
+            privacyPolicy?: string;
+            /**
+             * URL to the terms of service
+             */
+            terms?: string;
+            /**
+             * Other legal information
+             */
+            other?: string;
+        };
+        /**
+         * Author information about the agent
+         */
+        Author: {
+            /**
+             * Name of the agent author
+             */
+            name: string;
+            /**
+             * Contact email of the author
+             */
+            contactEmail?: string;
+            /**
+             * Other contact information for the author
+             */
+            contactOther?: string;
+            /**
+             * Organization of the author
+             */
+            organization?: string;
+        };
+        /**
+         * The current on-chain identifier of the agent registration to update
+         */
+        agentIdentifier: string;
+        /**
+         * The smart contract address of the payment source the registration belongs to
+         */
+        smartContractAddress?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/registry/update';
+};
+
+export type PostRegistryUpdateResponses = {
+    /**
+     * Agent update requested
+     */
+    200: {
+        status: string;
+        data: RegistryEntry;
+    };
+};
+
+export type PostRegistryUpdateResponse = PostRegistryUpdateResponses[keyof PostRegistryUpdateResponses];
 
 export type GetPaymentSourceData = {
     body?: never;

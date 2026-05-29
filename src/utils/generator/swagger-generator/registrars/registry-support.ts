@@ -10,6 +10,7 @@ import {
 } from '@/routes/api/registry/schemas';
 import { queryRegistryDiffSchemaInput } from '@/routes/api/registry/diff';
 import { unregisterAgentSchemaInput, unregisterAgentSchemaOutput } from '@/routes/api/registry/deregister';
+import { updateAgentSchemaInput, updateAgentSchemaOutput } from '@/routes/api/registry/update';
 import { queryAgentFromWalletSchemaInput, queryAgentFromWalletSchemaOutput } from '@/routes/api/registry/wallet';
 import {
 	queryAgentByIdentifierSchemaInput,
@@ -453,6 +454,57 @@ export function registerRegistrySupportPaths({ registry, apiKeyAuth }: SwaggerRe
 				content: {
 					'application/json': {
 						schema: z.object({ status: z.string(), data: unregisterAgentSchemaOutput }).openapi({
+							example: {
+								status: 'Success',
+								data: registryEntryExample,
+							},
+						}),
+					},
+				},
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'post',
+		path: '/registry/update',
+		description:
+			'Updates the metadata of an existing agent registration by issuing an UpdateAction on the V2 registry mint contract (atomically burns the current asset and mints a new one with the version segment incremented by one). Web3CardanoV2 only. Please note that while the command is put on-chain, the transaction is not yet finalized by the blockchain, as designed finality is only eventually reached.',
+		summary: 'Update an existing agent registration (V2 only, +PAY access required)',
+		tags: ['registry'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			body: {
+				description: '',
+				content: {
+					'application/json': {
+						schema: updateAgentSchemaInput.openapi({
+							example: {
+								agentIdentifier: 'agentIdentifier',
+								network: Network.Preprod,
+								name: 'Agent Name',
+								apiBaseUrl: 'https://api.example.com',
+								description: 'Updated agent description',
+								Tags: ['ai'],
+								ExampleOutputs: [],
+								Capability: { name: 'capability_name', version: '1.0.0' },
+								Author: { name: 'Author Name' },
+								AgentPricing: {
+									pricingType: PricingType.Fixed,
+									Pricing: [{ unit: '', amount: '10000000' }],
+								},
+							},
+						}),
+					},
+				},
+			},
+		},
+		responses: {
+			200: {
+				description: 'Agent update requested',
+				content: {
+					'application/json': {
+						schema: z.object({ status: z.string(), data: updateAgentSchemaOutput }).openapi({
 							example: {
 								status: 'Success',
 								data: registryEntryExample,
