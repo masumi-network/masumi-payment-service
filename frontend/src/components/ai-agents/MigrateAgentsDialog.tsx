@@ -299,6 +299,16 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
   // inside the async loop's closure without triggering re-renders.
   const cancelRef = useRef(false);
 
+  // Synchronous re-entry guard for runMigration. `setIsMigrating(true)` is
+  // async, so a double-click on the Confirm button fires runMigration twice
+  // within the same render frame — both invocations pass the `success`
+  // idempotency filter (the first hasn't written results yet) and BOTH call
+  // postRegistry, minting two on-chain agents (~5 ADA wasted + a duplicate
+  // registration). A ref flips synchronously on the first call, so the second
+  // returns immediately. `disabled={isMigrating}` on the button is additional
+  // (post-render) defense-in-depth.
+  const isRunningRef = useRef(false);
+
   // Tracks whether the component is still mounted so the long-running
   // `runMigration` loop can bail out before calling state setters after unmount.
   const mountedRef = useRef(true);
@@ -457,6 +467,13 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
       return;
     }
 
+    // Synchronous double-submit guard (see isRunningRef declaration). Must run
+    // before any await / state set so a same-frame second click is rejected.
+    if (isRunningRef.current) {
+      return;
+    }
+    isRunningRef.current = true;
+
     setConfirmPending(false);
     cancelRef.current = false;
     setIsMigrating(true);
@@ -584,6 +601,7 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
       }
     }
 
+    isRunningRef.current = false;
     if (!mountedRef.current) return;
     setIsMigrating(false);
     setIsDone(true);
@@ -937,7 +955,7 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
               <p className="text-xs text-muted-foreground">
                 This will mint {selectedAgentIds.size} new on-chain agent registration
                 {selectedAgentIds.size === 1 ? '' : 's'} on V2 and spend ~
-                {(requiredBalance / 1).toFixed(0)} ADA in fees.
+                {(requiredBalance / 1_000_000).toFixed(2)} ADA in fees.
                 {deregisterAfter &&
                   ' Selected V1 entries will be deregistered after each successful mint.'}{' '}
                 This action cannot be undone on chain. Already-successful agents from a previous run
@@ -974,7 +992,12 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
                   </Button>
                 )}
                 {confirmPending ? (
-                  <Button onClick={runMigration} className="gap-2" variant="destructive">
+                  <Button
+                    onClick={runMigration}
+                    disabled={isMigrating}
+                    className="gap-2"
+                    variant="destructive"
+                  >
                     Confirm migration of {selectedAgentIds.size} agent
                     {selectedAgentIds.size === 1 ? '' : 's'}
                     <ArrowRight className="h-4 w-4" />

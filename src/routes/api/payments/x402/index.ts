@@ -94,6 +94,29 @@ export const buildX402TxPost = x402BuildEndpointFactory.build({
 			);
 		}
 
+		// Re-validate the STORED sellerReturnAddress before it flows into the
+		// V2 funds-locking tx. The create-payment handler (payments/index.ts)
+		// only enforces pubkey-base for rows it creates; `payment.sellerReturnAddress`
+		// here is read back from the DB and may predate that check (legacy row),
+		// have been written by another path, or — the original bug — have passed
+		// the looser create-time schema refine (isCardanoAddressForNetwork, which
+		// accepts enterprise/script addresses) and been returned via the
+		// idempotency-replay branch without re-validation. The V2 contract can
+		// only pay out to a pubkey base address; locking against an
+		// enterprise/script address strands the funds at an address the contract
+		// cannot resolve. Fail closed (V2 only — V1 has no such datum requirement).
+		const isV2Payment = payment.PaymentSource.paymentSourceType === PaymentSourceType.Web3CardanoV2;
+		if (
+			isV2Payment &&
+			payment.sellerReturnAddress != null &&
+			!isCardanoPubKeyBaseAddressForNetwork(payment.sellerReturnAddress, input.network)
+		) {
+			throw createHttpError(
+				409,
+				'Stored sellerReturnAddress is not a Cardano base address with a stake credential; this payment cannot be locked on the V2 contract. Recreate the payment with a valid base address.',
+			);
+		}
+
 		const blockchainProvider = await createMeshProvider(payment.PaymentSource.PaymentSourceConfig.rpcProviderApiKey);
 		const coinsPerUtxoSize = await getCoinsPerUtxoSize(blockchainProvider);
 

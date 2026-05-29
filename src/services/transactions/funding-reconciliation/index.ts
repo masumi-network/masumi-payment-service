@@ -3,7 +3,7 @@ import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { retryOnSerializationConflict } from '@/utils/db/retry';
-import { withSerializableSlot } from '@/utils/db/serializable-semaphore';
+import { withSerializableSlotRetry } from '@/utils/db/serializable-semaphore';
 
 /**
  * Reconciliation worker for V2 funding transactions whose submit outcome was
@@ -300,8 +300,7 @@ export async function reconcileOne(tx: ReconcileCandidate): Promise<void> {
 		ttlSlot,
 	});
 
-	await withSerializableSlot(() =>
-		retryOnSerializationConflict(
+	await withSerializableSlotRetry(
 			() =>
 				prisma.$transaction(
 					async (txdb) => {
@@ -414,7 +413,6 @@ export async function reconcileOne(tx: ReconcileCandidate): Promise<void> {
 					{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
 				),
 			{ label: 'funding-reconciliation-revert' },
-		),
 	);
 }
 

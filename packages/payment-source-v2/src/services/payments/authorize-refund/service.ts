@@ -25,7 +25,11 @@ import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interp
 import { advancedRetry, delayErrorResolver } from 'advanced-retry';
 import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, tryAcquire, MutexInterface } from 'async-mutex';
-import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
+// V2-pinned single-item builder. MUST NOT use the root V1-mesh generator
+// (@/utils/generator/transaction-generator) — that bundles the V1 cost models
+// and CBOR serializer, which produce a script-data-hash the ledger rejects for
+// V2 scripts (PPViewHashesDontMatch). See docs/adr/0005.
+import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '../../../builders/single-interaction';
 import {
 	connectExistingNextPaymentAction,
 	connectExistingTransaction,
@@ -305,7 +309,9 @@ async function processSinglePaymentRequest(
 		async () =>
 			await generateMasumiSmartContractInteractionTransactionAutomaticFees(
 				'AuthorizeRefund',
-				blockchainProvider,
+				// V2-pinned builder expects the V2 mesh provider type; cast the shared
+				// (V1-resolved) instance — identical runtime object. See provider-cast.ts.
+				asV2Provider(blockchainProvider),
 				network,
 				script,
 				address,
@@ -338,6 +344,18 @@ async function processSinglePaymentRequest(
 	// throw leaves the Tx row in place (it points at a real on-chain tx) per
 	// the user's "do NOT revert after successful submit" constraint.
 	const newTxHash = await wallet.submitTx(signedTx);
+	// Divergence check — parity with this service's batch path. submitTx's
+	// returned hash must equal the deterministic resolveTxHash(signedTx); a
+	// mismatch signals a Mesh/Cardano serialization bug. We keep newTxHash (it
+	// is the hash the node accepted and what tx-sync will observe), but log
+	// loudly so single-item submits are investigable like the batch path.
+	const intendedTxHash = resolveTxHash(signedTx);
+	if (newTxHash !== intendedTxHash) {
+		logger.error('V2 authorize-refund single-item: node returned divergent txHash — investigate', {
+			intendedTxHash,
+			nodeTxHash: newTxHash,
+		});
+	}
 	await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
 	// retryOnSerializationConflict — see #24 note in V2 collection:
 	// post-submit conflict bubbling to advancedRetry would re-submit.

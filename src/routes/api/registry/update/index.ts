@@ -181,8 +181,15 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 				recipientHotWalletId = recipient.id;
 			}
 
-			const supportedPaymentSources = input.supportedPaymentSources ?? [];
-			if (supportedPaymentSources.length > 0) {
+			// supportedPaymentSources is OPTIONAL on update. Distinguish:
+			//   - omitted (undefined)     → leave existing rows UNCHANGED (no delete, no recreate).
+			//                                Previously `?? []` collapsed this into a silent wipe.
+			//   - provided (including [])  → REPLACE: delete existing rows, recreate from input.
+			// This route is already V2-gated above, so supportedPaymentSources is a
+			// V2-only concept here by construction.
+			const supportedPaymentSources = input.supportedPaymentSources;
+			const replaceSupportedPaymentSources = supportedPaymentSources !== undefined;
+			if (supportedPaymentSources != null && supportedPaymentSources.length > 0) {
 				try {
 					validateSupportedPaymentSourcesOrThrow(
 						supportedPaymentSources,
@@ -208,8 +215,27 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 			// build a fresh AgentPricing standalone, swap the RegistryRequest FK,
 			// then drop the orphan old row (and its AgentFixedPricing if any).
 			const result = await prisma.$transaction(async (tx) => {
+				// Re-read state INSIDE the tx and CAS-guard the state write below to
+				// close the TOCTOU window between the validStatesForUpdate check above
+				// (a stale findUnique read) and these writes. A concurrent deregister
+				// could have flipped the row to DeregistrationRequested; without this
+				// both the update and deregister schedulers would act on the same asset.
+				const current = await tx.registryRequest.findUnique({
+					where: { id: registryRequest.id },
+					select: { state: true, paymentSourceId: true },
+				});
+				if (current == null || current.paymentSourceId !== paymentSource.id) {
+					throw createHttpError(404, 'Registration not found');
+				}
+				if (!validStatesForUpdate.includes(current.state)) {
+					throw createHttpError(409, `Agent registration cannot be updated in its current state: ${current.state}`);
+				}
 				await tx.exampleOutput.deleteMany({ where: { registryRequestId: registryRequest.id } });
-				await tx.supportedPaymentSource.deleteMany({ where: { registryRequestId: registryRequest.id } });
+				// Only clear when the caller explicitly provided supportedPaymentSources;
+				// omitted (undefined) means "leave existing rows as-is".
+				if (replaceSupportedPaymentSources) {
+					await tx.supportedPaymentSource.deleteMany({ where: { registryRequestId: registryRequest.id } });
+				}
 				const oldPricing = await tx.registryRequest.findUnique({
 					where: { id: registryRequest.id },
 					select: { agentPricingId: true },
@@ -246,7 +272,11 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 					select: { id: true },
 				});
 				await tx.registryRequest.update({
-					where: { id: registryRequest.id },
+					// Atomic CAS on state: if a concurrent action advanced the row out of
+					// an updatable state between the re-read above and this write, match 0
+					// rows -> the whole tx rolls back (P2025, mapped to 409 below) instead
+					// of half-updating a row another scheduler now owns.
+					where: { id: registryRequest.id, state: { in: validStatesForUpdate } },
 					data: {
 						name: input.name,
 						description: input.description,
@@ -280,7 +310,7 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 								})),
 							},
 						},
-						...(supportedPaymentSources.length > 0
+						...(supportedPaymentSources != null && supportedPaymentSources.length > 0
 							? {
 									SupportedPaymentSources: {
 										createMany: {
@@ -381,7 +411,17 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 						}
 					: null,
 			};
-		} catch (error: unknown) {
+		} catch (rawError: unknown) {
+			// A CAS miss on the state guard (a concurrent lifecycle action advancing
+			// the row between the re-read and the write) surfaces as Prisma P2025.
+			// Map it to a clean 409 so callers see a conflict, not an opaque 500.
+			const error =
+				rawError != null &&
+				typeof rawError === 'object' &&
+				'code' in rawError &&
+				(rawError as { code?: string }).code === 'P2025'
+					? createHttpError(409, 'Agent registration state changed concurrently; please retry')
+					: rawError;
 			const errorInstance = error instanceof Error ? error : new Error(String(error));
 			const statusCode =
 				(errorInstance as { statusCode?: number; status?: number }).statusCode ||

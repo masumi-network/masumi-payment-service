@@ -19,7 +19,6 @@ import {
 	generateRegistryUpdateTransactionAutomaticFees,
 	resolveRegistryDeregistrationWallet,
 	resolveRegistryFundingLovelace,
-	resolveRegistryRecipientWalletAddress,
 } from '@/services/registry/shared';
 import { WALLET_SPLITTER_LOVELACE } from '../../../builders/batch-helpers';
 import { ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
@@ -114,6 +113,12 @@ async function processUpdate(
 		return;
 	}
 
+	// Holder-holds-asset guard: findRegistryTokenUtxo throws if the resolved
+	// holder wallet's UTxOs no longer contain this asset. The UpdateAction tx
+	// is signed by `holderWallet` (the on-chain holder recorded at request
+	// time), so if the asset has since moved out of that managed wallet there is
+	// nothing to burn+remint and the tx would fail on chain anyway — fail fast
+	// here with a clear message instead.
 	const tokenUtxo = findRegistryTokenUtxo(utxos, request.agentIdentifier);
 	const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8_000_000);
 	const collateralUtxo = limitedFilteredUtxos[0];
@@ -128,7 +133,14 @@ async function processUpdate(
 	};
 	const metadata = buildAgentMetadata(request, paymentSourceMetadata);
 
-	const recipientWalletAddress = resolveRegistryRecipientWalletAddress(request);
+	// Default the version-bumped NFT recipient to the CURRENT HOLDER (`address`,
+	// the wallet that signs this tx), NOT request.SmartContractWallet. When the
+	// holder differs from SmartContractWallet (the common case — the route
+	// records the on-chain holder as DeregistrationHotWallet), sending the new
+	// asset to SmartContractWallet would silently migrate the registry NFT to a
+	// different wallet on every default update. An explicit caller-supplied
+	// RecipientWallet still overrides.
+	const recipientWalletAddress = request.RecipientWallet?.walletAddress ?? address;
 	const fundingLovelace = resolveRegistryFundingLovelace(request);
 
 	const unsignedTx = await generateRegistryUpdateTransactionAutomaticFees(

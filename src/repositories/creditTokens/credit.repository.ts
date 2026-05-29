@@ -3,8 +3,7 @@ import createHttpError from 'http-errors';
 import { InsufficientFundsError } from '@/utils/errors/insufficient-funds-error';
 import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import { Network, PricingType, PurchasingAction, WalletBase, WalletType } from '@/generated/prisma/client';
-import { retryOnSerializationConflict } from '@/utils/db/retry';
-import { withSerializableSlot } from '@/utils/db/serializable-semaphore';
+import { withSerializableSlotRetry } from '@/utils/db/serializable-semaphore';
 
 async function handlePurchaseCreditInit({
 	id,
@@ -48,8 +47,7 @@ async function handlePurchaseCreditInit({
 	// Gate Serializable $transaction through the shared semaphore so concurrent
 	// HTTP requests don't exhaust the pg connection pool. See
 	// `src/utils/db/serializable-semaphore.ts`.
-	return await withSerializableSlot(() =>
-		retryOnSerializationConflict(
+	return await withSerializableSlotRetry(
 			() =>
 				prisma.$transaction(
 					async (prisma) => {
@@ -261,7 +259,6 @@ async function handlePurchaseCreditInit({
 				maxRetries: 6,
 				maxDelayMs: 1000,
 			},
-		),
 	);
 }
 

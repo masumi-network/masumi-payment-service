@@ -23,7 +23,7 @@ import {
 } from './tx';
 import { createApiClient, withJobLock } from '@/services/shared';
 import { retryOnSerializationConflict } from '@/utils/db/retry';
-import { withSerializableSlot } from '@/utils/db/serializable-semaphore';
+import { withSerializableSlotRetry } from '@/utils/db/serializable-semaphore';
 
 type PaymentSourceWithConfig = PaymentSource & {
 	PaymentSourceConfig: PaymentSourceConfig;
@@ -336,8 +336,7 @@ async function queryAndLockPaymentSourcesForSync() {
 	// Gate Serializable $transaction through the shared semaphore so the pg
 	// connection pool isn't exhausted under scheduler fan-out. See
 	// `src/utils/db/serializable-semaphore.ts`.
-	return await withSerializableSlot(() =>
-		retryOnSerializationConflict(
+	return await withSerializableSlotRetry(
 			() =>
 				prisma.$transaction(
 					async (prisma) => {
@@ -388,6 +387,5 @@ async function queryAndLockPaymentSourcesForSync() {
 					},
 				),
 			{ label: 'tx-sync-query-and-lock-payment-sources' },
-		),
 	);
 }

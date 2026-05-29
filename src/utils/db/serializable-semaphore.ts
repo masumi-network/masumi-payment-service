@@ -1,5 +1,6 @@
 import { Semaphore } from 'async-mutex';
 import { logger } from '@masumi/payment-core/logger';
+import { retryOnSerializationConflict, type RetryOptions } from '@/utils/db/retry';
 
 /**
  * Concurrency cap for Serializable interactive transactions issued by the
@@ -103,6 +104,38 @@ export async function withSerializableSlot<T>(operation: () => Promise<T>): Prom
 	} finally {
 		release();
 	}
+}
+
+/**
+ * Retry a Serializable transaction on serialization conflict, acquiring the
+ * shared connection slot PER ATTEMPT rather than holding it across the whole
+ * retry loop.
+ *
+ * Why the nesting order matters: the obvious composition
+ *
+ *   withSerializableSlot(() => retryOnSerializationConflict(() => $tx, opts))
+ *
+ * holds the scarce DB connection slot for the ENTIRE retry sequence —
+ * including `retryOnSerializationConflict`'s exponential backoff sleeps
+ * between attempts. Under a burst of 40001/deadlock conflicts (exactly when
+ * the parallel `lockAndQuery*` fan-out is busiest), every retrying wallet sits
+ * on a slot while merely sleeping, starving other wallets that have real work
+ * ready to run and can turn pool exhaustion into a self-inflicted stall.
+ *
+ * This helper inverts the nesting:
+ *
+ *   retryOnSerializationConflict(() => withSerializableSlot(() => $tx), opts)
+ *
+ * so the slot is acquired just before each attempt and RELEASED before the
+ * backoff sleep, letting a different wallet make progress during the wait.
+ * The transaction still runs entirely inside a slot (correctness unchanged);
+ * only the idle backoff time no longer pins a connection.
+ */
+export async function withSerializableSlotRetry<T>(
+	operation: () => Promise<T>,
+	options: RetryOptions = {},
+): Promise<T> {
+	return retryOnSerializationConflict(() => withSerializableSlot(operation), options);
 }
 
 /**

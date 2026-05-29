@@ -1,5 +1,6 @@
 import { HotWalletType, OnChainState, PaymentAction, PaymentSourceType, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
+import { logger } from '@masumi/payment-core/logger';
 import { retryOnSerializationConflict } from '@/utils/db/retry';
 import { withSerializableSlot } from '@/utils/db/serializable-semaphore';
 
@@ -69,13 +70,18 @@ export async function lockAndQueryPayments({
 	const paymentSourceResults = await Promise.all(
 		paymentSources.map(async (paymentSource) => {
 			const minCooldownTime = paymentSource.cooldownTime;
-			const perWalletResults = await Promise.all(
+			// Use allSettled (not all): each per-wallet transaction commits its
+			// own `lockedAt` lock before this fan-out resolves. With all-or-nothing
+			// `Promise.all`, one wallet exhausting its retry budget would reject the
+			// whole batch and discard the already-committed locks of every sibling
+			// wallet, leaving them stuck until the wallet-lock-timeout reaper frees
+			// them (~5 min). Settle and collect successes instead; log failures.
+			const settledPerWalletResults = await Promise.allSettled(
 				paymentSource.HotWallets.map((hotWallet) =>
 					// Gate every Serializable transaction through the shared semaphore so the
 					// per-wallet fan-out across sources cannot exhaust the pg connection pool.
 					// See `src/utils/db/serializable-semaphore.ts` for sizing rationale.
-					withSerializableSlot(() =>
-						retryOnSerializationConflict(
+					withSerializableSlotRetry(
 							() =>
 								prisma.$transaction(
 									async (prisma) => {
@@ -138,9 +144,25 @@ export async function lockAndQueryPayments({
 								),
 							{ label: 'lockAndQueryPayments' },
 						),
-					),
 				),
 			);
+			// Keep order-aligned with HotWallets so a rejected slot can be traced
+			// back to the wallet that failed. Successful slots already committed
+			// their lock, so we still return their rows exactly as before.
+			const perWalletResults = settledPerWalletResults.map((result, index) => {
+				if (result.status === 'fulfilled') {
+					return result.value;
+				}
+				// `PromiseRejectedResult.reason` is typed `any`; launder it to
+				// `unknown` so logging it does not trip no-unsafe-assignment.
+				const reason: unknown = result.reason;
+				logger.error('lockAndQueryPayments: per-wallet lock transaction failed', {
+					paymentSourceId: paymentSource.id,
+					hotWalletId: paymentSource.HotWallets[index]?.id,
+					error: reason,
+				});
+				return [];
+			});
 			const paymentRequests = perWalletResults.flat();
 			if (paymentRequests.length > 0) {
 				return {

@@ -226,7 +226,15 @@ export function findRegistryTokenUtxo(utxos: UTxO[], agentIdentifier: string): U
 		(utxo) => utxo.output.amount.length > 1 && utxo.output.amount.some((asset) => asset.unit == agentIdentifier),
 	);
 	if (!tokenUtxo) {
-		throw new Error('No token UTXO found');
+		// The resolved managed wallet no longer holds this registry asset. Both
+		// the update (burn+remint) and deregister (burn) flows sign with this
+		// wallet and need its asset UTxO as a tx input, so the on-chain tx would
+		// fail regardless. Fail fast with an explicit message so operators can
+		// tell "asset moved / already burned" apart from a generic build error.
+		throw new Error(
+			`Registry asset ${agentIdentifier} is no longer held by the resolved managed wallet; ` +
+				'cannot build update/deregister transaction (asset may have been transferred or already burned)',
+		);
 	}
 
 	return tokenUtxo;

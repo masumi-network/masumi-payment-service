@@ -226,8 +226,19 @@ export async function markTransactionPhase2Failed(
 			//    advances are guarded, so they no-op, but the wallet disconnect
 			//    branch would fire every tick at ERROR level).
 			//
-			//    Per-wallet update — pendingTransactionId is unique-keyed so the
-			//    disconnect cannot be expressed via updateMany without ambiguity.
+			//    Use `updateMany`, NOT `update`: a wallet that was soft-deleted or
+			//    otherwise no longer matches `{ id, deletedAt: null }` makes
+			//    `update` throw P2025, which would abort and ROLL BACK this whole
+			//    Serializable propagation — leaving the Transaction Pending and every
+			//    dependent request stuck in `*Initiated`, so wallet-timeouts
+			//    re-discovers the same phase-2 failure and re-propagates (ERROR-
+			//    logging) every tick forever. `updateMany` returns `{ count: 0 }`
+			//    instead of throwing, so the unlock is best-effort while the
+			//    dependent-request advance above still commits. Clearing the scalar
+			//    `pendingTransactionId` is the updateMany-compatible equivalent of
+			//    `PendingTransaction: { disconnect: true }` (relation operators are
+			//    not allowed in updateMany) and matches the funding-reconciliation
+			//    revert site. Genuine DB errors still throw and propagate.
 			//    Use the same `deletedAt: null` guard as every other hot-wallet
 			//    write site for soft-delete safety.
 			if (options.walletIdsToUnlock && options.walletIdsToUnlock.length > 0) {
@@ -240,10 +251,10 @@ export async function markTransactionPhase2Failed(
 				const uniqueWalletIds = Array.from(new Set(options.walletIdsToUnlock));
 				// intentional sequential — Prisma serializes interactive-tx queries on a single connection
 				for (const walletId of uniqueWalletIds) {
-					await tx.hotWallet.update({
+					await tx.hotWallet.updateMany({
 						where: { id: walletId, deletedAt: null },
 						data: {
-							PendingTransaction: { disconnect: true },
+							pendingTransactionId: null,
 							lockedAt: null,
 						},
 					});

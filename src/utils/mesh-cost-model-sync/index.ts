@@ -208,6 +208,16 @@ export function getCachedRawCostModels(blockfrostApiKey: string): RawCostModels 
 	return lastRawCostModelsByKey.get(blockfrostApiKey) ?? null;
 }
 
+// Max attempts to obtain a cost-models + protocol-params pair from the SAME
+// epoch. The two values come from two separate `/epochs/latest/parameters`
+// HTTP calls; if a Cardano epoch boundary lands between them, one returns
+// epoch N and the other N+1, producing mismatched cost models vs protocol
+// params -> the resulting script_data_hash is rejected with
+// PPViewHashesDontMatch for the whole CACHE_TTL_MS window. Epoch boundaries
+// are days apart, so a single retry closes the window in practice; cap at 3
+// so a pathological boundary-storm can't loop forever.
+const EPOCH_STRADDLE_MAX_ATTEMPTS = 3;
+
 async function fetchAndPatch(blockfrostApiKey: string): Promise<unknown> {
 	const api = new BlockFrostAPI({ projectId: blockfrostApiKey });
 	// Fetch in parallel: BlockFrostAPI gives raw cost_models we need to mutate
@@ -216,15 +226,72 @@ async function fetchAndPatch(blockfrostApiKey: string): Promise<unknown> {
 	// object that `MeshTxBuilder.protocolParams(...)` accepts. Caching both
 	// alongside the cost-model sync means callers don't pay a second roundtrip
 	// to `/epochs/latest/parameters` on every tx build.
+	//
+	// Epoch-straddle guard: the cost models (from `rawResponse`) and the mesh
+	// Protocol (from the provider) are two independent requests. If an epoch
+	// boundary falls between them they can disagree by one epoch. Both requests
+	// resolve `/epochs/latest/parameters`, whose payload carries `.epoch`, so
+	// after fetching we re-read the latest epoch and, if it advanced past the
+	// epoch the cost-models response reported, discard the pair and retry. This
+	// guarantees the cached cost-models + protocol-params pair is internally
+	// consistent (same epoch) before it is applied to the process-global arrays.
 	const provider = getCachedBlockfrostProvider(blockfrostApiKey);
-	const [rawResponse, meshProtocol] = await Promise.all([
-		api.epochsLatestParameters() as unknown as Promise<{
-			cost_models_raw?: { PlutusV1?: unknown; PlutusV2?: unknown; PlutusV3?: unknown } | null;
-		}>,
-		// NaN routes to `/epochs/latest/parameters` in the BlockfrostProvider
-		// impl (any real epoch number would hit `/epochs/<n>/parameters`).
-		provider.fetchProtocolParameters(Number.NaN),
-	]);
+
+	let rawResponse: {
+		epoch?: number | null;
+		cost_models_raw?: { PlutusV1?: unknown; PlutusV2?: unknown; PlutusV3?: unknown } | null;
+	} | null = null;
+	let meshProtocol: unknown = null;
+
+	for (let attempt = 1; attempt <= EPOCH_STRADDLE_MAX_ATTEMPTS; attempt++) {
+		const [fetchedRaw, fetchedProtocol] = await Promise.all([
+			api.epochsLatestParameters() as unknown as Promise<{
+				epoch?: number | null;
+				cost_models_raw?: { PlutusV1?: unknown; PlutusV2?: unknown; PlutusV3?: unknown } | null;
+			}>,
+			// NaN routes to `/epochs/latest/parameters` in the BlockfrostProvider
+			// impl (any real epoch number would hit `/epochs/<n>/parameters`).
+			provider.fetchProtocolParameters(Number.NaN),
+		]);
+
+		// Re-read the latest epoch AFTER both fetches resolved. If it still
+		// equals the epoch the cost-models response reported, no boundary was
+		// crossed during the pair and the two values are consistent.
+		const epochCheck = (await api.epochsLatestParameters()) as unknown as { epoch?: number | null };
+		const fetchedEpoch = fetchedRaw?.epoch;
+		const currentEpoch = epochCheck?.epoch;
+
+		if (fetchedEpoch == null || currentEpoch == null || fetchedEpoch === currentEpoch) {
+			// Consistent (or epoch unavailable to compare — accept rather than
+			// loop forever; the prior behavior had no check at all).
+			rawResponse = fetchedRaw;
+			meshProtocol = fetchedProtocol;
+			break;
+		}
+
+		logger.warn('Mesh cost-model sync straddled an epoch boundary; retrying for a consistent snapshot', {
+			fetchedEpoch,
+			currentEpoch,
+			attempt,
+			maxAttempts: EPOCH_STRADDLE_MAX_ATTEMPTS,
+		});
+
+		if (attempt === EPOCH_STRADDLE_MAX_ATTEMPTS) {
+			// Exhausted retries — use the latest pair anyway. Re-fetch both once
+			// more so cost models and protocol params at least come from calls
+			// made after the last observed boundary; logged above so operators
+			// can see the (very rare) straddle storm.
+			const [finalRaw, finalProtocol] = await Promise.all([
+				api.epochsLatestParameters() as unknown as Promise<{
+					epoch?: number | null;
+					cost_models_raw?: { PlutusV1?: unknown; PlutusV2?: unknown; PlutusV3?: unknown } | null;
+				}>,
+				provider.fetchProtocolParameters(Number.NaN),
+			]);
+			rawResponse = finalRaw;
+			meshProtocol = finalProtocol;
+		}
+	}
 
 	const raw = rawResponse?.cost_models_raw;
 	if (!raw) {

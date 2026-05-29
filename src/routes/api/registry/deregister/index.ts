@@ -14,6 +14,7 @@ import { extractAssetName, extractPolicyId } from '@/utils/converter/agent-ident
 import { registryRequestOutputSchema } from '@/routes/api/registry';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
+import { retryOnSerializationConflict } from '@/utils/db/retry';
 
 export const unregisterAgentSchemaInput = z.object({
 	agentIdentifier: z
@@ -127,52 +128,90 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 		if (!ctx.canAdmin && (registryRequest.requestedById == null || registryRequest.requestedById !== ctx.id)) {
 			throw createHttpError(403, 'You are not authorized to deregister this agent');
 		}
-		const result = await prisma.registryRequest.update({
-			where: {
-				id: registryRequest.id,
-				SmartContractWallet: {
-					deletedAt: null,
-				},
-			},
-			data: {
-				state: RegistrationState.DeregistrationRequested,
-				deregistrationHotWalletId: managedHolderWallet.id,
-			},
-			include: {
-				Pricing: {
-					include: {
-						FixedPricing: {
-							include: { Amounts: { select: { unit: true, amount: true } } },
-						},
+		// Deregister is only valid for a settled on-chain asset that is not
+		// mid-flight in another lifecycle action. Blocking the in-flight states
+		// (Registration*/Deregistration{Requested,Initiated}/Update{Requested,
+		// Initiated}) stops a deregister from flipping a row the
+		// register/update/deregister schedulers are already driving — which would
+		// let two services act on the same asset and risk a double burn/mint.
+		const validStatesForDeregister: RegistrationState[] = [
+			RegistrationState.RegistrationConfirmed,
+			RegistrationState.UpdateConfirmed,
+			RegistrationState.UpdateFailed,
+			RegistrationState.DeregistrationFailed,
+		];
+		const result = await retryOnSerializationConflict(
+			() =>
+				prisma.$transaction(
+					async (tx) => {
+						// Re-read state INSIDE the serializable tx to close the TOCTOU
+						// window between the findUnique above and this write. A concurrent
+						// update/deregister could have advanced the row; without this
+						// re-check both schedulers could act on the same asset.
+						const current = await tx.registryRequest.findUnique({
+							where: { id: registryRequest.id },
+							select: { state: true, paymentSourceId: true },
+						});
+						if (current == null || current.paymentSourceId !== paymentSource.id) {
+							throw createHttpError(404, 'Registration not found');
+						}
+						if (!validStatesForDeregister.includes(current.state)) {
+							throw createHttpError(
+								409,
+								`Agent registration cannot be deregistered in its current state: ${current.state}`,
+							);
+						}
+						return tx.registryRequest.update({
+							where: {
+								id: registryRequest.id,
+								SmartContractWallet: {
+									deletedAt: null,
+								},
+							},
+							data: {
+								state: RegistrationState.DeregistrationRequested,
+								deregistrationHotWalletId: managedHolderWallet.id,
+							},
+							include: {
+								Pricing: {
+									include: {
+										FixedPricing: {
+											include: { Amounts: { select: { unit: true, amount: true } } },
+										},
+									},
+								},
+								SmartContractWallet: {
+									select: { walletVkey: true, walletAddress: true },
+								},
+								RecipientWallet: {
+									select: { walletVkey: true, walletAddress: true },
+								},
+								ExampleOutputs: { select: { name: true, url: true, mimeType: true } },
+								SupportedPaymentSources: {
+									select: {
+										chain: true,
+										network: true,
+										paymentSourceType: true,
+										address: true,
+									},
+								},
+								CurrentTransaction: {
+									select: {
+										txHash: true,
+										status: true,
+										confirmations: true,
+										fees: true,
+										blockHeight: true,
+										blockTime: true,
+									},
+								},
+							},
+						});
 					},
-				},
-				SmartContractWallet: {
-					select: { walletVkey: true, walletAddress: true },
-				},
-				RecipientWallet: {
-					select: { walletVkey: true, walletAddress: true },
-				},
-				ExampleOutputs: { select: { name: true, url: true, mimeType: true } },
-				SupportedPaymentSources: {
-					select: {
-						chain: true,
-						network: true,
-						paymentSourceType: true,
-						address: true,
-					},
-				},
-				CurrentTransaction: {
-					select: {
-						txHash: true,
-						status: true,
-						confirmations: true,
-						fees: true,
-						blockHeight: true,
-						blockTime: true,
-					},
-				},
-			},
-		});
+					{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
+				),
+			{ label: 'registry-deregister-route' },
+		);
 
 		return {
 			...result,

@@ -25,7 +25,11 @@ import { sortAndLimitUtxos } from '@/utils/utxo';
 import { delayErrorResolver } from 'advanced-retry';
 import { advancedRetry } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
-import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
+// V2-pinned single-item builder. MUST NOT use the root V1-mesh generator
+// (@/utils/generator/transaction-generator) — that bundles the V1 cost models
+// and CBOR serializer, which produce a script-data-hash the ledger rejects for
+// V2 scripts (PPViewHashesDontMatch). See docs/adr/0005.
+import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '../../../builders/single-interaction';
 import {
 	connectExistingNextPaymentAction,
 	connectExistingTransaction,
@@ -150,6 +154,47 @@ function determineNewContractState(currentState: SmartContractState): SmartContr
 			);
 		}
 	}
+}
+
+// Slack kept off each on-chain SubmitResult deadline. The default tx-window
+// invalidAfter is ~now+2.5min+buffer; keeping ≥5min off the bound ensures a
+// submission never races the ledger boundary (a tx whose invalidAfter lands
+// after the bound is rejected by `must_end_before`).
+const SUBMIT_RESULT_WINDOW_SLACK_MS = 1000 * 60 * 5;
+
+/**
+ * Pick the `constrainAfterMs` (upper-bound anchor) for the SubmitResult tx
+ * validity window, matching the two legal time windows in vested_pay.ak's
+ * `SubmitResult` redeemer:
+ *
+ *   A) Normal: tx must end before `submit_result_time`. Used while that deadline
+ *      is still comfortably ahead.
+ *   B) Dispute-window rotation: once past `submit_result_time`, the validator
+ *      still accepts a re-submit as long as the tx ends before
+ *      `external_dispute_unlock_time` AND the CURRENT on-chain datum already
+ *      carries a result (`result_hash` non-empty — true for ResultSubmitted /
+ *      Disputed). Anchor invalidAfter to `external_dispute_unlock_time` so the
+ *      window is in the future. (The old code anchored unconditionally to
+ *      `submit_result_time`; once that was in the past, createTxWindow's `min`
+ *      strategy produced invalidAfter < invalidBefore — an unbuildable tx — so
+ *      the dispute-rotation capability was dead off-chain.)
+ *
+ * Throws a terminal (non-deferred) error when neither window is open so the
+ * caller marks the row for manual action rather than re-queueing it forever.
+ */
+function resolveSubmitResultConstrainAfterMs(decodedContract: DecodedV1ContractDatum, nowMs: number): bigint {
+	const cutoff = BigInt(nowMs + SUBMIT_RESULT_WINDOW_SLACK_MS);
+	if (decodedContract.resultTime > cutoff) {
+		return decodedContract.resultTime;
+	}
+	if (decodedContract.resultHash != null && decodedContract.externalDisputeUnlockTime > cutoff) {
+		return decodedContract.externalDisputeUnlockTime;
+	}
+	throw new Error(
+		decodedContract.resultHash == null
+			? 'SubmitResult window closed: past submit_result_time and no on-chain result to rotate during the dispute window; manual intervention required'
+			: 'SubmitResult window closed: past both submit_result_time and external_dispute_unlock_time; manual intervention required',
+	);
 }
 
 async function markRequestFailed(request: PaymentRequestWithRelations, error: unknown): Promise<void> {
@@ -295,7 +340,10 @@ async function validateAndBuildItem(
 	});
 
 	const { invalidBefore, invalidAfter } = createTxWindow(network, {
-		constrainAfterMs: decodedContract.resultTime,
+		// Branch A (submit_result_time) while the deadline is ahead, else branch B
+		// (external_dispute_unlock_time) for dispute-window result rotation. See
+		// resolveSubmitResultConstrainAfterMs.
+		constrainAfterMs: resolveSubmitResultConstrainAfterMs(decodedContract, Date.now()),
 		constrainBeforeMs: decodedContract.sellerCooldownTime,
 	});
 
@@ -334,14 +382,26 @@ async function processSinglePaymentRequest(
 		// `must_end_before(validity_range, submit_result_time)`, so past this
 		// point the seller cannot submit anymore. Topup won't help; park for
 		// manual intervention.
-		const submitDeadlineMs = Number(request.submitResultTime);
+		// Effective give-up deadline. A ResultSubmitted / Disputed row can still
+		// rotate its result during the dispute window (vested_pay.ak SubmitResult
+		// branch B), so a topup could still let it submit up to
+		// external_dispute_unlock_time. Other states only have the normal
+		// submit_result_time deadline. Using the wrong bound here would force a
+		// disputed row to manual action while it is still on-chain submittable.
+		const canRotateInDispute =
+			request.onChainState === OnChainState.ResultSubmitted || request.onChainState === OnChainState.Disputed;
+		const submitDeadlineMs = canRotateInDispute
+			? Number(request.externalDisputeUnlockTime)
+			: Number(request.submitResultTime);
 		// Require a positive finite timestamp; treat 0/negative as a
 		// data-integrity bug (deadline never set) rather than "passed".
 		// Without the `> 0` guard, `Date.now() > 0` is always true and a
 		// row with an uninitialised deadline silently falls into manual
 		// intervention.
 		if (Number.isFinite(submitDeadlineMs) && submitDeadlineMs > 0 && Date.now() > submitDeadlineMs) {
-			throw new Error('Wallet empty and on-chain submitResultTime deadline passed; manual intervention required');
+			throw new Error(
+				'Wallet empty and on-chain submit window (incl. dispute window) passed; manual intervention required',
+			);
 		}
 		// Deadline still ahead — defer to wait for funder cron topup.
 		throw new Error(`${LOOKUP_DEFERRED_PREFIX} wallet has no UTXOs; awaiting topup, retry next tick`);
@@ -396,7 +456,10 @@ async function processSinglePaymentRequest(
 	});
 
 	const { invalidBefore, invalidAfter } = createTxWindow(network, {
-		constrainAfterMs: decodedContract.resultTime,
+		// Branch A (submit_result_time) while the deadline is ahead, else branch B
+		// (external_dispute_unlock_time) for dispute-window result rotation. See
+		// resolveSubmitResultConstrainAfterMs.
+		constrainAfterMs: resolveSubmitResultConstrainAfterMs(decodedContract, Date.now()),
 		constrainBeforeMs: decodedContract.sellerCooldownTime,
 	});
 
@@ -407,7 +470,9 @@ async function processSinglePaymentRequest(
 		async () =>
 			await generateMasumiSmartContractInteractionTransactionAutomaticFees(
 				'SubmitResult',
-				blockchainProvider,
+				// V2-pinned builder expects the V2 mesh provider type; cast the shared
+				// (V1-resolved) instance — identical runtime object. See provider-cast.ts.
+				asV2Provider(blockchainProvider),
 				network,
 				script,
 				address,
@@ -456,6 +521,18 @@ async function processSinglePaymentRequest(
 		return false;
 	}
 
+	// Divergence check — parity with this service's batch path. submitTx's
+	// returned hash must equal the deterministic resolveTxHash(signedTx); a
+	// mismatch signals a Mesh/Cardano serialization bug. We keep newTxHash (it
+	// is the hash the node accepted and what tx-sync will observe), but log
+	// loudly so single-item submits are investigable like the batch path.
+	const intendedTxHash = resolveTxHash(signedTx);
+	if (newTxHash !== intendedTxHash) {
+		logger.error('V2 submit-result single-item: node returned divergent txHash — investigate', {
+			intendedTxHash,
+			nodeTxHash: newTxHash,
+		});
+	}
 	await walletSession.evaluateProjectedBalance(unsignedTx, limitedUtxos);
 	// Create the Transaction row with txHash already populated — single
 	// update both transitions the action AND attaches the real on-chain
@@ -1173,28 +1250,45 @@ export async function submitResultV2() {
 	}
 
 	try {
+		const nowMs = Date.now();
 		const paymentContractsWithWalletLocked = await lockAndQueryPayments({
 			paymentStatus: PaymentAction.SubmitResultRequested,
-			// Aiken SubmitResult requires `must_end_before(submit_result_time)`.
-			// The default tx-window's invalidAfter is ~now + 2.5min + slot buffer.
-			// Filter to at least 5 minutes of slack so submissions don't race
-			// the ledger boundary.
-			submitResultTime: {
-				gt: Date.now() + 1000 * 60 * 5,
-			},
 			requestedResultHash: { not: null },
-			// Aiken `SubmitResult` is only legal from FundsLocked, ResultSubmitted,
-			// RefundRequested, or Disputed (NOT from WithdrawAuthorized / RefundAuthorized).
-			// `determineNewContractState` defers from the latter two anyway, but
-			// pre-filtering here saves the lock + Blockfrost lookup cost on stale rows.
-			onChainState: {
-				in: [
-					OnChainState.FundsLocked,
-					OnChainState.ResultSubmitted,
-					OnChainState.RefundRequested,
-					OnChainState.Disputed,
-				],
-			},
+			// vested_pay.ak `SubmitResult` accepts a tx in EITHER of two windows
+			// (and only from FundsLocked / ResultSubmitted / RefundRequested /
+			// Disputed — never WithdrawAuthorized / RefundAuthorized, which
+			// determineNewContractState defers anyway):
+			//
+			//   A) Normal pre-deadline submit — tx ends before submit_result_time.
+			//   B) Dispute-window result rotation — tx ends before
+			//      external_dispute_unlock_time AND the current on-chain datum
+			//      already carries a result (i.e. ResultSubmitted or Disputed).
+			//
+			// Each leg keeps ≥5min slack off its own boundary (default tx-window
+			// invalidAfter is ~now+2.5min+buffer) so a submission never races the
+			// ledger bound. resolveSubmitResultConstrainAfterMs picks the matching
+			// upper bound per row at build time; this OR only gates eligibility.
+			// (Previously only leg A was queried, so disputed rows past
+			// submit_result_time were never selected and the contract's
+			// dispute-rotation path was unreachable off-chain.)
+			orFilters: [
+				{
+					submitResultTime: { gt: nowMs + SUBMIT_RESULT_WINDOW_SLACK_MS },
+					onChainState: {
+						in: [
+							OnChainState.FundsLocked,
+							OnChainState.ResultSubmitted,
+							OnChainState.RefundRequested,
+							OnChainState.Disputed,
+						],
+					},
+				},
+				{
+					submitResultTime: { lte: nowMs + SUBMIT_RESULT_WINDOW_SLACK_MS },
+					externalDisputeUnlockTime: { gt: nowMs + SUBMIT_RESULT_WINDOW_SLACK_MS },
+					onChainState: { in: [OnChainState.ResultSubmitted, OnChainState.Disputed] },
+				},
+			],
 			maxBatchSize: SUBMIT_RESULT_BATCH_SIZE,
 			paymentSourceType: PaymentSourceType.Web3CardanoV2,
 		});

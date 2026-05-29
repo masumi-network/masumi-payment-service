@@ -93,8 +93,13 @@ export const paymentSourceExtendedCreateSchemaInput = z
 		paymentSourceType: z
 			.nativeEnum(PaymentSourceType)
 			.optional()
-			.default(PaymentSourceType.Web3CardanoV2)
-			.describe('The payment source type to create. Defaults to Web3CardanoV2 to match the admin UI default.'),
+			.default(PaymentSourceType.Web3CardanoV1)
+			.describe(
+				'The payment source type to create. Defaults to Web3CardanoV1 for backward compatibility: ' +
+					'pre-V2 automation that omits this field (and supplies feeRatePermille / FeeReceiverNetworkWallet / ' +
+					'3 admin wallets) continues to create a V1 source unchanged. New V2 callers must set this explicitly ' +
+					'(the admin UI does).',
+			),
 		PaymentSourceConfig: z.object({
 			rpcProviderApiKey: z
 				.string()

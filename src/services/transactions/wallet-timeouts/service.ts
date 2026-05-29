@@ -366,7 +366,11 @@ export async function updateWalletTransactionHash() {
 						const result = await prisma.registryRequest.findMany({
 							where: {
 								state: {
-									in: [RegistrationState.RegistrationInitiated, RegistrationState.DeregistrationInitiated],
+									in: [
+										RegistrationState.RegistrationInitiated,
+										RegistrationState.DeregistrationInitiated,
+										RegistrationState.UpdateInitiated,
+									],
 								},
 								SmartContractWallet: { deletedAt: null },
 								OR: [
@@ -397,6 +401,7 @@ export async function updateWalletTransactionHash() {
 								SmartContractWallet: {
 									include: { PaymentSource: { select: { paymentSourceType: true } } },
 								},
+								CurrentTransaction: { select: { txHash: true, createdAt: true } },
 							},
 						});
 
@@ -445,11 +450,39 @@ export async function updateWalletTransactionHash() {
 										state:
 											registryRequest.state == RegistrationState.RegistrationInitiated
 												? RegistrationState.RegistrationFailed
-												: RegistrationState.DeregistrationFailed,
+												: registryRequest.state == RegistrationState.UpdateInitiated
+													? RegistrationState.UpdateFailed
+													: RegistrationState.DeregistrationFailed,
 										error: 'Timeout, force unlocked',
 									},
 								});
 							} else {
+								// #10: a registry tx with txHash set was already accepted by the node
+								// (registry services write txHash atomically with state=*Initiated only
+								// AFTER submitTx returns). Registry txs carry NO invalidHereafter TTL, so
+								// it can still land at any future slot — the usual reason it is still
+								// unconfirmed past the timeout is Blockfrost indexer lag, not a dead tx.
+								// Force-failing it here and letting the operator re-create would
+								// double-mint / double-burn when the original lands. Leave it for registry
+								// tx-sync, which polls *Initiated + txHash until the asset appears, then
+								// confirms + unlocks. Only the never-broadcast case (txHash == null,
+								// handled below) is safe to force-fail + unlock + resubmit — its inputs
+								// were never spent.
+								if (registryRequest.CurrentTransaction?.txHash != null) {
+									const ageMs = registryRequest.CurrentTransaction.createdAt
+										? Date.now() - new Date(registryRequest.CurrentTransaction.createdAt).getTime()
+										: null;
+									logger.warn(
+										'Registry request tx is submitted (txHash set) but still unconfirmed past the timeout window; NOT force-failing to avoid a double mint/burn (registry txs have no TTL and may still land). Leaving for registry tx-sync.',
+										{
+											registryRequestId: registryRequest.id,
+											txHash: registryRequest.CurrentTransaction.txHash,
+											state: registryRequest.state,
+											ageMs,
+										},
+									);
+									continue;
+								}
 								if (
 									registryRequest.SmartContractWallet != null &&
 									((registryRequest.SmartContractWallet.pendingTransactionId != null &&
@@ -506,7 +539,9 @@ export async function updateWalletTransactionHash() {
 										state:
 											registryRequest.state == RegistrationState.RegistrationInitiated
 												? RegistrationState.RegistrationFailed
-												: RegistrationState.DeregistrationFailed,
+												: registryRequest.state == RegistrationState.UpdateInitiated
+													? RegistrationState.UpdateFailed
+													: RegistrationState.DeregistrationFailed,
 									},
 								});
 							}
@@ -1183,9 +1218,65 @@ export async function updateWalletTransactionHash() {
 					lockedAt: null,
 					deletedAt: null,
 				},
-				include: { PendingTransaction: true },
+				include: {
+					PendingTransaction: true,
+					PaymentSource: {
+						include: { PaymentSourceConfig: true },
+					},
+				},
 			});
 			for (const hotWallet of errorHotWallets) {
+				const pendingTransaction = hotWallet.PendingTransaction;
+				// Ambiguous-funding guard — mirrors the `txHash == null && intendedTxHash != null`
+				// branch in the lockedHotWallets loop above. A V2 collateral-prep / batch-payments
+				// tx records `intendedTxHash` BEFORE broadcast; on an ambiguous submit the row stays
+				// Pending with `txHash == null` while the wallet can land in exactly the
+				// `{ pendingTransactionId set, lockedAt null }` half-state this sweep matches. Blindly
+				// disconnecting it would strand a possibly on-chain tx and let the next batch tick
+				// re-lock the same UTxOs → double-spend. Delegate to reconcileOne instead (it is
+				// explicitly designed to be driven from this sweep — see funding-reconciliation
+				// docs): it only disconnects once the TTL has provably elapsed and the chain confirms
+				// the tx never landed, otherwise it leaves the row Pending for the next tick.
+				if (
+					pendingTransaction != null &&
+					pendingTransaction.txHash == null &&
+					pendingTransaction.intendedTxHash != null
+				) {
+					logger.warn(
+						`Hot wallet ${hotWallet.id} in invalid locked state references an ambiguous funding tx (intendedTxHash set); delegating to reconcileOne instead of disconnecting`,
+						{ txId: pendingTransaction.id, intendedTxHash: pendingTransaction.intendedTxHash },
+					);
+					try {
+						const candidate: ReconcileCandidate = {
+							id: pendingTransaction.id,
+							intendedTxHash: pendingTransaction.intendedTxHash,
+							invalidHereafterSlot: pendingTransaction.invalidHereafterSlot,
+							BlocksWallet: {
+								id: hotWallet.id,
+								PaymentSource: {
+									network: hotWallet.PaymentSource.network,
+									PaymentSourceConfig: {
+										rpcProviderApiKey: hotWallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
+									},
+								},
+							},
+						};
+						await reconcileOne(candidate);
+					} catch (err) {
+						// Transient (indexer flake, etc.) — leave the row Pending, do NOT
+						// disconnect. The dedicated reconciliation cron and the next
+						// wallet-timeouts tick will retry.
+						logger.warn(
+							'wallet-timeouts: reconcileOne threw for invalid-locked-state ambiguous tx, leaving row Pending',
+							{
+								txId: pendingTransaction.id,
+								intendedTxHash: pendingTransaction.intendedTxHash,
+								error: errorToString(err),
+							},
+						);
+					}
+					continue;
+				}
 				logger.error(
 					`Hot wallet ${hotWallet.id} was in an invalid locked state, Pending transaction is not null, wallet is not locked (this is likely a bug please report it with the following transaction hash): ${hotWallet.PendingTransaction?.txHash} ; transaction id: ${hotWallet.PendingTransaction?.id}`,
 				);

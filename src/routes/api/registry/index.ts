@@ -1,7 +1,7 @@
 import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
-import { PricingType, RegistrationState } from '@/generated/prisma/client';
+import { PaymentSourceType, PricingType, RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { DEFAULTS } from '@masumi/payment-core/config';
@@ -106,7 +106,14 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 			const sendFundingLovelace = normalizeRequestedRegistryFundingLovelace(input.sendFundingLovelace);
 			// Keep persisted registry payment-source rows opt-in. Mint metadata
 			// still advertises the active payment source from the mint service.
-			const supportedPaymentSources = input.supportedPaymentSources ?? [];
+			// supportedPaymentSources is a V2-only concept: silently drop any
+			// provided rows for V1 (legacy) registrations so they are never
+			// persisted or advertised on-chain. (The validation + DB create below
+			// then become no-ops for V1.)
+			const supportedPaymentSources =
+				sellingWallet.PaymentSource.paymentSourceType === PaymentSourceType.Web3CardanoV2
+					? (input.supportedPaymentSources ?? [])
+					: [];
 			if (supportedPaymentSources.length > 0) {
 				try {
 					validateSupportedPaymentSourcesOrThrow(

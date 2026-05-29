@@ -147,6 +147,16 @@ export default function AIAgentsPage() {
   const [selectedAgentToDelete, setSelectedAgentToDelete] = useState<AIAgent | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectedAgentToUpdate, setSelectedAgentToUpdate] = useState<AIAgent | null>(null);
+  // Snapshot the agent's payment-source smart-contract address AT CLICK TIME.
+  // The agent list is already filtered to `selectedPaymentSource`, so at the
+  // moment of the click that source IS the agent's source. We must not read the
+  // live `selectedPaymentSource` later in the dialog prop: the update dialog
+  // stays mounted, and if the global source selector changes while it is open,
+  // the address would drift to a DIFFERENT source than the agent belongs to and
+  // the update would target the wrong contract.
+  const [updateAgentSmartContractAddress, setUpdateAgentSmartContractAddress] = useState<
+    string | null
+  >(null);
   const { apiClient, network, selectedPaymentSourceId, selectedPaymentSource } = useAppContext();
   const { paymentSources } = usePaymentSourceExtendedAll();
 
@@ -266,6 +276,10 @@ export default function AIAgentsPage() {
       toast.error('Update is only supported for Web3CardanoV2 payment sources');
       return;
     }
+    // Freeze the source address now — the list is filtered to this source, so
+    // it is the agent's source. Reading it later (render time) risks global
+    // selector drift targeting the wrong contract.
+    setUpdateAgentSmartContractAddress(selectedPaymentSource.smartContractAddress);
     setSelectedAgentToUpdate(agent);
   };
 
@@ -723,10 +737,14 @@ export default function AIAgentsPage() {
           <RegisterAIAgentDialog
             open={!!selectedAgentToUpdate}
             editingAgent={selectedAgentToUpdate}
-            editingAgentSmartContractAddress={selectedPaymentSource?.smartContractAddress}
-            onClose={() => setSelectedAgentToUpdate(null)}
+            editingAgentSmartContractAddress={updateAgentSmartContractAddress ?? undefined}
+            onClose={() => {
+              setSelectedAgentToUpdate(null);
+              setUpdateAgentSmartContractAddress(null);
+            }}
             onSuccess={() => {
               setSelectedAgentToUpdate(null);
+              setUpdateAgentSmartContractAddress(null);
               setTimeout(() => {
                 refetchAll();
               }, 250);

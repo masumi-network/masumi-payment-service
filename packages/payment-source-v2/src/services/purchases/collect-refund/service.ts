@@ -25,7 +25,8 @@ import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interp
 import { advancedRetry, delayErrorResolver } from 'advanced-retry';
 import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
-import { generateMasumiSmartContractWithdrawTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
+// V2-pinned single-item builder. MUST NOT use the root V1-mesh generator (@/utils/generator/transaction-generator) — that bundles the V1 cost models and CBOR serializer, which produce a script-data-hash the ledger rejects for V2 scripts (PPViewHashesDontMatch). See docs/adr/0005.
+import { generateMasumiSmartContractWithdrawTransactionAutomaticFees } from '../../../builders/single-interaction';
 import {
 	connectExistingNextPurchaseAction,
 	connectExistingTransaction,
@@ -291,7 +292,9 @@ async function processSingleRefundCollection(
 		async () =>
 			await generateMasumiSmartContractWithdrawTransactionAutomaticFees(
 				'CollectRefund',
-				blockchainProvider,
+				// V2-pinned builder expects the V2 mesh provider type; cast the shared
+				// (V1-resolved) instance — identical runtime object. See provider-cast.ts.
+				asV2Provider(blockchainProvider),
 				network,
 				script,
 				address,
@@ -325,6 +328,18 @@ async function processSingleRefundCollection(
 	// catch arm (markRequestFailed) clears lockedAt. Mirrors the pattern
 	// already used in V2 payments/{authorize-refund,collection,submit-result}.
 	const newTxHash = await wallet.submitTx(signedTx);
+	// Divergence check — parity with this service's batch path. submitTx's
+	// returned hash must equal the deterministic resolveTxHash(signedTx); a
+	// mismatch signals a Mesh/Cardano serialization bug. We keep newTxHash (it
+	// is the hash the node accepted and what tx-sync will observe), but log
+	// loudly so single-item submits are investigable like the batch path.
+	const intendedTxHash = resolveTxHash(signedTx);
+	if (newTxHash !== intendedTxHash) {
+		logger.error('V2 collect-refund single-item: node returned divergent txHash — investigate', {
+			intendedTxHash,
+			nodeTxHash: newTxHash,
+		});
+	}
 	await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
 	// Snapshot the wallet id before the closure — TS narrowing of
 	// request.SmartContractWallet doesn't survive into the arrow function.
