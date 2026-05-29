@@ -18180,8 +18180,8 @@
                                             "Web3CardanoV1",
                                             "Web3CardanoV2"
                                         ],
-                                        "default": "Web3CardanoV2",
-                                        "description": "The payment source type to create. Defaults to Web3CardanoV2 to match the admin UI default."
+                                        "default": "Web3CardanoV1",
+                                        "description": "The payment source type to create. Defaults to Web3CardanoV1 for backward compatibility: pre-V2 automation that omits this field (and supplies feeRatePermille / FeeReceiverNetworkWallet / 3 admin wallets) continues to create a V1 source unchanged. New V2 callers must set this explicitly (the admin UI does)."
                                     },
                                     "PaymentSourceConfig": {
                                         "type": "object",
