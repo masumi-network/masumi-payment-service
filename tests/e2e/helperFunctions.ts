@@ -36,8 +36,37 @@ class FatalE2EError extends Error {
 	}
 }
 
-function sleep(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+	return new Promise((resolve, reject) => {
+		if (signal?.aborted) {
+			reject(new Error(`Aborted: ${signal.reason ?? 'signal aborted'}`));
+			return;
+		}
+		const timer = setTimeout(resolve, ms);
+		signal?.addEventListener(
+			'abort',
+			() => {
+				clearTimeout(timer);
+				reject(new Error(`Aborted: ${signal.reason ?? 'signal aborted'}`));
+			},
+			{ once: true },
+		);
+	});
+}
+
+/**
+ * Runs all tasks concurrently and, on the FIRST rejection, aborts the rest via a
+ * shared AbortSignal. Without this, a sibling infinite `pollUntil` keeps looping
+ * (and logging) after Jest has torn the test down → "Cannot log after tests are done".
+ * Each task receives the signal and is expected to thread it into `pollUntil`.
+ */
+export async function allWithAbortOnFailure<T>(tasks: Array<(signal: AbortSignal) => Promise<T>>): Promise<T[]> {
+	const controller = new AbortController();
+	try {
+		return await Promise.all(tasks.map((task) => task(controller.signal)));
+	} finally {
+		controller.abort('sibling task failed or batch settled');
+	}
 }
 
 async function pollUntil(
@@ -74,7 +103,7 @@ async function pollUntil(
 				throw err; // fail-fast
 			}
 			lastErr = err;
-			await sleep(intervalMs);
+			await sleep(intervalMs, signal);
 		}
 	}
 
@@ -573,7 +602,11 @@ export async function createPurchase(paymentResult: PaymentResult, agentData: Co
  * @param blockchainIdentifier - The blockchain identifier to monitor
  * @param network - The blockchain network
  */
-export async function waitForFundsLocked(blockchainIdentifier: string, network: Network): Promise<void> {
+export async function waitForFundsLocked(
+	blockchainIdentifier: string,
+	network: Network,
+	signal?: AbortSignal,
+): Promise<void> {
 	console.log('⏳ E2E: waiting for FundsLocked (payment + purchase)...');
 	console.log('⏳ E2E: infinite wait enabled (FundsLocked)');
 
@@ -653,7 +686,7 @@ export async function waitForFundsLocked(blockchainIdentifier: string, network: 
 				`📊 E2E: purchase state=${currentPurchase.onChainState}, action=${currentPurchase.NextAction.requestedAction}`,
 			);
 		},
-		{ timeoutMs: 0, intervalMs: 5000, label: 'FundsLocked' },
+		{ timeoutMs: 0, intervalMs: 5000, label: 'FundsLocked', signal },
 	);
 
 	const fundsLockedMinutes = Math.floor((Date.now() - fundsLockedStartTime) / 60000);

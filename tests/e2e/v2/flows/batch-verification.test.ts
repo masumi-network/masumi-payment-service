@@ -23,6 +23,7 @@
 import { Network, PaymentSourceType } from '@/generated/prisma/enums';
 import { validateTestWallets } from '../../fixtures/testWallets';
 import {
+	allWithAbortOnFailure,
 	authorizeRefund,
 	createPaymentWithCustomTiming,
 	createPurchase,
@@ -243,7 +244,9 @@ describeFn(`Web3CardanoV2 batch action verification (${testNetwork})`, () => {
 			// Phase 1: wait for all N to reach FundsLocked.
 			// ============================================================
 			console.log('⏳ Waiting for FundsLocked on all batch members…');
-			await Promise.all(payments.map((p) => waitForFundsLocked(p.blockchainIdentifier, testNetwork)));
+			await allWithAbortOnFailure(
+				payments.map((p) => (signal) => waitForFundsLocked(p.blockchainIdentifier, testNetwork, signal)),
+			);
 
 			// ============================================================
 			// Phase 2: submit-result × N → expect single batched tx.

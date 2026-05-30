@@ -14,6 +14,20 @@ const mockResolvePaymentKeyHash = jest.fn() as AnyMock;
 const mockGetRegistryScript = jest.fn() as AnyMock;
 const mockGetRegistryScriptV2 = jest.fn() as AnyMock;
 
+const txClient = {
+	registryRequest: {
+		findUnique: mockFindRegistryRequest,
+		update: mockUpdateRegistryRequest,
+	},
+};
+
+const mockTransaction = jest.fn(async (arg: unknown) => {
+	if (typeof arg === 'function') {
+		return await (arg as (tx: typeof txClient) => Promise<unknown>)(txClient);
+	}
+	return arg;
+}) as AnyMock;
+
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		apiKey: {
@@ -27,6 +41,10 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 			findUnique: mockFindRegistryRequest,
 			update: mockUpdateRegistryRequest,
 		},
+		// `unregisterAgentPost` wraps its update in a Serializable `$transaction` to close the
+		// TOCTOU window between the route's findUnique and the update. Stub the helper so the
+		// handler is invoked once with a `tx` exposing the same registryRequest mocks.
+		$transaction: mockTransaction,
 	},
 }));
 
@@ -194,8 +212,12 @@ describe('unregisterAgentPost', () => {
 				},
 			],
 		});
+		// Includes `state` + `paymentSourceId` because the route now re-reads the row inside a
+		// Serializable transaction to close the TOCTOU window before updating.
 		mockFindRegistryRequest.mockResolvedValue({
 			id: 'registry-request-1',
+			state: RegistrationState.RegistrationConfirmed,
+			paymentSourceId: 'payment-source-1',
 		});
 		mockUpdateRegistryRequest.mockResolvedValue(buildRegistryUpdateResponse());
 	});
