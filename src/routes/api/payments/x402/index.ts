@@ -12,6 +12,7 @@ import { CONSTANTS } from '@masumi/payment-core/config';
 import { buildX402FundsLockingTransaction as buildX402FundsLockingTransactionV1 } from '@masumi/payment-source-v1/services/purchases/x402-build/service';
 import { buildX402FundsLockingTransactionV2 } from '@masumi/payment-source-v2/services/purchases/x402-build/service';
 import { PaymentSourceType } from '@/generated/prisma/client';
+import { assertNever } from '@/utils/assert-never';
 import { createAuthenticatedRateLimitMiddleware } from '@/utils/middleware/rate-limit';
 import { buildX402TxSchemaInput, buildX402TxSchemaOutput } from './schemas';
 import { isCardanoPubKeyBaseAddressForNetwork } from '@/types/payment-source';
@@ -120,47 +121,50 @@ export const buildX402TxPost = x402BuildEndpointFactory.build({
 		const blockchainProvider = await createMeshProvider(payment.PaymentSource.PaymentSourceConfig.rpcProviderApiKey);
 		const coinsPerUtxoSize = await getCoinsPerUtxoSize(blockchainProvider);
 
-		const isV2 = payment.PaymentSource.paymentSourceType === PaymentSourceType.Web3CardanoV2;
-		const result = isV2
-			? await buildX402FundsLockingTransactionV2({
-					purchaseRequestData: {
-						blockchainIdentifier: payment.blockchainIdentifier,
-						inputHash: payment.inputHash,
-						payByTime: BigInt(payment.payByTime),
-						submitResultTime: BigInt(payment.submitResultTime),
-						unlockTime: BigInt(payment.unlockTime),
-						externalDisputeUnlockTime: BigInt(payment.externalDisputeUnlockTime),
-						sellerAddress: payment.SmartContractWallet.walletAddress,
-						sellerReturnAddress: payment.sellerReturnAddress,
-						buyerReturnAddress: payment.buyerReturnAddress,
-						paidFunds: payment.RequestedFunds.map((f) => ({ unit: f.unit, amount: f.amount })),
-					},
-					buyerAddress: input.buyerAddress,
-					blockchainProvider,
-					network: input.network,
-					scriptAddress: payment.PaymentSource.smartContractAddress,
-					coinsPerUtxoSize,
-				})
-			: await buildX402FundsLockingTransactionV1({
-					purchaseRequestData: {
-						blockchainIdentifier: payment.blockchainIdentifier,
-						inputHash: payment.inputHash,
-						payByTime: BigInt(payment.payByTime),
-						submitResultTime: BigInt(payment.submitResultTime),
-						unlockTime: BigInt(payment.unlockTime),
-						externalDisputeUnlockTime: BigInt(payment.externalDisputeUnlockTime),
-						sellerAddress: payment.SmartContractWallet.walletAddress,
-						sellerReturnAddress: payment.sellerReturnAddress,
-						buyerReturnAddress: payment.buyerReturnAddress,
-						paymentSourceType: payment.PaymentSource.paymentSourceType,
-						paidFunds: payment.RequestedFunds.map((f) => ({ unit: f.unit, amount: f.amount })),
-					},
-					buyerAddress: input.buyerAddress,
-					blockchainProvider,
-					network: input.network,
-					scriptAddress: payment.PaymentSource.smartContractAddress,
-					coinsPerUtxoSize,
+		// Exhaustive switch on paymentSourceType: assertNever in the default
+		// arm forces a type error on any new PaymentSourceType enum value,
+		// preventing the silent V1 fallback an inline `isV2` ternary would
+		// produce (ADR-0004 dispatch boundary discipline).
+		const sourceType = payment.PaymentSource.paymentSourceType;
+		const purchaseRequestDataBase = {
+			blockchainIdentifier: payment.blockchainIdentifier,
+			inputHash: payment.inputHash,
+			payByTime: BigInt(payment.payByTime),
+			submitResultTime: BigInt(payment.submitResultTime),
+			unlockTime: BigInt(payment.unlockTime),
+			externalDisputeUnlockTime: BigInt(payment.externalDisputeUnlockTime),
+			sellerAddress: payment.SmartContractWallet.walletAddress,
+			sellerReturnAddress: payment.sellerReturnAddress,
+			buyerReturnAddress: payment.buyerReturnAddress,
+			paidFunds: payment.RequestedFunds.map((f) => ({ unit: f.unit, amount: f.amount })),
+		};
+		const sharedBuildArgs = {
+			buyerAddress: input.buyerAddress,
+			blockchainProvider,
+			network: input.network,
+			scriptAddress: payment.PaymentSource.smartContractAddress,
+			coinsPerUtxoSize,
+		};
+		let result;
+		switch (sourceType) {
+			case PaymentSourceType.Web3CardanoV2:
+				result = await buildX402FundsLockingTransactionV2({
+					purchaseRequestData: purchaseRequestDataBase,
+					...sharedBuildArgs,
 				});
+				break;
+			case PaymentSourceType.Web3CardanoV1:
+				result = await buildX402FundsLockingTransactionV1({
+					purchaseRequestData: {
+						...purchaseRequestDataBase,
+						paymentSourceType: sourceType,
+					},
+					...sharedBuildArgs,
+				});
+				break;
+			default:
+				assertNever(sourceType);
+		}
 
 		return {
 			unsignedTxCbor: result.unsignedTxCbor,

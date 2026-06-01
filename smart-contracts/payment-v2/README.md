@@ -101,15 +101,36 @@ Principal addresses (`buyer`, `seller`) vs payout addresses
 
 Return-address behavior:
 
-- If a return address is `None`, the validator does not enforce a tagged payout
-  output for that side. The actor (who must sign the tx) is free to route the
-  payout to any address of their choice via normal tx outputs.
+- **`Withdraw` and `WithdrawRefund` (cooperative, single-signer)**: if a
+  return address is `None`, the validator does not enforce a tagged payout
+  output for that side. The actor (who must sign the tx) is free to route
+  the payout to any address of their choice via normal tx outputs.
+- **`WithdrawDisputed` (admin-arbitrated)**: a tagged payout output IS
+  required for each side regardless of whether the return address is
+  `None`. When the return address is `None`, the validator falls back to
+  the corresponding principal (`buyer` / `seller`) as the destination and
+  still demands a tagged output at that address. This is intentional — the
+  admin signature is computed over `(own_ref, buyer_value, seller_value)`
+  and binds those payouts to specific addresses; the tagging is how the
+  on-chain check can attribute "this output satisfies the buyer's signed
+  share" deterministically across batched disputed-withdrawals from the
+  same admin set. A residual / "finder reward" output to whoever submits
+  the tx is permitted (and intentional — see WithdrawDisputed below).
 - If a return address is `Some(address)`, the validator requires a tagged
   payout output at exactly that address (full Cardano `Address` equality
-  including stake credential).
-- Tagged payout outputs use an inline datum equal to the spent contract `OutputReference`.
-- On seller withdrawal, the buyer must receive at least `collateral_return_lovelace`, and the seller return output must cover the contract input value minus that collateral lovelace.
-- Buyer and seller payout checks assume the effective payout targets are distinct: `buyer_return_address` or `buyer` for the buyer side, and `seller_return_address` or `seller` for the seller side. This holds for normal buyer/seller wallets. If a deployment intentionally points both sides at the same address, one tagged output can satisfy both role checks, so off-chain validation should reject equal effective payout targets unless that aggregation is intended.
+  including stake credential), for all three redeemers that pay out.
+- Tagged payout outputs use an inline datum equal to the spent contract
+  `OutputReference`.
+- On seller withdrawal, the buyer must receive at least
+  `collateral_return_lovelace`, and the seller return output must cover
+  the contract input value minus that collateral lovelace.
+- Buyer and seller payout checks assume the effective payout targets are
+  distinct: `buyer_return_address` or `buyer` for the buyer side, and
+  `seller_return_address` or `seller` for the seller side. This holds for
+  normal buyer/seller wallets. If a deployment intentionally points both
+  sides at the same address, one tagged output can satisfy both role
+  checks, so off-chain validation should reject equal effective payout
+  targets unless that aggregation is intended.
 
 ## States
 

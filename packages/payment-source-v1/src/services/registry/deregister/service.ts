@@ -158,6 +158,6 @@ export async function deRegisterAgentV1() {
 	} catch (error) {
 		logger.error('Error deregistering V1 agents', { error });
 	} finally {
-		release();
+		release?.();
 	}
 }

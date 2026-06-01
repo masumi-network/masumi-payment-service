@@ -618,7 +618,7 @@ export async function registerInboxAgentV2() {
 	} catch (error) {
 		logger.error('Error registering V2 inbox agents', { error });
 	} finally {
-		release();
+		release?.();
 	}
 }
 

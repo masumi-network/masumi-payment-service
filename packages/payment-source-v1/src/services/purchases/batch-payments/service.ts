@@ -736,6 +736,6 @@ export async function batchLatestPaymentEntriesV1() {
 	} catch (error) {
 		logger.error('Error batching payments', error);
 	} finally {
-		release();
+		release?.();
 	}
 }

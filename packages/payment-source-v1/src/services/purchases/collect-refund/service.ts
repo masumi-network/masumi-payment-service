@@ -299,6 +299,6 @@ export async function collectRefundV1() {
 		//TODO: Release the locked wallets
 		logger.error('Error collecting refund', { error: error });
 	} finally {
-		release();
+		release?.();
 	}
 }

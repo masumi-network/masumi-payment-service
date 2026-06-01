@@ -291,6 +291,6 @@ export async function requestRefundsV1() {
 	} catch (error) {
 		logger.error('Error requesting refund', { error: error });
 	} finally {
-		release();
+		release?.();
 	}
 }

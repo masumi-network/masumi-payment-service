@@ -1060,6 +1060,6 @@ export async function collectRefundV2() {
 	} catch (error) {
 		logger.error('Error collecting V2 refunds', { error });
 	} finally {
-		release();
+		release?.();
 	}
 }

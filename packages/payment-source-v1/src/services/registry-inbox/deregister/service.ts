@@ -171,6 +171,6 @@ export async function deRegisterInboxAgentV1() {
 	} catch (error) {
 		logger.error('Error deregistering inbox agent', { error });
 	} finally {
-		release();
+		release?.();
 	}
 }

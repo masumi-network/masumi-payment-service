@@ -812,7 +812,7 @@ export async function registerAgentV2() {
 	} catch (error) {
 		logger.error('Error registering V2 agents', { error });
 	} finally {
-		release();
+		release?.();
 	}
 }
 

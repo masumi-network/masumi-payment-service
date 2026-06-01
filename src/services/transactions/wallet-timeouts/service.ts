@@ -1327,6 +1327,6 @@ export async function updateWalletTransactionHash() {
 	} catch (error) {
 		logger.error(`Error updating wallet transaction hash`, { error: error });
 	} finally {
-		release();
+		release?.();
 	}
 }

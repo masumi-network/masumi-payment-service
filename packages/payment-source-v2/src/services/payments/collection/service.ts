@@ -1132,6 +1132,6 @@ export async function collectOutstandingPaymentsV2() {
 	} catch (error) {
 		logger.error('Error collecting V2 outstanding payments', { error });
 	} finally {
-		release();
+		release?.();
 	}
 }

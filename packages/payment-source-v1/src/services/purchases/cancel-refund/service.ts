@@ -251,6 +251,6 @@ export async function cancelRefundsV1() {
 	} catch (error) {
 		logger.error('Error cancelling V1 refunds', { error });
 	} finally {
-		release();
+		release?.();
 	}
 }

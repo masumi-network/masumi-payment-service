@@ -350,6 +350,6 @@ export async function submitResultV1() {
 	} catch (error) {
 		logger.error('Error submitting result', { error: error });
 	} finally {
-		release();
+		release?.();
 	}
 }

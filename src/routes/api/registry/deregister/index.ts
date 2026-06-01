@@ -4,10 +4,7 @@ import { Network, PricingType, RegistrationState } from '@/generated/prisma/clie
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
-import {
-	getRegistryScriptFromNetworkHandlerV1,
-	getRegistryScriptFromNetworkHandlerV2,
-} from '@/utils/generator/contract-generator';
+import { getPaymentSourceContractAdapter } from '@/services/payment-source-adapters';
 import { DEFAULTS } from '@masumi/payment-core/config';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { extractAssetName, extractPolicyId } from '@/utils/converter/agent-identifier';
@@ -94,10 +91,11 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 
 		const blockfrost = getBlockfrostInstance(input.network, paymentSource.PaymentSourceConfig.rpcProviderApiKey);
 
-		const { policyId } =
-			paymentSource.paymentSourceType === 'Web3CardanoV2'
-				? await getRegistryScriptFromNetworkHandlerV2(paymentSource)
-				: await getRegistryScriptFromNetworkHandlerV1(paymentSource);
+		// Dispatch via the central adapter (ADR-0004): assertNever inside the
+		// adapter forces a type error on any new PaymentSourceType, instead of
+		// silently falling back to V1 as an inline ternary would.
+		const adapter = getPaymentSourceContractAdapter(paymentSource.paymentSourceType);
+		const { policyId } = await adapter.getRegistryScriptFromPaymentSource(paymentSource);
 
 		const assetName = extractAssetName(input.agentIdentifier);
 		const holderWallet = await blockfrost.assetsAddresses(policyId + assetName, {

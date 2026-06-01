@@ -1137,6 +1137,6 @@ export async function requestRefundsV2() {
 	} catch (error) {
 		logger.error('Error collecting V2 timeout refunds', { error });
 	} finally {
-		release();
+		release?.();
 	}
 }

@@ -1,5 +1,5 @@
+import { jest } from '@jest/globals';
 import type { UTxO } from '@meshsdk/core';
-import { assertDistinctReferenceSignatures } from '../assert-distinct-reference-signatures';
 
 /**
  * Build a stub UTxO whose `plutusData` carries a `PLACEHOLDER_<hex>` marker.
@@ -8,6 +8,11 @@ import { assertDistinctReferenceSignatures } from '../assert-distinct-reference-
  * the test from mesh's CBOR serializer while still exercising the extractor's
  * field-index logic (which is the part most likely to drift if the V2 datum
  * layout changes).
+ *
+ * Under jest's ESM-mode runner the `jest` global is not injected and
+ * `jest.mock` is not hoisted; the mock must be registered with
+ * `jest.unstable_mockModule(...)` before the module under test is pulled in
+ * via dynamic `await import(...)`.
  */
 function utxoWithRefSig(txHash: string, outputIndex: number, referenceSignatureHex: string): UTxO {
 	return {
@@ -20,8 +25,8 @@ function utxoWithRefSig(txHash: string, outputIndex: number, referenceSignatureH
 	} as unknown as UTxO;
 }
 
-jest.mock('@meshsdk/core', () => {
-	const actual = jest.requireActual('@meshsdk/core');
+jest.unstable_mockModule('@meshsdk/core', () => {
+	const actual = jest.requireActual('@meshsdk/core') as Record<string, unknown>;
 	return {
 		...actual,
 		deserializeDatum: (data: string) => {
@@ -43,6 +48,8 @@ jest.mock('@meshsdk/core', () => {
 		},
 	};
 });
+
+const { assertDistinctReferenceSignatures } = await import('../assert-distinct-reference-signatures');
 
 describe('assertDistinctReferenceSignatures', () => {
 	it('passes when all reference_signatures are distinct', () => {

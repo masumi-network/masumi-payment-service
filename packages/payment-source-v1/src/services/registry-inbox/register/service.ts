@@ -203,6 +203,6 @@ export async function registerInboxAgentV1() {
 	} catch (error) {
 		logger.error('Error registering inbox agent', { error });
 	} finally {
-		release();
+		release?.();
 	}
 }

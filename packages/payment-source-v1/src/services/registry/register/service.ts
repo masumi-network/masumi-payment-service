@@ -288,6 +288,6 @@ export async function registerAgentV1() {
 	} catch (error) {
 		logger.error('Error registering V1 agents', { error });
 	} finally {
-		release();
+		release?.();
 	}
 }

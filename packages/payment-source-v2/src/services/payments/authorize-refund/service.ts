@@ -1066,6 +1066,6 @@ export async function authorizeRefundV2() {
 	} catch (error) {
 		logger.error('Error authorizing V2 refunds', { error });
 	} finally {
-		release();
+		release?.();
 	}
 }

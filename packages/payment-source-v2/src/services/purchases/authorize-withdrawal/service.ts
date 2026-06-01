@@ -1069,6 +1069,6 @@ export async function authorizeWithdrawalsV2() {
 	} catch (error) {
 		logger.error('Error authorizing V2 withdrawals', { error });
 	} finally {
-		release();
+		release?.();
 	}
 }

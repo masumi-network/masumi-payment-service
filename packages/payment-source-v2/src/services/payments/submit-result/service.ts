@@ -1324,6 +1324,6 @@ export async function submitResultV2() {
 	} catch (error) {
 		logger.error('Error submitting V2 result', { error });
 	} finally {
-		release();
+		release?.();
 	}
 }

@@ -249,6 +249,6 @@ export async function updateAgentV2() {
 	} catch (error) {
 		logger.error('Error updating V2 agent registrations', { error });
 	} finally {
-		release();
+		release?.();
 	}
 }
