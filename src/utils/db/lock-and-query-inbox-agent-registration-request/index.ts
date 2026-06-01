@@ -50,7 +50,6 @@ export async function lockAndQueryInboxAgentRegistrationRequests({
 
 					const newPaymentSources = [];
 					for (const paymentSource of paymentSources) {
-						const inboxAgentRegistrationRequests = [];
 						for (const hotWallet of paymentSource.HotWallets) {
 							const potentialInboxAgentRegistrationRequests = await prisma.inboxAgentRegistrationRequest.findMany({
 								where: {
@@ -119,14 +118,11 @@ export async function lockAndQueryInboxAgentRegistrationRequests({
 									walletToLock.pendingTransactionId = hotWalletResult.pendingTransactionId;
 									walletToLock.lockedAt = hotWalletResult.lockedAt;
 								});
-								inboxAgentRegistrationRequests.push(...potentialInboxAgentRegistrationRequests);
+								newPaymentSources.push({
+									...paymentSource,
+									InboxAgentRegistrationRequests: potentialInboxAgentRegistrationRequests,
+								});
 							}
-						}
-						if (inboxAgentRegistrationRequests.length > 0) {
-							newPaymentSources.push({
-								...paymentSource,
-								InboxAgentRegistrationRequests: inboxAgentRegistrationRequests,
-							});
 						}
 					}
 					return newPaymentSources;

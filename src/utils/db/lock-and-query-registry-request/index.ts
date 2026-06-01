@@ -161,15 +161,17 @@ export async function lockAndQueryRegistryRequests({
 				});
 				return [];
 			});
-			const registryRequests = perWalletResults.flat();
-			if (registryRequests.length > 0) {
-				return {
-					...paymentSource,
-					RegistryRequest: registryRequests,
-				};
-			}
-			return null;
+			const walletScopedPaymentSources = perWalletResults.flatMap((registryRequests) => {
+				if (registryRequests.length === 0) return [];
+				return [
+					{
+						...paymentSource,
+						RegistryRequest: registryRequests,
+					},
+				];
+			});
+			return walletScopedPaymentSources;
 		}),
 	);
-	return paymentSourceResults.filter((ps): ps is NonNullable<typeof ps> => ps != null);
+	return paymentSourceResults.flat();
 }

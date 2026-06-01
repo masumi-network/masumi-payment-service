@@ -3,6 +3,7 @@ export {
 	isCardanoAddressForNetwork,
 	isCardanoPubKeyBaseAddressForNetwork,
 	parseSupportedPaymentSourcesFromMetadata,
+	supportedPaymentSourceSchema,
 	supportedPaymentSourceMetadataSchema,
 	supportedPaymentSourcesSchema,
 	validateSupportedPaymentSourcesOrThrow,

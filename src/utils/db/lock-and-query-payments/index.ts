@@ -162,15 +162,17 @@ export async function lockAndQueryPayments({
 				});
 				return [];
 			});
-			const paymentRequests = perWalletResults.flat();
-			if (paymentRequests.length > 0) {
-				return {
-					...paymentSource,
-					PaymentRequests: paymentRequests,
-				};
-			}
-			return null;
+			const walletScopedPaymentSources = perWalletResults.flatMap((paymentRequests) => {
+				if (paymentRequests.length === 0) return [];
+				return [
+					{
+						...paymentSource,
+						PaymentRequests: paymentRequests,
+					},
+				];
+			});
+			return walletScopedPaymentSources;
 		}),
 	);
-	return paymentSourceResults.filter((ps): ps is NonNullable<typeof ps> => ps != null);
+	return paymentSourceResults.flat();
 }

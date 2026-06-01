@@ -5,7 +5,6 @@ import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
 import { getRegistryScriptFromNetworkHandlerV2 } from '@/utils/generator/contract-generator';
-import { DEFAULTS } from '@masumi/payment-core/config';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { extractAssetName, extractPolicyId } from '@/utils/converter/agent-identifier';
 import { registryRequestOutputSchema, registerAgentSchemaInput } from '@/routes/api/registry';
@@ -13,7 +12,12 @@ import { getBlockfrostInstance, validateAssetsOnChain } from '@/utils/blockfrost
 import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 import { bumpRegistryAssetNameVersionV2 } from '@/services/registry/shared';
 import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
-import { validateSupportedPaymentSourcesOrThrow } from '@/types/payment-source';
+import { supportedPaymentSourceSchema, validateSupportedPaymentSourcesOrThrow } from '@/types/payment-source';
+
+const updateSupportedPaymentSourcesSchema = z
+	.array(supportedPaymentSourceSchema)
+	.max(25)
+	.describe('Payment sources to replace on this registry request. Provide an empty array to clear them.');
 
 // The update flow re-uses the same metadata fields as registration — the
 // V2 mint contract's UpdateAction atomically burns the current asset and
@@ -40,6 +44,7 @@ export const updateAgentSchemaInput = registerAgentSchemaInput.omit({ sellingWal
 		.regex(/^(addr1|addr_test1)[0-9a-z]+$/, 'smartContractAddress must be a bech32 Cardano address')
 		.optional()
 		.describe('The smart contract address of the payment source the registration belongs to'),
+	supportedPaymentSources: updateSupportedPaymentSourcesSchema.optional(),
 });
 
 export const updateAgentSchemaOutput = registryRequestOutputSchema;
@@ -61,28 +66,31 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 				HotWallets: { where: { deletedAt: null } },
 			};
 
-			// Resolve the payment source from `network + smartContractAddress`
-			// alone — caller-provided address if specified, else the default V2
-			// smart contract address for the requested network. We do NOT use
-			// the policyId extracted from agentIdentifier as a lookup key here;
-			// instead, once the payment source is resolved we derive its
-			// policyId and look up the matching registration on that source.
-			const resolvedSmartContractAddress =
-				input.smartContractAddress ??
-				(input.network == Network.Mainnet
-					? DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_MAINNET
-					: DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_PREPROD);
-
-			const paymentSource = await prisma.paymentSource.findUnique({
-				where: {
-					network_smartContractAddress: {
-						network: input.network,
-						smartContractAddress: resolvedSmartContractAddress,
-					},
-					deletedAt: null,
-				},
-				include: paymentSourceInclude,
-			});
+			// Resolve the V2 payment source by caller-supplied address when
+			// present, otherwise by the policy prefix from agentIdentifier. This
+			// matches deregister's fallback and avoids accidentally resolving the
+			// legacy V1 default smart-contract address for V2-only updates.
+			const paymentSource =
+				input.smartContractAddress != null
+					? await prisma.paymentSource.findUnique({
+							where: {
+								network_smartContractAddress: {
+									network: input.network,
+									smartContractAddress: input.smartContractAddress,
+								},
+								deletedAt: null,
+							},
+							include: paymentSourceInclude,
+						})
+					: await prisma.paymentSource.findFirst({
+							where: {
+								network: input.network,
+								policyId: requestedPolicyId,
+								paymentSourceType: PaymentSourceType.Web3CardanoV2,
+								deletedAt: null,
+							},
+							include: paymentSourceInclude,
+						});
 
 			if (paymentSource == null) {
 				throw createHttpError(404, 'Network and Address combination not supported');

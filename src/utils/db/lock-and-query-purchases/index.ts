@@ -156,17 +156,19 @@ export async function lockAndQueryPurchases({
 					});
 					return [];
 				});
-				const purchasingRequests = perWalletResults.flat();
-				if (purchasingRequests.length > 0) {
-					return {
-						...paymentSource,
-						PurchaseRequests: purchasingRequests,
-					};
-				}
-				return null;
+				const walletScopedPaymentSources = perWalletResults.flatMap((purchasingRequests) => {
+					if (purchasingRequests.length === 0) return [];
+					return [
+						{
+							...paymentSource,
+							PurchaseRequests: purchasingRequests,
+						},
+					];
+				});
+				return walletScopedPaymentSources;
 			}),
 		);
-		return paymentSourceResults.filter((ps): ps is NonNullable<typeof ps> => ps != null);
+		return paymentSourceResults.flat();
 	} catch (error) {
 		logger.error('Error locking and querying purchases', error);
 		throw error;
