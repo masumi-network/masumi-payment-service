@@ -7979,7 +7979,7 @@ export type PostRegistryUpdateData = {
          */
         sendFundingLovelace?: string;
         /**
-         * Payment sources to persist for this registry request. If omitted, mint metadata advertises the active payment source.
+         * Payment sources to replace on this registry request. Provide an empty array to clear them.
          */
         supportedPaymentSources?: Array<{
             /**
