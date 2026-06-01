@@ -1,11 +1,6 @@
 import { jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
-import {
-	PaymentAction,
-	PaymentSourceType,
-	PurchasingAction,
-	RegistrationState,
-} from '@/generated/prisma/enums';
+import { PaymentAction, PaymentSourceType, PurchasingAction, RegistrationState } from '@/generated/prisma/enums';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -110,9 +105,8 @@ describe('lock-and-query helpers wallet scoping', () => {
 		({ lockAndQueryPayments } = await import('./lock-and-query-payments'));
 		({ lockAndQueryPurchases } = await import('./lock-and-query-purchases'));
 		({ lockAndQueryRegistryRequests } = await import('./lock-and-query-registry-request'));
-		({ lockAndQueryInboxAgentRegistrationRequests } = await import(
-			'./lock-and-query-inbox-agent-registration-request'
-		));
+		({ lockAndQueryInboxAgentRegistrationRequests } =
+			await import('./lock-and-query-inbox-agent-registration-request'));
 	});
 
 	beforeEach(() => {
@@ -122,12 +116,14 @@ describe('lock-and-query helpers wallet scoping', () => {
 
 	it('returns one payment batch per locked selling wallet', async () => {
 		mockPaymentSourceFindMany.mockResolvedValue([buildPaymentSource(['selling-a', 'selling-b'])]);
-		mockPaymentRequestFindMany.mockImplementation(async ({ where }: { where: { SmartContractWallet: { id: string } } }) => [
-			{
-				id: `payment-${where.SmartContractWallet.id}`,
-				SmartContractWallet: { id: where.SmartContractWallet.id },
-			},
-		]);
+		mockPaymentRequestFindMany.mockImplementation(
+			async ({ where }: { where: { SmartContractWallet: { id: string } } }) => [
+				{
+					id: `payment-${where.SmartContractWallet.id}`,
+					SmartContractWallet: { id: where.SmartContractWallet.id },
+				},
+			],
+		);
 
 		const result = await lockAndQueryPayments({
 			paymentStatus: PaymentAction.SubmitResultRequested,
@@ -166,13 +162,15 @@ describe('lock-and-query helpers wallet scoping', () => {
 
 	it('returns one registry registration batch per minting wallet', async () => {
 		mockPaymentSourceFindMany.mockResolvedValue([buildPaymentSource(['registry-a', 'registry-b'])]);
-		mockRegistryRequestFindMany.mockImplementation(async ({ where }: { where: { SmartContractWallet: { id: string } } }) => [
-			{
-				id: `registry-${where.SmartContractWallet.id}`,
-				SmartContractWallet: { id: where.SmartContractWallet.id },
-				DeregistrationHotWallet: null,
-			},
-		]);
+		mockRegistryRequestFindMany.mockImplementation(
+			async ({ where }: { where: { SmartContractWallet: { id: string } } }) => [
+				{
+					id: `registry-${where.SmartContractWallet.id}`,
+					SmartContractWallet: { id: where.SmartContractWallet.id },
+					DeregistrationHotWallet: null,
+				},
+			],
+		);
 
 		const result = await lockAndQueryRegistryRequests({
 			state: RegistrationState.RegistrationRequested,
@@ -188,16 +186,18 @@ describe('lock-and-query helpers wallet scoping', () => {
 
 	it('returns one registry holder-action batch per deregistration/update wallet', async () => {
 		mockPaymentSourceFindMany.mockResolvedValue([buildPaymentSource(['holder-a', 'holder-b'])]);
-		mockRegistryRequestFindMany.mockImplementation(async ({ where }: { where: Parameters<typeof walletIdFromRegistryWhere>[0] }) => {
-			const walletId = walletIdFromRegistryWhere(where);
-			return [
-				{
-					id: `registry-${walletId}`,
-					SmartContractWallet: { id: `mint-${walletId}` },
-					DeregistrationHotWallet: { id: walletId },
-				},
-			];
-		});
+		mockRegistryRequestFindMany.mockImplementation(
+			async ({ where }: { where: Parameters<typeof walletIdFromRegistryWhere>[0] }) => {
+				const walletId = walletIdFromRegistryWhere(where);
+				return [
+					{
+						id: `registry-${walletId}`,
+						SmartContractWallet: { id: `mint-${walletId}` },
+						DeregistrationHotWallet: { id: walletId },
+					},
+				];
+			},
+		);
 
 		const result = await lockAndQueryRegistryRequests({
 			state: RegistrationState.UpdateRequested,
@@ -229,9 +229,7 @@ describe('lock-and-query helpers wallet scoping', () => {
 		});
 
 		expect(
-			result.map((source) =>
-				source.InboxAgentRegistrationRequests.map((request) => request.SmartContractWallet.id),
-			),
+			result.map((source) => source.InboxAgentRegistrationRequests.map((request) => request.SmartContractWallet.id)),
 		).toEqual([['inbox-a'], ['inbox-b']]);
 	});
 
