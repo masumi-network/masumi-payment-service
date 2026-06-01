@@ -154,15 +154,21 @@ export async function getExtendedTxInformation(
 				}),
 			],
 		});
-		//filter out failed operations
-		const filteredTxData = txDataBatch.filter((x) => x.success == true && x.result != undefined).map((x) => x.result!);
-		//log warning for failed operations
-		const failedTxData = txDataBatch.filter((x) => x.success == false);
+		const failedTxData = txDataBatch
+			.map((result, index) => ({ result, txHash: txBatch[index]?.tx_hash ?? `batch-index-${index}` }))
+			.filter(({ result }) => result.success == false);
 		if (failedTxData.length > 0) {
-			logger.error('Failed to get data for transactions: ignoring ', {
-				tx: failedTxData,
+			const failedTxHashes = failedTxData.map(({ txHash }) => txHash);
+			logger.error('Failed to get extended data for transactions; halting tx-sync checkpoint advance', {
+				txHashes: failedTxHashes,
+				failures: failedTxData,
 			});
+			throw new Error(
+				`Failed to get extended data for ${failedTxData.length} transaction(s): ${failedTxHashes.join(', ')}`,
+			);
 		}
+
+		const filteredTxData = txDataBatch.filter((x) => x.success == true && x.result != undefined).map((x) => x.result!);
 		filteredTxData.forEach((x) => txData.push(x));
 	}
 

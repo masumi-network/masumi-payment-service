@@ -19,7 +19,7 @@ import { SmartContractState } from '@/utils/generator/contract-generator';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
-import { CONFIG, CONSTANTS } from '@masumi/payment-core/config';
+import { CONSTANTS } from '@masumi/payment-core/config';
 import { calculateMinUtxo, DUMMY_RESULT_HASH } from '@/utils/min-utxo';
 import { toBalanceMapFromMeshUtxos, walletLowBalanceMonitorService } from '@/services/wallets';
 import {
@@ -173,10 +173,15 @@ async function unlockUnusedPurchasingWallets(candidateWalletIds: string[], usedW
 }
 
 const mutex = new Mutex();
-const MIN_BATCH_SETTLE_WINDOW_MS = 30_000;
+const MULTI_REQUEST_BATCH_SETTLE_WINDOW_MS = 30_000;
+const SINGLE_REQUEST_BATCH_SETTLE_WINDOW_MS = 90_000;
 
-function getBatchSettleWindowMs() {
-	return Math.max(MIN_BATCH_SETTLE_WINDOW_MS, CONFIG.BATCH_PAYMENT_INTERVAL * 1000);
+function getBatchSettleWindowMs(requestCount: number) {
+	// A singleton is often just the first row of a sequential API burst. Hold it
+	// longer so the scheduler does not claim the buyer wallet before sibling
+	// purchases arrive; once two or more are visible, keep the normal short
+	// settle window so real batches move quickly.
+	return requestCount <= 1 ? SINGLE_REQUEST_BATCH_SETTLE_WINDOW_MS : MULTI_REQUEST_BATCH_SETTLE_WINDOW_MS;
 }
 
 function getNewestPurchaseRequestCreatedAt(purchaseRequests: PurchaseRequestWithRelations[]) {
@@ -595,10 +600,6 @@ export async function batchLatestPaymentEntriesV2() {
 					prisma.$transaction(
 						async (prisma) => {
 							const payByTime = new Date().getTime() + 1000 * 57;
-							// Let sequentially-created purchases collect for one scheduler
-							// interval before claiming the buyer wallet; otherwise a tick can
-							// fund item 1 alone while items 2..N are still being POSTed.
-							const createdBefore = new Date(Date.now() - getBatchSettleWindowMs());
 							const paymentContracts = await prisma.paymentSource.findMany({
 								where: {
 									deletedAt: null,
@@ -655,6 +656,8 @@ export async function batchLatestPaymentEntriesV2() {
 							const paymentContractsToUse = [];
 							for (const paymentContract of paymentContracts) {
 								const newestCreatedAt = getNewestPurchaseRequestCreatedAt(paymentContract.PurchaseRequests);
+								const settleWindowMs = getBatchSettleWindowMs(paymentContract.PurchaseRequests.length);
+								const createdBefore = new Date(Date.now() - settleWindowMs);
 								if (
 									newestCreatedAt != null &&
 									paymentContract.PurchaseRequests.length < maxBatchSize &&
@@ -664,7 +667,7 @@ export async function batchLatestPaymentEntriesV2() {
 										paymentSourceId: paymentContract.id,
 										requestCount: paymentContract.PurchaseRequests.length,
 										newestCreatedAt: newestCreatedAt.toISOString(),
-										settleWindowMs: getBatchSettleWindowMs(),
+										settleWindowMs,
 									});
 									continue;
 								}

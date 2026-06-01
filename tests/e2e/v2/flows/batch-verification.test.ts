@@ -291,6 +291,31 @@ describeFn(`Web3CardanoV2 batch action verification (${testNetwork})`, () => {
 				console.log(`✅ Created purchase ${i + 1}/${BATCH_SIZE}`);
 			}
 
+			console.log('⏳ Waiting for initial FundsLockingInitiated on every purchase…');
+			const fundsLockingTxHashes = await allWithAbortOnFailure(
+				purchases.map((purchase) => async (signal) => {
+					const currentPurchase = await pollForValue(
+						() => fetchPurchaseByBlockchainIdentifier(purchase.blockchainIdentifier, testNetwork),
+						(value) =>
+							value != null &&
+							['FundsLockingInitiated', 'WaitingForExternalAction'].includes(value.NextAction.requestedAction) &&
+							value.CurrentTransaction?.txHash != null,
+						{
+							timeoutMs: BATCH_PHASE_TIMEOUT_MS,
+							intervalMs: 3000,
+							label: `FundsLockingInitiated ${purchase.blockchainIdentifier.slice(0, 16)}`,
+							signal,
+						},
+					);
+					return currentPurchase?.CurrentTransaction?.txHash ?? null;
+				}),
+			);
+			console.log(
+				`📊 Funds-lock tx hashes per item: ${fundsLockingTxHashes.map((h) => h?.slice(0, 12) + '…').join(', ')}`,
+			);
+			const batchedFundsLockTxHash = assertAllEqual(fundsLockingTxHashes, 'funds-lock txHash');
+			console.log(`✅ Funds-lock batched into single tx: ${batchedFundsLockTxHash.slice(0, 20)}…`);
+
 			// ============================================================
 			// Phase 1: wait for all N to reach FundsLocked.
 			// ============================================================
