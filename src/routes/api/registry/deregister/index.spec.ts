@@ -85,6 +85,20 @@ jest.unstable_mockModule('@/utils/generator/contract-generator', () => ({
 	getRegistryScriptFromNetworkHandlerV2: mockGetRegistryScriptV2,
 }));
 
+// Mock the adapter the route now dispatches through (ADR-0004). Importing the
+// real adapter pulls `@meshsdk/core-cst.applyParamsToScript` transitively,
+// which would need additional mocking and exposes the test to mesh internals
+// it doesn't actually exercise. The route only calls
+// `adapter.getRegistryScriptFromPaymentSource(paymentSource)` — stub that
+// directly using the existing mockGetRegistryScript* mocks so the V1/V2
+// dispatch is still observable to the test.
+jest.unstable_mockModule('@/services/payment-source-adapters', () => ({
+	getPaymentSourceContractAdapter: (paymentSourceType: string) => ({
+		getRegistryScriptFromPaymentSource:
+			paymentSourceType === 'Web3CardanoV2' ? mockGetRegistryScriptV2 : mockGetRegistryScript,
+	}),
+}));
+
 jest.unstable_mockModule('@meshsdk/core-cst', () => ({
 	AddressType: {
 		BasePaymentKeyStakeKey: 0,
