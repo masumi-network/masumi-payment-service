@@ -86,13 +86,10 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 			reject(new Error(`Aborted: ${signal.reason ?? 'signal aborted'}`));
 			return;
 		}
-		// `{ once: true }` only auto-removes the listener when the abort fires.
-		// On the normal timer path the listener would otherwise stay attached to
-		// the signal — and `pollUntil` reuses ONE signal across every iteration,
-		// so a long poll (e.g. 600s / 3s ≈ 200 sleeps) piles up ~200 dead
-		// listeners and trips Node's MaxListenersExceededWarning (>10). Remove
-		// the listener explicitly on normal resolution so at most one listener
-		// per in-flight sleep is ever attached.
+		// Remove the abort listener on normal resolution. `pollUntil` reuses one
+		// signal across every iteration; `{ once: true }` only auto-removes on
+		// abort, so without this a long poll leaks a listener per sleep and trips
+		// Node's MaxListenersExceededWarning.
 		const onAbort = () => {
 			clearTimeout(timer);
 			reject(new Error(`Aborted: ${signal?.reason ?? 'signal aborted'}`));

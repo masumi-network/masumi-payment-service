@@ -51,14 +51,10 @@ const describeFn = envFilter && envFilter !== PaymentSourceType.Web3CardanoV2 ? 
 const BATCH_SIZE = 3;
 const BATCH_PHASE_TIMEOUT_MS = 10 * 60 * 1000;
 
-// Preflight funding floor for the V2 funds-lock batch. Mirrors the batch
-// service's wallet-fit gate (packages/payment-source-v2/src/services/purchases/
-// batch-payments/service.ts): the wallet that locks must simultaneously cover
-//   N × (per-lock min-UTxO) + MIN_TX_FEE_BUFFER_LOVELACE + WALLET_SPLITTER_LOVELACE.
-// Conservative round numbers — the preflight only needs to catch a grossly
-// underfunded wallet BEFORE the 600s funds-lock poll, not match the gate to the
-// lovelace. Per-lock ~5 ADA (V2 ResultSubmitted-sized datum after the
-// accurate-min-UTxO fix); batch overhead 7 ADA (2 fee buffer + 5 splitter).
+// Preflight funding floor for the funds-lock batch, mirroring the batch
+// service's wallet-fit gate: N × per-lock min-UTxO (~5 ADA) + batch overhead
+// (2 ADA fee buffer + 5 ADA splitter). Conservative round numbers — only needs
+// to catch a grossly underfunded wallet before the 600s poll.
 const PER_LOCK_LOVELACE_ESTIMATE = 5_000_000n;
 const BATCH_TX_OVERHEAD_LOVELACE = 7_000_000n;
 const MIN_PURCHASING_WALLET_LOVELACE = BigInt(BATCH_SIZE) * PER_LOCK_LOVELACE_ESTIMATE + BATCH_TX_OVERHEAD_LOVELACE;
@@ -84,15 +80,11 @@ async function getAddressLovelace(address: string, projectId: string, network: N
 }
 
 /**
- * Fail FAST (with an actionable message) if no single V2 purchasing wallet holds
- * enough to fund the whole batch. Without this, an underfunded wallet manifests
- * as a silent 600s `FundsLockingInitiated` poll timeout (the funds-lock build
- * never completes / never lands), which is expensive and opaque to diagnose.
- *
- * The batch locks ALL requests from ONE wallet (the test asserts a single shared
- * txHash), so we require at least one purchasing wallet at or above the floor —
- * not the sum across wallets. The wallet here is the SEEDED V2 purchasing hot
- * wallet (PURCHASE_WALLET_V2_PREPROD_MNEMONIC), NOT the buyer fixture vkey.
+ * Fail fast (actionable message) if no single V2 purchasing wallet can fund the
+ * whole batch, instead of a silent 600s FundsLockingInitiated poll timeout. The
+ * batch locks ALL requests from ONE wallet (single shared txHash), so we need
+ * one wallet at/above the floor — not the sum. This is the seeded
+ * PURCHASE_WALLET_V2_PREPROD_MNEMONIC wallet, not the buyer fixture vkey.
  */
 async function assertPurchasingWalletFunded(): Promise<void> {
 	const { ExtendedPaymentSources } = await global.testApiClient.queryPaymentSources();

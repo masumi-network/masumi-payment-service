@@ -121,10 +121,8 @@ export const buildX402TxPost = x402BuildEndpointFactory.build({
 		const blockchainProvider = await createMeshProvider(payment.PaymentSource.PaymentSourceConfig.rpcProviderApiKey);
 		const coinsPerUtxoSize = await getCoinsPerUtxoSize(blockchainProvider);
 
-		// Exhaustive switch on paymentSourceType: assertNever in the default
-		// arm forces a type error on any new PaymentSourceType enum value,
-		// preventing the silent V1 fallback an inline `isV2` ternary would
-		// produce (ADR-0004 dispatch boundary discipline).
+		// Exhaustive switch (assertNever default) so a new PaymentSourceType is a
+		// type error, not a silent V1 fallback (ADR-0004 dispatch discipline).
 		const sourceType = payment.PaymentSource.paymentSourceType;
 		const purchaseRequestDataBase = {
 			blockchainIdentifier: payment.blockchainIdentifier,

@@ -1,14 +1,12 @@
-// Defensive helper against a fabricated-collision griefing vector: an attacker
-// locks two UTxOs at the contract address with IDENTICAL `reference_signature`
-// bytes in their datums. The Aiken validator enforces
-// `list.unique(input_datum_signatures)` (vested_pay.ak:191) and rejects the
-// spend with a phase-2 failure — which burns the operator's collateral (~5 ADA
-// per attempt). The `(txHash, outputIndex)` dedupe in `batch-interaction.ts`
-// does not catch this because each fabricated UTxO has its own ref.
+// Guards a fabricated-collision griefing vector: an attacker locks two UTxOs
+// with IDENTICAL datum `reference_signature` bytes. The validator enforces
+// `list.unique(input_datum_signatures)` (vested_pay.ak:191) and fails phase-2,
+// burning the operator's collateral. The `(txHash, outputIndex)` dedupe in
+// batch-interaction.ts misses it (each fabricated UTxO has its own ref).
 //
-// Kept in a standalone module (not inlined in batch-interaction.ts) so the
-// test file can import it without pulling the whole builder's transitive
-// `@masumi/payment-core` graph through Jest's module resolver.
+// Standalone module (not inlined in batch-interaction.ts) so the test can
+// import it without pulling the builder's transitive @masumi/payment-core
+// graph through Jest's resolver.
 import { deserializeDatum, type UTxO } from '@meshsdk/core';
 
 /**

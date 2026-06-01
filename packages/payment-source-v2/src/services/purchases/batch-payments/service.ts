@@ -176,6 +176,15 @@ const mutex = new Mutex();
 const MULTI_REQUEST_BATCH_SETTLE_WINDOW_MS = 30_000;
 const SINGLE_REQUEST_BATCH_SETTLE_WINDOW_MS = 90_000;
 
+// Lovelace the funds-lock tx consumes once per batch, on top of the per-request
+// lock outputs: fee headroom + the WALLET_SPLITTER_LOVELACE self-send that
+// executeSpecificBatchPayment always appends (keeps the wallet at >=2 UTxOs for
+// the next script tx's collateral). The splitter returns to the wallet, but
+// coin-selection must still cover (locks + splitter + fee) at once — so the
+// wallet-fit gate MUST reserve it or it greenlights a batch the build rejects
+// with "UTxO Balance Insufficient".
+const BATCH_TX_LOVELACE_OVERHEAD = CONSTANTS.MIN_TX_FEE_BUFFER_LOVELACE + WALLET_SPLITTER_LOVELACE;
+
 function getBatchSettleWindowMs(requestCount: number) {
 	// A singleton is often just the first row of a sequential API burst. Hold it
 	// longer so the scheduler does not claim the buyer wallet before sibling
@@ -1032,30 +1041,16 @@ export async function batchLatestPaymentEntriesV2() {
 							}
 							let isFulfilled = true;
 							let fitMiss: (typeof walletFitMisses)[number] | null = null;
+							// Charge the once-per-batch overhead (fee + splitter, see
+							// BATCH_TX_LOVELACE_OVERHEAD) on the first batched request only.
 							const needsFeeBuffer = batchedPaymentRequests.length === 0;
-							// One-per-batch lovelace the funds-lock tx consumes ON TOP of the
-							// per-request lock outputs. Two components, both charged once on the
-							// first batched request:
-							//   1. MIN_TX_FEE_BUFFER_LOVELACE — the tx fee headroom.
-							//   2. WALLET_SPLITTER_LOVELACE — `executeSpecificBatchPayment`
-							//      ALWAYS appends a pure-ADA self-send of this size (see the
-							//      `unsignedTx.sendAssets({ address: buyerAddress }, ...)` call
-							//      ~line 321) so the wallet keeps >=2 UTxOs for the next
-							//      script tx's collateral. The splitter returns to the wallet,
-							//      but mesh coin-selection still requires the wallet's UTxO set
-							//      to simultaneously cover (sum of lock outputs + splitter +
-							//      fee). If the fit-check omits the splitter it greenlights a
-							//      batch the build then rejects with "UTxO Balance
-							//      Insufficient" — the request goes ambiguous and ultimately
-							//      FailedViaTimeout. Reserve it here so fit-check ⟹ build can
-							//      always complete. (Bug introduced when the unconditional
-							//      splitter was added in 0d7db856 without updating this gate.)
-							const perBatchLovelaceOverhead = CONSTANTS.MIN_TX_FEE_BUFFER_LOVELACE + WALLET_SPLITTER_LOVELACE;
 							for (const paymentAmount of workingPaidFunds) {
 								const walletAmount = amounts.find((amount) => amount.unit == paymentAmount.unit);
 								const isLovelace = paymentAmount.unit === '' || paymentAmount.unit.toLowerCase() === 'lovelace';
 								const requiredAmount =
-									isLovelace && needsFeeBuffer ? paymentAmount.amount + perBatchLovelaceOverhead : paymentAmount.amount;
+									isLovelace && needsFeeBuffer
+										? paymentAmount.amount + BATCH_TX_LOVELACE_OVERHEAD
+										: paymentAmount.amount;
 								if (walletAmount == null || requiredAmount > walletAmount.quantity) {
 									isFulfilled = false;
 									fitMiss = {
@@ -1083,16 +1078,15 @@ export async function batchLatestPaymentEntriesV2() {
 									paymentRequest,
 									overpaidLovelace,
 								});
-								//deduct amounts from wallet — mirror the requiredAmount reservation
-								//above EXACTLY (fee buffer + splitter once on the first request) so
-								//the running balance used to fit subsequent requests reflects what
-								//the build will actually consume.
+								// Deduct exactly what requiredAmount reserved (incl. the
+								// once-per-batch overhead) so subsequent requests fit against the
+								// real remaining balance.
 								for (const paymentAmount of workingPaidFunds) {
 									const walletAmount = amounts.find((amount) => amount.unit == paymentAmount.unit);
 									const isLovelace = paymentAmount.unit === '' || paymentAmount.unit.toLowerCase() === 'lovelace';
 									const deductAmount =
 										isLovelace && wasFirstRequest
-											? paymentAmount.amount + perBatchLovelaceOverhead
+											? paymentAmount.amount + BATCH_TX_LOVELACE_OVERHEAD
 											: paymentAmount.amount;
 									walletAmount!.quantity -= deductAmount;
 								}
@@ -1384,15 +1378,11 @@ export async function batchLatestPaymentEntriesV2() {
 						},
 					});
 
-					// Recovery for rows that DID advance past pre-submit (NextAction =
-					// FundsLockingInitiated, CurrentTransaction = sharedTx) but never
-					// reached the submit step — the wallet-unlock loop below marks
-					// their sharedTx RolledBack, and without an `intendedTxHash` on
-					// that row `funding-reconciliation` can never resolve them (it
-					// polls Blockfrost by intendedTxHash). The wallet is freed but
-					// the request would otherwise sit at FundsLockingInitiated
-					// forever. Safe to revert to FundsLockingRequested because
-					// `intendedTxHash IS NULL` guarantees no tx left the host.
+					// Rows that advanced to FundsLockingInitiated but never submitted
+					// (intendedTxHash IS NULL ⇒ no tx left the host). The wallet-unlock
+					// loop below rolls back their sharedTx, so funding-reconciliation
+					// can't resolve them (it polls by intendedTxHash); revert to
+					// FundsLockingRequested so the next tick re-batches them.
 					const orphanedInitiatedRequests = await prisma.purchaseRequest.findMany({
 						where: {
 							id: { in: potentiallyFailedPurchaseRequests.map((x) => x.id) },
@@ -1474,12 +1464,9 @@ export async function batchLatestPaymentEntriesV2() {
 						}),
 					);
 
-					// Revert the FundsLockingInitiated orphans collected above. Detached
-					// from the wallet-unlock loop so a Prisma failure during the revert
-					// of one row does not stall the rest, and so the revert runs only
-					// AFTER the wallet has been freed (otherwise the next scheduler
-					// tick could observe the Requested state while the wallet is still
-					// holding the placeholder).
+					// Revert the orphans collected above — after the wallet-unlock loop,
+					// so the next tick never sees Requested while the wallet still holds
+					// the placeholder.
 					await Promise.allSettled(
 						orphanedInitiatedRequests.map(async (r) => {
 							await prisma.purchaseRequest.update({

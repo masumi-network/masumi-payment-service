@@ -55,18 +55,13 @@ const formSchema = z
       walletAddress: z.string().optional(),
     }),
     feePermille: z.number().min(0).max(1000),
-    // Upper bound mirrors the backend cap at
-    // src/routes/api/payment-source-extended/schemas.ts:142
-    // (`requiredAdminSignatures: z.coerce.number().int().min(1).max(50)`).
-    // The hard-coded 3 here previously prevented the UI from creating any V2
-    // source with the weighted-quorum semantics the backend supports.
+    // Cap mirrors the backend (payment-source-extended/schemas.ts: min(1).max(50)).
     requiredAdminSignatures: z.number().int().min(1).max(50),
     purchasingWallets: z.array(walletSchema).min(1),
     sellingWallets: z.array(walletSchema).min(1),
     useCustomAdminWallets: z.boolean(),
-    // Variable-length to support V2's weighted multi-admin quorum (up to 50
-    // slots per backend). V1 retains its on-chain hard-coded "exactly 3"
-    // requirement, enforced cross-field in `superRefine` below.
+    // V2 supports a weighted multi-admin quorum (1..50). V1's "exactly 3" is
+    // enforced cross-field in superRefine below.
     customAdminWallets: z.array(adminWalletSchema).min(1).max(50),
   })
   .superRefine((data, ctx) => {
@@ -89,12 +84,8 @@ const formSchema = z
         }
       });
 
-      // V1 contracts ship with a hard-coded 3-of-3 (configurable via
-      // `requiredAdminSignatures`) admin set baked into the on-chain script.
-      // Backend rejects any V1 source whose AdminWallets.length !== 3 at
-      // src/routes/api/payment-source-extended/schemas.ts:183. Surface that
-      // constraint in the UI so users get a synchronous error instead of
-      // discovering it only on submit.
+      // V1 requires exactly 3 admin wallets (backend rejects otherwise) —
+      // surface synchronously instead of only on submit.
       if (data.paymentSourceType === 'Web3CardanoV1' && data.customAdminWallets.length !== 3) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -103,10 +94,8 @@ const formSchema = z
         });
       }
 
-      // V2 weighted-quorum invariant: the required signature count cannot
-      // exceed the number of admin slots (otherwise the contract is
-      // permanently undisputable). Matches the backend check at
-      // src/routes/api/payment-source-extended/schemas.ts:241.
+      // V2 quorum invariant: required signatures cannot exceed admin slots
+      // (else the contract is permanently undisputable).
       if (
         data.paymentSourceType === 'Web3CardanoV2' &&
         data.requiredAdminSignatures > data.customAdminWallets.length
@@ -869,8 +858,7 @@ export function AddPaymentSourceDialog({
                         <label className="text-sm font-medium">
                           Admin Wallet {i + 1} <span className="text-destructive">*</span>
                         </label>
-                        {/* V1 requires exactly 3 admin slots (on-chain hard-coded). Hide
-                            remove for V1, and only show remove for V2 when count > 1. */}
+                        {/* V2 only: V1 is locked at exactly 3 slots. */}
                         {isV2Source && customAdminWalletFields.length > 1 && (
                           <Button
                             type="button"
@@ -896,8 +884,7 @@ export function AddPaymentSourceDialog({
                       )}
                     </div>
                   ))}
-                  {/* Only V2 supports variable-length admin lists (1..50).
-                      V1 stays locked at exactly 3. */}
+                  {/* V2 only: variable-length list (1..50); V1 locked at 3. */}
                   {isV2Source && customAdminWalletFields.length < 50 && (
                     <Button
                       type="button"

@@ -8,31 +8,18 @@ const BUFFER_SIZE_TX_OUTPUT_HASH = 50;
 
 const BUFFER_SIZE_PER_UNIT = 50;
 
-// Headroom on top of the measured datum size + structural buffers. Bumped from
-// 20 to 100 when the datum measurement was corrected (see computeDatumSizeBytes):
-// the old `cbor.encode(meshDataObject)` over-counted ~2.4x and that inflation
-// was inadvertently acting as the real safety cushion. With accurate sizing the
-// estimate sits ~0.04 ADA above the ledger floor at margin=20 — too thin for a
-// money path. 100 bytes (~0.43 ADA at coinsPerUtxoSize=4310) keeps the estimate
-// comfortably above the ledger's `(160 + outputSize) * coinsPerUtxoByte` floor
-// while still ~half the pre-fix over-funding.
+// Headroom on top of the measured datum size + structural buffers (~0.43 ADA at
+// coinsPerUtxoSize=4310). Keeps the estimate above the ledger's
+// `(160 + outputSize) * coinsPerUtxoByte` floor.
 const SAFETY_MARGIN_BYTES = 100;
 
 /**
- * Measure the on-chain Plutus datum size in bytes.
+ * Measure the on-chain Plutus datum size in bytes. `serializeData` returns the
+ * real Plutus CBOR (hex), so `length / 2` is the byte count the ledger uses for
+ * min-UTxO. A `Buffer` input is already-encoded CBOR.
  *
- * IMPORTANT: this used to be `cbor.encode(datum).byteLength`, which — for a mesh
- * `Data` object like `{ alternative, fields: [...] }` — CBOR-encoded the JS
- * object literally (every nested constructor's `"alternative"`/`"fields"` key
- * strings included), producing ~1553 bytes for a datum whose real Plutus CBOR is
- * ~644 bytes. That ~2.4x inflation pushed every V1/V2 lock's min-UTxO to ~7.75
- * ADA instead of ~3.8 ADA, siloing ~2x the necessary ADA per lock and forcing
- * batch wallets to hold far more than required.
- *
- * `serializeData` returns the actual Plutus datum CBOR (hex), so `length / 2` is
- * the true on-chain datum byte count — the same bytes the ledger measures when
- * computing the output's min-UTxO. A `Buffer` input is already-encoded CBOR, so
- * its `byteLength` is used directly.
+ * NB: must NOT use `cbor.encode(datum)` — for a mesh `Data` object that encodes
+ * the JS object's `alternative`/`fields` keys, over-counting ~2.4x.
  */
 function computeDatumSizeBytes(datum: Data | Buffer): number {
 	if (Buffer.isBuffer(datum)) {

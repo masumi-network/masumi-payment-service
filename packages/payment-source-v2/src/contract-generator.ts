@@ -224,29 +224,19 @@ export function getDatumV2({
 	if (!validateHexString(referenceSignature)) {
 		throw new Error('Reference signature is not a valid hex string');
 	}
-	// Mirror the on-chain L5 guard at
-	// smart-contracts/payment-v2/validators/vested_pay.ak:133-134
-	// (`bytearray.length(reference_signature) >= min_reference_signature_bytes`,
-	// where `min_reference_signature_bytes = 16`). Locking permissionlessly
-	// with a shorter signature would brick the funds: every spending redeemer
-	// aborts at the top of the validator, and there is no on-chain rescue
-	// path. Reject here so the operator's own SDK never constructs such a
-	// lock tx.
+	// Mirror the on-chain guards in vested_pay.ak (L5 ref-sig length >= 16 bytes;
+	// collateral_return_lovelace >= 0). Locking with a value that violates either
+	// permanently bricks the funds — every spending redeemer aborts at the top of
+	// the validator with no rescue path — so reject before building the lock tx.
 	const MIN_REFERENCE_SIGNATURE_BYTES = 16;
 	if (referenceSignature.length / 2 < MIN_REFERENCE_SIGNATURE_BYTES) {
 		throw new Error(
 			`Reference signature must be at least ${MIN_REFERENCE_SIGNATURE_BYTES} bytes ` +
-				`(got ${referenceSignature.length / 2}); locking with a shorter signature ` +
-				`would permanently brick the funds via the on-chain L5 guard`,
+				`(got ${referenceSignature.length / 2})`,
 		);
 	}
-	// Mirror the on-chain guard at vested_pay.ak:128-129
-	// (`expect collateral_return_lovelace >= 0`). Same permanent-freeze risk.
 	if (collateralReturnLovelace < 0n) {
-		throw new Error(
-			`collateralReturnLovelace must be non-negative (got ${collateralReturnLovelace}); ` +
-				`a negative value would permanently brick the funds via the on-chain validator`,
-		);
+		throw new Error(`collateralReturnLovelace must be non-negative (got ${collateralReturnLovelace})`);
 	}
 	if (!validateHexString(sellerNonce)) {
 		throw new Error('Seller nonce is not a valid hex string');

@@ -91,9 +91,8 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 
 		const blockfrost = getBlockfrostInstance(input.network, paymentSource.PaymentSourceConfig.rpcProviderApiKey);
 
-		// Dispatch via the central adapter (ADR-0004): assertNever inside the
-		// adapter forces a type error on any new PaymentSourceType, instead of
-		// silently falling back to V1 as an inline ternary would.
+		// Central adapter dispatch (ADR-0004) — assertNever-backed, so a new
+		// PaymentSourceType is a type error rather than a silent V1 fallback.
 		const adapter = getPaymentSourceContractAdapter(paymentSource.paymentSourceType);
 		const { policyId } = await adapter.getRegistryScriptFromPaymentSource(paymentSource);
 
