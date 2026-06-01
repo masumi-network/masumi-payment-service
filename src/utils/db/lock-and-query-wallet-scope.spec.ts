@@ -68,10 +68,10 @@ jest.unstable_mockModule('@/utils/db/serializable-semaphore', () => ({
 
 jest.unstable_mockModule('@/generated/prisma/client', async () => await import('@/generated/prisma/enums'));
 
-const { lockAndQueryPayments } = await import('./lock-and-query-payments');
-const { lockAndQueryPurchases } = await import('./lock-and-query-purchases');
-const { lockAndQueryRegistryRequests } = await import('./lock-and-query-registry-request');
-const { lockAndQueryInboxAgentRegistrationRequests } = await import('./lock-and-query-inbox-agent-registration-request');
+let lockAndQueryPayments!: typeof import('./lock-and-query-payments').lockAndQueryPayments;
+let lockAndQueryPurchases!: typeof import('./lock-and-query-purchases').lockAndQueryPurchases;
+let lockAndQueryRegistryRequests!: typeof import('./lock-and-query-registry-request').lockAndQueryRegistryRequests;
+let lockAndQueryInboxAgentRegistrationRequests!: typeof import('./lock-and-query-inbox-agent-registration-request').lockAndQueryInboxAgentRegistrationRequests;
 
 function buildPaymentSource(walletIds: string[]) {
 	return {
@@ -106,6 +106,15 @@ function walletIdFromRegistryWhere(where: {
 }
 
 describe('lock-and-query helpers wallet scoping', () => {
+	beforeAll(async () => {
+		({ lockAndQueryPayments } = await import('./lock-and-query-payments'));
+		({ lockAndQueryPurchases } = await import('./lock-and-query-purchases'));
+		({ lockAndQueryRegistryRequests } = await import('./lock-and-query-registry-request'));
+		({ lockAndQueryInboxAgentRegistrationRequests } = await import(
+			'./lock-and-query-inbox-agent-registration-request'
+		));
+	});
+
 	beforeEach(() => {
 		jest.clearAllMocks();
 		mockWalletLock();
