@@ -51,6 +51,76 @@ const describeFn = envFilter && envFilter !== PaymentSourceType.Web3CardanoV2 ? 
 const BATCH_SIZE = 3;
 const BATCH_PHASE_TIMEOUT_MS = 10 * 60 * 1000;
 
+// Preflight funding floor for the V2 funds-lock batch. Mirrors the batch
+// service's wallet-fit gate (packages/payment-source-v2/src/services/purchases/
+// batch-payments/service.ts): the wallet that locks must simultaneously cover
+//   N × (per-lock min-UTxO) + MIN_TX_FEE_BUFFER_LOVELACE + WALLET_SPLITTER_LOVELACE.
+// Conservative round numbers — the preflight only needs to catch a grossly
+// underfunded wallet BEFORE the 600s funds-lock poll, not match the gate to the
+// lovelace. Per-lock ~5 ADA (V2 ResultSubmitted-sized datum after the
+// accurate-min-UTxO fix); batch overhead 7 ADA (2 fee buffer + 5 splitter).
+const PER_LOCK_LOVELACE_ESTIMATE = 5_000_000n;
+const BATCH_TX_OVERHEAD_LOVELACE = 7_000_000n;
+const MIN_PURCHASING_WALLET_LOVELACE = BigInt(BATCH_SIZE) * PER_LOCK_LOVELACE_ESTIMATE + BATCH_TX_OVERHEAD_LOVELACE;
+
+function blockfrostBaseUrl(network: Network): string {
+	return network === Network.Mainnet
+		? 'https://cardano-mainnet.blockfrost.io/api/v0'
+		: 'https://cardano-preprod.blockfrost.io/api/v0';
+}
+
+/** Total lovelace at an address per Blockfrost. Returns 0 for an unused (404) address. */
+async function getAddressLovelace(address: string, projectId: string, network: Network): Promise<bigint> {
+	const res = await fetch(`${blockfrostBaseUrl(network)}/addresses/${address}`, {
+		headers: { project_id: projectId },
+	});
+	if (res.status === 404) return 0n;
+	if (!res.ok) {
+		throw new Error(`Blockfrost address lookup failed (${res.status}) for ${address}`);
+	}
+	const body = (await res.json()) as { amount?: Array<{ unit: string; quantity: string }> };
+	const lovelace = body.amount?.find((a) => a.unit === 'lovelace')?.quantity ?? '0';
+	return BigInt(lovelace);
+}
+
+/**
+ * Fail FAST (with an actionable message) if no single V2 purchasing wallet holds
+ * enough to fund the whole batch. Without this, an underfunded wallet manifests
+ * as a silent 600s `FundsLockingInitiated` poll timeout (the funds-lock build
+ * never completes / never lands), which is expensive and opaque to diagnose.
+ *
+ * The batch locks ALL requests from ONE wallet (the test asserts a single shared
+ * txHash), so we require at least one purchasing wallet at or above the floor —
+ * not the sum across wallets. The wallet here is the SEEDED V2 purchasing hot
+ * wallet (PURCHASE_WALLET_V2_PREPROD_MNEMONIC), NOT the buyer fixture vkey.
+ */
+async function assertPurchasingWalletFunded(): Promise<void> {
+	const { ExtendedPaymentSources } = await global.testApiClient.queryPaymentSources();
+	const source = ExtendedPaymentSources.find(
+		(s) => s.paymentSourceType === PaymentSourceType.Web3CardanoV2 && s.network === testNetwork,
+	);
+	if (!source) {
+		throw new Error(`Preflight: no Web3CardanoV2 payment source found on ${testNetwork} to check funding.`);
+	}
+	const projectId = source.PaymentSourceConfig.rpcProviderApiKey;
+	const observed: string[] = [];
+	for (const wallet of source.PurchasingWallets) {
+		const lovelace = await getAddressLovelace(wallet.walletAddress, projectId, testNetwork);
+		observed.push(`${wallet.walletAddress} = ${(Number(lovelace) / 1e6).toFixed(2)} ADA`);
+		if (lovelace >= MIN_PURCHASING_WALLET_LOVELACE) {
+			return;
+		}
+	}
+	throw new Error(
+		`Preflight: V2 purchasing wallet underfunded for a ${BATCH_SIZE}-batch funds-lock. ` +
+			`Need ≥ ${(Number(MIN_PURCHASING_WALLET_LOVELACE) / 1e6).toFixed(2)} ADA in a SINGLE purchasing wallet. ` +
+			`Observed: ${observed.join('; ') || '(no purchasing wallets)'}. ` +
+			`Fund one of these addresses via the Cardano preprod faucet ` +
+			`(https://docs.cardano.org/cardano-testnet/tools/faucet/) — this is the seeded V2 ` +
+			`purchasing hot wallet (PURCHASE_WALLET_V2_PREPROD_MNEMONIC), not the buyer fixture vkey.`,
+	);
+}
+
 /** Sleep helper. We use this to space out scheduler polls. */
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 	return new Promise((resolve, reject) => {
@@ -252,6 +322,13 @@ describeFn(`Web3CardanoV2 batch action verification (${testNetwork})`, () => {
 		async () => {
 			const agent = global.testAgent;
 			if (!agent) throw new Error('Test agent missing.');
+
+			// Preflight: fail fast with an actionable message if the V2 purchasing
+			// wallet can't fund the batch, instead of a silent 600s funds-lock poll
+			// timeout downstream.
+			console.log('🔎 Preflight: checking V2 purchasing wallet balance…');
+			await assertPurchasingWalletFunded();
+			console.log('✅ Preflight: purchasing wallet funded for batch.');
 
 			console.log(`🚀 V2 batch verification (${testNetwork}): creating ${BATCH_SIZE} concurrent payments…`);
 
