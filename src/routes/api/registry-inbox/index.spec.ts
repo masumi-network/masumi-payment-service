@@ -231,6 +231,9 @@ describe('registerInboxAgentPost', () => {
 		expect(responseMock.statusCode).toBe(200);
 		expect(mockFindRecipientWallet).not.toHaveBeenCalled();
 		expect(mockCreateInboxAgentRegistrationRequest.mock.calls[0]?.[0]?.data?.RecipientWallet).toBeUndefined();
+		expect(mockCreateInboxAgentRegistrationRequest.mock.calls[0]?.[0]?.data?.RequestedBy).toEqual({
+			connect: { id: 'api-key-1' },
+		});
 		expect(mockCreateInboxAgentRegistrationRequest.mock.calls[0]?.[0]?.data?.sendFundingLovelace).toBeUndefined();
 		expect(responseMock._getJSONData().data.RecipientWallet).toBeNull();
 		expect(responseMock._getJSONData().data.sendFundingLovelace).toBeNull();

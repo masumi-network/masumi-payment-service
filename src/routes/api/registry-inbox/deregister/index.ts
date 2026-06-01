@@ -85,6 +85,9 @@ export const unregisterInboxAgentPost = payAuthenticatedEndpointFactory.build({
 		if (registrationRequest == null) {
 			throw createHttpError(404, 'Registration not found');
 		}
+		if (!ctx.canAdmin && (registrationRequest.requestedById == null || registrationRequest.requestedById !== ctx.id)) {
+			throw createHttpError(403, 'You are not authorized to deregister this inbox agent');
+		}
 
 		const result = await prisma.inboxAgentRegistrationRequest.update({
 			where: {

@@ -19,7 +19,7 @@ import { SmartContractState } from '@/utils/generator/contract-generator';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
-import { CONSTANTS } from '@masumi/payment-core/config';
+import { CONFIG, CONSTANTS } from '@masumi/payment-core/config';
 import { calculateMinUtxo, DUMMY_RESULT_HASH } from '@/utils/min-utxo';
 import { toBalanceMapFromMeshUtxos, walletLowBalanceMonitorService } from '@/services/wallets';
 import {
@@ -173,6 +173,20 @@ async function unlockUnusedPurchasingWallets(candidateWalletIds: string[], usedW
 }
 
 const mutex = new Mutex();
+const MIN_BATCH_SETTLE_WINDOW_MS = 30_000;
+
+function getBatchSettleWindowMs() {
+	return Math.max(MIN_BATCH_SETTLE_WINDOW_MS, CONFIG.BATCH_PAYMENT_INTERVAL * 1000);
+}
+
+function getNewestPurchaseRequestCreatedAt(purchaseRequests: PurchaseRequestWithRelations[]) {
+	return purchaseRequests.reduce<Date | null>((newestCreatedAt, purchaseRequest) => {
+		if (newestCreatedAt == null || purchaseRequest.createdAt > newestCreatedAt) {
+			return purchaseRequest.createdAt;
+		}
+		return newestCreatedAt;
+	}, null);
+}
 
 /**
  * Structured outcome per wallet-pairing in a batch.
@@ -581,6 +595,10 @@ export async function batchLatestPaymentEntriesV2() {
 					prisma.$transaction(
 						async (prisma) => {
 							const payByTime = new Date().getTime() + 1000 * 57;
+							// Let sequentially-created purchases collect for one scheduler
+							// interval before claiming the buyer wallet; otherwise a tick can
+							// fund item 1 alone while items 2..N are still being POSTed.
+							const createdBefore = new Date(Date.now() - getBatchSettleWindowMs());
 							const paymentContracts = await prisma.paymentSource.findMany({
 								where: {
 									deletedAt: null,
@@ -588,6 +606,7 @@ export async function batchLatestPaymentEntriesV2() {
 									HotWallets: {
 										some: {
 											PendingTransaction: null,
+											lockedAt: null,
 											type: HotWalletType.Purchasing,
 											deletedAt: null,
 										},
@@ -635,6 +654,21 @@ export async function batchLatestPaymentEntriesV2() {
 							const walletsToLock: HotWallet[] = [];
 							const paymentContractsToUse = [];
 							for (const paymentContract of paymentContracts) {
+								const newestCreatedAt = getNewestPurchaseRequestCreatedAt(paymentContract.PurchaseRequests);
+								if (
+									newestCreatedAt != null &&
+									paymentContract.PurchaseRequests.length < maxBatchSize &&
+									newestCreatedAt > createdBefore
+								) {
+									logger.info('Waiting for V2 funds-lock batch settle window before locking purchasing wallet', {
+										paymentSourceId: paymentContract.id,
+										requestCount: paymentContract.PurchaseRequests.length,
+										newestCreatedAt: newestCreatedAt.toISOString(),
+										settleWindowMs: getBatchSettleWindowMs(),
+									});
+									continue;
+								}
+
 								const purchaseRequests = [];
 								for (const purchaseRequest of paymentContract.PurchaseRequests) {
 									//if the purchase request times out in less than 5 minutes, we ignore it

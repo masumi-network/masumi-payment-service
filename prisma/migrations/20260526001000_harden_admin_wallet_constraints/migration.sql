@@ -9,7 +9,7 @@
 --     M-of-N admin signing. The 20260524000000 CHECK enforced
 --     requiredAdminSignatures >= 1 but nothing stopped admins from deleting
 --     AdminWallet rows below the M threshold or duplicating
---     (paymentSourceAdminId, walletAddress) / (paymentSourceAdminId, order).
+--     (paymentSourceAdminId, order).
 --
 -- This migration adds five guards:
 --   1. V1 must keep adminWalletId NOT NULL.
@@ -18,10 +18,7 @@
 --   3. AdminWallet.paymentSourceAdminId FK becomes ON DELETE RESTRICT so an
 --      operator must explicitly detach a wallet from its V2 source before
 --      deleting it. (NULL update path still works for detach-then-delete.)
---   4. Partial unique index on (paymentSourceAdminId, walletAddress) for
---      attached wallets — prevents duplicate verification keys silently
---      defeating multi-sig.
---   5. Partial unique index on (paymentSourceAdminId, order) for attached
+--   4. Partial unique index on (paymentSourceAdminId, order) for attached
 --      wallets — the `order` column drives canonical admin signing order;
 --      duplicates make off-chain ordering ambiguous vs the on-chain
 --      admin_vks list.
@@ -127,17 +124,12 @@ ALTER TABLE "AdminWallet"
     FOREIGN KEY ("paymentSourceAdminId") REFERENCES "PaymentSource"("id")
     ON DELETE RESTRICT ON UPDATE CASCADE;
 
--- 4. Unique (paymentSourceAdminId, walletAddress) on attached.
-CREATE UNIQUE INDEX IF NOT EXISTS "AdminWallet_paymentSourceAdminId_walletAddress_active_key"
-ON "AdminWallet" ("paymentSourceAdminId", "walletAddress")
-WHERE "paymentSourceAdminId" IS NOT NULL;
-
--- 5. Unique (paymentSourceAdminId, order) on attached.
+-- 4. Unique (paymentSourceAdminId, order) on attached.
 CREATE UNIQUE INDEX IF NOT EXISTS "AdminWallet_paymentSourceAdminId_order_active_key"
 ON "AdminWallet" ("paymentSourceAdminId", "order")
 WHERE "paymentSourceAdminId" IS NOT NULL;
 
--- 6. V2 quorum invariant: count(AdminWallets) >= requiredAdminSignatures.
+-- 5. V2 quorum invariant: count(AdminWallets) >= requiredAdminSignatures.
 -- CREATE OR REPLACE the function so re-runs update it cleanly; the trigger
 -- itself is dropped+recreated to guarantee binding to the latest function.
 

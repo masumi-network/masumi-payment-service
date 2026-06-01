@@ -782,6 +782,7 @@ async function updateInitialPurchaseTransaction(
 						dbEntry.CurrentTransaction?.BlocksWallet != null &&
 						dbEntry.SmartContractWallet != null
 					) {
+						const lockedWalletId = dbEntry.CurrentTransaction.BlocksWallet.id;
 						await prisma.transaction.update({
 							where: {
 								id: dbEntry.currentTransactionId,
@@ -792,12 +793,18 @@ async function updateInitialPurchaseTransaction(
 						});
 						await prisma.hotWallet.update({
 							where: {
-								id: dbEntry.SmartContractWallet.id,
+								id: lockedWalletId,
 								deletedAt: null,
 							},
 							data: {
 								lockedAt: null,
 							},
+						});
+						logger.info('tx-sync: unlocked purchasing wallet after initial funds-lock confirmation', {
+							purchaseRequestId: dbEntry.id,
+							transactionId: dbEntry.currentTransactionId,
+							txHash: tx.tx.tx_hash,
+							walletId: lockedWalletId,
 						});
 					}
 				},

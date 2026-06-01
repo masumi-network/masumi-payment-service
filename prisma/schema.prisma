@@ -21,16 +21,17 @@ model ApiKey {
   canPay   Boolean
   canAdmin Boolean
 
-  networkLimit          Network[]
-  usageLimited          Boolean             @default(false)
-  walletScopeEnabled    Boolean             @default(false)
-  deletedAt             DateTime?
-  PaymentRequest        PaymentRequest[]
-  PurchaseRequest       PurchaseRequest[]
-  RegistryRequest       RegistryRequest[]
-  RemainingUsageCredits UnitValue[]
-  CreatedWebhooks       WebhookEndpoint[]
-  WalletScopes          ApiKeyWalletScope[]
+  networkLimit                  Network[]
+  usageLimited                  Boolean                         @default(false)
+  walletScopeEnabled            Boolean                         @default(false)
+  deletedAt                     DateTime?
+  PaymentRequest                PaymentRequest[]
+  PurchaseRequest               PurchaseRequest[]
+  RegistryRequest               RegistryRequest[]
+  RemainingUsageCredits         UnitValue[]
+  CreatedWebhooks               WebhookEndpoint[]
+  WalletScopes                  ApiKeyWalletScope[]
+  InboxAgentRegistrationRequest InboxAgentRegistrationRequest[]
 }
 
 model ApiKeyWalletScope {
@@ -309,14 +310,19 @@ model InboxAgentRegistrationRequest {
   registrationStateLastChangedAt DateTime          @default(now())
   currentTransactionId           String?
   error                          String?
+  // Nullable: legacy rows created before this column existed have NULL.
+  // Deregister/mutate routes treat NULL-owner rows as admin-only.
+  requestedById                  String?
   CurrentTransaction             Transaction?      @relation(fields: [currentTransactionId], references: [id])
   PaymentSource                  PaymentSource     @relation(fields: [paymentSourceId], references: [id])
   SmartContractWallet            HotWallet         @relation("InboxAgentRegistrationRequestMintingWallet", fields: [smartContractWalletId], references: [id])
   RecipientWallet                HotWallet?        @relation("InboxAgentRegistrationRequestRecipientWallet", fields: [recipientHotWalletId], references: [id])
   DeregistrationHotWallet        HotWallet?        @relation("InboxAgentRegistrationRequestDeregistrationWallet", fields: [deregistrationHotWalletId], references: [id])
+  RequestedBy                    ApiKey?           @relation(fields: [requestedById], references: [id])
 
   @@index([recipientHotWalletId])
   @@index([deregistrationHotWalletId])
+  @@index([requestedById])
 }
 
 model ExampleOutput {

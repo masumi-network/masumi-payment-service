@@ -156,6 +156,12 @@ export const registerInboxAgentPost = payAuthenticatedEndpointFactory.build({
 							id: sellingWallet.paymentSourceId,
 						},
 					},
+					// Tenant ownership is enforced on mutate routes. Legacy
+					// rows created before this column existed carry NULL and
+					// remain admin-only.
+					RequestedBy: {
+						connect: { id: ctx.id },
+					},
 				},
 				include: {
 					SmartContractWallet: {

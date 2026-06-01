@@ -20,6 +20,7 @@
 		"./object-properties": "./src/object-properties.ts",
 		"./payment-source": "./src/payment-source.ts",
 		"./permissions": "./src/permissions.ts",
+		"./smart-contract-state": "./src/smart-contract-state.ts",
 		"./zod": "./src/zod.ts",
 		"./zod-openapi": "./src/zod-openapi.ts"
 	},
