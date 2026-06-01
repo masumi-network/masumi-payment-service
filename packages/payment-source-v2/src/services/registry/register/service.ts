@@ -680,60 +680,76 @@ export async function registerAgentV2() {
 					});
 					// Rollback the pre-submit transition so a stale
 					// CurrentTransaction doesn't pin the wallet.
-					await retryOnSerializationConflict(
-						() =>
-							prisma.$transaction(
-								async (tx) => {
-									await tx.transaction.update({
-										where: { id: sharedTxId },
-										data: {
-											...disconnectTransactionWallet(),
-											// Mark the orphan shared row as RolledBack: the per-item reverts
-											// below restore each request's CurrentTransaction to its pre-batch
-											// value, leaving this row with no back-references. Without an
-											// explicit status update it would sit in `Pending` indefinitely
-											// (no wallet pointer → invisible to wallet-timeouts; no request
-											// pointer → invisible to tx-sync), accumulating as DB pollution.
-											status: TransactionStatus.RolledBack,
-										},
-									});
-									for (const v of fit) {
-										// Reconnect to the pre-batch CurrentTransaction only if that
-										// prior Tx is still in an active state (Pending / Confirmed).
-										// If the prior Tx was itself a rolled-back / failed batch
-										// (e.g. this request has cycled through multiple failed
-										// batches), re-connecting would point the request at a dead
-										// Tx — leaving wallet-timeouts and tx-sync to wade through
-										// stale pointers. Disconnecting in that case mirrors the
-										// "no pre-batch active tx" branch and lets the next scheduler
-										// tick pick the request up cleanly.
-										let shouldReconnect = false;
-										if (v.request.currentTransactionId != null) {
-											const priorTx = await tx.transaction.findUnique({
-												where: { id: v.request.currentTransactionId },
-												select: { status: true },
-											});
-											shouldReconnect =
-												priorTx != null &&
-												(priorTx.status === TransactionStatus.Pending ||
-													priorTx.status === TransactionStatus.Confirmed);
-										}
-										await tx.registryRequest.update({
-											where: { id: v.request.id },
+					try {
+						await retryOnSerializationConflict(
+							() =>
+								prisma.$transaction(
+									async (tx) => {
+										await tx.transaction.update({
+											where: { id: sharedTxId },
 											data: {
-												state: RegistrationState.RegistrationRequested,
-												CurrentTransaction:
-													shouldReconnect && v.request.currentTransactionId != null
-														? { connect: { id: v.request.currentTransactionId } }
-														: { disconnect: true },
+												...disconnectTransactionWallet(),
+												// Mark the orphan shared row as RolledBack: the per-item reverts
+												// below restore each request's CurrentTransaction to its pre-batch
+												// value, leaving this row with no back-references. Without an
+												// explicit status update it would sit in `Pending` indefinitely
+												// (no wallet pointer → invisible to wallet-timeouts; no request
+												// pointer → invisible to tx-sync), accumulating as DB pollution.
+												status: TransactionStatus.RolledBack,
 											},
 										});
-									}
-								},
-								{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
-							),
-						{ label: 'v2-register-batch-tx' },
-					);
+										for (const v of fit) {
+											// Reconnect to the pre-batch CurrentTransaction only if that
+											// prior Tx is still in an active state (Pending / Confirmed).
+											// If the prior Tx was itself a rolled-back / failed batch
+											// (e.g. this request has cycled through multiple failed
+											// batches), re-connecting would point the request at a dead
+											// Tx — leaving wallet-timeouts and tx-sync to wade through
+											// stale pointers. Disconnecting in that case mirrors the
+											// "no pre-batch active tx" branch and lets the next scheduler
+											// tick pick the request up cleanly.
+											let shouldReconnect = false;
+											if (v.request.currentTransactionId != null) {
+												const priorTx = await tx.transaction.findUnique({
+													where: { id: v.request.currentTransactionId },
+													select: { status: true },
+												});
+												shouldReconnect =
+													priorTx != null &&
+													(priorTx.status === TransactionStatus.Pending ||
+														priorTx.status === TransactionStatus.Confirmed);
+											}
+											await tx.registryRequest.update({
+												where: { id: v.request.id },
+												data: {
+													state: RegistrationState.RegistrationRequested,
+													CurrentTransaction:
+														shouldReconnect && v.request.currentTransactionId != null
+															? { connect: { id: v.request.currentTransactionId } }
+															: { disconnect: true },
+												},
+											});
+										}
+									},
+									{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
+								),
+							{ label: 'v2-register-batch-tx' },
+						);
+					} catch (rollbackError) {
+						logger.error('V2 register batch rollback after submit failure failed; skipping single-item fallback', {
+							sharedTxId,
+							requestIds: fit.map((v) => v.request.id),
+							submitError:
+								submitError instanceof Error
+									? { message: submitError.message, stack: submitError.stack, name: submitError.name }
+									: submitError,
+							rollbackError:
+								rollbackError instanceof Error
+									? { message: rollbackError.message, stack: rollbackError.stack, name: rollbackError.name }
+									: rollbackError,
+						});
+						return;
+					}
 					await fallbackToSingleItems(fit, paymentSource, network, script);
 					// Rollback only cleared pendingTransactionId; lockedAt stays set. Conditional
 					// unlock prevents the wallet from orphan-locking when every single-item fallback

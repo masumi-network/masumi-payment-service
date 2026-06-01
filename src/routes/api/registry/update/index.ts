@@ -334,14 +334,18 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 							: {}),
 					},
 				});
+				if (oldFixedPricingId != null) {
+					// UnitValue.agentFixedPricingId uses ON DELETE SET NULL, not
+					// cascade. Delete amounts explicitly before dropping the old
+					// fixed-pricing row so update retries do not accumulate
+					// detached pricing values.
+					await tx.unitValue.deleteMany({ where: { agentFixedPricingId: oldFixedPricingId } });
+				}
 				if (oldPricing?.agentPricingId != null) {
 					await tx.agentPricing.delete({ where: { id: oldPricing.agentPricingId } });
 				}
 				if (oldFixedPricingId != null) {
-					// AgentFixedPricing is FK-pointed-at by AgentPricing.agentFixedPricingId,
-					// no cascade. UnitValue cascades from AgentFixedPricing via the
-					// schema relation, so deleting the fixed row sweeps the amounts too.
-					await tx.agentFixedPricing.delete({ where: { id: oldFixedPricingId } }).catch(() => undefined);
+					await tx.agentFixedPricing.delete({ where: { id: oldFixedPricingId } });
 				}
 				return tx.registryRequest.findUniqueOrThrow({
 					where: { id: registryRequest.id },

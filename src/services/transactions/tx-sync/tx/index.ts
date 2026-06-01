@@ -435,27 +435,19 @@ async function updateInitialPurchaseTransaction(
 		() =>
 			prisma.$transaction(
 				async (prisma) => {
-					const sellerWallet = await prisma.walletBase.findUnique({
-						where: {
-							paymentSourceId_walletVkey_walletAddress_type: {
-								paymentSourceId: paymentContract.id,
-								walletVkey: decodedNewContract.sellerVkey,
-								walletAddress: decodedNewContract.sellerAddress,
-								type: WalletType.Seller,
-							},
-						},
-					});
-					if (sellerWallet == null) {
-						return;
-					}
-
 					const dbEntry = await prisma.purchaseRequest.findFirst({
 						where: {
 							blockchainIdentifier: decodedNewContract.blockchainIdentifier,
 							paymentSourceId: paymentContract.id,
 							NextAction: {
 								requestedAction: {
-									in: [PurchasingAction.FundsLockingInitiated],
+									// Normally the scheduler moves the purchase to
+									// FundsLockingInitiated before broadcast. If a
+									// defensive cleanup/retry path resets the row to
+									// FundsLockingRequested before Blockfrost exposes
+									// the tx, chain truth should still win once sync
+									// sees the valid funding output.
+									in: [PurchasingAction.FundsLockingInitiated, PurchasingAction.FundsLockingRequested],
 								},
 							},
 						},
@@ -469,7 +461,8 @@ async function updateInitialPurchaseTransaction(
 						},
 					});
 					if (dbEntry == null) {
-						//transaction is not registered with us
+						// Transaction is not registered with us, or the local
+						// purchase row has already moved past the funding action.
 						return;
 					}
 					if (dbEntry.SmartContractWallet == null) {
@@ -909,8 +902,14 @@ async function updateInitialPaymentTransaction(
 					let newState: OnChainState = OnChainState.FundsLocked;
 					const errorNote: string[] = [];
 					if (tx.utxos.inputs.find((x) => x.address == decodedNewContract.buyerAddress) == null) {
-						logger.warn('Buyer address not found in inputs, this likely is a spoofing attempt.', {
-							paymentRequest: dbEntry,
+						// Do not mark the request invalid here: a third party can
+						// create a spoofed output with our blockchainIdentifier.
+						// Leave the request unchanged so the legitimate buyer lock
+						// can still be synced when it appears.
+						logger.warn('Ignoring initial payment tx because buyer address is not an input; likely spoof noise.', {
+							txHash: tx.tx.tx_hash,
+							paymentRequestId: dbEntry.id,
+							blockchainIdentifier: decodedNewContract.blockchainIdentifier,
 							buyerAddress: decodedNewContract.buyerAddress,
 						});
 						return;
@@ -1267,7 +1266,7 @@ export async function updateTransaction(
 	//
 	// Spoofing defence is preserved: when the DB value is non-null and does
 	// not match the on-chain datum, we log + return without writing through.
-	const paymentRequest = await prisma.paymentRequest.findUnique({
+	let paymentRequest = await prisma.paymentRequest.findUnique({
 		where: {
 			blockchainIdentifier: entry.decodedOldContract.blockchainIdentifier,
 		},
@@ -1282,15 +1281,22 @@ export async function updateTransaction(
 	});
 	if (paymentRequest != null) {
 		if (paymentRequest.paymentSourceId !== paymentContract.id) {
-			// Row belongs to a different payment source — leave it for that
-			// source's tx-sync pass.
-			return;
-		}
-		if (!verifyRequestFieldsAgainstDatum(paymentRequest, entry.decodedOldContract, 'payment', tx.tx.tx_hash)) {
+			// Row belongs to a different payment source. Ignore this side
+			// during the current source's pass, but keep checking the purchase
+			// side below in case it legitimately belongs here.
+			logger.warn('tx-sync: ignoring payment request row from a different payment source', {
+				txHash: tx.tx.tx_hash,
+				blockchainIdentifier: entry.decodedOldContract.blockchainIdentifier,
+				currentPaymentSourceId: paymentContract.id,
+				requestPaymentSourceId: paymentRequest.paymentSourceId,
+				paymentRequestId: paymentRequest.id,
+			});
+			paymentRequest = null;
+		} else if (!verifyRequestFieldsAgainstDatum(paymentRequest, entry.decodedOldContract, 'payment', tx.tx.tx_hash)) {
 			return;
 		}
 	}
-	const purchasingRequest = await prisma.purchaseRequest.findUnique({
+	let purchasingRequest = await prisma.purchaseRequest.findUnique({
 		where: {
 			blockchainIdentifier: entry.decodedOldContract.blockchainIdentifier,
 		},
@@ -1305,9 +1311,17 @@ export async function updateTransaction(
 	});
 	if (purchasingRequest != null) {
 		if (purchasingRequest.paymentSourceId !== paymentContract.id) {
-			return;
-		}
-		if (!verifyRequestFieldsAgainstDatum(purchasingRequest, entry.decodedOldContract, 'purchase', tx.tx.tx_hash)) {
+			logger.warn('tx-sync: ignoring purchase request row from a different payment source', {
+				txHash: tx.tx.tx_hash,
+				blockchainIdentifier: entry.decodedOldContract.blockchainIdentifier,
+				currentPaymentSourceId: paymentContract.id,
+				requestPaymentSourceId: purchasingRequest.paymentSourceId,
+				purchaseRequestId: purchasingRequest.id,
+			});
+			purchasingRequest = null;
+		} else if (
+			!verifyRequestFieldsAgainstDatum(purchasingRequest, entry.decodedOldContract, 'purchase', tx.tx.tx_hash)
+		) {
 			return;
 		}
 	}

@@ -36,16 +36,38 @@ import {
 } from '../../helperFunctions';
 import { PaymentResponse, PurchaseResponse } from '../../utils/apiClient';
 
+class FatalPollError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = 'FatalPollError';
+	}
+}
+
 const testNetwork = (process.env.TEST_NETWORK as Network) || Network.Preprod;
 const envFilter = process.env.TEST_PAYMENT_SOURCE_TYPE as PaymentSourceType | undefined;
 // V2-only suite. Skip when the workflow pinned this jest invocation to V1.
 const describeFn = envFilter && envFilter !== PaymentSourceType.Web3CardanoV2 ? describe.skip : describe;
 
 const BATCH_SIZE = 3;
+const BATCH_PHASE_TIMEOUT_MS = 10 * 60 * 1000;
 
 /** Sleep helper. We use this to space out scheduler polls. */
-function sleep(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+	return new Promise((resolve, reject) => {
+		if (signal?.aborted) {
+			reject(new Error(`Aborted: ${signal.reason ?? 'signal aborted'}`));
+			return;
+		}
+		const timer = setTimeout(resolve, ms);
+		signal?.addEventListener(
+			'abort',
+			() => {
+				clearTimeout(timer);
+				reject(new Error(`Aborted: ${signal.reason ?? 'signal aborted'}`));
+			},
+			{ once: true },
+		);
+	});
 }
 
 /**
@@ -67,7 +89,8 @@ function describeLastValue(value: unknown): string {
 	const next = v.NextAction as Record<string, unknown> | undefined;
 	const curr = v.CurrentTransaction as Record<string, unknown> | null | undefined;
 	const summary = {
-		blockchainIdentifier: typeof v.blockchainIdentifier === 'string' ? v.blockchainIdentifier.slice(0, 20) + '…' : undefined,
+		blockchainIdentifier:
+			typeof v.blockchainIdentifier === 'string' ? v.blockchainIdentifier.slice(0, 20) + '…' : undefined,
 		onChainState: v.onChainState,
 		requestedAction: next?.requestedAction,
 		errorType: next?.errorType,
@@ -82,10 +105,31 @@ function describeLastValue(value: unknown): string {
 	}
 }
 
+function throwIfWaitingForManual(value: unknown): void {
+	const maybeValue = value as {
+		blockchainIdentifier?: unknown;
+		NextAction?: {
+			requestedAction?: unknown;
+			errorNote?: unknown;
+		};
+	};
+
+	if (maybeValue?.NextAction?.requestedAction !== 'WaitingForManualAction') {
+		return;
+	}
+
+	const blockchainIdentifier =
+		typeof maybeValue.blockchainIdentifier === 'string' ? ` (blockchainId=${maybeValue.blockchainIdentifier})` : '';
+	const errorNote =
+		typeof maybeValue.NextAction.errorNote === 'string' ? maybeValue.NextAction.errorNote : 'No error note';
+
+	throw new FatalPollError(`Poll observed WaitingForManualAction${blockchainIdentifier}; errorNote=${errorNote}`);
+}
+
 async function pollForValue<T>(
 	fetch: () => Promise<T>,
 	predicate: (value: T) => boolean,
-	options: { timeoutMs: number; intervalMs: number; label: string },
+	options: { timeoutMs: number; intervalMs: number; label: string; signal?: AbortSignal },
 ): Promise<T> {
 	const startedAt = Date.now();
 	const deadline = startedAt + options.timeoutMs;
@@ -93,19 +137,26 @@ async function pollForValue<T>(
 	let lastError: unknown = undefined;
 
 	while (Date.now() < deadline) {
+		if (options.signal?.aborted) {
+			throw new Error(`Aborted (${options.label}): ${options.signal.reason ?? 'signal aborted'}`);
+		}
 		try {
 			lastValue = await fetch();
+			throwIfWaitingForManual(lastValue);
 			lastError = undefined;
 			if (predicate(lastValue)) {
 				return lastValue;
 			}
 		} catch (err) {
+			if (err instanceof FatalPollError) {
+				throw err;
+			}
 			// transient — capture and retry; surfaced in the timeout error
 			// message below so a stuck CI run isn't hiding the real cause
 			// (auth failure, 5xx, network drop) behind `lastValue=undefined`.
 			lastError = err;
 		}
-		await sleep(options.intervalMs);
+		await sleep(options.intervalMs, options.signal);
 	}
 
 	// Include a structured summary of the last observed value AND the last
@@ -245,7 +296,13 @@ describeFn(`Web3CardanoV2 batch action verification (${testNetwork})`, () => {
 			// ============================================================
 			console.log('⏳ Waiting for FundsLocked on all batch members…');
 			await allWithAbortOnFailure(
-				payments.map((p) => (signal) => waitForFundsLocked(p.blockchainIdentifier, testNetwork, signal)),
+				payments.map(
+					(p) => (signal) =>
+						waitForFundsLocked(p.blockchainIdentifier, testNetwork, {
+							signal,
+							timeoutMs: BATCH_PHASE_TIMEOUT_MS,
+						}),
+				),
 			);
 
 			// ============================================================
@@ -257,25 +314,40 @@ describeFn(`Web3CardanoV2 batch action verification (${testNetwork})`, () => {
 			await Promise.all(payments.map((p) => submitResult(p.blockchainIdentifier, testNetwork)));
 
 			console.log('⏳ Waiting for SubmitResultInitiated on every payment (proves the scheduler picked them up)…');
-			const submitResultTxHashes = await Promise.all(
-				payments.map(async (p) => {
+			const submitResultTxHashes = await allWithAbortOnFailure(
+				payments.map((p) => async (signal) => {
 					const payment = await pollForValue(
 						() => fetchPaymentByBlockchainIdentifier(p.blockchainIdentifier, testNetwork),
 						(value) =>
 							value != null &&
 							value.NextAction.requestedAction === 'SubmitResultInitiated' &&
 							value.CurrentTransaction?.txHash != null,
-						{ timeoutMs: 600_000, intervalMs: 3000, label: `SubmitResultInitiated ${p.blockchainIdentifier.slice(0, 16)}` },
+						{
+							timeoutMs: BATCH_PHASE_TIMEOUT_MS,
+							intervalMs: 3000,
+							label: `SubmitResultInitiated ${p.blockchainIdentifier.slice(0, 16)}`,
+							signal,
+						},
 					);
 					return payment?.CurrentTransaction?.txHash ?? null;
 				}),
 			);
-			console.log(`📊 Submit-result tx hashes per item: ${submitResultTxHashes.map((h) => h?.slice(0, 12) + '…').join(', ')}`);
+			console.log(
+				`📊 Submit-result tx hashes per item: ${submitResultTxHashes.map((h) => h?.slice(0, 12) + '…').join(', ')}`,
+			);
 			const batchedSubmitResultTxHash = assertAllEqual(submitResultTxHashes, 'submit-result txHash');
 			console.log(`✅ Submit-result batched into single tx: ${batchedSubmitResultTxHash.slice(0, 20)}…`);
 
 			console.log('⏳ Waiting for ResultSubmitted on every payment (on-chain confirmation of the batched tx)…');
-			await Promise.all(payments.map((p) => waitForResultSubmitted(p.blockchainIdentifier, testNetwork)));
+			await allWithAbortOnFailure(
+				payments.map(
+					(p) => (signal) =>
+						waitForResultSubmitted(p.blockchainIdentifier, testNetwork, {
+							signal,
+							timeoutMs: BATCH_PHASE_TIMEOUT_MS,
+						}),
+				),
+			);
 
 			// ============================================================
 			// Phase 3: request-refund × N → expect single batched tx.
@@ -284,8 +356,8 @@ describeFn(`Web3CardanoV2 batch action verification (${testNetwork})`, () => {
 			await Promise.all(payments.map((p) => requestRefund(p.blockchainIdentifier, testNetwork)));
 
 			console.log('⏳ Waiting for SetRefundRequestedInitiated on every purchase…');
-			const requestRefundTxHashes = await Promise.all(
-				purchases.map(async (p) => {
+			const requestRefundTxHashes = await allWithAbortOnFailure(
+				purchases.map((p) => async (signal) => {
 					const purchase = await pollForValue(
 						() => fetchPurchaseByBlockchainIdentifier(p.blockchainIdentifier, testNetwork),
 						(value) =>
@@ -293,20 +365,31 @@ describeFn(`Web3CardanoV2 batch action verification (${testNetwork})`, () => {
 							value.NextAction.requestedAction === 'SetRefundRequestedInitiated' &&
 							value.CurrentTransaction?.txHash != null,
 						{
-							timeoutMs: 600_000,
+							timeoutMs: BATCH_PHASE_TIMEOUT_MS,
 							intervalMs: 3000,
 							label: `SetRefundRequestedInitiated ${p.blockchainIdentifier.slice(0, 16)}`,
+							signal,
 						},
 					);
 					return purchase?.CurrentTransaction?.txHash ?? null;
 				}),
 			);
-			console.log(`📊 Request-refund tx hashes per item: ${requestRefundTxHashes.map((h) => h?.slice(0, 12) + '…').join(', ')}`);
+			console.log(
+				`📊 Request-refund tx hashes per item: ${requestRefundTxHashes.map((h) => h?.slice(0, 12) + '…').join(', ')}`,
+			);
 			const batchedRequestRefundTxHash = assertAllEqual(requestRefundTxHashes, 'request-refund txHash');
 			console.log(`✅ Request-refund batched into single tx: ${batchedRequestRefundTxHash.slice(0, 20)}…`);
 
 			console.log('⏳ Waiting for Disputed on every payment…');
-			await Promise.all(payments.map((p) => waitForDisputed(p.blockchainIdentifier, testNetwork)));
+			await allWithAbortOnFailure(
+				payments.map(
+					(p) => (signal) =>
+						waitForDisputed(p.blockchainIdentifier, testNetwork, {
+							signal,
+							timeoutMs: BATCH_PHASE_TIMEOUT_MS,
+						}),
+				),
+			);
 
 			// ============================================================
 			// Phase 4: authorize-refund × N → expect single batched tx.
@@ -315,8 +398,8 @@ describeFn(`Web3CardanoV2 batch action verification (${testNetwork})`, () => {
 			await Promise.all(payments.map((p) => authorizeRefund(p.blockchainIdentifier, testNetwork)));
 
 			console.log('⏳ Waiting for AuthorizeRefundInitiated on every payment…');
-			const authorizeRefundTxHashes = await Promise.all(
-				payments.map(async (p) => {
+			const authorizeRefundTxHashes = await allWithAbortOnFailure(
+				payments.map((p) => async (signal) => {
 					const payment = await pollForValue(
 						() => fetchPaymentByBlockchainIdentifier(p.blockchainIdentifier, testNetwork),
 						(value) =>
@@ -324,9 +407,10 @@ describeFn(`Web3CardanoV2 batch action verification (${testNetwork})`, () => {
 							value.NextAction.requestedAction === 'AuthorizeRefundInitiated' &&
 							value.CurrentTransaction?.txHash != null,
 						{
-							timeoutMs: 600_000,
+							timeoutMs: BATCH_PHASE_TIMEOUT_MS,
 							intervalMs: 3000,
 							label: `AuthorizeRefundInitiated ${p.blockchainIdentifier.slice(0, 16)}`,
+							signal,
 						},
 					);
 					return payment?.CurrentTransaction?.txHash ?? null;
