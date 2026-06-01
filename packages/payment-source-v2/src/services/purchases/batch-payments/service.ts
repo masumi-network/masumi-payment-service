@@ -838,6 +838,14 @@ export async function batchLatestPaymentEntriesV2() {
 					);
 					const paymentRequestsRemaining = [...paymentRequests];
 					const walletPairings: WalletPairing[] = [];
+					const walletFitMisses: Array<{
+						walletId: string;
+						purchaseRequestId: string;
+						unit: string;
+						requiredAmount: string;
+						availableAmount: string;
+						batchedCountBeforeMiss: number;
+					}> = [];
 
 					let maxBatchSizeReached = false;
 
@@ -1023,6 +1031,7 @@ export async function batchLatestPaymentEntriesV2() {
 								});
 							}
 							let isFulfilled = true;
+							let fitMiss: (typeof walletFitMisses)[number] | null = null;
 							const needsFeeBuffer = batchedPaymentRequests.length === 0;
 							for (const paymentAmount of workingPaidFunds) {
 								const walletAmount = amounts.find((amount) => amount.unit == paymentAmount.unit);
@@ -1033,6 +1042,14 @@ export async function batchLatestPaymentEntriesV2() {
 										: paymentAmount.amount;
 								if (walletAmount == null || requiredAmount > walletAmount.quantity) {
 									isFulfilled = false;
+									fitMiss = {
+										walletId: walletData.walletId,
+										purchaseRequestId: paymentRequest.id,
+										unit: paymentAmount.unit,
+										requiredAmount: requiredAmount.toString(),
+										availableAmount: (walletAmount?.quantity ?? 0n).toString(),
+										batchedCountBeforeMiss: batchedPaymentRequests.length,
+									};
 									break;
 								}
 							}
@@ -1064,6 +1081,9 @@ export async function batchLatestPaymentEntriesV2() {
 							} else {
 								// Nothing to roll back — workingPaidFunds is local; the
 								// Prisma object's PaidFunds array was never touched.
+								if (fitMiss != null) {
+									walletFitMisses.push(fitMiss);
+								}
 								index++;
 							}
 						}
@@ -1084,6 +1104,14 @@ export async function batchLatestPaymentEntriesV2() {
 								placeholderTransactionId: walletData.placeholderTransactionId,
 							});
 						}
+					}
+					if (paymentRequestsRemaining.length > 0 && walletFitMisses.length > 0) {
+						logger.warn('V2 funds-lock batch left purchase requests unpaired after wallet-fit', {
+							paymentSourceId: paymentContract.id,
+							remainingPurchaseRequestIds: paymentRequestsRemaining.map((request) => request.id),
+							pairedRequestCount: walletPairings.reduce((count, pairing) => count + pairing.batchedRequests.length, 0),
+							walletFitMisses,
+						});
 					}
 					//only go into error state if we did not reach max batch size, as otherwise we might have enough funds in other wallets
 					if (paymentRequestsRemaining.length > 0 && maxBatchSizeReached == false) {
@@ -1337,6 +1365,37 @@ export async function batchLatestPaymentEntriesV2() {
 						},
 					});
 
+					// Recovery for rows that DID advance past pre-submit (NextAction =
+					// FundsLockingInitiated, CurrentTransaction = sharedTx) but never
+					// reached the submit step — the wallet-unlock loop below marks
+					// their sharedTx RolledBack, and without an `intendedTxHash` on
+					// that row `funding-reconciliation` can never resolve them (it
+					// polls Blockfrost by intendedTxHash). The wallet is freed but
+					// the request would otherwise sit at FundsLockingInitiated
+					// forever. Safe to revert to FundsLockingRequested because
+					// `intendedTxHash IS NULL` guarantees no tx left the host.
+					const orphanedInitiatedRequests = await prisma.purchaseRequest.findMany({
+						where: {
+							id: { in: potentiallyFailedPurchaseRequests.map((x) => x.id) },
+							NextAction: {
+								requestedAction: PurchasingAction.FundsLockingInitiated,
+							},
+							CurrentTransaction: {
+								is: {
+									intendedTxHash: null,
+									txHash: null,
+								},
+							},
+						},
+						include: { NextAction: true, CurrentTransaction: true },
+					});
+					if (orphanedInitiatedRequests.length > 0) {
+						logger.warn('batch-payments outer-catch reverting orphaned FundsLockingInitiated rows', {
+							count: orphanedInitiatedRequests.length,
+							ids: orphanedInitiatedRequests.map((r) => r.id),
+						});
+					}
+
 					// Outer-catch wallet unlock — every wallet that the lock-and-query
 					// step touched now carries a placeholder PendingTransaction, so the
 					// previous `pendingTransactionId: null` filter would match none of
@@ -1391,6 +1450,34 @@ export async function batchLatestPaymentEntriesV2() {
 											errorNote: 'Outer error: Batching payments failed: ' + interpretBlockchainError(error),
 										},
 									},
+								},
+							});
+						}),
+					);
+
+					// Revert the FundsLockingInitiated orphans collected above. Detached
+					// from the wallet-unlock loop so a Prisma failure during the revert
+					// of one row does not stall the rest, and so the revert runs only
+					// AFTER the wallet has been freed (otherwise the next scheduler
+					// tick could observe the Requested state while the wallet is still
+					// holding the placeholder).
+					await Promise.allSettled(
+						orphanedInitiatedRequests.map(async (r) => {
+							await prisma.purchaseRequest.update({
+								where: { id: r.id },
+								data: {
+									ActionHistory: {
+										connect: { id: r.nextActionId },
+									},
+									NextAction: {
+										create: {
+											requestedAction: PurchasingAction.FundsLockingRequested,
+											errorType: null,
+											errorNote: null,
+										},
+									},
+									CurrentTransaction: { disconnect: true },
+									TransactionHistory: r.CurrentTransaction ? { connect: { id: r.CurrentTransaction.id } } : undefined,
 								},
 							});
 						}),

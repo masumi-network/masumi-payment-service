@@ -67,16 +67,14 @@ BEGIN
     END IF;
 END $$;
 
--- Validate only if no violators remain. Wrapping in DO $$ + EXCEPTION lets
--- the migration complete even when manual repair is still pending; the
--- constraint stays NOT VALID until validation succeeds.
-DO $$ BEGIN
-    ALTER TABLE "PaymentSource" VALIDATE CONSTRAINT "PaymentSource_v1_admin_wallet_required";
-EXCEPTION
-    WHEN check_violation THEN
-        RAISE WARNING 'PaymentSource_v1_admin_wallet_required left NOT VALID (existing offenders). '
-            'Repair them and run VALIDATE manually.';
-END $$;
+-- Fail-fast VALIDATE: surface offenders as a migration failure rather than
+-- a passive WARNING that operators may miss. A NOT VALID constraint quietly
+-- left in place is an operational footgun — later VALIDATE attempts take
+-- ACCESS EXCLUSIVE on the table for the duration of the scan. On a clean DB
+-- (route handlers always set adminWalletId on V1) this VALIDATE succeeds
+-- cleanly; on a dirty DB the migration aborts so the operator can repair
+-- the rows BEFORE retrying, instead of inheriting a half-validated state.
+ALTER TABLE "PaymentSource" VALIDATE CONSTRAINT "PaymentSource_v1_admin_wallet_required";
 
 -- 2. V2 must not carry the singular adminWalletId.
 -- Same NOT VALID + VALIDATE dance as #1: practically every V2 row should
@@ -107,13 +105,11 @@ BEGIN
     END IF;
 END $$;
 
-DO $$ BEGIN
-    ALTER TABLE "PaymentSource" VALIDATE CONSTRAINT "PaymentSource_v2_no_singular_admin";
-EXCEPTION
-    WHEN check_violation THEN
-        RAISE WARNING 'PaymentSource_v2_no_singular_admin left NOT VALID (existing offenders). '
-            'Repair them and run VALIDATE manually.';
-END $$;
+-- Same fail-fast rationale as the V1 constraint above. On a clean DB this
+-- VALIDATE succeeds because the V2 route handlers never set adminWalletId
+-- (V2 uses the AdminWallets[] relation); a manually-edited V2 row would be
+-- caught here and the migration aborts so the operator can repair it.
+ALTER TABLE "PaymentSource" VALIDATE CONSTRAINT "PaymentSource_v2_no_singular_admin";
 
 -- 3. RESTRICT FK on AdminWallet.paymentSourceAdminId. Default (NO ACTION)
 -- happens to fail late at commit; RESTRICT fails immediately and is the

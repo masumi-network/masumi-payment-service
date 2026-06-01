@@ -16,10 +16,18 @@
 -- intentionally NOT shipped here so it can be paired with the rollout
 -- confirmation step in ops.
 --
--- The Prisma schema still ships without the scalar columns; the old code
--- never wrote to them via Prisma in patterns that the new schema would
--- reject (it only ever read them via a scalar relation, which becomes a
--- nullable orphan column from Prisma's view — tolerated).
+-- IMPORTANT: the Prisma schema STILL ships with the scalar columns
+-- (`Transaction.paymentRequestHistoryId` and
+-- `Transaction.purchaseRequestHistoryId`) because active code paths still
+-- read them — notably `src/services/shared/transition-writer.ts` (reads the
+-- scalar to decide history vs. orphan) and
+-- `src/services/transactions/orphan-action-cleanup/index.ts` (filters rows
+-- by `historyId IS NULL`). A follow-up migration that drops the columns is
+-- intentionally NOT shipped here: it must be paired with a refactor of
+-- those two modules to use the new join-table relations
+-- (`PaymentRequestHistory` / `PurchaseRequestHistory`) BEFORE the columns
+-- can be removed. Until that refactor lands, both writes go through the
+-- backfill trigger below so the scalar and the join-table stay in sync.
 --
 -- See docs/adr/0006-shared-transaction-row-for-v2-batches.md for the
 -- two-phase column-drop rationale.

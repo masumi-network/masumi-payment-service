@@ -283,13 +283,15 @@ describeFn(`Web3CardanoV2 batch action verification (${testNetwork})`, () => {
 				console.log(`✅ Created payment ${i + 1}/${BATCH_SIZE}: ${payment.blockchainIdentifier.substring(0, 50)}…`);
 			}
 
-			// Same for purchases — sequential.
-			const purchases = [];
-			for (let i = 0; i < BATCH_SIZE; i++) {
-				const purchase = await createPurchase(payments[i], agent);
-				purchases.push(purchase);
-				console.log(`✅ Created purchase ${i + 1}/${BATCH_SIZE}`);
-			}
+			// Purchases are created near-simultaneously (in parallel) on purpose.
+			// The buyer funds-lock batches only the purchases that are already
+			// visible when the scheduler claims the (single) purchasing wallet.
+			// Creating them sequentially can spread their createdAt across the
+			// settle window so a tick locks the wallet on a partial set, leaving
+			// the stragglers unbatched. Firing the POSTs together keeps all
+			// BATCH_SIZE within one settle window so they land in one tx.
+			const purchases = await Promise.all(payments.map((payment) => createPurchase(payment, agent)));
+			purchases.forEach((_, i) => console.log(`✅ Created purchase ${i + 1}/${BATCH_SIZE}`));
 
 			console.log('⏳ Waiting for initial FundsLockingInitiated on every purchase…');
 			const fundsLockingTxHashes = await allWithAbortOnFailure(

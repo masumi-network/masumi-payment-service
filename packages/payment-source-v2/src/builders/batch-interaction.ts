@@ -14,6 +14,7 @@ import {
 	type Network,
 	type UTxO,
 } from '@meshsdk/core';
+import { assertDistinctReferenceSignatures } from './assert-distinct-reference-signatures';
 import { resolvePlutusScriptAddress } from '@meshsdk/core-cst';
 import { convertNetworkToId } from '@masumi/payment-core';
 import type { Network as PrismaNetwork } from '@/generated/prisma/client';
@@ -176,6 +177,7 @@ export async function generateMasumiSmartContractBatchInteractionTransactionAuto
 		throw new Error('no items in batch');
 	}
 	assertDistinctRefs(items);
+	assertDistinctReferenceSignatures(items);
 	assertCollateralNotInBatch(items, collateralUtxo);
 
 	if (rpcApiKey) {
@@ -467,6 +469,7 @@ export async function generateMasumiSmartContractBatchWithdrawTransactionAutomat
 		throw new Error('no items in batch');
 	}
 	assertDistinctRefs(items);
+	assertDistinctReferenceSignatures(items);
 	assertCollateralNotInBatch(items, collateralUtxo);
 
 	if (rpcApiKey) {

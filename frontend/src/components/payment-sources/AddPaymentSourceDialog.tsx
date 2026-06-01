@@ -55,11 +55,19 @@ const formSchema = z
       walletAddress: z.string().optional(),
     }),
     feePermille: z.number().min(0).max(1000),
-    requiredAdminSignatures: z.number().int().min(1).max(3),
+    // Upper bound mirrors the backend cap at
+    // src/routes/api/payment-source-extended/schemas.ts:142
+    // (`requiredAdminSignatures: z.coerce.number().int().min(1).max(50)`).
+    // The hard-coded 3 here previously prevented the UI from creating any V2
+    // source with the weighted-quorum semantics the backend supports.
+    requiredAdminSignatures: z.number().int().min(1).max(50),
     purchasingWallets: z.array(walletSchema).min(1),
     sellingWallets: z.array(walletSchema).min(1),
     useCustomAdminWallets: z.boolean(),
-    customAdminWallets: z.tuple([adminWalletSchema, adminWalletSchema, adminWalletSchema]),
+    // Variable-length to support V2's weighted multi-admin quorum (up to 50
+    // slots per backend). V1 retains its on-chain hard-coded "exactly 3"
+    // requirement, enforced cross-field in `superRefine` below.
+    customAdminWallets: z.array(adminWalletSchema).min(1).max(50),
   })
   .superRefine((data, ctx) => {
     if (data.paymentSourceType === 'Web3CardanoV1' && !data.feeReceiverWallet.walletAddress) {
@@ -80,6 +88,35 @@ const formSchema = z
           });
         }
       });
+
+      // V1 contracts ship with a hard-coded 3-of-3 (configurable via
+      // `requiredAdminSignatures`) admin set baked into the on-chain script.
+      // Backend rejects any V1 source whose AdminWallets.length !== 3 at
+      // src/routes/api/payment-source-extended/schemas.ts:183. Surface that
+      // constraint in the UI so users get a synchronous error instead of
+      // discovering it only on submit.
+      if (data.paymentSourceType === 'Web3CardanoV1' && data.customAdminWallets.length !== 3) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'V1 payment sources require exactly 3 admin wallets',
+          path: ['customAdminWallets'],
+        });
+      }
+
+      // V2 weighted-quorum invariant: the required signature count cannot
+      // exceed the number of admin slots (otherwise the contract is
+      // permanently undisputable). Matches the backend check at
+      // src/routes/api/payment-source-extended/schemas.ts:241.
+      if (
+        data.paymentSourceType === 'Web3CardanoV2' &&
+        data.requiredAdminSignatures > data.customAdminWallets.length
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `requiredAdminSignatures (${data.requiredAdminSignatures}) cannot exceed admin wallet count (${data.customAdminWallets.length})`,
+          path: ['requiredAdminSignatures'],
+        });
+      }
     }
   });
 
@@ -87,7 +124,7 @@ type FormSchema = z.infer<typeof formSchema>;
 // Helper functions to avoid duplicated default value construction logic
 const getDefaultCustomAdminWallets = (
   network: 'Mainnet' | 'Preprod',
-): [{ walletAddress: string }, { walletAddress: string }, { walletAddress: string }] => [
+): Array<{ walletAddress: string }> => [
   { walletAddress: DEFAULT_ADMIN_WALLETS[network][0].walletAddress },
   { walletAddress: DEFAULT_ADMIN_WALLETS[network][1].walletAddress },
   { walletAddress: DEFAULT_ADMIN_WALLETS[network][2].walletAddress },
@@ -172,6 +209,14 @@ export function AddPaymentSourceDialog({
   } = useFieldArray({
     control,
     name: 'sellingWallets',
+  });
+  const {
+    fields: customAdminWalletFields,
+    append: appendCustomAdminWallet,
+    remove: removeCustomAdminWallet,
+  } = useFieldArray({
+    control,
+    name: 'customAdminWallets',
   });
 
   // Only reset the full form when the dialog actually opens (false -> true
@@ -488,8 +533,6 @@ export function AddPaymentSourceDialog({
     );
   };
 
-  type AdminWalletPath = `customAdminWallets.${0 | 1 | 2}.walletAddress`;
-
   return (
     <Dialog open={open} onOpenChange={(o) => !o && !isLoading && onClose()}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -787,13 +830,15 @@ export function AddPaymentSourceDialog({
                 <input
                   type="number"
                   className="w-full p-2 rounded-md bg-background border"
-                  min={2}
-                  max={3}
+                  min={1}
+                  max={50}
                   step={1}
                   {...register('requiredAdminSignatures', { valueAsNumber: true })}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Choose how many of the three admin slots must approve V2 dispute actions.
+                  Weighted M-of-N quorum required to authorize V2 dispute actions. Must not exceed
+                  the number of admin wallet slots below. Duplicate addresses across slots count as
+                  weighted votes per the V2 contract semantics.
                 </p>
                 {errors.requiredAdminSignatures && (
                   <p className="text-xs text-destructive mt-1">
@@ -818,24 +863,59 @@ export function AddPaymentSourceDialog({
               </div>
               {useCustomAdminWallets ? (
                 <div className="space-y-4">
-                  {[0, 1, 2].map((i) => (
-                    <div key={i} className="space-y-2">
-                      <label className="text-sm font-medium">
-                        Admin Wallet {i + 1} <span className="text-destructive">*</span>
-                      </label>
+                  {customAdminWalletFields.map((field, i) => (
+                    <div key={field.id} className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <label className="text-sm font-medium">
+                          Admin Wallet {i + 1} <span className="text-destructive">*</span>
+                        </label>
+                        {/* V1 requires exactly 3 admin slots (on-chain hard-coded). Hide
+                            remove for V1, and only show remove for V2 when count > 1. */}
+                        {isV2Source && customAdminWalletFields.length > 1 && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeCustomAdminWallet(i)}
+                            aria-label={`Remove admin wallet ${i + 1}`}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
                       <input
                         type="text"
                         className="w-full p-2 rounded-md bg-background border"
-                        {...register(`customAdminWallets.${i}.walletAddress` as AdminWalletPath)}
+                        {...register(`customAdminWallets.${i}.walletAddress` as const)}
                         placeholder="Enter admin wallet address"
                       />
                       {errors.customAdminWallets?.[i]?.walletAddress && (
                         <p className="text-xs text-destructive mt-1">
-                          {errors.customAdminWallets[i].walletAddress.message}
+                          {errors.customAdminWallets[i]?.walletAddress?.message}
                         </p>
                       )}
                     </div>
                   ))}
+                  {/* Only V2 supports variable-length admin lists (1..50).
+                      V1 stays locked at exactly 3. */}
+                  {isV2Source && customAdminWalletFields.length < 50 && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => appendCustomAdminWallet({ walletAddress: '' })}
+                    >
+                      Add admin wallet
+                    </Button>
+                  )}
+                  {/* Top-level error for the array as a whole (e.g. V1 exactly-3 check). */}
+                  {errors.customAdminWallets &&
+                    !Array.isArray(errors.customAdminWallets) &&
+                    'message' in errors.customAdminWallets && (
+                      <p className="text-xs text-destructive mt-1">
+                        {errors.customAdminWallets.message as string}
+                      </p>
+                    )}
                 </div>
               ) : (
                 <div className="space-y-2">

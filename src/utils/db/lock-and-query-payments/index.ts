@@ -62,10 +62,17 @@ export async function lockAndQueryPayments({
 	});
 
 	// Step 2: for each (paymentSource, hotWallet) pair, run an independent
-	// Serializable transaction in parallel. Wallets hold disjoint row locks
-	// (HotWallet.id is unique per wallet), so parallelizing them avoids
-	// serializing the whole batch on one connection while preserving
-	// retryOnSerializationConflict semantics per wallet.
+	// Serializable transaction in parallel. NOTE: this does NOT take an
+	// explicit `SELECT ... FOR UPDATE` row lock on HotWallet — the
+	// per-wallet inner transaction only LOCKS the row at its eventual
+	// `update lockedAt`. Safety against two concurrent ticks selecting the
+	// same wallet is provided entirely by Postgres SSI (Serializable
+	// Snapshot Isolation): one of the conflicting transactions aborts with
+	// 40001 and `retryOnSerializationConflict` retries it. The earlier
+	// comment about "disjoint row locks" was misleading — there are no
+	// explicit row locks, just SSI predicate detection on the read +
+	// subsequent write. The end behavior is the same (one wallet, one
+	// committed lock per tick) but for the right reason.
 	const paymentSourceResults = await Promise.all(
 		paymentSources.map(async (paymentSource) => {
 			const minCooldownTime = paymentSource.cooldownTime;
