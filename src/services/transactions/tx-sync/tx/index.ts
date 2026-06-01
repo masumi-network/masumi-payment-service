@@ -435,21 +435,9 @@ async function updateInitialPurchaseTransaction(
 		() =>
 			prisma.$transaction(
 				async (prisma) => {
-					const dbEntry = await prisma.purchaseRequest.findFirst({
+					const dbEntry = await prisma.purchaseRequest.findUnique({
 						where: {
 							blockchainIdentifier: decodedNewContract.blockchainIdentifier,
-							paymentSourceId: paymentContract.id,
-							NextAction: {
-								requestedAction: {
-									// Normally the scheduler moves the purchase to
-									// FundsLockingInitiated before broadcast. If a
-									// defensive cleanup/retry path resets the row to
-									// FundsLockingRequested before Blockfrost exposes
-									// the tx, chain truth should still win once sync
-									// sees the valid funding output.
-									in: [PurchasingAction.FundsLockingInitiated, PurchasingAction.FundsLockingRequested],
-								},
-							},
 						},
 						include: {
 							SmartContractWallet: { where: { deletedAt: null } },
@@ -461,8 +449,34 @@ async function updateInitialPurchaseTransaction(
 						},
 					});
 					if (dbEntry == null) {
-						// Transaction is not registered with us, or the local
-						// purchase row has already moved past the funding action.
+						logger.warn('tx-sync: initial purchase output has no matching local purchase row', {
+							txHash: tx.tx.tx_hash,
+							paymentSourceId: paymentContract.id,
+							blockchainIdentifier: decodedNewContract.blockchainIdentifier,
+						});
+						return;
+					}
+					if (dbEntry.paymentSourceId !== paymentContract.id) {
+						logger.warn('tx-sync: initial purchase output matched a purchase from a different payment source', {
+							txHash: tx.tx.tx_hash,
+							paymentSourceId: paymentContract.id,
+							purchaseRequestId: dbEntry.id,
+							purchasePaymentSourceId: dbEntry.paymentSourceId,
+							blockchainIdentifier: decodedNewContract.blockchainIdentifier,
+						});
+						return;
+					}
+					const isInitialFundsLockAction =
+						dbEntry.NextAction.requestedAction === PurchasingAction.FundsLockingInitiated ||
+						dbEntry.NextAction.requestedAction === PurchasingAction.FundsLockingRequested;
+					if (!isInitialFundsLockAction) {
+						logger.info('tx-sync: initial purchase output already handled or not awaiting funds lock', {
+							txHash: tx.tx.tx_hash,
+							purchaseRequestId: dbEntry.id,
+							requestedAction: dbEntry.NextAction.requestedAction,
+							onChainState: dbEntry.onChainState,
+							blockchainIdentifier: decodedNewContract.blockchainIdentifier,
+						});
 						return;
 					}
 					if (dbEntry.SmartContractWallet == null) {
