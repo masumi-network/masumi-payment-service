@@ -1033,13 +1033,29 @@ export async function batchLatestPaymentEntriesV2() {
 							let isFulfilled = true;
 							let fitMiss: (typeof walletFitMisses)[number] | null = null;
 							const needsFeeBuffer = batchedPaymentRequests.length === 0;
+							// One-per-batch lovelace the funds-lock tx consumes ON TOP of the
+							// per-request lock outputs. Two components, both charged once on the
+							// first batched request:
+							//   1. MIN_TX_FEE_BUFFER_LOVELACE — the tx fee headroom.
+							//   2. WALLET_SPLITTER_LOVELACE — `executeSpecificBatchPayment`
+							//      ALWAYS appends a pure-ADA self-send of this size (see the
+							//      `unsignedTx.sendAssets({ address: buyerAddress }, ...)` call
+							//      ~line 321) so the wallet keeps >=2 UTxOs for the next
+							//      script tx's collateral. The splitter returns to the wallet,
+							//      but mesh coin-selection still requires the wallet's UTxO set
+							//      to simultaneously cover (sum of lock outputs + splitter +
+							//      fee). If the fit-check omits the splitter it greenlights a
+							//      batch the build then rejects with "UTxO Balance
+							//      Insufficient" — the request goes ambiguous and ultimately
+							//      FailedViaTimeout. Reserve it here so fit-check ⟹ build can
+							//      always complete. (Bug introduced when the unconditional
+							//      splitter was added in 0d7db856 without updating this gate.)
+							const perBatchLovelaceOverhead = CONSTANTS.MIN_TX_FEE_BUFFER_LOVELACE + WALLET_SPLITTER_LOVELACE;
 							for (const paymentAmount of workingPaidFunds) {
 								const walletAmount = amounts.find((amount) => amount.unit == paymentAmount.unit);
 								const isLovelace = paymentAmount.unit === '' || paymentAmount.unit.toLowerCase() === 'lovelace';
 								const requiredAmount =
-									isLovelace && needsFeeBuffer
-										? paymentAmount.amount + CONSTANTS.MIN_TX_FEE_BUFFER_LOVELACE
-										: paymentAmount.amount;
+									isLovelace && needsFeeBuffer ? paymentAmount.amount + perBatchLovelaceOverhead : paymentAmount.amount;
 								if (walletAmount == null || requiredAmount > walletAmount.quantity) {
 									isFulfilled = false;
 									fitMiss = {
@@ -1067,13 +1083,16 @@ export async function batchLatestPaymentEntriesV2() {
 									paymentRequest,
 									overpaidLovelace,
 								});
-								//deduct amounts from wallet
+								//deduct amounts from wallet — mirror the requiredAmount reservation
+								//above EXACTLY (fee buffer + splitter once on the first request) so
+								//the running balance used to fit subsequent requests reflects what
+								//the build will actually consume.
 								for (const paymentAmount of workingPaidFunds) {
 									const walletAmount = amounts.find((amount) => amount.unit == paymentAmount.unit);
 									const isLovelace = paymentAmount.unit === '' || paymentAmount.unit.toLowerCase() === 'lovelace';
 									const deductAmount =
 										isLovelace && wasFirstRequest
-											? paymentAmount.amount + CONSTANTS.MIN_TX_FEE_BUFFER_LOVELACE
+											? paymentAmount.amount + perBatchLovelaceOverhead
 											: paymentAmount.amount;
 									walletAmount!.quantity -= deductAmount;
 								}
