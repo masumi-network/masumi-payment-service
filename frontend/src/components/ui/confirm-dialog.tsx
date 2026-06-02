@@ -15,6 +15,10 @@ interface ConfirmDialogProps {
   requireConfirmation?: boolean;
   confirmationText?: string;
   confirmationLabel?: string;
+  /** Above elevated agent dialog (AI agents opened over transactions). */
+  elevatedChildStack?: boolean;
+  /** Above elevated-child dialogs (e.g. confirm inside wallet opened from elevated agent). */
+  elevatedGrandchildStack?: boolean;
 }
 
 export function ConfirmDialog({
@@ -27,6 +31,8 @@ export function ConfirmDialog({
   requireConfirmation = false,
   confirmationText = 'DELETE',
   confirmationLabel,
+  elevatedChildStack,
+  elevatedGrandchildStack,
 }: ConfirmDialogProps) {
   const [confirmationInput, setConfirmationInput] = useState('');
   const [isShaking, setIsShaking] = useState(false);
@@ -48,7 +54,10 @@ export function ConfirmDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent>
+      <DialogContent
+        elevatedChildStack={elevatedChildStack}
+        elevatedGrandchildStack={elevatedGrandchildStack}
+      >
         <DialogHeader>
           <DialogTitle>{title ?? 'Confirm'}</DialogTitle>
         </DialogHeader>

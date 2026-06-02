@@ -1,6 +1,6 @@
-import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
-import { logger } from '@/utils/logger';
-import { prisma } from '@/utils/db';
+import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { logger } from '@masumi/payment-core/logger';
+import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { HotWalletType, FundDistributionStatus } from '@/generated/prisma/client';
 import { encrypt } from '@/utils/security/encryption';

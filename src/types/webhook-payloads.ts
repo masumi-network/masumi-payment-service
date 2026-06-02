@@ -1,5 +1,5 @@
-import { HotWalletType, Network, WebhookEventType } from '@/generated/prisma/client';
-import { z } from '@/utils/zod-openapi';
+import { HotWalletType, Network, PaymentSourceType, WebhookEventType } from '@/generated/prisma/client';
+import { z } from '@masumi/payment-core/zod';
 import { queryPurchaseRequestSchemaOutput } from '@/routes/api/purchases';
 import { queryPaymentsSchemaOutput } from '@/routes/api/payments';
 import type { Jsonified } from '@/utils/json-value';
@@ -58,6 +58,7 @@ const walletLowBalancePayloadSchema = createWebhookPayloadSchema(
 		walletVkey: z.string().describe('Wallet verification key'),
 		walletType: z.nativeEnum(HotWalletType).describe('Wallet type'),
 		paymentSourceId: z.string().describe('Payment source id'),
+		paymentSourceType: z.nativeEnum(PaymentSourceType).describe('Payment source type'),
 		network: z.nativeEnum(Network).describe('Wallet network'),
 		assetUnit: z.string().describe('Raw on-chain asset unit that triggered the warning'),
 		thresholdAmount: z.string().describe('Configured low-balance threshold in raw on-chain units'),
@@ -90,7 +91,7 @@ const fundDistributionSentPayloadSchema = createWebhookPayloadSchema(
 );
 
 // Union schema for all webhook payloads
-export const webhookPayloadSchema = z.discriminatedUnion('event_type', [
+const _webhookPayloadSchema = z.discriminatedUnion('event_type', [
 	purchaseOnChainStatusChangedPayloadSchema,
 	paymentOnChainStatusChangedPayloadSchema,
 	purchaseOnErrorPayloadSchema,
@@ -99,7 +100,7 @@ export const webhookPayloadSchema = z.discriminatedUnion('event_type', [
 	fundDistributionSentPayloadSchema,
 ]);
 
-export type WebhookPayload = z.infer<typeof webhookPayloadSchema>;
+type WebhookPayload = z.infer<typeof _webhookPayloadSchema>;
 export type WebhookPayloadByEvent<T extends WebhookEventType> = Extract<WebhookPayload, { event_type: T }>;
 export type WebhookPayloadDataByEvent<T extends WebhookEventType> = WebhookPayloadByEvent<T>['data'];
 
@@ -108,9 +109,8 @@ type LegacyCompatibleStoredWebhookPayload<T> = T extends { service_name: infer T
 	: T;
 
 export type StoredWebhookPayload = LegacyCompatibleStoredWebhookPayload<Jsonified<WebhookPayload>>;
-export type StoredWebhookPayloadByEvent<T extends WebhookEventType> = Extract<StoredWebhookPayload, { event_type: T }>;
 
-export const webhookTestPayloadSchema = z.object({
+const _webhookTestPayloadSchema = z.object({
 	event_type: z.literal(WEBHOOK_TEST_EVENT_TYPE),
 	service_name: z.string(),
 	timestamp: z.string().datetime(),
@@ -124,5 +124,5 @@ export const webhookTestPayloadSchema = z.object({
 	}),
 });
 
-export type WebhookTestPayload = z.infer<typeof webhookTestPayloadSchema>;
+export type WebhookTestPayload = z.infer<typeof _webhookTestPayloadSchema>;
 export type WebhookSendPayload = StoredWebhookPayload | WebhookTestPayload;

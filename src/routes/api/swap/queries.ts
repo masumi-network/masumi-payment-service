@@ -1,5 +1,5 @@
-import { prisma } from '@/utils/db';
-import { z } from '@/utils/zod-openapi';
+import { prisma } from '@masumi/payment-core/db';
+import { z } from '@masumi/payment-core/zod';
 import { getSwapTransactionsSchemaInput } from './schemas';
 
 export type SwapTransactionsQueryInput = z.infer<typeof getSwapTransactionsSchemaInput>;

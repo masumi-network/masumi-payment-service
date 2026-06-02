@@ -1,27 +1,33 @@
-import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
-import { z } from '@/utils/zod-openapi';
+import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { z } from '@masumi/payment-core/zod';
 import { Network, PricingType, RegistrationState } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
-import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contract-generator';
-import { DEFAULTS } from '@/utils/config';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
-import { extractAssetName } from '@/utils/converter/agent-identifier';
+import { getPaymentSourceContractAdapter } from '@/services/payment-source-adapters';
+import { DEFAULTS } from '@masumi/payment-core/config';
+import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
+import { extractAssetName, extractPolicyId } from '@/utils/converter/agent-identifier';
 import { registryRequestOutputSchema } from '@/routes/api/registry';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
+import { retryOnSerializationConflict } from '@/utils/db/retry';
 
 export const unregisterAgentSchemaInput = z.object({
 	agentIdentifier: z
 		.string()
 		.min(57)
 		.max(250)
+		// PolicyId (56 hex) + assetName (1..64 hex). Reject non-hex up front so
+		// downstream `extractPolicyId` / Blockfrost calls cannot be fed garbage.
+		.regex(/^[0-9a-fA-F]+$/, 'agentIdentifier must be a hex string (policyId + assetName)')
 		.describe('The identifier of the registration (asset) to be deregistered'),
 	network: z.nativeEnum(Network).describe('The network the registration was made on'),
 	smartContractAddress: z
 		.string()
-		.max(250)
+		.min(58)
+		.max(120)
+		.regex(/^(addr1|addr_test1)[0-9a-z]+$/, 'smartContractAddress must be a bech32 Cardano address')
 		.optional()
 		.describe('The smart contract address of the payment contract to which the registration belongs'),
 });
@@ -34,34 +40,61 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 	output: unregisterAgentSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof unregisterAgentSchemaInput>; ctx: AuthContext }) => {
 		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
-		const smartContractAddress =
-			input.smartContractAddress ??
-			(input.network == Network.Mainnet
-				? DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_MAINNET
-				: DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_PREPROD);
-		const paymentSource = await prisma.paymentSource.findUnique({
-			where: {
-				network_smartContractAddress: {
-					network: input.network,
-					smartContractAddress: smartContractAddress,
-				},
-				deletedAt: null,
+		const requestedPolicyId = extractPolicyId(input.agentIdentifier);
+		const paymentSourceInclude = {
+			PaymentSourceConfig: { select: { rpcProviderApiKey: true } },
+			HotWallets: {
+				include: { Secret: { select: { encryptedMnemonic: true } } },
+				where: { deletedAt: null },
 			},
-			include: {
-				PaymentSourceConfig: { select: { rpcProviderApiKey: true } },
-				HotWallets: {
-					include: { Secret: { select: { encryptedMnemonic: true } } },
-					where: { deletedAt: null },
+		};
+		let paymentSource =
+			input.smartContractAddress != null
+				? await prisma.paymentSource.findUnique({
+						where: {
+							network_smartContractAddress: {
+								network: input.network,
+								smartContractAddress: input.smartContractAddress,
+							},
+							deletedAt: null,
+						},
+						include: paymentSourceInclude,
+					})
+				: await prisma.paymentSource.findFirst({
+						where: {
+							network: input.network,
+							policyId: requestedPolicyId,
+							deletedAt: null,
+						},
+						include: paymentSourceInclude,
+					});
+
+		if (paymentSource == null && input.smartContractAddress == null) {
+			const smartContractAddress =
+				input.network == Network.Mainnet
+					? DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_MAINNET
+					: DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_PREPROD;
+			paymentSource = await prisma.paymentSource.findUnique({
+				where: {
+					network_smartContractAddress: {
+						network: input.network,
+						smartContractAddress: smartContractAddress,
+					},
+					deletedAt: null,
 				},
-			},
-		});
+				include: paymentSourceInclude,
+			});
+		}
 		if (paymentSource == null) {
 			throw createHttpError(404, 'Network and Address combination not supported');
 		}
 
 		const blockfrost = getBlockfrostInstance(input.network, paymentSource.PaymentSourceConfig.rpcProviderApiKey);
 
-		const { policyId } = await getRegistryScriptFromNetworkHandlerV1(paymentSource);
+		// Central adapter dispatch (ADR-0004) — assertNever-backed, so a new
+		// PaymentSourceType is a type error rather than a silent V1 fallback.
+		const adapter = getPaymentSourceContractAdapter(paymentSource.paymentSourceType);
+		const { policyId } = await adapter.getRegistryScriptFromPaymentSource(paymentSource);
 
 		const assetName = extractAssetName(input.agentIdentifier);
 		const holderWallet = await blockfrost.assetsAddresses(policyId + assetName, {
@@ -86,44 +119,96 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 		if (registryRequest == null) {
 			throw createHttpError(404, 'Registration not found');
 		}
-		const result = await prisma.registryRequest.update({
-			where: {
-				id: registryRequest.id,
-				SmartContractWallet: {
-					deletedAt: null,
-				},
-			},
-			data: {
-				state: RegistrationState.DeregistrationRequested,
-				deregistrationHotWalletId: managedHolderWallet.id,
-			},
-			include: {
-				Pricing: {
-					include: {
-						FixedPricing: {
-							include: { Amounts: { select: { unit: true, amount: true } } },
-						},
+		// Tenant scope: the requesting key must own the row, or be admin.
+		// Legacy rows (created before the requestedById column existed) have
+		// NULL and are admin-only.
+		if (!ctx.canAdmin && (registryRequest.requestedById == null || registryRequest.requestedById !== ctx.id)) {
+			throw createHttpError(403, 'You are not authorized to deregister this agent');
+		}
+		// Deregister is only valid for a settled on-chain asset that is not
+		// mid-flight in another lifecycle action. Blocking the in-flight states
+		// (Registration*/Deregistration{Requested,Initiated}/Update{Requested,
+		// Initiated}) stops a deregister from flipping a row the
+		// register/update/deregister schedulers are already driving — which would
+		// let two services act on the same asset and risk a double burn/mint.
+		const validStatesForDeregister: RegistrationState[] = [
+			RegistrationState.RegistrationConfirmed,
+			RegistrationState.UpdateConfirmed,
+			RegistrationState.UpdateFailed,
+			RegistrationState.DeregistrationFailed,
+		];
+		const result = await retryOnSerializationConflict(
+			() =>
+				prisma.$transaction(
+					async (tx) => {
+						// Re-read state INSIDE the serializable tx to close the TOCTOU
+						// window between the findUnique above and this write. A concurrent
+						// update/deregister could have advanced the row; without this
+						// re-check both schedulers could act on the same asset.
+						const current = await tx.registryRequest.findUnique({
+							where: { id: registryRequest.id },
+							select: { state: true, paymentSourceId: true },
+						});
+						if (current == null || current.paymentSourceId !== paymentSource.id) {
+							throw createHttpError(404, 'Registration not found');
+						}
+						if (!validStatesForDeregister.includes(current.state)) {
+							throw createHttpError(
+								409,
+								`Agent registration cannot be deregistered in its current state: ${current.state}`,
+							);
+						}
+						return tx.registryRequest.update({
+							where: {
+								id: registryRequest.id,
+								SmartContractWallet: {
+									deletedAt: null,
+								},
+							},
+							data: {
+								state: RegistrationState.DeregistrationRequested,
+								deregistrationHotWalletId: managedHolderWallet.id,
+							},
+							include: {
+								Pricing: {
+									include: {
+										FixedPricing: {
+											include: { Amounts: { select: { unit: true, amount: true } } },
+										},
+									},
+								},
+								SmartContractWallet: {
+									select: { walletVkey: true, walletAddress: true },
+								},
+								RecipientWallet: {
+									select: { walletVkey: true, walletAddress: true },
+								},
+								ExampleOutputs: { select: { name: true, url: true, mimeType: true } },
+								SupportedPaymentSources: {
+									select: {
+										chain: true,
+										network: true,
+										paymentSourceType: true,
+										address: true,
+									},
+								},
+								CurrentTransaction: {
+									select: {
+										txHash: true,
+										status: true,
+										confirmations: true,
+										fees: true,
+										blockHeight: true,
+										blockTime: true,
+									},
+								},
+							},
+						});
 					},
-				},
-				SmartContractWallet: {
-					select: { walletVkey: true, walletAddress: true },
-				},
-				RecipientWallet: {
-					select: { walletVkey: true, walletAddress: true },
-				},
-				ExampleOutputs: { select: { name: true, url: true, mimeType: true } },
-				CurrentTransaction: {
-					select: {
-						txHash: true,
-						status: true,
-						confirmations: true,
-						fees: true,
-						blockHeight: true,
-						blockTime: true,
-					},
-				},
-			},
-		});
+					{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
+				),
+			{ label: 'registry-deregister-route' },
+		);
 
 		return {
 			...result,
@@ -156,6 +241,7 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 							pricingType: result.Pricing.pricingType,
 						},
 			sendFundingLovelace: result.sendFundingLovelace?.toString() ?? null,
+			supportedPaymentSources: result.SupportedPaymentSources.length > 0 ? result.SupportedPaymentSources : null,
 			Tags: result.tags,
 			RecipientWallet: result.RecipientWallet,
 			CurrentTransaction: result.CurrentTransaction

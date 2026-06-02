@@ -12,7 +12,7 @@ const mockCreateInboxAgentRegistrationRequest = jest.fn() as AnyMock;
 const mockFindInboxAgentRegistrationRequests = jest.fn() as AnyMock;
 const mockCountInboxAgentRegistrationRequests = jest.fn() as AnyMock;
 
-jest.unstable_mockModule('@/utils/db', () => ({
+jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		apiKey: {
 			findUnique: mockFindApiKey,
@@ -31,7 +31,7 @@ jest.unstable_mockModule('@/utils/db', () => ({
 	},
 }));
 
-jest.unstable_mockModule('@/utils/config', () => ({
+jest.unstable_mockModule('@masumi/payment-core/config', () => ({
 	CONFIG: {
 		ENCRYPTION_KEY: '12345678901234567890',
 	},
@@ -45,7 +45,7 @@ jest.unstable_mockModule('@/utils/config', () => ({
 	},
 }));
 
-jest.unstable_mockModule('@/utils/logger', () => ({
+jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: {
 		info: jest.fn(),
 		warn: jest.fn(),
@@ -54,7 +54,7 @@ jest.unstable_mockModule('@/utils/logger', () => ({
 	},
 }));
 
-jest.unstable_mockModule('@/utils/metrics', () => ({
+jest.unstable_mockModule('@masumi/payment-core/metrics', () => ({
 	recordBusinessEndpointError: jest.fn(),
 }));
 
@@ -231,6 +231,9 @@ describe('registerInboxAgentPost', () => {
 		expect(responseMock.statusCode).toBe(200);
 		expect(mockFindRecipientWallet).not.toHaveBeenCalled();
 		expect(mockCreateInboxAgentRegistrationRequest.mock.calls[0]?.[0]?.data?.RecipientWallet).toBeUndefined();
+		expect(mockCreateInboxAgentRegistrationRequest.mock.calls[0]?.[0]?.data?.RequestedBy).toEqual({
+			connect: { id: 'api-key-1' },
+		});
 		expect(mockCreateInboxAgentRegistrationRequest.mock.calls[0]?.[0]?.data?.sendFundingLovelace).toBeUndefined();
 		expect(responseMock._getJSONData().data.RecipientWallet).toBeNull();
 		expect(responseMock._getJSONData().data.sendFundingLovelace).toBeNull();

@@ -1,5 +1,5 @@
 import { RegistrationState } from '@/generated/prisma/client';
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
 import { registerInboxAgentSchemaOutput } from './schemas';
 
 export const registryInboxEntryExample = {

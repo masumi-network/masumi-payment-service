@@ -1,5 +1,5 @@
 import { SLOT_CONFIG_NETWORK, unixTimeToEnclosingSlot } from '@meshsdk/core';
-import { SERVICE_CONSTANTS } from '@/utils/config';
+import { SERVICE_CONSTANTS } from '@masumi/payment-core/config';
 
 export type TxWindow = {
 	invalidBefore: number;
@@ -15,9 +15,17 @@ export function createTxWindow(
 		beforeBufferMs?: number;
 		afterBufferMs?: number;
 		validitySlotBuffer?: number;
-		constrainAfterMs?: number;
+		// Accept bigint OR number so callers can pass decoded-datum values
+		// directly (the contract decoder returns bigint for time fields).
+		// Number(bigint) at call sites loses precision past ~9e15 ms and
+		// silently produces NaN slots — always bigint-safe here.
+		constrainAfterMs?: number | bigint;
 		constrainSlotBuffer?: number;
 		constrainStrategy?: 'min' | 'max';
+		// When set, ensures `invalidBefore` is no earlier than the slot
+		// containing `constrainBeforeMs`. Use to satisfy Aiken
+		// `must_start_after(validity_range, X)` checks (e.g. cooldowns).
+		constrainBeforeMs?: number | bigint;
 	} = {},
 ): TxWindow {
 	const nowMs = options.nowMs ?? Date.now();
@@ -25,11 +33,31 @@ export function createTxWindow(
 	const afterBufferMs = options.afterBufferMs ?? SERVICE_CONSTANTS.TRANSACTION.timeBufferMs;
 	const validitySlotBuffer = options.validitySlotBuffer ?? SERVICE_CONSTANTS.TRANSACTION.validitySlotBuffer;
 
-	const invalidBefore = unixTimeToEnclosingSlot(nowMs - beforeBufferMs, SLOT_CONFIG_NETWORK[network]) - 1;
+	// unixTimeToEnclosingSlot expects number. Convert bigint inputs here so
+	// every callsite can pass the decoded-datum bigint as-is; values are
+	// always millisecond unix timestamps that fit comfortably in number.
+	const constrainBeforeMsNum =
+		options.constrainBeforeMs == null
+			? undefined
+			: typeof options.constrainBeforeMs === 'bigint'
+				? Number(options.constrainBeforeMs)
+				: options.constrainBeforeMs;
+	const constrainAfterMsNum =
+		options.constrainAfterMs == null
+			? undefined
+			: typeof options.constrainAfterMs === 'bigint'
+				? Number(options.constrainAfterMs)
+				: options.constrainAfterMs;
+
+	const defaultInvalidBefore = unixTimeToEnclosingSlot(nowMs - beforeBufferMs, SLOT_CONFIG_NETWORK[network]) - 1;
+	const invalidBefore =
+		constrainBeforeMsNum == null
+			? defaultInvalidBefore
+			: Math.max(defaultInvalidBefore, unixTimeToEnclosingSlot(constrainBeforeMsNum, SLOT_CONFIG_NETWORK[network]) + 1);
 	const defaultInvalidAfter =
 		unixTimeToEnclosingSlot(nowMs + afterBufferMs, SLOT_CONFIG_NETWORK[network]) + validitySlotBuffer;
 
-	if (options.constrainAfterMs == null) {
+	if (constrainAfterMsNum == null) {
 		return {
 			invalidBefore,
 			invalidAfter: defaultInvalidAfter,
@@ -37,7 +65,7 @@ export function createTxWindow(
 	}
 
 	const constrainedInvalidAfter =
-		unixTimeToEnclosingSlot(options.constrainAfterMs + afterBufferMs, SLOT_CONFIG_NETWORK[network]) +
+		unixTimeToEnclosingSlot(constrainAfterMsNum + afterBufferMs, SLOT_CONFIG_NETWORK[network]) +
 		(options.constrainSlotBuffer ?? SERVICE_CONSTANTS.TRANSACTION.resultTimeSlotBuffer);
 
 	return {

@@ -1,4 +1,4 @@
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
 import { lowBalanceSummarySchema } from '@/routes/api/wallet/low-balance.schemas';
 
 const fundDistributionConfigSchema = z.object({

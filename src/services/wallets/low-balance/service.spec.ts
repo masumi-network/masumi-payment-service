@@ -34,10 +34,15 @@ const LowBalanceStatus = {
 	Healthy: 'Healthy',
 } as const;
 
+const PaymentSourceType = {
+	Web3CardanoV1: 'Web3CardanoV1',
+	Web3CardanoV2: 'Web3CardanoV2',
+} as const;
+
 jest.unstable_mockModule('@/generated/prisma/client', () => ({
 	HotWalletType,
 	Network,
-	LowBalanceStatus,
+	PaymentSourceType,
 	FundDistributionPriority: { Warning: 'Warning', Critical: 'Critical' },
 	FundDistributionStatus: { Pending: 'Pending', Submitted: 'Submitted', Confirmed: 'Confirmed', Failed: 'Failed' },
 	TransactionStatus: { Pending: 'Pending', Submitted: 'Submitted', Confirmed: 'Confirmed' },
@@ -47,7 +52,7 @@ jest.unstable_mockModule('@/generated/prisma/enums', () => ({
 	LowBalanceStatus,
 }));
 
-jest.unstable_mockModule('@/utils/db', () => ({
+jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		$transaction: async (
 			callback: (tx: { hotWalletLowBalanceRule: { updateMany: typeof mockUpdateMany } }) => Promise<unknown>,
@@ -70,7 +75,7 @@ jest.unstable_mockModule('@/utils/db', () => ({
 	},
 }));
 
-jest.unstable_mockModule('@/utils/config', () => ({
+jest.unstable_mockModule('@masumi/payment-core/config', () => ({
 	CONFIG: {
 		LOW_BALANCE_DEFAULT_RULES_MAINNET: [],
 		LOW_BALANCE_DEFAULT_RULES_PREPROD: [],
@@ -86,7 +91,7 @@ jest.unstable_mockModule('@/services/wallets/fund-distribution', () => ({
 	},
 }));
 
-jest.unstable_mockModule('@/utils/logger', () => ({
+jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: {
 		info: mockLoggerInfo,
 		warn: mockLoggerWarn,
@@ -98,7 +103,7 @@ jest.unstable_mockModule('@/utils/logs', () => ({
 	logWarn: mockLogWarn,
 }));
 
-jest.unstable_mockModule('@/utils/metrics', () => ({
+jest.unstable_mockModule('@masumi/payment-core/metrics', () => ({
 	recordWalletLowBalanceAlert: mockRecordWalletLowBalanceAlert,
 }));
 
@@ -172,6 +177,7 @@ describe('WalletLowBalanceMonitorService', () => {
 		PaymentSource: {
 			id: 'payment-source-1',
 			network: Network.Preprod,
+			paymentSourceType: PaymentSourceType.Web3CardanoV1,
 		},
 		LowBalanceRules: [
 			{
@@ -299,6 +305,7 @@ describe('WalletLowBalanceMonitorService', () => {
 			asset_unit: 'lovelace',
 			wallet_type: HotWalletType.Purchasing,
 			check_source: 'interval_check',
+			payment_source_type: PaymentSourceType.Web3CardanoV1,
 		});
 	});
 
@@ -321,6 +328,7 @@ describe('WalletLowBalanceMonitorService', () => {
 			asset_unit: 'lovelace',
 			wallet_type: HotWalletType.Purchasing,
 			check_source: 'submission',
+			payment_source_type: PaymentSourceType.Web3CardanoV1,
 		});
 	});
 

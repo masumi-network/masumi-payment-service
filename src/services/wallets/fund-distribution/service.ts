@@ -4,11 +4,12 @@ import {
 	FundDistributionStatus,
 	HotWalletType,
 	LowBalanceStatus,
+	PaymentSourceType,
 	TransactionStatus,
 } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
-import { CONSTANTS } from '@/utils/config';
-import { logger } from '@/utils/logger';
+import { prisma } from '@masumi/payment-core/db';
+import { CONSTANTS } from '@masumi/payment-core/config';
+import { logger } from '@masumi/payment-core/logger';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { Mutex } from 'async-mutex';
 import { withJobLock } from '@/services/shared/job-runner';
@@ -21,6 +22,7 @@ type FundWalletContext = {
 	walletVkey: string;
 	lowBalanceRuleId: string;
 	paymentSourceId: string;
+	paymentSourceType: PaymentSourceType;
 	network: string;
 	rpcProviderApiKey: string;
 	encryptedMnemonic: string;
@@ -58,6 +60,7 @@ async function getFundWalletForPaymentSource(paymentSourceId: string): Promise<F
 			PaymentSource: {
 				select: {
 					network: true,
+					paymentSourceType: true,
 					PaymentSourceConfig: { select: { rpcProviderApiKey: true } },
 				},
 			},
@@ -87,6 +90,7 @@ async function getFundWalletForPaymentSource(paymentSourceId: string): Promise<F
 		walletVkey: fundWallet.walletVkey,
 		lowBalanceRuleId: fundWallet.LowBalanceRules[0]?.id ?? '',
 		paymentSourceId: fundWallet.paymentSourceId,
+		paymentSourceType: fundWallet.PaymentSource.paymentSourceType,
 		network: fundWallet.PaymentSource.network,
 		rpcProviderApiKey: fundWallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
 		encryptedMnemonic: fundWallet.Secret.encryptedMnemonic,
@@ -143,6 +147,7 @@ async function processRequestsForFundWallet(
 			walletVkey: fundWallet.walletVkey,
 			walletType: HotWalletType.Funding,
 			paymentSourceId: fundWallet.paymentSourceId,
+			paymentSourceType: fundWallet.paymentSourceType,
 			network: fundWallet.network as 'Mainnet' | 'Preprod',
 			assetUnit: 'lovelace',
 			thresholdAmount: '0',
@@ -594,7 +599,7 @@ export class FundDistributionService {
 			if (!rpcKey) continue;
 
 			const { createMeshProvider } = await import('@/services/shared/provider-factory');
-			const provider = createMeshProvider(rpcKey);
+			const provider = await createMeshProvider(rpcKey);
 
 			// Deduplicate by txHash — batched requests share one hash, so one Blockfrost call covers all
 			const byTxHash = new Map<string, typeof requests>();
@@ -692,6 +697,7 @@ export class FundDistributionService {
 				PaymentSource: {
 					select: {
 						network: true,
+						paymentSourceType: true,
 						PaymentSourceConfig: { select: { rpcProviderApiKey: true } },
 					},
 				},
@@ -721,6 +727,7 @@ export class FundDistributionService {
 			walletVkey: wallet.walletVkey,
 			lowBalanceRuleId: wallet.LowBalanceRules[0]?.id ?? '',
 			paymentSourceId: wallet.paymentSourceId,
+			paymentSourceType: wallet.PaymentSource.paymentSourceType,
 			network: wallet.PaymentSource.network,
 			rpcProviderApiKey: wallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
 			encryptedMnemonic: wallet.Secret.encryptedMnemonic,

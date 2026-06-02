@@ -15,7 +15,7 @@ const mockFindPaymentSource = jest.fn() as AnyMock;
 const mockSendTestWebhook = jest.fn() as AnyMock;
 const mockAssertWebhookDestinationAllowed = jest.fn() as AnyMock;
 
-jest.unstable_mockModule('@/utils/db', () => ({
+jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		apiKey: {
 			findUnique: mockFindApiKey,
@@ -50,7 +50,7 @@ jest.unstable_mockModule('@/utils/security/webhook-secrets', () => ({
 	),
 }));
 
-jest.unstable_mockModule('@/utils/logger', () => ({
+jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: {
 		info: jest.fn(),
 		warn: jest.fn(),
@@ -59,7 +59,7 @@ jest.unstable_mockModule('@/utils/logger', () => ({
 	},
 }));
 
-jest.unstable_mockModule('@/utils/config', () => ({
+jest.unstable_mockModule('@masumi/payment-core/config', () => ({
 	CONFIG: {
 		ENCRYPTION_KEY: '12345678901234567890',
 		OTEL_SERVICE_NAME: 'masumi-test-service',

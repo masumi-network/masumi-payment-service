@@ -1,16 +1,18 @@
 import {
 	OnChainState,
 	PaymentAction,
+	PaymentErrorType,
 	PaymentSource,
 	PaymentSourceConfig,
 	Prisma,
+	PurchaseErrorType,
 	PurchasingAction,
 } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
-import { logger } from '@/utils/logger';
+import { prisma } from '@masumi/payment-core/db';
+import { logger } from '@masumi/payment-core/logger';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { Mutex } from 'async-mutex';
-import { CONFIG, CONSTANTS } from '@/utils/config';
+import { CONFIG, CONSTANTS } from '@masumi/payment-core/config';
 import { extractOnChainTransactionData } from './util';
 import { getExtendedTxInformation, getTxsFromCardanoAfterSpecificTx } from './blockchain';
 import {
@@ -20,6 +22,8 @@ import {
 	UpdateTransactionInput,
 } from './tx';
 import { createApiClient, withJobLock } from '@/services/shared';
+import { retryOnSerializationConflict } from '@/utils/db/retry';
+import { withSerializableSlotRetry } from '@/utils/db/serializable-semaphore';
 
 type PaymentSourceWithConfig = PaymentSource & {
 	PaymentSourceConfig: PaymentSourceConfig;
@@ -117,8 +121,29 @@ async function processPaymentSource(
 	}
 }
 
+// Shared timeout predicate. A request is "timed out" when:
+//   - onChainState is still null (buyer never locked funds on chain), AND
+//   - payByTime has passed by more than 5 minutes, AND
+//   - the request is either still in its initial waiting state
+//     (FundsLockingRequested / WaitingForExternalAction) OR has already
+//     been parked in an error state.
+//
+// We use a 5-minute grace after payByTime to avoid racing late blockchain
+// confirmations: a buyer's lock tx may have been broadcast right at the
+// deadline and is still propagating to Blockfrost. The grace gives tx-sync
+// a chance to observe it before we declare the request dead.
+const TIMEOUT_GRACE_MS = 1000 * 60 * 5;
+
 async function invalidateTimedOutPurchaseRequests() {
-	const failTimedOutPurchaseRequests = await prisma.purchaseRequest.updateMany({
+	const cutoff = Date.now() - TIMEOUT_GRACE_MS;
+	// Per-row update so we can also advance NextAction (a relation —
+	// `updateMany` can only touch scalars). Previously we only flipped
+	// `onChainState` and left NextAction stuck at FundsLockingRequested,
+	// which made the row look "still pending" in dashboards and to
+	// operators reading the request audit trail. Batch-payments queries
+	// already filter `onChainState: null` so they never re-pick these
+	// rows — but the operator-visible state was misleading.
+	const timedOut = await prisma.purchaseRequest.findMany({
 		where: {
 			OR: [
 				{
@@ -126,28 +151,61 @@ async function invalidateTimedOutPurchaseRequests() {
 					NextAction: {
 						requestedAction: PurchasingAction.FundsLockingRequested,
 					},
-					payByTime: { lt: Date.now() - 1000 * 60 * 5 },
+					payByTime: { lt: cutoff },
 				},
 				{
 					onChainState: null,
 					NextAction: {
 						errorType: { not: null },
 					},
-					payByTime: { lt: Date.now() - 1000 * 60 * 5 },
+					payByTime: { lt: cutoff },
 				},
 			],
 		},
-		data: {
-			onChainState: OnChainState.FundsOrDatumInvalid,
-		},
+		select: { id: true, nextActionId: true, payByTime: true },
 	});
+
+	for (const row of timedOut) {
+		try {
+			await retryOnSerializationConflict(
+				() =>
+					prisma.purchaseRequest.update({
+						where: { id: row.id, nextActionId: row.nextActionId },
+						data: {
+							onChainState: OnChainState.FundsOrDatumInvalid,
+							ActionHistory: { connect: { id: row.nextActionId } },
+							NextAction: {
+								create: {
+									requestedAction: PurchasingAction.WaitingForManualAction,
+									errorType: PurchaseErrorType.Unknown,
+									errorNote: `Purchase request payByTime (${row.payByTime?.toString() ?? 'unset'}) passed without on-chain lock; no FundsLocked tx observed within ${TIMEOUT_GRACE_MS / 1000}s grace.`,
+								},
+							},
+						},
+					}),
+				{ label: 'invalidate-timed-out-purchase' },
+			);
+		} catch (err) {
+			// Row may have advanced concurrently (tx-sync observed a late
+			// chain confirmation, batch service resubmitted, etc.) — the
+			// `nextActionId` guard rejects with P2025 in that case. Log
+			// and skip; the row is no longer ours to invalidate.
+			logger.warn('invalidateTimedOutPurchaseRequests: per-row update skipped (concurrent advance)', {
+				purchaseRequestId: row.id,
+				error: err instanceof Error ? err.message : String(err),
+			});
+		}
+	}
+
 	logger.info('Failed timed out purchase requests', {
-		failTimedOutPurchaseRequests: failTimedOutPurchaseRequests,
+		count: timedOut.length,
+		ids: timedOut.map((r) => r.id),
 	});
 }
 
 async function invalidateTimedOutPaymentRequests() {
-	const failTimedOutPaymentRequests = await prisma.paymentRequest.updateMany({
+	const cutoff = Date.now() - TIMEOUT_GRACE_MS;
+	const timedOut = await prisma.paymentRequest.findMany({
 		where: {
 			OR: [
 				{
@@ -155,23 +213,51 @@ async function invalidateTimedOutPaymentRequests() {
 					NextAction: {
 						requestedAction: PaymentAction.WaitingForExternalAction,
 					},
-					payByTime: { lt: Date.now() - 1000 * 60 * 5 },
+					payByTime: { lt: cutoff },
 				},
 				{
 					onChainState: null,
 					NextAction: {
 						errorType: { not: null },
 					},
-					payByTime: { lt: Date.now() - 1000 * 60 * 5 },
+					payByTime: { lt: cutoff },
 				},
 			],
 		},
-		data: {
-			onChainState: OnChainState.FundsOrDatumInvalid,
-		},
+		select: { id: true, nextActionId: true, payByTime: true },
 	});
+
+	for (const row of timedOut) {
+		try {
+			await retryOnSerializationConflict(
+				() =>
+					prisma.paymentRequest.update({
+						where: { id: row.id, nextActionId: row.nextActionId },
+						data: {
+							onChainState: OnChainState.FundsOrDatumInvalid,
+							ActionHistory: { connect: { id: row.nextActionId } },
+							NextAction: {
+								create: {
+									requestedAction: PaymentAction.WaitingForManualAction,
+									errorType: PaymentErrorType.Unknown,
+									errorNote: `Payment request payByTime (${row.payByTime?.toString() ?? 'unset'}) passed without on-chain lock; no FundsLocked tx observed within ${TIMEOUT_GRACE_MS / 1000}s grace.`,
+								},
+							},
+						},
+					}),
+				{ label: 'invalidate-timed-out-payment' },
+			);
+		} catch (err) {
+			logger.warn('invalidateTimedOutPaymentRequests: per-row update skipped (concurrent advance)', {
+				paymentRequestId: row.id,
+				error: err instanceof Error ? err.message : String(err),
+			});
+		}
+	}
+
 	logger.info('Failed timed out payment requests', {
-		failTimedOutPaymentRequests: failTimedOutPaymentRequests,
+		count: timedOut.length,
+		ids: timedOut.map((r) => r.id),
 	});
 }
 
@@ -193,7 +279,15 @@ async function processTransactionData(
 			paymentContract.PaymentSourceConfig.rpcProviderApiKey,
 		);
 	} else if (extractedData.type == 'Transaction') {
-		await updateTransaction(paymentContract, extractedData, blockfrost, tx);
+		// Multi-redeemer batch txs produce N entries — one per script input
+		// consumed in this tx. Each entry maps to exactly one PaymentRequest
+		// / PurchaseRequest row via its decoded datum's blockchainIdentifier.
+		// Process them sequentially: each updateTransaction is independent at
+		// the row level so order is irrelevant, but the sequential await
+		// keeps the per-entry Prisma transactions from racing each other.
+		for (const entry of extractedData.entries) {
+			await updateTransaction(paymentContract, entry, blockfrost, tx);
+		}
 	}
 }
 async function updateSyncCheckpoint(
@@ -239,52 +333,59 @@ async function unlockPaymentSources(paymentContractIds: string[]) {
 }
 
 async function queryAndLockPaymentSourcesForSync() {
-	return await prisma.$transaction(
-		async (prisma) => {
-			const paymentContracts = await prisma.paymentSource.findMany({
-				where: {
-					deletedAt: null,
-					disableSyncAt: null,
-					OR: [
-						{ syncInProgress: false },
-						{
-							syncInProgress: true,
-							updatedAt: {
-								lte: new Date(
-									Date.now() -
-										//3 minutes
-										CONFIG.SYNC_LOCK_TIMEOUT_INTERVAL,
-								),
-							},
+	// Gate Serializable $transaction through the shared semaphore so the pg
+	// connection pool isn't exhausted under scheduler fan-out. See
+	// `src/utils/db/serializable-semaphore.ts`.
+	return await withSerializableSlotRetry(
+		() =>
+			prisma.$transaction(
+				async (prisma) => {
+					const paymentContracts = await prisma.paymentSource.findMany({
+						where: {
+							deletedAt: null,
+							disableSyncAt: null,
+							OR: [
+								{ syncInProgress: false },
+								{
+									syncInProgress: true,
+									updatedAt: {
+										lte: new Date(
+											Date.now() -
+												//3 minutes
+												CONFIG.SYNC_LOCK_TIMEOUT_INTERVAL,
+										),
+									},
+								},
+							],
 						},
-					],
-				},
-				include: {
-					PaymentSourceConfig: true,
-				},
-			});
-			if (paymentContracts.length == 0) {
-				logger.warn(
-					'No payment contracts found, skipping update. It could be that an other instance is already syncing',
-				);
-				return null;
-			}
+						include: {
+							PaymentSourceConfig: true,
+						},
+					});
+					if (paymentContracts.length == 0) {
+						logger.warn(
+							'No payment contracts found, skipping update. It could be that an other instance is already syncing',
+						);
+						return null;
+					}
 
-			await prisma.paymentSource.updateMany({
-				where: {
-					id: { in: paymentContracts.map((x) => x.id) },
-					deletedAt: null,
+					await prisma.paymentSource.updateMany({
+						where: {
+							id: { in: paymentContracts.map((x) => x.id) },
+							deletedAt: null,
+						},
+						data: { syncInProgress: true },
+					});
+					return paymentContracts.map((x) => {
+						return { ...x, syncInProgress: true };
+					});
 				},
-				data: { syncInProgress: true },
-			});
-			return paymentContracts.map((x) => {
-				return { ...x, syncInProgress: true };
-			});
-		},
-		{
-			isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-			timeout: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
-			maxWait: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
-		},
+				{
+					isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+					timeout: 30_000,
+					maxWait: 30_000,
+				},
+			),
+		{ label: 'tx-sync-query-and-lock-payment-sources' },
 	);
 }

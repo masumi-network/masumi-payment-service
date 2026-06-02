@@ -1,9 +1,9 @@
 import { webhookQueueService } from './queue.service';
-import { logger } from '@/utils/logger';
-import { prisma } from '@/utils/db';
+import { logger } from '@masumi/payment-core/logger';
+import { prisma } from '@masumi/payment-core/db';
 import { WebhookEventType } from '@/generated/prisma/client';
 import type { WebhookPayloadDataByEvent } from '@/types/webhook-payloads';
-import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 
 type PaymentWebhookEvent = 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_ERROR';
 type PurchaseWebhookEvent = 'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR';
@@ -143,6 +143,7 @@ class WebhookEventsService {
 			let formattedData: PurchaseWebhookData | PaymentWebhookData;
 			let blockchainIdentifier: string;
 			let paymentSourceId: string;
+			let paymentSourceType: string;
 
 			if (entityType === 'purchase') {
 				const purchase = await this.queryPurchaseForWebhook(entityId);
@@ -155,6 +156,7 @@ class WebhookEventsService {
 				formattedData = this.formatPurchaseForWebhook(purchase);
 				blockchainIdentifier = purchase.blockchainIdentifier;
 				paymentSourceId = purchase.PaymentSource.id;
+				paymentSourceType = purchase.PaymentSource.paymentSourceType;
 			} else {
 				const payment = await this.queryPaymentForWebhook(entityId);
 				if (!payment) {
@@ -166,6 +168,7 @@ class WebhookEventsService {
 				formattedData = this.formatPaymentForWebhook(payment);
 				blockchainIdentifier = payment.blockchainIdentifier;
 				paymentSourceId = payment.PaymentSource.id;
+				paymentSourceType = payment.PaymentSource.paymentSourceType;
 			}
 
 			await webhookQueueService.queueWebhook(eventType, formattedData, blockchainIdentifier, paymentSourceId);
@@ -173,6 +176,7 @@ class WebhookEventsService {
 			logger.info(`${String(eventType)} webhook triggered`, {
 				[`${entityType}Id`]: entityId,
 				blockchainIdentifier,
+				paymentSourceType,
 			});
 		} catch (error) {
 			logger.error(`Failed to trigger ${String(eventType)} webhook`, {

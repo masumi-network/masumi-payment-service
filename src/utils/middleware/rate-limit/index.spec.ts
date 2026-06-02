@@ -1,7 +1,7 @@
 import { describe, expect, it } from '@jest/globals';
 import { testMiddleware } from 'express-zod-api';
 import { Network } from '@/generated/prisma/client';
-import type { AuthContext } from '@/utils/middleware/auth-middleware';
+import type { AuthContext } from '@masumi/payment-core/auth-middleware';
 import { createAuthenticatedRateLimitMiddleware } from './index';
 
 const makeAuthContext = (overrides: Partial<AuthContext> = {}): AuthContext => ({
