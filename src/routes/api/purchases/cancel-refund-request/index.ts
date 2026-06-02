@@ -1,11 +1,12 @@
-import { z } from '@/utils/zod-openapi';
-import { Network, PurchasingAction, OnChainState } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { z } from '@masumi/payment-core/zod';
+import { Network, PaymentSourceType, PurchasingAction, OnChainState, Prisma } from '@/generated/prisma/client';
+import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
-import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { purchaseResponseSchema } from '@/routes/api/purchases';
-import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
+import { lovelaceToAdaNumberSafe } from '@/utils/lovelace';
 import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
 import { assertWalletInScope } from '@/utils/shared/wallet-scope';
 
@@ -54,74 +55,106 @@ export const cancelPurchaseRefundRequestPost = payAuthenticatedEndpointFactory.b
 					txHash: { not: null },
 				},
 			},
+			include: {
+				PaymentSource: {
+					select: {
+						paymentSourceType: true,
+					},
+				},
+			},
 		});
 		if (purchase == null) {
 			throw createHttpError(404, 'Purchase not found or in invalid state');
 		}
 		assertWalletInScope(ctx.walletScopeIds, purchase.smartContractWalletId);
 
+		// Identity check must precede any state-shape 400 so an unauthorized
+		// caller cannot infer the V2/state of a purchase by status-code timing.
 		if (purchase.requestedById != ctx.id && !ctx.canAdmin) {
 			throw createHttpError(403, 'You are not authorized to cancel a refund request for this purchase');
 		}
 
-		const result = await prisma.purchaseRequest.update({
-			where: { id: purchase.id },
-			data: {
-				ActionHistory: {
-					connect: {
-						id: purchase.nextActionId,
+		const requestedAction =
+			purchase.PaymentSource.paymentSourceType === PaymentSourceType.Web3CardanoV2
+				? PurchasingAction.AuthorizeWithdrawalRequested
+				: PurchasingAction.UnSetRefundRequestedRequested;
+
+		if (
+			purchase.PaymentSource.paymentSourceType === PaymentSourceType.Web3CardanoV2 &&
+			purchase.onChainState !== OnChainState.Disputed
+		) {
+			throw createHttpError(400, 'Authorize withdrawal is only available for disputed V2 purchases');
+		}
+
+		// Optimistic-lock guard via nextActionId — see submit-result/index.ts
+		// for the full rationale.
+		let result;
+		try {
+			result = await prisma.purchaseRequest.update({
+				where: { id: purchase.id, nextActionId: purchase.nextActionId },
+				data: {
+					ActionHistory: {
+						connect: {
+							id: purchase.nextActionId,
+						},
+					},
+					NextAction: {
+						create: {
+							requestedAction,
+						},
 					},
 				},
-				NextAction: {
-					create: {
-						requestedAction: PurchasingAction.UnSetRefundRequestedRequested,
+				include: {
+					NextAction: {
+						select: {
+							id: true,
+							requestedAction: true,
+							errorType: true,
+							errorNote: true,
+						},
 					},
-				},
-			},
-			include: {
-				NextAction: {
-					select: {
-						id: true,
-						requestedAction: true,
-						errorType: true,
-						errorNote: true,
+					CurrentTransaction: {
+						select: {
+							id: true,
+							createdAt: true,
+							updatedAt: true,
+							txHash: true,
+							status: true,
+							fees: true,
+							blockHeight: true,
+							blockTime: true,
+							previousOnChainState: true,
+							newOnChainState: true,
+							confirmations: true,
+						},
 					},
-				},
-				CurrentTransaction: {
-					select: {
-						id: true,
-						createdAt: true,
-						updatedAt: true,
-						txHash: true,
-						status: true,
-						fees: true,
-						blockHeight: true,
-						blockTime: true,
-						previousOnChainState: true,
-						newOnChainState: true,
-						confirmations: true,
+					PaidFunds: { select: { id: true, amount: true, unit: true } },
+					PaymentSource: {
+						select: {
+							id: true,
+							network: true,
+							paymentSourceType: true,
+							policyId: true,
+							smartContractAddress: true,
+						},
 					},
-				},
-				PaidFunds: { select: { id: true, amount: true, unit: true } },
-				PaymentSource: {
-					select: {
-						id: true,
-						network: true,
-						policyId: true,
-						smartContractAddress: true,
+					SellerWallet: { select: { id: true, walletVkey: true } },
+					SmartContractWallet: {
+						where: { deletedAt: null },
+						select: { id: true, walletVkey: true, walletAddress: true },
 					},
+					WithdrawnForSeller: {
+						select: { id: true, amount: true, unit: true },
+					},
+					WithdrawnForBuyer: { select: { id: true, amount: true, unit: true } },
 				},
-				SellerWallet: { select: { id: true, walletVkey: true } },
-				SmartContractWallet: {
-					where: { deletedAt: null },
-					select: { id: true, walletVkey: true, walletAddress: true },
-				},
-				WithdrawnForSeller: {
-					select: { id: true, amount: true, unit: true },
-				},
-				WithdrawnForBuyer: { select: { id: true, amount: true, unit: true } },
-			},
-		});
+			});
+		} catch (err) {
+			if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
+				throw createHttpError(409, 'Purchase state changed concurrently; retry against the new state');
+			}
+			throw err;
+		}
 
 		const decoded = decodeBlockchainIdentifier(result.blockchainIdentifier);
 
@@ -129,8 +162,10 @@ export const cancelPurchaseRefundRequestPost = payAuthenticatedEndpointFactory.b
 			...result,
 			...transformPurchaseGetTimestamps(result),
 			...transformPurchaseGetAmounts(result),
-			totalBuyerCardanoFees: Number(result.totalBuyerCardanoFees.toString()) / 1_000_000,
-			totalSellerCardanoFees: Number(result.totalSellerCardanoFees.toString()) / 1_000_000,
+			// safe: response schema is z.number() (ADA). lovelaceToAdaNumberSafe
+			// throws if the lovelace value exceeds Number.MAX_SAFE_INTEGER.
+			totalBuyerCardanoFees: lovelaceToAdaNumberSafe(result.totalBuyerCardanoFees),
+			totalSellerCardanoFees: lovelaceToAdaNumberSafe(result.totalSellerCardanoFees),
 			agentIdentifier: decoded?.agentIdentifier ?? null,
 			CurrentTransaction: result.CurrentTransaction
 				? {

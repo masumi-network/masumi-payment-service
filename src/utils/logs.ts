@@ -1,5 +1,5 @@
 import { logs, SeverityNumber } from '@opentelemetry/api-logs';
-import { logger as winstonLogger } from '@/utils/logger/';
+import { logger as winstonLogger } from '@masumi/payment-core/logger';
 
 // Fetch logger lazily so it uses the provider registered after SDK start
 const getLogger = () => logs.getLogger('masumi-payment-logger', '1.0.0');

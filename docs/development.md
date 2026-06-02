@@ -62,6 +62,16 @@ The `.editorconfig` file at the project root ensures your editor applies these s
 
 - [**prisma/\*\***](../prisma/): Database generation and ORM related files
 
+## API Pagination
+
+List endpoints that accept `cursorId` intentionally use inclusive cursor semantics. When a request includes a cursor,
+the response may include the cursor row again. This keeps pagination and polling callers idempotent across retries and
+concurrent updates. Clients should de-duplicate by `id` when appending pages or use the last returned `id` as the next
+cursor according to the endpoint contract.
+
+Do not add Prisma `skip: 1` to these list queries unless the API contract is intentionally changed and downstream
+clients are updated.
+
 ## Testing
 
 This project uses Jest as the testing framework. Here's how you can run tests:

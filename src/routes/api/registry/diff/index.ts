@@ -1,12 +1,12 @@
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
 import { ez } from 'express-zod-api';
-import { prisma } from '@/utils/db';
-import { Network, Prisma } from '@/generated/prisma/client';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { prisma } from '@masumi/payment-core/db';
+import { Network, PaymentSourceType, Prisma } from '@/generated/prisma/client';
+import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import createHttpError from 'http-errors';
 import { queryRegistryRequestSchemaOutput } from '@/routes/api/registry';
 import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
-import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
+import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { serializeRegistryEntriesResponse } from '../serializers';
 
 const registryDiffLastUpdateSchema = ez.dateIn();
@@ -28,6 +28,7 @@ export const queryRegistryDiffSchemaInput = z.object({
 		.optional()
 		.nullable()
 		.describe('The smart contract address of the payment source'),
+	filterPaymentSourceType: z.nativeEnum(PaymentSourceType).optional().describe('Filter by payment source type'),
 });
 
 function buildRegistryDiffWhere({
@@ -35,12 +36,14 @@ function buildRegistryDiffWhere({
 	cursorId,
 	network,
 	filterSmartContractAddress,
+	filterPaymentSourceType,
 	walletScopeIds,
 }: {
 	lastUpdate: Date;
 	cursorId?: string;
 	network: Prisma.PaymentSourceWhereInput['network'];
 	filterSmartContractAddress?: string | null;
+	filterPaymentSourceType?: PaymentSourceType;
 	walletScopeIds: string[] | null;
 }): Prisma.RegistryRequestWhereInput {
 	const base: Prisma.RegistryRequestWhereInput = {
@@ -48,6 +51,7 @@ function buildRegistryDiffWhere({
 			network,
 			deletedAt: null,
 			smartContractAddress: filterSmartContractAddress ?? undefined,
+			paymentSourceType: filterPaymentSourceType,
 		},
 		SmartContractWallet: { deletedAt: null },
 		...buildManagedHolderWalletScopeFilter(walletScopeIds),
@@ -77,6 +81,7 @@ export const queryRegistryDiffGet = readAuthenticatedEndpointFactory.build({
 				cursorId: input.cursorId,
 				network: input.network,
 				filterSmartContractAddress: input.filterSmartContractAddress,
+				filterPaymentSourceType: input.filterPaymentSourceType,
 				walletScopeIds: ctx.walletScopeIds,
 			}),
 			orderBy: [{ registrationStateLastChangedAt: 'asc' }, { id: 'asc' }],
@@ -110,6 +115,14 @@ export const queryRegistryDiffGet = readAuthenticatedEndpointFactory.build({
 						name: true,
 						url: true,
 						mimeType: true,
+					},
+				},
+				SupportedPaymentSources: {
+					select: {
+						chain: true,
+						network: true,
+						paymentSourceType: true,
+						address: true,
 					},
 				},
 			},

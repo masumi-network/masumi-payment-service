@@ -22,7 +22,7 @@ jest.unstable_mockModule('@opentelemetry/api-logs', () => ({
 	},
 }));
 
-jest.unstable_mockModule('@/utils/logger', () => ({
+jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: {
 		debug: mockWinstonDebug,
 		info: mockWinstonInfo,

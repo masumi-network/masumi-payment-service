@@ -13,7 +13,7 @@ const mockAssetsAddresses = jest.fn() as AnyMock;
 const mockResolvePaymentKeyHash = jest.fn() as AnyMock;
 const mockGetRegistryScript = jest.fn() as AnyMock;
 
-jest.unstable_mockModule('@/utils/db', () => ({
+jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		apiKey: {
 			findUnique: mockFindApiKey,
@@ -28,7 +28,7 @@ jest.unstable_mockModule('@/utils/db', () => ({
 	},
 }));
 
-jest.unstable_mockModule('@/utils/config', () => ({
+jest.unstable_mockModule('@masumi/payment-core/config', () => ({
 	CONFIG: {
 		ENCRYPTION_KEY: '12345678901234567890',
 	},
@@ -43,7 +43,7 @@ jest.unstable_mockModule('@/utils/config', () => ({
 	},
 }));
 
-jest.unstable_mockModule('@/utils/logger', () => ({
+jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: {
 		info: jest.fn(),
 		warn: jest.fn(),
@@ -59,6 +59,7 @@ jest.unstable_mockModule('@/utils/blockfrost', () => ({
 }));
 
 jest.unstable_mockModule('@/utils/generator/contract-generator', () => ({
+	getRegistryScriptFromNetworkHandler: mockGetRegistryScript,
 	getRegistryScriptFromNetworkHandlerV1: mockGetRegistryScript,
 }));
 
@@ -70,17 +71,17 @@ jest.unstable_mockModule('@/generated/prisma/client', async () => await import('
 
 const { unregisterInboxAgentPost } = await import('./index');
 
-function asApiKey() {
+function asApiKey({ id = 'api-key-1', canAdmin = true }: { id?: string; canAdmin?: boolean } = {}) {
 	return {
-		id: 'api-key-1',
+		id,
 		canRead: true,
 		canPay: true,
-		canAdmin: true,
+		canAdmin,
 		status: ApiKeyStatus.Active,
 		token: null,
 		tokenHash: null,
 		usageLimited: false,
-		networkLimit: [],
+		networkLimit: canAdmin ? [] : [Network.Preprod],
 		walletScopeEnabled: false,
 		WalletScopes: [],
 	};
@@ -177,6 +178,29 @@ describe('unregisterInboxAgentPost', () => {
 			walletAddress: 'addr_test1recipientwallet',
 		});
 		expect(responseMock._getJSONData().data.sendFundingLovelace).toBe('7500000');
+	});
+
+	it('rejects non-admin deregistration for inbox rows owned by another API key', async () => {
+		mockFindApiKey.mockResolvedValue(asApiKey({ canAdmin: false }));
+		mockFindInboxRequest.mockResolvedValue({
+			id: 'inbox-request-1',
+			requestedById: 'other-api-key',
+		});
+
+		const { responseMock } = await testEndpoint({
+			endpoint: unregisterInboxAgentPost,
+			requestProps: {
+				method: 'POST',
+				headers: { token: 'valid' },
+				body: {
+					agentIdentifier: 'p'.repeat(56) + 'asset',
+					network: Network.Preprod,
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(403);
+		expect(mockUpdateInboxRequest).not.toHaveBeenCalled();
 	});
 
 	it('returns 409 when the asset is no longer held by a managed wallet', async () => {

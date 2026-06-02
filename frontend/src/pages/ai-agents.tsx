@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { Plus, Trash2, ExternalLink, ShieldCheck } from 'lucide-react';
+import { Plus, Pencil, Trash2, ExternalLink, ShieldCheck, ArrowUpRight } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 
@@ -37,6 +37,8 @@ import { extractApiErrorMessage } from '@/lib/api-error';
 import { useRegistryEntryByAgentIdentifier } from '@/lib/queries/useRegistryEntryByAgentIdentifier';
 import { useAgentDetailsDialog } from '@/lib/contexts/AgentDetailsDialogContext';
 import { findPaymentSourceWalletByVkey } from '@/lib/wallet-lookup';
+import { isV2PaymentSource } from '@/lib/payment-source-type';
+import { MigrateAgentsDialog } from '@/components/ai-agents/MigrateAgentsDialog';
 type AIAgent = RegistryEntry;
 
 const getHoldingWallet = (agent: AIAgent) => agent.RecipientWallet ?? agent.SmartContractWallet;
@@ -71,6 +73,7 @@ export default function AIAgentsPage() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [isRegisterDialogOpen, setIsRegisterDialogOpen] = useState(false);
+  const [isMigrateDialogOpen, setIsMigrateDialogOpen] = useState(false);
   const debouncedSearchQuery = useDebouncedValue(searchQuery);
 
   const [activeTab, setActiveTab] = useState('All');
@@ -143,6 +146,17 @@ export default function AIAgentsPage() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedAgentToDelete, setSelectedAgentToDelete] = useState<AIAgent | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [selectedAgentToUpdate, setSelectedAgentToUpdate] = useState<AIAgent | null>(null);
+  // Snapshot the agent's payment-source smart-contract address AT CLICK TIME.
+  // The agent list is already filtered to `selectedPaymentSource`, so at the
+  // moment of the click that source IS the agent's source. We must not read the
+  // live `selectedPaymentSource` later in the dialog prop: the update dialog
+  // stays mounted, and if the global source selector changes while it is open,
+  // the address would drift to a DIFFERENT source than the agent belongs to and
+  // the update would target the wrong contract.
+  const [updateAgentSmartContractAddress, setUpdateAgentSmartContractAddress] = useState<
+    string | null
+  >(null);
   const { apiClient, network, selectedPaymentSourceId, selectedPaymentSource } = useAppContext();
   const { paymentSources } = usePaymentSourceExtendedAll();
 
@@ -150,6 +164,15 @@ export default function AIAgentsPage() {
     () => paymentSources.filter((paymentSource) => paymentSource.network === network),
     [paymentSources, network],
   );
+  const hasV2Source = useMemo(
+    () => currentNetworkPaymentSources.some(isV2PaymentSource),
+    [currentNetworkPaymentSources],
+  );
+  const hasLegacySource = useMemo(
+    () => currentNetworkPaymentSources.some((s) => !isV2PaymentSource(s)),
+    [currentNetworkPaymentSources],
+  );
+  const canMigrate = hasV2Source && hasLegacySource;
   const [selectedAgentForVerification, setSelectedAgentForVerification] = useState<AIAgent | null>(
     null,
   );
@@ -241,6 +264,25 @@ export default function AIAgentsPage() {
     setIsDeleteDialogOpen(true);
   };
 
+  const handleUpdateClick = (agent: AIAgent) => {
+    if (!selectedPaymentSource?.smartContractAddress) {
+      toast.error('Cannot update agent: Missing payment source');
+      return;
+    }
+    if (!isV2PaymentSource(selectedPaymentSource)) {
+      // The Update button is hidden in the row UI for non-V2 sources, but
+      // guard here too in case the selected source flipped between click
+      // and handler dispatch.
+      toast.error('Update is only supported for Web3CardanoV2 payment sources');
+      return;
+    }
+    // Freeze the source address now — the list is filtered to this source, so
+    // it is the agent's source. Reading it later (render time) risks global
+    // selector drift targeting the wrong contract.
+    setUpdateAgentSmartContractAddress(selectedPaymentSource.smartContractAddress);
+    setSelectedAgentToUpdate(agent);
+  };
+
   const handleDeleteConfirm = async () => {
     if (
       selectedAgentToDelete?.state === 'RegistrationFailed' ||
@@ -277,6 +319,10 @@ export default function AIAgentsPage() {
         toast.error('Cannot deregister agent: Missing identifier');
         return;
       }
+      if (!selectedPaymentSource?.smartContractAddress) {
+        toast.error('Cannot deregister agent: Missing payment source');
+        return;
+      }
       setIsDeleting(true);
       await handleApiCall(
         () =>
@@ -285,6 +331,7 @@ export default function AIAgentsPage() {
             body: {
               agentIdentifier: selectedAgentToDelete.agentIdentifier!,
               network: network,
+              smartContractAddress: selectedPaymentSource.smartContractAddress,
             },
           }),
         {
@@ -360,6 +407,16 @@ export default function AIAgentsPage() {
                 }}
                 isRefreshing={isFetchingAgents}
               />
+              {canMigrate && (
+                <Button
+                  variant="outline"
+                  className="flex items-center gap-2 btn-hover-lift"
+                  onClick={() => setIsMigrateDialogOpen(true)}
+                >
+                  <ArrowUpRight className="h-4 w-4" />
+                  Migrate to V2
+                </Button>
+              )}
               <Button
                 className="flex items-center gap-2 btn-hover-lift"
                 onClick={() => setIsRegisterDialogOpen(true)}
@@ -601,6 +658,21 @@ export default function AIAgentsPage() {
                                 >
                                   <ExternalLink className="h-4 w-4" />
                                 </Button>
+                                {selectedPaymentSource &&
+                                  isV2PaymentSource(selectedPaymentSource) && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleUpdateClick(agent);
+                                      }}
+                                      className="text-primary hover:text-primary hover:bg-primary/10"
+                                      title="Update agent metadata (V2)"
+                                    >
+                                      <Pencil className="h-4 w-4" />
+                                    </Button>
+                                  )}
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -662,6 +734,23 @@ export default function AIAgentsPage() {
             }}
           />
 
+          <RegisterAIAgentDialog
+            open={!!selectedAgentToUpdate}
+            editingAgent={selectedAgentToUpdate}
+            editingAgentSmartContractAddress={updateAgentSmartContractAddress ?? undefined}
+            onClose={() => {
+              setSelectedAgentToUpdate(null);
+              setUpdateAgentSmartContractAddress(null);
+            }}
+            onSuccess={() => {
+              setSelectedAgentToUpdate(null);
+              setUpdateAgentSmartContractAddress(null);
+              setTimeout(() => {
+                refetchAll();
+              }, 250);
+            }}
+          />
+
           <VerifyAndPublishAgentDialog
             agent={selectedAgentForVerification}
             open={!!selectedAgentForVerification}
@@ -697,6 +786,14 @@ export default function AIAgentsPage() {
             isOpen={!!selectedWalletForDetails}
             onClose={() => setSelectedWalletForDetails(null)}
             wallet={selectedWalletForDetails}
+          />
+
+          <MigrateAgentsDialog
+            open={isMigrateDialogOpen}
+            onClose={() => setIsMigrateDialogOpen(false)}
+            onSuccess={() => {
+              setTimeout(() => refetchAll(), 250);
+            }}
           />
         </div>
       </AnimatedPage>

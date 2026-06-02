@@ -1,7 +1,7 @@
 import { jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import { testEndpoint } from 'express-zod-api';
-import { ApiKeyStatus, Network, PricingType, RegistrationState } from '@/generated/prisma/enums';
+import { ApiKeyStatus, Network, PaymentSourceType, PricingType, RegistrationState } from '@/generated/prisma/enums';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -12,7 +12,7 @@ const mockCreateRegistryRequest = jest.fn() as AnyMock;
 const mockFindRegistryRequests = jest.fn() as AnyMock;
 const mockCountRegistryRequests = jest.fn() as AnyMock;
 
-jest.unstable_mockModule('@/utils/db', () => ({
+jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		apiKey: {
 			findUnique: mockFindApiKey,
@@ -31,12 +31,25 @@ jest.unstable_mockModule('@/utils/db', () => ({
 	},
 }));
 
-jest.unstable_mockModule('@/utils/config', () => ({
+jest.unstable_mockModule('@masumi/payment-core/config', () => ({
 	CONFIG: {
 		ENCRYPTION_KEY: '12345678901234567890',
 	},
 	DEFAULTS: {
 		DEFAULT_METADATA_VERSION: 1,
+		DEFAULT_REGISTRY_METADATA_VERSION: 2,
+		DEFAULT_ADMIN_SIGNATURES_V2: 2,
+		ADMIN_WALLET1_PREPROD:
+			'addr_test1qq0e6dy7cehm9zfqurcf8mwwg9te9nszsx5gy5q4eclpd0czhmdlpagxe5n8ppnrf6424tt8gwweumrtg2q7234x2p2qzjenfx',
+		ADMIN_WALLET2_PREPROD:
+			'addr_test1qqk38pk6rruh67j76s5e3sjj3uce6kr8329kgpg9umhp8k50t3yt4hw3u4fg4f4xtfh630g5fvg6fkr4p2svzyug4nsq40tdna',
+		ADMIN_WALLET3_PREPROD:
+			'addr_test1qq0e6dy7cehm9zfqurcf8mwwg9te9nszsx5gy5q4eclpd0czhmdlpagxe5n8ppnrf6424tt8gwweumrtg2q7234x2p2qzjenfx',
+		ADMIN_WALLET1_MAINNET: 'addr1w859pcn45l8mc85s65cjk6t56mk0evgp9wjlpyht3k42wwc3hq2df',
+		ADMIN_WALLET2_MAINNET: 'addr1w859pcn45l8mc85s65cjk6t56mk0evgp9wjlpyht3k42wwc3hq2df',
+		ADMIN_WALLET3_MAINNET: 'addr1w859pcn45l8mc85s65cjk6t56mk0evgp9wjlpyht3k42wwc3hq2df',
+		COOLDOWN_TIME_PREPROD: 420000,
+		COOLDOWN_TIME_MAINNET: 420000,
 	},
 	SERVICE_CONSTANTS: {
 		SMART_CONTRACT: {
@@ -45,7 +58,7 @@ jest.unstable_mockModule('@/utils/config', () => ({
 	},
 }));
 
-jest.unstable_mockModule('@/utils/logger', () => ({
+jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: {
 		info: jest.fn(),
 		warn: jest.fn(),
@@ -54,7 +67,7 @@ jest.unstable_mockModule('@/utils/logger', () => ({
 	},
 }));
 
-jest.unstable_mockModule('@/utils/metrics', () => ({
+jest.unstable_mockModule('@masumi/payment-core/metrics', () => ({
 	recordBusinessEndpointError: jest.fn(),
 }));
 
@@ -65,13 +78,16 @@ jest.unstable_mockModule('@/utils/blockfrost', () => ({
 
 jest.unstable_mockModule('@/generated/prisma/client', async () => await import('@/generated/prisma/enums'));
 
-jest.unstable_mockModule('@prisma/client', () => ({
+jest.unstable_mockModule('@prisma/client', async () => ({
+	...(await import('@/generated/prisma/enums')),
 	OnChainState: {
 		FundsLocked: 'FundsLocked',
 		FundsOrDatumInvalid: 'FundsOrDatumInvalid',
 		ResultSubmitted: 'ResultSubmitted',
 		RefundRequested: 'RefundRequested',
 		Disputed: 'Disputed',
+		WithdrawAuthorized: 'WithdrawAuthorized',
+		RefundAuthorized: 'RefundAuthorized',
 		Withdrawn: 'Withdrawn',
 		RefundWithdrawn: 'RefundWithdrawn',
 		DisputedWithdrawn: 'DisputedWithdrawn',
@@ -100,9 +116,12 @@ function buildSellingWallet() {
 	return {
 		id: 'selling-wallet-id',
 		paymentSourceId: 'payment-source-1',
-		walletVkey: 'selling-wallet-vkey',
+		walletVkey: 'b'.repeat(56),
 		walletAddress: 'addr_test1sellingwallet',
 		PaymentSource: {
+			paymentSourceType: PaymentSourceType.Web3CardanoV2,
+			smartContractAddress: 'addr_test1smartcontract',
+			network: Network.Preprod,
 			PaymentSourceConfig: {
 				rpcProviderApiKey: 'provider-key',
 			},
@@ -142,10 +161,11 @@ function buildRegistryRequestResponse(
 		},
 		sendFundingLovelace,
 		SmartContractWallet: {
-			walletVkey: 'selling-wallet-vkey',
+			walletVkey: 'b'.repeat(56),
 			walletAddress: 'addr_test1sellingwallet',
 		},
 		RecipientWallet: recipientWallet,
+		SupportedPaymentSources: [],
 		CurrentTransaction: null,
 	};
 }
@@ -252,7 +272,7 @@ describe('registerAgentPost', () => {
 				headers: { token: 'valid' },
 				body: {
 					network: Network.Preprod,
-					sellingWalletVkey: 'selling-wallet-vkey',
+					sellingWalletVkey: 'b'.repeat(56),
 					name: 'Test Agent',
 					description: 'Agent description',
 					apiBaseUrl: 'https://example.com/agent',
@@ -275,8 +295,10 @@ describe('registerAgentPost', () => {
 		expect(responseMock.statusCode).toBe(200);
 		expect(mockFindRecipientWallet).not.toHaveBeenCalled();
 		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.RecipientWallet).toBeUndefined();
+		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.SupportedPaymentSources).toBeUndefined();
 		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.sendFundingLovelace).toBeUndefined();
 		expect(responseMock._getJSONData().data.RecipientWallet).toBeNull();
+		expect(responseMock._getJSONData().data.supportedPaymentSources).toBeNull();
 		expect(responseMock._getJSONData().data.sendFundingLovelace).toBeNull();
 	});
 
@@ -284,12 +306,12 @@ describe('registerAgentPost', () => {
 		mockFindRecipientWallet.mockResolvedValue({
 			id: 'recipient-wallet-id',
 			walletVkey: 'recipient-wallet-vkey',
-			walletAddress: 'addr_test1recipientwallet',
+			walletAddress: 'addr_test1qrecipientwallet000000000000000000000000000000000',
 		});
 		mockCreateRegistryRequest.mockResolvedValue(
 			buildRegistryRequestResponse({
 				walletVkey: 'recipient-wallet-vkey',
-				walletAddress: 'addr_test1recipientwallet',
+				walletAddress: 'addr_test1qrecipientwallet000000000000000000000000000000000',
 			}),
 		);
 
@@ -300,8 +322,8 @@ describe('registerAgentPost', () => {
 				headers: { token: 'valid' },
 				body: {
 					network: Network.Preprod,
-					sellingWalletVkey: 'selling-wallet-vkey',
-					recipientWalletAddress: 'addr_test1recipientwallet',
+					sellingWalletVkey: 'b'.repeat(56),
+					recipientWalletAddress: 'addr_test1qrecipientwallet000000000000000000000000000000000',
 					name: 'Test Agent',
 					description: 'Agent description',
 					apiBaseUrl: 'https://example.com/agent',
@@ -324,7 +346,7 @@ describe('registerAgentPost', () => {
 		expect(responseMock.statusCode).toBe(200);
 		expect(mockFindRecipientWallet).toHaveBeenCalledWith({
 			where: {
-				walletAddress: 'addr_test1recipientwallet',
+				walletAddress: 'addr_test1qrecipientwallet000000000000000000000000000000000',
 				paymentSourceId: 'payment-source-1',
 				deletedAt: null,
 			},
@@ -341,7 +363,7 @@ describe('registerAgentPost', () => {
 		});
 		expect(responseMock._getJSONData().data.RecipientWallet).toEqual({
 			walletVkey: 'recipient-wallet-vkey',
-			walletAddress: 'addr_test1recipientwallet',
+			walletAddress: 'addr_test1qrecipientwallet000000000000000000000000000000000',
 		});
 	});
 
@@ -355,7 +377,7 @@ describe('registerAgentPost', () => {
 				headers: { token: 'valid' },
 				body: {
 					network: Network.Preprod,
-					sellingWalletVkey: 'selling-wallet-vkey',
+					sellingWalletVkey: 'b'.repeat(56),
 					sendFundingLovelace: '2000000',
 					name: 'Test Agent',
 					description: 'Agent description',
@@ -386,7 +408,7 @@ describe('registerAgentPost', () => {
 		mockFindRecipientWallet.mockResolvedValue({
 			id: 'recipient-wallet-id',
 			walletVkey: 'recipient-wallet-vkey',
-			walletAddress: 'addr_test1recipientwallet',
+			walletAddress: 'addr_test1qrecipientwallet000000000000000000000000000000000',
 		});
 
 		const { responseMock } = await testEndpoint({
@@ -396,8 +418,8 @@ describe('registerAgentPost', () => {
 				headers: { token: 'valid' },
 				body: {
 					network: Network.Preprod,
-					sellingWalletVkey: 'selling-wallet-vkey',
-					recipientWalletAddress: 'addr_test1recipientwallet',
+					sellingWalletVkey: 'b'.repeat(56),
+					recipientWalletAddress: 'addr_test1qrecipientwallet000000000000000000000000000000000',
 					name: 'Test Agent',
 					description: 'Agent description',
 					apiBaseUrl: 'https://example.com/agent',

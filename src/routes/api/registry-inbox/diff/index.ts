@@ -1,12 +1,12 @@
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
 import { ez } from 'express-zod-api';
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 import { Network, Prisma } from '@/generated/prisma/client';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import createHttpError from 'http-errors';
 import { queryRegistryInboxRequestSchemaOutput } from '@/routes/api/registry-inbox';
 import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
-import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
+import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { serializeInboxRegistryEntriesResponse } from '../serializers';
 
 const registryDiffLastUpdateSchema = ez.dateIn();

@@ -1,16 +1,17 @@
-import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
-import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
-import { z } from '@/utils/zod-openapi';
-import { PricingType, RegistrationState } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { z } from '@masumi/payment-core/zod';
+import { PaymentSourceType, PricingType, RegistrationState } from '@/generated/prisma/client';
+import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
-import { DEFAULTS } from '@/utils/config';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
-import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
-import { recordBusinessEndpointError } from '@/utils/metrics';
+import { DEFAULTS } from '@masumi/payment-core/config';
+import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
+import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
 import { getBlockfrostInstance, validateAssetsOnChain } from '@/utils/blockfrost';
 import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { normalizeRequestedRegistryFundingLovelace } from '@/services/registry/shared';
+import { validateSupportedPaymentSourcesOrThrow } from '@/types/payment-source';
 import {
 	deleteAgentRegistrationSchemaInput,
 	deleteAgentRegistrationSchemaOutput,
@@ -65,6 +66,7 @@ export const queryRegistryCountGet = readAuthenticatedEndpointFactory.build({
 					network: input.network,
 					deletedAt: null,
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
+					paymentSourceType: input.filterPaymentSourceType,
 				},
 				SmartContractWallet: { deletedAt: null },
 				...buildManagedHolderWalletScopeFilter(ctx.walletScopeIds),
@@ -102,6 +104,27 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 				operation: 'register_agent',
 			});
 			const sendFundingLovelace = normalizeRequestedRegistryFundingLovelace(input.sendFundingLovelace);
+			// Keep persisted registry payment-source rows opt-in. Mint metadata
+			// still advertises the active payment source from the mint service.
+			// supportedPaymentSources is a V2-only concept: silently drop any
+			// provided rows for V1 (legacy) registrations so they are never
+			// persisted or advertised on-chain. (The validation + DB create below
+			// then become no-ops for V1.)
+			const supportedPaymentSources =
+				sellingWallet.PaymentSource.paymentSourceType === PaymentSourceType.Web3CardanoV2
+					? (input.supportedPaymentSources ?? [])
+					: [];
+			if (supportedPaymentSources.length > 0) {
+				try {
+					validateSupportedPaymentSourcesOrThrow(
+						supportedPaymentSources,
+						input.network,
+						sellingWallet.PaymentSource.paymentSourceType,
+					);
+				} catch (error) {
+					throw createHttpError(400, error instanceof Error ? error.message : String(error));
+				}
+			}
 
 			// Validate pricing assets exist on-chain
 			if (input.AgentPricing.pricingType === PricingType.Fixed) {
@@ -148,7 +171,15 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 					sendFundingLovelace,
 					state: RegistrationState.RegistrationRequested,
 					agentIdentifier: null,
-					metadataVersion: DEFAULTS.DEFAULT_METADATA_VERSION,
+					metadataVersion: DEFAULTS.DEFAULT_REGISTRY_METADATA_VERSION,
+					// Tenant ownership — enforced on subsequent mutate routes
+					// (deregister, future update flows) so a key cannot mutate
+					// registrations another key created on the same payment
+					// source. Legacy rows pre-dating this column carry NULL
+					// and are admin-only.
+					RequestedBy: {
+						connect: { id: ctx.id },
+					},
 					ExampleOutputs: {
 						createMany: {
 							data: input.ExampleOutputs.map((exampleOutput) => ({
@@ -158,6 +189,19 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 							})),
 						},
 					},
+					SupportedPaymentSources:
+						supportedPaymentSources.length > 0
+							? {
+									createMany: {
+										data: supportedPaymentSources.map((source) => ({
+											chain: source.chain,
+											network: source.network,
+											paymentSourceType: source.paymentSourceType,
+											address: source.address,
+										})),
+									},
+								}
+							: undefined,
 					SmartContractWallet: {
 						connect: {
 							id: sellingWallet.id,
@@ -221,6 +265,14 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 							mimeType: true,
 						},
 					},
+					SupportedPaymentSources: {
+						select: {
+							chain: true,
+							network: true,
+							paymentSourceType: true,
+							address: true,
+						},
+					},
 					CurrentTransaction: {
 						select: {
 							txHash: true,
@@ -265,6 +317,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 								pricingType: result.Pricing.pricingType,
 							},
 				sendFundingLovelace: result.sendFundingLovelace?.toString() ?? null,
+				supportedPaymentSources: result.SupportedPaymentSources.length > 0 ? result.SupportedPaymentSources : null,
 				Tags: result.tags,
 				RecipientWallet: result.RecipientWallet,
 				CurrentTransaction: result.CurrentTransaction
@@ -372,6 +425,14 @@ export const deleteAgentRegistration = adminAuthenticatedEndpointFactory.build({
 					ExampleOutputs: {
 						select: { name: true, url: true, mimeType: true },
 					},
+					SupportedPaymentSources: {
+						select: {
+							chain: true,
+							network: true,
+							paymentSourceType: true,
+							address: true,
+						},
+					},
 					CurrentTransaction: {
 						select: {
 							txHash: true,
@@ -416,6 +477,7 @@ export const deleteAgentRegistration = adminAuthenticatedEndpointFactory.build({
 								pricingType: item.Pricing.pricingType,
 							},
 				sendFundingLovelace: item.sendFundingLovelace?.toString() ?? null,
+				supportedPaymentSources: item.SupportedPaymentSources.length > 0 ? item.SupportedPaymentSources : null,
 				Tags: item.tags,
 				RecipientWallet: item.RecipientWallet,
 				CurrentTransaction: item.CurrentTransaction

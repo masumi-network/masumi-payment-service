@@ -1,18 +1,20 @@
-import { z } from 'zod';
 import { Network, PaymentAction, TransactionStatus, OnChainState } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
-import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
-import { logger } from '@/utils/logger';
+import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
+import { logger } from '@masumi/payment-core/logger';
 import { ez } from 'express-zod-api';
 import { paymentResponseSchema } from '..';
-import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
+import { lovelaceToAdaNumberSafe } from '@/utils/lovelace';
 import { transformPaymentGetTimestamps, transformPaymentGetAmounts } from '@/utils/shared/transformers';
 import { assertWalletInScope } from '@/utils/shared/wallet-scope';
+import { retryOnSerializationConflict } from '@/utils/db/retry';
+import { z } from '@masumi/payment-core/zod';
 
 export const paymentErrorStateRecoverySchemaInput = z.object({
-	blockchainIdentifier: z.string().min(1).describe('The blockchain identifier of the payment request'),
+	blockchainIdentifier: z.string().min(1).max(8000).describe('The blockchain identifier of the payment request'),
 	network: z.nativeEnum(Network).describe('The network the transaction was made on'),
 	updatedAt: ez.dateIn().describe('The time of the last update, to ensure you clear the correct error state'),
 });
@@ -59,6 +61,9 @@ export const paymentErrorStateRecoveryPost = payAuthenticatedEndpointFactory.bui
 			throw createHttpError(404, 'Payment request not found with the provided blockchain identifier or it was changed');
 		}
 		assertWalletInScope(ctx.walletScopeIds, paymentRequest.smartContractWalletId);
+		if (paymentRequest.requestedById !== ctx.id && !ctx.canAdmin) {
+			throw createHttpError(403, 'You are not authorized to recover this payment request');
+		}
 
 		if (!paymentRequest.onChainState) {
 			throw createHttpError(
@@ -116,87 +121,99 @@ export const paymentErrorStateRecoveryPost = payAuthenticatedEndpointFactory.bui
 			transactionsToFailIds: transactionsToFail.map((tx) => tx.id),
 		});
 
-		const result = await prisma.$transaction(async (tx) => {
-			for (const transaction of transactionsToFail) {
-				await tx.transaction.update({
-					where: { id: transaction.id },
-					data: { status: TransactionStatus.FailedViaManualReset },
-				});
-			}
+		// Serializable + retry: this handler races concurrent tx-sync handlers
+		// that may advance the same PaymentRequest. Without Serializable
+		// isolation, a concurrent state-machine update can win between this
+		// route's pre-read (line 41-57) and the in-transaction updates here.
+		const result = await retryOnSerializationConflict(
+			() =>
+				prisma.$transaction(
+					async (tx) => {
+						for (const transaction of transactionsToFail) {
+							await tx.transaction.update({
+								where: { id: transaction.id },
+								data: { status: TransactionStatus.FailedViaManualReset },
+							});
+						}
 
-			await tx.paymentRequest.update({
-				where: { id: paymentRequest.id },
-				data: { currentTransactionId: lastSuccessfulTransaction?.id || null },
-			});
-			const isCompletedState =
-				paymentRequest.onChainState &&
-				(
-					[OnChainState.Withdrawn, OnChainState.RefundWithdrawn, OnChainState.DisputedWithdrawn] as OnChainState[]
-				).includes(paymentRequest.onChainState);
+						await tx.paymentRequest.update({
+							where: { id: paymentRequest.id },
+							data: { currentTransactionId: lastSuccessfulTransaction?.id || null },
+						});
+						const isCompletedState =
+							paymentRequest.onChainState &&
+							(
+								[OnChainState.Withdrawn, OnChainState.RefundWithdrawn, OnChainState.DisputedWithdrawn] as OnChainState[]
+							).includes(paymentRequest.onChainState);
 
-			const updatedPaymentRequest = await tx.paymentRequest.update({
-				where: { id: paymentRequest.id },
-				data: {
-					ActionHistory: {
-						connect: {
-							id: paymentRequest.nextActionId,
-						},
+						const updatedPaymentRequest = await tx.paymentRequest.update({
+							where: { id: paymentRequest.id },
+							data: {
+								ActionHistory: {
+									connect: {
+										id: paymentRequest.nextActionId,
+									},
+								},
+								NextAction: {
+									create: {
+										requestedAction: isCompletedState ? PaymentAction.None : PaymentAction.WaitingForExternalAction,
+									},
+								},
+							},
+							include: {
+								BuyerWallet: { select: { id: true, walletVkey: true } },
+								SmartContractWallet: {
+									where: { deletedAt: null },
+									select: { id: true, walletVkey: true, walletAddress: true },
+								},
+								RequestedFunds: { select: { id: true, amount: true, unit: true } },
+								NextAction: {
+									select: {
+										id: true,
+										requestedAction: true,
+										errorType: true,
+										errorNote: true,
+										resultHash: true,
+									},
+								},
+								PaymentSource: {
+									select: {
+										id: true,
+										network: true,
+										paymentSourceType: true,
+										smartContractAddress: true,
+										policyId: true,
+									},
+								},
+								CurrentTransaction: {
+									select: {
+										id: true,
+										createdAt: true,
+										updatedAt: true,
+										fees: true,
+										blockHeight: true,
+										blockTime: true,
+										txHash: true,
+										status: true,
+										previousOnChainState: true,
+										newOnChainState: true,
+										confirmations: true,
+									},
+								},
+								WithdrawnForSeller: {
+									select: { id: true, amount: true, unit: true },
+								},
+								WithdrawnForBuyer: {
+									select: { id: true, amount: true, unit: true },
+								},
+							},
+						});
+						return updatedPaymentRequest;
 					},
-					NextAction: {
-						create: {
-							requestedAction: isCompletedState ? PaymentAction.None : PaymentAction.WaitingForExternalAction,
-						},
-					},
-				},
-				include: {
-					BuyerWallet: { select: { id: true, walletVkey: true } },
-					SmartContractWallet: {
-						where: { deletedAt: null },
-						select: { id: true, walletVkey: true, walletAddress: true },
-					},
-					RequestedFunds: { select: { id: true, amount: true, unit: true } },
-					NextAction: {
-						select: {
-							id: true,
-							requestedAction: true,
-							errorType: true,
-							errorNote: true,
-							resultHash: true,
-						},
-					},
-					PaymentSource: {
-						select: {
-							id: true,
-							network: true,
-							smartContractAddress: true,
-							policyId: true,
-						},
-					},
-					CurrentTransaction: {
-						select: {
-							id: true,
-							createdAt: true,
-							updatedAt: true,
-							fees: true,
-							blockHeight: true,
-							blockTime: true,
-							txHash: true,
-							status: true,
-							previousOnChainState: true,
-							newOnChainState: true,
-							confirmations: true,
-						},
-					},
-					WithdrawnForSeller: {
-						select: { id: true, amount: true, unit: true },
-					},
-					WithdrawnForBuyer: {
-						select: { id: true, amount: true, unit: true },
-					},
-				},
-			});
-			return updatedPaymentRequest;
-		});
+					{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
+				),
+			{ label: 'payments-error-state-recovery' },
+		);
 
 		logger.info('Error state recovery completed successfully', {
 			paymentRequestId: paymentRequest.id,
@@ -208,8 +225,10 @@ export const paymentErrorStateRecoveryPost = payAuthenticatedEndpointFactory.bui
 			...result,
 			...transformPaymentGetTimestamps(result),
 			...transformPaymentGetAmounts(result),
-			totalBuyerCardanoFees: Number(result.totalBuyerCardanoFees.toString()) / 1_000_000,
-			totalSellerCardanoFees: Number(result.totalSellerCardanoFees.toString()) / 1_000_000,
+			// safe: response schema is z.number() (ADA). lovelaceToAdaNumberSafe
+			// throws if the lovelace value exceeds Number.MAX_SAFE_INTEGER.
+			totalBuyerCardanoFees: lovelaceToAdaNumberSafe(result.totalBuyerCardanoFees),
+			totalSellerCardanoFees: lovelaceToAdaNumberSafe(result.totalSellerCardanoFees),
 			agentIdentifier: decoded?.agentIdentifier ?? null,
 			CurrentTransaction: result.CurrentTransaction
 				? {

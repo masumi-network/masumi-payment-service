@@ -4,10 +4,12 @@ import {
 	OnChainState,
 	PaymentAction,
 	PaymentErrorType,
+	PaymentSourceType,
 	PricingType,
 	TransactionStatus,
 } from '@/generated/prisma/client';
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
+import { isCardanoAddressForNetwork } from '@/types/payment-source';
 
 const paymentTimeSchema = ez.dateIn();
 
@@ -24,6 +26,7 @@ export const queryPaymentsSchemaInput = z.object({
 		.nullable()
 		.describe('The smart contract address of the payment source'),
 	filterOnChainState: z.nativeEnum(OnChainState).optional().describe('Filter by on-chain state'),
+	filterPaymentSourceType: z.nativeEnum(PaymentSourceType).optional().describe('Filter by payment source type'),
 	searchQuery: z
 		.string()
 		.optional()
@@ -43,6 +46,7 @@ export const queryPaymentCountSchemaInput = z.object({
 		.optional()
 		.nullable()
 		.describe('The smart contract address of the payment source'),
+	filterPaymentSourceType: z.nativeEnum(PaymentSourceType).optional().describe('Filter by payment source type'),
 });
 
 export const queryPaymentCountSchemaOutput = z.object({
@@ -77,6 +81,8 @@ export const paymentResponseSchema = z
 			.string()
 			.nullable()
 			.describe('Amount of collateral to return in lovelace. Null if no collateral'),
+		buyerReturnAddress: z.string().nullable().describe('Optional buyer return address stored with the request'),
+		sellerReturnAddress: z.string().nullable().describe('Optional seller return address stored with the request'),
 		externalDisputeUnlockTime: z
 			.string()
 			.describe('Unix timestamp (in milliseconds) after which external dispute resolution can occur'),
@@ -211,6 +217,7 @@ export const paymentResponseSchema = z
 			.object({
 				id: z.string().describe('Unique identifier for the payment source'),
 				network: z.nativeEnum(Network).describe('The Cardano network (Mainnet, Preprod, or Preview)'),
+				paymentSourceType: z.nativeEnum(PaymentSourceType).describe('Payment source type for adapter dispatch'),
 				smartContractAddress: z.string().describe('Address of the smart contract managing this payment'),
 				policyId: z.string().nullable().describe('Policy ID for the agent registry NFTs. Null if not applicable'),
 			})
@@ -241,45 +248,68 @@ export const queryPaymentsSchemaOutput = z.object({
 	Payments: z.array(paymentResponseSchema),
 });
 
-export const createPaymentsSchemaInput = z.object({
-	inputHash: z
-		.string()
-		.max(250)
-		.describe(
-			'The hash of the input data of the payment, should be sha256 hash of the input data, therefore needs to be in hex string format',
-		),
-	network: z.nativeEnum(Network).describe('The network the payment will be received on'),
-	agentIdentifier: z.string().min(57).max(250).describe('The identifier of the agent that will be paid'),
-	RequestedFunds: z
-		.array(
-			z.object({
-				amount: z.string().max(25).describe('Amount of the asset in smallest unit (e.g., lovelace for ADA)'),
-				unit: z.string().max(150).describe('Asset policy id + asset name concatenated. Empty string for ADA/lovelace'),
-			}),
-		)
-		.max(7)
-		.optional()
-		.describe('The amounts of the payment, should be null for fixed amount'),
-	payByTime: ez
-		.dateIn()
-		.default(() => paymentTimeSchema.parse(new Date(1000 * 60 * 60 * 12).toISOString()))
-		.describe('The time after which the payment has to be submitted to the smart contract'),
-	submitResultTime: ez
-		.dateIn()
-		.default(() => paymentTimeSchema.parse(new Date(1000 * 60 * 60 * 12).toISOString()))
-		.describe('The time after which the payment has to be submitted to the smart contract'),
-	unlockTime: ez.dateIn().optional().describe('The time after which the payment will be unlocked'),
-	externalDisputeUnlockTime: ez
-		.dateIn()
-		.optional()
-		.describe('The time after which the payment will be unlocked for external dispute'),
-	metadata: z.string().optional().describe('Metadata to be stored with the payment request'),
-	identifierFromPurchaser: z
-		.string()
-		.min(14)
-		.max(26)
-		.describe('A unique nonce from the purchaser. It must be in hex format'),
-});
+export const createPaymentsSchemaInput = z
+	.object({
+		inputHash: z
+			.string()
+			.max(250)
+			.describe(
+				'The hash of the input data of the payment, should be sha256 hash of the input data, therefore needs to be in hex string format',
+			),
+		network: z.nativeEnum(Network).describe('The network the payment will be received on'),
+		agentIdentifier: z.string().min(57).max(250).describe('The identifier of the agent that will be paid'),
+		paymentSourceType: z
+			.nativeEnum(PaymentSourceType)
+			.optional()
+			.describe('Expected payment source type for this request'),
+		RequestedFunds: z
+			.array(
+				z.object({
+					amount: z.string().max(25).describe('Amount of the asset in smallest unit (e.g., lovelace for ADA)'),
+					unit: z
+						.string()
+						.max(150)
+						.describe('Asset policy id + asset name concatenated. Empty string for ADA/lovelace'),
+				}),
+			)
+			.max(7)
+			.optional()
+			.describe('The amounts of the payment, should be null for fixed amount'),
+		payByTime: ez
+			.dateIn()
+			.default(() => paymentTimeSchema.parse(new Date(1000 * 60 * 60 * 12).toISOString()))
+			.describe('The time after which the payment has to be submitted to the smart contract'),
+		submitResultTime: ez
+			.dateIn()
+			.default(() => paymentTimeSchema.parse(new Date(1000 * 60 * 60 * 12).toISOString()))
+			.describe('The time after which the payment has to be submitted to the smart contract'),
+		unlockTime: ez.dateIn().optional().describe('The time after which the payment will be unlocked'),
+		externalDisputeUnlockTime: ez
+			.dateIn()
+			.optional()
+			.describe('The time after which the payment will be unlocked for external dispute'),
+		metadata: z.string().optional().describe('Metadata to be stored with the payment request'),
+		sellerReturnAddress: z
+			.string()
+			.max(250)
+			.optional()
+			.describe(
+				'Optional seller return address. Defaults to the selling hot wallet collection address when available.',
+			),
+		identifierFromPurchaser: z
+			.string()
+			.min(14)
+			.max(26)
+			.describe('A unique nonce from the purchaser. It must be in hex format'),
+	})
+	.refine(
+		(value) =>
+			value.sellerReturnAddress == null || isCardanoAddressForNetwork(value.sellerReturnAddress, value.network),
+		{
+			message: 'sellerReturnAddress is not a valid Cardano address for the configured network',
+			path: ['sellerReturnAddress'],
+		},
+	);
 
 export const createPaymentSchemaOutput = paymentResponseSchema.omit({
 	TransactionHistory: true,
