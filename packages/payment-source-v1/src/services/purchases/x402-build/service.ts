@@ -158,7 +158,7 @@ export async function buildX402FundsLockingTransaction({
 	const invalidBefore = unixTimeToEnclosingSlot(Date.now() - 300_000, SLOT_CONFIG_NETWORK[meshNetwork]) - 1;
 	// Use payByTime as the tx validity upper bound so the buyer has the full window to sign and submit
 	const invalidAfterMs = Number(buildData.payByTime);
-	const invalidAfter = unixTimeToEnclosingSlot(invalidAfterMs, SLOT_CONFIG_NETWORK[meshNetwork]) + 5;
+	const invalidAfter = unixTimeToEnclosingSlot(invalidAfterMs, SLOT_CONFIG_NETWORK[meshNetwork]) + 30;
 
 	// Pull live chain protocol params so script_data_hash matches the
 	// ledger's computation. See generateRegistryMintTransaction in

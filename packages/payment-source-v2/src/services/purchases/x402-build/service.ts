@@ -150,7 +150,7 @@ export async function buildX402FundsLockingTransactionV2({
 		throw createHttpError(400, 'payByTime exceeds safe integer range');
 	}
 	const invalidAfterMs = Number(buildData.payByTime);
-	const invalidAfter = unixTimeToEnclosingSlot(invalidAfterMs, SLOT_CONFIG_NETWORK[meshNetwork]) + 5;
+	const invalidAfter = unixTimeToEnclosingSlot(invalidAfterMs, SLOT_CONFIG_NETWORK[meshNetwork]) + 30;
 
 	// Pull live chain protocol params so script_data_hash matches the
 	// ledger's computation. See generateRegistryMintTransaction in
