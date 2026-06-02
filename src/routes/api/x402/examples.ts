@@ -8,6 +8,9 @@ import {
 	listPaymentAttemptsSchemaOutput,
 	listSettlementsSchemaOutput,
 	listWalletsSchemaOutput,
+	settleSchemaOutput,
+	verifySchemaOutput,
+	verifySettleSchemaInput,
 	walletSchemaOutput,
 	x402NetworkSchema,
 	x402PaymentAttemptSchema,
@@ -196,3 +199,44 @@ export const deleteX402WalletBodyExample = {
 export const deleteX402WalletResponseExample = {
 	id: x402WalletExample.id,
 };
+
+export const verifyX402BodyExample = {
+	supportedPaymentSourceId: 'supported_payment_source_id',
+	paymentPayload: {
+		x402Version: 1,
+		resource: { url: 'https://api.example-agent.com/run' },
+		accepted: {
+			scheme: 'exact',
+			network: 'eip155:8453',
+			asset: exampleUsdcAsset,
+			amount: '1000000',
+			payTo: '0x2222222222222222222222222222222222222222',
+			maxTimeoutSeconds: 300,
+		},
+		payload: { signature: '0x...' },
+	},
+} satisfies z.infer<typeof verifySettleSchemaInput>;
+
+export const verifyX402ResponseExample = {
+	attemptId: x402PaymentAttemptExample.id,
+	paymentPayloadHash: 'b3f1c2a4d5e6f70819203a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f',
+	paymentIdentifier: null,
+	verifyResponse: {
+		isValid: true,
+		payer: examplePayer,
+	},
+} satisfies z.infer<typeof verifySchemaOutput>;
+
+export const settleX402ResponseExample = {
+	attemptId: x402PaymentAttemptExample.id,
+	paymentPayloadHash: 'b3f1c2a4d5e6f70819203a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f',
+	paymentIdentifier: null,
+	replay: false,
+	settleResponse: {
+		success: true,
+		payer: examplePayer,
+		transaction: '0x4242424242424242424242424242424242424242424242424242424242424242',
+		network: 'eip155:8453',
+		amount: '1000000',
+	},
+} satisfies z.infer<typeof settleSchemaOutput>;

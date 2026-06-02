@@ -5776,7 +5776,7 @@
                                         },
                                         "maxItems": 50,
                                         "default": [],
-                                        "description": "Additional CAIP-2 chain identifiers the API key is allowed to use"
+                                        "description": "Additional non-Cardano CAIP-2 chain identifiers the API key is allowed to use"
                                     },
                                     "permission": {
                                         "type": "string",
@@ -23886,6 +23886,462 @@
                 }
             }
         },
+        "/x402/verify": {
+            "post": {
+                "description": "Verifies a buyer x402 payment payload against a registered resource without settling it, so a resource server can check a payment before serving content.",
+                "summary": "Verify an inbound x402 payment. (pay access required)",
+                "tags": [
+                    "x402"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "The registered supported payment source id and the buyer payment payload to verify",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "supportedPaymentSourceId": {
+                                        "type": "string"
+                                    },
+                                    "paymentPayload": {
+                                        "type": "object",
+                                        "properties": {
+                                            "x402Version": {
+                                                "type": "integer"
+                                            },
+                                            "resource": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "url": {
+                                                        "type": "string"
+                                                    }
+                                                }
+                                            },
+                                            "accepted": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "scheme": {
+                                                        "type": "string"
+                                                    },
+                                                    "network": {
+                                                        "type": "string",
+                                                        "pattern": "^eip155:\\d+$"
+                                                    },
+                                                    "asset": {
+                                                        "type": "string",
+                                                        "pattern": "^0x[a-fA-F0-9]{40}$"
+                                                    },
+                                                    "amount": {
+                                                        "type": "string",
+                                                        "pattern": "^\\d+$"
+                                                    },
+                                                    "payTo": {
+                                                        "type": "string",
+                                                        "pattern": "^0x[a-fA-F0-9]{40}$"
+                                                    },
+                                                    "maxTimeoutSeconds": {
+                                                        "type": "integer",
+                                                        "minimum": 0,
+                                                        "exclusiveMinimum": true
+                                                    },
+                                                    "extra": {
+                                                        "type": "object",
+                                                        "additionalProperties": {
+                                                            "nullable": true
+                                                        }
+                                                    }
+                                                },
+                                                "required": [
+                                                    "scheme",
+                                                    "network",
+                                                    "asset",
+                                                    "amount",
+                                                    "payTo",
+                                                    "maxTimeoutSeconds"
+                                                ]
+                                            },
+                                            "payload": {
+                                                "type": "object",
+                                                "additionalProperties": {
+                                                    "nullable": true
+                                                }
+                                            },
+                                            "extensions": {
+                                                "type": "object",
+                                                "additionalProperties": {
+                                                    "nullable": true
+                                                }
+                                            }
+                                        },
+                                        "required": [
+                                            "x402Version",
+                                            "accepted",
+                                            "payload"
+                                        ]
+                                    }
+                                },
+                                "required": [
+                                    "supportedPaymentSourceId",
+                                    "paymentPayload"
+                                ],
+                                "example": {
+                                    "supportedPaymentSourceId": "supported_payment_source_id",
+                                    "paymentPayload": {
+                                        "x402Version": 1,
+                                        "resource": {
+                                            "url": "https://api.example-agent.com/run"
+                                        },
+                                        "accepted": {
+                                            "scheme": "exact",
+                                            "network": "eip155:8453",
+                                            "asset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+                                            "amount": "1000000",
+                                            "payTo": "0x2222222222222222222222222222222222222222",
+                                            "maxTimeoutSeconds": 300
+                                        },
+                                        "payload": {
+                                            "signature": "0x..."
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "x402 verification result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "attemptId": {
+                                                    "type": "string"
+                                                },
+                                                "paymentPayloadHash": {
+                                                    "type": "string"
+                                                },
+                                                "paymentIdentifier": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "verifyResponse": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "isValid": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "invalidReason": {
+                                                            "type": "string"
+                                                        },
+                                                        "invalidMessage": {
+                                                            "type": "string"
+                                                        },
+                                                        "payer": {
+                                                            "type": "string"
+                                                        },
+                                                        "extensions": {
+                                                            "type": "object",
+                                                            "additionalProperties": {
+                                                                "nullable": true
+                                                            }
+                                                        },
+                                                        "extra": {
+                                                            "type": "object",
+                                                            "additionalProperties": {
+                                                                "nullable": true
+                                                            }
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "isValid"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "attemptId",
+                                                "paymentPayloadHash",
+                                                "paymentIdentifier",
+                                                "verifyResponse"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "attemptId": "clx402attempt0001",
+                                            "paymentPayloadHash": "b3f1c2a4d5e6f70819203a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f",
+                                            "paymentIdentifier": null,
+                                            "verifyResponse": {
+                                                "isValid": true,
+                                                "payer": "0x3333333333333333333333333333333333333333"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/x402/settle": {
+            "post": {
+                "description": "Settles a buyer x402 payment payload on-chain for a registered resource and records the settlement. Idempotent per payment payload hash.",
+                "summary": "Settle an inbound x402 payment on-chain. (pay access required)",
+                "tags": [
+                    "x402"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "The registered supported payment source id and the buyer payment payload to settle",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "supportedPaymentSourceId": {
+                                        "type": "string"
+                                    },
+                                    "paymentPayload": {
+                                        "type": "object",
+                                        "properties": {
+                                            "x402Version": {
+                                                "type": "integer"
+                                            },
+                                            "resource": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "url": {
+                                                        "type": "string"
+                                                    }
+                                                }
+                                            },
+                                            "accepted": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "scheme": {
+                                                        "type": "string"
+                                                    },
+                                                    "network": {
+                                                        "type": "string",
+                                                        "pattern": "^eip155:\\d+$"
+                                                    },
+                                                    "asset": {
+                                                        "type": "string",
+                                                        "pattern": "^0x[a-fA-F0-9]{40}$"
+                                                    },
+                                                    "amount": {
+                                                        "type": "string",
+                                                        "pattern": "^\\d+$"
+                                                    },
+                                                    "payTo": {
+                                                        "type": "string",
+                                                        "pattern": "^0x[a-fA-F0-9]{40}$"
+                                                    },
+                                                    "maxTimeoutSeconds": {
+                                                        "type": "integer",
+                                                        "minimum": 0,
+                                                        "exclusiveMinimum": true
+                                                    },
+                                                    "extra": {
+                                                        "type": "object",
+                                                        "additionalProperties": {
+                                                            "nullable": true
+                                                        }
+                                                    }
+                                                },
+                                                "required": [
+                                                    "scheme",
+                                                    "network",
+                                                    "asset",
+                                                    "amount",
+                                                    "payTo",
+                                                    "maxTimeoutSeconds"
+                                                ]
+                                            },
+                                            "payload": {
+                                                "type": "object",
+                                                "additionalProperties": {
+                                                    "nullable": true
+                                                }
+                                            },
+                                            "extensions": {
+                                                "type": "object",
+                                                "additionalProperties": {
+                                                    "nullable": true
+                                                }
+                                            }
+                                        },
+                                        "required": [
+                                            "x402Version",
+                                            "accepted",
+                                            "payload"
+                                        ]
+                                    }
+                                },
+                                "required": [
+                                    "supportedPaymentSourceId",
+                                    "paymentPayload"
+                                ],
+                                "example": {
+                                    "supportedPaymentSourceId": "supported_payment_source_id",
+                                    "paymentPayload": {
+                                        "x402Version": 1,
+                                        "resource": {
+                                            "url": "https://api.example-agent.com/run"
+                                        },
+                                        "accepted": {
+                                            "scheme": "exact",
+                                            "network": "eip155:8453",
+                                            "asset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+                                            "amount": "1000000",
+                                            "payTo": "0x2222222222222222222222222222222222222222",
+                                            "maxTimeoutSeconds": 300
+                                        },
+                                        "payload": {
+                                            "signature": "0x..."
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "x402 settlement result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "attemptId": {
+                                                    "type": "string"
+                                                },
+                                                "paymentPayloadHash": {
+                                                    "type": "string"
+                                                },
+                                                "paymentIdentifier": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "replay": {
+                                                    "type": "boolean"
+                                                },
+                                                "settleResponse": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "success": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "errorReason": {
+                                                            "type": "string"
+                                                        },
+                                                        "errorMessage": {
+                                                            "type": "string"
+                                                        },
+                                                        "payer": {
+                                                            "type": "string"
+                                                        },
+                                                        "transaction": {
+                                                            "type": "string"
+                                                        },
+                                                        "network": {
+                                                            "type": "string",
+                                                            "pattern": "^eip155:\\d+$"
+                                                        },
+                                                        "amount": {
+                                                            "type": "string"
+                                                        },
+                                                        "extensions": {
+                                                            "type": "object",
+                                                            "additionalProperties": {
+                                                                "nullable": true
+                                                            }
+                                                        },
+                                                        "extra": {
+                                                            "type": "object",
+                                                            "additionalProperties": {
+                                                                "nullable": true
+                                                            }
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "success",
+                                                        "transaction",
+                                                        "network"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "attemptId",
+                                                "paymentPayloadHash",
+                                                "paymentIdentifier",
+                                                "replay",
+                                                "settleResponse"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "attemptId": "clx402attempt0001",
+                                            "paymentPayloadHash": "b3f1c2a4d5e6f70819203a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f",
+                                            "paymentIdentifier": null,
+                                            "replay": false,
+                                            "settleResponse": {
+                                                "success": true,
+                                                "payer": "0x3333333333333333333333333333333333333333",
+                                                "transaction": "0x4242424242424242424242424242424242424242424242424242424242424242",
+                                                "network": "eip155:8453",
+                                                "amount": "1000000"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/x402/pay": {
             "post": {
                 "description": "Signs a payment for a forwarded 402 using a managed EVM wallet, charged against the caller budget. Returns the X-PAYMENT header for the caller to send with its own retried request; this service never fetches the resource itself.",
@@ -23966,6 +24422,7 @@
                                                     ]
                                                 },
                                                 "minItems": 1,
+                                                "maxItems": 20,
                                                 "description": "The payment options advertised by the 402 response"
                                             },
                                             "extensions": {

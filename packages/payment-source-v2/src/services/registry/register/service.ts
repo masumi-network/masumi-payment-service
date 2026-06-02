@@ -183,26 +183,36 @@ export function buildAgentMetadata(
 		metadata_version: request.metadataVersion.toString(),
 		supported_payment_sources:
 			request.metadataVersion >= DEFAULTS.DEFAULT_REGISTRY_METADATA_VERSION
-				? supportedPaymentSources.map((source) => ({
-						chain: stringToMetadata(source.chain),
-						network: stringToMetadata(String(source.network)),
-						paymentSourceType:
-							source.paymentSourceType != null ? stringToMetadata(source.paymentSourceType) : undefined,
-						address: stringToMetadata(
-							source.chain === SupportedPaymentSourceChain.EVM ? (source.address ?? source.payTo) : source.address,
-						),
-						...(source.chain === SupportedPaymentSourceChain.EVM
-							? {
-									scheme: stringToMetadata(source.scheme ?? X402PaymentScheme.Exact),
-									asset: stringToMetadata(source.asset),
-									amount: String(source.amount),
-									decimals: String(source.decimals),
-									payTo: stringToMetadata(source.payTo),
-									resource: stringToMetadata(source.resource),
-									extra: source.extra,
-								}
-							: {}),
-					}))
+				? supportedPaymentSources.map((source) => {
+						if (
+							source.chain === SupportedPaymentSourceChain.EVM &&
+							(source.amount == null || source.decimals == null || source.asset == null || source.payTo == null)
+						) {
+							// Never mint an incomplete x402 source on-chain as the literal strings
+							// "null"/"undefined"; fail the registration so the bad row is surfaced.
+							throw new Error('Cannot register agent: x402 supported payment source is incomplete');
+						}
+						return {
+							chain: stringToMetadata(source.chain),
+							network: stringToMetadata(String(source.network)),
+							paymentSourceType:
+								source.paymentSourceType != null ? stringToMetadata(source.paymentSourceType) : undefined,
+							address: stringToMetadata(
+								source.chain === SupportedPaymentSourceChain.EVM ? (source.address ?? source.payTo) : source.address,
+							),
+							...(source.chain === SupportedPaymentSourceChain.EVM
+								? {
+										scheme: stringToMetadata(source.scheme ?? X402PaymentScheme.Exact),
+										asset: stringToMetadata(source.asset),
+										amount: String(source.amount),
+										decimals: String(source.decimals),
+										payTo: stringToMetadata(source.payTo),
+										resource: stringToMetadata(source.resource),
+										extra: source.extra,
+									}
+								: {}),
+						};
+					})
 				: undefined,
 	};
 	return cleanMetadata(metadata) as RegistryMetadata;

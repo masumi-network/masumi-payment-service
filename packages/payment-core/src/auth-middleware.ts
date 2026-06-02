@@ -130,6 +130,7 @@ export async function checkIsAllowedCaip2NetworkOrThrowUnauthorized(
 	caip2Network: string,
 ) {
 	if (!isAllowedCaip2Network(networkLimit, caip2Network)) {
+		//await a random amount to throttle invalid requests
 		await new Promise((resolve) => setTimeout(resolve, Math.random() * 1000));
 		throw createHttpError(401, 'Unauthorized, network not allowed');
 	}

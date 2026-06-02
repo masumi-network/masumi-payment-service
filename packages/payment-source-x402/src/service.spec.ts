@@ -7,7 +7,19 @@ const mockX402SettlementUpsert = jest.fn() as jest.Mock<any>;
 const mockX402PaymentAttemptCreate = jest.fn() as jest.Mock<any>;
 const mockX402PaymentAttemptUpdate = jest.fn() as jest.Mock<any>;
 const mockX402EvmWalletFindUnique = jest.fn() as jest.Mock<any>;
+const mockApiKeyFindUnique = jest.fn() as jest.Mock<any>;
+const mockX402EvmWalletCreate = jest.fn() as jest.Mock<any>;
 const mockBudgetFindFirst = jest.fn() as jest.Mock<any>;
+
+// Minimal stand-in for Prisma's known-request error so the service's
+// `instanceof Prisma.PrismaClientKnownRequestError` checks behave under the db mock.
+class MockPrismaClientKnownRequestError extends Error {
+	code: string;
+	constructor(message: string, code: string) {
+		super(message);
+		this.code = code;
+	}
+}
 const mockBudgetUpdateMany = jest.fn() as jest.Mock<any>;
 const mockBudgetUpdate = jest.fn() as jest.Mock<any>;
 const mockBudgetUpsert = jest.fn() as jest.Mock<any>;
@@ -53,7 +65,7 @@ class X402ClientMock implements MockX402Client {
 }
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
-	Prisma: {},
+	Prisma: { PrismaClientKnownRequestError: MockPrismaClientKnownRequestError },
 	X402PaymentDirection: {
 		InboundVerify: 'InboundVerify',
 		InboundSettle: 'InboundSettle',
@@ -76,6 +88,9 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 		x402Network: {
 			findUnique: mockX402NetworkFindUnique,
 		},
+		apiKey: {
+			findUnique: mockApiKeyFindUnique,
+		},
 		x402Settlement: {
 			findUnique: mockX402SettlementFindUnique,
 			upsert: mockX402SettlementUpsert,
@@ -86,7 +101,7 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 		},
 		x402EvmWallet: {
 			findUnique: mockX402EvmWalletFindUnique,
-			create: jest.fn(),
+			create: mockX402EvmWalletCreate,
 			findMany: jest.fn(),
 		},
 		x402WalletBudget: {
@@ -142,9 +157,14 @@ jest.unstable_mockModule('@x402/extensions/payment-identifier', () => ({
 }));
 
 jest.unstable_mockModule('viem', () => ({
-	createPublicClient: jest.fn(() => ({ publicClient: true })),
-	createWalletClient: jest.fn(() => ({
-		extend: jest.fn(() => ({ walletClient: true })),
+	// getChainId echoes the chain id the client was built with (defineChain passes the
+	// chain through), so assertRpcServesDeclaredChain sees a matching live chain id.
+	createPublicClient: jest.fn((opts: { chain?: { id?: number } }) => ({
+		publicClient: true,
+		getChainId: jest.fn(async () => opts?.chain?.id),
+	})),
+	createWalletClient: jest.fn((opts: { chain?: { id?: number } }) => ({
+		extend: jest.fn(() => ({ walletClient: true, getChainId: jest.fn(async () => opts?.chain?.id) })),
 	})),
 	defineChain: jest.fn((chain: unknown) => chain),
 	http: jest.fn((rpcUrl: string) => ({ rpcUrl })),
@@ -231,6 +251,14 @@ describe('x402 service helpers', () => {
 			address: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
 			encryptedPrivateKey: 'encrypted-private-key',
 			deletedAt: null,
+		});
+		mockApiKeyFindUnique.mockResolvedValue({ id: 'api-key-1' });
+		mockX402EvmWalletCreate.mockResolvedValue({
+			id: 'wallet-new',
+			address: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+			createdAt: new Date('2026-01-01T00:00:00.000Z'),
+			updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+			createdById: 'api-key-1',
 		});
 		mockX402SettlementFindUnique.mockResolvedValue(null);
 		mockX402SettlementUpsert.mockResolvedValue({ id: 'settlement-1' });
@@ -511,6 +539,70 @@ describe('x402 service helpers', () => {
 				}),
 			}),
 		);
+	});
+
+	it('rejects setting a budget for an unregistered network with a 404', async () => {
+		mockX402NetworkFindUnique.mockResolvedValueOnce(null);
+		await expect(
+			service.setX402WalletBudget({
+				apiKeyId: 'api-key-1',
+				evmWalletId: 'wallet-1',
+				caip2Network: source.network,
+				asset: source.asset,
+				remainingAmount: '100',
+			}),
+		).rejects.toMatchObject({ status: 404 });
+		expect(mockBudgetUpsert).not.toHaveBeenCalled();
+	});
+
+	it('rejects setting a budget for a missing wallet with a 404', async () => {
+		mockX402EvmWalletFindUnique.mockResolvedValueOnce(null);
+		await expect(
+			service.setX402WalletBudget({
+				apiKeyId: 'api-key-1',
+				evmWalletId: 'missing-wallet',
+				caip2Network: source.network,
+				asset: source.asset,
+				remainingAmount: '100',
+			}),
+		).rejects.toMatchObject({ status: 404 });
+		expect(mockBudgetUpsert).not.toHaveBeenCalled();
+	});
+
+	it('maps a duplicate managed wallet address to a 409', async () => {
+		mockX402EvmWalletCreate.mockRejectedValueOnce(
+			new MockPrismaClientKnownRequestError('Unique constraint failed on the fields: (`address`)', 'P2002'),
+		);
+		await expect(
+			service.createX402ManagedWallet({
+				createdByApiKeyId: 'api-key-1',
+				privateKey: `0x${'a'.repeat(64)}`,
+			}),
+		).rejects.toMatchObject({ status: 409 });
+	});
+
+	it('refuses to settle through a retired facilitator wallet', async () => {
+		mockX402NetworkFindUnique.mockResolvedValueOnce({
+			id: 'network-1',
+			caip2Id: source.network,
+			displayName: 'Base Sepolia',
+			rpcUrl: 'https://sepolia.base.org',
+			isEnabled: true,
+			FacilitatorWallet: {
+				id: 'wallet-facilitator',
+				encryptedPrivateKey: 'encrypted-private-key',
+				deletedAt: new Date('2026-01-01T00:00:00.000Z'),
+			},
+		});
+		await expect(
+			service.settleX402Payment({
+				apiKeyId: 'api-key-1',
+				caip2NetworkLimit: null,
+				supportedPaymentSourceId: 'source-1',
+				paymentPayload: typedPaymentPayload,
+			}),
+		).rejects.toMatchObject({ status: 400 });
+		expect(mockFacilitatorSettle).not.toHaveBeenCalled();
 	});
 
 	describe('createX402Payment (buy side)', () => {

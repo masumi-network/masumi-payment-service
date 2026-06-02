@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import { Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -24,6 +25,7 @@ const PRIVATE_KEY_REGEX = /^0x[a-fA-F0-9]{64}$/;
 
 export function WalletsTab() {
   const { apiClient } = useAppContext();
+  const queryClient = useQueryClient();
   const { wallets, isLoading, isRefetching, refetch } = useX402Wallets();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [retiringId, setRetiringId] = useState<string | null>(null);
@@ -41,6 +43,10 @@ export function WalletsTab() {
       onSuccess: () => {
         toast.success('Wallet retired');
         refetch();
+        // Retiring disables this wallet's budgets and detaches it as a chain facilitator,
+        // so refresh those caches too — refetching only the wallet list leaves them stale.
+        queryClient.invalidateQueries({ queryKey: ['x402-budgets'] });
+        queryClient.invalidateQueries({ queryKey: ['x402-networks'] });
       },
       onFinally: () => setRetiringId(null),
       errorMessage: 'Failed to retire wallet',
@@ -132,6 +138,8 @@ export function WalletsTab() {
         onSaved={() => {
           setDialogOpen(false);
           refetch();
+          // A newly created wallet becomes selectable as a budget target.
+          queryClient.invalidateQueries({ queryKey: ['x402-budgets'] });
         }}
       />
     </div>
@@ -196,6 +204,8 @@ function CreateWalletDialog({
               type="password"
               placeholder="0x… (leave empty to generate)"
               className="font-mono"
+              autoComplete="off"
+              spellCheck={false}
               value={privateKey}
               onChange={(e) => setPrivateKey(e.target.value)}
             />

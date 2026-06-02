@@ -21,7 +21,9 @@ export function useX402Networks(options?: { silentErrors?: boolean }) {
   const silentErrors = options?.silentErrors ?? false;
 
   const query = useQuery({
-    queryKey: ['x402-networks'],
+    // Keyed by silentErrors so the silent (selector) and toasting (tab) consumers do
+    // not share one cache entry and race on which onError handler runs.
+    queryKey: ['x402-networks', silentErrors],
     queryFn: async () => {
       const response = await handleApiCall(
         () => getX402Networks({ client: apiClient }),

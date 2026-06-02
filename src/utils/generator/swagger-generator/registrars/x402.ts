@@ -15,7 +15,10 @@ import {
 	listSettlementsSchemaOutput,
 	listWalletsSchemaOutput,
 	setBudgetSchemaInput,
+	settleSchemaOutput,
 	upsertNetworkSchemaInput,
+	verifySchemaOutput,
+	verifySettleSchemaInput,
 	x402NetworkSchema,
 } from '@/routes/api/x402/schemas';
 import {
@@ -33,7 +36,10 @@ import {
 	listX402SettlementsResponseExample,
 	listX402WalletsResponseExample,
 	setX402BudgetBodyExample,
+	settleX402ResponseExample,
 	upsertX402NetworkBodyExample,
+	verifyX402BodyExample,
+	verifyX402ResponseExample,
 	x402BudgetExample,
 	x402NetworkExample,
 	x402WalletExample,
@@ -163,6 +169,48 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 			},
 		},
 		responses: { 200: successResponse('Budget saved', budgetSchema, x402BudgetExample) },
+	});
+
+	registry.registerPath({
+		method: 'post',
+		path: '/x402/verify',
+		description:
+			'Verifies a buyer x402 payment payload against a registered resource without settling it, so a resource server can check a payment before serving content.',
+		summary: 'Verify an inbound x402 payment. (pay access required)',
+		tags: ['x402'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			body: {
+				description: 'The registered supported payment source id and the buyer payment payload to verify',
+				content: {
+					'application/json': {
+						schema: verifySettleSchemaInput.openapi({ example: verifyX402BodyExample }),
+					},
+				},
+			},
+		},
+		responses: { 200: successResponse('x402 verification result', verifySchemaOutput, verifyX402ResponseExample) },
+	});
+
+	registry.registerPath({
+		method: 'post',
+		path: '/x402/settle',
+		description:
+			'Settles a buyer x402 payment payload on-chain for a registered resource and records the settlement. Idempotent per payment payload hash.',
+		summary: 'Settle an inbound x402 payment on-chain. (pay access required)',
+		tags: ['x402'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			body: {
+				description: 'The registered supported payment source id and the buyer payment payload to settle',
+				content: {
+					'application/json': {
+						schema: verifySettleSchemaInput.openapi({ example: verifyX402BodyExample }),
+					},
+				},
+			},
+		},
+		responses: { 200: successResponse('x402 settlement result', settleSchemaOutput, settleX402ResponseExample) },
 	});
 
 	registry.registerPath({

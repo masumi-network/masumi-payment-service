@@ -3108,7 +3108,7 @@ export type PostApiKeyData = {
          */
         NetworkLimit?: Array<'Preprod' | 'Mainnet'>;
         /**
-         * Additional CAIP-2 chain identifiers the API key is allowed to use
+         * Additional non-Cardano CAIP-2 chain identifiers the API key is allowed to use
          */
         ChainIdLimit?: Array<string>;
         /**
@@ -10259,6 +10259,136 @@ export type PostX402BudgetsResponses = {
 };
 
 export type PostX402BudgetsResponse = PostX402BudgetsResponses[keyof PostX402BudgetsResponses];
+
+export type PostX402VerifyData = {
+    /**
+     * The registered supported payment source id and the buyer payment payload to verify
+     */
+    body?: {
+        supportedPaymentSourceId: string;
+        paymentPayload: {
+            x402Version: number;
+            resource?: {
+                url?: string;
+            };
+            accepted: {
+                scheme: string;
+                network: string;
+                asset: string;
+                amount: string;
+                payTo: string;
+                maxTimeoutSeconds: number;
+                extra?: {
+                    [key: string]: unknown;
+                };
+            };
+            payload: {
+                [key: string]: unknown;
+            };
+            extensions?: {
+                [key: string]: unknown;
+            };
+        };
+    };
+    path?: never;
+    query?: never;
+    url: '/x402/verify';
+};
+
+export type PostX402VerifyResponses = {
+    /**
+     * x402 verification result
+     */
+    200: {
+        status: 'success';
+        data: {
+            attemptId: string;
+            paymentPayloadHash: string;
+            paymentIdentifier: string | null;
+            verifyResponse: {
+                isValid: boolean;
+                invalidReason?: string;
+                invalidMessage?: string;
+                payer?: string;
+                extensions?: {
+                    [key: string]: unknown;
+                };
+                extra?: {
+                    [key: string]: unknown;
+                };
+            };
+        };
+    };
+};
+
+export type PostX402VerifyResponse = PostX402VerifyResponses[keyof PostX402VerifyResponses];
+
+export type PostX402SettleData = {
+    /**
+     * The registered supported payment source id and the buyer payment payload to settle
+     */
+    body?: {
+        supportedPaymentSourceId: string;
+        paymentPayload: {
+            x402Version: number;
+            resource?: {
+                url?: string;
+            };
+            accepted: {
+                scheme: string;
+                network: string;
+                asset: string;
+                amount: string;
+                payTo: string;
+                maxTimeoutSeconds: number;
+                extra?: {
+                    [key: string]: unknown;
+                };
+            };
+            payload: {
+                [key: string]: unknown;
+            };
+            extensions?: {
+                [key: string]: unknown;
+            };
+        };
+    };
+    path?: never;
+    query?: never;
+    url: '/x402/settle';
+};
+
+export type PostX402SettleResponses = {
+    /**
+     * x402 settlement result
+     */
+    200: {
+        status: 'success';
+        data: {
+            attemptId: string;
+            paymentPayloadHash: string;
+            paymentIdentifier: string | null;
+            replay: boolean;
+            settleResponse: {
+                success: boolean;
+                errorReason?: string;
+                errorMessage?: string;
+                payer?: string;
+                transaction: string;
+                network: string;
+                amount?: string;
+                extensions?: {
+                    [key: string]: unknown;
+                };
+                extra?: {
+                    [key: string]: unknown;
+                };
+            };
+        };
+    };
+};
+
+export type PostX402SettleResponse = PostX402SettleResponses[keyof PostX402SettleResponses];
 
 export type PostX402PayData = {
     /**

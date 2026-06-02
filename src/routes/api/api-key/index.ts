@@ -177,7 +177,15 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 				canPay: canPay,
 				canAdmin: canAdmin,
 				usageLimited: isAdmin ? false : input.usageLimited,
-				networkLimit: isAdmin ? [] : mergeCaip2NetworkLimits(input.NetworkLimit, input.ChainIdLimit),
+				networkLimit: isAdmin
+					? []
+					: mergeCaip2NetworkLimits(
+							input.NetworkLimit,
+							// Mirror the update path: ChainIdLimit contributes only EVM (non-Cardano)
+							// chains. Cardano access is controlled solely by NetworkLimit, so a
+							// Cardano CAIP-2 id passed here is dropped rather than silently granting access.
+							input.ChainIdLimit.filter((chainId) => caip2ToCardanoNetwork(chainId) == null),
+						),
 				walletScopeEnabled: isAdmin ? false : input.walletScopeEnabled,
 				RemainingUsageCredits: {
 					createMany: {

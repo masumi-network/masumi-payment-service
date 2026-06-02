@@ -34,7 +34,7 @@ export function AgentX402Options({
         <div className="space-y-2 p-2 bg-muted/40 border rounded-md">
           {evmSources.map((source, index, arr) => (
             <div
-              key={index}
+              key={`${source.network}-${source.asset}-${source.payTo}`}
               className={cn('flex flex-col gap-1 py-2', index < arr.length - 1 && 'border-b')}
             >
               <div className="flex items-center justify-between">

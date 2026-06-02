@@ -89,11 +89,17 @@ export const addAPIKeySchemaInput = z.object({
 		.describe('The Cardano networks the API key is allowed to use'),
 	ChainIdLimit: z
 		.array(
-			z.string().regex(/^[-a-z0-9]{3,8}:[-_a-zA-Z0-9]{1,32}$/, 'Each entry must be a CAIP-2 chain id like eip155:8453'),
+			z
+				.string()
+				.regex(/^[-a-z0-9]{3,8}:[-_a-zA-Z0-9]{1,32}$/, 'Each entry must be a CAIP-2 chain id like eip155:8453')
+				.refine(
+					(chainId) => !chainId.toLowerCase().startsWith('cardano:'),
+					'Use NetworkLimit for Cardano networks; ChainIdLimit is for non-Cardano CAIP-2 chain ids',
+				),
 		)
 		.max(50)
 		.default([])
-		.describe('Additional CAIP-2 chain identifiers the API key is allowed to use'),
+		.describe('Additional non-Cardano CAIP-2 chain identifiers the API key is allowed to use'),
 	/** @deprecated Use canRead, canPay, canAdmin flags instead. Will be removed in a future version. */
 	permission: z
 		.enum(['Read', 'ReadAndPay', 'Admin'])
@@ -150,7 +156,13 @@ export const updateAPIKeySchemaInput = z.object({
 		.describe('Replaces the Cardano-network half of the access list. Omit to leave Cardano access unchanged.'),
 	ChainIdLimit: z
 		.array(
-			z.string().regex(/^[-a-z0-9]{3,8}:[-_a-zA-Z0-9]{1,32}$/, 'Each entry must be a CAIP-2 chain id like eip155:8453'),
+			z
+				.string()
+				.regex(/^[-a-z0-9]{3,8}:[-_a-zA-Z0-9]{1,32}$/, 'Each entry must be a CAIP-2 chain id like eip155:8453')
+				.refine(
+					(chainId) => !chainId.toLowerCase().startsWith('cardano:'),
+					'Use NetworkLimit for Cardano networks; ChainIdLimit is for non-Cardano CAIP-2 chain ids',
+				),
 		)
 		.max(50)
 		.optional()

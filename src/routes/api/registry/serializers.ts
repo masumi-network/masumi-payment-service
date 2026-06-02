@@ -1,6 +1,6 @@
 import { Network, PricingType, X402PaymentScheme, type Prisma } from '@/generated/prisma/client';
 import { SupportedPaymentSourceChain, type SupportedPaymentSource } from '@/types/payment-source';
-import createHttpError from 'http-errors';
+import { logger } from '@masumi/payment-core/logger';
 import type { RegistryListRecord } from './queries';
 
 type SupportedPaymentSourceRecord = RegistryListRecord['SupportedPaymentSources'][number];
@@ -16,7 +16,9 @@ export function serializeSupportedPaymentSources(
 	sources: SupportedPaymentSourceRecord[],
 ): SupportedPaymentSource[] | null {
 	if (sources.length === 0) return null;
-	return sources.map((source) => {
+	// Skip (and log) incomplete persisted rows rather than throwing: this runs inside the
+	// list serializer, so one malformed row must not fail the entire page with a 500.
+	const serialized = sources.flatMap((source): SupportedPaymentSource[] => {
 		if (source.chain === SupportedPaymentSourceChain.EVM) {
 			if (
 				source.scheme !== X402PaymentScheme.Exact ||
@@ -25,33 +27,46 @@ export function serializeSupportedPaymentSources(
 				source.decimals == null ||
 				source.payTo == null
 			) {
-				throw createHttpError(500, 'Persisted x402 supported payment source is incomplete');
+				logger.error('Skipping incomplete persisted x402 supported payment source', {
+					network: source.network,
+					address: source.address,
+				});
+				return [];
 			}
-			return {
-				chain: SupportedPaymentSourceChain.EVM,
-				network: source.network,
-				paymentSourceType: null,
-				address: source.address,
-				scheme: 'Exact',
-				asset: source.asset,
-				amount: source.amount.toString(),
-				decimals: source.decimals,
-				payTo: source.payTo,
-				resource: source.resource ?? undefined,
-				extra: jsonObjectToRecord(source.extra),
-			};
+			return [
+				{
+					chain: SupportedPaymentSourceChain.EVM,
+					network: source.network,
+					paymentSourceType: null,
+					address: source.address,
+					scheme: 'Exact',
+					asset: source.asset,
+					amount: source.amount.toString(),
+					decimals: source.decimals,
+					payTo: source.payTo,
+					resource: source.resource ?? undefined,
+					extra: jsonObjectToRecord(source.extra),
+				},
+			];
 		}
 
 		if (source.paymentSourceType == null) {
-			throw createHttpError(500, 'Persisted Cardano supported payment source is missing its paymentSourceType');
+			logger.error('Skipping persisted Cardano supported payment source missing its paymentSourceType', {
+				network: source.network,
+				address: source.address,
+			});
+			return [];
 		}
-		return {
-			chain: SupportedPaymentSourceChain.Cardano,
-			network: source.network as Network,
-			paymentSourceType: source.paymentSourceType,
-			address: source.address,
-		};
+		return [
+			{
+				chain: SupportedPaymentSourceChain.Cardano,
+				network: source.network as Network,
+				paymentSourceType: source.paymentSourceType,
+				address: source.address,
+			},
+		];
 	});
+	return serialized.length === 0 ? null : serialized;
 }
 
 export function serializeRegistryEntry(item: RegistryListRecord) {

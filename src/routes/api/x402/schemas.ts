@@ -98,6 +98,7 @@ export const forwardedX402PaymentRequiredSchema = z.object({
 	accepts: z
 		.array(forwardedX402RequirementSchema)
 		.min(1)
+		.max(20)
 		.describe('The payment options advertised by the 402 response'),
 	extensions: z.record(z.string(), z.unknown()).optional(),
 	error: z.string().optional(),
