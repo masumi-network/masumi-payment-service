@@ -13,7 +13,7 @@ import { SmartContractState } from '@masumi/payment-core/smart-contract-state';
 import { convertNetwork } from '@masumi/payment-core/network';
 // TODO(v1-package-boundary): move min-utxo to @masumi/payment-core
 import { calculateMinUtxo, DUMMY_RESULT_HASH, getNativeTokenCount } from '@/utils/min-utxo';
-import { CONSTANTS } from '@masumi/payment-core/config';
+import { CONSTANTS, SERVICE_CONSTANTS } from '@masumi/payment-core/config';
 import { logger } from '@masumi/payment-core/logger';
 import { getDatumFromBlockchainIdentifier } from '@masumi/payment-source-v1';
 
@@ -155,10 +155,14 @@ export async function buildX402FundsLockingTransaction({
 
 	// Step 5: Build unsigned transaction with MeshTxBuilder
 	const meshNetwork = convertNetwork(network);
-	const invalidBefore = unixTimeToEnclosingSlot(Date.now() - 300_000, SLOT_CONFIG_NETWORK[meshNetwork]) - 1;
+	const invalidBefore =
+		unixTimeToEnclosingSlot(Date.now() - SERVICE_CONSTANTS.TRANSACTION.timeBufferMs, SLOT_CONFIG_NETWORK[meshNetwork]) -
+		1;
 	// Use payByTime as the tx validity upper bound so the buyer has the full window to sign and submit
 	const invalidAfterMs = Number(buildData.payByTime);
-	const invalidAfter = unixTimeToEnclosingSlot(invalidAfterMs, SLOT_CONFIG_NETWORK[meshNetwork]) + 30;
+	const invalidAfter =
+		unixTimeToEnclosingSlot(invalidAfterMs, SLOT_CONFIG_NETWORK[meshNetwork]) +
+		SERVICE_CONSTANTS.TRANSACTION.validitySlotBuffer;
 
 	// Pull live chain protocol params so script_data_hash matches the
 	// ledger's computation. See generateRegistryMintTransaction in

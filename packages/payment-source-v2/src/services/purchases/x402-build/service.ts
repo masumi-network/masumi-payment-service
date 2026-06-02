@@ -7,7 +7,7 @@ import { Network } from '@/generated/prisma/client';
 import { SmartContractState } from '@/utils/generator/contract-generator';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { calculateMinUtxo, DUMMY_RESULT_HASH, getNativeTokenCount } from '@/utils/min-utxo';
-import { CONSTANTS } from '@masumi/payment-core/config';
+import { CONSTANTS, SERVICE_CONSTANTS } from '@masumi/payment-core/config';
 import { logger } from '@masumi/payment-core/logger';
 import { createDatumFromBlockchainIdentifierV2 } from '@masumi/payment-source-v2';
 
@@ -140,7 +140,9 @@ export async function buildX402FundsLockingTransactionV2({
 	const selectedUtxos = selectUtxosForPayment(buyerUtxos, adjustedFunds, totalLovelaceNeeded);
 
 	const meshNetwork = convertNetwork(network);
-	const invalidBefore = unixTimeToEnclosingSlot(Date.now() - 300_000, SLOT_CONFIG_NETWORK[meshNetwork]) - 1;
+	const invalidBefore =
+		unixTimeToEnclosingSlot(Date.now() - SERVICE_CONSTANTS.TRANSACTION.timeBufferMs, SLOT_CONFIG_NETWORK[meshNetwork]) -
+		1;
 	// `unixTimeToEnclosingSlot` accepts `number`, but `payByTime` is `bigint`
 	// in our DB. ms-since-epoch fits inside `Number.MAX_SAFE_INTEGER` for any
 	// realistic deadline (~285k years), so the BigInt→Number coerce is safe
@@ -150,7 +152,9 @@ export async function buildX402FundsLockingTransactionV2({
 		throw createHttpError(400, 'payByTime exceeds safe integer range');
 	}
 	const invalidAfterMs = Number(buildData.payByTime);
-	const invalidAfter = unixTimeToEnclosingSlot(invalidAfterMs, SLOT_CONFIG_NETWORK[meshNetwork]) + 30;
+	const invalidAfter =
+		unixTimeToEnclosingSlot(invalidAfterMs, SLOT_CONFIG_NETWORK[meshNetwork]) +
+		SERVICE_CONSTANTS.TRANSACTION.validitySlotBuffer;
 
 	// Pull live chain protocol params so script_data_hash matches the
 	// ledger's computation. See generateRegistryMintTransaction in
