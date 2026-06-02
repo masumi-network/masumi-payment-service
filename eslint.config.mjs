@@ -69,7 +69,7 @@ export default [
 	},
 	// Add custom rules for TypeScript
 	{
-		files: ['src/**/*.ts'],
+		files: ['src/**/*.ts', 'packages/**/*.ts'],
 		rules: {
 			'@typescript-eslint/array-type': ['error', { default: 'array-simple' }],
 			'@typescript-eslint/no-explicit-any': ['off'],
@@ -89,7 +89,14 @@ export default [
 	},
 	// Add Jest environment for test files
 	{
-		files: ['src/**/*.spec.ts', 'src/**/*.test.ts', 'tests/**/*.ts', 'jest.e2e.config.ts'],
+		files: [
+			'src/**/*.spec.ts',
+			'src/**/*.test.ts',
+			'packages/**/*.spec.ts',
+			'packages/**/*.test.ts',
+			'tests/**/*.ts',
+			'jest.e2e.config.ts',
+		],
 		languageOptions: {
 			globals: {
 				...globals.jest,
@@ -112,6 +119,8 @@ export default [
 			'.remember/**',
 			'src/**/*.spec.ts',
 			'src/**/*.test.ts',
+			'packages/**/*.spec.ts',
+			'packages/**/*.test.ts',
 			'tests/**/*.ts',
 			'jest.e2e.config.ts',
 			'**/node_modules/**',

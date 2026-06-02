@@ -43,6 +43,7 @@ import { queryAgentFromWalletGet } from './registry/wallet';
 import { resolvePaymentRequestPost } from './payments/resolve-blockchain-identifier';
 import { resolvePurchaseRequestPost } from './purchases/resolve-blockchain-identifier';
 import { unregisterAgentPost } from './registry/deregister';
+import { updateAgentPost } from './registry/update';
 import { revealDataEndpointPost } from './signature/verify/reveal-data';
 import { postMonthlySignatureEndpoint } from './signature/sign/create-invoice/monthly';
 import { postVerifyAndPublishAgentSignatureEndpoint } from './signature/sign/verify-and-publish-agent';
@@ -167,6 +168,9 @@ export const apiRouter: Routing = {
 			},
 			deregister: {
 				post: unregisterAgentPost,
+			},
+			update: {
+				post: updateAgentPost,
 			},
 			'agent-identifier': {
 				get: queryAgentByIdentifierGet,

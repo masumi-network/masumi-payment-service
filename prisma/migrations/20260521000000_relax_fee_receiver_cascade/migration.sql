@@ -1,0 +1,13 @@
+-- No-op: the FK relaxation (PaymentSource.adminWalletId ON DELETE SET NULL)
+-- previously performed here was merged into the prior migration
+-- 20260519120000_add_payment_source_type_v2_registry_metadata so that the FK
+-- becomes SET NULL BEFORE the column is made nullable. Splitting the two left
+-- a cascade window where deleting an admin wallet between migrations would
+-- wipe the PaymentSource and every dependent row.
+--
+-- This file is intentionally kept (rather than deleted) so Prisma's
+-- _prisma_migrations tracker on databases that already applied this migration
+-- does not see a missing migration directory. The DROP+ADD in the merged
+-- migration is wrapped in IF EXISTS, so re-applying that block on a database
+-- where this no-op already ran is safe.
+SELECT 1;

@@ -1,16 +1,21 @@
-import { getPaymentScriptV1, getRegistryScriptV1 } from '@/utils/generator/contract-generator';
-import { prisma } from '@/utils/db';
+import {
+	getPaymentScriptV1,
+	getPaymentScriptV2,
+	getRegistryScriptV1,
+	getRegistryScriptV2,
+} from '@/utils/generator/contract-generator';
+import { prisma } from '@masumi/payment-core/db';
 import { encrypt } from '@/utils/security/encryption';
-import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
+import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
-import { HotWalletType, Network } from '@/generated/prisma/client';
+import { HotWalletType, Network, PaymentSourceType } from '@/generated/prisma/client';
 import createHttpError from 'http-errors';
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
-import { DEFAULTS } from '@/utils/config';
+import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
+import { DEFAULTS } from '@masumi/payment-core/config';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 import { walletLowBalanceMonitorService } from '@/services/wallets';
 import {
 	paymentSourceExtendedCreateSchemaInput,
@@ -126,107 +131,131 @@ export const paymentSourceExtendedEndpointPost = adminAuthenticatedEndpointFacto
 			};
 		});
 
-		const createdPaymentSource = await prisma.$transaction(async (prisma) => {
-			const { smartContractAddress } = await getPaymentScriptV1(
-				input.AdminWallets[0].walletAddress,
-				input.AdminWallets[1].walletAddress,
-				input.AdminWallets[2].walletAddress,
-				input.FeeReceiverNetworkWallet.walletAddress,
-				input.feeRatePermille,
-				input.cooldownTime ??
-					(input.network == Network.Preprod ? DEFAULTS.COOLDOWN_TIME_PREPROD : DEFAULTS.COOLDOWN_TIME_MAINNET),
-				input.network,
-			);
+		const createdPaymentSource = await prisma.$transaction(
+			async (prisma) => {
+				const cooldownTime =
+					input.cooldownTime ??
+					(input.network == Network.Preprod ? DEFAULTS.COOLDOWN_TIME_PREPROD : DEFAULTS.COOLDOWN_TIME_MAINNET);
+				const { smartContractAddress } =
+					input.paymentSourceType === PaymentSourceType.Web3CardanoV1
+						? await getPaymentScriptV1(
+								input.AdminWallets[0].walletAddress,
+								input.AdminWallets[1].walletAddress,
+								input.AdminWallets[2].walletAddress,
+								input.FeeReceiverNetworkWallet!.walletAddress,
+								input.feeRatePermille!,
+								cooldownTime,
+								input.network,
+							)
+						: await getPaymentScriptV2(
+								input.AdminWallets.map((wallet) => wallet.walletAddress),
+								input.requiredAdminSignatures!,
+								cooldownTime,
+								input.network,
+							);
 
-			const { policyId } = await getRegistryScriptV1(smartContractAddress, input.network);
-			const latestIdentifierChecked = await resolveLatestIdentifierCheckpoint(
-				input.network,
-				input.PaymentSourceConfig.rpcProviderApiKey,
-				smartContractAddress,
-			);
+				const { policyId } =
+					input.paymentSourceType === PaymentSourceType.Web3CardanoV1
+						? await getRegistryScriptV1(smartContractAddress, input.network)
+						: await getRegistryScriptV2(input.network);
+				const latestIdentifierChecked = await resolveLatestIdentifierCheckpoint(
+					input.network,
+					input.PaymentSourceConfig.rpcProviderApiKey,
+					smartContractAddress,
+				);
 
-			const sellingWallets = await Promise.all(
-				sellingWalletsMesh.map(async (sw) => {
-					return {
-						walletAddress: (await sw.wallet.getUnusedAddresses())[0],
-						walletVkey: resolvePaymentKeyHash((await sw.wallet.getUnusedAddresses())[0]),
-						secretId: (
-							await prisma.walletSecret.create({
-								data: { encryptedMnemonic: sw.mnemonicEncrypted },
-							})
-						).id,
-						note: sw.note,
-						type: HotWalletType.Selling,
-						collectionAddress: sw.collectionAddress,
-					};
-				}),
-			);
+				const sellingWallets = await Promise.all(
+					sellingWalletsMesh.map(async (sw) => {
+						const unusedAddresses = await sw.wallet.getUnusedAddresses();
+						const walletAddress = unusedAddresses[0];
+						return {
+							walletAddress,
+							walletVkey: resolvePaymentKeyHash(walletAddress),
+							secretId: (
+								await prisma.walletSecret.create({
+									data: { encryptedMnemonic: sw.mnemonicEncrypted },
+								})
+							).id,
+							note: sw.note,
+							type: HotWalletType.Selling,
+							collectionAddress: sw.collectionAddress,
+						};
+					}),
+				);
 
-			const purchasingWallets = await Promise.all(
-				purchasingWalletsMesh.map(async (pw) => {
-					return {
-						walletVkey: resolvePaymentKeyHash((await pw.wallet.getUnusedAddresses())[0]),
-						walletAddress: (await pw.wallet.getUnusedAddresses())[0],
-						secretId: (
-							await prisma.walletSecret.create({
-								data: { encryptedMnemonic: pw.mnemonicEncrypted },
-							})
-						).id,
-						note: pw.note,
-						type: HotWalletType.Purchasing,
-						collectionAddress: pw.collectionAddress,
-					};
-				}),
-			);
+				const purchasingWallets = await Promise.all(
+					purchasingWalletsMesh.map(async (pw) => {
+						const unusedAddresses = await pw.wallet.getUnusedAddresses();
+						const walletAddress = unusedAddresses[0];
+						return {
+							walletVkey: resolvePaymentKeyHash(walletAddress),
+							walletAddress,
+							secretId: (
+								await prisma.walletSecret.create({
+									data: { encryptedMnemonic: pw.mnemonicEncrypted },
+								})
+							).id,
+							note: pw.note,
+							type: HotWalletType.Purchasing,
+							collectionAddress: pw.collectionAddress,
+						};
+					}),
+				);
 
-			const paymentSource = await prisma.paymentSource.create({
-				data: {
-					network: input.network,
-					smartContractAddress: smartContractAddress,
-					policyId: policyId,
-					lastIdentifierChecked: latestIdentifierChecked,
-					PaymentSourceConfig: {
-						create: {
-							rpcProviderApiKey: input.PaymentSourceConfig.rpcProviderApiKey,
-							rpcProvider: input.PaymentSourceConfig.rpcProvider,
+				const paymentSource = await prisma.paymentSource.create({
+					data: {
+						network: input.network,
+						paymentSourceType: input.paymentSourceType,
+						requiredAdminSignatures:
+							input.paymentSourceType === PaymentSourceType.Web3CardanoV2 ? input.requiredAdminSignatures! : null,
+						smartContractAddress: smartContractAddress,
+						policyId: policyId,
+						lastIdentifierChecked: latestIdentifierChecked,
+						PaymentSourceConfig: {
+							create: {
+								rpcProviderApiKey: input.PaymentSourceConfig.rpcProviderApiKey,
+								rpcProvider: input.PaymentSourceConfig.rpcProvider,
+							},
+						},
+						cooldownTime,
+						AdminWallets: {
+							createMany: {
+								data: input.AdminWallets.map((aw, index) => ({
+									walletAddress: aw.walletAddress,
+									order: index,
+								})),
+							},
+						},
+						feeRatePermille: input.paymentSourceType === PaymentSourceType.Web3CardanoV2 ? 0 : input.feeRatePermille!,
+						FeeReceiverNetworkWallet:
+							input.paymentSourceType === PaymentSourceType.Web3CardanoV1
+								? {
+										create: {
+											walletAddress: input.FeeReceiverNetworkWallet!.walletAddress,
+											order: 0,
+										},
+									}
+								: undefined,
+						HotWallets: {
+							createMany: {
+								data: [...purchasingWallets, ...sellingWallets],
+							},
 						},
 					},
-					cooldownTime:
-						input.cooldownTime ??
-						(input.network == Network.Preprod ? DEFAULTS.COOLDOWN_TIME_PREPROD : DEFAULTS.COOLDOWN_TIME_MAINNET),
-					AdminWallets: {
-						createMany: {
-							data: input.AdminWallets.map((aw, index) => ({
-								walletAddress: aw.walletAddress,
-								order: index,
-							})),
+					include: {
+						HotWallets: {
+							where: { deletedAt: null },
+							select: {
+								id: true,
+							},
 						},
 					},
-					feeRatePermille: input.feeRatePermille,
-					FeeReceiverNetworkWallet: {
-						create: {
-							walletAddress: input.FeeReceiverNetworkWallet.walletAddress,
-							order: 0,
-						},
-					},
-					HotWallets: {
-						createMany: {
-							data: [...purchasingWallets, ...sellingWallets],
-						},
-					},
-				},
-				include: {
-					HotWallets: {
-						where: { deletedAt: null },
-						select: {
-							id: true,
-						},
-					},
-				},
-			});
+				});
 
-			return paymentSource;
-		});
+				return paymentSource;
+			},
+			{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
+		);
 
 		await walletLowBalanceMonitorService.seedDefaultRulesForWallets(
 			createdPaymentSource.HotWallets.map((wallet) => wallet.id),
@@ -257,7 +286,6 @@ export const paymentSourceExtendedEndpointPatch = adminAuthenticatedEndpointFact
 		const paymentSource = await prisma.paymentSource.findUnique({
 			where: {
 				id: input.id,
-				network: { in: ctx.networkLimit },
 				deletedAt: null,
 			},
 			select: {
@@ -276,6 +304,10 @@ export const paymentSourceExtendedEndpointPatch = adminAuthenticatedEndpointFact
 		if (paymentSource == null) {
 			throw createHttpError(404, 'Payment source not found');
 		}
+		// Explicit 403 when the admin's networkLimit does not cover this
+		// source's network. Previously the network filter was inlined in the
+		// where-clause, masking authorization failures as 404s.
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, paymentSource.network);
 		const sellingWalletsMesh = input.AddSellingWallets?.map((sellingWallet) => {
 			return {
 				wallet: generateOfflineWallet(paymentSource.network, sellingWallet.walletMnemonic.split(' ')),
@@ -292,95 +324,98 @@ export const paymentSourceExtendedEndpointPatch = adminAuthenticatedEndpointFact
 				collectionAddress: purchasingWallet.collectionAddress,
 			};
 		});
-		const result = await prisma.$transaction(async (prisma) => {
-			const sellingWallets =
-				sellingWalletsMesh != null
-					? await Promise.all(
-							sellingWalletsMesh.map(async (sw) => {
-								return {
-									walletAddress: (await sw.wallet.getUnusedAddresses())[0],
-									walletVkey: resolvePaymentKeyHash((await sw.wallet.getUnusedAddresses())[0]),
-									secretId: (
-										await prisma.walletSecret.create({
-											data: { encryptedMnemonic: sw.mnemonicEncrypted },
-										})
-									).id,
-									note: sw.note,
-									type: HotWalletType.Selling,
-									collectionAddress: sw.collectionAddress,
-								};
-							}),
-						)
-					: [];
+		const result = await prisma.$transaction(
+			async (prisma) => {
+				const sellingWallets =
+					sellingWalletsMesh != null
+						? await Promise.all(
+								sellingWalletsMesh.map(async (sw) => {
+									return {
+										walletAddress: (await sw.wallet.getUnusedAddresses())[0],
+										walletVkey: resolvePaymentKeyHash((await sw.wallet.getUnusedAddresses())[0]),
+										secretId: (
+											await prisma.walletSecret.create({
+												data: { encryptedMnemonic: sw.mnemonicEncrypted },
+											})
+										).id,
+										note: sw.note,
+										type: HotWalletType.Selling,
+										collectionAddress: sw.collectionAddress,
+									};
+								}),
+							)
+						: [];
 
-			const purchasingWallets =
-				purchasingWalletsMesh != null
-					? await Promise.all(
-							purchasingWalletsMesh.map(async (pw) => {
-								return {
-									walletAddress: (await pw.wallet.getUnusedAddresses())[0],
-									walletVkey: resolvePaymentKeyHash((await pw.wallet.getUnusedAddresses())[0]),
-									secretId: (
-										await prisma.walletSecret.create({
-											data: { encryptedMnemonic: pw.mnemonicEncrypted },
-										})
-									).id,
-									note: pw.note,
-									type: HotWalletType.Purchasing,
-									collectionAddress: pw.collectionAddress,
-								};
-							}),
-						)
-					: [];
+				const purchasingWallets =
+					purchasingWalletsMesh != null
+						? await Promise.all(
+								purchasingWalletsMesh.map(async (pw) => {
+									return {
+										walletAddress: (await pw.wallet.getUnusedAddresses())[0],
+										walletVkey: resolvePaymentKeyHash((await pw.wallet.getUnusedAddresses())[0]),
+										secretId: (
+											await prisma.walletSecret.create({
+												data: { encryptedMnemonic: pw.mnemonicEncrypted },
+											})
+										).id,
+										note: pw.note,
+										type: HotWalletType.Purchasing,
+										collectionAddress: pw.collectionAddress,
+									};
+								}),
+							)
+						: [];
 
-			const walletIdsToRemove = [...(input.RemoveSellingWallets ?? []), ...(input.RemovePurchasingWallets ?? [])].map(
-				(rw) => rw.id,
-			);
+				const walletIdsToRemove = [...(input.RemoveSellingWallets ?? []), ...(input.RemovePurchasingWallets ?? [])].map(
+					(rw) => rw.id,
+				);
 
-			if (walletIdsToRemove.length > 0) {
-				await prisma.paymentSource.update({
+				if (walletIdsToRemove.length > 0) {
+					await prisma.paymentSource.update({
+						where: { id: input.id },
+						data: {
+							HotWallets: {
+								updateMany: {
+									where: { id: { in: walletIdsToRemove } },
+									data: { deletedAt: new Date() },
+								},
+							},
+						},
+					});
+				}
+
+				const updatedPaymentSource = await prisma.paymentSource.update({
 					where: { id: input.id },
 					data: {
+						lastIdentifierChecked: input.lastIdentifierChecked,
+						PaymentSourceConfig:
+							input.PaymentSourceConfig != null
+								? {
+										update: {
+											rpcProviderApiKey: input.PaymentSourceConfig.rpcProviderApiKey,
+										},
+									}
+								: undefined,
 						HotWallets: {
-							updateMany: {
-								where: { id: { in: walletIdsToRemove } },
-								data: { deletedAt: new Date() },
+							createMany: {
+								data: [...purchasingWallets, ...sellingWallets],
+							},
+						},
+					},
+					include: {
+						HotWallets: {
+							where: { deletedAt: null },
+							select: {
+								id: true,
 							},
 						},
 					},
 				});
-			}
 
-			const updatedPaymentSource = await prisma.paymentSource.update({
-				where: { id: input.id },
-				data: {
-					lastIdentifierChecked: input.lastIdentifierChecked,
-					PaymentSourceConfig:
-						input.PaymentSourceConfig != null
-							? {
-									update: {
-										rpcProviderApiKey: input.PaymentSourceConfig.rpcProviderApiKey,
-									},
-								}
-							: undefined,
-					HotWallets: {
-						createMany: {
-							data: [...purchasingWallets, ...sellingWallets],
-						},
-					},
-				},
-				include: {
-					HotWallets: {
-						where: { deletedAt: null },
-						select: {
-							id: true,
-						},
-					},
-				},
-			});
-
-			return updatedPaymentSource;
-		});
+				return updatedPaymentSource;
+			},
+			{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
+		);
 
 		const existingWalletIds = new Set(paymentSource.HotWallets.map((wallet) => wallet.id));
 		const createdWalletIds = result.HotWallets.map((wallet) => wallet.id).filter(
@@ -410,8 +445,20 @@ export const paymentSourceExtendedEndpointDelete = adminAuthenticatedEndpointFac
 		input: z.infer<typeof paymentSourceExtendedDeleteSchemaInput>;
 		ctx: AuthContext;
 	}) => {
+		// Look up first so a cross-network attempt returns 403 (via the
+		// network check below) and a missing row returns 404. The previous
+		// inlined where-clause filter conflated both into a Prisma P2025
+		// thrown as an opaque 500.
+		const existing = await prisma.paymentSource.findUnique({
+			where: { id: input.id, deletedAt: null },
+			select: { id: true, network: true },
+		});
+		if (existing == null) {
+			throw createHttpError(404, 'Payment source not found');
+		}
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, existing.network);
 		const paymentSource = await prisma.paymentSource.update({
-			where: { id: input.id, network: { in: ctx.networkLimit } },
+			where: { id: existing.id },
 			data: { deletedAt: new Date() },
 			include: paymentSourceExtendedInclude,
 		});

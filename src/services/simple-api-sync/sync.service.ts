@@ -1,8 +1,8 @@
 import { createHash } from 'crypto';
 import { Network, Prisma, SimpleApiStatus } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
-import { CONFIG } from '@/utils/config';
-import { logger } from '@/utils/logger';
+import { prisma } from '@masumi/payment-core/db';
+import { CONFIG } from '@masumi/payment-core/config';
+import { logger } from '@masumi/payment-core/logger';
 
 interface RegistryQueryBody {
 	network: Network;

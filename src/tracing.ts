@@ -15,9 +15,9 @@ import type { IncomingMessage, OutgoingMessage } from 'http';
 import type { Request } from 'express';
 import { PrismaInstrumentation } from '@prisma/instrumentation';
 import { PrismaOutlierFilterSpanExporter } from '@/utils/tracing/prisma-outlier-filter-exporter';
-import { CONFIG } from './utils/config';
+import { CONFIG } from '@masumi/payment-core/config';
 import { logInfo, logError } from './utils/logs';
-import { logger } from './utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 
 export async function setupTracing() {
 	// Service information

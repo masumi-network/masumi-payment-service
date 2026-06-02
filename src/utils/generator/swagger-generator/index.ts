@@ -1,5 +1,5 @@
 import { OpenAPIRegistry, OpenApiGeneratorV3, extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
 import { registerAdminPaths } from './registrars/admin';
 import { registerPaymentPaths } from './registrars/payments';
 import { registerInvoiceAndPurchasePaths } from './registrars/invoices-purchases';

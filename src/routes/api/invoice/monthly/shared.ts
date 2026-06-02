@@ -1,9 +1,9 @@
-import { z } from '@/utils/zod-openapi';
-import { prisma } from '@/utils/db';
+import { z } from '@masumi/payment-core/zod';
+import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 
-import { recordBusinessEndpointError } from '@/utils/metrics';
+import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
 import { generateInvoicePDFBase64, generateCancellationInvoicePDFBase64 } from '@/utils/invoice/pdf-generator';
 import {
 	generateInvoiceGroups,
@@ -21,11 +21,11 @@ import {
 	PREPROD_USDM_UNIT,
 } from '@/utils/invoice/template';
 import { detectInvoiceChanges, getOriginalInvoiceInfo } from '@/utils/invoice/comparison';
-import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
-import { CONFIG } from '@/utils/config';
+import { CONFIG } from '@masumi/payment-core/config';
 import Coingecko from '@coingecko/coingecko-typescript';
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 import {
 	collectDistinctSellerWalletVkeys,
 	getBillableFunds,
@@ -34,11 +34,12 @@ import {
 	type PaymentWithInvoiceContext,
 } from './billing';
 
-export { getBillableFunds, isPaymentBillable } from './billing';
+export { isPaymentBillable } from './billing';
 
 const isUsdcxUnit = (unit: string) => unit === MAINNET_USDCX_UNIT;
 const isUsdmUnit = (unit: string) => unit === MAINNET_USDM_UNIT || unit === PREPROD_USDM_UNIT;
 import { getServicePeriodLabel, mergePaymentsById, validateInvoiceCompliance } from '@/utils/invoice/compliance';
+import { withSerializableSlot } from '@/utils/db/serializable-semaphore';
 
 function toPrismaBytes(base64: string): Uint8Array<ArrayBuffer> {
 	return Uint8Array.from(Buffer.from(base64, 'base64'));
@@ -522,310 +523,374 @@ export async function generateMonthlyInvoice(
 	});
 
 	// ── Serializable transaction: payment read + invoice check + write ──
-	const invoiceResult = await prisma.$transaction(
-		async (tx) => {
-			const txNowMs = BigInt(Date.now());
-			const txBillableStateFilter = [
-				{
-					onChainState: 'ResultSubmitted' as const,
-					unlockTime: { lte: txNowMs },
-					onChainStateOrResultLastChangedAt: { gte: monthStart, lt: nextMonthStart },
-				},
-				{
-					onChainState: 'Withdrawn' as const,
-					onChainStateOrResultLastChangedAt: { gte: monthStart, lt: nextMonthStart },
-				},
-				{
-					onChainState: 'DisputedWithdrawn' as const,
-					onChainStateOrResultLastChangedAt: { gte: monthStart, lt: nextMonthStart },
-				},
-			];
-
-			const txUninvoicedPayments = await tx.paymentRequest.findMany({
-				where: {
-					BuyerWallet: { walletVkey: input.buyerWalletVkey },
-					...(input.sellerWalletVkey ? { SmartContractWallet: { walletVkey: input.sellerWalletVkey } } : {}),
-					invoiceBaseId: null,
-					OR: txBillableStateFilter,
-					...walletScopePaymentFilter,
-				},
-				include: paymentIncludes,
-			});
-			const txUninvoicedBillableAll = txUninvoicedPayments.filter((payment) =>
-				isPaymentBillable(payment),
-			) as PaymentWithInvoiceContext[];
-			const txUninvoicedSellerWalletVkeys = collectDistinctSellerWalletVkeys(txUninvoicedBillableAll);
-			if (txUninvoicedSellerWalletVkeys.length > 1) {
-				throw createHttpError(
-					409,
-					`Multiple seller wallets found for buyer ${input.buyerWalletVkey} in ${input.month}: ${txUninvoicedSellerWalletVkeys.join(', ')}. Provide sellerWalletVkey to scope the invoice.`,
-				);
-			}
-
-			let txTargetSellerWalletVkey = targetSellerWalletVkey;
-			if (!txTargetSellerWalletVkey && txUninvoicedSellerWalletVkeys.length === 1) {
-				txTargetSellerWalletVkey = txUninvoicedSellerWalletVkeys[0];
-			}
-
-			const txExistingBases = await tx.invoiceBase.findMany({
-				where: {
-					buyerWalletVkey: input.buyerWalletVkey,
-					invoiceMonth: invoiceMonth,
-					invoiceYear: year,
-					...(txTargetSellerWalletVkey ? { sellerWalletVkey: txTargetSellerWalletVkey } : {}),
-				},
-				include: {
-					InvoiceRevisions: {
-						where: { isCancelled: false },
-						orderBy: { revisionNumber: 'desc' },
-						take: 1,
-						include: { InvoiceItems: true },
+	// Gate via the shared semaphore so concurrent HTTP requests don't
+	// exhaust the pg connection pool. See
+	// `src/utils/db/serializable-semaphore.ts`.
+	const invoiceResult = await withSerializableSlot(() =>
+		prisma.$transaction(
+			async (tx) => {
+				const txNowMs = BigInt(Date.now());
+				const txBillableStateFilter = [
+					{
+						onChainState: 'ResultSubmitted' as const,
+						unlockTime: { lte: txNowMs },
+						onChainStateOrResultLastChangedAt: { gte: monthStart, lt: nextMonthStart },
 					},
-					coveredPaymentRequests: {
-						include: paymentIncludes,
+					{
+						onChainState: 'Withdrawn' as const,
+						onChainStateOrResultLastChangedAt: { gte: monthStart, lt: nextMonthStart },
 					},
-				},
-			});
-			const txExistingBasesBySeller = new Map<string, (typeof txExistingBases)[number]>(
-				txExistingBases.map((base) => [base.sellerWalletVkey, base]),
-			);
-			if (txExistingBasesBySeller.size !== txExistingBases.length) {
-				throw createHttpError(409, 'Multiple invoice bases exist for the same buyer/seller/month/year scope');
-			}
-			if (!txTargetSellerWalletVkey && txExistingBases.length > 1) {
-				throw createHttpError(
-					409,
-					`Multiple seller-scoped invoice bases found for buyer ${input.buyerWalletVkey} in ${input.month}.`,
-				);
-			}
-			if (!txTargetSellerWalletVkey && txExistingBases.length === 1) {
-				txTargetSellerWalletVkey = txExistingBases[0].sellerWalletVkey;
-			}
+					{
+						onChainState: 'DisputedWithdrawn' as const,
+						onChainStateOrResultLastChangedAt: { gte: monthStart, lt: nextMonthStart },
+					},
+				];
 
-			const txExistingBase = txTargetSellerWalletVkey
-				? (txExistingBasesBySeller.get(txTargetSellerWalletVkey) ?? null)
-				: null;
-			const txExistingRevision =
-				txExistingBase && txExistingBase.InvoiceRevisions.length > 0
-					? { ...txExistingBase.InvoiceRevisions[0], InvoiceBase: txExistingBase }
-					: null;
-
-			const txExistingBillable = (txExistingBase?.coveredPaymentRequests ?? []).filter((payment) =>
-				isPaymentBillable(payment),
-			) as PaymentWithInvoiceContext[];
-			const txUninvoicedBillable = txTargetSellerWalletVkey
-				? txUninvoicedBillableAll.filter((payment) => getSellerWalletVkey(payment) === txTargetSellerWalletVkey)
-				: txUninvoicedBillableAll;
-			const payments = mergePaymentsById(txExistingBillable, txUninvoicedBillable);
-
-			if (payments.length === 0) {
-				if (txExistingRevision && !input.forceRegenerate) {
-					const cachedInvoice = storedPdfToBase64(txExistingRevision.generatedPDFInvoice);
-					if (cachedInvoice) {
-						return { invoice: cachedInvoice };
-					}
-
-					logger.error('Active invoice revision has empty PDF and cannot be returned as cache', {
-						invoiceRevisionId: txExistingRevision.id,
-						buyerWalletVkey: input.buyerWalletVkey,
-						month: input.month,
-					});
+				const txUninvoicedPayments = await tx.paymentRequest.findMany({
+					where: {
+						BuyerWallet: { walletVkey: input.buyerWalletVkey },
+						...(input.sellerWalletVkey ? { SmartContractWallet: { walletVkey: input.sellerWalletVkey } } : {}),
+						invoiceBaseId: null,
+						OR: txBillableStateFilter,
+						...walletScopePaymentFilter,
+					},
+					include: paymentIncludes,
+				});
+				const txUninvoicedBillableAll = txUninvoicedPayments.filter((payment) =>
+					isPaymentBillable(payment),
+				) as PaymentWithInvoiceContext[];
+				const txUninvoicedSellerWalletVkeys = collectDistinctSellerWalletVkeys(txUninvoicedBillableAll);
+				if (txUninvoicedSellerWalletVkeys.length > 1) {
 					throw createHttpError(
 						409,
-						'Cached invoice PDF is unavailable. Regenerate the invoice with force regeneration to repair the revision.',
+						`Multiple seller wallets found for buyer ${input.buyerWalletVkey} in ${input.month}: ${txUninvoicedSellerWalletVkeys.join(', ')}. Provide sellerWalletVkey to scope the invoice.`,
 					);
 				}
-				throw createHttpError(404, 'No billable payments found for month and wallet');
-			}
 
-			const sellerWalletAddress = payments[0].SmartContractWallet?.walletAddress ?? null;
-			const buyerWalletAddress = payments[0].BuyerWallet?.walletAddress ?? null;
-
-			const items: InvoiceGroupItemInput[] = [];
-			const dbItems: Array<InvoiceGroupItemInput & { referencedPaymentId: string }> = [];
-
-			const groupedPayments = new Map<string, Array<(typeof payments)[number]>>();
-			for (const payment of payments) {
-				const decidedIdentifier = decodeBlockchainIdentifier(payment.blockchainIdentifier);
-				const agentIdentifier = decidedIdentifier?.agentIdentifier ?? `unknown-${payment.id}`;
-				const funds = getBillableFunds(payment);
-				const fundFingerprint = funds
-					.map((f) => `${f.unit}:${f.amount.toString()}`)
-					.sort()
-					.join('|');
-				const groupKey = `${agentIdentifier}::${fundFingerprint}`;
-				if (!groupedPayments.has(groupKey)) {
-					groupedPayments.set(groupKey, []);
+				let txTargetSellerWalletVkey = targetSellerWalletVkey;
+				if (!txTargetSellerWalletVkey && txUninvoicedSellerWalletVkeys.length === 1) {
+					txTargetSellerWalletVkey = txUninvoicedSellerWalletVkeys[0];
 				}
-				groupedPayments.get(groupKey)!.push(payment);
-			}
 
-			for (const [, agentPayments] of groupedPayments) {
-				const payment = agentPayments[0];
-				const quantity = agentPayments.length;
-
-				const decidedIdentifier = decodeBlockchainIdentifier(payment.blockchainIdentifier);
-				const agentIdentifier = decidedIdentifier?.agentIdentifier ?? `unknown-${payment.id}`;
-				const agentDisplayName = agentDisplayNames.get(agentIdentifier) ?? '-';
-				const itemName = `${resolved.itemNamePrefix}${agentDisplayName}${resolved.itemNameSuffix}`;
-
-				const funds = getBillableFunds(payment);
-				let paymentCount = 0;
-
-				for (const fund of funds) {
-					paymentCount++;
-					const unit = fund.unit;
-					const factor = conversion.get(unit);
-					if (!factor) {
-						throw createHttpError(400, `Missing conversion for unit: ${unit}`);
-					}
-					const rawPrice = (Number(fund.amount) * factor.factor) / (1 + effectiveVatRate);
-					const price = Math.round(rawPrice * 1e10) / 1e10;
-					const conversionFactor = 1 / factor.factor;
-					let newItemName = itemName;
-					if (paymentCount > 1) {
-						newItemName = `${newItemName} (${paymentCount}/${funds.length})`;
-					}
-					const item: InvoiceGroupItemInput = {
-						name: newItemName,
-						quantity,
-						price,
-						conversionFactor,
-						decimals: factor.decimals,
-						convertedUnit: unit,
-						conversionDate: dateOfConversionDate,
-					};
-					items.push(item);
-					dbItems.push({ ...item, referencedPaymentId: payment.id });
-				}
-			}
-
-			const groups = generateInvoiceGroups(items, effectiveVatRate);
-
-			if (txExistingRevision) {
-				const changeResult = detectInvoiceChanges(txExistingRevision, groups, input.seller, input.buyer, resolved);
-
-				if (!changeResult.hasChanges && !input.forceRegenerate) {
-					const cachedInvoice = storedPdfToBase64(txExistingRevision.generatedPDFInvoice);
-					if (cachedInvoice) {
-						return { invoice: cachedInvoice };
-					}
-
-					logger.warn('Cached invoice has no PDF bytes; creating recovery revision', {
-						invoiceRevisionId: txExistingRevision.id,
+				const txExistingBases = await tx.invoiceBase.findMany({
+					where: {
 						buyerWalletVkey: input.buyerWalletVkey,
-						month: input.month,
-					});
+						invoiceMonth: invoiceMonth,
+						invoiceYear: year,
+						...(txTargetSellerWalletVkey ? { sellerWalletVkey: txTargetSellerWalletVkey } : {}),
+					},
+					include: {
+						InvoiceRevisions: {
+							where: { isCancelled: false },
+							orderBy: { revisionNumber: 'desc' },
+							take: 1,
+							include: { InvoiceItems: true },
+						},
+						coveredPaymentRequests: {
+							include: paymentIncludes,
+						},
+					},
+				});
+				const txExistingBasesBySeller = new Map<string, (typeof txExistingBases)[number]>(
+					txExistingBases.map((base) => [base.sellerWalletVkey, base]),
+				);
+				if (txExistingBasesBySeller.size !== txExistingBases.length) {
+					throw createHttpError(409, 'Multiple invoice bases exist for the same buyer/seller/month/year scope');
+				}
+				if (!txTargetSellerWalletVkey && txExistingBases.length > 1) {
+					throw createHttpError(
+						409,
+						`Multiple seller-scoped invoice bases found for buyer ${input.buyerWalletVkey} in ${input.month}.`,
+					);
+				}
+				if (!txTargetSellerWalletVkey && txExistingBases.length === 1) {
+					txTargetSellerWalletVkey = txExistingBases[0].sellerWalletVkey;
 				}
 
-				const originalInfo = getOriginalInvoiceInfo(txExistingRevision);
-				const originalItems = txExistingRevision.InvoiceItems.map((it) => ({
-					name: it.name,
-					quantity: Number(it.quantity.toString()),
-					price: Number(it.pricePerUnitWithoutVat.toString()),
-					vatRateOverride: Number(it.vatRate.toString()),
-					decimals: Number(it.decimals.toString()),
-					conversionFactor: Number(it.conversionFactor.toString()),
-					convertedUnit: it.convertedUnit,
-					conversionDate: it.conversionDate,
-				}));
-				const originalGroups = generateInvoiceGroups(originalItems, 0);
+				const txExistingBase = txTargetSellerWalletVkey
+					? (txExistingBasesBySeller.get(txTargetSellerWalletVkey) ?? null)
+					: null;
+				const txExistingRevision =
+					txExistingBase && txExistingBase.InvoiceRevisions.length > 0
+						? { ...txExistingBase.InvoiceRevisions[0], InvoiceBase: txExistingBase }
+						: null;
 
-				const originalSeller = {
-					name: txExistingRevision.sellerName ?? null,
-					companyName: txExistingRevision.sellerCompanyName ?? null,
-					vatNumber: txExistingRevision.sellerVatNumber ?? null,
-					country: txExistingRevision.sellerCountry,
-					city: txExistingRevision.sellerCity,
-					zipCode: txExistingRevision.sellerZipCode,
-					street: txExistingRevision.sellerStreet,
-					streetNumber: txExistingRevision.sellerStreetNumber,
-					email: txExistingRevision.sellerEmail ?? null,
-					phone: txExistingRevision.sellerPhone ?? null,
-				};
-				const originalBuyer = {
-					name: txExistingRevision.buyerName ?? null,
-					companyName: txExistingRevision.buyerCompanyName ?? null,
-					vatNumber: txExistingRevision.buyerVatNumber ?? null,
-					country: txExistingRevision.buyerCountry,
-					city: txExistingRevision.buyerCity,
-					zipCode: txExistingRevision.buyerZipCode,
-					street: txExistingRevision.buyerStreet,
-					streetNumber: txExistingRevision.buyerStreetNumber,
-					email: txExistingRevision.buyerEmail ?? null,
-					phone: txExistingRevision.buyerPhone ?? null,
-				};
+				const txExistingBillable = (txExistingBase?.coveredPaymentRequests ?? []).filter((payment) =>
+					isPaymentBillable(payment),
+				) as PaymentWithInvoiceContext[];
+				const txUninvoicedBillable = txTargetSellerWalletVkey
+					? txUninvoicedBillableAll.filter((payment) => getSellerWalletVkey(payment) === txTargetSellerWalletVkey)
+					: txUninvoicedBillableAll;
+				const payments = mergePaymentsById(txExistingBillable, txUninvoicedBillable);
 
-				const originalResolved = resolveInvoiceConfig(
-					txExistingRevision.currencyShortId as SupportedCurrencies,
-					{
-						title: txExistingRevision.invoiceTitle ?? undefined,
-						date: txExistingRevision.invoiceDate.toISOString(),
-						greeting: txExistingRevision.invoiceGreetings ?? undefined,
-						closing: txExistingRevision.invoiceClosing ?? undefined,
-						signature: txExistingRevision.invoiceSignature ?? undefined,
-						logo: txExistingRevision.invoiceLogo ?? undefined,
-						footer: txExistingRevision.invoiceFooter ?? undefined,
-						terms: txExistingRevision.invoiceTerms ?? undefined,
-						privacy: txExistingRevision.invoicePrivacy ?? undefined,
-						language: (txExistingRevision.language as 'en-us' | 'en-gb' | 'de') ?? undefined,
-						localizationFormat: (txExistingRevision.localizationFormat as 'en-us' | 'en-gb' | 'de') ?? undefined,
-					},
-					{ invoiceType: 'monthly' },
-				);
+				if (payments.length === 0) {
+					if (txExistingRevision && !input.forceRegenerate) {
+						const cachedInvoice = storedPdfToBase64(txExistingRevision.generatedPDFInvoice);
+						if (cachedInvoice) {
+							return { invoice: cachedInvoice };
+						}
 
-				const requiresRecoveryReason = !changeResult.hasChanges && !input.forceRegenerate;
-				const cancellationReason =
-					changeResult.reasons.length > 0
-						? changeResult.reasons.join('; ')
-						: input.forceRegenerate
-							? 'Manual regeneration requested'
-							: requiresRecoveryReason
-								? 'Automatic regeneration because cached invoice PDF was missing'
-								: 'Invoice regenerated';
+						logger.error('Active invoice revision has empty PDF and cannot be returned as cache', {
+							invoiceRevisionId: txExistingRevision.id,
+							buyerWalletVkey: input.buyerWalletVkey,
+							month: input.month,
+						});
+						throw createHttpError(
+							409,
+							'Cached invoice PDF is unavailable. Regenerate the invoice with force regeneration to repair the revision.',
+						);
+					}
+					throw createHttpError(404, 'No billable payments found for month and wallet');
+				}
 
-				const cancelPrefixKey = `${input.invoice?.idPrefix ?? 'default'}-cancel`;
-				const cancelCounter = await tx.invoicePrefix.upsert({
-					create: { id: cancelPrefixKey, count: 1 },
+				const sellerWalletAddress = payments[0].SmartContractWallet?.walletAddress ?? null;
+				const buyerWalletAddress = payments[0].BuyerWallet?.walletAddress ?? null;
+
+				const items: InvoiceGroupItemInput[] = [];
+				const dbItems: Array<InvoiceGroupItemInput & { referencedPaymentId: string }> = [];
+
+				const groupedPayments = new Map<string, Array<(typeof payments)[number]>>();
+				for (const payment of payments) {
+					const decidedIdentifier = decodeBlockchainIdentifier(payment.blockchainIdentifier);
+					const agentIdentifier = decidedIdentifier?.agentIdentifier ?? `unknown-${payment.id}`;
+					const funds = getBillableFunds(payment);
+					const fundFingerprint = funds
+						.map((f) => `${f.unit}:${f.amount.toString()}`)
+						.sort()
+						.join('|');
+					const groupKey = `${agentIdentifier}::${fundFingerprint}`;
+					if (!groupedPayments.has(groupKey)) {
+						groupedPayments.set(groupKey, []);
+					}
+					groupedPayments.get(groupKey)!.push(payment);
+				}
+
+				for (const [, agentPayments] of groupedPayments) {
+					const payment = agentPayments[0];
+					const quantity = agentPayments.length;
+
+					const decidedIdentifier = decodeBlockchainIdentifier(payment.blockchainIdentifier);
+					const agentIdentifier = decidedIdentifier?.agentIdentifier ?? `unknown-${payment.id}`;
+					const agentDisplayName = agentDisplayNames.get(agentIdentifier) ?? '-';
+					const itemName = `${resolved.itemNamePrefix}${agentDisplayName}${resolved.itemNameSuffix}`;
+
+					const funds = getBillableFunds(payment);
+					let paymentCount = 0;
+
+					for (const fund of funds) {
+						paymentCount++;
+						const unit = fund.unit;
+						const factor = conversion.get(unit);
+						if (!factor) {
+							throw createHttpError(400, `Missing conversion for unit: ${unit}`);
+						}
+						const rawPrice = (Number(fund.amount) * factor.factor) / (1 + effectiveVatRate);
+						const price = Math.round(rawPrice * 1e10) / 1e10;
+						const conversionFactor = 1 / factor.factor;
+						let newItemName = itemName;
+						if (paymentCount > 1) {
+							newItemName = `${newItemName} (${paymentCount}/${funds.length})`;
+						}
+						const item: InvoiceGroupItemInput = {
+							name: newItemName,
+							quantity,
+							price,
+							conversionFactor,
+							decimals: factor.decimals,
+							convertedUnit: unit,
+							conversionDate: dateOfConversionDate,
+						};
+						items.push(item);
+						dbItems.push({ ...item, referencedPaymentId: payment.id });
+					}
+				}
+
+				const groups = generateInvoiceGroups(items, effectiveVatRate);
+
+				if (txExistingRevision) {
+					const changeResult = detectInvoiceChanges(txExistingRevision, groups, input.seller, input.buyer, resolved);
+
+					if (!changeResult.hasChanges && !input.forceRegenerate) {
+						const cachedInvoice = storedPdfToBase64(txExistingRevision.generatedPDFInvoice);
+						if (cachedInvoice) {
+							return { invoice: cachedInvoice };
+						}
+
+						logger.warn('Cached invoice has no PDF bytes; creating recovery revision', {
+							invoiceRevisionId: txExistingRevision.id,
+							buyerWalletVkey: input.buyerWalletVkey,
+							month: input.month,
+						});
+					}
+
+					const originalInfo = getOriginalInvoiceInfo(txExistingRevision);
+					const originalItems = txExistingRevision.InvoiceItems.map((it) => ({
+						name: it.name,
+						quantity: Number(it.quantity.toString()),
+						price: Number(it.pricePerUnitWithoutVat.toString()),
+						vatRateOverride: Number(it.vatRate.toString()),
+						decimals: Number(it.decimals.toString()),
+						conversionFactor: Number(it.conversionFactor.toString()),
+						convertedUnit: it.convertedUnit,
+						conversionDate: it.conversionDate,
+					}));
+					const originalGroups = generateInvoiceGroups(originalItems, 0);
+
+					const originalSeller = {
+						name: txExistingRevision.sellerName ?? null,
+						companyName: txExistingRevision.sellerCompanyName ?? null,
+						vatNumber: txExistingRevision.sellerVatNumber ?? null,
+						country: txExistingRevision.sellerCountry,
+						city: txExistingRevision.sellerCity,
+						zipCode: txExistingRevision.sellerZipCode,
+						street: txExistingRevision.sellerStreet,
+						streetNumber: txExistingRevision.sellerStreetNumber,
+						email: txExistingRevision.sellerEmail ?? null,
+						phone: txExistingRevision.sellerPhone ?? null,
+					};
+					const originalBuyer = {
+						name: txExistingRevision.buyerName ?? null,
+						companyName: txExistingRevision.buyerCompanyName ?? null,
+						vatNumber: txExistingRevision.buyerVatNumber ?? null,
+						country: txExistingRevision.buyerCountry,
+						city: txExistingRevision.buyerCity,
+						zipCode: txExistingRevision.buyerZipCode,
+						street: txExistingRevision.buyerStreet,
+						streetNumber: txExistingRevision.buyerStreetNumber,
+						email: txExistingRevision.buyerEmail ?? null,
+						phone: txExistingRevision.buyerPhone ?? null,
+					};
+
+					const originalResolved = resolveInvoiceConfig(
+						txExistingRevision.currencyShortId as SupportedCurrencies,
+						{
+							title: txExistingRevision.invoiceTitle ?? undefined,
+							date: txExistingRevision.invoiceDate.toISOString(),
+							greeting: txExistingRevision.invoiceGreetings ?? undefined,
+							closing: txExistingRevision.invoiceClosing ?? undefined,
+							signature: txExistingRevision.invoiceSignature ?? undefined,
+							logo: txExistingRevision.invoiceLogo ?? undefined,
+							footer: txExistingRevision.invoiceFooter ?? undefined,
+							terms: txExistingRevision.invoiceTerms ?? undefined,
+							privacy: txExistingRevision.invoicePrivacy ?? undefined,
+							language: (txExistingRevision.language as 'en-us' | 'en-gb' | 'de') ?? undefined,
+							localizationFormat: (txExistingRevision.localizationFormat as 'en-us' | 'en-gb' | 'de') ?? undefined,
+						},
+						{ invoiceType: 'monthly' },
+					);
+
+					const requiresRecoveryReason = !changeResult.hasChanges && !input.forceRegenerate;
+					const cancellationReason =
+						changeResult.reasons.length > 0
+							? changeResult.reasons.join('; ')
+							: input.forceRegenerate
+								? 'Manual regeneration requested'
+								: requiresRecoveryReason
+									? 'Automatic regeneration because cached invoice PDF was missing'
+									: 'Invoice regenerated';
+
+					const cancelPrefixKey = `${input.invoice?.idPrefix ?? 'default'}-cancel`;
+					const cancelCounter = await tx.invoicePrefix.upsert({
+						create: { id: cancelPrefixKey, count: 1 },
+						update: { count: { increment: 1 } },
+						where: { id: cancelPrefixKey },
+					});
+					const cancellationId = `${input.invoice?.idPrefix ? input.invoice.idPrefix + '-' : ''}${cancelCounter.count
+						.toString()
+						.padStart(4, '0')}-CN`;
+
+					const cancellationResolved = resolveInvoiceConfig(
+						originalResolved.currency,
+						{
+							title: originalResolved.title,
+							date: new Date().toISOString(),
+							greeting: originalResolved.greeting,
+							closing: originalResolved.closing,
+							signature: originalResolved.signature,
+							logo: originalResolved.logo ?? undefined,
+							footer: originalResolved.footer,
+							terms: originalResolved.terms,
+							privacy: originalResolved.privacy,
+							language: originalResolved.language as 'en-us' | 'en-gb' | 'de',
+							localizationFormat: originalResolved.localizationFormat as 'en-us' | 'en-gb' | 'de',
+						},
+						{ invoiceType: 'monthly' },
+					);
+
+					const { pdfBase64: cancellationPdfBase64 } = await generateCancellationInvoicePDFBase64(
+						originalGroups,
+						originalSeller,
+						originalBuyer,
+						cancellationResolved,
+						cancellationId,
+						originalInfo.originalInvoiceNumber,
+						originalInfo.originalInvoiceDate,
+						usedCoingeckoForConversion,
+						{ reverseCharge: txExistingRevision.reverseCharge, cancellationReason },
+					);
+
+					const newRevisionNumber = txExistingRevision.revisionNumber + 1;
+					const newInvoiceId = generateInvoiceId(newRevisionNumber, txExistingBase!.invoiceId);
+					const { pdfBase64 } = await generateInvoicePDFBase64(
+						groups,
+						input.seller,
+						input.buyer,
+						resolved,
+						newInvoiceId,
+						null,
+						usedCoingeckoForConversion,
+						{ invoiceType: 'monthly', reverseCharge: input.reverseCharge, servicePeriod },
+					);
+
+					const newlyCoveredPaymentIds = txUninvoicedBillable.map((payment) => payment.id);
+					if (newlyCoveredPaymentIds.length > 0) {
+						await tx.invoiceBase.update({
+							where: { id: txExistingBase!.id },
+							data: {
+								coveredPaymentRequests: {
+									connect: newlyCoveredPaymentIds.map((id) => ({ id })),
+								},
+							},
+						});
+					}
+
+					await tx.invoiceRevision.update({
+						where: { id: txExistingRevision.id },
+						data: {
+							isCancelled: true,
+							cancellationReason,
+							cancellationDate: new Date(),
+							cancellationId,
+							generatedCancelledInvoice: toPrismaBytes(cancellationPdfBase64),
+						},
+					});
+
+					await tx.invoiceRevision.create({
+						data: {
+							invoiceBaseId: txExistingBase!.id,
+							revisionNumber: newRevisionNumber,
+							...buildRevisionData(sellerWalletAddress, buyerWalletAddress, dbItems, toPrismaBytes(pdfBase64)),
+						},
+					});
+
+					return { invoice: pdfBase64, cancellationInvoice: cancellationPdfBase64 };
+				}
+
+				if (txUninvoicedBillable.length === 0) {
+					throw createHttpError(404, 'No billable payments found for month and wallet');
+				}
+
+				const incrementedInvoiceNumber = await tx.invoicePrefix.upsert({
+					create: { id: input.invoice?.idPrefix ?? 'default', count: 1 },
 					update: { count: { increment: 1 } },
-					where: { id: cancelPrefixKey },
+					where: { id: input.invoice?.idPrefix ?? 'default' },
 				});
-				const cancellationId = `${input.invoice?.idPrefix ? input.invoice.idPrefix + '-' : ''}${cancelCounter.count
-					.toString()
-					.padStart(4, '0')}-CN`;
-
-				const cancellationResolved = resolveInvoiceConfig(
-					originalResolved.currency,
-					{
-						title: originalResolved.title,
-						date: new Date().toISOString(),
-						greeting: originalResolved.greeting,
-						closing: originalResolved.closing,
-						signature: originalResolved.signature,
-						logo: originalResolved.logo ?? undefined,
-						footer: originalResolved.footer,
-						terms: originalResolved.terms,
-						privacy: originalResolved.privacy,
-						language: originalResolved.language as 'en-us' | 'en-gb' | 'de',
-						localizationFormat: originalResolved.localizationFormat as 'en-us' | 'en-gb' | 'de',
-					},
-					{ invoiceType: 'monthly' },
+				const baseIdString = generateNewInvoiceBaseId(
+					(input.invoice?.idPrefix ? input.invoice?.idPrefix + '-' : '') +
+						incrementedInvoiceNumber.count.toString().padStart(4, '0'),
 				);
 
-				const { pdfBase64: cancellationPdfBase64 } = await generateCancellationInvoicePDFBase64(
-					originalGroups,
-					originalSeller,
-					originalBuyer,
-					cancellationResolved,
-					cancellationId,
-					originalInfo.originalInvoiceNumber,
-					originalInfo.originalInvoiceDate,
-					usedCoingeckoForConversion,
-					{ reverseCharge: txExistingRevision.reverseCharge, cancellationReason },
-				);
-
-				const newRevisionNumber = txExistingRevision.revisionNumber + 1;
-				const newInvoiceId = generateInvoiceId(newRevisionNumber, txExistingBase!.invoiceId);
+				const newInvoiceId = generateInvoiceId(1, baseIdString);
 				const { pdfBase64 } = await generateInvoicePDFBase64(
 					groups,
 					input.seller,
@@ -837,101 +902,42 @@ export async function generateMonthlyInvoice(
 					{ invoiceType: 'monthly', reverseCharge: input.reverseCharge, servicePeriod },
 				);
 
-				const newlyCoveredPaymentIds = txUninvoicedBillable.map((payment) => payment.id);
-				if (newlyCoveredPaymentIds.length > 0) {
-					await tx.invoiceBase.update({
-						where: { id: txExistingBase!.id },
-						data: {
-							coveredPaymentRequests: {
-								connect: newlyCoveredPaymentIds.map((id) => ({ id })),
-							},
-						},
-					});
+				if (!txTargetSellerWalletVkey) {
+					throw createHttpError(
+						409,
+						`Unable to resolve seller wallet scope for buyer ${input.buyerWalletVkey} in ${input.month}.`,
+					);
 				}
 
-				await tx.invoiceRevision.update({
-					where: { id: txExistingRevision.id },
+				const base = await tx.invoiceBase.create({
 					data: {
-						isCancelled: true,
-						cancellationReason,
-						cancellationDate: new Date(),
-						cancellationId,
-						generatedCancelledInvoice: toPrismaBytes(cancellationPdfBase64),
+						invoiceId: baseIdString,
+						buyerWalletVkey: input.buyerWalletVkey,
+						sellerWalletVkey: txTargetSellerWalletVkey,
+						invoiceMonth: invoiceMonth,
+						invoiceYear: year,
+						coveredPaymentRequests: {
+							connect: txUninvoicedBillable.map((payment) => ({ id: payment.id })),
+						},
 					},
 				});
 
 				await tx.invoiceRevision.create({
 					data: {
-						invoiceBaseId: txExistingBase!.id,
-						revisionNumber: newRevisionNumber,
+						invoiceBaseId: base.id,
+						revisionNumber: 1,
 						...buildRevisionData(sellerWalletAddress, buyerWalletAddress, dbItems, toPrismaBytes(pdfBase64)),
 					},
 				});
 
-				return { invoice: pdfBase64, cancellationInvoice: cancellationPdfBase64 };
-			}
-
-			if (txUninvoicedBillable.length === 0) {
-				throw createHttpError(404, 'No billable payments found for month and wallet');
-			}
-
-			const incrementedInvoiceNumber = await tx.invoicePrefix.upsert({
-				create: { id: input.invoice?.idPrefix ?? 'default', count: 1 },
-				update: { count: { increment: 1 } },
-				where: { id: input.invoice?.idPrefix ?? 'default' },
-			});
-			const baseIdString = generateNewInvoiceBaseId(
-				(input.invoice?.idPrefix ? input.invoice?.idPrefix + '-' : '') +
-					incrementedInvoiceNumber.count.toString().padStart(4, '0'),
-			);
-
-			const newInvoiceId = generateInvoiceId(1, baseIdString);
-			const { pdfBase64 } = await generateInvoicePDFBase64(
-				groups,
-				input.seller,
-				input.buyer,
-				resolved,
-				newInvoiceId,
-				null,
-				usedCoingeckoForConversion,
-				{ invoiceType: 'monthly', reverseCharge: input.reverseCharge, servicePeriod },
-			);
-
-			if (!txTargetSellerWalletVkey) {
-				throw createHttpError(
-					409,
-					`Unable to resolve seller wallet scope for buyer ${input.buyerWalletVkey} in ${input.month}.`,
-				);
-			}
-
-			const base = await tx.invoiceBase.create({
-				data: {
-					invoiceId: baseIdString,
-					buyerWalletVkey: input.buyerWalletVkey,
-					sellerWalletVkey: txTargetSellerWalletVkey,
-					invoiceMonth: invoiceMonth,
-					invoiceYear: year,
-					coveredPaymentRequests: {
-						connect: txUninvoicedBillable.map((payment) => ({ id: payment.id })),
-					},
-				},
-			});
-
-			await tx.invoiceRevision.create({
-				data: {
-					invoiceBaseId: base.id,
-					revisionNumber: 1,
-					...buildRevisionData(sellerWalletAddress, buyerWalletAddress, dbItems, toPrismaBytes(pdfBase64)),
-				},
-			});
-
-			return { invoice: pdfBase64 };
-		},
-		{
-			timeout: 20000,
-			maxWait: 20000,
-			isolationLevel: 'Serializable',
-		},
+				return { invoice: pdfBase64 };
+			},
+			{
+				timeout: 20000,
+				maxWait: 20000,
+				isolationLevel: 'Serializable',
+			},
+		),
 	);
 
 	return invoiceResult;

@@ -1,4 +1,4 @@
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 import { stateTransitionMonitor } from '@/utils/monitoring/state-transition-monitor';
 
 class BlockchainStateMonitorService {

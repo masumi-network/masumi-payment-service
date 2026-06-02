@@ -1,13 +1,13 @@
 import { RegistrationState } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
-import { recordBusinessEndpointError } from '@/utils/metrics';
-import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
-import { AuthContext } from '@/utils/middleware/auth-middleware';
+import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
+import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { AuthContext } from '@masumi/payment-core/auth';
 import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 import { generateWalletExtended } from '@/utils/generator/wallet-generator';
 import stringify from 'canonical-json';
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
 
 export const postVerifyAndPublishAgentSignatureSchemaInput = z.object({
 	publicKey: z.string().min(1).max(1000).describe('The public key to sign for publishing the agent'),

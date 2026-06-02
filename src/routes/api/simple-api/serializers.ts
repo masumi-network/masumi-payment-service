@@ -1,5 +1,5 @@
 import { Prisma, SimpleApiListing } from '@/generated/prisma/client';
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
 import { simpleApiListingSchema } from './schemas';
 
 type SimpleApiListingResponse = z.infer<typeof simpleApiListingSchema>;

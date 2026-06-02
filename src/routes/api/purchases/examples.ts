@@ -1,5 +1,5 @@
-import { Network, PurchasingAction } from '@/generated/prisma/client';
-import { z } from '@/utils/zod-openapi';
+import { Network, PaymentSourceType, PurchasingAction } from '@/generated/prisma/client';
+import { z } from '@masumi/payment-core/zod';
 import { createPurchaseInitSchemaOutput } from './schemas';
 
 export const purchaseResponseSchemaExample = {
@@ -17,6 +17,8 @@ export const purchaseResponseSchemaExample = {
 	requestedById: 'requester_id',
 	onChainState: null,
 	collateralReturnLovelace: null,
+	buyerReturnAddress: null,
+	sellerReturnAddress: null,
 	cooldownTime: 0,
 	cooldownTimeOtherParty: 0,
 	inputHash: 'input_hash',
@@ -37,6 +39,7 @@ export const purchaseResponseSchemaExample = {
 		id: 'payment_source_id',
 		policyId: 'policy_id',
 		network: Network.Preprod,
+		paymentSourceType: PaymentSourceType.Web3CardanoV1,
 		smartContractAddress: 'address',
 	},
 	SellerWallet: null,

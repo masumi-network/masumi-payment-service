@@ -1,5 +1,5 @@
 import { Network, SimpleApiStatus } from '@/generated/prisma/client';
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
 
 const acceptEntrySchema = z
 	.object({

@@ -1,16 +1,17 @@
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
 import { Network, PaymentAction, PaymentErrorType } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
-import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
+import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
+import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { transformPaymentGetTimestamps, transformPaymentGetAmounts } from '@/utils/shared/transformers';
-import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
+import { lovelaceToAdaNumberSafe } from '@/utils/lovelace';
 import { paymentResponseSchema } from '@/routes/api/payments';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 
 export const postPaymentRequestSchemaInput = z.object({
-	blockchainIdentifier: z.string().describe('The blockchain identifier to resolve'),
+	blockchainIdentifier: z.string().min(1).max(8000).describe('The blockchain identifier to resolve'),
 	network: z.nativeEnum(Network).describe('The network the purchases were made on'),
 	filterSmartContractAddress: z
 		.string()
@@ -65,6 +66,7 @@ export const resolvePaymentRequestPost = readAuthenticatedEndpointFactory.build(
 					select: {
 						id: true,
 						network: true,
+						paymentSourceType: true,
 						smartContractAddress: true,
 						policyId: true,
 					},
@@ -118,6 +120,7 @@ export const resolvePaymentRequestPost = readAuthenticatedEndpointFactory.build(
 									createdAt: true,
 									updatedAt: true,
 									requestedAction: true,
+									submittedTxHash: true,
 									errorType: true,
 									errorNote: true,
 									resultHash: true,
@@ -136,8 +139,10 @@ export const resolvePaymentRequestPost = readAuthenticatedEndpointFactory.build(
 			...result,
 			...transformPaymentGetTimestamps(result),
 			...transformPaymentGetAmounts(result),
-			totalBuyerCardanoFees: Number(result.totalBuyerCardanoFees.toString()) / 1_000_000,
-			totalSellerCardanoFees: Number(result.totalSellerCardanoFees.toString()) / 1_000_000,
+			// safe: response schema is z.number() (ADA). lovelaceToAdaNumberSafe
+			// throws if the lovelace value exceeds Number.MAX_SAFE_INTEGER.
+			totalBuyerCardanoFees: lovelaceToAdaNumberSafe(result.totalBuyerCardanoFees),
+			totalSellerCardanoFees: lovelaceToAdaNumberSafe(result.totalSellerCardanoFees),
 			agentIdentifier: decoded?.agentIdentifier ?? null,
 			CurrentTransaction: result.CurrentTransaction
 				? {

@@ -1,5 +1,5 @@
 import createHttpError from 'http-errors';
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 
 export interface Eip3009Authorization {
 	from: string;

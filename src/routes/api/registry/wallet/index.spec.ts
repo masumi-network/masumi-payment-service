@@ -12,7 +12,7 @@ const mockAccountsAddressesAssetsAll = jest.fn() as AnyMock;
 const mockAssetsById = jest.fn() as AnyMock;
 const mockGetRegistryScript = jest.fn() as AnyMock;
 
-jest.unstable_mockModule('@/utils/db', () => ({
+jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		apiKey: {
 			findUnique: mockFindApiKey,
@@ -23,7 +23,7 @@ jest.unstable_mockModule('@/utils/db', () => ({
 	},
 }));
 
-jest.unstable_mockModule('@/utils/config', () => ({
+jest.unstable_mockModule('@masumi/payment-core/config', () => ({
 	CONFIG: {
 		ENCRYPTION_KEY: '12345678901234567890',
 	},
@@ -34,7 +34,7 @@ jest.unstable_mockModule('@/utils/config', () => ({
 	},
 }));
 
-jest.unstable_mockModule('@/utils/logger', () => ({
+jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: {
 		info: jest.fn(),
 		warn: jest.fn(),
@@ -52,6 +52,7 @@ jest.unstable_mockModule('@/utils/blockfrost', () => ({
 }));
 
 jest.unstable_mockModule('@/utils/generator/contract-generator', () => ({
+	getRegistryScriptFromNetworkHandler: mockGetRegistryScript,
 	getRegistryScriptFromNetworkHandlerV1: mockGetRegistryScript,
 }));
 

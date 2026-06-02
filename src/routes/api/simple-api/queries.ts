@@ -1,5 +1,5 @@
 import { Network, SimpleApiStatus } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 
 interface QueryListingsParams {
 	limit: number;

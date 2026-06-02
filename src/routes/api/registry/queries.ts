@@ -1,16 +1,20 @@
 import { PricingType, RegistrationState } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
-import { AuthContext } from '@/utils/middleware/auth-middleware';
+import { prisma } from '@masumi/payment-core/db';
+import { AuthContext } from '@masumi/payment-core/auth';
 import { parseAmountSearchRange } from '@/utils/shared/queries';
 import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
 import { FilterStatus, queryRegistryRequestSchemaInput } from './schemas';
 
 export type RegistryListQueryInput = z.infer<typeof queryRegistryRequestSchemaInput>;
 
 function buildRegistryStateFilter(filterStatus?: FilterStatus): RegistrationState[] | undefined {
 	if (filterStatus === FilterStatus.Registered) {
-		return [RegistrationState.RegistrationConfirmed];
+		// UpdateConfirmed represents an in-place version bump that left a
+		// fresh asset on chain, so it stays in the Registered bucket. Mid-
+		// flight UpdateRequested/Initiated rows fall into Pending (see
+		// below) because their on-chain state is not yet committed.
+		return [RegistrationState.RegistrationConfirmed, RegistrationState.UpdateConfirmed];
 	}
 
 	if (filterStatus === FilterStatus.Deregistered) {
@@ -18,11 +22,20 @@ function buildRegistryStateFilter(filterStatus?: FilterStatus): RegistrationStat
 	}
 
 	if (filterStatus === FilterStatus.Pending) {
-		return [RegistrationState.RegistrationRequested, RegistrationState.DeregistrationRequested];
+		return [
+			RegistrationState.RegistrationRequested,
+			RegistrationState.DeregistrationRequested,
+			RegistrationState.UpdateRequested,
+			RegistrationState.UpdateInitiated,
+		];
 	}
 
 	if (filterStatus === FilterStatus.Failed) {
-		return [RegistrationState.RegistrationFailed, RegistrationState.DeregistrationFailed];
+		return [
+			RegistrationState.RegistrationFailed,
+			RegistrationState.DeregistrationFailed,
+			RegistrationState.UpdateFailed,
+		];
 	}
 
 	return undefined;
@@ -55,10 +68,12 @@ export async function getRegistryEntriesForQuery(
 				network: input.network,
 				deletedAt: null,
 				smartContractAddress: input.filterSmartContractAddress ?? undefined,
+				paymentSourceType: input.filterPaymentSourceType,
 			},
 			SmartContractWallet: { deletedAt: null },
 			...buildManagedHolderWalletScopeFilter(walletScopeIds),
 			...(stateFilter ? { state: { in: stateFilter } } : {}),
+			...(input.filterAgentIdentifier ? { agentIdentifier: input.filterAgentIdentifier } : {}),
 			...(searchLower
 				? {
 						OR: [
@@ -145,6 +160,14 @@ export async function getRegistryEntriesForQuery(
 					name: true,
 					url: true,
 					mimeType: true,
+				},
+			},
+			SupportedPaymentSources: {
+				select: {
+					chain: true,
+					network: true,
+					paymentSourceType: true,
+					address: true,
 				},
 			},
 		},
