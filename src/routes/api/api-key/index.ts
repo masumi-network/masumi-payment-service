@@ -11,6 +11,12 @@ import { transformBigIntAmounts } from '@/utils/shared/transformers';
 import { withSerializableSlot } from '@/utils/db/serializable-semaphore';
 import { z } from '@masumi/payment-core/zod';
 import {
+	caip2LimitToCardanoNetworks,
+	caip2ToCardanoNetwork,
+	cardanoNetworksToCaip2,
+	mergeCaip2NetworkLimits,
+} from '@masumi/payment-core/network';
+import {
 	addAPIKeySchemaInput,
 	addAPIKeySchemaOutput,
 	apiKeyOutputSchema,
@@ -69,7 +75,8 @@ export const mapApiKeyOutput = <
 		canRead: boolean;
 		canPay: boolean;
 		canAdmin: boolean;
-		networkLimit: Network[];
+		usageLimited: boolean;
+		networkLimit: string[];
 		RemainingUsageCredits: Array<{ amount: bigint; unit: string }>;
 		WalletScopes: Array<{ hotWalletId: string }>;
 		encryptedToken: string | null;
@@ -83,6 +90,7 @@ export const mapApiKeyOutput = <
 	// Explicitly destructure all sensitive/internal fields so they never reach the API response
 	const {
 		networkLimit,
+		usageLimited,
 		RemainingUsageCredits,
 		encryptedToken,
 		token: storedMaskedToken,
@@ -97,7 +105,9 @@ export const mapApiKeyOutput = <
 		// create time (see addAPIKeyEndpointPost above).
 		token: (options.revealToken === true ? decryptTokenSafe(encryptedToken) : storedMaskedToken) ?? '*****',
 		permission: computePermissionFromFlags(data.canRead, data.canPay, data.canAdmin),
-		NetworkLimit: networkLimit,
+		usageLimited: data.canAdmin ? false : usageLimited,
+		NetworkLimit: data.canAdmin ? [Network.Mainnet, Network.Preprod] : caip2LimitToCardanoNetworks(networkLimit),
+		ChainIdLimit: data.canAdmin ? [] : networkLimit,
 		RemainingUsageCredits: transformBigIntAmounts(RemainingUsageCredits),
 	};
 };
@@ -167,7 +177,7 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 				canPay: canPay,
 				canAdmin: canAdmin,
 				usageLimited: isAdmin ? false : input.usageLimited,
-				networkLimit: isAdmin ? [Network.Mainnet, Network.Preprod] : input.NetworkLimit,
+				networkLimit: isAdmin ? [] : mergeCaip2NetworkLimits(input.NetworkLimit, input.ChainIdLimit),
 				walletScopeEnabled: isAdmin ? false : input.walletScopeEnabled,
 				RemainingUsageCredits: {
 					createMany: {
@@ -279,6 +289,23 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 					if (newCanAdmin && input.usageLimited) {
 						throw createHttpError(400, 'Admin API keys cannot have usage limits');
 					}
+					// Update each half of the access list independently: NetworkLimit replaces
+					// only the Cardano-network entries, ChainIdLimit replaces only the EVM
+					// entries. An omitted field leaves its half untouched (no silent reset).
+					const nextNetworkLimit = newCanAdmin
+						? []
+						: input.NetworkLimit === undefined && input.ChainIdLimit === undefined
+							? undefined
+							: Array.from(
+									new Set([
+										...(input.NetworkLimit !== undefined
+											? cardanoNetworksToCaip2(input.NetworkLimit)
+											: apiKey.networkLimit.filter((chainId) => caip2ToCardanoNetwork(chainId) != null)),
+										...(input.ChainIdLimit !== undefined
+											? input.ChainIdLimit.filter((chainId) => caip2ToCardanoNetwork(chainId) == null)
+											: apiKey.networkLimit.filter((chainId) => caip2ToCardanoNetwork(chainId) == null)),
+									]),
+								);
 
 					if (input.WalletScopeHotWalletIds !== undefined) {
 						await prisma.apiKeyWalletScope.deleteMany({
@@ -304,10 +331,10 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 										token: newMaskedToken,
 									}
 								: {}),
-							usageLimited: input.usageLimited,
+							usageLimited: newCanAdmin ? false : input.usageLimited,
 							status: input.status,
-							networkLimit: input.NetworkLimit,
-							walletScopeEnabled: input.walletScopeEnabled,
+							networkLimit: nextNetworkLimit,
+							walletScopeEnabled: newCanAdmin ? false : input.walletScopeEnabled,
 							canRead: newCanRead,
 							canPay: newCanPay,
 							canAdmin: newCanAdmin,

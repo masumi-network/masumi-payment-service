@@ -5,6 +5,7 @@ import { z } from './zod';
 import { ApiKeyStatus, Network } from '@prisma/client';
 import { generateApiKeySecureHash } from './api-key-hash';
 import { RequiredPermissionFlags, hasPermission, getPermissionName } from './permissions';
+import { caip2LimitToCardanoNetworks, isAllowedCaip2Network } from './network';
 
 /**
  * Authentication context passed to endpoint handlers.
@@ -19,8 +20,10 @@ export type AuthContext = {
 	canPay: boolean;
 	/** Whether the user has admin access (bypasses network/usage limits) */
 	canAdmin: boolean;
-	/** Networks this API key is allowed to access (already set to all networks if canAdmin=true) */
+	/** Cardano networks this API key is allowed to access (already set to all Cardano networks if canAdmin=true) */
 	networkLimit: Network[];
+	/** CAIP-2 chain identifiers this API key is allowed to access; null means admin/unlimited */
+	caip2NetworkLimit: string[] | null;
 	/** Whether this API key has usage credit limits (already false if canAdmin=true) */
 	usageLimited: boolean;
 	walletScopeIds: string[] | null;
@@ -73,14 +76,15 @@ export const authMiddleware = (required: RequiredPermissionFlags) =>
 					throw createHttpError(401, `Unauthorized, ${permissionName} access required`);
 				}
 
-				// Admin special handling: bypass network and usage limits
-				let networkLimit = apiKey.networkLimit;
+				const caip2NetworkLimit = apiKey.canAdmin ? null : apiKey.networkLimit;
 				let usageLimited = apiKey.usageLimited;
 
 				if (apiKey.canAdmin) {
-					networkLimit = [Network.Mainnet, Network.Preprod];
 					usageLimited = false;
 				}
+				const networkLimit = apiKey.canAdmin
+					? [Network.Mainnet, Network.Preprod]
+					: caip2LimitToCardanoNetworks(apiKey.networkLimit);
 
 				const walletScopeIds =
 					apiKey.canAdmin || !apiKey.walletScopeEnabled ? null : apiKey.WalletScopes.map((ws) => ws.hotWalletId);
@@ -91,6 +95,7 @@ export const authMiddleware = (required: RequiredPermissionFlags) =>
 					canPay: apiKey.canPay,
 					canAdmin: apiKey.canAdmin,
 					networkLimit: networkLimit,
+					caip2NetworkLimit,
 					usageLimited: usageLimited,
 					walletScopeIds: walletScopeIds,
 				}; // provides endpoints with options.user
@@ -115,6 +120,16 @@ export const authMiddleware = (required: RequiredPermissionFlags) =>
 export async function checkIsAllowedNetworkOrThrowUnauthorized(networkLimit: Network[], network: Network) {
 	if (!networkLimit.includes(network)) {
 		//await a random amount to throttle invalid requests
+		await new Promise((resolve) => setTimeout(resolve, Math.random() * 1000));
+		throw createHttpError(401, 'Unauthorized, network not allowed');
+	}
+}
+
+export async function checkIsAllowedCaip2NetworkOrThrowUnauthorized(
+	networkLimit: string[] | null,
+	caip2Network: string,
+) {
+	if (!isAllowedCaip2Network(networkLimit, caip2Network)) {
 		await new Promise((resolve) => setTimeout(resolve, Math.random() * 1000));
 		throw createHttpError(401, 'Unauthorized, network not allowed');
 	}

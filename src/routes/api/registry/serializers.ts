@@ -1,5 +1,58 @@
-import { PricingType } from '@/generated/prisma/client';
+import { Network, PricingType, X402PaymentScheme, type Prisma } from '@/generated/prisma/client';
+import { SupportedPaymentSourceChain, type SupportedPaymentSource } from '@/types/payment-source';
+import createHttpError from 'http-errors';
 import type { RegistryListRecord } from './queries';
+
+type SupportedPaymentSourceRecord = RegistryListRecord['SupportedPaymentSources'][number];
+
+function jsonObjectToRecord(value: Prisma.JsonValue | null): Prisma.JsonObject | undefined {
+	if (value != null && typeof value === 'object' && !Array.isArray(value)) {
+		return value;
+	}
+	return undefined;
+}
+
+export function serializeSupportedPaymentSources(
+	sources: SupportedPaymentSourceRecord[],
+): SupportedPaymentSource[] | null {
+	if (sources.length === 0) return null;
+	return sources.map((source) => {
+		if (source.chain === SupportedPaymentSourceChain.EVM) {
+			if (
+				source.scheme !== X402PaymentScheme.Exact ||
+				source.asset == null ||
+				source.amount == null ||
+				source.decimals == null ||
+				source.payTo == null
+			) {
+				throw createHttpError(500, 'Persisted x402 supported payment source is incomplete');
+			}
+			return {
+				chain: SupportedPaymentSourceChain.EVM,
+				network: source.network,
+				paymentSourceType: null,
+				address: source.address,
+				scheme: 'Exact',
+				asset: source.asset,
+				amount: source.amount.toString(),
+				decimals: source.decimals,
+				payTo: source.payTo,
+				resource: source.resource ?? undefined,
+				extra: jsonObjectToRecord(source.extra),
+			};
+		}
+
+		if (source.paymentSourceType == null) {
+			throw createHttpError(500, 'Persisted Cardano supported payment source is missing its paymentSourceType');
+		}
+		return {
+			chain: SupportedPaymentSourceChain.Cardano,
+			network: source.network as Network,
+			paymentSourceType: source.paymentSourceType,
+			address: source.address,
+		};
+	});
+}
 
 export function serializeRegistryEntry(item: RegistryListRecord) {
 	return {
@@ -33,7 +86,7 @@ export function serializeRegistryEntry(item: RegistryListRecord) {
 						pricingType: item.Pricing.pricingType,
 					},
 		sendFundingLovelace: item.sendFundingLovelace?.toString() ?? null,
-		supportedPaymentSources: item.SupportedPaymentSources.length > 0 ? item.SupportedPaymentSources : null,
+		supportedPaymentSources: serializeSupportedPaymentSources(item.SupportedPaymentSources),
 		Tags: item.tags,
 		CurrentTransaction: item.CurrentTransaction
 			? {

@@ -1,4 +1,10 @@
-import { PaymentSourceType, RegistrationState, PricingType, TransactionStatus } from '@/generated/prisma/client';
+import {
+	PaymentSourceType,
+	RegistrationState,
+	PricingType,
+	TransactionStatus,
+	X402PaymentScheme,
+} from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import type { LanguageVersion, UTxO } from '@meshsdk/core';
@@ -35,11 +41,7 @@ import {
 import { type BatchRegistryMintItem, generateRegistryBatchMintTransaction } from '../../../builders/batch-registry';
 import { ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
 import { unlockHotWalletIfNoPendingTransaction } from '../../wallet-lock-helpers';
-import {
-	SupportedPaymentSourceChain,
-	type RegistryMetadataPaymentSource,
-	type SupportedPaymentSource,
-} from '@/types/payment-source';
+import { SupportedPaymentSourceChain, type RegistryMetadataPaymentSource } from '@/types/payment-source';
 
 // V2 registry batch sizing. The on-chain `MintAction` validator runs once for
 // the policy bucket and verifies every minted asset name against the set of
@@ -49,6 +51,20 @@ import {
 const REGISTRY_BATCH_SIZE = 7;
 
 const mutex = new Mutex();
+
+type RegistrySupportedPaymentSourceMetadataRow = {
+	chain: string;
+	network: string;
+	paymentSourceType: PaymentSourceType | null;
+	address: string;
+	scheme?: X402PaymentScheme | null;
+	asset?: string | null;
+	amount?: bigint | string | null;
+	decimals?: number | null;
+	payTo?: string | null;
+	resource?: string | null;
+	extra?: unknown;
+};
 
 type LockedPaymentSource = Awaited<ReturnType<typeof lockAndQueryRegistryRequests>>[number];
 type RegistryRequestRecord = LockedPaymentSource['RegistryRequest'][number];
@@ -107,7 +123,7 @@ export function buildAgentMetadata(
 			} | null;
 		};
 		metadataVersion: number;
-		SupportedPaymentSources: SupportedPaymentSource[];
+		SupportedPaymentSources: RegistrySupportedPaymentSourceMetadataRow[];
 	},
 	paymentSource: RegistryMetadataPaymentSource,
 ): RegistryMetadata {
@@ -169,9 +185,23 @@ export function buildAgentMetadata(
 			request.metadataVersion >= DEFAULTS.DEFAULT_REGISTRY_METADATA_VERSION
 				? supportedPaymentSources.map((source) => ({
 						chain: stringToMetadata(source.chain),
-						network: stringToMetadata(source.network),
-						paymentSourceType: stringToMetadata(source.paymentSourceType),
-						address: stringToMetadata(source.address),
+						network: stringToMetadata(String(source.network)),
+						paymentSourceType:
+							source.paymentSourceType != null ? stringToMetadata(source.paymentSourceType) : undefined,
+						address: stringToMetadata(
+							source.chain === SupportedPaymentSourceChain.EVM ? (source.address ?? source.payTo) : source.address,
+						),
+						...(source.chain === SupportedPaymentSourceChain.EVM
+							? {
+									scheme: stringToMetadata(source.scheme ?? X402PaymentScheme.Exact),
+									asset: stringToMetadata(source.asset),
+									amount: String(source.amount),
+									decimals: String(source.decimals),
+									payTo: stringToMetadata(source.payTo),
+									resource: stringToMetadata(source.resource),
+									extra: source.extra,
+								}
+							: {}),
 					}))
 				: undefined,
 	};
