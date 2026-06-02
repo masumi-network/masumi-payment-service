@@ -1,5 +1,6 @@
 import { PaymentAction, PaymentErrorType } from '@/generated/prisma/client';
-import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
+import { lovelaceToAdaNumberSafe } from '@/utils/lovelace';
 import { transformPaymentGetAmounts, transformPaymentGetTimestamps } from '@/utils/shared/transformers';
 import type { PaymentListRecord } from './queries';
 
@@ -8,8 +9,11 @@ export function serializePaymentListEntry(payment: PaymentListRecord) {
 		...payment,
 		...transformPaymentGetTimestamps(payment),
 		...transformPaymentGetAmounts(payment),
-		totalBuyerCardanoFees: Number(payment.totalBuyerCardanoFees.toString()) / 1_000_000,
-		totalSellerCardanoFees: Number(payment.totalSellerCardanoFees.toString()) / 1_000_000,
+		// safe: response schema is z.number() (ADA). lovelaceToAdaNumberSafe
+		// throws if the lovelace value exceeds Number.MAX_SAFE_INTEGER instead
+		// of silently losing precision.
+		totalBuyerCardanoFees: lovelaceToAdaNumberSafe(payment.totalBuyerCardanoFees),
+		totalSellerCardanoFees: lovelaceToAdaNumberSafe(payment.totalSellerCardanoFees),
 		agentIdentifier:
 			payment.agentIdentifier ?? decodeBlockchainIdentifier(payment.blockchainIdentifier)?.agentIdentifier ?? null,
 		CurrentTransaction: payment.CurrentTransaction

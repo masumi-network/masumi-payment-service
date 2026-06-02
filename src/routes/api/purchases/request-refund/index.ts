@@ -1,11 +1,12 @@
-import { z } from '@/utils/zod-openapi';
-import { Network, PurchasingAction, OnChainState } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { z } from '@masumi/payment-core/zod';
+import { Network, PurchasingAction, OnChainState, Prisma } from '@/generated/prisma/client';
+import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
-import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { purchaseResponseSchema } from '@/routes/api/purchases';
-import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
+import { lovelaceToAdaNumberSafe } from '@/utils/lovelace';
 import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
 import { assertWalletInScope } from '@/utils/shared/wallet-scope';
 
@@ -59,64 +60,75 @@ export const requestPurchaseRefundPost = payAuthenticatedEndpointFactory.build({
 			throw createHttpError(403, 'You are not authorized to request a refund for this purchase');
 		}
 
-		const newPurchase = await prisma.purchaseRequest.update({
-			where: { id: purchase.id },
-			data: {
-				ActionHistory: {
-					connect: {
-						id: purchase.nextActionId,
+		// Optimistic-lock guard via nextActionId — see submit-result/index.ts
+		// for the full rationale.
+		let newPurchase;
+		try {
+			newPurchase = await prisma.purchaseRequest.update({
+				where: { id: purchase.id, nextActionId: purchase.nextActionId },
+				data: {
+					ActionHistory: {
+						connect: {
+							id: purchase.nextActionId,
+						},
+					},
+					NextAction: {
+						create: {
+							requestedAction: PurchasingAction.SetRefundRequestedRequested,
+						},
 					},
 				},
-				NextAction: {
-					create: {
-						requestedAction: PurchasingAction.SetRefundRequestedRequested,
+				include: {
+					NextAction: {
+						select: {
+							id: true,
+							requestedAction: true,
+							errorType: true,
+							errorNote: true,
+						},
 					},
-				},
-			},
-			include: {
-				NextAction: {
-					select: {
-						id: true,
-						requestedAction: true,
-						errorType: true,
-						errorNote: true,
+					CurrentTransaction: {
+						select: {
+							id: true,
+							createdAt: true,
+							updatedAt: true,
+							txHash: true,
+							status: true,
+							fees: true,
+							blockHeight: true,
+							blockTime: true,
+							previousOnChainState: true,
+							newOnChainState: true,
+							confirmations: true,
+						},
 					},
-				},
-				CurrentTransaction: {
-					select: {
-						id: true,
-						createdAt: true,
-						updatedAt: true,
-						txHash: true,
-						status: true,
-						fees: true,
-						blockHeight: true,
-						blockTime: true,
-						previousOnChainState: true,
-						newOnChainState: true,
-						confirmations: true,
+					PaidFunds: { select: { id: true, amount: true, unit: true } },
+					PaymentSource: {
+						select: {
+							id: true,
+							network: true,
+							paymentSourceType: true,
+							policyId: true,
+							smartContractAddress: true,
+						},
 					},
-				},
-				PaidFunds: { select: { id: true, amount: true, unit: true } },
-				PaymentSource: {
-					select: {
-						id: true,
-						network: true,
-						policyId: true,
-						smartContractAddress: true,
+					SellerWallet: { select: { id: true, walletVkey: true } },
+					SmartContractWallet: {
+						where: { deletedAt: null },
+						select: { id: true, walletVkey: true, walletAddress: true },
 					},
+					WithdrawnForSeller: {
+						select: { id: true, amount: true, unit: true },
+					},
+					WithdrawnForBuyer: { select: { id: true, amount: true, unit: true } },
 				},
-				SellerWallet: { select: { id: true, walletVkey: true } },
-				SmartContractWallet: {
-					where: { deletedAt: null },
-					select: { id: true, walletVkey: true, walletAddress: true },
-				},
-				WithdrawnForSeller: {
-					select: { id: true, amount: true, unit: true },
-				},
-				WithdrawnForBuyer: { select: { id: true, amount: true, unit: true } },
-			},
-		});
+			});
+		} catch (err) {
+			if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
+				throw createHttpError(409, 'Purchase state changed concurrently; retry against the new state');
+			}
+			throw err;
+		}
 
 		const decoded = decodeBlockchainIdentifier(newPurchase.blockchainIdentifier);
 
@@ -124,8 +136,10 @@ export const requestPurchaseRefundPost = payAuthenticatedEndpointFactory.build({
 			...newPurchase,
 			...transformPurchaseGetTimestamps(newPurchase),
 			...transformPurchaseGetAmounts(newPurchase),
-			totalBuyerCardanoFees: Number(newPurchase.totalBuyerCardanoFees.toString()) / 1_000_000,
-			totalSellerCardanoFees: Number(newPurchase.totalSellerCardanoFees.toString()) / 1_000_000,
+			// safe: response schema is z.number() (ADA). lovelaceToAdaNumberSafe
+			// throws if the lovelace value exceeds Number.MAX_SAFE_INTEGER.
+			totalBuyerCardanoFees: lovelaceToAdaNumberSafe(newPurchase.totalBuyerCardanoFees),
+			totalSellerCardanoFees: lovelaceToAdaNumberSafe(newPurchase.totalSellerCardanoFees),
 			agentIdentifier: decoded?.agentIdentifier ?? null,
 			CurrentTransaction: newPurchase.CurrentTransaction
 				? {

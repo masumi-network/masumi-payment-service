@@ -1,16 +1,17 @@
-import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
-import { z } from '@/utils/zod-openapi';
-import { Network } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { z } from '@masumi/payment-core/zod';
+import { Network, PaymentSourceType } from '@/generated/prisma/client';
+import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
-import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contract-generator';
-import { DEFAULTS } from '@/utils/config';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
-import { logger } from '@/utils/logger';
+import { getRegistryScriptFromNetworkHandler } from '@/utils/generator/contract-generator';
+import { DEFAULTS } from '@masumi/payment-core/config';
+import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
+import { logger } from '@masumi/payment-core/logger';
 import { extractAssetName } from '@/utils/converter/agent-identifier';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
-import { parseInboxAgentRegistrationMetadata } from '@/services/registry-inbox/metadata';
+import { parseInboxAgentRegistrationMetadata as parseInboxAgentRegistrationMetadataV1 } from '@masumi/payment-source-v1/services/registry-inbox/metadata';
+import { parseInboxAgentRegistrationMetadata as parseInboxAgentRegistrationMetadataV2 } from '@masumi/payment-source-v2/services/registry-inbox/metadata';
 
 export const queryInboxAgentFromWalletSchemaInput = z.object({
 	walletVkey: z.string().max(250).describe('The payment key of the wallet to be queried'),
@@ -102,7 +103,7 @@ export const queryInboxAgentFromWalletGet = readAuthenticatedEndpointFactory.bui
 			throw createHttpError(404, 'Wallet not found');
 		}
 		assertHotWalletInScope(ctx.walletScopeIds, wallet.id);
-		const { policyId } = await getRegistryScriptFromNetworkHandlerV1(paymentSource);
+		const { policyId } = await getRegistryScriptFromNetworkHandler(paymentSource);
 
 		const addressInfo = await blockfrost.addresses(wallet.walletAddress);
 		if (addressInfo.stake_address == null) {
@@ -117,6 +118,11 @@ export const queryInboxAgentFromWalletGet = readAuthenticatedEndpointFactory.bui
 			unit: string;
 			Metadata: z.infer<typeof queryInboxAgentFromWalletSchemaOutput>['Assets'][0]['Metadata'];
 		}> = [];
+
+		const parseInboxAgentRegistrationMetadata =
+			paymentSource.paymentSourceType === PaymentSourceType.Web3CardanoV2
+				? parseInboxAgentRegistrationMetadataV2
+				: parseInboxAgentRegistrationMetadataV1;
 
 		await Promise.all(
 			assets.map(async (asset) => {

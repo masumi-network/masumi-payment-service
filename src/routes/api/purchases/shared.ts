@@ -1,8 +1,8 @@
-import { PricingType } from '@/generated/prisma/client';
+import { HotWalletType, PaymentSourceType, PricingType } from '@/generated/prisma/client';
 import { getPublicKeyFromCoseKey } from '@/utils/converter/public-key-convert';
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { generateSHA256Hash } from '@/utils/crypto';
-import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { metadataSchema } from '../registry/wallet';
 import { normalizePurchaseUnit } from '@/utils/shared/transformers';
@@ -10,6 +10,8 @@ import { validateHexString } from '@/utils/validator/hex';
 import { checkSignature, resolvePaymentKeyHash } from '@meshsdk/core';
 import createHttpError from 'http-errors';
 import stringify from 'canonical-json';
+import { prisma } from '@masumi/payment-core/db';
+import { buildSignedBlockchainIdentifierPayload } from '@/utils/generator/blockchain-identifier-payload';
 
 interface PurchaseInitBaseInput {
 	network: 'Preprod' | 'Mainnet';
@@ -23,14 +25,20 @@ interface PurchaseInitBaseInput {
 	submitResultTime: string;
 	payByTime: string;
 	identifierFromPurchaser: string;
+	paymentSourceType: PaymentSourceType;
+	sellerReturnAddress?: string;
 }
 
 export async function resolvePurchaseCreationContext({
 	input,
+	paymentSourceId,
 	rpcProviderApiKey,
+	smartContractAddress,
 }: {
 	input: PurchaseInitBaseInput;
+	paymentSourceId: string;
 	rpcProviderApiKey: string;
+	smartContractAddress: string;
 }) {
 	const policyId = input.agentIdentifier.substring(0, 56);
 	const additionalExternalDisputeUnlockTime = BigInt(1000 * 60 * 15);
@@ -74,6 +82,30 @@ export async function resolvePurchaseCreationContext({
 	if (sellerAddressVkey !== input.sellerVkey) {
 		throw createHttpError(400, 'Invalid seller vkey');
 	}
+	const sellerCollectionAddress =
+		(
+			await prisma.hotWallet.findFirst({
+				where: {
+					paymentSourceId,
+					type: HotWalletType.Selling,
+					deletedAt: null,
+					walletVkey: input.sellerVkey,
+					walletAddress: sellerAddress,
+				},
+				select: {
+					collectionAddress: true,
+				},
+			})
+		)?.collectionAddress ?? null;
+	// Buyer-supplied `sellerReturnAddress` overrides the seller's stored
+	// collection address for BOTH V1 and V2. Previously V1 silently dropped
+	// the input field and always used `sellerCollectionAddress`, which made
+	// `input.sellerReturnAddress` look like a no-op for V1 callers with no
+	// validation error to signal the silent drop. V1's contract / collection
+	// service already honors `request.sellerReturnAddress` when present
+	// (see packages/payment-source-v1/src/services/payments/collection/service.ts),
+	// so propagating it here is the consistent behavior.
+	const sellerReturnAddress = input.sellerReturnAddress ?? sellerCollectionAddress;
 
 	const assetInfo = await provider.assetsById(input.agentIdentifier);
 	if (!assetInfo.onchain_metadata) {
@@ -154,12 +186,27 @@ export async function resolvePurchaseCreationContext({
 		throw createHttpError(400, 'Invalid blockchain identifier, key does not match');
 	}
 
-	const reconstructedBlockchainIdentifier = {
+	const resolvedPaymentSourceType = input.paymentSourceType;
+	const isV2 = resolvedPaymentSourceType === PaymentSourceType.Web3CardanoV2;
+	if (isV2 && decoded.smartContractAddress == null) {
+		throw createHttpError(400, 'Invalid blockchain identifier, V2 must carry smartContractAddress');
+	}
+	// Defense-in-depth: fast-fail when the identifier's smartContractAddress doesn't match
+	// the resolved paymentSource. The signature check below would also reject this case (the
+	// reconstructed payload uses `decoded.smartContractAddress`, so tampering breaks the hash),
+	// but rejecting before crypto saves a SHA-256 round-trip and gives a clearer error.
+	if (isV2 && decoded.smartContractAddress !== smartContractAddress) {
+		throw createHttpError(400, 'Invalid blockchain identifier, smartContractAddress mismatch');
+	}
+	// Reconstruct using the address carried in the identifier itself (not the looked-up paymentSource
+	// address), so the signature check directly verifies what the buyer submitted — tampering
+	// segment [4] makes the signature verification below fail by construction.
+	const reconstructedBlockchainIdentifier = buildSignedBlockchainIdentifierPayload({
 		inputHash: input.inputHash,
 		agentIdentifier: input.agentIdentifier,
 		purchaserIdentifier: purchaserId,
 		sellerIdentifier: sellerId,
-		RequestedFunds:
+		requestedFunds:
 			pricing.pricingType === PricingType.Dynamic && input.Amounts != null
 				? input.Amounts.map((amount) => ({
 						amount: amount.amount,
@@ -171,7 +218,10 @@ export async function resolvePurchaseCreationContext({
 		unlockTime: unlockTime.toString(),
 		externalDisputeUnlockTime: externalDisputeUnlockTime.toString(),
 		sellerAddress,
-	};
+		sellerReturnAddress,
+		smartContractAddress: isV2 ? decoded.smartContractAddress : null,
+		paymentSourceType: resolvedPaymentSourceType,
+	});
 
 	const hashedBlockchainIdentifier = generateSHA256Hash(stringify(reconstructedBlockchainIdentifier));
 	const identifierIsSignedCorrectly = await checkSignature(hashedBlockchainIdentifier, {
@@ -188,6 +238,7 @@ export async function resolvePurchaseCreationContext({
 		unlockTime,
 		externalDisputeUnlockTime,
 		sellerAddress,
+		sellerReturnAddress,
 		pricingType: pricing.pricingType,
 		requestedCost: Array.from(requestedCostMap.entries()).map(([unit, amount]) => ({
 			amount,

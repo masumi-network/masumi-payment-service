@@ -1,4 +1,4 @@
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
 import { ApiKeyStatus, Network } from '@/generated/prisma/client';
 
 export const getAPIKeySchemaInput = z.object({

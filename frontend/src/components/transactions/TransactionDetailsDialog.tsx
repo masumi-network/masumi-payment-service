@@ -24,6 +24,7 @@ import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/Wal
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { findPaymentSourceWalletByVkey } from '@/lib/wallet-lookup';
 import { extractApiErrorMessage } from '@/lib/api-error';
+import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
 import { useRegistryEntryByAgentIdentifier } from '@/lib/queries/useRegistryEntryByAgentIdentifier';
 import { useAgentDetailsDialog } from '@/lib/contexts/AgentDetailsDialogContext';
 
@@ -66,8 +67,11 @@ const getStatusColor = (status: string | null, hasError?: boolean) => {
     case 'resultsubmitted':
       return 'text-green-500';
     case 'refundrequested':
-    case 'refundwithdrawn':
+    case 'withdrawauthorized':
+    case 'refundauthorized':
       return 'text-orange-500';
+    case 'refundwithdrawn':
+      return 'text-blue-500';
     case 'disputed':
     case 'disputedwithdrawn':
       return 'text-red-500';
@@ -401,8 +405,14 @@ export default function TransactionDetailsDialog({
               </div>
 
               <div>
-                <h4 className="font-semibold mb-1">Network</h4>
-                <p className="text-sm capitalize">{transaction.PaymentSource.network}</p>
+                <h4 className="font-semibold mb-1">Source</h4>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm capitalize">{transaction.PaymentSource.network}</p>
+                  <PaymentSourceTypeBadge
+                    paymentSourceType={transaction.PaymentSource.paymentSourceType}
+                    showDefault
+                  />
+                </div>
               </div>
 
               <div className="col-span-1 w-full mb-4">
@@ -491,6 +501,10 @@ export default function TransactionDetailsDialog({
                         return 'Result Submitted';
                       case 'refundrequested':
                         return 'Refund Requested (waiting for approval)';
+                      case 'withdrawauthorized':
+                        return 'Withdraw Authorized';
+                      case 'refundauthorized':
+                        return 'Refund Authorized';
                       case 'refundwithdrawn':
                         return 'Refund Withdrawn';
                       case 'disputed':
@@ -501,11 +515,6 @@ export default function TransactionDetailsDialog({
                         return 'Withdrawn';
                       case 'fundsordatuminvalid':
                         return 'Funds or Datum Invalid';
-                      case 'resultsubmitted':
-                        return 'Result Submitted';
-                      case 'refundrequested':
-                        return 'Refund Requested (waiting for approval)';
-                      case 'refundwithdrawn':
                       default:
                         return state ? state.charAt(0).toUpperCase() + state.slice(1) : '—';
                     }
@@ -541,6 +550,10 @@ export default function TransactionDetailsDialog({
                           return 'Refund withdraw requested';
                         case 'WithdrawRefundInitiated':
                           return 'Refund withdraw initiated';
+                        case 'AuthorizeWithdrawalRequested':
+                          return 'Withdrawal authorization requested';
+                        case 'AuthorizeWithdrawalInitiated':
+                          return 'Withdrawal authorization initiated';
                         default:
                           return action;
                       }

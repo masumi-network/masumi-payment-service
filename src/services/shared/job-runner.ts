@@ -1,5 +1,5 @@
 import { Mutex, tryAcquire } from 'async-mutex';
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 
 export type JobDefinition = {
 	initialDelayMs: number;

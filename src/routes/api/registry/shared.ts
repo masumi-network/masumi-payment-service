@@ -1,6 +1,6 @@
-import { HotWalletType, Network } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
-import { recordBusinessEndpointError } from '@/utils/metrics';
+import { HotWalletType, Network, PaymentSourceType } from '@/generated/prisma/client';
+import { prisma } from '@masumi/payment-core/db';
+import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
 import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 import createHttpError from 'http-errors';
 
@@ -18,6 +18,9 @@ type ScopedSellingWallet = {
 	walletVkey: string;
 	walletAddress: string;
 	PaymentSource: {
+		paymentSourceType: PaymentSourceType;
+		smartContractAddress: string;
+		network: Network;
 		PaymentSourceConfig: {
 			rpcProviderApiKey: string;
 		};

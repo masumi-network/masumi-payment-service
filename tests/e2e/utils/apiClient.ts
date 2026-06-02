@@ -1,4 +1,4 @@
-import { Network } from '@/generated/prisma/enums';
+import { Network, PaymentSourceType } from '@/generated/prisma/enums';
 
 export interface ApiClientConfig {
 	baseUrl: string;
@@ -34,6 +34,12 @@ export interface RegistrationData {
 		terms?: string;
 		other?: string;
 	};
+	supportedPaymentSources?: Array<{
+		chain: string;
+		network: Network;
+		paymentSourceType: PaymentSourceType;
+		address: string;
+	}>;
 	Author: {
 		name: string;
 		contactEmail?: string;
@@ -81,6 +87,12 @@ export interface RegistrationResponse {
 		}>;
 	};
 	agentIdentifier?: string | null;
+	supportedPaymentSources?: Array<{
+		chain: string;
+		network: Network;
+		paymentSourceType: PaymentSourceType;
+		address: string;
+	}> | null;
 	createdAt: string;
 	updatedAt: string;
 }
@@ -89,6 +101,7 @@ export interface QueryRegistryParams {
 	cursorId?: string;
 	network: Network;
 	filterSmartContractAddress?: string;
+	filterPaymentSourceType?: PaymentSourceType;
 }
 
 export interface QueryRegistryResponse {
@@ -147,6 +160,7 @@ export interface CreatePaymentData {
 	network: Network;
 	agentIdentifier: string;
 	RequestedFunds?: Array<{ amount: string; unit: string }>;
+	paymentSourceType?: PaymentSourceType;
 	payByTime: string;
 	submitResultTime: string;
 	unlockTime?: string;
@@ -192,6 +206,7 @@ export interface PaymentResponse {
 		network: Network;
 		smartContractAddress: string;
 		policyId: string | null;
+		paymentSourceType: PaymentSourceType;
 	};
 	BuyerWallet: {
 		id: string;
@@ -202,6 +217,14 @@ export interface PaymentResponse {
 		walletVkey: string;
 		walletAddress: string;
 	} | null;
+	// Present on /api/v1/payment query responses; null when no tx is in flight
+	// for this payment. Exposed here so batch-verification e2e specs can
+	// assert that N concurrent payments share the same on-chain tx hash.
+	CurrentTransaction?: {
+		id: string;
+		txHash: string | null;
+		status: string;
+	} | null;
 	metadata: string | null;
 }
 
@@ -210,6 +233,7 @@ export interface QueryPaymentsParams {
 	cursorId?: string;
 	network: Network;
 	filterSmartContractAddress?: string;
+	filterPaymentSourceType?: PaymentSourceType;
 	includeHistory?: boolean;
 }
 
@@ -224,6 +248,7 @@ export interface CreatePurchaseData {
 	sellerVkey: string;
 	agentIdentifier: string;
 	Amounts?: Array<{ amount: string; unit: string }>;
+	paymentSourceType?: PaymentSourceType;
 	unlockTime: string;
 	externalDisputeUnlockTime: string;
 	submitResultTime: string;
@@ -275,6 +300,7 @@ export interface PurchaseResponse {
 		network: Network;
 		policyId: string | null;
 		smartContractAddress: string;
+		paymentSourceType: PaymentSourceType;
 	};
 	SellerWallet: {
 		id: string;
@@ -293,6 +319,7 @@ export interface QueryPurchasesParams {
 	cursorId?: string;
 	network: Network;
 	filterSmartContractAddress?: string;
+	filterPaymentSourceType?: PaymentSourceType;
 	includeHistory?: boolean;
 }
 
@@ -318,6 +345,7 @@ export interface PaymentSourceResponse {
 	createdAt: string;
 	updatedAt: string;
 	network: Network;
+	paymentSourceType: PaymentSourceType;
 	policyId: string | null;
 	smartContractAddress: string;
 	PaymentSourceConfig: {
@@ -335,7 +363,7 @@ export interface PaymentSourceResponse {
 	SellingWallets: PaymentSourceWallet[];
 	FeeReceiverNetworkWallet: {
 		walletAddress: string;
-	};
+	} | null;
 	feeRatePermille: number;
 }
 
@@ -355,49 +383,80 @@ export class ApiClient {
 
 	private async makeRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
 		const url = `${this.config.baseUrl}${endpoint}`;
+		// Retry transient socket-level failures (server closed an idle
+		// keep-alive socket, TCP RST, etc.). E2E globalSetup awaits ~30 min for
+		// on-chain confirmations between API calls; any keep-alive socket the
+		// undici fetch dispatcher kept open during that idle window is liable
+		// to be closed by the server. The next fetch then surfaces as
+		// `fetch failed: SocketError: other side closed` from undici.
+		const maxRetries = 3;
+		for (let attempt = 0; attempt <= maxRetries; attempt++) {
+			const controller = new AbortController();
+			const timeoutId = setTimeout(() => controller.abort(), this.config.timeout);
+			try {
+				const response = await fetch(url, {
+					...options,
+					signal: controller.signal,
+					headers: {
+						token: this.config.apiKey,
+						'Content-Type': 'application/json',
+						// Force a fresh TCP connection on each request. Keep-alive
+						// sockets idle through long blockchain polls are the source
+						// of the transient socket-closed errors. Cost is minimal
+						// for an e2e workload.
+						Connection: 'close',
+						...options.headers,
+					},
+				});
+				clearTimeout(timeoutId);
 
-		const controller = new AbortController();
-		const timeoutId = setTimeout(() => controller.abort(), this.config.timeout);
+				if (!response.ok) {
+					const errorText = await response.text();
+					// HTTP-level errors (4xx/5xx) are deterministic — don't retry.
+					throw new Error(`HTTP ${response.status}: ${errorText}`);
+				}
 
-		try {
-			const response = await fetch(url, {
-				...options,
-				signal: controller.signal,
-				headers: {
-					token: this.config.apiKey,
-					'Content-Type': 'application/json',
-					...options.headers,
-				},
-			});
+				const jsonResponse: unknown = await response.json();
 
-			clearTimeout(timeoutId);
+				// Handle wrapped API responses with { status: "success", data: {...} } format
+				if (
+					jsonResponse &&
+					typeof jsonResponse === 'object' &&
+					'status' in jsonResponse &&
+					jsonResponse.status === 'success' &&
+					'data' in jsonResponse
+				) {
+					return (jsonResponse as { data: T }).data;
+				}
 
-			if (!response.ok) {
-				const errorText = await response.text();
-				throw new Error(`HTTP ${response.status}: ${errorText}`);
+				return jsonResponse as T;
+			} catch (error) {
+				clearTimeout(timeoutId);
+				// Match transient socket errors via MESSAGE CONTENT only — checking
+				// `error.name === 'TypeError'` alone would also retry programmer
+				// bugs like "x is not a function" which we want to surface
+				// immediately. Undici wraps low-level socket errors as
+				// `TypeError('fetch failed')`, so the 'fetch failed' fragment in
+				// the message catches the intended case.
+				const transientFragments = /fetch failed|SocketError|ECONNRESET|EPIPE|other side closed/i;
+				const isTransient =
+					error instanceof Error &&
+					(transientFragments.test(error.message) ||
+						transientFragments.test(String((error as { cause?: unknown }).cause ?? ''))) &&
+					!/HTTP \d{3}:/.test(error.message);
+				if (isTransient && attempt < maxRetries) {
+					// Exponential backoff with jitter: 100ms, 250ms, 600ms (max).
+					const delay = Math.floor(Math.random() * (100 * Math.pow(2, attempt) + 100));
+					await new Promise((resolve) => setTimeout(resolve, delay));
+					continue;
+				}
+				if (error instanceof Error) {
+					throw new Error(`API request failed: ${error.message}`);
+				}
+				throw error;
 			}
-
-			const jsonResponse: unknown = await response.json();
-
-			// Handle wrapped API responses with { status: "success", data: {...} } format
-			if (
-				jsonResponse &&
-				typeof jsonResponse === 'object' &&
-				'status' in jsonResponse &&
-				jsonResponse.status === 'success' &&
-				'data' in jsonResponse
-			) {
-				return (jsonResponse as { data: T }).data;
-			}
-
-			return jsonResponse as T;
-		} catch (error) {
-			clearTimeout(timeoutId);
-			if (error instanceof Error) {
-				throw new Error(`API request failed: ${error.message}`);
-			}
-			throw error;
 		}
+		throw new Error(`API request failed after ${maxRetries + 1} attempts`);
 	}
 
 	/**
@@ -423,13 +482,23 @@ export class ApiClient {
 		if (params.filterSmartContractAddress) {
 			searchParams.set('filterSmartContractAddress', params.filterSmartContractAddress);
 		}
+		if (params.filterPaymentSourceType) {
+			searchParams.set('filterPaymentSourceType', params.filterPaymentSourceType);
+		}
 
 		return this.makeRequest<QueryRegistryResponse>(`/api/v1/registry?${searchParams.toString()}`);
 	}
 
-	async getRegistrationById(id: string, network: Network): Promise<RegistrationResponse | null> {
+	async getRegistrationById(
+		id: string,
+		network: Network,
+		paymentSourceType?: PaymentSourceType,
+	): Promise<RegistrationResponse | null> {
 		try {
-			const response = await this.queryRegistry({ network });
+			const response = await this.queryRegistry({
+				network,
+				filterPaymentSourceType: paymentSourceType ?? global.testConfig?.paymentSourceType,
+			});
 			const registration = response.Assets.find((asset) => asset.id === id);
 			return registration || null;
 		} catch (error) {
@@ -458,6 +527,9 @@ export class ApiClient {
 		if (params.filterSmartContractAddress) {
 			searchParams.set('filterSmartContractAddress', params.filterSmartContractAddress);
 		}
+		if (params.filterPaymentSourceType) {
+			searchParams.set('filterPaymentSourceType', params.filterPaymentSourceType);
+		}
 		if (params.includeHistory !== undefined) {
 			searchParams.set('includeHistory', params.includeHistory.toString());
 		}
@@ -481,6 +553,9 @@ export class ApiClient {
 		if (params.filterSmartContractAddress) {
 			searchParams.set('filterSmartContractAddress', params.filterSmartContractAddress);
 		}
+		if (params.filterPaymentSourceType) {
+			searchParams.set('filterPaymentSourceType', params.filterPaymentSourceType);
+		}
 		if (params.includeHistory !== undefined) {
 			searchParams.set('includeHistory', params.includeHistory.toString());
 		}
@@ -498,5 +573,74 @@ export class ApiClient {
 		const endpoint = queryString ? `/api/v1/payment-source-extended?${queryString}` : '/api/v1/payment-source-extended';
 
 		return this.makeRequest<QueryPaymentSourcesResponse>(endpoint);
+	}
+
+	/**
+	 * Resolve a single payment by `blockchainIdentifier` via the dedicated
+	 * resolve endpoint. Prefer this over `queryPayments(...).find(...)` in
+	 * tests — paginated listings can drop the target row as CI history
+	 * accumulates. Returns `undefined` on 404 so the polling callers can
+	 * treat the "not yet present" case uniformly.
+	 */
+	async resolvePaymentByBlockchainIdentifier(params: {
+		blockchainIdentifier: string;
+		network: Network;
+		filterSmartContractAddress?: string;
+		includeHistory?: boolean;
+	}): Promise<PaymentResponse | undefined> {
+		const body: Record<string, unknown> = {
+			blockchainIdentifier: params.blockchainIdentifier,
+			network: params.network,
+		};
+		if (params.filterSmartContractAddress != null) {
+			body.filterSmartContractAddress = params.filterSmartContractAddress;
+		}
+		if (params.includeHistory != null) {
+			body.includeHistory = params.includeHistory ? 'true' : 'false';
+		}
+		try {
+			return await this.makeRequest<PaymentResponse>('/api/v1/payment/resolve-blockchain-identifier', {
+				method: 'POST',
+				body: JSON.stringify(body),
+			});
+		} catch (err) {
+			if (err instanceof Error && /HTTP 404:/.test(err.message)) {
+				return undefined;
+			}
+			throw err;
+		}
+	}
+
+	/**
+	 * Resolve a single purchase by `blockchainIdentifier`. See
+	 * `resolvePaymentByBlockchainIdentifier` for rationale.
+	 */
+	async resolvePurchaseByBlockchainIdentifier(params: {
+		blockchainIdentifier: string;
+		network: Network;
+		filterSmartContractAddress?: string;
+		includeHistory?: boolean;
+	}): Promise<PurchaseResponse | undefined> {
+		const body: Record<string, unknown> = {
+			blockchainIdentifier: params.blockchainIdentifier,
+			network: params.network,
+		};
+		if (params.filterSmartContractAddress != null) {
+			body.filterSmartContractAddress = params.filterSmartContractAddress;
+		}
+		if (params.includeHistory != null) {
+			body.includeHistory = params.includeHistory ? 'true' : 'false';
+		}
+		try {
+			return await this.makeRequest<PurchaseResponse>('/api/v1/purchase/resolve-blockchain-identifier', {
+				method: 'POST',
+				body: JSON.stringify(body),
+			});
+		} catch (err) {
+			if (err instanceof Error && /HTTP 404:/.test(err.message)) {
+				return undefined;
+			}
+			throw err;
+		}
 	}
 }

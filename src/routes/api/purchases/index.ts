@@ -1,17 +1,19 @@
-import { z } from '@/utils/zod-openapi';
-import { HotWalletType } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { z } from '@masumi/payment-core/zod';
+import { HotWalletType, PaymentSourceType } from '@/generated/prisma/client';
+import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
-import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { validateHexString } from '@/utils/validator/hex';
 import { handlePurchaseCreditInit } from '@/services/integrations';
-import { HttpExistsError } from '@/utils/errors/http-exists-error';
-import { recordBusinessEndpointError } from '@/utils/metrics';
+import { HttpExistsError } from '@masumi/payment-core/http-exists-error';
+import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
+import { lovelaceToAdaNumberSafe } from '@/utils/lovelace';
 import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
-import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
+import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { resolvePurchaseCreationContext } from './shared';
+import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import {
 	createPurchaseInitSchemaInput,
 	createPurchaseInitSchemaOutput,
@@ -23,6 +25,7 @@ import {
 } from './schemas';
 import { getPurchasesForQuery } from './queries';
 import { serializePurchasesResponse } from './serializers';
+import { isCardanoPubKeyBaseAddressForNetwork } from '@/types/payment-source';
 
 export {
 	createPurchaseInitSchemaInput,
@@ -62,6 +65,7 @@ export const queryPurchaseCountGet = readAuthenticatedEndpointFactory.build({
 					deletedAt: null,
 					network: input.network,
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
+					paymentSourceType: input.filterPaymentSourceType,
 				},
 				...buildWalletScopeFilter(ctx.walletScopeIds),
 			},
@@ -127,8 +131,10 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 			if (existingPurchaseRequest != null) {
 				throw new HttpExistsError('Purchase exists', existingPurchaseRequest.id, {
 					...existingPurchaseRequest,
-					totalBuyerCardanoFees: Number(existingPurchaseRequest.totalBuyerCardanoFees.toString()) / 1_000_000,
-					totalSellerCardanoFees: Number(existingPurchaseRequest.totalSellerCardanoFees.toString()) / 1_000_000,
+					// safe: response schema is z.number() (ADA). lovelaceToAdaNumberSafe
+					// throws if the lovelace value exceeds Number.MAX_SAFE_INTEGER.
+					totalBuyerCardanoFees: lovelaceToAdaNumberSafe(existingPurchaseRequest.totalBuyerCardanoFees),
+					totalSellerCardanoFees: lovelaceToAdaNumberSafe(existingPurchaseRequest.totalSellerCardanoFees),
 					CurrentTransaction: existingPurchaseRequest.CurrentTransaction
 						? {
 								id: existingPurchaseRequest.CurrentTransaction.id,
@@ -188,19 +194,63 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 				});
 			}
 			const policyId = input.agentIdentifier.substring(0, 56);
+			const explicitSmartContractAddress =
+				input.smartContractAddress != null && input.smartContractAddress.length > 0 ? input.smartContractAddress : null;
 
-			const paymentSource = await prisma.paymentSource.findFirst({
-				where: {
-					policyId: policyId,
-					network: input.network,
-					deletedAt: null,
-				},
-				include: {
-					PaymentSourceConfig: {
-						select: { rpcProviderApiKey: true, rpcProvider: true },
+			const decodedBlockchainIdentifier = decodeBlockchainIdentifier(input.blockchainIdentifier);
+			if (decodedBlockchainIdentifier == null) {
+				throw createHttpError(400, 'Invalid blockchain identifier, format invalid');
+			}
+			const inferredPaymentSourceType =
+				decodedBlockchainIdentifier.smartContractAddress != null
+					? PaymentSourceType.Web3CardanoV2
+					: PaymentSourceType.Web3CardanoV1;
+			if (input.paymentSourceType != null && input.paymentSourceType !== inferredPaymentSourceType) {
+				throw createHttpError(400, 'Payment source type does not match the blockchain identifier');
+			}
+
+			const resolvedPaymentSourceType = input.paymentSourceType ?? inferredPaymentSourceType;
+			const isV2 = resolvedPaymentSourceType === PaymentSourceType.Web3CardanoV2;
+			const v2SmartContractAddress = decodedBlockchainIdentifier.smartContractAddress;
+
+			const paymentSource = await (async () => {
+				if (isV2) {
+					if (v2SmartContractAddress == null) {
+						throw createHttpError(400, 'Invalid blockchain identifier, V2 must carry smartContractAddress');
+					}
+					if (explicitSmartContractAddress != null && explicitSmartContractAddress !== v2SmartContractAddress) {
+						throw createHttpError(400, 'Invalid blockchain identifier, smartContractAddress mismatch');
+					}
+					return prisma.paymentSource.findFirst({
+						where: {
+							network: input.network,
+							smartContractAddress: v2SmartContractAddress,
+							policyId: policyId,
+							paymentSourceType: PaymentSourceType.Web3CardanoV2,
+							deletedAt: null,
+						},
+						include: {
+							PaymentSourceConfig: {
+								select: { rpcProviderApiKey: true, rpcProvider: true },
+							},
+						},
+					});
+				}
+
+				return prisma.paymentSource.findFirst({
+					where: {
+						policyId: policyId,
+						network: input.network,
+						paymentSourceType: resolvedPaymentSourceType,
+						deletedAt: null,
 					},
-				},
-			});
+					include: {
+						PaymentSourceConfig: {
+							select: { rpcProviderApiKey: true, rpcProvider: true },
+						},
+					},
+				});
+			})();
 			const inputHash = input.inputHash;
 			if (validateHexString(inputHash) == false) {
 				recordBusinessEndpointError('/api/v1/purchase', 'POST', 400, 'Input hash is not a valid hex string', {
@@ -216,15 +266,26 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 					'/api/v1/purchase',
 					'POST',
 					404,
-					'No payment source found for agent identifiers policy id',
+					isV2
+						? 'No configured V2 payment source found for smartContractAddress'
+						: 'No payment source found for agent identifiers policy id',
 					{
 						network: input.network,
 						policy_id: policyId,
+						smart_contract_address: isV2 ? (v2SmartContractAddress ?? '') : (explicitSmartContractAddress ?? ''),
 						agent_identifier: input.agentIdentifier,
 						step: 'payment_source_lookup',
 					},
 				);
-				throw createHttpError(404, 'No payment source found for agent identifiers policy id');
+				throw createHttpError(
+					404,
+					isV2
+						? 'No configured V2 payment source found for smartContractAddress'
+						: 'No payment source found for agent identifiers policy id',
+				);
+			}
+			if (paymentSource.paymentSourceType !== resolvedPaymentSourceType) {
+				throw createHttpError(400, 'Payment source type does not match the agent identifier policy');
 			}
 
 			const wallets = await prisma.hotWallet.aggregate({
@@ -250,13 +311,43 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 				pricingType,
 				requestedCost,
 				sellerAddress,
+				sellerReturnAddress,
 				submitResultTime,
 				unlockTime,
 			} = await resolvePurchaseCreationContext({
-				input,
+				input: {
+					...input,
+					paymentSourceType: paymentSource.paymentSourceType,
+				},
+				paymentSourceId: paymentSource.id,
 				rpcProviderApiKey: paymentSource.PaymentSourceConfig.rpcProviderApiKey,
+				smartContractAddress: paymentSource.smartContractAddress,
 			});
 			const smartContractAddress = paymentSource.smartContractAddress;
+			if (isV2) {
+				if (
+					input.buyerReturnAddress != null &&
+					!isCardanoPubKeyBaseAddressForNetwork(input.buyerReturnAddress, input.network)
+				) {
+					throw createHttpError(400, 'buyerReturnAddress must be a Cardano base address with a stake credential');
+				}
+				if (sellerReturnAddress != null && !isCardanoPubKeyBaseAddressForNetwork(sellerReturnAddress, input.network)) {
+					throw createHttpError(400, 'sellerReturnAddress must be a Cardano base address with a stake credential');
+				}
+			}
+			// V2 contract trap: `address_to_verification_key(seller)` returns None
+			// for script-credential addresses. The `sellerAddress` resolved above
+			// is the on-chain holder of the agent NFT — if a seller transferred
+			// their NFT to a script-credential address, every contract redeemer
+			// referencing the seller principal would fail and funds locked
+			// against this seller would be permanently unspendable. Reject
+			// before constructing the purchase request.
+			if (isV2 && !isCardanoPubKeyBaseAddressForNetwork(sellerAddress, input.network)) {
+				throw createHttpError(
+					400,
+					'Seller principal address (resolved from agent NFT holder) must be a Cardano base address with a verification-key payment credential. Script-credential addresses (smart wallets, multisig wrappers) cannot interact with the escrow contract; the seller must move the agent NFT to a verification-key address before purchases can be processed.',
+				);
+			}
 
 			const initialPurchaseRequest = await handlePurchaseCreditInit({
 				id: ctx.id,
@@ -274,6 +365,8 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 				externalDisputeUnlockTime,
 				inputHash: input.inputHash,
 				pricingType,
+				buyerReturnAddress: input.buyerReturnAddress ?? null,
+				sellerReturnAddress,
 			});
 
 			return {

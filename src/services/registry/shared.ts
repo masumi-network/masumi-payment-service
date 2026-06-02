@@ -1,12 +1,38 @@
-import { SERVICE_CONSTANTS } from '@/utils/config';
+// Mesh SDK pinning: this file is in the shared `src/` tree and is implicitly
+// V1-aligned because the repo root pins the V1 mesh line
+// (`@meshsdk/core@1.9.0-beta.96`). It builds V1 registry mint transactions.
+// V2 registry transactions are built inside `packages/payment-source-v2`,
+// which pins its own newer mesh line. Do not unify; do not bump. See
+// docs/adr/0005-meshsdk-version-pinning-v1-v2.md.
+import { SERVICE_CONSTANTS } from '@masumi/payment-core/config';
 import { blake2b } from 'ethereum-cryptography/blake2b';
 import { BlockfrostProvider, IFetcher, LanguageVersion, MeshTxBuilder, Network, UTxO } from '@meshsdk/core';
+import { PaymentSourceType } from '@/generated/prisma/client';
+import { getCachedChainProtocolParameters, syncMeshCostModelsFromChain } from '@/utils/mesh-cost-model-sync';
+import { assertNever } from '@/utils/assert-never';
 
 export type RegistryMetadata = {
 	[key: string]: string | string[] | RegistryMetadata | RegistryMetadata[] | undefined;
 };
 
 const minimumRegistryFundingLovelace = BigInt(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount);
+
+// V2 mint contract Action enum: MintAction=0, UpdateAction=1, BurnAction=2.
+// V1 mint contract Action enum: MintAction=0, BurnAction=1.
+// Map by PaymentSourceType so the same shared helper drives both.
+const V1_BURN_REDEEMER_ALTERNATIVE = 1;
+const V2_BURN_REDEEMER_ALTERNATIVE = 2;
+
+export function getBurnRedeemerAlternative(paymentSourceType: PaymentSourceType): number {
+	switch (paymentSourceType) {
+		case PaymentSourceType.Web3CardanoV1:
+			return V1_BURN_REDEEMER_ALTERNATIVE;
+		case PaymentSourceType.Web3CardanoV2:
+			return V2_BURN_REDEEMER_ALTERNATIVE;
+		default:
+			return assertNever(paymentSourceType);
+	}
+}
 
 export function normalizeRequestedRegistryFundingLovelace(sendFundingLovelace?: string): bigint | undefined {
 	if (sendFundingLovelace == null) {
@@ -27,6 +53,56 @@ export function generateRegistryAssetName(firstUtxo: UTxO): string {
 	const serializedOutputUint8Array = new Uint8Array(Buffer.from(serializedOutput.toString(), 'hex'));
 	const blake2b256 = blake2b(serializedOutputUint8Array, 32);
 	return Buffer.from(blake2b256).toString('hex');
+}
+
+// V2 registry mint contract requires asset names of the exact structure:
+//   [ 1 byte nonce > 0x0f | 28 bytes blake2b_224(tx_id || index_be4) | 3 bytes version 0x000000 ]
+// (see smart-contracts/registry-v2/validators/mint.ak). The nonce > 0x0f guard
+// keeps registry asset names out of the CIP-67/CIP-68 label-prefix range. The
+// version field starts at 0 and increments by 1 on every UpdateAction.
+const V2_REGISTRY_INITIAL_NONCE = '10'; // 0x10 — first byte strictly > 0x0f
+const V2_REGISTRY_INITIAL_VERSION = '000000'; // 3 bytes BE, starts at 0
+const V2_REGISTRY_ASSET_NAME_HEX_LENGTH = 64; // 32 bytes
+const V2_REGISTRY_VERSION_MAX = 0xffffff;
+const V2_UPDATE_REDEEMER_ALTERNATIVE = 1;
+
+export function generateRegistryAssetNameV2(firstUtxo: UTxO): string {
+	const txId = firstUtxo.input.txHash;
+	const txIndex = firstUtxo.input.outputIndex;
+	const serializedOutput = txId + txIndex.toString(16).padStart(8, '0');
+	const serializedOutputUint8Array = new Uint8Array(Buffer.from(serializedOutput.toString(), 'hex'));
+	// 28-byte root hash matches the contract's `blake2b_224(...)` of the same input.
+	const rootHashBytes = blake2b(serializedOutputUint8Array, 28);
+	const rootHashHex = Buffer.from(rootHashBytes).toString('hex');
+	return V2_REGISTRY_INITIAL_NONCE + rootHashHex + V2_REGISTRY_INITIAL_VERSION;
+}
+
+// Compute the next-version V2 asset name for an UpdateAction. The on-chain
+// validator (smart-contracts/registry-v2/validators/mint.ak) requires the new
+// asset name to share the burned asset's 1-byte nonce + 28-byte root_hash and
+// to carry a 3-byte version that is the burned version + 1. Version overflow
+// past 0xFFFFFF is rejected explicitly because the chain check uses big-endian
+// from_int + 1 and a wrap-around there would produce the contract's own
+// `update_asset_rejects_max_version_overflow` failure mode.
+export function bumpRegistryAssetNameVersionV2(assetNameHex: string): string {
+	if (assetNameHex.length !== V2_REGISTRY_ASSET_NAME_HEX_LENGTH) {
+		throw new Error(
+			`V2 registry asset name must be ${V2_REGISTRY_ASSET_NAME_HEX_LENGTH} hex chars, got ${assetNameHex.length}`,
+		);
+	}
+	const noncePart = assetNameHex.slice(0, 2);
+	const rootHashPart = assetNameHex.slice(2, 58);
+	const versionPart = assetNameHex.slice(58, 64);
+	const currentVersion = parseInt(versionPart, 16);
+	if (!Number.isFinite(currentVersion)) {
+		throw new Error(`V2 registry asset name has non-hex version segment: ${versionPart}`);
+	}
+	const nextVersion = currentVersion + 1;
+	if (nextVersion > V2_REGISTRY_VERSION_MAX) {
+		throw new Error('V2 registry asset version would overflow 0xFFFFFF');
+	}
+	const nextVersionHex = nextVersion.toString(16).padStart(6, '0');
+	return noncePart + rootHashPart + nextVersionHex;
 }
 
 export function resolveRegistryRecipientWalletAddress(request: {
@@ -64,10 +140,41 @@ export async function generateRegistryMintTransaction(
 		mem: number;
 		steps: number;
 	} = SERVICE_CONSTANTS.SMART_CONTRACT.defaultExUnits,
+	rpcApiKey?: string,
+	// Optional V2 single-item splitter support. When set, emit a self-send
+	// lovelace output back to `mintingWalletAddress` before `.changeAddress`,
+	// raising the post-tx wallet UTxO count from 2 (collateral + change) to 3.
+	// V1 callers MUST NOT pass this (no V1 splitter convention).
+	walletSplitterLovelace?: bigint,
 ) {
+	if (rpcApiKey) {
+		// `protocolParams(...)` below does NOT carry cost models; mesh-sdk
+		// hashes script_data against its BUNDLED cost-model arrays. Patch them
+		// from chain or risk `PPViewHashesDontMatch` after any cost-model vote.
+		// Helper is memoized 5 min so this is cheap to call before each build.
+		await syncMeshCostModelsFromChain(rpcApiKey);
+	}
+	// Fetch CURRENT chain protocol parameters (including the live Plutus cost
+	// models) and feed them into MeshTxBuilder. Without this, MeshTxBuilder
+	// falls back to its bundled default cost models, which can lag behind the
+	// chain after a hard fork or PParam vote. When that happens the
+	// script_data_hash computed for the transaction body does not match what
+	// the ledger recomputes from the actual on-chain cost models, and the
+	// submission is rejected with `ConwayUtxowFailure
+	// (PPViewHashesDontMatch ...)`. Symptom in CI: V1 RegistrationFailed with
+	// `TxSubmitFail` / `TxValidationErrorInCardanoMode` carrying a
+	// PPViewHashesDontMatch mismatch where `supplied` and `expected` are both
+	// stable across runs (because mesh's bundled models are deterministic).
+	// `syncMeshCostModelsFromChain` (above, when `rpcApiKey` is supplied) ALSO
+	// caches the mesh-format Protocol object so we don't repeat
+	// `/epochs/latest/parameters` here. Fall back to a live fetch if the cache
+	// is cold (first tx of the process lifetime).
+	const cachedParams = rpcApiKey == null ? null : getCachedChainProtocolParameters(rpcApiKey);
+	const protocolParameters = cachedParams ?? (await blockchainProvider.fetchProtocolParameters(Number.NaN));
 	const txBuilder = new MeshTxBuilder({
 		fetcher: blockchainProvider,
 	});
+	txBuilder.protocolParams(protocolParameters);
 	const deserializedAddress = txBuilder.serializer.deserializer.key.deserializeAddress(mintingWalletAddress);
 
 	txBuilder
@@ -99,6 +206,11 @@ export async function generateRegistryMintTransaction(
 		txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
 	}
 
+	// Optional V2 single-item splitter — see param docstring above.
+	if (walletSplitterLovelace != null) {
+		txBuilder.txOut(mintingWalletAddress, [{ unit: 'lovelace', quantity: walletSplitterLovelace.toString() }]);
+	}
+
 	return await txBuilder
 		.requiredSignerHash(deserializedAddress.pubKeyHash)
 		.setNetwork(network)
@@ -114,7 +226,15 @@ export function findRegistryTokenUtxo(utxos: UTxO[], agentIdentifier: string): U
 		(utxo) => utxo.output.amount.length > 1 && utxo.output.amount.some((asset) => asset.unit == agentIdentifier),
 	);
 	if (!tokenUtxo) {
-		throw new Error('No token UTXO found');
+		// The resolved managed wallet no longer holds this registry asset. Both
+		// the update (burn+remint) and deregister (burn) flows sign with this
+		// wallet and need its asset UTxO as a tx input, so the on-chain tx would
+		// fail regardless. Fail fast with an explicit message so operators can
+		// tell "asset moved / already burned" apart from a generic build error.
+		throw new Error(
+			`Registry asset ${agentIdentifier} is no longer held by the resolved managed wallet; ` +
+				'cannot build update/deregister transaction (asset may have been transferred or already burned)',
+		);
 	}
 
 	return tokenUtxo;
@@ -139,6 +259,13 @@ export async function generateRegistryDeregisterTransactionAutomaticFees(
 	assetUtxo: UTxO,
 	collateralUtxo: UTxO,
 	utxos: UTxO[],
+	// V1 burn=alt 1; V2 burn=alt 2 (V2 reserves alt 1 for UpdateAction).
+	// Resolved via getBurnRedeemerAlternative(paymentSourceType).
+	burnRedeemerAlternative: number = V1_BURN_REDEEMER_ALTERNATIVE,
+	rpcApiKey?: string,
+	// Optional V2 single-item splitter — see equivalent param on
+	// `generateRegistryMintTransaction`. V1 callers omit.
+	walletSplitterLovelace?: bigint,
 ) {
 	const evaluationTx = await generateRegistryDeregisterTransaction(
 		blockchainProvider,
@@ -150,6 +277,10 @@ export async function generateRegistryDeregisterTransactionAutomaticFees(
 		assetUtxo,
 		collateralUtxo,
 		utxos,
+		undefined,
+		burnRedeemerAlternative,
+		rpcApiKey,
+		walletSplitterLovelace,
 	);
 	const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
 		budget: { mem: number; steps: number };
@@ -166,7 +297,170 @@ export async function generateRegistryDeregisterTransactionAutomaticFees(
 		collateralUtxo,
 		utxos,
 		estimatedFee[0].budget,
+		burnRedeemerAlternative,
+		rpcApiKey,
+		walletSplitterLovelace,
 	);
+}
+
+// Build a single-item V2 registry UpdateAction transaction. The on-chain
+// validator atomically pairs the burned asset with a freshly minted asset
+// sharing the same nonce + root_hash but with version+1; the same
+// `UpdateAction` redeemer (alternative=1) covers both the burn leg and the
+// mint leg under one policy bucket. This helper performs the two-pass
+// `evaluateTx` cycle and returns the unsigned tx ready for the caller to
+// sign and submit.
+//
+// V2-only by construction — the V1 mint contract has no UpdateAction
+// (Action enum is `MintAction | BurnAction`). The route layer rejects V1
+// payment sources before this is ever reached.
+export async function generateRegistryUpdateTransactionAutomaticFees(
+	blockchainProvider: BlockfrostProvider,
+	network: Network,
+	script: {
+		version: LanguageVersion;
+		code: string;
+	},
+	walletAddress: string,
+	recipientWalletAddress: string,
+	fundingLovelace: string,
+	policyId: string,
+	oldAssetName: string,
+	newAssetName: string,
+	assetUtxo: UTxO,
+	collateralUtxo: UTxO,
+	utxos: UTxO[],
+	metadata: RegistryMetadata,
+	rpcApiKey?: string,
+	walletSplitterLovelace?: bigint,
+) {
+	const evaluationTx = await generateRegistryUpdateTransaction(
+		blockchainProvider,
+		network,
+		script,
+		walletAddress,
+		recipientWalletAddress,
+		fundingLovelace,
+		policyId,
+		oldAssetName,
+		newAssetName,
+		assetUtxo,
+		collateralUtxo,
+		utxos,
+		metadata,
+		undefined,
+		rpcApiKey,
+		walletSplitterLovelace,
+	);
+	const evaluated = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
+		tag?: string;
+		budget: { mem: number; steps: number };
+	}>;
+	// One shared MINT redeemer covers the burn+mint pair under the single
+	// UpdateAction policy bucket; pick the MINT entry if tagged, else the
+	// first action returned (`evaluateTx` ordering varies across providers).
+	const mintBudget = evaluated.find((action) => action.tag === 'MINT')?.budget ?? evaluated[0]?.budget;
+	if (mintBudget == null) {
+		throw new Error('evaluateTx returned no MINT budget for V2 registry UpdateAction');
+	}
+
+	return await generateRegistryUpdateTransaction(
+		blockchainProvider,
+		network,
+		script,
+		walletAddress,
+		recipientWalletAddress,
+		fundingLovelace,
+		policyId,
+		oldAssetName,
+		newAssetName,
+		assetUtxo,
+		collateralUtxo,
+		utxos,
+		metadata,
+		mintBudget,
+		rpcApiKey,
+		walletSplitterLovelace,
+	);
+}
+
+async function generateRegistryUpdateTransaction(
+	blockchainProvider: IFetcher,
+	network: Network,
+	script: {
+		version: LanguageVersion;
+		code: string;
+	},
+	walletAddress: string,
+	recipientWalletAddress: string,
+	fundingLovelace: string,
+	policyId: string,
+	oldAssetName: string,
+	newAssetName: string,
+	assetUtxo: UTxO,
+	collateralUtxo: UTxO,
+	utxos: UTxO[],
+	metadata: RegistryMetadata,
+	exUnits: {
+		mem: number;
+		steps: number;
+	} = SERVICE_CONSTANTS.SMART_CONTRACT.defaultExUnits,
+	rpcApiKey?: string,
+	walletSplitterLovelace?: bigint,
+) {
+	if (rpcApiKey) {
+		await syncMeshCostModelsFromChain(rpcApiKey);
+	}
+	const cachedParams = rpcApiKey == null ? null : getCachedChainProtocolParameters(rpcApiKey);
+	const protocolParameters = cachedParams ?? (await blockchainProvider.fetchProtocolParameters(Number.NaN));
+	const txBuilder = new MeshTxBuilder({
+		fetcher: blockchainProvider,
+	});
+	txBuilder.protocolParams(protocolParameters);
+	const deserializedAddress = txBuilder.serializer.deserializer.key.deserializeAddress(walletAddress);
+
+	txBuilder
+		.txIn(assetUtxo.input.txHash, assetUtxo.input.outputIndex)
+		.mintPlutusScript(script.version)
+		.mint('-1', policyId, oldAssetName)
+		.mint(SERVICE_CONSTANTS.SMART_CONTRACT.mintQuantity, policyId, newAssetName)
+		.mintingScript(script.code)
+		.mintRedeemerValue({ alternative: V2_UPDATE_REDEEMER_ALTERNATIVE, fields: [] }, 'Mesh', exUnits)
+		.metadataValue(SERVICE_CONSTANTS.METADATA.nftLabel, {
+			[policyId]: {
+				[newAssetName]: metadata,
+			},
+			version: '1',
+		})
+		.txIn(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
+		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
+		.setTotalCollateral(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount)
+		.txOut(recipientWalletAddress, [
+			{
+				unit: policyId + newAssetName,
+				quantity: SERVICE_CONSTANTS.SMART_CONTRACT.mintQuantity,
+			},
+			{
+				unit: SERVICE_CONSTANTS.CARDANO.NATIVE_TOKEN,
+				quantity: fundingLovelace,
+			},
+		]);
+	for (const utxo of utxos) {
+		txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
+	}
+
+	if (walletSplitterLovelace != null) {
+		txBuilder.txOut(walletAddress, [{ unit: 'lovelace', quantity: walletSplitterLovelace.toString() }]);
+	}
+
+	return await txBuilder
+		.requiredSignerHash(deserializedAddress.pubKeyHash)
+		.setNetwork(network)
+		.metadataValue(SERVICE_CONSTANTS.METADATA.masumiLabel, {
+			msg: ['Masumi', 'UpdateAgent'],
+		})
+		.changeAddress(walletAddress)
+		.complete();
 }
 
 async function generateRegistryDeregisterTransaction(
@@ -189,10 +483,23 @@ async function generateRegistryDeregisterTransaction(
 		mem: 7e6,
 		steps: 3e9,
 	},
+	burnRedeemerAlternative: number = V1_BURN_REDEEMER_ALTERNATIVE,
+	rpcApiKey?: string,
+	walletSplitterLovelace?: bigint,
 ) {
+	if (rpcApiKey) {
+		// See cost-model sync comment in generateRegistryMintTransaction above.
+		await syncMeshCostModelsFromChain(rpcApiKey);
+	}
+	// Reuse the cached mesh-format chain params populated by the cost-model
+	// sync (see generateRegistryMintTransaction). Fall back to a live fetch on
+	// cache miss.
+	const cachedParams = rpcApiKey == null ? null : getCachedChainProtocolParameters(rpcApiKey);
+	const protocolParameters = cachedParams ?? (await blockchainProvider.fetchProtocolParameters(Number.NaN));
 	const txBuilder = new MeshTxBuilder({
 		fetcher: blockchainProvider,
 	});
+	txBuilder.protocolParams(protocolParameters);
 	const deserializedAddress = txBuilder.serializer.deserializer.key.deserializeAddress(walletAddress);
 
 	txBuilder
@@ -200,12 +507,18 @@ async function generateRegistryDeregisterTransaction(
 		.mintPlutusScript(script.version)
 		.mint('-1', policyId, assetName)
 		.mintingScript(script.code)
-		.mintRedeemerValue({ alternative: 1, fields: [] }, 'Mesh', exUnits)
+		.mintRedeemerValue({ alternative: burnRedeemerAlternative, fields: [] }, 'Mesh', exUnits)
 		.txIn(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
 		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
 		.setTotalCollateral('3000000');
 	for (const utxo of utxos) {
 		txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
+	}
+
+	// Optional V2 single-item splitter — see param docstring on the public
+	// `generateRegistryDeregisterTransactionAutomaticFees` entry above.
+	if (walletSplitterLovelace != null) {
+		txBuilder.txOut(walletAddress, [{ unit: 'lovelace', quantity: walletSplitterLovelace.toString() }]);
 	}
 
 	return await txBuilder

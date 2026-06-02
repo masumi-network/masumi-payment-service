@@ -1,18 +1,20 @@
-import { z } from 'zod';
 import { Network, PurchasingAction, TransactionStatus, OnChainState } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
-import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
-import { logger } from '@/utils/logger';
+import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
+import { logger } from '@masumi/payment-core/logger';
 import { ez } from 'express-zod-api';
 import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
-import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
+import { lovelaceToAdaNumberSafe } from '@/utils/lovelace';
 import { assertWalletInScope } from '@/utils/shared/wallet-scope';
+import { retryOnSerializationConflict } from '@/utils/db/retry';
 import { purchaseResponseSchema } from '..';
+import { z } from '@masumi/payment-core/zod';
 
 export const purchaseErrorStateRecoverySchemaInput = z.object({
-	blockchainIdentifier: z.string().min(1).describe('The blockchain identifier of the purchase request'),
+	blockchainIdentifier: z.string().min(1).max(8000).describe('The blockchain identifier of the purchase request'),
 	network: z.nativeEnum(Network).describe('The network the transaction was made on'),
 	updatedAt: ez.dateIn().describe('The time of the last update, to ensure you clear the correct error state'),
 });
@@ -118,87 +120,101 @@ export const purchaseErrorStateRecoveryPost = payAuthenticatedEndpointFactory.bu
 			transactionsToFailIds: transactionsToFail.map((tx) => tx.id),
 		});
 
-		const newPurchase = await prisma.$transaction(async (tx) => {
-			for (const transaction of transactionsToFail) {
-				await tx.transaction.update({
-					where: { id: transaction.id },
-					data: { status: TransactionStatus.FailedViaManualReset },
-				});
-			}
+		// Serializable + retry: this handler races concurrent tx-sync handlers
+		// that may advance the same PurchaseRequest. Without Serializable
+		// isolation, a concurrent state-machine update can win between this
+		// route's pre-read and the in-transaction updates here.
+		const newPurchase = await retryOnSerializationConflict(
+			() =>
+				prisma.$transaction(
+					async (tx) => {
+						for (const transaction of transactionsToFail) {
+							await tx.transaction.update({
+								where: { id: transaction.id },
+								data: { status: TransactionStatus.FailedViaManualReset },
+							});
+						}
 
-			await tx.purchaseRequest.update({
-				where: { id: purchaseRequest.id },
-				data: { currentTransactionId: lastSuccessfulTransaction?.id || null },
-			});
+						await tx.purchaseRequest.update({
+							where: { id: purchaseRequest.id },
+							data: { currentTransactionId: lastSuccessfulTransaction?.id || null },
+						});
 
-			const isCompletedState =
-				purchaseRequest.onChainState &&
-				(
-					[OnChainState.Withdrawn, OnChainState.RefundWithdrawn, OnChainState.DisputedWithdrawn] as OnChainState[]
-				).includes(purchaseRequest.onChainState);
+						const isCompletedState =
+							purchaseRequest.onChainState &&
+							(
+								[OnChainState.Withdrawn, OnChainState.RefundWithdrawn, OnChainState.DisputedWithdrawn] as OnChainState[]
+							).includes(purchaseRequest.onChainState);
 
-			return await tx.purchaseRequest.update({
-				where: { id: purchaseRequest.id },
-				data: {
-					ActionHistory: {
-						connect: {
-							id: purchaseRequest.nextActionId,
-						},
+						return await tx.purchaseRequest.update({
+							where: { id: purchaseRequest.id },
+							data: {
+								ActionHistory: {
+									connect: {
+										id: purchaseRequest.nextActionId,
+									},
+								},
+								NextAction: {
+									create: {
+										submittedTxHash: null,
+										requestedAction: isCompletedState
+											? PurchasingAction.None
+											: PurchasingAction.WaitingForExternalAction,
+									},
+								},
+							},
+							include: {
+								NextAction: {
+									select: {
+										id: true,
+										requestedAction: true,
+										errorType: true,
+										errorNote: true,
+									},
+								},
+								CurrentTransaction: {
+									select: {
+										id: true,
+										createdAt: true,
+										updatedAt: true,
+										txHash: true,
+										status: true,
+										fees: true,
+										blockHeight: true,
+										blockTime: true,
+										previousOnChainState: true,
+										newOnChainState: true,
+										confirmations: true,
+									},
+								},
+								PaidFunds: { select: { id: true, amount: true, unit: true } },
+								PaymentSource: {
+									select: {
+										id: true,
+										network: true,
+										paymentSourceType: true,
+										policyId: true,
+										smartContractAddress: true,
+									},
+								},
+								SellerWallet: { select: { id: true, walletVkey: true } },
+								SmartContractWallet: {
+									where: { deletedAt: null },
+									select: { id: true, walletVkey: true, walletAddress: true },
+								},
+								WithdrawnForSeller: {
+									select: { id: true, amount: true, unit: true },
+								},
+								WithdrawnForBuyer: {
+									select: { id: true, amount: true, unit: true },
+								},
+							},
+						});
 					},
-					NextAction: {
-						create: {
-							submittedTxHash: null,
-							requestedAction: isCompletedState ? PurchasingAction.None : PurchasingAction.WaitingForExternalAction,
-						},
-					},
-				},
-				include: {
-					NextAction: {
-						select: {
-							id: true,
-							requestedAction: true,
-							errorType: true,
-							errorNote: true,
-						},
-					},
-					CurrentTransaction: {
-						select: {
-							id: true,
-							createdAt: true,
-							updatedAt: true,
-							txHash: true,
-							status: true,
-							fees: true,
-							blockHeight: true,
-							blockTime: true,
-							previousOnChainState: true,
-							newOnChainState: true,
-							confirmations: true,
-						},
-					},
-					PaidFunds: { select: { id: true, amount: true, unit: true } },
-					PaymentSource: {
-						select: {
-							id: true,
-							network: true,
-							policyId: true,
-							smartContractAddress: true,
-						},
-					},
-					SellerWallet: { select: { id: true, walletVkey: true } },
-					SmartContractWallet: {
-						where: { deletedAt: null },
-						select: { id: true, walletVkey: true, walletAddress: true },
-					},
-					WithdrawnForSeller: {
-						select: { id: true, amount: true, unit: true },
-					},
-					WithdrawnForBuyer: {
-						select: { id: true, amount: true, unit: true },
-					},
-				},
-			});
-		});
+					{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
+				),
+			{ label: 'purchases-error-state-recovery' },
+		);
 
 		logger.info('Error state recovery completed successfully', {
 			purchaseRequestId: purchaseRequest.id,
@@ -211,8 +227,10 @@ export const purchaseErrorStateRecoveryPost = payAuthenticatedEndpointFactory.bu
 			...newPurchase,
 			...transformPurchaseGetTimestamps(newPurchase),
 			...transformPurchaseGetAmounts(newPurchase),
-			totalBuyerCardanoFees: Number(newPurchase.totalBuyerCardanoFees.toString()) / 1_000_000,
-			totalSellerCardanoFees: Number(newPurchase.totalSellerCardanoFees.toString()) / 1_000_000,
+			// safe: response schema is z.number() (ADA). lovelaceToAdaNumberSafe
+			// throws if the lovelace value exceeds Number.MAX_SAFE_INTEGER.
+			totalBuyerCardanoFees: lovelaceToAdaNumberSafe(newPurchase.totalBuyerCardanoFees),
+			totalSellerCardanoFees: lovelaceToAdaNumberSafe(newPurchase.totalSellerCardanoFees),
 			agentIdentifier: decoded?.agentIdentifier ?? null,
 			CurrentTransaction: newPurchase.CurrentTransaction
 				? {

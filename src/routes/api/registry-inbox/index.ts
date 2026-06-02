@@ -1,13 +1,13 @@
-import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
-import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
-import { z } from '@/utils/zod-openapi';
+import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { z } from '@masumi/payment-core/zod';
 import { RegistrationState } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
-import { DEFAULTS } from '@/utils/config';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
-import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
-import { recordBusinessEndpointError } from '@/utils/metrics';
+import { DEFAULTS } from '@masumi/payment-core/config';
+import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
+import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
 import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { normalizeRequestedRegistryFundingLovelace } from '@/services/registry/shared';
 import {
@@ -155,6 +155,12 @@ export const registerInboxAgentPost = payAuthenticatedEndpointFactory.build({
 						connect: {
 							id: sellingWallet.paymentSourceId,
 						},
+					},
+					// Tenant ownership is enforced on mutate routes. Legacy
+					// rows created before this column existed carry NULL and
+					// remain admin-only.
+					RequestedBy: {
+						connect: { id: ctx.id },
 					},
 				},
 				include: {

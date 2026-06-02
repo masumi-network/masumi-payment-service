@@ -1,6 +1,6 @@
-import { prisma } from '@/utils/db';
-import { logger } from '@/utils/logger';
-import { recordStateTransition, recordBlockchainJourney } from '@/utils/metrics';
+import { prisma } from '@masumi/payment-core/db';
+import { logger } from '@masumi/payment-core/logger';
+import { recordStateTransition, recordBlockchainJourney } from '@masumi/payment-core/metrics';
 import { PurchasingAction, PaymentAction, Prisma } from '@/generated/prisma/client';
 import { webhookEventsService } from '@/services/webhooks';
 

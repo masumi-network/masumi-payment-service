@@ -1,12 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 import {
 	recordApiError,
 	recordApiRequestDuration,
 	recordBusinessEndpointError,
 	isBusinessEndpoint,
 	normalizeEndpointForMetrics,
-} from '@/utils/metrics';
+} from '@masumi/payment-core/metrics';
 
 // Paths we skip for request logging and metrics (static assets, health, etc.)
 const isNoisyPath = (url: string): boolean => {

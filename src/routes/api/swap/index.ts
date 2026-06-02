@@ -1,5 +1,5 @@
-import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
-import { z } from '@/utils/zod-openapi';
+import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { z } from '@masumi/payment-core/zod';
 import createHttpError from 'http-errors';
 import {
 	swapTokens,
@@ -9,15 +9,16 @@ import {
 	findOrderOutputIndex,
 	SWAP_CHAIN_SUBMIT_TIMEOUT_MS,
 } from '@/services/integrations';
-import { CONFIG } from '@/utils/config';
-import { recordBusinessEndpointError } from '@/utils/metrics';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { CONFIG } from '@masumi/payment-core/config';
+import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
+import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { Network, TransactionStatus, SwapStatus } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 import { decrypt } from '@/utils/security/encryption';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
+import { withSerializableSlot } from '@/utils/db/serializable-semaphore';
 import {
 	swapTokensSchemaInput,
 	swapTokensSchemaOutput,
@@ -60,54 +61,58 @@ export const swapTokensEndpointPost = adminAuthenticatedEndpointFactory.build({
 		try {
 			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, Network.Mainnet);
 
-			// Lock the wallet in a transaction to prevent concurrent usage
-			const wallet = await prisma.$transaction(
-				async (prisma) => {
-					const wallet = await prisma.hotWallet.findFirst({
-						where: {
-							walletVkey: input.walletVkey,
-							deletedAt: null,
-							PaymentSource: {
-								network: { in: ctx.networkLimit },
-							},
-						},
-						include: {
-							Secret: true,
-							PaymentSource: {
-								include: {
-									PaymentSourceConfig: true,
+			// Lock the wallet in a transaction to prevent concurrent usage.
+			// Gate Serializable $transaction through the shared semaphore so
+			// concurrent HTTP requests don't exhaust the pg connection pool.
+			const wallet = await withSerializableSlot(() =>
+				prisma.$transaction(
+					async (prisma) => {
+						const wallet = await prisma.hotWallet.findFirst({
+							where: {
+								walletVkey: input.walletVkey,
+								deletedAt: null,
+								PaymentSource: {
+									network: { in: ctx.networkLimit },
 								},
 							},
-						},
-					});
+							include: {
+								Secret: true,
+								PaymentSource: {
+									include: {
+										PaymentSourceConfig: true,
+									},
+								},
+							},
+						});
 
-					if (wallet == null) {
-						throw createHttpError(404, 'Wallet not found');
-					}
+						if (wallet == null) {
+							throw createHttpError(404, 'Wallet not found');
+						}
 
-					assertHotWalletInScope(ctx.walletScopeIds, wallet.id);
+						assertHotWalletInScope(ctx.walletScopeIds, wallet.id);
 
-					if (wallet.lockedAt != null) {
-						throw createHttpError(409, 'Wallet is currently locked and cannot be used for swap');
-					}
+						if (wallet.lockedAt != null) {
+							throw createHttpError(409, 'Wallet is currently locked and cannot be used for swap');
+						}
 
-					if (wallet.PaymentSource.network !== Network.Mainnet) {
-						throw createHttpError(400, 'Swap functionality is only available for mainnet wallets');
-					}
+						if (wallet.PaymentSource.network !== Network.Mainnet) {
+							throw createHttpError(400, 'Swap functionality is only available for mainnet wallets');
+						}
 
-					if (!wallet.PaymentSource.PaymentSourceConfig) {
-						throw createHttpError(400, 'Payment source configuration not found');
-					}
+						if (!wallet.PaymentSource.PaymentSourceConfig) {
+							throw createHttpError(400, 'Payment source configuration not found');
+						}
 
-					// Lock the wallet atomically
-					await prisma.hotWallet.update({
-						where: { id: wallet.id, deletedAt: null },
-						data: { lockedAt: new Date() },
-					});
+						// Lock the wallet atomically
+						await prisma.hotWallet.update({
+							where: { id: wallet.id, deletedAt: null },
+							data: { lockedAt: new Date() },
+						});
 
-					return wallet;
-				},
-				{ isolationLevel: 'Serializable', timeout: 10000 },
+						return wallet;
+					},
+					{ isolationLevel: 'Serializable', timeout: 10000 },
+				),
 			);
 
 			walletId = wallet.id;
@@ -376,7 +381,10 @@ export const getSwapConfirmEndpointGet = adminAuthenticatedEndpointFactory.build
 							walletId: wallet.id,
 							error: unlockError instanceof Error ? unlockError.message : String(unlockError),
 						});
-						throw createHttpError(500, 'State transition succeeded but wallet unlock failed. Please retry.');
+						throw createHttpError(
+							500,
+							'State transition succeeded but wallet unlock failed. The wallet-timeouts sweep will release the lock on its next tick; no client-side retry required (a retry will fail until the lock clears).',
+						);
 					}
 
 					return {
@@ -441,7 +449,10 @@ export const getSwapConfirmEndpointGet = adminAuthenticatedEndpointFactory.build
 							walletId: wallet.id,
 							error: unlockError instanceof Error ? unlockError.message : String(unlockError),
 						});
-						throw createHttpError(500, 'State transition succeeded but wallet unlock failed. Please retry.');
+						throw createHttpError(
+							500,
+							'State transition succeeded but wallet unlock failed. The wallet-timeouts sweep will release the lock on its next tick; no client-side retry required (a retry will fail until the lock clears).',
+						);
 					}
 
 					return {
@@ -487,7 +498,10 @@ export const getSwapConfirmEndpointGet = adminAuthenticatedEndpointFactory.build
 							txHash: input.txHash,
 							error: unlockError instanceof Error ? unlockError.message : String(unlockError),
 						});
-						throw createHttpError(500, 'State transition succeeded but wallet unlock failed. Please retry.');
+						throw createHttpError(
+							500,
+							'State transition succeeded but wallet unlock failed. The wallet-timeouts sweep will release the lock on its next tick; no client-side retry required (a retry will fail until the lock clears).',
+						);
 					}
 				}
 
@@ -541,7 +555,10 @@ export const getSwapConfirmEndpointGet = adminAuthenticatedEndpointFactory.build
 									walletId: wallet.id,
 									error: unlockError instanceof Error ? unlockError.message : String(unlockError),
 								});
-								throw createHttpError(500, 'State transition succeeded but wallet unlock failed. Please retry.');
+								throw createHttpError(
+									500,
+									'State transition succeeded but wallet unlock failed. The wallet-timeouts sweep will release the lock on its next tick; no client-side retry required (a retry will fail until the lock clears).',
+								);
 							}
 							return {
 								status: 'NotFound' as const,
@@ -619,57 +636,61 @@ export const cancelSwapEndpointPost = adminAuthenticatedEndpointFactory.build({
 				throw createHttpError(400, 'Original transaction hash not available');
 			}
 
-			// Lock the wallet atomically
-			const wallet = await prisma.$transaction(
-				async (prisma) => {
-					const wallet = await prisma.hotWallet.findFirst({
-						where: {
-							walletVkey: input.walletVkey,
-							deletedAt: null,
-							PaymentSource: {
-								network: { in: ctx.networkLimit },
-							},
-						},
-						include: {
-							Secret: true,
-							PaymentSource: {
-								include: {
-									PaymentSourceConfig: true,
+			// Lock the wallet atomically. Gate Serializable $transaction through
+			// the shared semaphore so concurrent HTTP requests don't exhaust
+			// the pg connection pool.
+			const wallet = await withSerializableSlot(() =>
+				prisma.$transaction(
+					async (prisma) => {
+						const wallet = await prisma.hotWallet.findFirst({
+							where: {
+								walletVkey: input.walletVkey,
+								deletedAt: null,
+								PaymentSource: {
+									network: { in: ctx.networkLimit },
 								},
 							},
-						},
-					});
+							include: {
+								Secret: true,
+								PaymentSource: {
+									include: {
+										PaymentSourceConfig: true,
+									},
+								},
+							},
+						});
 
-					if (wallet == null) {
-						throw createHttpError(404, 'Wallet not found');
-					}
+						if (wallet == null) {
+							throw createHttpError(404, 'Wallet not found');
+						}
 
-					assertHotWalletInScope(ctx.walletScopeIds, wallet.id);
+						assertHotWalletInScope(ctx.walletScopeIds, wallet.id);
 
-					if (wallet.lockedAt != null) {
-						throw createHttpError(409, 'Wallet is currently locked');
-					}
+						if (wallet.lockedAt != null) {
+							throw createHttpError(409, 'Wallet is currently locked');
+						}
 
-					if (wallet.PaymentSource.network !== Network.Mainnet) {
-						throw createHttpError(400, 'Cancel is only available for mainnet wallets');
-					}
+						if (wallet.PaymentSource.network !== Network.Mainnet) {
+							throw createHttpError(400, 'Cancel is only available for mainnet wallets');
+						}
 
-					if (!wallet.PaymentSource.PaymentSourceConfig) {
-						throw createHttpError(400, 'Payment source configuration not found');
-					}
+						if (!wallet.PaymentSource.PaymentSourceConfig) {
+							throw createHttpError(400, 'Payment source configuration not found');
+						}
 
-					// Lock wallet and link pending swap transaction
-					await prisma.hotWallet.update({
-						where: { id: wallet.id, deletedAt: null },
-						data: {
-							lockedAt: new Date(),
-							pendingSwapTransactionId: swapTx.id,
-						},
-					});
+						// Lock wallet and link pending swap transaction
+						await prisma.hotWallet.update({
+							where: { id: wallet.id, deletedAt: null },
+							data: {
+								lockedAt: new Date(),
+								pendingSwapTransactionId: swapTx.id,
+							},
+						});
 
-					return wallet;
-				},
-				{ isolationLevel: 'Serializable', timeout: 10000 },
+						return wallet;
+					},
+					{ isolationLevel: 'Serializable', timeout: 10000 },
+				),
 			);
 
 			walletId = wallet.id;

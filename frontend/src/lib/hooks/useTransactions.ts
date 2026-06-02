@@ -10,6 +10,7 @@ import {
   type TransactionsPage,
   type TransactionsPageParam,
 } from './useTransactions.helpers';
+import type { PaymentSourceType } from '@/lib/payment-source-type';
 
 const LAST_VISIT_KEY = 'masumi_last_transactions_visit';
 const NEW_TRANSACTIONS_COUNT_KEY = 'masumi_new_transactions_count';
@@ -21,6 +22,8 @@ export const ON_CHAIN_STATES = [
   'ResultSubmitted',
   'RefundRequested',
   'Disputed',
+  'WithdrawAuthorized',
+  'RefundAuthorized',
   'Withdrawn',
   'RefundWithdrawn',
   'DisputedWithdrawn',
@@ -30,6 +33,7 @@ export type OnChainStateFilter = (typeof ON_CHAIN_STATES)[number];
 
 type TransactionQueryParams = {
   filterOnChainState?: OnChainStateFilter;
+  filterPaymentSourceType?: PaymentSourceType;
   searchQuery?: string;
   transactionType?: 'payment' | 'purchase';
 };
@@ -85,7 +89,7 @@ export function useTransactions(
   options?: { trackVisit?: boolean },
 ) {
   const trackVisit = options?.trackVisit !== false;
-  const { apiClient, network } = useAppContext();
+  const { apiClient, network, selectedPaymentSource } = useAppContext();
   const router = useRouter();
   const [newTransactionsCount, setNewTransactionsCount] = useState(0);
   const seenTransactionIdsRef = useRef<Set<string>>(new Set());
@@ -93,11 +97,15 @@ export function useTransactions(
   const hasInitializedRef = useRef(false);
   const previousNetworkRef = useRef(network);
 
+  const filterPaymentSourceType =
+    params?.filterPaymentSourceType ?? selectedPaymentSource?.paymentSourceType;
+
   const query = useInfiniteQuery({
     queryKey: [
       'transactions',
       network,
       params?.filterOnChainState,
+      filterPaymentSourceType,
       params?.searchQuery,
       params?.transactionType,
     ],
@@ -119,6 +127,7 @@ export function useTransactions(
                   includeHistory: 'true',
                   limit: TRANSACTION_PAGE_SIZE,
                   filterOnChainState: params?.filterOnChainState,
+                  filterPaymentSourceType,
                   searchQuery: params?.searchQuery || undefined,
                 },
               }),
@@ -142,6 +151,7 @@ export function useTransactions(
                   includeHistory: 'true',
                   limit: TRANSACTION_PAGE_SIZE,
                   filterOnChainState: params?.filterOnChainState,
+                  filterPaymentSourceType,
                   searchQuery: params?.searchQuery || undefined,
                 },
               }),

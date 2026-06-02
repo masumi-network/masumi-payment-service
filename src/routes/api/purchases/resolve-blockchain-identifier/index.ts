@@ -1,16 +1,17 @@
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
 import { Network } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
-import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
+import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
+import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { transformPurchaseGetTimestamps, transformPurchaseGetAmounts } from '@/utils/shared/transformers';
-import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
+import { lovelaceToAdaNumberSafe } from '@/utils/lovelace';
 import { purchaseResponseSchema } from '@/routes/api/purchases';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 
 export const postPurchaseRequestSchemaInput = z.object({
-	blockchainIdentifier: z.string().describe('The blockchain identifier to resolve'),
+	blockchainIdentifier: z.string().min(1).max(8000).describe('The blockchain identifier to resolve'),
 	network: z.nativeEnum(Network).describe('The network the purchases were made on'),
 	filterSmartContractAddress: z
 		.string()
@@ -73,6 +74,7 @@ export const resolvePurchaseRequestPost = readAuthenticatedEndpointFactory.build
 					select: {
 						id: true,
 						network: true,
+						paymentSourceType: true,
 						policyId: true,
 						smartContractAddress: true,
 					},
@@ -130,8 +132,10 @@ export const resolvePurchaseRequestPost = readAuthenticatedEndpointFactory.build
 			...purchase,
 			...transformPurchaseGetTimestamps(purchase),
 			...transformPurchaseGetAmounts(purchase),
-			totalBuyerCardanoFees: Number(purchase.totalBuyerCardanoFees.toString()) / 1_000_000,
-			totalSellerCardanoFees: Number(purchase.totalSellerCardanoFees.toString()) / 1_000_000,
+			// safe: response schema is z.number() (ADA). lovelaceToAdaNumberSafe
+			// throws if the lovelace value exceeds Number.MAX_SAFE_INTEGER.
+			totalBuyerCardanoFees: lovelaceToAdaNumberSafe(purchase.totalBuyerCardanoFees),
+			totalSellerCardanoFees: lovelaceToAdaNumberSafe(purchase.totalSellerCardanoFees),
 			agentIdentifier: decodeBlockchainIdentifier(purchase.blockchainIdentifier)?.agentIdentifier ?? null,
 			CurrentTransaction: purchase.CurrentTransaction
 				? {

@@ -1,5 +1,3 @@
-/* eslint-disable react-hooks/exhaustive-deps */
-
 import {
   Dialog,
   DialogContent,
@@ -12,11 +10,13 @@ import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { Eye, EyeOff } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { patchPaymentSourceExtended, postWallet, getUtxos } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
@@ -26,11 +26,17 @@ import { Spinner } from '@/components/ui/spinner';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { handleApiCall, validateCardanoAddress } from '@/lib/utils';
+import { handleApiCall, shortenAddress, validateCardanoAddress } from '@/lib/utils';
 import { WalletTypeBadge } from '@/components/ui/wallet-type-badge';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { extractApiErrorMessage } from '@/lib/api-error';
 import { extractApiPayload } from '@/lib/api-response';
+import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
+import {
+  getPaymentSourceTypeLabel,
+  getPreferredPaymentSource,
+  sortPaymentSourcesByPreference,
+} from '@/lib/payment-source-type';
 
 interface AddWalletDialogProps {
   open: boolean;
@@ -41,7 +47,7 @@ interface AddWalletDialogProps {
 const walletSchema = z.object({
   mnemonic: z.string().min(1, 'Mnemonic phrase is required'),
   note: z.string().min(1, 'Note is required'),
-  collectionAddress: z.string().min(1, 'Collection address is required').nullable().optional(),
+  collectionAddress: z.string().nullable().optional(),
 });
 
 type WalletFormValues = z.infer<typeof walletSchema>;
@@ -50,9 +56,16 @@ export function AddWalletDialog({ open, onClose, onSuccess }: AddWalletDialogPro
   const [type, setType] = useState<'Purchasing' | 'Selling'>('Purchasing');
   const [isLoading, setIsLoading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  // Mnemonic textarea defaults to masked-by-CSS so a typed/pasted seed
+  // phrase isn't visible to over-shoulder readers, screen-share, or
+  // screenshots while the dialog is open. User explicitly reveals via
+  // the eye toggle. `<textarea>` has no native `type="password"`, so we
+  // apply `-webkit-text-security: disc` / `text-security: disc` via an
+  // inline style when hidden.
+  const [showMnemonic, setShowMnemonic] = useState(false);
   const [error, setError] = useState<string>('');
   const [paymentSourceId, setPaymentSourceId] = useState<string | null>(null);
-  const { apiClient, network } = useAppContext();
+  const { apiClient, network, selectedPaymentSourceId } = useAppContext();
 
   const {
     register,
@@ -73,15 +86,32 @@ export function AddWalletDialog({ open, onClose, onSuccess }: AddWalletDialogPro
     () => paymentSources.filter((paymentSource) => paymentSource.network === network),
     [paymentSources, network],
   );
+  const sortedPaymentSources = useMemo(
+    () => sortPaymentSourcesByPreference(currentNetworkPaymentSources),
+    [currentNetworkPaymentSources],
+  );
+  const defaultPaymentSource = useMemo(
+    () =>
+      sortedPaymentSources.find((paymentSource) => paymentSource.id === selectedPaymentSourceId) ??
+      getPreferredPaymentSource(sortedPaymentSources),
+    [selectedPaymentSourceId, sortedPaymentSources],
+  );
+  const selectedPaymentSource = useMemo(
+    () =>
+      sortedPaymentSources.find((paymentSource) => paymentSource.id === paymentSourceId) ?? null,
+    [paymentSourceId, sortedPaymentSources],
+  );
 
   useEffect(() => {
     if (open) {
-      setPaymentSourceId(currentNetworkPaymentSources[0]?.id || null);
+      setPaymentSourceId(defaultPaymentSource?.id ?? null);
     } else {
       reset();
       setError('');
+      setIsLoading(false);
+      setPaymentSourceId(null);
     }
-  }, [open]);
+  }, [defaultPaymentSource?.id, open, reset]);
 
   const handleGenerateMnemonic = async () => {
     try {
@@ -125,6 +155,7 @@ export function AddWalletDialog({ open, onClose, onSuccess }: AddWalletDialogPro
 
   const onSubmit = async (data: WalletFormValues) => {
     setError('');
+    setIsLoading(true);
 
     let collectionAddress: string | null = data.collectionAddress?.trim() || null;
 
@@ -134,6 +165,7 @@ export function AddWalletDialog({ open, onClose, onSuccess }: AddWalletDialogPro
 
       if (!validation.isValid) {
         setError('Invalid collection address: ' + validation.error);
+        setIsLoading(false);
         return;
       }
 
@@ -155,6 +187,7 @@ export function AddWalletDialog({ open, onClose, onSuccess }: AddWalletDialogPro
 
     if (!paymentSourceId) {
       setError('No payment source available');
+      setIsLoading(false);
       return;
     }
 
@@ -231,6 +264,41 @@ export function AddWalletDialog({ open, onClose, onSuccess }: AddWalletDialogPro
           </div>
 
           <div className="space-y-2">
+            <label className="text-sm font-medium">Payment source</label>
+            <Select
+              value={paymentSourceId ?? ''}
+              onValueChange={setPaymentSourceId}
+              disabled={isLoading || sortedPaymentSources.length === 0}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select payment source" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {sortedPaymentSources.map((paymentSource) => (
+                    <SelectItem key={paymentSource.id} value={paymentSource.id}>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <PaymentSourceTypeBadge
+                          paymentSourceType={paymentSource.paymentSourceType}
+                          showDefault
+                        />
+                        <span className="truncate">
+                          {shortenAddress(paymentSource.smartContractAddress, 8)}
+                        </span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <p className="text-sm text-muted-foreground">
+              {selectedPaymentSource
+                ? `This wallet will be added to ${getPaymentSourceTypeLabel(selectedPaymentSource.paymentSourceType)} on ${network}.`
+                : 'Create a payment source before adding wallets.'}
+            </p>
+          </div>
+
+          <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label className="text-sm font-medium">
                 Mnemonic Phrase <span className="text-destructive">*</span>
@@ -246,12 +314,33 @@ export function AddWalletDialog({ open, onClose, onSuccess }: AddWalletDialogPro
                 {isGenerating ? <Spinner size={16} /> : 'Generate'}
               </Button>
             </div>
-            <Textarea
-              {...register('mnemonic')}
-              placeholder="Enter your mnemonic phrase"
-              required
-              className="min-h-[100px] font-mono"
-            />
+            <div className="relative">
+              <Textarea
+                {...register('mnemonic')}
+                placeholder="Enter your mnemonic phrase"
+                required
+                className="min-h-[100px] font-mono pr-10"
+                spellCheck={false}
+                autoComplete="off"
+                style={
+                  showMnemonic
+                    ? undefined
+                    : ({
+                        WebkitTextSecurity: 'disc',
+                        textSecurity: 'disc',
+                      } as React.CSSProperties)
+                }
+              />
+              <button
+                type="button"
+                onClick={() => setShowMnemonic((v) => !v)}
+                className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
+                aria-label={showMnemonic ? 'Hide mnemonic' : 'Show mnemonic'}
+                tabIndex={-1}
+              >
+                {showMnemonic ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
             {errors.mnemonic && (
               <p className="text-xs text-destructive mt-1">{errors.mnemonic.message}</p>
             )}
