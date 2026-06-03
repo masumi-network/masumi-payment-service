@@ -1,4 +1,4 @@
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 import { logInfo, logError } from '@/utils/logs';
 import { fileURLToPath } from 'node:url';
 

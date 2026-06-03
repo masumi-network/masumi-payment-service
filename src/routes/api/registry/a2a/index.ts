@@ -1,10 +1,13 @@
-import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
-import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
-import { z } from '@/utils/zod-openapi';
+import {
+	payAuthenticatedEndpointFactory,
+	readAuthenticatedEndpointFactory,
+	AuthContext,
+	checkIsAllowedNetworkOrThrowUnauthorized,
+} from '@masumi/payment-core/auth';
+import { z } from '@masumi/payment-core/zod';
 import { HotWalletType, Network, PricingType, RegistrationState } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { fetchAndValidateAgentCard, AgentCard, assertPublicHttpsUrl } from '@/utils/validator/agent-card';
 import {
 	a2aRegistryRequestOutputSchema,
@@ -14,9 +17,9 @@ import {
 } from '@/routes/api/registry/schemas';
 import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 import { mapA2ARegistryRequestToOutput } from '@/routes/api/registry/utils';
-import { recordBusinessEndpointError } from '@/utils/metrics';
+import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 
 export const registerA2AAgentSchemaInput = z.object({
 	network: z.nativeEnum(Network).describe('The Cardano network used to register the agent on'),

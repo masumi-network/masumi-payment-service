@@ -7,7 +7,7 @@ import { flattenInclusiveCursorPages } from '@/lib/pagination/cursor-pagination'
 
 const PAGE_SIZE = 20;
 
-export function useApiKeys() {
+export function useApiKey() {
   const { apiClient } = useAppContext();
 
   const query = useInfiniteQuery({
@@ -87,5 +87,3 @@ export function useApiKeys() {
     isRefetching,
   };
 }
-
-export const useApiKey = useApiKeys;

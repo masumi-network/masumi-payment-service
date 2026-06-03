@@ -53,6 +53,8 @@ Cardano blockchain payment escrow service with Aiken smart contracts. Enables se
 - Encrypt wallet secrets using `@/utils/security/encryption` utilities.
 - Never use unknown-valued map types; use domain types, Prisma JSON types, or explicit property guards.
 - Never edit files in `src/generated/` or `frontend/src/lib/api/generated/`.
+- Cursor pagination on list endpoints is intentionally inclusive. Do not add `skip: 1` to Prisma cursor queries
+  unless the API contract is deliberately changed; clients should tolerate receiving the cursor row again.
 
 ## Formatting Standards
 

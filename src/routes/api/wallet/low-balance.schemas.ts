@@ -1,6 +1,6 @@
 import { Network, HotWalletType } from '@/generated/prisma/client';
 import { LowBalanceStatus } from '@/generated/prisma/enums';
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
 
 const booleanQuery = (description: string) =>
 	z

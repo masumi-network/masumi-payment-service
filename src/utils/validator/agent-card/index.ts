@@ -1,6 +1,6 @@
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
 import createHttpError from 'http-errors';
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 import { timedFetch } from '@/utils/timed-fetch';
 import net from 'net';
 import { promises as dns } from 'dns';

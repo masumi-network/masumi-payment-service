@@ -1,5 +1,12 @@
-import { Network, PricingType, RegistrationState, TransactionStatus } from '@/generated/prisma/client';
-import { z } from '@/utils/zod-openapi';
+import {
+	Network,
+	PaymentSourceType,
+	PricingType,
+	RegistrationState,
+	TransactionStatus,
+} from '@/generated/prisma/client';
+import { supportedPaymentSourcesSchema } from '@/types/payment-source';
+import { z } from '@masumi/payment-core/zod';
 
 export enum FilterStatus {
 	Registered = 'Registered',
@@ -17,12 +24,21 @@ export const queryRegistryRequestSchemaInput = z.object({
 		.optional()
 		.nullable()
 		.describe('The smart contract address of the payment source'),
+	filterPaymentSourceType: z.nativeEnum(PaymentSourceType).optional().describe('Filter by payment source type'),
 	filterStatus: z.nativeEnum(FilterStatus).optional().describe('Filter by registration status category'),
 	searchQuery: z
 		.string()
 		.optional()
 		.describe(
 			'Search query to filter by name, description, tags, minting or recipient wallet address, state, or price',
+		),
+	filterAgentIdentifier: z
+		.string()
+		.min(57)
+		.max(250)
+		.optional()
+		.describe(
+			'When set, return only the registry entry whose on-chain agent identifier matches exactly (same scope as list: network, payment source, and wallet permissions)',
 		),
 });
 
@@ -173,6 +189,9 @@ export const registryRequestOutputSchema = z
 			.describe(
 				'Effective lovelace amount explicitly configured for the NFT output. Null means the default minimum NFT funding is used.',
 			),
+		supportedPaymentSources: supportedPaymentSourcesSchema
+			.nullable()
+			.describe('Payment sources advertised by this registry entry. Null for legacy metadata.'),
 		SmartContractWallet: z
 			.object({
 				walletVkey: z.string().describe('Payment key hash of the smart contract wallet'),
@@ -255,6 +274,7 @@ export const queryRegistryCountSchemaInput = z.object({
 		.optional()
 		.nullable()
 		.describe('The smart contract address of the payment source'),
+	filterPaymentSourceType: z.nativeEnum(PaymentSourceType).optional().describe('Filter by payment source type'),
 });
 
 export const queryRegistryCountSchemaOutput = z.object({
@@ -263,10 +283,16 @@ export const queryRegistryCountSchemaOutput = z.object({
 
 export const registerAgentSchemaInput = z.object({
 	network: z.nativeEnum(Network).describe('The Cardano network used to register the agent on'),
-	sellingWalletVkey: z.string().max(250).describe('The payment key of a specific wallet used for the registration'),
+	sellingWalletVkey: z
+		.string()
+		.length(56)
+		.regex(/^[0-9a-fA-F]{56}$/, 'sellingWalletVkey must be a 56-char hex blake2b-224 payment-key hash')
+		.describe('The payment key of a specific wallet used for the registration'),
 	recipientWalletAddress: z
 		.string()
-		.max(250)
+		.min(58)
+		.max(120)
+		.regex(/^(addr1|addr_test1)[0-9a-z]+$/, 'recipientWalletAddress must be a bech32 Cardano address')
 		.optional()
 		.describe(
 			'Optional managed hot wallet address on the same payment source that should receive the minted registry NFT. If omitted, the minting wallet receives it.',
@@ -274,10 +300,18 @@ export const registerAgentSchemaInput = z.object({
 	sendFundingLovelace: z
 		.string()
 		.regex(/^\d+$/)
-		.max(25)
+		// Cardano max supply is ~45e15 lovelace (16 digits). Reject inputs
+		// beyond what could ever exist on chain so downstream BigInt math
+		// has a sane upper bound.
+		.max(17)
 		.optional()
 		.describe(
 			'Optional lovelace amount to include with the minted NFT output. If provided below the minimum NFT funding, the current minimum is still used.',
+		),
+	supportedPaymentSources: supportedPaymentSourcesSchema
+		.optional()
+		.describe(
+			'Payment sources to persist for this registry request. If omitted, mint metadata advertises the active payment source.',
 		),
 	ExampleOutputs: z
 		.array(

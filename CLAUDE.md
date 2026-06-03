@@ -96,6 +96,41 @@ Cardano blockchain payment escrow service with Aiken smart contracts. Enables se
 - advanced-retry for retry logic
 - @paralleldrive/cuid2 for ID generation
 
+## Mesh SDK version isolation (V1 vs V2)
+
+The repo intentionally uses TWO Mesh SDK versions and they MUST NOT be mixed:
+
+- V1 code paths (repo root, `packages/payment-core`, `packages/payment-source-v1`)
+  use `@meshsdk/core@1.9.0-beta.96` and `@meshsdk/core-cst@1.9.0-beta.90`.
+- V2 code paths (`packages/payment-source-v2`) use
+  `@meshsdk/core@1.9.0-beta.102` and `@meshsdk/core-cst@1.9.0-beta.102`.
+
+Why: Mesh SDK upgrades change script address derivation, Plutus cost model
+bundles, and CBOR encoding for datums/redeemers. Changing a side's mesh
+version would change the derived `smartContractAddress`, would change the
+script-data-hash the ledger checks (`PPViewHashesDontMatch`), and would
+break compatibility with already-deployed V1 / V2 contracts and their
+existing on-chain UTxOs.
+
+Rules:
+
+- New Mesh-touching code goes under the package that matches its target
+  payment source type. Files in shared `src/` are implicitly V1-pinned
+  (because the root manifest pins the V1 mesh line).
+- Never bump either Mesh version without an explicit on-chain compatibility
+  plan (new contract deployment + update to
+  `DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_*` + migration for existing
+  locked funds).
+- The `@harmoniclabs/crypto` peer-dependency conflict warning printed by
+  `pnpm install` is a side effect of the two mesh lines coexisting and is
+  expected. Do not "fix" it via overrides.
+- Unit-test mocks of `@meshsdk/core-cst` apply globally per test file
+  regardless of which mesh version a transitive import resolves to. Mocks
+  must enumerate every symbol any transitively-loaded module actually
+  imports from `@meshsdk/core-cst`, not just the V1 surface.
+
+See `docs/adr/0005-meshsdk-version-pinning-v1-v2.md` for the full rationale.
+
 ## Key Files
 
 - Entry point: `src/index.ts`

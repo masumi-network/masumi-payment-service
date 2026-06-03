@@ -1,5 +1,6 @@
-import { PricingType, RegistrationState } from '@/generated/prisma/client';
-import { z } from '@/utils/zod-openapi';
+import { Network, PaymentSourceType, PricingType, RegistrationState } from '@/generated/prisma/client';
+import { SupportedPaymentSourceChain } from '@/types/payment-source';
+import { z } from '@masumi/payment-core/zod';
 import { a2aRegistryRequestOutputSchema, registerAgentSchemaOutput } from './schemas';
 
 export const registryEntryExample = {
@@ -43,6 +44,14 @@ export const registryEntryExample = {
 		],
 	},
 	sendFundingLovelace: null,
+	supportedPaymentSources: [
+		{
+			chain: SupportedPaymentSourceChain.Cardano,
+			network: Network.Preprod,
+			paymentSourceType: PaymentSourceType.Web3CardanoV2,
+			address: 'addr_test1wz7j4kmg2cs7yf92uat3ed4a3u97kr7axxr4avaz0lhwdsqukgwfm',
+		},
+	],
 	SmartContractWallet: {
 		walletVkey: 'wallet_vkey',
 		walletAddress: 'wallet_address',

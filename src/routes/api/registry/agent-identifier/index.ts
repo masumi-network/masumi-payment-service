@@ -1,16 +1,37 @@
-import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
-import { z } from '@/utils/zod-openapi';
+import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { z } from '@masumi/payment-core/zod';
 import { Network, PricingType } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
-import { logger } from '@/utils/logger';
+import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
+import { logger } from '@masumi/payment-core/logger';
 import { extractPolicyId, extractAssetName } from '@/utils/converter/agent-identifier';
 import { validateHexString } from '@/utils/validator/hex';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { metadataSchemaCombined, metadataSchema, metadataSchemaV2 } from '@/routes/api/registry/wallet';
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
+import {
+	isCardanoAddressForNetwork,
+	parseSupportedPaymentSourcesFromMetadata,
+	SupportedPaymentSourceChain,
+	supportedPaymentSourcesSchema,
+	type SupportedPaymentSource,
+} from '@/types/payment-source';
+import type { Network as NetworkType } from '@/generated/prisma/client';
+
+function filterValidSupportedPaymentSources(
+	sources: SupportedPaymentSource[] | null,
+	expectedNetwork: NetworkType,
+): SupportedPaymentSource[] | null {
+	if (sources == null) return null;
+	return sources.filter(
+		(source) =>
+			source.chain === SupportedPaymentSourceChain.Cardano &&
+			source.network === expectedNetwork &&
+			isCardanoAddressForNetwork(source.address, expectedNetwork),
+	);
+}
 
 export const queryAgentByIdentifierSchemaInput = z.object({
 	agentIdentifier: z.string().min(57).max(250).describe('Full agent identifier (policy ID + asset name in hex)'),
@@ -130,6 +151,10 @@ const agentMetadataObjectSchema = z.object({
 		.describe('Version of the metadata schema (1=standard MIP-002, 2=MIP-002-A2A)'),
 	agentCardUrl: z.string().nullable().optional().describe('Agent Card URL for A2A agents. Null for standard agents'),
 	a2aProtocolVersions: z.array(z.string()).optional().describe('A2A protocol versions. Empty for standard agents'),
+	supportedPaymentSources: supportedPaymentSourcesSchema
+		.nullable()
+		.optional()
+		.describe('Payment sources advertised by this registry entry. Null for legacy metadata.'),
 });
 
 export const queryAgentByIdentifierSchemaOutput = z
@@ -203,13 +228,21 @@ export const queryAgentByIdentifierGet = readAuthenticatedEndpointFactory.build(
 		try {
 			assetInfo = await blockfrost.assetsById(input.agentIdentifier);
 		} catch (error) {
-			// Use comprehensive 404 detection pattern from src/utils/blockfrost/index.ts
-			if (
+			// Prefer the structured status_code field that @blockfrost/blockfrost-js
+			// attaches to its error objects; fall back to the string-shape
+			// checks for SDK versions / error paths that don't surface it.
+			// The OR combination keeps existing detections working even if
+			// the structured field is missing on a given error shape.
+			const structuredStatus =
+				typeof error === 'object' && error != null && 'status_code' in error
+					? (error as { status_code?: unknown }).status_code
+					: undefined;
+			const messageHints =
 				error instanceof Error &&
 				(error.message.includes('404') ||
 					error.message.toLocaleLowerCase().includes('not found') ||
-					error.message.toLocaleLowerCase().includes('not been found'))
-			) {
+					error.message.toLocaleLowerCase().includes('not been found'));
+			if (structuredStatus === 404 || messageHints) {
 				throw createHttpError(404, 'Agent identifier not found');
 			}
 			// Log the actual error for debugging before throwing generic 500
@@ -314,6 +347,10 @@ export const queryAgentByIdentifierGet = readAuthenticatedEndpointFactory.build(
 							},
 				image: metadataToString(data.image)!,
 				metadataVersion: data.metadata_version,
+				supportedPaymentSources: filterValidSupportedPaymentSources(
+					parseSupportedPaymentSourcesFromMetadata(data.supported_payment_sources),
+					input.network,
+				),
 			},
 		};
 	},

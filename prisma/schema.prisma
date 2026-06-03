@@ -21,15 +21,17 @@ model ApiKey {
   canPay   Boolean
   canAdmin Boolean
 
-  networkLimit          Network[]
-  usageLimited          Boolean             @default(false)
-  walletScopeEnabled    Boolean             @default(false)
-  deletedAt             DateTime?
-  PaymentRequest        PaymentRequest[]
-  PurchaseRequest       PurchaseRequest[]
-  RemainingUsageCredits UnitValue[]
-  CreatedWebhooks       WebhookEndpoint[]
-  WalletScopes          ApiKeyWalletScope[]
+  networkLimit                  Network[]
+  usageLimited                  Boolean                         @default(false)
+  walletScopeEnabled            Boolean                         @default(false)
+  deletedAt                     DateTime?
+  PaymentRequest                PaymentRequest[]
+  PurchaseRequest               PurchaseRequest[]
+  RegistryRequest               RegistryRequest[]
+  RemainingUsageCredits         UnitValue[]
+  CreatedWebhooks               WebhookEndpoint[]
+  WalletScopes                  ApiKeyWalletScope[]
+  InboxAgentRegistrationRequest InboxAgentRegistrationRequest[]
 }
 
 model ApiKeyWalletScope {
@@ -70,37 +72,37 @@ model UnitValue {
 }
 
 model HotWallet {
-  id                       String                    @id @default(cuid())
-  createdAt                DateTime                  @default(now())
-  updatedAt                DateTime                  @updatedAt
-  walletVkey               String                    @unique
-  walletAddress            String
-  type                     HotWalletType
-  secretId                 String
-  collectionAddress        String?
-  pendingTransactionId     String?                   @unique
-  pendingSwapTransactionId String?                   @unique
-  paymentSourceId          String
-  lockedAt                 DateTime?
-  note                     String?
-  deletedAt                DateTime?
-  PaymentSource            PaymentSource             @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
-  PendingTransaction       Transaction?              @relation(fields: [pendingTransactionId], references: [id])
-  PendingSwapTransaction   SwapTransaction?          @relation(fields: [pendingSwapTransactionId], references: [id])
-  SwapTransactionHistory   SwapTransaction[]         @relation("SwapTransactionHistory")
-  Secret                   WalletSecret              @relation(fields: [secretId], references: [id])
-  PaymentRequest           PaymentRequest[]
-  PurchaseRequest          PurchaseRequest[]
-  RegistryRequest          RegistryRequest[]         @relation("RegistryRequestMintingWallet")
-  RecipientRegistryRequest RegistryRequest[]         @relation("RegistryRequestRecipientWallet")
-  DeregistrationRequests   RegistryRequest[]         @relation("RegistryRequestDeregistrationWallet")
+  id                                      String                          @id @default(cuid())
+  createdAt                               DateTime                        @default(now())
+  updatedAt                               DateTime                        @updatedAt
+  walletVkey                              String                          @unique
+  walletAddress                           String
+  type                                    HotWalletType
+  secretId                                String
+  collectionAddress                       String?
+  pendingTransactionId                    String?                         @unique
+  pendingSwapTransactionId                String?                         @unique
+  paymentSourceId                         String
+  lockedAt                                DateTime?
+  note                                    String?
+  deletedAt                               DateTime?
+  PaymentSource                           PaymentSource                   @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
+  PendingTransaction                      Transaction?                    @relation(fields: [pendingTransactionId], references: [id])
+  PendingSwapTransaction                  SwapTransaction?                @relation(fields: [pendingSwapTransactionId], references: [id])
+  SwapTransactionHistory                  SwapTransaction[]               @relation("SwapTransactionHistory")
+  Secret                                  WalletSecret                    @relation(fields: [secretId], references: [id])
+  PaymentRequest                          PaymentRequest[]
+  PurchaseRequest                         PurchaseRequest[]
+  RegistryRequest                         RegistryRequest[]               @relation("RegistryRequestMintingWallet")
+  RecipientRegistryRequest                RegistryRequest[]               @relation("RegistryRequestRecipientWallet")
+  DeregistrationRequests                  RegistryRequest[]               @relation("RegistryRequestDeregistrationWallet")
   A2ARegistryRequest                      A2ARegistryRequest[]
   InboxAgentRegistrationRequests          InboxAgentRegistrationRequest[] @relation("InboxAgentRegistrationRequestMintingWallet")
   RecipientInboxAgentRegistrationRequests InboxAgentRegistrationRequest[] @relation("InboxAgentRegistrationRequestRecipientWallet")
   InboxDeregistrationRequests             InboxAgentRegistrationRequest[] @relation("InboxAgentRegistrationRequestDeregistrationWallet")
-  apiKeyWalletScopes       ApiKeyWalletScope[]
-  LimitedPurchaseRequests  PurchaseRequest[]         @relation("HotWalletLimit")
-  LowBalanceRules          HotWalletLowBalanceRule[]
+  apiKeyWalletScopes                      ApiKeyWalletScope[]
+  LimitedPurchaseRequests                 PurchaseRequest[]               @relation("HotWalletLimit")
+  LowBalanceRules                         HotWalletLowBalanceRule[]
 }
 
 model HotWalletLowBalanceRule {
@@ -123,34 +125,61 @@ model HotWalletLowBalanceRule {
 }
 
 model Transaction {
-  id                       String            @id @default(cuid())
-  createdAt                DateTime          @default(now())
-  updatedAt                DateTime          @updatedAt
-  txHash                   String?
-  status                   TransactionStatus
-  confirmations            Int?
-  lastCheckedAt            DateTime?
-  fees                     BigInt?
-  blockHeight              Int?
-  blockTime                Int?
-  outputAmount             String?           @db.Text
-  utxoCount                Int?
-  withdrawalCount          Int?
-  assetMintOrBurnCount     Int?
-  redeemerCount            Int?
-  validContract            Boolean?
-  paymentRequestHistoryId  String?
-  purchaseRequestHistoryId String?
-  previousOnChainState     OnChainState?
-  newOnChainState          OnChainState?
-  BlocksWallet             HotWallet?
-  PaymentRequestCurrent    PaymentRequest?   @relation("CurrentPaymentTransaction")
-  PurchaseRequestCurrent   PurchaseRequest?  @relation("CurrentPurchaseTransaction")
-  RegistryRequest          RegistryRequest[]
-  A2ARegistryRequest       A2ARegistryRequest[]
+  id                            String                          @id @default(cuid())
+  createdAt                     DateTime                        @default(now())
+  updatedAt                     DateTime                        @updatedAt
+  txHash                        String?
+  status                        TransactionStatus
+  confirmations                 Int?
+  lastCheckedAt                 DateTime?
+  fees                          BigInt?
+  blockHeight                   Int?
+  blockTime                     Int?
+  outputAmount                  String?                         @db.Text
+  utxoCount                     Int?
+  withdrawalCount               Int?
+  assetMintOrBurnCount          Int?
+  redeemerCount                 Int?
+  validContract                 Boolean?
+  previousOnChainState          OnChainState?
+  newOnChainState               OnChainState?
+  /// Deterministic txHash (blake2b_256 of the signed tx body) computed BEFORE
+  /// broadcast. Set during pre-submit alongside invalidHereafterSlot so the
+  /// reconciliation worker can resolve an ambiguous submit (e.g. submit threw
+  /// after the node accepted the tx) by querying the chain for this hash. After
+  /// successful broadcast txHash and intendedTxHash MUST match.
+  intendedTxHash                String?
+  /// The tx's `invalid_hereafter` slot. Once the current slot passes this
+  /// (with a small grace), the ledger can never accept the txBody — reconciliation
+  /// uses this as the safe boundary to mark an ambiguous Pending tx as
+  /// RolledBack and free the wallet without risking double-spend.
+  invalidHereafterSlot          BigInt?
+  BlocksWallet                  HotWallet?
+  // V2 batch txs: one Transaction row referenced from N PaymentRequests / PurchaseRequests.
+  // For V1 single-item txs each list still holds at most one entry, so existing code paths are unchanged.
+  PaymentRequestCurrent         PaymentRequest[]                @relation("CurrentPaymentTransaction")
+  PurchaseRequestCurrent        PurchaseRequest[]               @relation("CurrentPurchaseTransaction")
+  RegistryRequest               RegistryRequest[]
+  A2ARegistryRequest            A2ARegistryRequest[]
   InboxAgentRegistrationRequest InboxAgentRegistrationRequest[]
-  PaymentRequestHistory    PaymentRequest?   @relation("PaymentTransactionHistory", fields: [paymentRequestHistoryId], references: [id])
-  PurchaseRequestHistory   PurchaseRequest?  @relation("PurchaseTransactionHistory", fields: [purchaseRequestHistoryId], references: [id])
+  // History is many-to-many because a V2 batch can move one shared Transaction
+  // row through multiple request histories after it leaves CurrentTransaction.
+  PaymentRequestHistory         PaymentRequest[]                @relation("PaymentTransactionHistory")
+  PurchaseRequestHistory        PurchaseRequest[]               @relation("PurchaseTransactionHistory")
+
+  // Schema-declared full index on intendedTxHash. Migration
+  // 20260526002000_add_transaction_intended_tx_hash creates an additional
+  // PARTIAL index (`Transaction_intended_pending_idx`) with the predicate
+  // `WHERE "txHash" IS NULL AND "intendedTxHash" IS NOT NULL` — that one is
+  // the hot-path index for the funding-reconciliation poll and is smaller /
+  // tighter than this full index. Prisma cannot express partial indexes in
+  // schema.prisma; declaring this full index here ensures `prisma migrate
+  // dev` from the schema never silently DROPs index coverage on
+  // `intendedTxHash` (it would only drop the partial it doesn't know about
+  // and then re-create a full one under a different name). Both indexes
+  // co-exist; write cost is acceptable since only ambiguous-funding rows
+  // populate this column.
+  @@index([intendedTxHash])
 }
 
 model SwapTransaction {
@@ -201,9 +230,9 @@ model WalletBase {
 }
 
 model RegistryRequest {
-  id                             String            @id @default(cuid())
-  createdAt                      DateTime          @default(now())
-  updatedAt                      DateTime          @updatedAt
+  id                             String                   @id @default(cuid())
+  createdAt                      DateTime                 @default(now())
+  updatedAt                      DateTime                 @updatedAt
   lastCheckedAt                  DateTime?
   paymentSourceId                String
   smartContractWalletId          String
@@ -222,23 +251,46 @@ model RegistryRequest {
   authorContactEmail             String?
   authorContactOther             String?
   authorOrganization             String?
+  metadataVersion                Int
   tags                           String[]
-  agentPricingId                 String            @unique
-  agentIdentifier                String?           @unique
+  agentPricingId                 String                   @unique
+  agentIdentifier                String?                  @unique
   state                          RegistrationState
-  registrationStateLastChangedAt DateTime          @default(now())
+  registrationStateLastChangedAt DateTime                 @default(now())
   currentTransactionId           String?
   error                          String?
+  // Nullable: legacy rows created before this column existed have NULL.
+  // Deregister/mutate routes treat NULL-owner rows as admin-only.
+  requestedById                  String?
   ExampleOutputs                 ExampleOutput[]
-  Pricing                        AgentPricing      @relation(fields: [agentPricingId], references: [id])
-  CurrentTransaction             Transaction?      @relation(fields: [currentTransactionId], references: [id])
-  PaymentSource                  PaymentSource     @relation(fields: [paymentSourceId], references: [id])
-  SmartContractWallet            HotWallet         @relation("RegistryRequestMintingWallet", fields: [smartContractWalletId], references: [id])
-  RecipientWallet                HotWallet?        @relation("RegistryRequestRecipientWallet", fields: [recipientHotWalletId], references: [id])
-  DeregistrationHotWallet        HotWallet?        @relation("RegistryRequestDeregistrationWallet", fields: [deregistrationHotWalletId], references: [id])
+  SupportedPaymentSources        SupportedPaymentSource[]
+  Pricing                        AgentPricing             @relation(fields: [agentPricingId], references: [id])
+  CurrentTransaction             Transaction?             @relation(fields: [currentTransactionId], references: [id])
+  PaymentSource                  PaymentSource            @relation(fields: [paymentSourceId], references: [id])
+  SmartContractWallet            HotWallet                @relation("RegistryRequestMintingWallet", fields: [smartContractWalletId], references: [id])
+  RecipientWallet                HotWallet?               @relation("RegistryRequestRecipientWallet", fields: [recipientHotWalletId], references: [id])
+  DeregistrationHotWallet        HotWallet?               @relation("RegistryRequestDeregistrationWallet", fields: [deregistrationHotWalletId], references: [id])
+  RequestedBy                    ApiKey?                  @relation(fields: [requestedById], references: [id])
 
   @@index([recipientHotWalletId])
   @@index([deregistrationHotWalletId])
+  @@index([requestedById])
+}
+
+model SupportedPaymentSource {
+  id                String            @id @default(cuid())
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  registryRequestId String
+  chain             Chain
+  network           Network
+  paymentSourceType PaymentSourceType
+  address           String
+  RegistryRequest   RegistryRequest   @relation(fields: [registryRequestId], references: [id], onDelete: Cascade)
+
+  @@unique([registryRequestId, chain, network, paymentSourceType, address])
+  @@index([address])
+  @@index([paymentSourceType])
 }
 
 model InboxAgentRegistrationRequest {
@@ -260,14 +312,19 @@ model InboxAgentRegistrationRequest {
   registrationStateLastChangedAt DateTime          @default(now())
   currentTransactionId           String?
   error                          String?
+  // Nullable: legacy rows created before this column existed have NULL.
+  // Deregister/mutate routes treat NULL-owner rows as admin-only.
+  requestedById                  String?
   CurrentTransaction             Transaction?      @relation(fields: [currentTransactionId], references: [id])
   PaymentSource                  PaymentSource     @relation(fields: [paymentSourceId], references: [id])
   SmartContractWallet            HotWallet         @relation("InboxAgentRegistrationRequestMintingWallet", fields: [smartContractWalletId], references: [id])
   RecipientWallet                HotWallet?        @relation("InboxAgentRegistrationRequestRecipientWallet", fields: [recipientHotWalletId], references: [id])
   DeregistrationHotWallet        HotWallet?        @relation("InboxAgentRegistrationRequestDeregistrationWallet", fields: [deregistrationHotWalletId], references: [id])
+  RequestedBy                    ApiKey?           @relation(fields: [requestedById], references: [id])
 
   @@index([recipientHotWalletId])
   @@index([deregistrationHotWalletId])
+  @@index([requestedById])
 }
 
 model ExampleOutput {
@@ -302,8 +359,8 @@ model A2ARegistryRequest {
   a2aProviderUrl                   String?
   a2aDocumentationUrl              String?
   a2aIconUrl                       String?
-  a2aCapabilitiesStreaming          Boolean?
-  a2aCapabilitiesPushNotifications  Boolean?
+  a2aCapabilitiesStreaming         Boolean?
+  a2aCapabilitiesPushNotifications Boolean?
   agentIdentifier                  String?           @unique
   state                            RegistrationState
   registrationStateLastChangedAt   DateTime          @default(now())
@@ -316,12 +373,12 @@ model A2ARegistryRequest {
 }
 
 model AgentPricing {
-  id                  String             @id @default(cuid())
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
+  id                  String              @id @default(cuid())
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
   pricingType         PricingType
-  agentFixedPricingId String?            @unique
-  FixedPricing        AgentFixedPricing? @relation(fields: [agentFixedPricingId], references: [id])
+  agentFixedPricingId String?             @unique
+  FixedPricing        AgentFixedPricing?  @relation(fields: [agentFixedPricingId], references: [id])
   RegistryRequest     RegistryRequest?
   A2ARegistryRequest  A2ARegistryRequest?
 }
@@ -347,6 +404,10 @@ model PaymentRequest {
   metadata                                      String?
   pricingType                                   PricingType         @default(Fixed)
   blockchainIdentifier                          String              @unique
+  /// Decoded agent asset id (policyId + asset name hex); denormalized for search. Mirrors decodeBlockchainIdentifier(..).agentIdentifier.
+  agentIdentifier                               String?
+  /// Populated when agentIdentifier was aligned from blockchainIdentifier (create path or startup backfill). Null only on legacy rows pending sync.
+  agentIdentifierSyncedAt                       DateTime?
   submitResultTime                              BigInt
   unlockTime                                    BigInt
   externalDisputeUnlockTime                     BigInt
@@ -358,9 +419,14 @@ model PaymentRequest {
   sellerCoolDownTime                            BigInt
   buyerCoolDownTime                             BigInt
   requestedById                                 String
-  currentTransactionId                          String?             @unique
+  // Not @unique: V2 batch transactions reference one shared Transaction row from N PaymentRequests.
+  // Uniqueness was a leftover from the V1 single-item flow; dropping it allows
+  // a multi-redeemer batch tx to be referenced once from each participating request.
+  currentTransactionId                          String?
   collateralReturnLovelace                      BigInt?
   payByTime                                     BigInt?
+  buyerReturnAddress                            String?
+  sellerReturnAddress                           String?
   BuyerWallet                                   WalletBase?         @relation(fields: [buyerWalletId], references: [id])
   CurrentTransaction                            Transaction?        @relation("CurrentPaymentTransaction", fields: [currentTransactionId], references: [id])
   NextAction                                    PaymentActionData   @relation("NextAction", fields: [nextActionId], references: [id])
@@ -387,6 +453,7 @@ model PaymentRequest {
   @@index([paymentSourceId, createdAt])
   @@index([paymentSourceId, onChainState])
   @@index([paymentSourceId, payByTime])
+  @@index([currentTransactionId])
 }
 
 model PaymentActionData {
@@ -414,6 +481,10 @@ model PurchaseRequest {
   metadata                                      String?
   pricingType                                   PricingType          @default(Fixed)
   blockchainIdentifier                          String               @unique
+  /// Decoded agent asset id (policyId + asset name hex); denormalized for search. Mirrors decodeBlockchainIdentifier(..).agentIdentifier.
+  agentIdentifier                               String?
+  /// Populated when agentIdentifier was aligned from blockchainIdentifier (create path or startup backfill). Null only on legacy rows pending sync.
+  agentIdentifierSyncedAt                       DateTime?
   submitResultTime                              BigInt
   unlockTime                                    BigInt
   externalDisputeUnlockTime                     BigInt
@@ -429,9 +500,14 @@ model PurchaseRequest {
   nextActionLastChangedAt                       DateTime             @default(now())
   nextActionOrOnChainStateOrResultLastChangedAt DateTime             @default(now())
   requestedById                                 String
-  currentTransactionId                          String?              @unique
+  // Not @unique: V2 batch transactions reference one shared Transaction row from N PurchaseRequests.
+  // Uniqueness was a leftover from the V1 single-item flow; dropping it allows
+  // a multi-redeemer batch tx to be referenced once from each participating request.
+  currentTransactionId                          String?
   collateralReturnLovelace                      BigInt?
   payByTime                                     BigInt?
+  buyerReturnAddress                            String?
+  sellerReturnAddress                           String?
   CurrentTransaction                            Transaction?         @relation("CurrentPurchaseTransaction", fields: [currentTransactionId], references: [id])
   NextAction                                    PurchaseActionData   @relation("NextAction", fields: [nextActionId], references: [id])
   ActionHistory                                 PurchaseActionData[] @relation("PurchaseActionHistory")
@@ -455,6 +531,7 @@ model PurchaseRequest {
   @@index([paymentSourceId, createdAt])
   @@index([paymentSourceId, onChainState])
   @@index([paymentSourceId, payByTime])
+  @@index([currentTransactionId])
 }
 
 model PurchaseActionData {
@@ -480,37 +557,56 @@ model PaymentSourceIdentifiers {
 }
 
 model PaymentSource {
-  id                       String                     @id @default(cuid())
-  createdAt                DateTime                   @default(now())
-  updatedAt                DateTime                   @updatedAt
-  network                  Network
-  lastCheckedAt            DateTime?
-  lastIdentifierChecked    String?
-  syncInProgress           Boolean                    @default(false)
-  smartContractAddress     String
-  adminWalletId            String
-  feeRatePermille          Int
-  cooldownTime             Int
-  paymentSourceConfigId    String                     @unique
-  deletedAt                DateTime?
-  policyId                 String?
-  disablePaymentAt         DateTime?
-  disableSyncAt            DateTime?
-  AdminWallets             AdminWallet[]              @relation("AdminWallets")
-  HotWallets               HotWallet[]
-  PaymentRequests          PaymentRequest[]           @relation("PaymentRequestPaymentSource")
-  FeeReceiverNetworkWallet AdminWallet                @relation("FeeReceiverNetworkWallet", fields: [adminWalletId], references: [id], onDelete: Cascade)
-  PaymentSourceConfig      PaymentSourceConfig        @relation(fields: [paymentSourceConfigId], references: [id])
-  PaymentSourceIdentifiers PaymentSourceIdentifiers[]
-  PurchaseRequests         PurchaseRequest[]          @relation("PurchaseRequestPaymentSource")
-  RegistryRequest          RegistryRequest[]
-  A2ARegistryRequest       A2ARegistryRequest[]
+  id                             String                          @id @default(cuid())
+  createdAt                      DateTime                        @default(now())
+  updatedAt                      DateTime                        @updatedAt
+  network                        Network
+  lastCheckedAt                  DateTime?
+  lastIdentifierChecked          String?
+  syncInProgress                 Boolean                         @default(false)
+  paymentSourceType              PaymentSourceType               @default(Web3CardanoV1)
+  /// Required for Web3CardanoV2 (must be >= 1) and forbidden for Web3CardanoV1.
+  /// Enforced at the DB layer by a CHECK constraint defined in migration
+  /// 20260524000000_add_payment_source_type_index. Keep this comment in sync if
+  /// the constraint is changed.
+  requiredAdminSignatures        Int?
+  smartContractAddress           String
+  /// V1: required fee-receiver (NOT NULL enforced by CHECK
+  /// `PaymentSource_v1_admin_wallet_required` in migration
+  /// 20260526001000_harden_admin_wallet_constraints).
+  /// V2: must be NULL — V2 has no V1-style fee receiver. Enforced by CHECK
+  /// `PaymentSource_v2_no_singular_admin` in the same migration.
+  adminWalletId                  String?
+  feeRatePermille                Int
+  cooldownTime                   Int
+  paymentSourceConfigId          String                          @unique
+  deletedAt                      DateTime?
+  /// Registry policy id. Active rows must be unique per network; soft-deleted
+  /// rows may keep duplicate historical values. Enforced by the partial unique
+  /// index in migration 20260525000000_restore_active_policy_id_uniqueness.
+  policyId                       String?
+  disablePaymentAt               DateTime?
+  disableSyncAt                  DateTime?
+  AdminWallets                   AdminWallet[]                   @relation("AdminWallets")
+  HotWallets                     HotWallet[]
+  PaymentRequests                PaymentRequest[]                @relation("PaymentRequestPaymentSource")
+  FeeReceiverNetworkWallet       AdminWallet?                    @relation("FeeReceiverNetworkWallet", fields: [adminWalletId], references: [id], onDelete: SetNull)
+  PaymentSourceConfig            PaymentSourceConfig             @relation(fields: [paymentSourceConfigId], references: [id])
+  PaymentSourceIdentifiers       PaymentSourceIdentifiers[]
+  PurchaseRequests               PurchaseRequest[]               @relation("PurchaseRequestPaymentSource")
+  RegistryRequest                RegistryRequest[]
+  A2ARegistryRequest             A2ARegistryRequest[]
   InboxAgentRegistrationRequests InboxAgentRegistrationRequest[]
-  WalletBases              WalletBase[]
-  WebhookEndpoints         WebhookEndpoint[]
+  WalletBases                    WalletBase[]
+  WebhookEndpoints               WebhookEndpoint[]
 
   @@unique([network, smartContractAddress])
-  @@unique([network, policyId])
+  // Active-only uniqueness on (network, policyId) is enforced by the partial
+  // unique index "PaymentSource_network_policyId_active_key" created in
+  // migration 20260525000000_restore_active_policy_id_uniqueness. That index
+  // also covers point lookups, so no plain @@index([network, policyId]) is
+  // needed (and a duplicate b-tree would waste write throughput).
+  @@index([paymentSourceType, deletedAt])
 }
 
 model AdminWallet {
@@ -519,8 +615,18 @@ model AdminWallet {
   updatedAt                DateTime        @updatedAt
   walletAddress            String
   paymentSourceAdminId     String?
+  /// Canonical V2 admin signing order. Must be unique per
+  /// paymentSourceAdminId so the off-chain ordering matches the on-chain
+  /// admin_vks list exactly. Enforced by partial unique index
+  /// `AdminWallet_paymentSourceAdminId_order_active_key` in migration
+  /// 20260526001000_harden_admin_wallet_constraints.
   order                    Int
-  PaymentSourceAdmin       PaymentSource?  @relation("AdminWallets", fields: [paymentSourceAdminId], references: [id])
+  /// V2 admin-set membership. FK is ON DELETE RESTRICT (migration
+  /// 20260526001000_harden_admin_wallet_constraints) so an admin must be
+  /// detached (paymentSourceAdminId set to NULL) before deletion. A
+  /// deferrable trigger also enforces count(AdminWallets) >=
+  /// requiredAdminSignatures for V2 PaymentSources.
+  PaymentSourceAdmin       PaymentSource?  @relation("AdminWallets", fields: [paymentSourceAdminId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   PaymentSourceFeeReceiver PaymentSource[] @relation("FeeReceiverNetworkWallet")
 }
 
@@ -557,6 +663,10 @@ enum RegistrationState {
   DeregistrationInitiated
   DeregistrationConfirmed
   DeregistrationFailed
+  UpdateRequested
+  UpdateInitiated
+  UpdateConfirmed
+  UpdateFailed
 }
 
 enum PricingType {
@@ -600,9 +710,20 @@ enum OnChainState {
   ResultSubmitted
   RefundRequested
   Disputed
+  WithdrawAuthorized
+  RefundAuthorized
   Withdrawn
   RefundWithdrawn
   DisputedWithdrawn
+}
+
+enum PaymentSourceType {
+  Web3CardanoV1
+  Web3CardanoV2
+}
+
+enum Chain {
+  Cardano
 }
 
 enum PaymentAction {
@@ -631,6 +752,8 @@ enum PurchasingAction {
   UnSetRefundRequestedInitiated
   WithdrawRefundRequested
   WithdrawRefundInitiated
+  AuthorizeWithdrawalRequested
+  AuthorizeWithdrawalInitiated
 }
 
 model InvoiceBase {

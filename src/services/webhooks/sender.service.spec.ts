@@ -11,7 +11,7 @@ const loggerInfo = jest.fn() as jest.Mock<any>;
 const loggerWarn = jest.fn() as jest.Mock<any>;
 const loggerError = jest.fn() as jest.Mock<any>;
 
-jest.unstable_mockModule('@/utils/db', () => ({
+jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		webhookEndpoint: {
 			findUnique: mockWebhookEndpointFindUnique,
@@ -24,7 +24,7 @@ jest.unstable_mockModule('@/utils/db', () => ({
 	},
 }));
 
-jest.unstable_mockModule('@/utils/logger', () => ({
+jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: {
 		info: loggerInfo,
 		warn: loggerWarn,

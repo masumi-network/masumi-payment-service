@@ -11,9 +11,6 @@ ALTER TABLE "RegistryRequest" DROP COLUMN IF EXISTS "a2aIconUrl";
 ALTER TABLE "RegistryRequest" DROP COLUMN IF EXISTS "a2aCapabilitiesStreaming";
 ALTER TABLE "RegistryRequest" DROP COLUMN IF EXISTS "a2aCapabilitiesPushNotifications";
 
--- Drop metadataVersion from RegistryRequest (now implicit: always 1 for standard agents)
-ALTER TABLE "RegistryRequest" DROP COLUMN IF EXISTS "metadataVersion";
-
 -- CreateTable: A2ARegistryRequest
 CREATE TABLE "A2ARegistryRequest" (
     "id" TEXT NOT NULL,

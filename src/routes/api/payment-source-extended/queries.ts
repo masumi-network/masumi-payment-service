@@ -1,6 +1,6 @@
-import { prisma } from '@/utils/db';
-import { AuthContext } from '@/utils/middleware/auth-middleware';
-import { z } from '@/utils/zod-openapi';
+import { prisma } from '@masumi/payment-core/db';
+import { AuthContext } from '@masumi/payment-core/auth';
+import { z } from '@masumi/payment-core/zod';
 import { paymentSourceExtendedSchemaInput } from './schemas';
 
 export type PaymentSourceExtendedListQueryInput = z.infer<typeof paymentSourceExtendedSchemaInput>;

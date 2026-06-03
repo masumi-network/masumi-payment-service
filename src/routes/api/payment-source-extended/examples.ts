@@ -1,5 +1,5 @@
-import { Network, RPCProvider } from '@/generated/prisma/client';
-import { z } from '@/utils/zod-openapi';
+import { Network, PaymentSourceType, RPCProvider } from '@/generated/prisma/client';
+import { z } from '@masumi/payment-core/zod';
 import { paymentSourceExtendedCreateSchemaOutput } from './schemas';
 
 export const paymentSourceExtendedExample = {
@@ -7,6 +7,8 @@ export const paymentSourceExtendedExample = {
 	createdAt: new Date(1713636260),
 	updatedAt: new Date(1713636260),
 	network: Network.Mainnet,
+	paymentSourceType: PaymentSourceType.Web3CardanoV1,
+	requiredAdminSignatures: null,
 	policyId: 'policy_id',
 	smartContractAddress: 'address_of_the_smart_contract',
 	PaymentSourceConfig: {
@@ -91,6 +93,8 @@ export const listPaymentSourceExtendedResponseExample = {
 			createdAt: new Date(1713636260),
 			updatedAt: new Date(1713636260),
 			network: Network.Mainnet,
+			paymentSourceType: PaymentSourceType.Web3CardanoV1,
+			requiredAdminSignatures: null,
 			feeRatePermille: 50,
 			syncInProgress: true,
 			policyId: 'policy_id',
@@ -167,6 +171,7 @@ export const listPaymentSourceExtendedResponseExample = {
 
 export const createPaymentSourceExtendedBodyExample = {
 	network: Network.Preprod,
+	paymentSourceType: PaymentSourceType.Web3CardanoV2,
 	PaymentSourceConfig: {
 		rpcProviderApiKey: 'rpc_provider_api_key',
 		rpcProvider: RPCProvider.Blockfrost,
@@ -176,8 +181,7 @@ export const createPaymentSourceExtendedBodyExample = {
 		{ walletAddress: 'wallet_address_2' },
 		{ walletAddress: 'wallet_address_3' },
 	],
-	FeeReceiverNetworkWallet: { walletAddress: 'wallet_address' },
-	feeRatePermille: 50,
+	requiredAdminSignatures: 2,
 	PurchasingWallets: [
 		{
 			walletMnemonic: 'wallet mnemonic',

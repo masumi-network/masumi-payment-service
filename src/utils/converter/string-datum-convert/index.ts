@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { generateBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { generateBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import { SmartContractState } from '@/utils/generator/contract-generator';
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 import { serializeAddressObj } from '@meshsdk/core';
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
 import { Network } from '@meshsdk/core';
@@ -11,14 +11,18 @@ import { Network } from '@meshsdk/core';
 export type DecodedV1ContractDatum = {
 	blockchainIdentifier: string;
 	buyerAddress: string;
+	buyerReturnAddress?: string | null;
 	sellerAddress: string;
+	sellerReturnAddress?: string | null;
 	buyerVkey: string;
 	sellerVkey: string;
 	state: SmartContractState;
 	referenceKey: string;
 	referenceSignature: string;
 	sellerNonce: string;
+	sellerIdentifier?: string;
 	buyerNonce: string;
+	agentIdentifier?: string | null;
 	collateralReturnLovelace: bigint;
 	inputHash: string | null;
 	resultHash: string | null;
@@ -30,7 +34,31 @@ export type DecodedV1ContractDatum = {
 	sellerCooldownTime: bigint;
 };
 
-export function decodeV1ContractDatum(decodedDatum: any, network: Network): DecodedV1ContractDatum | null {
+function serializeOptionalAddressObj(value: any, networkId: 0 | 1): string | null {
+	if (typeof value !== 'object' || value === null) return null;
+	const ctor = (value as { constructor?: unknown }).constructor;
+	if (typeof ctor !== 'number' && typeof ctor !== 'bigint') return null;
+	if (value.fields == null) return null;
+
+	// Plutus Option: ctor 0 = Some, ctor 1 = None. Treat None (and any empty
+	// Some) as a null optional address.
+	if ((ctor === 1 || ctor === 1n) && value.fields.length === 0) {
+		return null;
+	}
+
+	const addressValue = value.fields[0];
+	if (addressValue == null) {
+		return null;
+	}
+
+	return serializeAddressObj(addressValue, networkId);
+}
+
+export function decodeV1ContractDatum(
+	decodedDatum: any,
+	network: Network,
+	_smartContractAddress?: string | null,
+): DecodedV1ContractDatum | null {
 	try {
 		/*
   buyer: VerificationKeyHash,
@@ -191,6 +219,123 @@ export function decodeV1ContractDatum(decodedDatum: any, network: Network): Deco
 	}
 }
 
+export function decodeV2ContractDatum(
+	decodedDatum: any,
+	network: Network,
+	smartContractAddress?: string | null,
+): DecodedV1ContractDatum | null {
+	try {
+		if (decodedDatum == null) {
+			return null;
+		}
+		const fields = decodedDatum.fields;
+
+		if (fields?.length != 19) {
+			return null;
+		}
+		const networkId = network == 'mainnet' ? 1 : 0;
+		const buyerAddress = serializeAddressObj(fields[0], networkId);
+		const buyerReturnAddress = serializeOptionalAddressObj(fields[1], networkId);
+		const buyerVkey = resolvePaymentKeyHash(buyerAddress);
+
+		const sellerAddress = serializeAddressObj(fields[2], networkId);
+		const sellerReturnAddress = serializeOptionalAddressObj(fields[3], networkId);
+		const sellerVkey = resolvePaymentKeyHash(sellerAddress);
+
+		const referenceKey = fields[4]?.bytes;
+		const referenceSignature = fields[5]?.bytes;
+		const sellerNonce = fields[6]?.bytes;
+		const buyerNonce = fields[7]?.bytes;
+		const agentIdentifier = fields[8]?.bytes;
+		const inputHashBytes = fields[10]?.bytes;
+		const resultHashBytes = fields[11]?.bytes;
+		if (
+			typeof referenceKey !== 'string' ||
+			typeof referenceSignature !== 'string' ||
+			typeof sellerNonce !== 'string' ||
+			typeof buyerNonce !== 'string' ||
+			typeof agentIdentifier !== 'string' ||
+			typeof inputHashBytes !== 'string' ||
+			typeof resultHashBytes !== 'string'
+		) {
+			return null;
+		}
+
+		const collateralReturnLovelace = BigInt(fields[9]?.int ?? -1);
+		let inputHash: string | null = inputHashBytes;
+		let resultHash: string | null = resultHashBytes;
+		const payByTime = BigInt(fields[12]?.int ?? -1);
+		const resultTime = BigInt(fields[13]?.int ?? -1);
+		const unlockTime = BigInt(fields[14]?.int ?? -1);
+		const externalDisputeUnlockTime = BigInt(fields[15]?.int ?? -1);
+		const sellerCooldownTime = BigInt(fields[16]?.int ?? -1);
+		const buyerCooldownTime = BigInt(fields[17]?.int ?? -1);
+		const state = valueToStatus(fields[18]);
+
+		if (
+			collateralReturnLovelace < 0n ||
+			payByTime < 0n ||
+			resultTime < 0n ||
+			unlockTime < 0n ||
+			externalDisputeUnlockTime < 0n ||
+			sellerCooldownTime < 0n ||
+			buyerCooldownTime < 0n ||
+			state == null
+		) {
+			return null;
+		}
+
+		if (inputHash.length == 0) {
+			inputHash = null;
+		}
+		if (resultHash.length == 0) {
+			resultHash = null;
+		}
+
+		// V2 sellerNonce is exactly 64 hex chars (32 bytes). If the on-chain field exceeds
+		// 64 chars the agentIdentifier was already concatenated upstream — keep as-is.
+		// Otherwise append agentIdentifier (when present) to reconstruct the full identifier.
+		const sellerIdentifier =
+			sellerNonce.length > 64 || agentIdentifier.length === 0 ? sellerNonce : sellerNonce + agentIdentifier;
+		const blockchainIdentifier = generateBlockchainIdentifier(
+			referenceKey,
+			referenceSignature,
+			sellerIdentifier,
+			buyerNonce,
+			smartContractAddress,
+		);
+
+		return {
+			blockchainIdentifier,
+			buyerAddress,
+			buyerReturnAddress,
+			sellerAddress,
+			sellerReturnAddress,
+			buyerVkey,
+			sellerVkey,
+			state,
+			referenceKey,
+			referenceSignature,
+			sellerNonce,
+			sellerIdentifier,
+			buyerNonce,
+			agentIdentifier,
+			collateralReturnLovelace,
+			inputHash,
+			resultHash,
+			payByTime,
+			resultTime,
+			unlockTime,
+			externalDisputeUnlockTime,
+			buyerCooldownTime,
+			sellerCooldownTime,
+		};
+	} catch (error) {
+		logger.warn('Error decoding v2 contract datum', { error: error });
+		return null;
+	}
+}
+
 export function newCooldownTime(cooldownTime: bigint) {
 	//We add some additional cooldown time to avoid validity issues with blocktime
 	const cooldownTimeMs = BigInt(Date.now()) + cooldownTime + BigInt(1000 * 60 * 10);
@@ -218,6 +363,12 @@ function valueToStatus(value: any) {
 		case 3n:
 		case 3:
 			return SmartContractState.Disputed;
+		case 4n:
+		case 4:
+			return SmartContractState.WithdrawAuthorized;
+		case 5n:
+		case 5:
+			return SmartContractState.RefundAuthorized;
 	}
 	return null;
 }

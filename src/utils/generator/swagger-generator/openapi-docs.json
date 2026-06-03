@@ -391,6 +391,16 @@
                         "nullable": true,
                         "description": "Amount of collateral to return in lovelace. Null if no collateral"
                     },
+                    "buyerReturnAddress": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Optional buyer return address stored with the request"
+                    },
+                    "sellerReturnAddress": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Optional seller return address stored with the request"
+                    },
                     "externalDisputeUnlockTime": {
                         "type": "string",
                         "description": "Unix timestamp (in milliseconds) after which external dispute resolution can occur"
@@ -449,6 +459,8 @@
                             "ResultSubmitted",
                             "RefundRequested",
                             "Disputed",
+                            "WithdrawAuthorized",
+                            "RefundAuthorized",
                             "Withdrawn",
                             "RefundWithdrawn",
                             "DisputedWithdrawn",
@@ -637,6 +649,8 @@
                                     "ResultSubmitted",
                                     "RefundRequested",
                                     "Disputed",
+                                    "WithdrawAuthorized",
+                                    "RefundAuthorized",
                                     "Withdrawn",
                                     "RefundWithdrawn",
                                     "DisputedWithdrawn",
@@ -653,6 +667,8 @@
                                     "ResultSubmitted",
                                     "RefundRequested",
                                     "Disputed",
+                                    "WithdrawAuthorized",
+                                    "RefundAuthorized",
                                     "Withdrawn",
                                     "RefundWithdrawn",
                                     "DisputedWithdrawn",
@@ -741,6 +757,8 @@
                                         "ResultSubmitted",
                                         "RefundRequested",
                                         "Disputed",
+                                        "WithdrawAuthorized",
+                                        "RefundAuthorized",
                                         "Withdrawn",
                                         "RefundWithdrawn",
                                         "DisputedWithdrawn",
@@ -757,6 +775,8 @@
                                         "ResultSubmitted",
                                         "RefundRequested",
                                         "Disputed",
+                                        "WithdrawAuthorized",
+                                        "RefundAuthorized",
                                         "Withdrawn",
                                         "RefundWithdrawn",
                                         "DisputedWithdrawn",
@@ -863,6 +883,14 @@
                                 ],
                                 "description": "The Cardano network (Mainnet, Preprod, or Preview)"
                             },
+                            "paymentSourceType": {
+                                "type": "string",
+                                "enum": [
+                                    "Web3CardanoV1",
+                                    "Web3CardanoV2"
+                                ],
+                                "description": "Payment source type for adapter dispatch"
+                            },
                             "smartContractAddress": {
                                 "type": "string",
                                 "description": "Address of the smart contract managing this payment"
@@ -876,6 +904,7 @@
                         "required": [
                             "id",
                             "network",
+                            "paymentSourceType",
                             "smartContractAddress",
                             "policyId"
                         ],
@@ -942,6 +971,8 @@
                     "submitResultTime",
                     "unlockTime",
                     "collateralReturnLovelace",
+                    "buyerReturnAddress",
+                    "sellerReturnAddress",
                     "externalDisputeUnlockTime",
                     "requestedById",
                     "resultHash",
@@ -1061,6 +1092,8 @@
                             "ResultSubmitted",
                             "RefundRequested",
                             "Disputed",
+                            "WithdrawAuthorized",
+                            "RefundAuthorized",
                             "Withdrawn",
                             "RefundWithdrawn",
                             "DisputedWithdrawn",
@@ -1072,6 +1105,16 @@
                         "type": "string",
                         "nullable": true,
                         "description": "Amount of collateral to return in lovelace. Null if no collateral"
+                    },
+                    "buyerReturnAddress": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Optional buyer return address stored with the request"
+                    },
+                    "sellerReturnAddress": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Optional seller return address stored with the request"
                     },
                     "cooldownTime": {
                         "type": "number",
@@ -1107,7 +1150,9 @@
                                     "UnSetRefundRequestedRequested",
                                     "UnSetRefundRequestedInitiated",
                                     "WithdrawRefundRequested",
-                                    "WithdrawRefundInitiated"
+                                    "WithdrawRefundInitiated",
+                                    "AuthorizeWithdrawalRequested",
+                                    "AuthorizeWithdrawalInitiated"
                                 ],
                                 "description": "Next action required for this purchase"
                             },
@@ -1169,7 +1214,9 @@
                                         "UnSetRefundRequestedRequested",
                                         "UnSetRefundRequestedInitiated",
                                         "WithdrawRefundRequested",
-                                        "WithdrawRefundInitiated"
+                                        "WithdrawRefundInitiated",
+                                        "AuthorizeWithdrawalRequested",
+                                        "AuthorizeWithdrawalInitiated"
                                     ],
                                     "description": "Next action required for this purchase"
                                 },
@@ -1260,6 +1307,8 @@
                                     "ResultSubmitted",
                                     "RefundRequested",
                                     "Disputed",
+                                    "WithdrawAuthorized",
+                                    "RefundAuthorized",
                                     "Withdrawn",
                                     "RefundWithdrawn",
                                     "DisputedWithdrawn",
@@ -1276,6 +1325,8 @@
                                     "ResultSubmitted",
                                     "RefundRequested",
                                     "Disputed",
+                                    "WithdrawAuthorized",
+                                    "RefundAuthorized",
                                     "Withdrawn",
                                     "RefundWithdrawn",
                                     "DisputedWithdrawn",
@@ -1364,6 +1415,8 @@
                                         "ResultSubmitted",
                                         "RefundRequested",
                                         "Disputed",
+                                        "WithdrawAuthorized",
+                                        "RefundAuthorized",
                                         "Withdrawn",
                                         "RefundWithdrawn",
                                         "DisputedWithdrawn",
@@ -1380,6 +1433,8 @@
                                         "ResultSubmitted",
                                         "RefundRequested",
                                         "Disputed",
+                                        "WithdrawAuthorized",
+                                        "RefundAuthorized",
                                         "Withdrawn",
                                         "RefundWithdrawn",
                                         "DisputedWithdrawn",
@@ -1476,6 +1531,13 @@
                                     "Mainnet"
                                 ]
                             },
+                            "paymentSourceType": {
+                                "type": "string",
+                                "enum": [
+                                    "Web3CardanoV1",
+                                    "Web3CardanoV2"
+                                ]
+                            },
                             "smartContractAddress": {
                                 "type": "string"
                             },
@@ -1487,6 +1549,7 @@
                         "required": [
                             "id",
                             "network",
+                            "paymentSourceType",
                             "smartContractAddress",
                             "policyId"
                         ]
@@ -1560,6 +1623,8 @@
                     "requestedById",
                     "onChainState",
                     "collateralReturnLovelace",
+                    "buyerReturnAddress",
+                    "sellerReturnAddress",
                     "cooldownTime",
                     "cooldownTimeOtherParty",
                     "inputHash",
@@ -1821,6 +1886,52 @@
                                     "type": "string"
                                 },
                                 "description": "A2A protocol versions. Empty for standard agents"
+                            },
+                            "supportedPaymentSources": {
+                                "type": "array",
+                                "nullable": true,
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "chain": {
+                                            "type": "string",
+                                            "enum": [
+                                                "Cardano"
+                                            ],
+                                            "description": "The blockchain this payment source is available on"
+                                        },
+                                        "network": {
+                                            "type": "string",
+                                            "enum": [
+                                                "Preprod",
+                                                "Mainnet"
+                                            ],
+                                            "description": "The blockchain network this payment source is available on"
+                                        },
+                                        "paymentSourceType": {
+                                            "type": "string",
+                                            "enum": [
+                                                "Web3CardanoV1",
+                                                "Web3CardanoV2"
+                                            ],
+                                            "description": "The configured payment source type"
+                                        },
+                                        "address": {
+                                            "type": "string",
+                                            "maxLength": 250,
+                                            "description": "The escrow smart contract address for this payment source"
+                                        }
+                                    },
+                                    "required": [
+                                        "chain",
+                                        "network",
+                                        "paymentSourceType",
+                                        "address"
+                                    ]
+                                },
+                                "minItems": 1,
+                                "maxItems": 25,
+                                "description": "Payment sources advertised by this registry entry. Null for legacy metadata."
                             }
                         },
                         "required": [
@@ -2088,6 +2199,52 @@
                                     "type": "string"
                                 },
                                 "description": "A2A protocol versions. Empty for standard agents"
+                            },
+                            "supportedPaymentSources": {
+                                "type": "array",
+                                "nullable": true,
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "chain": {
+                                            "type": "string",
+                                            "enum": [
+                                                "Cardano"
+                                            ],
+                                            "description": "The blockchain this payment source is available on"
+                                        },
+                                        "network": {
+                                            "type": "string",
+                                            "enum": [
+                                                "Preprod",
+                                                "Mainnet"
+                                            ],
+                                            "description": "The blockchain network this payment source is available on"
+                                        },
+                                        "paymentSourceType": {
+                                            "type": "string",
+                                            "enum": [
+                                                "Web3CardanoV1",
+                                                "Web3CardanoV2"
+                                            ],
+                                            "description": "The configured payment source type"
+                                        },
+                                        "address": {
+                                            "type": "string",
+                                            "maxLength": 250,
+                                            "description": "The escrow smart contract address for this payment source"
+                                        }
+                                    },
+                                    "required": [
+                                        "chain",
+                                        "network",
+                                        "paymentSourceType",
+                                        "address"
+                                    ]
+                                },
+                                "minItems": 1,
+                                "maxItems": 25,
+                                "description": "Payment sources advertised by this registry entry. Null for legacy metadata."
                             }
                         },
                         "required": [
@@ -2219,7 +2376,11 @@
                             "DeregistrationRequested",
                             "DeregistrationInitiated",
                             "DeregistrationConfirmed",
-                            "DeregistrationFailed"
+                            "DeregistrationFailed",
+                            "UpdateRequested",
+                            "UpdateInitiated",
+                            "UpdateConfirmed",
+                            "UpdateFailed"
                         ],
                         "description": "Current state of the registration process"
                     },
@@ -2362,6 +2523,52 @@
                         "nullable": true,
                         "description": "Effective lovelace amount explicitly configured for the NFT output. Null means the default minimum NFT funding is used."
                     },
+                    "supportedPaymentSources": {
+                        "type": "array",
+                        "nullable": true,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "chain": {
+                                    "type": "string",
+                                    "enum": [
+                                        "Cardano"
+                                    ],
+                                    "description": "The blockchain this payment source is available on"
+                                },
+                                "network": {
+                                    "type": "string",
+                                    "enum": [
+                                        "Preprod",
+                                        "Mainnet"
+                                    ],
+                                    "description": "The blockchain network this payment source is available on"
+                                },
+                                "paymentSourceType": {
+                                    "type": "string",
+                                    "enum": [
+                                        "Web3CardanoV1",
+                                        "Web3CardanoV2"
+                                    ],
+                                    "description": "The configured payment source type"
+                                },
+                                "address": {
+                                    "type": "string",
+                                    "maxLength": 250,
+                                    "description": "The escrow smart contract address for this payment source"
+                                }
+                            },
+                            "required": [
+                                "chain",
+                                "network",
+                                "paymentSourceType",
+                                "address"
+                            ]
+                        },
+                        "minItems": 1,
+                        "maxItems": 25,
+                        "description": "Payment sources advertised by this registry entry. Null for legacy metadata."
+                    },
                     "SmartContractWallet": {
                         "type": "object",
                         "properties": {
@@ -2468,6 +2675,7 @@
                     "agentIdentifier",
                     "AgentPricing",
                     "sendFundingLovelace",
+                    "supportedPaymentSources",
                     "SmartContractWallet",
                     "RecipientWallet",
                     "CurrentTransaction"
@@ -2526,7 +2734,11 @@
                             "DeregistrationRequested",
                             "DeregistrationInitiated",
                             "DeregistrationConfirmed",
-                            "DeregistrationFailed"
+                            "DeregistrationFailed",
+                            "UpdateRequested",
+                            "UpdateInitiated",
+                            "UpdateConfirmed",
+                            "UpdateFailed"
                         ],
                         "description": "Current state of the registration process"
                     },
@@ -2798,6 +3010,19 @@
                         ],
                         "description": "The Cardano network (Mainnet, Preprod, or Preview)"
                     },
+                    "paymentSourceType": {
+                        "type": "string",
+                        "enum": [
+                            "Web3CardanoV1",
+                            "Web3CardanoV2"
+                        ],
+                        "description": "Payment source type for adapter dispatch"
+                    },
+                    "requiredAdminSignatures": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Required weighted admin signatures for Web3CardanoV2 sources. Null for Web3CardanoV1."
+                    },
                     "policyId": {
                         "type": "string",
                         "nullable": true,
@@ -2841,6 +3066,7 @@
                     },
                     "FeeReceiverNetworkWallet": {
                         "type": "object",
+                        "nullable": true,
                         "properties": {
                             "walletAddress": {
                                 "type": "string",
@@ -2864,6 +3090,8 @@
                     "createdAt",
                     "updatedAt",
                     "network",
+                    "paymentSourceType",
+                    "requiredAdminSignatures",
                     "policyId",
                     "smartContractAddress",
                     "lastIdentifierChecked",
@@ -3038,6 +3266,19 @@
                             "Mainnet"
                         ],
                         "description": "The Cardano network"
+                    },
+                    "paymentSourceType": {
+                        "type": "string",
+                        "enum": [
+                            "Web3CardanoV1",
+                            "Web3CardanoV2"
+                        ],
+                        "description": "Payment source type for adapter dispatch"
+                    },
+                    "requiredAdminSignatures": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Required weighted admin signatures for Web3CardanoV2 sources. Null for Web3CardanoV1."
                     },
                     "policyId": {
                         "type": "string",
@@ -3237,6 +3478,7 @@
                     },
                     "FeeReceiverNetworkWallet": {
                         "type": "object",
+                        "nullable": true,
                         "properties": {
                             "walletAddress": {
                                 "type": "string",
@@ -3260,6 +3502,8 @@
                     "createdAt",
                     "updatedAt",
                     "network",
+                    "paymentSourceType",
+                    "requiredAdminSignatures",
                     "policyId",
                     "smartContractAddress",
                     "PaymentSourceConfig",
@@ -3542,7 +3786,11 @@
                             "DeregistrationRequested",
                             "DeregistrationInitiated",
                             "DeregistrationConfirmed",
-                            "DeregistrationFailed"
+                            "DeregistrationFailed",
+                            "UpdateRequested",
+                            "UpdateInitiated",
+                            "UpdateConfirmed",
+                            "UpdateFailed"
                         ],
                         "description": "Current state of the inbox registration process"
                     },
@@ -5646,7 +5894,9 @@
                                 "properties": {
                                     "walletVkey": {
                                         "type": "string",
-                                        "minLength": 1,
+                                        "minLength": 56,
+                                        "maxLength": 56,
+                                        "pattern": "^[0-9a-fA-F]{56}$",
                                         "description": "Wallet verification key (vKey) to identify the wallet"
                                     },
                                     "amount": {
@@ -5704,6 +5954,9 @@
                                     },
                                     "poolId": {
                                         "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 120,
+                                        "pattern": "^[0-9a-zA-Z]+$",
                                         "description": "SundaeSwap pool identifier"
                                     },
                                     "slippage": {
@@ -5797,7 +6050,9 @@
                     {
                         "schema": {
                             "type": "string",
-                            "minLength": 1,
+                            "minLength": 64,
+                            "maxLength": 64,
+                            "pattern": "^[0-9a-fA-F]{64}$",
                             "description": "Transaction hash to check"
                         },
                         "required": true,
@@ -5808,7 +6063,9 @@
                     {
                         "schema": {
                             "type": "string",
-                            "minLength": 1,
+                            "minLength": 56,
+                            "maxLength": 56,
+                            "pattern": "^[0-9a-fA-F]{56}$",
                             "description": "Wallet verification key (vKey) that submitted the swap"
                         },
                         "required": true,
@@ -5889,7 +6146,9 @@
                     {
                         "schema": {
                             "type": "string",
-                            "minLength": 1,
+                            "minLength": 56,
+                            "maxLength": 56,
+                            "pattern": "^[0-9a-fA-F]{56}$",
                             "description": "Wallet verification key (vKey) to filter swap transactions"
                         },
                         "required": true,
@@ -5913,6 +6172,7 @@
                     {
                         "schema": {
                             "type": "string",
+                            "maxLength": 64,
                             "description": "Cursor ID for pagination"
                         },
                         "required": false,
@@ -6070,6 +6330,8 @@
                     {
                         "schema": {
                             "type": "string",
+                            "maxLength": 56,
+                            "pattern": "^[0-9a-fA-F]*$",
                             "description": "Policy ID of the source token. Use empty string \"\" for ADA"
                         },
                         "required": true,
@@ -6080,6 +6342,8 @@
                     {
                         "schema": {
                             "type": "string",
+                            "maxLength": 64,
+                            "pattern": "^[0-9a-fA-F]*$",
                             "description": "Asset name (hex) of the source token. Use empty string \"\" for ADA"
                         },
                         "required": true,
@@ -6090,6 +6354,8 @@
                     {
                         "schema": {
                             "type": "string",
+                            "maxLength": 56,
+                            "pattern": "^[0-9a-fA-F]*$",
                             "description": "Policy ID of the destination token. Use empty string \"\" for ADA"
                         },
                         "required": true,
@@ -6100,6 +6366,8 @@
                     {
                         "schema": {
                             "type": "string",
+                            "maxLength": 64,
+                            "pattern": "^[0-9a-fA-F]*$",
                             "description": "Asset name (hex) of the destination token. Use empty string \"\" for ADA"
                         },
                         "required": true,
@@ -6111,6 +6379,8 @@
                         "schema": {
                             "type": "string",
                             "minLength": 1,
+                            "maxLength": 120,
+                            "pattern": "^[0-9a-zA-Z]+$",
                             "description": "SundaeSwap pool identifier"
                         },
                         "required": true,
@@ -6190,12 +6460,15 @@
                                 "properties": {
                                     "walletVkey": {
                                         "type": "string",
-                                        "minLength": 1,
+                                        "minLength": 56,
+                                        "maxLength": 56,
+                                        "pattern": "^[0-9a-fA-F]{56}$",
                                         "description": "Wallet verification key (vKey) of the wallet that placed the order"
                                     },
                                     "swapTransactionId": {
                                         "type": "string",
                                         "minLength": 1,
+                                        "maxLength": 64,
                                         "description": "ID of the SwapTransaction to cancel"
                                     }
                                 },
@@ -6270,12 +6543,15 @@
                                 "properties": {
                                     "walletVkey": {
                                         "type": "string",
-                                        "minLength": 1,
+                                        "minLength": 56,
+                                        "maxLength": 56,
+                                        "pattern": "^[0-9a-fA-F]{56}$",
                                         "description": "Wallet verification key (vKey) of the wallet"
                                     },
                                     "swapTransactionId": {
                                         "type": "string",
                                         "minLength": 1,
+                                        "maxLength": 64,
                                         "description": "ID of the timed-out SwapTransaction"
                                     }
                                 },
@@ -6402,6 +6678,8 @@
                                 "ResultSubmitted",
                                 "RefundRequested",
                                 "Disputed",
+                                "WithdrawAuthorized",
+                                "RefundAuthorized",
                                 "Withdrawn",
                                 "RefundWithdrawn",
                                 "DisputedWithdrawn"
@@ -6411,6 +6689,20 @@
                         "required": false,
                         "description": "Filter by on-chain state",
                         "name": "filterOnChainState",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Web3CardanoV1",
+                                "Web3CardanoV2"
+                            ],
+                            "description": "Filter by payment source type"
+                        },
+                        "required": false,
+                        "description": "Filter by payment source type",
+                        "name": "filterPaymentSourceType",
                         "in": "query"
                     },
                     {
@@ -6484,6 +6776,8 @@
                                                     "payByTime": null,
                                                     "cooldownTimeOtherParty": 0,
                                                     "collateralReturnLovelace": null,
+                                                    "buyerReturnAddress": null,
+                                                    "sellerReturnAddress": null,
                                                     "requestedById": "requester_id",
                                                     "resultHash": "result_hash",
                                                     "onChainState": null,
@@ -6504,6 +6798,7 @@
                                                     "PaymentSource": {
                                                         "id": "payment_source_id",
                                                         "network": "Preprod",
+                                                        "paymentSourceType": "Web3CardanoV1",
                                                         "smartContractAddress": "address",
                                                         "policyId": "policy_id"
                                                     },
@@ -6573,6 +6868,14 @@
                                         "minLength": 57,
                                         "maxLength": 250,
                                         "description": "The identifier of the agent that will be paid"
+                                    },
+                                    "paymentSourceType": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Web3CardanoV1",
+                                            "Web3CardanoV2"
+                                        ],
+                                        "description": "Expected payment source type for this request"
                                     },
                                     "RequestedFunds": {
                                         "type": "array",
@@ -6672,6 +6975,11 @@
                                         "type": "string",
                                         "description": "Metadata to be stored with the payment request"
                                     },
+                                    "sellerReturnAddress": {
+                                        "type": "string",
+                                        "maxLength": 250,
+                                        "description": "Optional seller return address. Defaults to the selling hot wallet collection address when available."
+                                    },
                                     "identifierFromPurchaser": {
                                         "type": "string",
                                         "minLength": 14,
@@ -6765,6 +7073,16 @@
                                                     "nullable": true,
                                                     "description": "Amount of collateral to return in lovelace. Null if no collateral"
                                                 },
+                                                "buyerReturnAddress": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Optional buyer return address stored with the request"
+                                                },
+                                                "sellerReturnAddress": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Optional seller return address stored with the request"
+                                                },
                                                 "externalDisputeUnlockTime": {
                                                     "type": "string",
                                                     "description": "Unix timestamp (in milliseconds) after which external dispute resolution can occur"
@@ -6823,6 +7141,8 @@
                                                         "ResultSubmitted",
                                                         "RefundRequested",
                                                         "Disputed",
+                                                        "WithdrawAuthorized",
+                                                        "RefundAuthorized",
                                                         "Withdrawn",
                                                         "RefundWithdrawn",
                                                         "DisputedWithdrawn",
@@ -6935,6 +7255,8 @@
                                                                 "ResultSubmitted",
                                                                 "RefundRequested",
                                                                 "Disputed",
+                                                                "WithdrawAuthorized",
+                                                                "RefundAuthorized",
                                                                 "Withdrawn",
                                                                 "RefundWithdrawn",
                                                                 "DisputedWithdrawn",
@@ -6951,6 +7273,8 @@
                                                                 "ResultSubmitted",
                                                                 "RefundRequested",
                                                                 "Disputed",
+                                                                "WithdrawAuthorized",
+                                                                "RefundAuthorized",
                                                                 "Withdrawn",
                                                                 "RefundWithdrawn",
                                                                 "DisputedWithdrawn",
@@ -7056,6 +7380,14 @@
                                                             ],
                                                             "description": "The Cardano network (Mainnet, Preprod, or Preview)"
                                                         },
+                                                        "paymentSourceType": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Web3CardanoV1",
+                                                                "Web3CardanoV2"
+                                                            ],
+                                                            "description": "Payment source type for adapter dispatch"
+                                                        },
                                                         "smartContractAddress": {
                                                             "type": "string",
                                                             "description": "Address of the smart contract managing this payment"
@@ -7069,6 +7401,7 @@
                                                     "required": [
                                                         "id",
                                                         "network",
+                                                        "paymentSourceType",
                                                         "smartContractAddress",
                                                         "policyId"
                                                     ],
@@ -7135,6 +7468,8 @@
                                                 "submitResultTime",
                                                 "unlockTime",
                                                 "collateralReturnLovelace",
+                                                "buyerReturnAddress",
+                                                "sellerReturnAddress",
                                                 "externalDisputeUnlockTime",
                                                 "requestedById",
                                                 "resultHash",
@@ -7183,6 +7518,8 @@
                                             "payByTime": null,
                                             "cooldownTimeOtherParty": 0,
                                             "collateralReturnLovelace": null,
+                                            "buyerReturnAddress": null,
+                                            "sellerReturnAddress": null,
                                             "requestedById": "requester_id",
                                             "resultHash": "result_hash",
                                             "onChainState": null,
@@ -7203,6 +7540,7 @@
                                             "PaymentSource": {
                                                 "id": "payment_source_id",
                                                 "network": "Preprod",
+                                                "paymentSourceType": "Web3CardanoV1",
                                                 "smartContractAddress": "address",
                                                 "policyId": "policy_id"
                                             },
@@ -7322,6 +7660,20 @@
                     {
                         "schema": {
                             "type": "string",
+                            "enum": [
+                                "Web3CardanoV1",
+                                "Web3CardanoV2"
+                            ],
+                            "description": "Filter by payment source type"
+                        },
+                        "required": false,
+                        "description": "Filter by payment source type",
+                        "name": "filterPaymentSourceType",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
                             "default": "false",
                             "description": "Whether to include the full transaction and status history of the payments"
                         },
@@ -7380,6 +7732,8 @@
                                                     "payByTime": null,
                                                     "cooldownTimeOtherParty": 0,
                                                     "collateralReturnLovelace": null,
+                                                    "buyerReturnAddress": null,
+                                                    "sellerReturnAddress": null,
                                                     "requestedById": "requester_id",
                                                     "resultHash": "result_hash",
                                                     "onChainState": null,
@@ -7400,6 +7754,7 @@
                                                     "PaymentSource": {
                                                         "id": "payment_source_id",
                                                         "network": "Preprod",
+                                                        "paymentSourceType": "Web3CardanoV1",
                                                         "smartContractAddress": "address",
                                                         "policyId": "policy_id"
                                                     },
@@ -7522,6 +7877,20 @@
                     {
                         "schema": {
                             "type": "string",
+                            "enum": [
+                                "Web3CardanoV1",
+                                "Web3CardanoV2"
+                            ],
+                            "description": "Filter by payment source type"
+                        },
+                        "required": false,
+                        "description": "Filter by payment source type",
+                        "name": "filterPaymentSourceType",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
                             "default": "false",
                             "description": "Whether to include the full transaction and status history of the payments"
                         },
@@ -7580,6 +7949,8 @@
                                                     "payByTime": null,
                                                     "cooldownTimeOtherParty": 0,
                                                     "collateralReturnLovelace": null,
+                                                    "buyerReturnAddress": null,
+                                                    "sellerReturnAddress": null,
                                                     "requestedById": "requester_id",
                                                     "resultHash": "result_hash",
                                                     "onChainState": null,
@@ -7600,6 +7971,7 @@
                                                     "PaymentSource": {
                                                         "id": "payment_source_id",
                                                         "network": "Preprod",
+                                                        "paymentSourceType": "Web3CardanoV1",
                                                         "smartContractAddress": "address",
                                                         "policyId": "policy_id"
                                                     },
@@ -7670,6 +8042,20 @@
                         "required": false,
                         "description": "The smart contract address of the payment source",
                         "name": "filterSmartContractAddress",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Web3CardanoV1",
+                                "Web3CardanoV2"
+                            ],
+                            "description": "Filter by payment source type"
+                        },
+                        "required": false,
+                        "description": "Filter by payment source type",
+                        "name": "filterPaymentSourceType",
                         "in": "query"
                     }
                 ],
@@ -7750,6 +8136,20 @@
                         "required": false,
                         "description": "The smart contract address of the payment source",
                         "name": "filterSmartContractAddress",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Web3CardanoV1",
+                                "Web3CardanoV2"
+                            ],
+                            "description": "Filter by payment source type"
+                        },
+                        "required": false,
+                        "description": "Filter by payment source type",
+                        "name": "filterPaymentSourceType",
                         "in": "query"
                     }
                 ],
@@ -7882,6 +8282,20 @@
                     {
                         "schema": {
                             "type": "string",
+                            "enum": [
+                                "Web3CardanoV1",
+                                "Web3CardanoV2"
+                            ],
+                            "description": "Filter by payment source type"
+                        },
+                        "required": false,
+                        "description": "Filter by payment source type",
+                        "name": "filterPaymentSourceType",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
                             "default": "false",
                             "description": "Whether to include the full transaction and status history of the payments"
                         },
@@ -7940,6 +8354,8 @@
                                                     "payByTime": null,
                                                     "cooldownTimeOtherParty": 0,
                                                     "collateralReturnLovelace": null,
+                                                    "buyerReturnAddress": null,
+                                                    "sellerReturnAddress": null,
                                                     "requestedById": "requester_id",
                                                     "resultHash": "result_hash",
                                                     "onChainState": null,
@@ -7960,6 +8376,7 @@
                                                     "PaymentSource": {
                                                         "id": "payment_source_id",
                                                         "network": "Preprod",
+                                                        "paymentSourceType": "Web3CardanoV1",
                                                         "smartContractAddress": "address",
                                                         "policyId": "policy_id"
                                                     },
@@ -8023,11 +8440,14 @@
                                     },
                                     "submitResultHash": {
                                         "type": "string",
-                                        "maxLength": 250,
+                                        "minLength": 64,
+                                        "maxLength": 64,
+                                        "pattern": "^[0-9a-fA-F]{64}$",
                                         "description": "The hash of the AI agent result to be submitted, should be sha256 hash of the result, therefore needs to be in hex string format"
                                     },
                                     "blockchainIdentifier": {
                                         "type": "string",
+                                        "minLength": 1,
                                         "maxLength": 8000,
                                         "description": "The identifier of the payment"
                                     }
@@ -8113,6 +8533,16 @@
                                                     "nullable": true,
                                                     "description": "Amount of collateral to return in lovelace. Null if no collateral"
                                                 },
+                                                "buyerReturnAddress": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Optional buyer return address stored with the request"
+                                                },
+                                                "sellerReturnAddress": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Optional seller return address stored with the request"
+                                                },
                                                 "externalDisputeUnlockTime": {
                                                     "type": "string",
                                                     "description": "Unix timestamp (in milliseconds) after which external dispute resolution can occur"
@@ -8171,6 +8601,8 @@
                                                         "ResultSubmitted",
                                                         "RefundRequested",
                                                         "Disputed",
+                                                        "WithdrawAuthorized",
+                                                        "RefundAuthorized",
                                                         "Withdrawn",
                                                         "RefundWithdrawn",
                                                         "DisputedWithdrawn",
@@ -8283,6 +8715,8 @@
                                                                 "ResultSubmitted",
                                                                 "RefundRequested",
                                                                 "Disputed",
+                                                                "WithdrawAuthorized",
+                                                                "RefundAuthorized",
                                                                 "Withdrawn",
                                                                 "RefundWithdrawn",
                                                                 "DisputedWithdrawn",
@@ -8299,6 +8733,8 @@
                                                                 "ResultSubmitted",
                                                                 "RefundRequested",
                                                                 "Disputed",
+                                                                "WithdrawAuthorized",
+                                                                "RefundAuthorized",
                                                                 "Withdrawn",
                                                                 "RefundWithdrawn",
                                                                 "DisputedWithdrawn",
@@ -8404,6 +8840,14 @@
                                                             ],
                                                             "description": "The Cardano network (Mainnet, Preprod, or Preview)"
                                                         },
+                                                        "paymentSourceType": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Web3CardanoV1",
+                                                                "Web3CardanoV2"
+                                                            ],
+                                                            "description": "Payment source type for adapter dispatch"
+                                                        },
                                                         "smartContractAddress": {
                                                             "type": "string",
                                                             "description": "Address of the smart contract managing this payment"
@@ -8417,6 +8861,7 @@
                                                     "required": [
                                                         "id",
                                                         "network",
+                                                        "paymentSourceType",
                                                         "smartContractAddress",
                                                         "policyId"
                                                     ],
@@ -8483,6 +8928,8 @@
                                                 "submitResultTime",
                                                 "unlockTime",
                                                 "collateralReturnLovelace",
+                                                "buyerReturnAddress",
+                                                "sellerReturnAddress",
                                                 "externalDisputeUnlockTime",
                                                 "requestedById",
                                                 "resultHash",
@@ -8531,6 +8978,8 @@
                                             "payByTime": null,
                                             "cooldownTimeOtherParty": 0,
                                             "collateralReturnLovelace": null,
+                                            "buyerReturnAddress": null,
+                                            "sellerReturnAddress": null,
                                             "requestedById": "requester_id",
                                             "resultHash": "result_hash",
                                             "onChainState": null,
@@ -8551,6 +9000,7 @@
                                             "PaymentSource": {
                                                 "id": "payment_source_id",
                                                 "network": "Preprod",
+                                                "paymentSourceType": "Web3CardanoV1",
                                                 "smartContractAddress": "address",
                                                 "policyId": "policy_id"
                                             },
@@ -8700,6 +9150,16 @@
                                                     "nullable": true,
                                                     "description": "Amount of collateral to return in lovelace. Null if no collateral"
                                                 },
+                                                "buyerReturnAddress": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Optional buyer return address stored with the request"
+                                                },
+                                                "sellerReturnAddress": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Optional seller return address stored with the request"
+                                                },
                                                 "externalDisputeUnlockTime": {
                                                     "type": "string",
                                                     "description": "Unix timestamp (in milliseconds) after which external dispute resolution can occur"
@@ -8758,6 +9218,8 @@
                                                         "ResultSubmitted",
                                                         "RefundRequested",
                                                         "Disputed",
+                                                        "WithdrawAuthorized",
+                                                        "RefundAuthorized",
                                                         "Withdrawn",
                                                         "RefundWithdrawn",
                                                         "DisputedWithdrawn",
@@ -8870,6 +9332,8 @@
                                                                 "ResultSubmitted",
                                                                 "RefundRequested",
                                                                 "Disputed",
+                                                                "WithdrawAuthorized",
+                                                                "RefundAuthorized",
                                                                 "Withdrawn",
                                                                 "RefundWithdrawn",
                                                                 "DisputedWithdrawn",
@@ -8886,6 +9350,8 @@
                                                                 "ResultSubmitted",
                                                                 "RefundRequested",
                                                                 "Disputed",
+                                                                "WithdrawAuthorized",
+                                                                "RefundAuthorized",
                                                                 "Withdrawn",
                                                                 "RefundWithdrawn",
                                                                 "DisputedWithdrawn",
@@ -8991,6 +9457,14 @@
                                                             ],
                                                             "description": "The Cardano network (Mainnet, Preprod, or Preview)"
                                                         },
+                                                        "paymentSourceType": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Web3CardanoV1",
+                                                                "Web3CardanoV2"
+                                                            ],
+                                                            "description": "Payment source type for adapter dispatch"
+                                                        },
                                                         "smartContractAddress": {
                                                             "type": "string",
                                                             "description": "Address of the smart contract managing this payment"
@@ -9004,6 +9478,7 @@
                                                     "required": [
                                                         "id",
                                                         "network",
+                                                        "paymentSourceType",
                                                         "smartContractAddress",
                                                         "policyId"
                                                     ],
@@ -9070,6 +9545,8 @@
                                                 "submitResultTime",
                                                 "unlockTime",
                                                 "collateralReturnLovelace",
+                                                "buyerReturnAddress",
+                                                "sellerReturnAddress",
                                                 "externalDisputeUnlockTime",
                                                 "requestedById",
                                                 "resultHash",
@@ -9118,6 +9595,8 @@
                                             "payByTime": null,
                                             "cooldownTimeOtherParty": 0,
                                             "collateralReturnLovelace": null,
+                                            "buyerReturnAddress": null,
+                                            "sellerReturnAddress": null,
                                             "requestedById": "requester_id",
                                             "resultHash": "result_hash",
                                             "onChainState": null,
@@ -9138,6 +9617,7 @@
                                             "PaymentSource": {
                                                 "id": "payment_source_id",
                                                 "network": "Preprod",
+                                                "paymentSourceType": "Web3CardanoV1",
                                                 "smartContractAddress": "address",
                                                 "policyId": "policy_id"
                                             },
@@ -9197,6 +9677,7 @@
                                     "blockchainIdentifier": {
                                         "type": "string",
                                         "minLength": 1,
+                                        "maxLength": 8000,
                                         "description": "The blockchain identifier of the payment request"
                                     },
                                     "network": {
@@ -9309,6 +9790,16 @@
                                                     "nullable": true,
                                                     "description": "Amount of collateral to return in lovelace. Null if no collateral"
                                                 },
+                                                "buyerReturnAddress": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Optional buyer return address stored with the request"
+                                                },
+                                                "sellerReturnAddress": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Optional seller return address stored with the request"
+                                                },
                                                 "externalDisputeUnlockTime": {
                                                     "type": "string",
                                                     "description": "Unix timestamp (in milliseconds) after which external dispute resolution can occur"
@@ -9367,6 +9858,8 @@
                                                         "ResultSubmitted",
                                                         "RefundRequested",
                                                         "Disputed",
+                                                        "WithdrawAuthorized",
+                                                        "RefundAuthorized",
                                                         "Withdrawn",
                                                         "RefundWithdrawn",
                                                         "DisputedWithdrawn",
@@ -9479,6 +9972,8 @@
                                                                 "ResultSubmitted",
                                                                 "RefundRequested",
                                                                 "Disputed",
+                                                                "WithdrawAuthorized",
+                                                                "RefundAuthorized",
                                                                 "Withdrawn",
                                                                 "RefundWithdrawn",
                                                                 "DisputedWithdrawn",
@@ -9495,6 +9990,8 @@
                                                                 "ResultSubmitted",
                                                                 "RefundRequested",
                                                                 "Disputed",
+                                                                "WithdrawAuthorized",
+                                                                "RefundAuthorized",
                                                                 "Withdrawn",
                                                                 "RefundWithdrawn",
                                                                 "DisputedWithdrawn",
@@ -9600,6 +10097,14 @@
                                                             ],
                                                             "description": "The Cardano network (Mainnet, Preprod, or Preview)"
                                                         },
+                                                        "paymentSourceType": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Web3CardanoV1",
+                                                                "Web3CardanoV2"
+                                                            ],
+                                                            "description": "Payment source type for adapter dispatch"
+                                                        },
                                                         "smartContractAddress": {
                                                             "type": "string",
                                                             "description": "Address of the smart contract managing this payment"
@@ -9613,6 +10118,7 @@
                                                     "required": [
                                                         "id",
                                                         "network",
+                                                        "paymentSourceType",
                                                         "smartContractAddress",
                                                         "policyId"
                                                     ],
@@ -9679,6 +10185,8 @@
                                                 "submitResultTime",
                                                 "unlockTime",
                                                 "collateralReturnLovelace",
+                                                "buyerReturnAddress",
+                                                "sellerReturnAddress",
                                                 "externalDisputeUnlockTime",
                                                 "requestedById",
                                                 "resultHash",
@@ -9820,6 +10328,7 @@
                                     "blockchainIdentifier": {
                                         "type": "string",
                                         "minLength": 1,
+                                        "maxLength": 8000,
                                         "description": "The blockchain identifier of the purchase request"
                                     },
                                     "network": {
@@ -9967,6 +10476,8 @@
                                                         "ResultSubmitted",
                                                         "RefundRequested",
                                                         "Disputed",
+                                                        "WithdrawAuthorized",
+                                                        "RefundAuthorized",
                                                         "Withdrawn",
                                                         "RefundWithdrawn",
                                                         "DisputedWithdrawn",
@@ -9978,6 +10489,16 @@
                                                     "type": "string",
                                                     "nullable": true,
                                                     "description": "Amount of collateral to return in lovelace. Null if no collateral"
+                                                },
+                                                "buyerReturnAddress": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Optional buyer return address stored with the request"
+                                                },
+                                                "sellerReturnAddress": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Optional seller return address stored with the request"
                                                 },
                                                 "cooldownTime": {
                                                     "type": "number",
@@ -10013,7 +10534,9 @@
                                                                 "UnSetRefundRequestedRequested",
                                                                 "UnSetRefundRequestedInitiated",
                                                                 "WithdrawRefundRequested",
-                                                                "WithdrawRefundInitiated"
+                                                                "WithdrawRefundInitiated",
+                                                                "AuthorizeWithdrawalRequested",
+                                                                "AuthorizeWithdrawalInitiated"
                                                             ],
                                                             "description": "Next action required for this purchase"
                                                         },
@@ -10099,6 +10622,8 @@
                                                                 "ResultSubmitted",
                                                                 "RefundRequested",
                                                                 "Disputed",
+                                                                "WithdrawAuthorized",
+                                                                "RefundAuthorized",
                                                                 "Withdrawn",
                                                                 "RefundWithdrawn",
                                                                 "DisputedWithdrawn",
@@ -10115,6 +10640,8 @@
                                                                 "ResultSubmitted",
                                                                 "RefundRequested",
                                                                 "Disputed",
+                                                                "WithdrawAuthorized",
+                                                                "RefundAuthorized",
                                                                 "Withdrawn",
                                                                 "RefundWithdrawn",
                                                                 "DisputedWithdrawn",
@@ -10210,6 +10737,13 @@
                                                                 "Mainnet"
                                                             ]
                                                         },
+                                                        "paymentSourceType": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Web3CardanoV1",
+                                                                "Web3CardanoV2"
+                                                            ]
+                                                        },
                                                         "smartContractAddress": {
                                                             "type": "string"
                                                         },
@@ -10221,6 +10755,7 @@
                                                     "required": [
                                                         "id",
                                                         "network",
+                                                        "paymentSourceType",
                                                         "smartContractAddress",
                                                         "policyId"
                                                     ]
@@ -10294,6 +10829,8 @@
                                                 "requestedById",
                                                 "onChainState",
                                                 "collateralReturnLovelace",
+                                                "buyerReturnAddress",
+                                                "sellerReturnAddress",
                                                 "cooldownTime",
                                                 "cooldownTimeOtherParty",
                                                 "inputHash",
@@ -11587,6 +12124,20 @@
                         "description": "The smart contract address of the payment source",
                         "name": "filterSmartContractAddress",
                         "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Web3CardanoV1",
+                                "Web3CardanoV2"
+                            ],
+                            "description": "Filter by payment source type"
+                        },
+                        "required": false,
+                        "description": "Filter by payment source type",
+                        "name": "filterPaymentSourceType",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -12320,6 +12871,8 @@
                                 "ResultSubmitted",
                                 "RefundRequested",
                                 "Disputed",
+                                "WithdrawAuthorized",
+                                "RefundAuthorized",
                                 "Withdrawn",
                                 "RefundWithdrawn",
                                 "DisputedWithdrawn"
@@ -12329,6 +12882,20 @@
                         "required": false,
                         "description": "Filter by on-chain state",
                         "name": "filterOnChainState",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Web3CardanoV1",
+                                "Web3CardanoV2"
+                            ],
+                            "description": "Filter by payment source type"
+                        },
+                        "required": false,
+                        "description": "Filter by payment source type",
+                        "name": "filterPaymentSourceType",
                         "in": "query"
                     },
                     {
@@ -12479,6 +13046,19 @@
                                         ],
                                         "description": "The network the transaction will be made on"
                                     },
+                                    "paymentSourceType": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Web3CardanoV1",
+                                            "Web3CardanoV2"
+                                        ],
+                                        "description": "Optional payment source type hint for this purchase. When omitted, the type is inferred from the blockchainIdentifier shape."
+                                    },
+                                    "smartContractAddress": {
+                                        "type": "string",
+                                        "maxLength": 250,
+                                        "description": "Optional V2 payment contract address. When omitted, the address is inferred from the signed blockchainIdentifier; when provided, it must match that identifier."
+                                    },
                                     "inputHash": {
                                         "type": "string",
                                         "maxLength": 250,
@@ -12538,6 +13118,16 @@
                                     "metadata": {
                                         "type": "string",
                                         "description": "Metadata to be stored with the purchase request"
+                                    },
+                                    "buyerReturnAddress": {
+                                        "type": "string",
+                                        "maxLength": 250,
+                                        "description": "Optional buyer return address. Defaults to the purchasing hot wallet collection address when available."
+                                    },
+                                    "sellerReturnAddress": {
+                                        "type": "string",
+                                        "maxLength": 250,
+                                        "description": "Optional seller return address when using a signed V2 identifier from the seller."
                                     },
                                     "identifierFromPurchaser": {
                                         "type": "string",
@@ -12676,6 +13266,8 @@
                                                         "ResultSubmitted",
                                                         "RefundRequested",
                                                         "Disputed",
+                                                        "WithdrawAuthorized",
+                                                        "RefundAuthorized",
                                                         "Withdrawn",
                                                         "RefundWithdrawn",
                                                         "DisputedWithdrawn",
@@ -12687,6 +13279,16 @@
                                                     "type": "string",
                                                     "nullable": true,
                                                     "description": "Amount of collateral to return in lovelace. Null if no collateral"
+                                                },
+                                                "buyerReturnAddress": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Optional buyer return address stored with the request"
+                                                },
+                                                "sellerReturnAddress": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Optional seller return address stored with the request"
                                                 },
                                                 "cooldownTime": {
                                                     "type": "number",
@@ -12722,7 +13324,9 @@
                                                                 "UnSetRefundRequestedRequested",
                                                                 "UnSetRefundRequestedInitiated",
                                                                 "WithdrawRefundRequested",
-                                                                "WithdrawRefundInitiated"
+                                                                "WithdrawRefundInitiated",
+                                                                "AuthorizeWithdrawalRequested",
+                                                                "AuthorizeWithdrawalInitiated"
                                                             ],
                                                             "description": "Next action required for this purchase"
                                                         },
@@ -12808,6 +13412,8 @@
                                                                 "ResultSubmitted",
                                                                 "RefundRequested",
                                                                 "Disputed",
+                                                                "WithdrawAuthorized",
+                                                                "RefundAuthorized",
                                                                 "Withdrawn",
                                                                 "RefundWithdrawn",
                                                                 "DisputedWithdrawn",
@@ -12824,6 +13430,8 @@
                                                                 "ResultSubmitted",
                                                                 "RefundRequested",
                                                                 "Disputed",
+                                                                "WithdrawAuthorized",
+                                                                "RefundAuthorized",
                                                                 "Withdrawn",
                                                                 "RefundWithdrawn",
                                                                 "DisputedWithdrawn",
@@ -12919,6 +13527,13 @@
                                                                 "Mainnet"
                                                             ]
                                                         },
+                                                        "paymentSourceType": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Web3CardanoV1",
+                                                                "Web3CardanoV2"
+                                                            ]
+                                                        },
                                                         "smartContractAddress": {
                                                             "type": "string"
                                                         },
@@ -12930,6 +13545,7 @@
                                                     "required": [
                                                         "id",
                                                         "network",
+                                                        "paymentSourceType",
                                                         "smartContractAddress",
                                                         "policyId"
                                                     ]
@@ -13003,6 +13619,8 @@
                                                 "requestedById",
                                                 "onChainState",
                                                 "collateralReturnLovelace",
+                                                "buyerReturnAddress",
+                                                "sellerReturnAddress",
                                                 "cooldownTime",
                                                 "cooldownTimeOtherParty",
                                                 "inputHash",
@@ -13043,6 +13661,8 @@
                                             "requestedById": "requester_id",
                                             "onChainState": null,
                                             "collateralReturnLovelace": null,
+                                            "buyerReturnAddress": null,
+                                            "sellerReturnAddress": null,
                                             "cooldownTime": 0,
                                             "cooldownTimeOtherParty": 0,
                                             "inputHash": "input_hash",
@@ -13063,6 +13683,7 @@
                                                 "id": "payment_source_id",
                                                 "policyId": "policy_id",
                                                 "network": "Preprod",
+                                                "paymentSourceType": "Web3CardanoV1",
                                                 "smartContractAddress": "address"
                                             },
                                             "SellerWallet": null,
@@ -13205,6 +13826,8 @@
                                                         "ResultSubmitted",
                                                         "RefundRequested",
                                                         "Disputed",
+                                                        "WithdrawAuthorized",
+                                                        "RefundAuthorized",
                                                         "Withdrawn",
                                                         "RefundWithdrawn",
                                                         "DisputedWithdrawn",
@@ -13216,6 +13839,16 @@
                                                     "type": "string",
                                                     "nullable": true,
                                                     "description": "Amount of collateral to return in lovelace. Null if no collateral"
+                                                },
+                                                "buyerReturnAddress": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Optional buyer return address stored with the request"
+                                                },
+                                                "sellerReturnAddress": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Optional seller return address stored with the request"
                                                 },
                                                 "cooldownTime": {
                                                     "type": "number",
@@ -13251,7 +13884,9 @@
                                                                 "UnSetRefundRequestedRequested",
                                                                 "UnSetRefundRequestedInitiated",
                                                                 "WithdrawRefundRequested",
-                                                                "WithdrawRefundInitiated"
+                                                                "WithdrawRefundInitiated",
+                                                                "AuthorizeWithdrawalRequested",
+                                                                "AuthorizeWithdrawalInitiated"
                                                             ],
                                                             "description": "Next action required for this purchase"
                                                         },
@@ -13337,6 +13972,8 @@
                                                                 "ResultSubmitted",
                                                                 "RefundRequested",
                                                                 "Disputed",
+                                                                "WithdrawAuthorized",
+                                                                "RefundAuthorized",
                                                                 "Withdrawn",
                                                                 "RefundWithdrawn",
                                                                 "DisputedWithdrawn",
@@ -13353,6 +13990,8 @@
                                                                 "ResultSubmitted",
                                                                 "RefundRequested",
                                                                 "Disputed",
+                                                                "WithdrawAuthorized",
+                                                                "RefundAuthorized",
                                                                 "Withdrawn",
                                                                 "RefundWithdrawn",
                                                                 "DisputedWithdrawn",
@@ -13448,6 +14087,13 @@
                                                                 "Mainnet"
                                                             ]
                                                         },
+                                                        "paymentSourceType": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Web3CardanoV1",
+                                                                "Web3CardanoV2"
+                                                            ]
+                                                        },
                                                         "smartContractAddress": {
                                                             "type": "string"
                                                         },
@@ -13459,6 +14105,7 @@
                                                     "required": [
                                                         "id",
                                                         "network",
+                                                        "paymentSourceType",
                                                         "smartContractAddress",
                                                         "policyId"
                                                     ]
@@ -13532,6 +14179,8 @@
                                                 "requestedById",
                                                 "onChainState",
                                                 "collateralReturnLovelace",
+                                                "buyerReturnAddress",
+                                                "sellerReturnAddress",
                                                 "cooldownTime",
                                                 "cooldownTimeOtherParty",
                                                 "inputHash",
@@ -13576,6 +14225,8 @@
                                         "requestedById": "requester_id",
                                         "onChainState": null,
                                         "collateralReturnLovelace": null,
+                                        "buyerReturnAddress": null,
+                                        "sellerReturnAddress": null,
                                         "cooldownTime": 0,
                                         "cooldownTimeOtherParty": 0,
                                         "inputHash": "input_hash",
@@ -13596,6 +14247,7 @@
                                             "id": "payment_source_id",
                                             "policyId": "policy_id",
                                             "network": "Preprod",
+                                            "paymentSourceType": "Web3CardanoV1",
                                             "smartContractAddress": "address"
                                         },
                                         "SellerWallet": null,
@@ -14089,12 +14741,14 @@
                                     "blockchainIdentifier": {
                                         "type": "string",
                                         "minLength": 1,
+                                        "maxLength": 8000,
                                         "description": "The blockchainIdentifier from the PaymentRequest"
                                     },
                                     "buyerAddress": {
                                         "type": "string",
-                                        "minLength": 40,
-                                        "maxLength": 200,
+                                        "minLength": 58,
+                                        "maxLength": 120,
+                                        "pattern": "^(addr1|addr_test1)[0-9a-z]+$",
                                         "description": "The buyer's bech32 Cardano wallet address. UTxOs fetched from this address to build the unsigned tx."
                                     }
                                 },
@@ -14318,6 +14972,8 @@
                                                         "ResultSubmitted",
                                                         "RefundRequested",
                                                         "Disputed",
+                                                        "WithdrawAuthorized",
+                                                        "RefundAuthorized",
                                                         "Withdrawn",
                                                         "RefundWithdrawn",
                                                         "DisputedWithdrawn",
@@ -14329,6 +14985,16 @@
                                                     "type": "string",
                                                     "nullable": true,
                                                     "description": "Amount of collateral to return in lovelace. Null if no collateral"
+                                                },
+                                                "buyerReturnAddress": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Optional buyer return address stored with the request"
+                                                },
+                                                "sellerReturnAddress": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Optional seller return address stored with the request"
                                                 },
                                                 "cooldownTime": {
                                                     "type": "number",
@@ -14364,7 +15030,9 @@
                                                                 "UnSetRefundRequestedRequested",
                                                                 "UnSetRefundRequestedInitiated",
                                                                 "WithdrawRefundRequested",
-                                                                "WithdrawRefundInitiated"
+                                                                "WithdrawRefundInitiated",
+                                                                "AuthorizeWithdrawalRequested",
+                                                                "AuthorizeWithdrawalInitiated"
                                                             ],
                                                             "description": "Next action required for this purchase"
                                                         },
@@ -14450,6 +15118,8 @@
                                                                 "ResultSubmitted",
                                                                 "RefundRequested",
                                                                 "Disputed",
+                                                                "WithdrawAuthorized",
+                                                                "RefundAuthorized",
                                                                 "Withdrawn",
                                                                 "RefundWithdrawn",
                                                                 "DisputedWithdrawn",
@@ -14466,6 +15136,8 @@
                                                                 "ResultSubmitted",
                                                                 "RefundRequested",
                                                                 "Disputed",
+                                                                "WithdrawAuthorized",
+                                                                "RefundAuthorized",
                                                                 "Withdrawn",
                                                                 "RefundWithdrawn",
                                                                 "DisputedWithdrawn",
@@ -14561,6 +15233,13 @@
                                                                 "Mainnet"
                                                             ]
                                                         },
+                                                        "paymentSourceType": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Web3CardanoV1",
+                                                                "Web3CardanoV2"
+                                                            ]
+                                                        },
                                                         "smartContractAddress": {
                                                             "type": "string"
                                                         },
@@ -14572,6 +15251,7 @@
                                                     "required": [
                                                         "id",
                                                         "network",
+                                                        "paymentSourceType",
                                                         "smartContractAddress",
                                                         "policyId"
                                                     ]
@@ -14645,6 +15325,8 @@
                                                 "requestedById",
                                                 "onChainState",
                                                 "collateralReturnLovelace",
+                                                "buyerReturnAddress",
+                                                "sellerReturnAddress",
                                                 "cooldownTime",
                                                 "cooldownTimeOtherParty",
                                                 "inputHash",
@@ -14685,6 +15367,8 @@
                                             "requestedById": "requester_id",
                                             "onChainState": null,
                                             "collateralReturnLovelace": null,
+                                            "buyerReturnAddress": null,
+                                            "sellerReturnAddress": null,
                                             "cooldownTime": 0,
                                             "cooldownTimeOtherParty": 0,
                                             "inputHash": "input_hash",
@@ -14705,6 +15389,7 @@
                                                 "id": "payment_source_id",
                                                 "policyId": "policy_id",
                                                 "network": "Preprod",
+                                                "paymentSourceType": "Web3CardanoV1",
                                                 "smartContractAddress": "address"
                                             },
                                             "SellerWallet": null,
@@ -14888,6 +15573,8 @@
                                                         "ResultSubmitted",
                                                         "RefundRequested",
                                                         "Disputed",
+                                                        "WithdrawAuthorized",
+                                                        "RefundAuthorized",
                                                         "Withdrawn",
                                                         "RefundWithdrawn",
                                                         "DisputedWithdrawn",
@@ -14899,6 +15586,16 @@
                                                     "type": "string",
                                                     "nullable": true,
                                                     "description": "Amount of collateral to return in lovelace. Null if no collateral"
+                                                },
+                                                "buyerReturnAddress": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Optional buyer return address stored with the request"
+                                                },
+                                                "sellerReturnAddress": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Optional seller return address stored with the request"
                                                 },
                                                 "cooldownTime": {
                                                     "type": "number",
@@ -14934,7 +15631,9 @@
                                                                 "UnSetRefundRequestedRequested",
                                                                 "UnSetRefundRequestedInitiated",
                                                                 "WithdrawRefundRequested",
-                                                                "WithdrawRefundInitiated"
+                                                                "WithdrawRefundInitiated",
+                                                                "AuthorizeWithdrawalRequested",
+                                                                "AuthorizeWithdrawalInitiated"
                                                             ],
                                                             "description": "Next action required for this purchase"
                                                         },
@@ -15020,6 +15719,8 @@
                                                                 "ResultSubmitted",
                                                                 "RefundRequested",
                                                                 "Disputed",
+                                                                "WithdrawAuthorized",
+                                                                "RefundAuthorized",
                                                                 "Withdrawn",
                                                                 "RefundWithdrawn",
                                                                 "DisputedWithdrawn",
@@ -15036,6 +15737,8 @@
                                                                 "ResultSubmitted",
                                                                 "RefundRequested",
                                                                 "Disputed",
+                                                                "WithdrawAuthorized",
+                                                                "RefundAuthorized",
                                                                 "Withdrawn",
                                                                 "RefundWithdrawn",
                                                                 "DisputedWithdrawn",
@@ -15131,6 +15834,13 @@
                                                                 "Mainnet"
                                                             ]
                                                         },
+                                                        "paymentSourceType": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Web3CardanoV1",
+                                                                "Web3CardanoV2"
+                                                            ]
+                                                        },
                                                         "smartContractAddress": {
                                                             "type": "string"
                                                         },
@@ -15142,6 +15852,7 @@
                                                     "required": [
                                                         "id",
                                                         "network",
+                                                        "paymentSourceType",
                                                         "smartContractAddress",
                                                         "policyId"
                                                     ]
@@ -15215,6 +15926,8 @@
                                                 "requestedById",
                                                 "onChainState",
                                                 "collateralReturnLovelace",
+                                                "buyerReturnAddress",
+                                                "sellerReturnAddress",
                                                 "cooldownTime",
                                                 "cooldownTimeOtherParty",
                                                 "inputHash",
@@ -15255,6 +15968,8 @@
                                             "requestedById": "requester_id",
                                             "onChainState": null,
                                             "collateralReturnLovelace": null,
+                                            "buyerReturnAddress": null,
+                                            "sellerReturnAddress": null,
                                             "cooldownTime": 0,
                                             "cooldownTimeOtherParty": 0,
                                             "inputHash": "input_hash",
@@ -15275,6 +15990,7 @@
                                                 "id": "payment_source_id",
                                                 "policyId": "policy_id",
                                                 "network": "Preprod",
+                                                "paymentSourceType": "Web3CardanoV1",
                                                 "smartContractAddress": "address"
                                             },
                                             "SellerWallet": null,
@@ -15332,6 +16048,8 @@
                                 "properties": {
                                     "blockchainIdentifier": {
                                         "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 8000,
                                         "description": "The blockchain identifier to resolve"
                                     },
                                     "network": {
@@ -15477,6 +16195,8 @@
                                 "properties": {
                                     "blockchainIdentifier": {
                                         "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 8000,
                                         "description": "The blockchain identifier to resolve"
                                     },
                                     "network": {
@@ -15926,6 +16646,20 @@
                         "schema": {
                             "type": "string",
                             "enum": [
+                                "Web3CardanoV1",
+                                "Web3CardanoV2"
+                            ],
+                            "description": "Filter by payment source type"
+                        },
+                        "required": false,
+                        "description": "Filter by payment source type",
+                        "name": "filterPaymentSourceType",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
                                 "Registered",
                                 "Deregistered",
                                 "Pending",
@@ -15946,6 +16680,18 @@
                         "required": false,
                         "description": "Search query to filter by name, description, tags, minting or recipient wallet address, state, or price",
                         "name": "searchQuery",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 57,
+                            "maxLength": 250,
+                            "description": "When set, return only the registry entry whose on-chain agent identifier matches exactly (same scope as list: network, payment source, and wallet permissions)"
+                        },
+                        "required": false,
+                        "description": "When set, return only the registry entry whose on-chain agent identifier matches exactly (same scope as list: network, payment source, and wallet permissions)",
+                        "name": "filterAgentIdentifier",
                         "in": "query"
                     }
                 ],
@@ -16070,19 +16816,68 @@
                                     },
                                     "sellingWalletVkey": {
                                         "type": "string",
-                                        "maxLength": 250,
+                                        "minLength": 56,
+                                        "maxLength": 56,
+                                        "pattern": "^[0-9a-fA-F]{56}$",
                                         "description": "The payment key of a specific wallet used for the registration"
                                     },
                                     "recipientWalletAddress": {
                                         "type": "string",
-                                        "maxLength": 250,
+                                        "minLength": 58,
+                                        "maxLength": 120,
+                                        "pattern": "^(addr1|addr_test1)[0-9a-z]+$",
                                         "description": "Optional managed hot wallet address on the same payment source that should receive the minted registry NFT. If omitted, the minting wallet receives it."
                                     },
                                     "sendFundingLovelace": {
                                         "type": "string",
-                                        "maxLength": 25,
+                                        "maxLength": 17,
                                         "pattern": "^\\d+$",
                                         "description": "Optional lovelace amount to include with the minted NFT output. If provided below the minimum NFT funding, the current minimum is still used."
+                                    },
+                                    "supportedPaymentSources": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "chain": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Cardano"
+                                                    ],
+                                                    "description": "The blockchain this payment source is available on"
+                                                },
+                                                "network": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Preprod",
+                                                        "Mainnet"
+                                                    ],
+                                                    "description": "The blockchain network this payment source is available on"
+                                                },
+                                                "paymentSourceType": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Web3CardanoV1",
+                                                        "Web3CardanoV2"
+                                                    ],
+                                                    "description": "The configured payment source type"
+                                                },
+                                                "address": {
+                                                    "type": "string",
+                                                    "maxLength": 250,
+                                                    "description": "The escrow smart contract address for this payment source"
+                                                }
+                                            },
+                                            "required": [
+                                                "chain",
+                                                "network",
+                                                "paymentSourceType",
+                                                "address"
+                                            ]
+                                        },
+                                        "minItems": 1,
+                                        "maxItems": 25,
+                                        "description": "Payment sources to persist for this registry request. If omitted, mint metadata advertises the active payment source."
                                     },
                                     "ExampleOutputs": {
                                         "type": "array",
@@ -16414,6 +17209,14 @@
                                                 ]
                                             },
                                             "sendFundingLovelace": null,
+                                            "supportedPaymentSources": [
+                                                {
+                                                    "chain": "Cardano",
+                                                    "network": "Preprod",
+                                                    "paymentSourceType": "Web3CardanoV2",
+                                                    "address": "addr_test1wz7j4kmg2cs7yf92uat3ed4a3u97kr7axxr4avaz0lhwdsqukgwfm"
+                                                }
+                                            ],
                                             "SmartContractWallet": {
                                                 "walletVkey": "wallet_vkey",
                                                 "walletAddress": "wallet_address"
@@ -16537,6 +17340,14 @@
                                                 ]
                                             },
                                             "sendFundingLovelace": null,
+                                            "supportedPaymentSources": [
+                                                {
+                                                    "chain": "Cardano",
+                                                    "network": "Preprod",
+                                                    "paymentSourceType": "Web3CardanoV2",
+                                                    "address": "addr_test1wz7j4kmg2cs7yf92uat3ed4a3u97kr7axxr4avaz0lhwdsqukgwfm"
+                                                }
+                                            ],
                                             "SmartContractWallet": {
                                                 "walletVkey": "wallet_vkey",
                                                 "walletAddress": "wallet_address"
@@ -16714,6 +17525,20 @@
                         "description": "The smart contract address of the payment source",
                         "name": "filterSmartContractAddress",
                         "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Web3CardanoV1",
+                                "Web3CardanoV2"
+                            ],
+                            "description": "Filter by payment source type"
+                        },
+                        "required": false,
+                        "description": "Filter by payment source type",
+                        "name": "filterPaymentSourceType",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -16785,6 +17610,7 @@
                                         "type": "string",
                                         "minLength": 57,
                                         "maxLength": 250,
+                                        "pattern": "^[0-9a-fA-F]+$",
                                         "description": "The identifier of the registration (asset) to be deregistered"
                                     },
                                     "network": {
@@ -16797,7 +17623,9 @@
                                     },
                                     "smartContractAddress": {
                                         "type": "string",
-                                        "maxLength": 250,
+                                        "minLength": 58,
+                                        "maxLength": 120,
+                                        "pattern": "^(addr1|addr_test1)[0-9a-z]+$",
                                         "description": "The smart contract address of the payment contract to which the registration belongs"
                                     }
                                 },
@@ -16888,6 +17716,448 @@
                                                 ]
                                             },
                                             "sendFundingLovelace": null,
+                                            "supportedPaymentSources": [
+                                                {
+                                                    "chain": "Cardano",
+                                                    "network": "Preprod",
+                                                    "paymentSourceType": "Web3CardanoV2",
+                                                    "address": "addr_test1wz7j4kmg2cs7yf92uat3ed4a3u97kr7axxr4avaz0lhwdsqukgwfm"
+                                                }
+                                            ],
+                                            "SmartContractWallet": {
+                                                "walletVkey": "wallet_vkey",
+                                                "walletAddress": "wallet_address"
+                                            },
+                                            "RecipientWallet": null,
+                                            "CurrentTransaction": null
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/registry/update": {
+            "post": {
+                "description": "Updates the metadata of an existing agent registration by issuing an UpdateAction on the V2 registry mint contract (atomically burns the current asset and mints a new one with the version segment incremented by one). Web3CardanoV2 only. Please note that while the command is put on-chain, the transaction is not yet finalized by the blockchain, as designed finality is only eventually reached.",
+                "summary": "Update an existing agent registration (V2 only, +PAY access required)",
+                "tags": [
+                    "registry"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "network": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Preprod",
+                                            "Mainnet"
+                                        ],
+                                        "description": "The Cardano network used to register the agent on"
+                                    },
+                                    "recipientWalletAddress": {
+                                        "type": "string",
+                                        "minLength": 58,
+                                        "maxLength": 120,
+                                        "pattern": "^(addr1|addr_test1)[0-9a-z]+$",
+                                        "description": "Optional managed hot wallet address on the same payment source that should receive the minted registry NFT. If omitted, the minting wallet receives it."
+                                    },
+                                    "sendFundingLovelace": {
+                                        "type": "string",
+                                        "maxLength": 17,
+                                        "pattern": "^\\d+$",
+                                        "description": "Optional lovelace amount to include with the minted NFT output. If provided below the minimum NFT funding, the current minimum is still used."
+                                    },
+                                    "supportedPaymentSources": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "chain": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Cardano"
+                                                    ],
+                                                    "description": "The blockchain this payment source is available on"
+                                                },
+                                                "network": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Preprod",
+                                                        "Mainnet"
+                                                    ],
+                                                    "description": "The blockchain network this payment source is available on"
+                                                },
+                                                "paymentSourceType": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Web3CardanoV1",
+                                                        "Web3CardanoV2"
+                                                    ],
+                                                    "description": "The configured payment source type"
+                                                },
+                                                "address": {
+                                                    "type": "string",
+                                                    "maxLength": 250,
+                                                    "description": "The escrow smart contract address for this payment source"
+                                                }
+                                            },
+                                            "required": [
+                                                "chain",
+                                                "network",
+                                                "paymentSourceType",
+                                                "address"
+                                            ]
+                                        },
+                                        "maxItems": 25,
+                                        "description": "Payment sources to replace on this registry request. Provide an empty array to clear them."
+                                    },
+                                    "ExampleOutputs": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "name": {
+                                                    "type": "string",
+                                                    "maxLength": 60,
+                                                    "description": "Name of the example output"
+                                                },
+                                                "url": {
+                                                    "type": "string",
+                                                    "maxLength": 250,
+                                                    "description": "URL to the example output"
+                                                },
+                                                "mimeType": {
+                                                    "type": "string",
+                                                    "maxLength": 60,
+                                                    "description": "MIME type of the example output (e.g., image/png, text/plain)"
+                                                }
+                                            },
+                                            "required": [
+                                                "name",
+                                                "url",
+                                                "mimeType"
+                                            ]
+                                        },
+                                        "maxItems": 25,
+                                        "description": "List of example outputs from the agent"
+                                    },
+                                    "Tags": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "maxLength": 63
+                                        },
+                                        "minItems": 1,
+                                        "maxItems": 15,
+                                        "description": "Tags used in the registry metadata"
+                                    },
+                                    "name": {
+                                        "type": "string",
+                                        "maxLength": 250,
+                                        "description": "Name of the agent"
+                                    },
+                                    "apiBaseUrl": {
+                                        "type": "string",
+                                        "maxLength": 250,
+                                        "description": "Base URL of the agent, to request interactions"
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "maxLength": 250,
+                                        "description": "Description of the agent"
+                                    },
+                                    "Capability": {
+                                        "type": "object",
+                                        "properties": {
+                                            "name": {
+                                                "type": "string",
+                                                "maxLength": 250,
+                                                "description": "Name of the AI model/capability"
+                                            },
+                                            "version": {
+                                                "type": "string",
+                                                "maxLength": 250,
+                                                "description": "Version of the AI model/capability"
+                                            }
+                                        },
+                                        "required": [
+                                            "name",
+                                            "version"
+                                        ],
+                                        "description": "Provide information about the used AI model and version"
+                                    },
+                                    "AgentPricing": {
+                                        "anyOf": [
+                                            {
+                                                "type": "object",
+                                                "properties": {
+                                                    "pricingType": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "Fixed"
+                                                        ],
+                                                        "description": "Pricing type for the agent"
+                                                    },
+                                                    "Pricing": {
+                                                        "type": "array",
+                                                        "items": {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "unit": {
+                                                                    "type": "string",
+                                                                    "maxLength": 250,
+                                                                    "description": "Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
+                                                                },
+                                                                "amount": {
+                                                                    "type": "string",
+                                                                    "maxLength": 25,
+                                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                                                }
+                                                            },
+                                                            "required": [
+                                                                "unit",
+                                                                "amount"
+                                                            ]
+                                                        },
+                                                        "minItems": 1,
+                                                        "maxItems": 5,
+                                                        "description": "Price for a default interaction"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "pricingType",
+                                                    "Pricing"
+                                                ]
+                                            },
+                                            {
+                                                "type": "object",
+                                                "properties": {
+                                                    "pricingType": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "Free"
+                                                        ],
+                                                        "description": "Pricing type for the agent"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "pricingType"
+                                                ]
+                                            },
+                                            {
+                                                "type": "object",
+                                                "properties": {
+                                                    "pricingType": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "Dynamic"
+                                                        ],
+                                                        "description": "Pricing type for the agent. Amounts are provided per payment/purchase request"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "pricingType"
+                                                ]
+                                            }
+                                        ],
+                                        "description": "Pricing information for the agent"
+                                    },
+                                    "Legal": {
+                                        "type": "object",
+                                        "properties": {
+                                            "privacyPolicy": {
+                                                "type": "string",
+                                                "maxLength": 250,
+                                                "description": "URL to the privacy policy"
+                                            },
+                                            "terms": {
+                                                "type": "string",
+                                                "maxLength": 250,
+                                                "description": "URL to the terms of service"
+                                            },
+                                            "other": {
+                                                "type": "string",
+                                                "maxLength": 250,
+                                                "description": "Other legal information"
+                                            }
+                                        },
+                                        "description": "Legal information about the agent"
+                                    },
+                                    "Author": {
+                                        "type": "object",
+                                        "properties": {
+                                            "name": {
+                                                "type": "string",
+                                                "maxLength": 250,
+                                                "description": "Name of the agent author"
+                                            },
+                                            "contactEmail": {
+                                                "type": "string",
+                                                "maxLength": 250,
+                                                "description": "Contact email of the author"
+                                            },
+                                            "contactOther": {
+                                                "type": "string",
+                                                "maxLength": 250,
+                                                "description": "Other contact information for the author"
+                                            },
+                                            "organization": {
+                                                "type": "string",
+                                                "maxLength": 250,
+                                                "description": "Organization of the author"
+                                            }
+                                        },
+                                        "required": [
+                                            "name"
+                                        ],
+                                        "description": "Author information about the agent"
+                                    },
+                                    "agentIdentifier": {
+                                        "type": "string",
+                                        "minLength": 57,
+                                        "maxLength": 250,
+                                        "pattern": "^[0-9a-fA-F]+$",
+                                        "description": "The current on-chain identifier of the agent registration to update"
+                                    },
+                                    "smartContractAddress": {
+                                        "type": "string",
+                                        "minLength": 58,
+                                        "maxLength": 120,
+                                        "pattern": "^(addr1|addr_test1)[0-9a-z]+$",
+                                        "description": "The smart contract address of the payment source the registration belongs to"
+                                    }
+                                },
+                                "required": [
+                                    "network",
+                                    "ExampleOutputs",
+                                    "Tags",
+                                    "name",
+                                    "apiBaseUrl",
+                                    "description",
+                                    "Capability",
+                                    "AgentPricing",
+                                    "Author",
+                                    "agentIdentifier"
+                                ],
+                                "example": {
+                                    "agentIdentifier": "agentIdentifier",
+                                    "network": "Preprod",
+                                    "name": "Agent Name",
+                                    "apiBaseUrl": "https://api.example.com",
+                                    "description": "Updated agent description",
+                                    "Tags": [
+                                        "ai"
+                                    ],
+                                    "ExampleOutputs": [],
+                                    "Capability": {
+                                        "name": "capability_name",
+                                        "version": "1.0.0"
+                                    },
+                                    "Author": {
+                                        "name": "Author Name"
+                                    },
+                                    "AgentPricing": {
+                                        "pricingType": "Fixed",
+                                        "Pricing": [
+                                            {
+                                                "unit": "",
+                                                "amount": "10000000"
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Agent update requested",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/RegistryEntry"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "Success",
+                                        "data": {
+                                            "error": null,
+                                            "id": "registry_id",
+                                            "name": "Agent Name",
+                                            "description": "Agent Description",
+                                            "apiBaseUrl": "https://api.example.com",
+                                            "Capability": {
+                                                "name": "Capability Name",
+                                                "version": "1.0.0"
+                                            },
+                                            "Author": {
+                                                "name": "Author Name",
+                                                "contactEmail": "author@example.com",
+                                                "contactOther": "contact-other",
+                                                "organization": "Author Org"
+                                            },
+                                            "Legal": {
+                                                "privacyPolicy": "https://example.com/privacy",
+                                                "terms": "https://example.com/terms",
+                                                "other": "https://example.com/other"
+                                            },
+                                            "state": "RegistrationRequested",
+                                            "Tags": [
+                                                "tag1",
+                                                "tag2"
+                                            ],
+                                            "createdAt": "1970-01-20T20:00:36.260Z",
+                                            "updatedAt": "1970-01-20T20:00:36.260Z",
+                                            "lastCheckedAt": null,
+                                            "ExampleOutputs": [
+                                                {
+                                                    "name": "example_output_name",
+                                                    "url": "https://example.com/example_output",
+                                                    "mimeType": "application/json"
+                                                }
+                                            ],
+                                            "agentIdentifier": "policy_id_asset_name_policy_id_asset_name_policy_id_asset_name",
+                                            "AgentPricing": {
+                                                "pricingType": "Fixed",
+                                                "Pricing": [
+                                                    {
+                                                        "unit": "",
+                                                        "amount": "10000000"
+                                                    }
+                                                ]
+                                            },
+                                            "sendFundingLovelace": null,
+                                            "supportedPaymentSources": [
+                                                {
+                                                    "chain": "Cardano",
+                                                    "network": "Preprod",
+                                                    "paymentSourceType": "Web3CardanoV2",
+                                                    "address": "addr_test1wz7j4kmg2cs7yf92uat3ed4a3u97kr7axxr4avaz0lhwdsqukgwfm"
+                                                }
+                                            ],
                                             "SmartContractWallet": {
                                                 "walletVkey": "wallet_vkey",
                                                 "walletAddress": "wallet_address"
@@ -17124,6 +18394,8 @@
                                                     "createdAt": "1970-01-20T20:00:36.260Z",
                                                     "updatedAt": "1970-01-20T20:00:36.260Z",
                                                     "network": "Mainnet",
+                                                    "paymentSourceType": "Web3CardanoV1",
+                                                    "requiredAdminSignatures": null,
                                                     "feeRatePermille": 50,
                                                     "syncInProgress": true,
                                                     "policyId": "policy_id",
@@ -17239,6 +18511,15 @@
                                         ],
                                         "description": "The network the payment source will be used on"
                                     },
+                                    "paymentSourceType": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Web3CardanoV1",
+                                            "Web3CardanoV2"
+                                        ],
+                                        "default": "Web3CardanoV1",
+                                        "description": "The payment source type to create. Defaults to Web3CardanoV1 for backward compatibility: pre-V2 automation that omits this field (and supplies feeRatePermille / FeeReceiverNetworkWallet / 3 admin wallets) continues to create a V1 source unchanged. New V2 callers must set this explicitly (the admin UI does)."
+                                    },
                                     "PaymentSourceConfig": {
                                         "type": "object",
                                         "properties": {
@@ -17288,9 +18569,15 @@
                                                 "walletAddress"
                                             ]
                                         },
-                                        "minItems": 3,
-                                        "maxItems": 3,
-                                        "description": "The wallet addresses of the admin wallets (exactly 3)"
+                                        "minItems": 1,
+                                        "maxItems": 50,
+                                        "description": "V2 admin wallet slots. Repeated addresses ARE permitted and intentional: each entry is an independent voting slot, so the same Cardano address can be added multiple times to give that key proportionally more weight in the M-of-N quorum. Example: [addrA, addrA, addrB] with requiredAdminSignatures=2 means addrA alone satisfies the quorum (2 weighted slots) while addrB alone does not. No distinct-address check is enforced server-side — duplicates are by design, not a bug. Auditing operators must reason about effective vote weight, not raw row count."
+                                    },
+                                    "requiredAdminSignatures": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 50,
+                                        "description": "Required weighted admin signatures for Web3CardanoV2 dispute settlement. Minimum 1 (single-admin custody is allowed by design — operators choosing this trade fast settlement for centralized control). Weight is counted by AdminWallets row position, so duplicate addresses inflate effective weight; see AdminWallets docs."
                                     },
                                     "FeeReceiverNetworkWallet": {
                                         "type": "object",
@@ -17374,14 +18661,13 @@
                                 "required": [
                                     "network",
                                     "PaymentSourceConfig",
-                                    "feeRatePermille",
                                     "AdminWallets",
-                                    "FeeReceiverNetworkWallet",
                                     "PurchasingWallets",
                                     "SellingWallets"
                                 ],
                                 "example": {
                                     "network": "Preprod",
+                                    "paymentSourceType": "Web3CardanoV2",
                                     "PaymentSourceConfig": {
                                         "rpcProviderApiKey": "rpc_provider_api_key",
                                         "rpcProvider": "Blockfrost"
@@ -17397,10 +18683,7 @@
                                             "walletAddress": "wallet_address_3"
                                         }
                                     ],
-                                    "FeeReceiverNetworkWallet": {
-                                        "walletAddress": "wallet_address"
-                                    },
-                                    "feeRatePermille": 50,
+                                    "requiredAdminSignatures": 2,
                                     "PurchasingWallets": [
                                         {
                                             "walletMnemonic": "wallet mnemonic",
@@ -17446,6 +18729,8 @@
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
                                             "network": "Mainnet",
+                                            "paymentSourceType": "Web3CardanoV1",
+                                            "requiredAdminSignatures": null,
                                             "policyId": "policy_id",
                                             "smartContractAddress": "address_of_the_smart_contract",
                                             "PaymentSourceConfig": {
@@ -17747,6 +19032,8 @@
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
                                             "network": "Mainnet",
+                                            "paymentSourceType": "Web3CardanoV1",
+                                            "requiredAdminSignatures": null,
                                             "policyId": "policy_id",
                                             "smartContractAddress": "address_of_the_smart_contract",
                                             "PaymentSourceConfig": {
@@ -17893,6 +19180,8 @@
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
                                             "network": "Mainnet",
+                                            "paymentSourceType": "Web3CardanoV1",
+                                            "requiredAdminSignatures": null,
                                             "policyId": "policy_id",
                                             "smartContractAddress": "address_of_the_smart_contract",
                                             "PaymentSourceConfig": {
@@ -18300,6 +19589,14 @@
                                             "Mainnet"
                                         ],
                                         "description": "The Cardano network to query spending from"
+                                    },
+                                    "filterPaymentSourceType": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Web3CardanoV1",
+                                            "Web3CardanoV2"
+                                        ],
+                                        "description": "Filter by payment source type"
                                     }
                                 },
                                 "required": [
@@ -18938,6 +20235,14 @@
                                             "Mainnet"
                                         ],
                                         "description": "The Cardano network to query income from"
+                                    },
+                                    "filterPaymentSourceType": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Web3CardanoV1",
+                                            "Web3CardanoV2"
+                                        ],
+                                        "description": "Filter by payment source type"
                                     }
                                 },
                                 "required": [
@@ -20598,6 +21903,20 @@
                         "schema": {
                             "type": "string",
                             "enum": [
+                                "Web3CardanoV1",
+                                "Web3CardanoV2"
+                            ],
+                            "description": "Filter by payment source type"
+                        },
+                        "required": false,
+                        "description": "Filter by payment source type",
+                        "name": "filterPaymentSourceType",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
                                 "Registered",
                                 "Deregistered",
                                 "Pending",
@@ -20618,6 +21937,18 @@
                         "required": false,
                         "description": "Search query to filter by name, description, tags, minting or recipient wallet address, state, or price",
                         "name": "searchQuery",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 57,
+                            "maxLength": 250,
+                            "description": "When set, return only the registry entry whose on-chain agent identifier matches exactly (same scope as list: network, payment source, and wallet permissions)"
+                        },
+                        "required": false,
+                        "description": "When set, return only the registry entry whose on-chain agent identifier matches exactly (same scope as list: network, payment source, and wallet permissions)",
+                        "name": "filterAgentIdentifier",
                         "in": "query"
                     }
                 ],

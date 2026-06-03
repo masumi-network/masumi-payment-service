@@ -7,12 +7,14 @@ import {
   useRef,
   useMemo,
 } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { ErrorDialog } from '@/components/ui/error-dialog';
 import { Client, createClient } from '@/lib/api/generated/client';
 import { usePaymentSourceExtendedAllWithParams } from '../hooks/usePaymentSourceExtendedAll';
-import { PaymentSource } from '../api/generated';
+import type { PaymentSource } from '../api/generated';
+import { getPreferredPaymentSource } from '@/lib/payment-source-type';
 
-type NetworkType = 'Preprod' | 'Mainnet';
+export type NetworkType = 'Preprod' | 'Mainnet';
 
 export const AppContext = createContext<
   | {
@@ -83,6 +85,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
   const [setupWizardStep, setSetupWizardStep] = useState(0);
 
+  const queryClient = useQueryClient();
+
   const { paymentSources } = usePaymentSourceExtendedAllWithParams({
     apiClient,
     apiKey,
@@ -129,22 +133,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   useEffect(() => {
-    if (!selectedPaymentSourceId && currentNetworkPaymentSources.length > 0) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronizing payment source selection with network and available sources requires state updates
-      setSelectedPaymentSourceIdAndPersist(currentNetworkPaymentSources[0].id);
-    }
-    if (selectedPaymentSourceId && currentNetworkPaymentSources.length > 0) {
-      const foundPaymentSource = currentNetworkPaymentSources.find(
-        (ps) => ps.id === selectedPaymentSourceId,
-      );
-
-      if (foundPaymentSource) {
-        setSelectedPaymentSource(foundPaymentSource);
-      } else {
+    if (currentNetworkPaymentSources.length === 0) {
+      if (selectedPaymentSourceId) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronizing localStorage-backed selection with available payment sources requires state updates
         setSelectedPaymentSourceIdAndPersist(null);
-        setSelectedPaymentSource(null);
       }
+      setSelectedPaymentSource(null);
+      return;
     }
+
+    const foundPaymentSource = selectedPaymentSourceId
+      ? currentNetworkPaymentSources.find((ps) => ps.id === selectedPaymentSourceId)
+      : null;
+    const nextPaymentSource =
+      foundPaymentSource ?? getPreferredPaymentSource(currentNetworkPaymentSources);
+
+    if (!nextPaymentSource) {
+      setSelectedPaymentSource(null);
+      return;
+    }
+
+    if (selectedPaymentSourceId !== nextPaymentSource.id) {
+      setSelectedPaymentSourceIdAndPersist(nextPaymentSource.id);
+    }
+    setSelectedPaymentSource(nextPaymentSource);
   }, [
     selectedPaymentSourceId,
     currentNetworkPaymentSources,
@@ -162,6 +174,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       previousNetworkRef.current = network;
     }
   }, [network]);
+
+  // Invalidate payment-source-scoped queries whenever the active source changes.
+  // Query keys for transactions/wallets/etc. include the source id; without invalidation
+  // the UI can briefly render stale rows from the previous source.
+  // Skip the initial render (and the null->null transition before sources hydrate)
+  // so we don't mass-invalidate on every login / page-load when nothing has actually
+  // changed. Only fire when transitioning from a previous non-null source to a
+  // different one.
+  const previousSelectedPaymentSourceIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      previousSelectedPaymentSourceIdRef.current !== null &&
+      previousSelectedPaymentSourceIdRef.current !== selectedPaymentSourceId
+    ) {
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['wallets'] });
+      queryClient.invalidateQueries({ queryKey: ['payment-source-extended'] });
+    }
+    previousSelectedPaymentSourceIdRef.current = selectedPaymentSourceId;
+  }, [selectedPaymentSourceId, queryClient]);
 
   const showError = useCallback((error: { code?: number; message: string; details?: unknown }) => {
     setError(error);
@@ -214,6 +246,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               }),
             );
           }
+          // Drop all cached query results so subsequent fetches use the new client/credentials.
+          queryClient.removeQueries();
         },
         setAuthorized,
         authorized,

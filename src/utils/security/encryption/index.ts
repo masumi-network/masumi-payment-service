@@ -5,7 +5,7 @@ import { createCipheriv } from 'crypto';
 import { scryptSync } from 'crypto';
 
 import { randomBytes } from 'crypto';
-import { CONFIG } from '@/utils/config';
+import { CONFIG } from '@masumi/payment-core/config';
 
 function decrypt(secretEncrypted: string) {
 	const secret = Buffer.from(secretEncrypted, 'hex');
