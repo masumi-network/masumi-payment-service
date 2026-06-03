@@ -1,4 +1,4 @@
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
 import { healthResponseSchema } from '@/routes/api/health/schemas';
 import {
 	addAPIKeySchemaInput,

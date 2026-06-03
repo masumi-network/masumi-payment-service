@@ -1,8 +1,8 @@
-import { Network, OnChainState } from '@/generated/prisma/client';
-import { z } from 'zod';
-import { prisma } from '@/utils/db';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
-import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
+import { Network, OnChainState, PaymentSourceType } from '@/generated/prisma/client';
+import { z } from '@masumi/payment-core/zod';
+import { prisma } from '@masumi/payment-core/db';
+import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
+import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import {
 	parseDateRange,
 	filterByAgentIdentifier,
@@ -12,7 +12,7 @@ import {
 	mapMonthlyFundsOutput,
 	mapTotalFundsOutput,
 } from '@/utils/earnings-helpers';
-import { recordBusinessEndpointError } from '@/utils/metrics';
+import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
 import { ez } from 'express-zod-api';
 import spacetime from 'spacetime';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
@@ -48,6 +48,7 @@ export const postPaymentIncomeSchemaInput = z.object({
 			'The time zone to use for the income calculation. If not provided, will use the UTC time zone. Must be a valid IANA time zone name, see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones',
 		),
 	network: z.nativeEnum(Network).describe('The Cardano network to query income from'),
+	filterPaymentSourceType: z.nativeEnum(PaymentSourceType).optional().describe('Filter by payment source type'),
 });
 
 const unitAmountSchema = z
@@ -159,6 +160,7 @@ export const getPaymentIncome = readAuthenticatedEndpointFactory.build({
 					onChainState: { not: null },
 					PaymentSource: {
 						network: input.network,
+						paymentSourceType: input.filterPaymentSourceType,
 						deletedAt: null,
 					},
 					...buildWalletScopeFilter(ctx.walletScopeIds),

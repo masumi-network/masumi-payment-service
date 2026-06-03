@@ -1,8 +1,10 @@
 /**
  * Early Refund Complete Flow E2E Test
  *
- * This test demonstrates the complete early refund flow where a refund is requested
- * BEFORE submitting results (while funds are still locked).
+ * Parameterized over the available PaymentSource types (V1 and V2). Each
+ * `describe.each` iteration pins `global.testConfig.paymentSourceType` and
+ * `global.testAgent` to the source under test so the shared helper functions
+ * route to the matching wallets/contracts.
  *
  * Complete Flow:
  * 1. Register Agent → 2. Create Payment → 3. Create Purchase → 4. Wait for Funds Locked
@@ -10,11 +12,10 @@
  *
  * Key Features:
  * - Early refund scenario (refund before result submission)
- * - Uses helper functions for clean orchestration
  * - Complete end-to-end early refund scenario
  */
 
-import { Network } from '@/generated/prisma/enums';
+import { Network, PaymentSourceType } from '@/generated/prisma/enums';
 import { validateTestWallets } from '../fixtures/testWallets';
 import {
 	createPayment,
@@ -26,10 +27,28 @@ import {
 	waitForDisputed,
 	authorizeRefund,
 } from '../helperFunctions';
+import { describeEachOrSkip } from '../utils/describeForCases';
 
 const testNetwork = (process.env.TEST_NETWORK as Network) || Network.Preprod;
 
-describe(`Early Refund Complete Flow E2E Tests (${testNetwork})`, () => {
+// V2 is intentionally NOT covered by this single-item flow test. V2's
+// equivalent action surface is exercised by
+// `tests/e2e/v2/flows/batch-verification.test.ts` via the batch path.
+// Running V2 here just duplicated the assertions through V2's single-item
+// fallback while adding ~10 minutes of on-chain wait time per e2e run.
+const allCases = [{ name: 'V1' as const, sourceType: PaymentSourceType.Web3CardanoV1 }];
+
+// The workflow spawns one jest invocation per source type and pins it via
+// TEST_PAYMENT_SOURCE_TYPE so V1 and V2 can run in parallel against the
+// shared API + DB. When unset (local dev), run both iterations sequentially.
+const envFilter = process.env.TEST_PAYMENT_SOURCE_TYPE as PaymentSourceType | undefined;
+const cases = envFilter ? allCases.filter((c) => c.sourceType === envFilter) : allCases;
+
+describeEachOrSkip(
+	cases,
+	`V1-only suite; runner pinned to ${envFilter ?? 'unset'}`,
+	`Early Refund Complete Flow E2E Tests — $name (${testNetwork})`,
+	({ sourceType }) => {
 	const testCleanupData: Array<{
 		agentId?: string;
 		agentIdentifier?: string;
@@ -44,23 +63,30 @@ describe(`Early Refund Complete Flow E2E Tests (${testNetwork})`, () => {
 		if (!global.testConfig) {
 			throw new Error('Global test configuration not available.');
 		}
+		if (!global.testApiClient) {
+			throw new Error('Test API client not initialized.');
+		}
 
-		const walletValidation = validateTestWallets(testNetwork);
+		const agent = global.testAgents?.[sourceType];
+		if (!agent) {
+			throw new Error(`No registered agent for ${sourceType}. globalSetup may have skipped this source type.`);
+		}
+
+		global.testConfig.paymentSourceType = sourceType;
+		global.testAgent = agent;
+
+		const walletValidation = await validateTestWallets(testNetwork, sourceType);
 		if (!walletValidation.valid) {
 			walletValidation.errors.forEach((error) => console.error(`  - ${error}`));
 			throw new Error('Test wallets not properly configured.');
 		}
 
-		if (!global.testApiClient) {
-			throw new Error('Test API client not initialized.');
-		}
-
-		console.log(`✅ Early Refund Complete Flow environment validated for ${testNetwork}`);
+		console.log(`✅ Early Refund Complete Flow environment validated for ${sourceType} on ${testNetwork}`);
 	});
 
 	afterAll(async () => {
 		if (testCleanupData.length > 0) {
-			console.log('🧹 Early Refund Complete Flow cleanup data:');
+			console.log(`🧹 Early Refund Complete Flow cleanup data (${sourceType}):`);
 			testCleanupData.forEach((item) => {
 				console.log(`   Agent: ${item.agentId}, Payment: ${item.paymentId}, Purchase: ${item.purchaseId}`);
 				console.log(`   Result Hash: ${item.resultHash}, Refund Completed: ${item.refundCompleted}`);
@@ -71,7 +97,7 @@ describe(`Early Refund Complete Flow E2E Tests (${testNetwork})`, () => {
 	test(
 		'Complete early refund flow: setup → request refund → submit result → authorize refund',
 		async () => {
-			console.log('🚀 Starting Early Refund Complete Flow...');
+			console.log(`🚀 Starting Early Refund Complete Flow (${sourceType})...`);
 			const flowStartTime = Date.now();
 
 			// ============================
@@ -100,6 +126,7 @@ describe(`Early Refund Complete Flow E2E Tests (${testNetwork})`, () => {
 			// ============================
 			console.log('💰 Step 2: Creating payment...');
 			const payment = await createPayment(agent.agentIdentifier, testNetwork);
+			expect(payment.response.PaymentSource.paymentSourceType).toBe(sourceType);
 
 			console.log(`✅ Payment created:
         - Payment ID: ${payment.id}
@@ -115,6 +142,7 @@ describe(`Early Refund Complete Flow E2E Tests (${testNetwork})`, () => {
 			// ============================
 			console.log('🛒 Step 3: Creating purchase...');
 			const purchase = await createPurchase(payment, agent);
+			expect(purchase.response.PaymentSource.paymentSourceType).toBe(sourceType);
 
 			console.log(`✅ Purchase created:
         - Purchase ID: ${purchase.id}
@@ -149,6 +177,7 @@ describe(`Early Refund Complete Flow E2E Tests (${testNetwork})`, () => {
 			// ============================
 			console.log('📋 Step 6: Submitting result after refund request...');
 			const result = await submitResult(payment.blockchainIdentifier, testNetwork);
+			expect(result.resultHash).toMatch(/^[a-f0-9]{64}$/);
 
 			console.log(`✅ Result submitted after early refund request:
         - Result Hash: ${result.resultHash}
@@ -167,7 +196,9 @@ describe(`Early Refund Complete Flow E2E Tests (${testNetwork})`, () => {
 			// STEP 8: ADMIN AUTHORIZE REFUND (Using Helper Function)
 			// ============================
 			console.log('👨‍💼 Step 8: Admin authorization...');
-			await authorizeRefund(payment.blockchainIdentifier, testNetwork);
+			const authorization = await authorizeRefund(payment.blockchainIdentifier, testNetwork);
+			expect(authorization.PaymentSource.paymentSourceType).toBe(sourceType);
+			expect(authorization.NextAction.requestedAction).toBe('AuthorizeRefundRequested');
 
 			// Track completion
 			testCleanupData[0].refundCompleted = true;
@@ -176,7 +207,7 @@ describe(`Early Refund Complete Flow E2E Tests (${testNetwork})`, () => {
 			// FINAL SUCCESS
 			// ============================
 			const totalFlowMinutes = Math.floor((Date.now() - flowStartTime) / 60000);
-			console.log(`🎉 EARLY REFUND COMPLETE FLOW SUCCESSFUL! (${totalFlowMinutes}m total)
+			console.log(`🎉 EARLY REFUND COMPLETE FLOW SUCCESSFUL! (${totalFlowMinutes}m total — ${sourceType})
         ✅ Registration: ${agent.name}
         ✅ Agent ID: ${agent.agentIdentifier}
         ✅ Payment: ${payment.id}
@@ -186,9 +217,9 @@ describe(`Early Refund Complete Flow E2E Tests (${testNetwork})`, () => {
         ✅ Result Submitted → Disputed State
         ✅ Admin Authorization → COMPLETE
         ✅ Blockchain ID: ${payment.blockchainIdentifier.substring(0, 50)}...
-        
+
         🎯 Complete 8-step early refund flow successfully executed using helper functions!
-        
+
         📋 Early Refund Flow Summary:
         1. Agent registered and confirmed
         2. Payment created with default timing
@@ -202,4 +233,5 @@ describe(`Early Refund Complete Flow E2E Tests (${testNetwork})`, () => {
 		},
 		20 * 60 * 1000, // 20 minutes timeout
 	);
-});
+	},
+);

@@ -9,7 +9,7 @@ The E2E tests simulate real user workflows covering the complete payment service
 1. **Complete Payment Flow with Refund** - Full agent registration → payment → purchase → funds locked → submit result → refund process
 2. **Early Refund Flow** - Refund requested before result submission
 3. **Cancel Refund Request** - Cancel a refund after it's been requested
-4. **Agent Deregistration** - Remove agents from the registry
+4. **Web3CardanoV2 Payment Source Flow** - Same public routes as V1, but with V2 source dispatch and isolated V2 wallets
 
 ## 📋 Available Tests
 
@@ -55,35 +55,45 @@ pnpm run test:e2e -- tests/e2e/flows/cancel-refund-request-flow.test.ts
 
 ---
 
-### Part 4: Agent Deregister Flow
+### Part 4: Web3CardanoV2 Payment Source Flow
 
-**Filename**: `agent-deregister-delete-flow.test.ts`
+**Filename**: `v2/flows/v2-payment-source-flow.test.ts`
 
 **Command**:
 
 ```bash
-pnpm run test:e2e -- tests/e2e/flows/agent-deregister-delete-flow.test.ts
+pnpm run test:e2e:v2
 ```
 
-**What it tests**: Find existing confirmed agents and deregister them
+**What it tests**: V2 source selection, V2 wallet isolation from V1, V2 payment/purchase creation, refund authorization, and V2 cancel-refund withdrawal authorization.
 
 ---
 
-### Run All Tests
+### Run V1 Tests
 
 ```bash
-pnpm run test:e2e
+pnpm run test:e2e:v1
+```
+
+`pnpm run test:e2e` is an alias for the V1 runner.
+
+### Run V2 Tests
+
+```bash
+pnpm run test:e2e:v2
 ```
 
 ## 🏗️ Test Architecture
 
 ```
 tests/e2e/
-├── flows/                 # 4 Complete business flow tests
+├── flows/                 # V1 complete business flow tests
 │   ├── complete-flow-with-refund.test.ts      # Part 1
 │   ├── early-refund-complete-flow.test.ts     # Part 2
-│   ├── cancel-refund-request-flow.test.ts     # Part 3
-│   └── agent-deregister-delete-flow.test.ts   # Part 4
+│   └── cancel-refund-request-flow.test.ts     # Part 3
+├── v2/
+│   └── flows/
+│       └── v2-payment-source-flow.test.ts     # V2 source-specific E2E flow
 ├── utils/                 # Reusable testing utilities
 │   ├── apiClient.ts       # HTTP client wrapper
 │   ├── paymentSourceHelper.ts # Dynamic database queries
@@ -116,7 +126,10 @@ TEST_API_KEY="your-test-api-key-here"
 # Optional (defaults shown)
 TEST_NETWORK="Preprod"
 TEST_API_URL="http://localhost:3001"
+TEST_PAYMENT_SOURCE_TYPE="Web3CardanoV1"
 ```
+
+The V1 and V2 package scripts set `TEST_PAYMENT_SOURCE_TYPE` automatically. The V2 runner uses `Web3CardanoV2`, filters the active payment source by that type, and validates that V2 E2E wallets do not overlap with V1 E2E wallets when both sources are configured.
 
 ### 3. Database Setup
 
@@ -147,10 +160,12 @@ pnpm run dev
 pnpm run test:e2e -- tests/e2e/flows/complete-flow-with-refund.test.ts
 pnpm run test:e2e -- tests/e2e/flows/early-refund-complete-flow.test.ts
 pnpm run test:e2e -- tests/e2e/flows/cancel-refund-request-flow.test.ts
-pnpm run test:e2e -- tests/e2e/flows/agent-deregister-delete-flow.test.ts
 
-# Or run all tests (will take longer)
-pnpm run test:e2e
+# Run all V1 tests
+pnpm run test:e2e:v1
+
+# Run all V2 tests with the separate runner and wallet selection
+pnpm run test:e2e:v2
 ```
 
 ## 📊 Test Scenarios
@@ -177,8 +192,10 @@ pnpm run test:e2e
 - Cancel refund request instead of authorizing
 - Returns to normal completion flow
 
-### Part 4: Agent Deregistration
+### Part 4: Web3CardanoV2 Payment Source Flow
 
-- Finds existing confirmed agents
-- Calls deregister endpoint
-- Verifies deregistration state
+- Uses the V2 Jest runner and `TEST_PAYMENT_SOURCE_TYPE=Web3CardanoV2`
+- Selects the active V2 payment source and V2 hot wallets
+- Fails if V2 wallets overlap with V1 wallets
+- Verifies V2 zero-fee source setup
+- Exercises V2 refund authorization and withdrawal authorization through the shared public routes

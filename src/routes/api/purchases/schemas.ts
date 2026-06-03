@@ -1,12 +1,14 @@
 import {
 	Network,
 	OnChainState,
+	PaymentSourceType,
 	PricingType,
 	PurchaseErrorType,
 	PurchasingAction,
 	TransactionStatus,
 } from '@/generated/prisma/client';
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
+import { isCardanoAddressForNetwork } from '@/types/payment-source';
 
 export const queryPurchaseRequestSchemaInput = z.object({
 	limit: z.coerce.number().min(1).max(100).default(10).describe('The number of purchases to return'),
@@ -21,6 +23,7 @@ export const queryPurchaseRequestSchemaInput = z.object({
 		.nullable()
 		.describe('The smart contract address of the payment source'),
 	filterOnChainState: z.nativeEnum(OnChainState).optional().describe('Filter by on-chain state'),
+	filterPaymentSourceType: z.nativeEnum(PaymentSourceType).optional().describe('Filter by payment source type'),
 	searchQuery: z
 		.string()
 		.optional()
@@ -40,6 +43,7 @@ export const queryPurchaseCountSchemaInput = z.object({
 		.optional()
 		.nullable()
 		.describe('The smart contract address of the payment source'),
+	filterPaymentSourceType: z.nativeEnum(PaymentSourceType).optional().describe('Filter by payment source type'),
 });
 
 export const queryPurchaseCountSchemaOutput = z.object({
@@ -99,6 +103,8 @@ export const purchaseResponseSchema = z
 			.string()
 			.nullable()
 			.describe('Amount of collateral to return in lovelace. Null if no collateral'),
+		buyerReturnAddress: z.string().nullable().describe('Optional buyer return address stored with the request'),
+		sellerReturnAddress: z.string().nullable().describe('Optional seller return address stored with the request'),
 		cooldownTime: z.number().describe('Cooldown period in milliseconds for the buyer to dispute'),
 		cooldownTimeOtherParty: z.number().describe('Cooldown period in milliseconds for the seller to dispute'),
 		inputHash: z.string().describe('SHA256 hash of the input data for the purchase (hex string)'),
@@ -186,6 +192,7 @@ export const purchaseResponseSchema = z
 		PaymentSource: z.object({
 			id: z.string(),
 			network: z.nativeEnum(Network),
+			paymentSourceType: z.nativeEnum(PaymentSourceType),
 			smartContractAddress: z.string(),
 			policyId: z.string().nullable(),
 		}),
@@ -215,36 +222,84 @@ export const queryPurchaseRequestSchemaOutput = z.object({
 	Purchases: z.array(purchaseResponseSchema),
 });
 
-export const createPurchaseInitSchemaInput = z.object({
-	blockchainIdentifier: z.string().max(8000).describe('The identifier of the purchase. Is provided by the seller'),
-	network: z.nativeEnum(Network).describe('The network the transaction will be made on'),
-	inputHash: z
-		.string()
-		.max(250)
-		.describe(
-			'The hash of the input data of the purchase, should be sha256 hash of the input data, therefore needs to be in hex string format',
-		),
-	sellerVkey: z.string().max(250).describe('The verification key of the seller'),
-	agentIdentifier: z.string().min(57).max(250).describe('The identifier of the agent that is being purchased'),
-	Amounts: z
-		.array(
-			z.object({
-				amount: z.string().max(25).describe('Amount of the asset in smallest unit (e.g., lovelace for ADA)'),
-				unit: z.string().max(150).describe('Asset policy id + asset name concatenated. Empty string for ADA/lovelace'),
-			}),
-		)
-		.max(7)
-		.optional()
-		.describe('The amounts to be paid for the purchase'),
-	unlockTime: z.string().describe('The time after which the purchase will be unlocked. In unix time (number)'),
-	externalDisputeUnlockTime: z
-		.string()
-		.describe('The time after which the purchase will be unlocked for external dispute. In unix time (number)'),
-	submitResultTime: z.string().describe('The time by which the result has to be submitted. In unix time (number)'),
-	payByTime: z.string().describe('The time after which the purchase has to be submitted to the smart contract'),
-	metadata: z.string().optional().describe('Metadata to be stored with the purchase request'),
-	identifierFromPurchaser: z.string().min(14).max(26).describe('The nonce of the purchaser. It must be in hex format'),
-});
+export const createPurchaseInitSchemaInput = z
+	.object({
+		blockchainIdentifier: z.string().max(8000).describe('The identifier of the purchase. Is provided by the seller'),
+		network: z.nativeEnum(Network).describe('The network the transaction will be made on'),
+		paymentSourceType: z
+			.nativeEnum(PaymentSourceType)
+			.optional()
+			.describe(
+				'Optional payment source type hint for this purchase. When omitted, the type is inferred from the blockchainIdentifier shape.',
+			),
+		smartContractAddress: z
+			.string()
+			.max(250)
+			.optional()
+			.describe(
+				'Optional V2 payment contract address. When omitted, the address is inferred from the signed blockchainIdentifier; when provided, it must match that identifier.',
+			),
+		inputHash: z
+			.string()
+			.max(250)
+			.describe(
+				'The hash of the input data of the purchase, should be sha256 hash of the input data, therefore needs to be in hex string format',
+			),
+		sellerVkey: z.string().max(250).describe('The verification key of the seller'),
+		agentIdentifier: z.string().min(57).max(250).describe('The identifier of the agent that is being purchased'),
+		Amounts: z
+			.array(
+				z.object({
+					amount: z.string().max(25).describe('Amount of the asset in smallest unit (e.g., lovelace for ADA)'),
+					unit: z
+						.string()
+						.max(150)
+						.describe('Asset policy id + asset name concatenated. Empty string for ADA/lovelace'),
+				}),
+			)
+			.max(7)
+			.optional()
+			.describe('The amounts to be paid for the purchase'),
+		unlockTime: z.string().describe('The time after which the purchase will be unlocked. In unix time (number)'),
+		externalDisputeUnlockTime: z
+			.string()
+			.describe('The time after which the purchase will be unlocked for external dispute. In unix time (number)'),
+		submitResultTime: z.string().describe('The time by which the result has to be submitted. In unix time (number)'),
+		payByTime: z.string().describe('The time after which the purchase has to be submitted to the smart contract'),
+		metadata: z.string().optional().describe('Metadata to be stored with the purchase request'),
+		buyerReturnAddress: z
+			.string()
+			.max(250)
+			.optional()
+			.describe(
+				'Optional buyer return address. Defaults to the purchasing hot wallet collection address when available.',
+			),
+		sellerReturnAddress: z
+			.string()
+			.max(250)
+			.optional()
+			.describe('Optional seller return address when using a signed V2 identifier from the seller.'),
+		identifierFromPurchaser: z
+			.string()
+			.min(14)
+			.max(26)
+			.describe('The nonce of the purchaser. It must be in hex format'),
+	})
+	.refine(
+		(value) => value.buyerReturnAddress == null || isCardanoAddressForNetwork(value.buyerReturnAddress, value.network),
+		{
+			message: 'buyerReturnAddress is not a valid Cardano address for the configured network',
+			path: ['buyerReturnAddress'],
+		},
+	)
+	.refine(
+		(value) =>
+			value.sellerReturnAddress == null || isCardanoAddressForNetwork(value.sellerReturnAddress, value.network),
+		{
+			message: 'sellerReturnAddress is not a valid Cardano address for the configured network',
+			path: ['sellerReturnAddress'],
+		},
+	);
 
 export const createPurchaseInitSchemaOutput = purchaseResponseSchema.omit({
 	TransactionHistory: true,

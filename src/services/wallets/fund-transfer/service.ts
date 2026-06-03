@@ -1,11 +1,11 @@
 import { Prisma, TransactionStatus } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
-import { logger } from '@/utils/logger';
+import { prisma } from '@masumi/payment-core/db';
+import { logger } from '@masumi/payment-core/logger';
 import { Transaction } from '@meshsdk/core';
 import { generateWalletExtended } from '@/utils/generator/wallet-generator';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { errorToString } from '@/utils/converter/error-string-convert';
-import { walletLowBalanceMonitorService } from '@/services/wallets';
+import { walletLowBalanceMonitorService } from '@/services/wallets/low-balance/service';
 import { convertNetwork } from '@/utils/converter/network-convert';
 
 const mutex = new Mutex();

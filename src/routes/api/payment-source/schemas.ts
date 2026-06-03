@@ -1,5 +1,5 @@
-import { Network } from '@/generated/prisma/client';
-import { z } from '@/utils/zod-openapi';
+import { Network, PaymentSourceType } from '@/generated/prisma/client';
+import { z } from '@masumi/payment-core/zod';
 import { lowBalanceSummarySchema } from '@/routes/api/wallet/low-balance.schemas';
 
 export const paymentSourceSchemaInput = z.object({
@@ -42,6 +42,12 @@ export const paymentSourceOutputSchema = z
 		createdAt: z.date().describe('Timestamp when the payment source was created'),
 		updatedAt: z.date().describe('Timestamp when the payment source was last updated'),
 		network: z.nativeEnum(Network).describe('The Cardano network (Mainnet, Preprod, or Preview)'),
+		paymentSourceType: z.nativeEnum(PaymentSourceType).describe('Payment source type for adapter dispatch'),
+		requiredAdminSignatures: z
+			.number()
+			.int()
+			.nullable()
+			.describe('Required weighted admin signatures for Web3CardanoV2 sources. Null for Web3CardanoV1.'),
 		policyId: z.string().nullable().describe('Policy ID for the agent registry NFTs. Null if not applicable'),
 		smartContractAddress: z.string().describe('Address of the smart contract for this payment source'),
 		lastIdentifierChecked: z
@@ -56,6 +62,7 @@ export const paymentSourceOutputSchema = z
 			.object({
 				walletAddress: z.string().describe('Cardano address that receives network fees'),
 			})
+			.nullable()
 			.describe('Wallet that receives network fees from transactions'),
 		feeRatePermille: z.number().min(0).max(1000).describe('Fee rate in permille'),
 	})

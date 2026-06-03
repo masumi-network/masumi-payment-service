@@ -1,4 +1,6 @@
-import { Network } from '@/generated/prisma/enums';
+import { Network, PaymentSourceType } from '@/generated/prisma/enums';
+import { ApiClient } from '../utils/apiClient';
+import { validateE2EPaymentSourceWallets } from '../utils/paymentSourceHelper';
 
 /**
  * Test wallet configurations for e2e tests
@@ -72,39 +74,15 @@ export const TEST_WALLETS: TestWalletConfig = {
 /**
  * Validate that test wallets are properly configured
  */
-export function validateTestWallets(network: Network): {
+export async function validateTestWallets(
+	network: Network,
+	paymentSourceType: PaymentSourceType,
+	apiClient?: ApiClient,
+): Promise<{
 	valid: boolean;
 	errors: string[];
-} {
-	const errors: string[] = [];
-	const wallets = TEST_WALLETS[network];
-
-	// Check sellers
-	if (wallets.sellers.length === 0) {
-		errors.push(`No seller wallets configured for ${network}`);
-	} else {
-		wallets.sellers.forEach((wallet, index) => {
-			if (wallet.vkey.startsWith('REPLACE_WITH_ACTUAL')) {
-				errors.push(`Seller wallet ${index} for ${network} needs actual vkey`);
-			}
-		});
-	}
-
-	// Check buyers
-	if (wallets.buyers.length === 0) {
-		errors.push(`No buyer wallets configured for ${network}`);
-	} else {
-		wallets.buyers.forEach((wallet, index) => {
-			if (wallet.vkey.startsWith('REPLACE_WITH_ACTUAL')) {
-				errors.push(`Buyer wallet ${index} for ${network} needs actual vkey`);
-			}
-		});
-	}
-
-	return {
-		valid: errors.length === 0,
-		errors,
-	};
+}> {
+	return validateE2EPaymentSourceWallets(network, paymentSourceType, apiClient);
 }
 
 export default {

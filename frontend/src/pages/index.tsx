@@ -42,6 +42,8 @@ import { AnimatedPage } from '@/components/ui/animated-page';
 import { StatCard } from '@/components/ui/stat-card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { WelcomeBanner } from '@/components/ui/welcome-banner';
+import { SetupV2Banner } from '@/components/setup/SetupV2Banner';
+import { MigrateAgentsDialog } from '@/components/ai-agents/MigrateAgentsDialog';
 
 type AIAgent = RegistryEntry;
 
@@ -102,6 +104,7 @@ export default function Overview() {
   const [selectedAgentForDetails, setSelectedAgentForDetails] = useState<AIAgent | null>(null);
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
     useState<WalletWithBalance | null>(null);
+  const [isMigrateDialogOpen, setMigrateDialogOpen] = useState(false);
 
   const formatUsdValue = (adaAmount: string) => {
     if (!rate || !adaAmount) return '—';
@@ -134,6 +137,8 @@ export default function Overview() {
                 page.
               </p>
             </div>
+
+            <SetupV2Banner onMigrateClick={() => setMigrateDialogOpen(true)} />
 
             <WelcomeBanner
               agentCount={agents.length}
@@ -546,6 +551,15 @@ export default function Overview() {
         isOpen={!!selectedWalletForDetails}
         onClose={() => setSelectedWalletForDetails(null)}
         wallet={selectedWalletForDetails}
+      />
+
+      <MigrateAgentsDialog
+        open={isMigrateDialogOpen}
+        onClose={() => setMigrateDialogOpen(false)}
+        onSuccess={() => {
+          refetchAgents();
+          refetchWallets();
+        }}
       />
     </>
   );

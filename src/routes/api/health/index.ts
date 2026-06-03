@@ -1,5 +1,5 @@
-import { unauthenticatedEndpointFactory } from '@/utils/security/auth/not-authenticated';
-import { z } from '@/utils/zod-openapi';
+import { unauthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { z } from '@masumi/payment-core/zod';
 import { healthResponseSchema } from './schemas';
 
 export const healthEndpointGet = unauthenticatedEndpointFactory.build({

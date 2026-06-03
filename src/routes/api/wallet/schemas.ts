@@ -1,5 +1,5 @@
 import { Network, TransactionStatus } from '@/generated/prisma/client';
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
 import { lowBalanceRuleSchema, lowBalanceSummarySchema } from './low-balance.schemas';
 
 export const getWalletSchemaInput = z.object({

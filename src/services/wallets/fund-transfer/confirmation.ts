@@ -1,8 +1,8 @@
 import { TransactionStatus } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
-import { logger } from '@/utils/logger';
-import { createMeshProvider } from '@/services/shared';
-import { CONFIG } from '@/utils/config';
+import { prisma } from '@masumi/payment-core/db';
+import { logger } from '@masumi/payment-core/logger';
+import { createMeshProvider } from '@/services/shared/provider-factory';
+import { CONFIG } from '@masumi/payment-core/config';
 import { errorToString } from '@/utils/converter/error-string-convert';
 
 export async function checkFundTransferConfirmations(): Promise<void> {
@@ -52,7 +52,7 @@ export async function checkFundTransferConfirmations(): Promise<void> {
 					}
 				} else {
 					const blockfrostKey = wallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey;
-					const provider = createMeshProvider(blockfrostKey);
+					const provider = await createMeshProvider(blockfrostKey);
 					try {
 						const txInfo = await provider.fetchTxInfo(txHash);
 						if (txInfo) {

@@ -1,5 +1,5 @@
-import { Network, PaymentAction } from '@/generated/prisma/client';
-import { z } from '@/utils/zod-openapi';
+import { Network, PaymentAction, PaymentSourceType } from '@/generated/prisma/client';
+import { z } from '@masumi/payment-core/zod';
 import { createPaymentSchemaOutput } from './schemas';
 
 export const paymentSchemaOutputExample = {
@@ -17,6 +17,8 @@ export const paymentSchemaOutputExample = {
 	payByTime: null,
 	cooldownTimeOtherParty: 0,
 	collateralReturnLovelace: null,
+	buyerReturnAddress: null,
+	sellerReturnAddress: null,
 	requestedById: 'requester_id',
 	resultHash: 'result_hash',
 	onChainState: null,
@@ -37,6 +39,7 @@ export const paymentSchemaOutputExample = {
 	PaymentSource: {
 		id: 'payment_source_id',
 		network: Network.Preprod,
+		paymentSourceType: PaymentSourceType.Web3CardanoV1,
 		smartContractAddress: 'address',
 		policyId: 'policy_id',
 	},

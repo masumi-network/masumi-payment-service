@@ -74,18 +74,25 @@ fi
 # Remove session memory temp files that ESLint's projectService rejects
 rm -f .remember/tmp/last-ndc.ts
 
-# Run ESLint on full project
-echo "${BLUE}🔍 Running ESLint (full project)...${NC}"
-if ! pnpm run lint; then
-    echo "${RED}❌ ESLint check failed. Please fix the errors and try committing again.${NC}"
+# Run backend ESLint
+echo "${BLUE}🔍 Running backend ESLint...${NC}"
+if ! pnpm run lint:backend; then
+    echo "${RED}❌ Backend ESLint check failed. Please fix the errors and try committing again.${NC}"
     exit 5
+fi
+
+# Run frontend ESLint
+echo "${BLUE}🔍 Running frontend ESLint...${NC}"
+if ! pnpm -C frontend run lint; then
+    echo "${RED}❌ Frontend ESLint check failed. Please fix the errors and try committing again.${NC}"
+    exit 6
 fi
 
 # Generate Swagger JSON
 echo "${BLUE}🔍 Generating Swagger JSON...${NC}"
 if ! pnpm run swagger-json; then
     echo "${RED}❌ Swagger JSON generation failed. Please fix errors and try again.${NC}"
-    exit 6
+    exit 7
 fi
 
 # Check if OpenAPI JSON file changed
@@ -96,7 +103,7 @@ else
     echo "${BLUE}🔍 OpenAPI JSON changed, generating Postman collection...${NC}"
     if ! pnpm run swagger-postman; then
         echo "${RED}❌ Postman collection generation failed. Please fix errors and try again.${NC}"
-        exit 7
+        exit 8
     fi
 fi
 
@@ -104,7 +111,21 @@ fi
 echo "${BLUE}🔍 Generating frontend types...${NC}"
 if ! (cd frontend && pnpm run openapi-ts-latest); then
     echo "${RED}❌ Type generation for the frontend failed. Please fix errors and try again.${NC}"
-    exit 8
+    exit 9
+fi
+
+# Run backend TypeScript checks
+echo "${BLUE}🔍 Running backend TypeScript checks...${NC}"
+if ! pnpm run typecheck:backend; then
+    echo "${RED}❌ Backend TypeScript check failed. Please fix errors and try again.${NC}"
+    exit 10
+fi
+
+# Run frontend TypeScript checks
+echo "${BLUE}🔍 Running frontend TypeScript checks...${NC}"
+if ! pnpm run typecheck:frontend; then
+    echo "${RED}❌ Frontend TypeScript check failed. Please fix errors and try again.${NC}"
+    exit 11
 fi
 
 # Check for changes in generated files

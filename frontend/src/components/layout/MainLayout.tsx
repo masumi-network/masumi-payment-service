@@ -19,6 +19,7 @@ import {
   Search,
   Code,
   Wand2,
+  AlertTriangle,
 } from 'lucide-react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import { useSidebar } from '@/lib/contexts/SidebarContext';
@@ -40,6 +41,8 @@ import { formatCount } from '@/lib/utils';
 import MasumiIconFlat from '@/components/MasumiIconFlat';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { NetworkSourceCard } from '@/components/layout/PaymentSourceSelector';
+import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
+import { DEFAULT_PAYMENT_SOURCE_TYPE, isV2PaymentSource } from '@/lib/payment-source-type';
 interface MainLayoutProps {
   children: React.ReactNode;
 }
@@ -136,10 +139,13 @@ export function MainLayout({ children }: MainLayoutProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
   const { paymentSources } = usePaymentSourceExtendedAll();
-  const hasPaymentSources = useMemo(
-    () => paymentSources.some((ps) => ps.network === network),
-    [paymentSources, network],
+  const currentNetworkPaymentSources = useMemo(
+    () => paymentSources.filter((ps) => ps.network === network),
+    [network, paymentSources],
   );
+  const hasPaymentSources = currentNetworkPaymentSources.length > 0;
+  const hasV2PaymentSource = currentNetworkPaymentSources.some(isV2PaymentSource);
+  const hasLegacyOnlyPaymentSources = hasPaymentSources && !hasV2PaymentSource;
   const {
     activeWalletAlertCount,
     unacknowledgedWalletAlertCount,
@@ -598,6 +604,30 @@ export function MainLayout({ children }: MainLayoutProps) {
         </div>
 
         <main className="flex-1 relative z-10 w-full animate-content-fade-in">
+          {hasLegacyOnlyPaymentSources && !isSetupMode && (
+            <div className="border-b border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100">
+              <div className="mx-auto flex max-w-[1400px] flex-col gap-3 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex gap-3">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" />
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium">V2 is not set up for {network}</span>
+                      <PaymentSourceTypeBadge
+                        paymentSourceType={DEFAULT_PAYMENT_SOURCE_TYPE}
+                        showDefault
+                      />
+                    </div>
+                    <p className="opacity-85">
+                      Run the one-time V2 setup, then migrate your agents on the dashboard.
+                    </p>
+                  </div>
+                </div>
+                <Button size="sm" asChild>
+                  <Link href={`/setup?network=${network}`}>Start V2 setup</Link>
+                </Button>
+              </div>
+            </div>
+          )}
           <div className="max-w-[1400px] mx-auto w-full p-8 px-4">{children}</div>
         </main>
       </div>

@@ -4,6 +4,7 @@ import { ApiClient } from '../utils/apiClient';
 import { getTestEnvironment } from '../fixtures/testData';
 import './globals';
 import { decodeE2EGlobalState, E2E_GLOBAL_STATE_ENV_KEY, type E2EGlobalState } from './e2eGlobalState';
+import { PaymentSourceType } from '@/generated/prisma/enums';
 
 async function safeReadState(): Promise<E2EGlobalState | null> {
 	try {
@@ -18,6 +19,9 @@ async function safeReadState(): Promise<E2EGlobalState | null> {
 /**
  * Jest global teardown for E2E tests.
  * Runs ONCE per Jest invocation (not per test file).
+ *
+ * Deregisters every agent we registered during setup. Uses `Promise.allSettled`
+ * so a teardown failure on one source type doesn't prevent cleanup of the others.
  */
 export default async function globalTeardown() {
 	const GLOBAL_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
@@ -35,8 +39,28 @@ export default async function globalTeardown() {
 		global.testApiClient = apiClient;
 
 		const state = await safeReadState();
-		if (state?.agent?.agentIdentifier) {
-			await deregisterAndConfirmAgent(state.network, state.agent.agentIdentifier);
+		if (state?.agents) {
+			const entries = Object.entries(state.agents) as Array<
+				[PaymentSourceType, NonNullable<E2EGlobalState['agents'][PaymentSourceType]>]
+			>;
+			const results = await Promise.allSettled(
+				entries.map(([sourceType, agent]) => {
+					if (!agent?.agentIdentifier) {
+						return Promise.resolve();
+					}
+					console.log(`🔄 [globalTeardown] Deregistering ${sourceType} agent ${agent.agentIdentifier}...`);
+					return deregisterAndConfirmAgent(state.network, agent.agentIdentifier, undefined, sourceType);
+				}),
+			);
+
+			for (const [index, result] of results.entries()) {
+				const [sourceType] = entries[index];
+				if (result.status === 'rejected') {
+					console.error(`❌ [globalTeardown] Failed to deregister ${sourceType} agent:`, result.reason);
+				} else {
+					console.log(`✅ [globalTeardown] Deregistered ${sourceType} agent.`);
+				}
+			}
 		}
 
 		delete process.env[E2E_GLOBAL_STATE_ENV_KEY];

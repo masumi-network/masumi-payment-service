@@ -9,6 +9,9 @@ export function PaymentSourceTableSkeleton({ rows = 5 }: { rows?: number }) {
             <Skeleton className="h-4 w-32" />
           </td>
           <td className="p-4">
+            <Skeleton className="h-4 w-14" />
+          </td>
+          <td className="p-4">
             <Skeleton className="h-4 w-48" />
           </td>
           <td className="p-4">

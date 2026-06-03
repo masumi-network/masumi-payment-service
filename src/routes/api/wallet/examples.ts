@@ -1,5 +1,5 @@
 import { Network, TransactionStatus } from '@/generated/prisma/client';
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
 import { getWalletSchemaOutput, postWalletSchemaOutput, postWalletFundSchemaOutput } from './schemas';
 
 export const walletExample = {

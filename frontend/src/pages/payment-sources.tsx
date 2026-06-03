@@ -1,12 +1,13 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { Plus, Trash2, Edit2, Wand2 } from 'lucide-react';
+import { Plus, Trash2, Edit2, Wand2, AlertTriangle, ShieldCheck, Eye, EyeOff } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useEffect, useMemo } from 'react';
 import { AddPaymentSourceDialog } from '@/components/payment-sources/AddPaymentSourceDialog';
 import { PaymentSourceDialog } from '@/components/payment-sources/PaymentSourceDialog';
 import Link from 'next/link';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
   deletePaymentSourceExtended,
@@ -38,6 +39,13 @@ import { handleApiCall } from '@/lib/utils';
 import { useRouter } from 'next/router';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { extractApiErrorMessage } from '@/lib/api-error';
+import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
+import {
+  DEFAULT_PAYMENT_SOURCE_TYPE,
+  getPaymentSourceTypeLabel,
+  isV2PaymentSource,
+  type PaymentSourceType,
+} from '@/lib/payment-source-type';
 
 interface UpdatePaymentSourceDialogProps {
   open: boolean;
@@ -56,6 +64,11 @@ function UpdatePaymentSourceDialog({
 }: UpdatePaymentSourceDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [apiKey, setApiKey] = useState(currentApiKey);
+  // Blockfrost API key is a long-lived secret. Mask by default; user reveals
+  // explicitly via the eye toggle. Without this the existing key renders in
+  // plaintext as the dialog opens — visible to screen-share, screenshots,
+  // and over-the-shoulder readers.
+  const [showApiKey, setShowApiKey] = useState(false);
   const { apiClient } = useAppContext();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -105,14 +118,28 @@ function UpdatePaymentSourceDialog({
             >
               Blockfrost API Key
             </label>
-            <Input
-              id="apiKey"
-              type="text"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder="Enter Blockfrost API key"
-              required
-            />
+            <div className="relative">
+              <Input
+                id="apiKey"
+                type={showApiKey ? 'text' : 'password'}
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="Enter Blockfrost API key"
+                autoComplete="off"
+                spellCheck={false}
+                required
+                className="pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowApiKey((v) => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                aria-label={showApiKey ? 'Hide API key' : 'Show API key'}
+                tabIndex={-1}
+              >
+                {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
           </div>
 
           <div className="flex justify-end gap-3">
@@ -133,6 +160,9 @@ export default function PaymentSourcesPage() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [addPaymentSourceType, setAddPaymentSourceType] = useState<PaymentSourceType>(
+    DEFAULT_PAYMENT_SOURCE_TYPE,
+  );
 
   const [sourceToDelete, setSourceToDelete] = useState<PaymentSourceExtended | null>(null);
   const [sourceToUpdate, setSourceToUpdate] = useState<PaymentSourceExtended | null>(null);
@@ -140,6 +170,7 @@ export default function PaymentSourcesPage() {
   const { apiClient, selectedPaymentSourceId, network, setSelectedPaymentSourceId } =
     useAppContext();
   const { paymentSources: ps, isLoading, refetch } = usePaymentSourceExtendedAll();
+  const queryClient = useQueryClient();
 
   const paymentSources = useMemo(() => ps.filter((p) => p.network === network), [ps, network]);
 
@@ -149,9 +180,19 @@ export default function PaymentSourcesPage() {
     return paymentSources.filter((source) => {
       const matchAddress = source.smartContractAddress?.toLowerCase().includes(query) || false;
       const matchNetwork = source.network?.toLowerCase().includes(query) || false;
-      return matchAddress || matchNetwork;
+      const matchType = source.paymentSourceType.toLowerCase().includes(query);
+      return matchAddress || matchNetwork || matchType;
     });
   }, [paymentSources, searchQuery]);
+
+  const v2Sources = useMemo(() => paymentSources.filter(isV2PaymentSource), [paymentSources]);
+  const legacySources = useMemo(
+    () => paymentSources.filter((source) => !isV2PaymentSource(source)),
+    [paymentSources],
+  );
+  const hasV2Source = v2Sources.length > 0;
+  const hasLegacyOnly = legacySources.length > 0 && !hasV2Source;
+  const needsV2Setup = !hasV2Source;
 
   const [sourceToSelect, setSourceToSelect] = useState<PaymentSourceExtended | undefined>(
     undefined,
@@ -181,6 +222,16 @@ export default function PaymentSourcesPage() {
         onSuccess: async () => {
           toast.success('Payment source deleted successfully');
           refetch();
+          // Dashboard cards keyed by selectedPaymentSourceId continue
+          // rendering against caches that no longer match a live source.
+          // Invalidate sibling queries so wallets / transactions / agents
+          // refetch against whatever source the user selects next instead
+          // of showing rows from the deleted one until the next ~25s tick.
+          queryClient.invalidateQueries({ queryKey: ['payment-sources-all'] });
+          queryClient.invalidateQueries({ queryKey: ['wallets'] });
+          queryClient.invalidateQueries({ queryKey: ['transactions'] });
+          queryClient.invalidateQueries({ queryKey: ['agents'] });
+          queryClient.invalidateQueries({ queryKey: ['payment-source-extended'] });
         },
         onError: (error: any) => {
           console.error('Error deleting payment source:', error);
@@ -233,11 +284,84 @@ export default function PaymentSourcesPage() {
               />
               <Button
                 className="flex items-center gap-2 btn-hover-lift"
-                onClick={() => setIsAddDialogOpen(true)}
+                onClick={() => {
+                  setAddPaymentSourceType(DEFAULT_PAYMENT_SOURCE_TYPE);
+                  setIsAddDialogOpen(true);
+                }}
               >
                 <Plus className="h-4 w-4" />
-                Add payment source
+                Add V2 source
               </Button>
+            </div>
+          </div>
+
+          <div
+            className={cn(
+              'rounded-lg border px-4 py-3',
+              needsV2Setup
+                ? 'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100'
+                : 'border-green-200 bg-green-50 text-green-950 dark:border-green-900/50 dark:bg-green-950/20 dark:text-green-100',
+            )}
+          >
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex gap-3">
+                {needsV2Setup ? (
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" />
+                ) : (
+                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-green-600 dark:text-green-300" />
+                )}
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-medium">
+                      {hasV2Source
+                        ? 'V2 payment source ready'
+                        : hasLegacyOnly
+                          ? 'Set up V2 before migrating agents'
+                          : 'Set up V2 for new agents'}
+                    </p>
+                    <PaymentSourceTypeBadge
+                      paymentSourceType={DEFAULT_PAYMENT_SOURCE_TYPE}
+                      showDefault
+                    />
+                  </div>
+                  <p className="max-w-3xl text-sm opacity-85">
+                    {legacySources.length > 0
+                      ? 'V2 is the default for new agents. Create the V2 source, migrate V1 agents to the V2 registry, then delete the old source after it is no longer used.'
+                      : 'V2 is the default for new agents. Create a V2 source to use the new registry metadata and zero-fee payment source behavior.'}
+                  </p>
+                </div>
+              </div>
+              {needsV2Setup && (
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setAddPaymentSourceType(DEFAULT_PAYMENT_SOURCE_TYPE);
+                    setIsAddDialogOpen(true);
+                  }}
+                  className="shrink-0"
+                >
+                  Set up V2
+                </Button>
+              )}
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="rounded-lg border bg-card px-4 py-3">
+              <p className="text-xs font-medium uppercase text-muted-foreground">Default</p>
+              <p className="mt-1 text-sm font-semibold">
+                {getPaymentSourceTypeLabel(DEFAULT_PAYMENT_SOURCE_TYPE)}
+              </p>
+            </div>
+            <div className="rounded-lg border bg-card px-4 py-3">
+              <p className="text-xs font-medium uppercase text-muted-foreground">V2 sources</p>
+              <p className="mt-1 text-sm font-semibold">{v2Sources.length}</p>
+            </div>
+            <div className="rounded-lg border bg-card px-4 py-3">
+              <p className="text-xs font-medium uppercase text-muted-foreground">
+                Legacy V1 sources
+              </p>
+              <p className="mt-1 text-sm font-semibold">{legacySources.length}</p>
             </div>
           </div>
 
@@ -247,7 +371,7 @@ export default function PaymentSourcesPage() {
                 <SearchInput
                   value={searchQuery}
                   onChange={setSearchQuery}
-                  placeholder="Search Payment Source"
+                  placeholder="Search address, network, or type"
                   className="max-w-xs"
                 />
               </div>
@@ -260,6 +384,7 @@ export default function PaymentSourcesPage() {
                     <th className="p-4 text-left text-sm font-medium truncate pl-6">
                       Contract address
                     </th>
+                    <th className="p-4 text-left text-sm font-medium">Type</th>
                     <th className="p-4 text-left text-sm font-medium">ID</th>
                     <th className="p-4 text-left text-sm font-medium">Network</th>
                     <th className="p-4 text-left text-sm font-medium truncate">Fee rate (%)</th>
@@ -273,11 +398,11 @@ export default function PaymentSourcesPage() {
                     <PaymentSourceTableSkeleton rows={5} />
                   ) : filteredPaymentSources.length === 0 ? (
                     <tr>
-                      <td colSpan={7}>
+                      <td colSpan={8}>
                         <EmptyState
                           icon="inbox"
                           title="No payment sources found"
-                          description="Add a payment source to get started"
+                          description="Add a V2 payment source to get started"
                           action={
                             <Button asChild>
                               <Link href={`/setup?network=${network}`}>
@@ -314,6 +439,12 @@ export default function PaymentSourcesPage() {
                           </div>
                         </td>
                         <td className="p-4">
+                          <PaymentSourceTypeBadge
+                            paymentSourceType={source.paymentSourceType}
+                            showDefault
+                          />
+                        </td>
+                        <td className="p-4">
                           <div className="text-sm flex items-center gap-2">
                             {shortenAddress(source.id)}
                             <CopyButton value={source.id} />
@@ -323,7 +454,12 @@ export default function PaymentSourcesPage() {
                           <div className="text-sm">{source.network}</div>
                         </td>
                         <td className="p-4">
-                          <div className="text-sm">{(source.feeRatePermille / 10).toFixed(1)}%</div>
+                          <div className="text-sm">
+                            {(source.feeRatePermille / 10).toFixed(1)}%
+                            {isV2PaymentSource(source) && (
+                              <span className="ml-1 text-xs text-muted-foreground">fixed</span>
+                            )}
+                          </div>
                         </td>
                         <td className="p-4">
                           <div className="text-xs text-muted-foreground">
@@ -402,6 +538,7 @@ export default function PaymentSourcesPage() {
             onSuccess={() => {
               refetch();
             }}
+            defaultPaymentSourceType={addPaymentSourceType}
           />
 
           <UpdatePaymentSourceDialog
@@ -430,7 +567,7 @@ export default function PaymentSourcesPage() {
             open={sourceToSelect !== undefined}
             onClose={() => setSourceToSelect(undefined)}
             title="Set as Active Payment Source"
-            description={`Setting this as the active source will change which agents, wallets, and transactions are displayed across the admin interface.\n\nContract Address: ${sourceToSelect?.smartContractAddress ? shortenAddress(sourceToSelect.smartContractAddress) : ''}`}
+            description={`Setting this as the active source will change which agents, wallets, and transactions are displayed across the admin interface.\n\nType: ${sourceToSelect?.paymentSourceType ? getPaymentSourceTypeLabel(sourceToSelect.paymentSourceType) : ''}\nContract Address: ${sourceToSelect?.smartContractAddress ? shortenAddress(sourceToSelect.smartContractAddress) : ''}`}
             onConfirm={() => {
               if (sourceToSelect?.id) {
                 setSelectedPaymentSourceId(sourceToSelect.id);
