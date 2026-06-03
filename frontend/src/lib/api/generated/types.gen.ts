@@ -38,6 +38,10 @@ export type ApiKey = {
      */
     NetworkLimit: Array<'Preprod' | 'Mainnet'>;
     /**
+     * CAIP-2 chain identifiers this API key is allowed to access
+     */
+    ChainIdLimit: Array<string>;
+    /**
      * Remaining usage credits for this API key
      */
     RemainingUsageCredits: Array<{
@@ -996,7 +1000,7 @@ export type AgentMetadata = {
              */
             chain: 'Cardano';
             /**
-             * The blockchain network this payment source is available on
+             * The Cardano network this payment source is available on
              */
             network: 'Preprod' | 'Mainnet';
             /**
@@ -1007,6 +1011,53 @@ export type AgentMetadata = {
              * The escrow smart contract address for this payment source
              */
             address: string;
+        } | {
+            /**
+             * The chain family used by standard x402
+             */
+            chain: 'EVM';
+            /**
+             * CAIP-2 EVM network id, for example eip155:8453
+             */
+            network: string;
+            /**
+             * The configured payment source type
+             */
+            paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2' | null;
+            /**
+             * Alias for payTo, kept for existing payment-source shape
+             */
+            address?: string;
+            /**
+             * x402 payment scheme
+             */
+            scheme: 'Exact';
+            /**
+             * ERC-20 token contract address
+             */
+            asset: string;
+            /**
+             * Atomic token amount
+             */
+            amount: string;
+            /**
+             * ERC-20 token decimals
+             */
+            decimals: number;
+            /**
+             * EVM address receiving the x402 payment
+             */
+            payTo: string;
+            /**
+             * Optional absolute resource URL this x402 option protects
+             */
+            resource?: string;
+            /**
+             * Additional x402 metadata
+             */
+            extra?: {
+                [key: string]: unknown;
+            };
         }> | null;
     };
 };
@@ -1161,7 +1212,7 @@ export type AgentIdentifierMetadata = {
              */
             chain: 'Cardano';
             /**
-             * The blockchain network this payment source is available on
+             * The Cardano network this payment source is available on
              */
             network: 'Preprod' | 'Mainnet';
             /**
@@ -1172,6 +1223,53 @@ export type AgentIdentifierMetadata = {
              * The escrow smart contract address for this payment source
              */
             address: string;
+        } | {
+            /**
+             * The chain family used by standard x402
+             */
+            chain: 'EVM';
+            /**
+             * CAIP-2 EVM network id, for example eip155:8453
+             */
+            network: string;
+            /**
+             * The configured payment source type
+             */
+            paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2' | null;
+            /**
+             * Alias for payTo, kept for existing payment-source shape
+             */
+            address?: string;
+            /**
+             * x402 payment scheme
+             */
+            scheme: 'Exact';
+            /**
+             * ERC-20 token contract address
+             */
+            asset: string;
+            /**
+             * Atomic token amount
+             */
+            amount: string;
+            /**
+             * ERC-20 token decimals
+             */
+            decimals: number;
+            /**
+             * EVM address receiving the x402 payment
+             */
+            payTo: string;
+            /**
+             * Optional absolute resource URL this x402 option protects
+             */
+            resource?: string;
+            /**
+             * Additional x402 metadata
+             */
+            extra?: {
+                [key: string]: unknown;
+            };
         }> | null;
     };
 };
@@ -1334,7 +1432,7 @@ export type RegistryEntry = {
          */
         chain: 'Cardano';
         /**
-         * The blockchain network this payment source is available on
+         * The Cardano network this payment source is available on
          */
         network: 'Preprod' | 'Mainnet';
         /**
@@ -1345,6 +1443,53 @@ export type RegistryEntry = {
          * The escrow smart contract address for this payment source
          */
         address: string;
+    } | {
+        /**
+         * The chain family used by standard x402
+         */
+        chain: 'EVM';
+        /**
+         * CAIP-2 EVM network id, for example eip155:8453
+         */
+        network: string;
+        /**
+         * The configured payment source type
+         */
+        paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2' | null;
+        /**
+         * Alias for payTo, kept for existing payment-source shape
+         */
+        address?: string;
+        /**
+         * x402 payment scheme
+         */
+        scheme: 'Exact';
+        /**
+         * ERC-20 token contract address
+         */
+        asset: string;
+        /**
+         * Atomic token amount
+         */
+        amount: string;
+        /**
+         * ERC-20 token decimals
+         */
+        decimals: number;
+        /**
+         * EVM address receiving the x402 payment
+         */
+        payTo: string;
+        /**
+         * Optional absolute resource URL this x402 option protects
+         */
+        resource?: string;
+        /**
+         * Additional x402 metadata
+         */
+        extra?: {
+            [key: string]: unknown;
+        };
     }> | null;
     /**
      * Smart contract wallet managing this agent registration
@@ -2074,6 +2219,142 @@ export type StoppedMonitoring = {
     stopped: boolean;
 };
 
+export type X402Network = {
+    id: string;
+    /**
+     * CAIP-2 EVM chain id, for example eip155:8453
+     */
+    caip2Id: string;
+    /**
+     * Human readable chain name
+     */
+    displayName: string;
+    /**
+     * HTTP(S) RPC endpoint used to talk to the chain
+     */
+    rpcUrl: string;
+    /**
+     * Whether this chain is a testnet (paired with the Cardano Preprod environment)
+     */
+    isTestnet: boolean;
+    /**
+     * Whether this chain may be used for x402 payments
+     */
+    isEnabled: boolean;
+    /**
+     * Default settlement asset (token contract) for this chain
+     */
+    defaultAsset: string | null;
+    /**
+     * Id of the managed EVM wallet used to settle payments on this chain
+     */
+    facilitatorWalletId: string | null;
+    /**
+     * Id of the API key that created this chain configuration
+     */
+    createdById: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+};
+
+export type X402Wallet = {
+    /**
+     * Unique identifier of the managed EVM wallet
+     */
+    id: string;
+    /**
+     * The EVM address derived from the wallet private key
+     */
+    address: string;
+    /**
+     * Id of the API key that created this wallet
+     */
+    createdById: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+};
+
+export type X402Budget = {
+    id: string;
+    /**
+     * API key the budget is granted to
+     */
+    apiKeyId: string;
+    /**
+     * Managed EVM wallet the budget draws from
+     */
+    evmWalletId: string;
+    caip2Network: string;
+    /**
+     * Token contract the budget is denominated in
+     */
+    asset: string;
+    /**
+     * Remaining spendable amount, in token base units
+     */
+    remainingAmount: string;
+    /**
+     * Amount already spent, in token base units
+     */
+    spentAmount: string;
+    /**
+     * Id of the API key that created this budget
+     */
+    createdById: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+};
+
+export type X402PaymentAttempt = {
+    id: string;
+    createdAt: Date;
+    updatedAt: Date;
+    direction: 'InboundVerify' | 'InboundSettle' | 'OutboundPayment';
+    status: 'PaymentRequired' | 'Verified' | 'Settled' | 'Failed' | 'Replayed';
+    apiKeyId: string;
+    evmWalletId: string | null;
+    registryRequestId: string | null;
+    supportedPaymentSourceId: string | null;
+    caip2Network: string;
+    asset: string;
+    /**
+     * Payment amount in token base units
+     */
+    amount: string;
+    payTo: string;
+    payer: string | null;
+    resource: string | null;
+    paymentIdentifier: string | null;
+    errorReason: string | null;
+    errorMessage: string | null;
+    Settlement: {
+        id: string;
+        success: boolean;
+        /**
+         * On-chain settlement transaction hash
+         */
+        txHash: string | null;
+        /**
+         * Settled amount in token base units
+         */
+        amount: string | null;
+        payer: string | null;
+        createdAt: Date;
+    } | null;
+};
+
+export type X402SettlementRecord = {
+    id: string;
+    createdAt: Date;
+    updatedAt: Date;
+    paymentAttemptId: string;
+    success: boolean;
+    txHash: string | null;
+    caip2Network: string;
+    amount: string | null;
+    payer: string | null;
+};
+
 export type GetHealthData = {
     body?: never;
     path?: never;
@@ -2743,9 +3024,13 @@ export type PatchApiKeyData = {
          */
         status?: 'Active' | 'Revoked';
         /**
-         * The networks the API key is allowed to use
+         * Replaces the Cardano-network half of the access list. Omit to leave Cardano access unchanged.
          */
         NetworkLimit?: Array<'Preprod' | 'Mainnet'>;
+        /**
+         * Replaces the EVM (CAIP-2) half of the access list. Omit to leave EVM access unchanged.
+         */
+        ChainIdLimit?: Array<string>;
         /**
          * Whether to enable wallet scope filtering for this API key
          */
@@ -2819,9 +3104,13 @@ export type PostApiKeyData = {
             amount: string;
         }>;
         /**
-         * The networks the API key is allowed to use
+         * The Cardano networks the API key is allowed to use
          */
         NetworkLimit?: Array<'Preprod' | 'Mainnet'>;
+        /**
+         * Additional non-Cardano CAIP-2 chain identifiers the API key is allowed to use
+         */
+        ChainIdLimit?: Array<string>;
         /**
          * [DEPRECATED] The permission of the API key. Use canRead/canPay/canAdmin flags instead. Will be removed in a future version.
          */
@@ -7725,7 +8014,7 @@ export type PostRegistryData = {
              */
             chain: 'Cardano';
             /**
-             * The blockchain network this payment source is available on
+             * The Cardano network this payment source is available on
              */
             network: 'Preprod' | 'Mainnet';
             /**
@@ -7736,6 +8025,53 @@ export type PostRegistryData = {
              * The escrow smart contract address for this payment source
              */
             address: string;
+        } | {
+            /**
+             * The chain family used by standard x402
+             */
+            chain: 'EVM';
+            /**
+             * CAIP-2 EVM network id, for example eip155:8453
+             */
+            network: string;
+            /**
+             * The configured payment source type
+             */
+            paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2' | null;
+            /**
+             * Alias for payTo, kept for existing payment-source shape
+             */
+            address?: string;
+            /**
+             * x402 payment scheme
+             */
+            scheme: 'Exact';
+            /**
+             * ERC-20 token contract address
+             */
+            asset: string;
+            /**
+             * Atomic token amount
+             */
+            amount: string;
+            /**
+             * ERC-20 token decimals
+             */
+            decimals: number;
+            /**
+             * EVM address receiving the x402 payment
+             */
+            payTo: string;
+            /**
+             * Optional absolute resource URL this x402 option protects
+             */
+            resource?: string;
+            /**
+             * Additional x402 metadata
+             */
+            extra?: {
+                [key: string]: unknown;
+            };
         }>;
         /**
          * List of example outputs from the agent
@@ -7987,7 +8323,7 @@ export type PostRegistryUpdateData = {
              */
             chain: 'Cardano';
             /**
-             * The blockchain network this payment source is available on
+             * The Cardano network this payment source is available on
              */
             network: 'Preprod' | 'Mainnet';
             /**
@@ -7998,6 +8334,53 @@ export type PostRegistryUpdateData = {
              * The escrow smart contract address for this payment source
              */
             address: string;
+        } | {
+            /**
+             * The chain family used by standard x402
+             */
+            chain: 'EVM';
+            /**
+             * CAIP-2 EVM network id, for example eip155:8453
+             */
+            network: string;
+            /**
+             * The configured payment source type
+             */
+            paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2' | null;
+            /**
+             * Alias for payTo, kept for existing payment-source shape
+             */
+            address?: string;
+            /**
+             * x402 payment scheme
+             */
+            scheme: 'Exact';
+            /**
+             * ERC-20 token contract address
+             */
+            asset: string;
+            /**
+             * Atomic token amount
+             */
+            amount: string;
+            /**
+             * ERC-20 token decimals
+             */
+            decimals: number;
+            /**
+             * EVM address receiving the x402 payment
+             */
+            payTo: string;
+            /**
+             * Optional absolute resource URL this x402 option protects
+             */
+            resource?: string;
+            /**
+             * Additional x402 metadata
+             */
+            extra?: {
+                [key: string]: unknown;
+            };
         }>;
         /**
          * List of example outputs from the agent
@@ -9694,3 +10077,479 @@ export type PostMonitoringStopResponses = {
 };
 
 export type PostMonitoringStopResponse = PostMonitoringStopResponses[keyof PostMonitoringStopResponses];
+
+export type GetX402NetworksData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/x402/networks';
+};
+
+export type GetX402NetworksResponses = {
+    /**
+     * Configured x402 EVM chains
+     */
+    200: {
+        status: 'success';
+        data: {
+            Networks: Array<X402Network>;
+        };
+    };
+};
+
+export type GetX402NetworksResponse = GetX402NetworksResponses[keyof GetX402NetworksResponses];
+
+export type PostX402NetworksData = {
+    /**
+     * Chain configuration to upsert
+     */
+    body?: {
+        caip2Id: string;
+        displayName: string;
+        rpcUrl: string;
+        isTestnet?: boolean;
+        isEnabled?: boolean;
+        defaultAsset?: string | null;
+        facilitatorWalletId?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/x402/networks';
+};
+
+export type PostX402NetworksResponses = {
+    /**
+     * Chain configuration saved
+     */
+    200: {
+        status: 'success';
+        data: X402Network;
+    };
+};
+
+export type PostX402NetworksResponse = PostX402NetworksResponses[keyof PostX402NetworksResponses];
+
+export type GetX402WalletsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/x402/wallets';
+};
+
+export type GetX402WalletsResponses = {
+    /**
+     * Managed x402 EVM wallets
+     */
+    200: {
+        status: 'success';
+        data: {
+            Wallets: Array<X402Wallet>;
+        };
+    };
+};
+
+export type GetX402WalletsResponse = GetX402WalletsResponses[keyof GetX402WalletsResponses];
+
+export type PostX402WalletsData = {
+    /**
+     * Optional private key to import
+     */
+    body?: {
+        /**
+         * Optional 0x-prefixed 32-byte hex private key. A new key is generated when omitted.
+         */
+        privateKey?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/x402/wallets';
+};
+
+export type PostX402WalletsResponses = {
+    /**
+     * Managed wallet created
+     */
+    200: {
+        status: 'success';
+        data: X402Wallet;
+    };
+};
+
+export type PostX402WalletsResponse = PostX402WalletsResponses[keyof PostX402WalletsResponses];
+
+export type PostX402WalletsDeleteData = {
+    /**
+     * Managed wallet to retire
+     */
+    body?: {
+        /**
+         * Id of the managed EVM wallet to retire
+         */
+        id: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/x402/wallets/delete';
+};
+
+export type PostX402WalletsDeleteResponses = {
+    /**
+     * Managed wallet retired
+     */
+    200: {
+        status: 'success';
+        data: {
+            id: string;
+        };
+    };
+};
+
+export type PostX402WalletsDeleteResponse = PostX402WalletsDeleteResponses[keyof PostX402WalletsDeleteResponses];
+
+export type GetX402BudgetsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Filter budgets to a single API key
+         */
+        apiKeyId?: string;
+    };
+    url: '/x402/budgets';
+};
+
+export type GetX402BudgetsResponses = {
+    /**
+     * x402 wallet budgets
+     */
+    200: {
+        status: 'success';
+        data: {
+            Budgets: Array<X402Budget>;
+        };
+    };
+};
+
+export type GetX402BudgetsResponse = GetX402BudgetsResponses[keyof GetX402BudgetsResponses];
+
+export type PostX402BudgetsData = {
+    /**
+     * Budget to set
+     */
+    body?: {
+        apiKeyId: string;
+        evmWalletId: string;
+        caip2Network: string;
+        asset: string;
+        remainingAmount: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/x402/budgets';
+};
+
+export type PostX402BudgetsResponses = {
+    /**
+     * Budget saved
+     */
+    200: {
+        status: 'success';
+        data: X402Budget;
+    };
+};
+
+export type PostX402BudgetsResponse = PostX402BudgetsResponses[keyof PostX402BudgetsResponses];
+
+export type PostX402VerifyData = {
+    /**
+     * The registered supported payment source id and the buyer payment payload to verify
+     */
+    body?: {
+        supportedPaymentSourceId: string;
+        paymentPayload: {
+            x402Version: number;
+            resource?: {
+                url?: string;
+            };
+            accepted: {
+                scheme: string;
+                network: string;
+                asset: string;
+                amount: string;
+                payTo: string;
+                maxTimeoutSeconds: number;
+                extra?: {
+                    [key: string]: unknown;
+                };
+            };
+            payload: {
+                [key: string]: unknown;
+            };
+            extensions?: {
+                [key: string]: unknown;
+            };
+        };
+    };
+    path?: never;
+    query?: never;
+    url: '/x402/verify';
+};
+
+export type PostX402VerifyResponses = {
+    /**
+     * x402 verification result
+     */
+    200: {
+        status: 'success';
+        data: {
+            attemptId: string;
+            paymentPayloadHash: string;
+            paymentIdentifier: string | null;
+            verifyResponse: {
+                isValid: boolean;
+                invalidReason?: string;
+                invalidMessage?: string;
+                payer?: string;
+                extensions?: {
+                    [key: string]: unknown;
+                };
+                extra?: {
+                    [key: string]: unknown;
+                };
+            };
+        };
+    };
+};
+
+export type PostX402VerifyResponse = PostX402VerifyResponses[keyof PostX402VerifyResponses];
+
+export type PostX402SettleData = {
+    /**
+     * The registered supported payment source id and the buyer payment payload to settle
+     */
+    body?: {
+        supportedPaymentSourceId: string;
+        paymentPayload: {
+            x402Version: number;
+            resource?: {
+                url?: string;
+            };
+            accepted: {
+                scheme: string;
+                network: string;
+                asset: string;
+                amount: string;
+                payTo: string;
+                maxTimeoutSeconds: number;
+                extra?: {
+                    [key: string]: unknown;
+                };
+            };
+            payload: {
+                [key: string]: unknown;
+            };
+            extensions?: {
+                [key: string]: unknown;
+            };
+        };
+    };
+    path?: never;
+    query?: never;
+    url: '/x402/settle';
+};
+
+export type PostX402SettleResponses = {
+    /**
+     * x402 settlement result
+     */
+    200: {
+        status: 'success';
+        data: {
+            attemptId: string;
+            paymentPayloadHash: string;
+            paymentIdentifier: string | null;
+            replay: boolean;
+            settleResponse: {
+                success: boolean;
+                errorReason?: string;
+                errorMessage?: string;
+                payer?: string;
+                transaction: string;
+                network: string;
+                amount?: string;
+                extensions?: {
+                    [key: string]: unknown;
+                };
+                extra?: {
+                    [key: string]: unknown;
+                };
+            };
+        };
+    };
+};
+
+export type PostX402SettleResponse = PostX402SettleResponses[keyof PostX402SettleResponses];
+
+export type PostX402PayData = {
+    /**
+     * The 402 Payment Required response the buyer received
+     */
+    body?: {
+        /**
+         * Managed EVM wallet to sign the payment with
+         */
+        evmWalletId: string;
+        /**
+         * The 402 Payment Required response the buyer received
+         */
+        paymentRequired: {
+            x402Version: number;
+            resource?: {
+                url?: string;
+            };
+            /**
+             * The payment options advertised by the 402 response
+             */
+            accepts: Array<{
+                scheme: string;
+                network: string;
+                asset: string;
+                amount: string;
+                payTo: string;
+                maxTimeoutSeconds: number;
+                extra?: {
+                    [key: string]: unknown;
+                };
+            }>;
+            extensions?: {
+                [key: string]: unknown;
+            };
+            error?: string;
+        };
+        /**
+         * Restrict signing to this CAIP-2 network
+         */
+        preferredNetwork?: string;
+        /**
+         * Restrict signing to this token asset
+         */
+        preferredAsset?: string;
+        paymentIdentifier?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/x402/pay';
+};
+
+export type PostX402PayResponses = {
+    /**
+     * Signed x402 payment
+     */
+    200: {
+        status: 'success';
+        data: {
+            attemptId: string;
+            /**
+             * The managed wallet address that signed the payment
+             */
+            payer: string;
+            caip2Network: string;
+            asset: string;
+            /**
+             * Signed payment amount in token base units
+             */
+            amount: string;
+            payTo: string;
+            /**
+             * Base64 X-PAYMENT header value; the buyer sends this with its own retried request
+             */
+            xPaymentHeader: string;
+            /**
+             * The signed x402 payment payload
+             */
+            paymentPayload: {
+                [key: string]: unknown;
+            };
+            paymentPayloadHash: string;
+            paymentIdentifier: string | null;
+        };
+    };
+};
+
+export type PostX402PayResponse = PostX402PayResponses[keyof PostX402PayResponses];
+
+export type GetX402PaymentsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Number of payment attempts to return
+         */
+        take?: number;
+        /**
+         * Pagination cursor (provide the id of the last returned attempt)
+         */
+        cursorId?: string;
+        /**
+         * Filter by payment status
+         */
+        status?: 'PaymentRequired' | 'Verified' | 'Settled' | 'Failed' | 'Replayed';
+        /**
+         * Filter by payment direction
+         */
+        direction?: 'InboundVerify' | 'InboundSettle' | 'OutboundPayment';
+        /**
+         * Filter by CAIP-2 chain id
+         */
+        caip2Network?: string;
+    };
+    url: '/x402/payments';
+};
+
+export type GetX402PaymentsResponses = {
+    /**
+     * x402 payment attempts
+     */
+    200: {
+        status: 'success';
+        data: {
+            PaymentAttempts: Array<X402PaymentAttempt>;
+        };
+    };
+};
+
+export type GetX402PaymentsResponse = GetX402PaymentsResponses[keyof GetX402PaymentsResponses];
+
+export type GetX402SettlementsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Number of settlements to return
+         */
+        take?: number;
+        /**
+         * Pagination cursor (provide the id of the last returned settlement)
+         */
+        cursorId?: string;
+        /**
+         * Filter by CAIP-2 chain id
+         */
+        caip2Network?: string;
+    };
+    url: '/x402/settlements';
+};
+
+export type GetX402SettlementsResponses = {
+    /**
+     * x402 settlements
+     */
+    200: {
+        status: 'success';
+        data: {
+            Settlements: Array<X402SettlementRecord>;
+        };
+    };
+};
+
+export type GetX402SettlementsResponse = GetX402SettlementsResponses[keyof GetX402SettlementsResponses];

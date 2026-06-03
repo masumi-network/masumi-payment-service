@@ -1,10 +1,11 @@
 'use client';
 
 import { useRouter } from 'next/router';
-import { FileInput, ChevronsUpDown, Settings, Check } from 'lucide-react';
+import { FileInput, ChevronsUpDown, Settings, Check, Coins } from 'lucide-react';
 import { cn, shortenAddress } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
+import { useX402Networks } from '@/lib/hooks/useX402';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -31,12 +32,19 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
   const { selectedPaymentSourceId, setSelectedPaymentSourceId, selectedPaymentSource, network } =
     useAppContext();
   const { paymentSources } = usePaymentSourceExtendedAll();
+  const { networks: x402Networks } = useX402Networks({ silentErrors: true });
 
   const networkSources = sortPaymentSourcesByPreference(
     paymentSources.filter((ps) => ps.network === network),
   );
   const isOnPaymentSourcesPage = router.pathname === '/payment-sources';
   const hasSources = networkSources.length > 0;
+
+  // EVM/x402 chains are payment rails within the selected Cardano environment.
+  // Testnet chains pair with Preprod, mainnet chains with Mainnet.
+  const activeEvmChains = x402Networks.filter(
+    (chain) => chain.isEnabled && chain.isTestnet === (network === 'Preprod'),
+  );
 
   if (collapsed) {
     return (
@@ -90,6 +98,21 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
               isOnPaymentSourcesPage={isOnPaymentSourcesPage}
             />
           </DropdownMenu>
+        )}
+        {activeEvmChains.length > 0 && (
+          <Button
+            variant="ghost"
+            className="h-10 w-10 p-0 justify-center relative"
+            title={`${activeEvmChains.length} x402 ${
+              activeEvmChains.length === 1 ? 'chain' : 'chains'
+            } active`}
+            onClick={() => router.push('/x402')}
+          >
+            <Coins className="h-4 w-4" />
+            <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-muted px-1 text-[10px] font-medium text-muted-foreground">
+              {activeEvmChains.length}
+            </span>
+          </Button>
         )}
       </div>
     );
@@ -157,6 +180,39 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
             isOnPaymentSourcesPage={isOnPaymentSourcesPage}
           />
         </DropdownMenu>
+      )}
+      {activeEvmChains.length > 0 && (
+        <div className="mx-0.5 rounded-md bg-[#00000006] dark:bg-[#ffffff06] px-2 py-1.5">
+          <button
+            onClick={() => router.push('/x402')}
+            className="flex w-full items-center justify-between text-[11px] font-medium uppercase tracking-wide text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <span>x402 chains</span>
+            <Settings className="h-3 w-3" />
+          </button>
+          <div className="mt-1 flex flex-col gap-1">
+            {activeEvmChains.map((chain) => (
+              <button
+                key={chain.id}
+                onClick={() => router.push('/x402')}
+                className="flex items-center gap-2 rounded px-1 py-0.5 text-left transition-colors hover:bg-[#00000008] dark:hover:bg-[#ffffff08]"
+                title={
+                  chain.facilitatorWalletId
+                    ? chain.caip2Id
+                    : `${chain.caip2Id} · no facilitator wallet set`
+                }
+              >
+                <span
+                  className={cn(
+                    'h-1.5 w-1.5 shrink-0 rounded-full',
+                    chain.facilitatorWalletId ? 'bg-green-500' : 'bg-amber-500',
+                  )}
+                />
+                <span className="truncate text-xs">{chain.displayName}</span>
+              </button>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );

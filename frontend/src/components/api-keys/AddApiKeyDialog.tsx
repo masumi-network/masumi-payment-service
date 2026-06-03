@@ -11,6 +11,7 @@ import {
 import { useState, useEffect, useMemo } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { postApiKey } from '@/lib/api/generated';
+import { useX402Networks } from '@/lib/hooks/useX402';
 import { toast } from 'react-toastify';
 import { handleApiCall } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -44,6 +45,7 @@ const apiKeySchema = z
     canPay: z.boolean(),
     canAdmin: z.boolean(),
     networks: z.array(z.enum(['Preprod', 'Mainnet'])).min(1, 'Select at least one network'),
+    evmChains: z.array(z.string()),
     usageLimited: z.boolean(),
     credits: z.object({
       lovelace: z.string().optional(),
@@ -93,6 +95,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
   const [isLoading, setIsLoading] = useState(false);
   const { apiClient, network } = useAppContext();
   const { paymentSources } = usePaymentSourceExtendedAll();
+  const { networks: evmChainOptions } = useX402Networks({ silentErrors: true });
 
   const allWallets = useMemo(() => {
     const wallets: Array<{
@@ -141,6 +144,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
       canAdmin: false,
       usageLimited: true,
       networks: ['Preprod', 'Mainnet'],
+      evmChains: [],
       credits: { lovelace: '', usdcx: '' },
       walletScopeEnabled: false,
       walletScopeIds: [],
@@ -165,11 +169,13 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
     if (flags.canAdmin) {
       setValue('usageLimited', false);
       setValue('networks', ['Preprod', 'Mainnet']);
+      setValue('evmChains', []);
       setValue('walletScopeEnabled', false);
       setValue('walletScopeIds', []);
     } else if (!flags.canPay) {
       // Read-only: always usage limited
       setValue('usageLimited', true);
+      setValue('evmChains', []);
     }
   }, [permissionPreset, setValue]);
 
@@ -192,6 +198,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
             canAdmin: data.canAdmin,
             usageLimited: isReadOnly ? 'true' : data.usageLimited.toString(),
             NetworkLimit: data.networks,
+            ChainIdLimit: data.canPay && !data.canAdmin ? data.evmChains : [],
             UsageCredits: isReadOnly
               ? defaultCredits
               : data.usageLimited
@@ -320,6 +327,45 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
               <p className="text-xs text-destructive mt-1">{errors.networks.message}</p>
             )}
           </div>
+
+          {canPay && !canAdmin && evmChainOptions.length > 0 && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium">EVM chains (x402)</label>
+              <p className="text-xs text-muted-foreground">
+                Grant this key access to settle and fetch x402 payments on these chains.
+              </p>
+              <Controller
+                control={control}
+                name="evmChains"
+                render={({ field }) => (
+                  <div className="flex flex-col gap-2">
+                    {evmChainOptions.map((chain) => (
+                      <div key={chain.id} className="flex items-center gap-2">
+                        <Checkbox
+                          checked={field.value.includes(chain.caip2Id)}
+                          onCheckedChange={() => {
+                            if (field.value.includes(chain.caip2Id)) {
+                              field.onChange(
+                                field.value.filter((c: string) => c !== chain.caip2Id),
+                              );
+                            } else {
+                              field.onChange([...field.value, chain.caip2Id]);
+                            }
+                          }}
+                        />
+                        <label className="text-sm">
+                          {chain.displayName}{' '}
+                          <span className="font-mono text-xs text-muted-foreground">
+                            {chain.caip2Id}
+                          </span>
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              />
+            </div>
+          )}
 
           <div className="space-y-2">
             <div className="flex items-center gap-2">

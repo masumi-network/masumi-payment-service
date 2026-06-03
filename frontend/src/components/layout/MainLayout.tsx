@@ -20,6 +20,7 @@ import {
   Code,
   Wand2,
   AlertTriangle,
+  Coins,
 } from 'lucide-react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import { useSidebar } from '@/lib/contexts/SidebarContext';
@@ -252,6 +253,13 @@ export function MainLayout({ children }: MainLayoutProps) {
         href: '/webhooks',
         name: 'Webhooks',
         icon: <Bell className="h-4 w-4" />,
+        badge: null,
+        group: 1,
+      },
+      {
+        href: '/x402',
+        name: 'x402',
+        icon: <Coins className="h-4 w-4" />,
         badge: null,
         group: 1,
       },
