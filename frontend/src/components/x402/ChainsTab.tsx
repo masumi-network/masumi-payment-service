@@ -174,7 +174,7 @@ function FacilitatorLabel({ walletId }: { walletId: string }) {
   return <span className="font-mono">{wallet ? shortenAddress(wallet.address, 6) : walletId}</span>;
 }
 
-function ChainDialog({
+export function ChainDialog({
   open,
   editing,
   onClose,

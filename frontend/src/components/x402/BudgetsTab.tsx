@@ -146,7 +146,7 @@ export function BudgetsTab() {
   );
 }
 
-function BudgetDialog({
+export function BudgetDialog({
   open,
   editing,
   onClose,

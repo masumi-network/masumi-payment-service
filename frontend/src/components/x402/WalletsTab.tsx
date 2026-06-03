@@ -146,7 +146,7 @@ export function WalletsTab() {
   );
 }
 
-function CreateWalletDialog({
+export function CreateWalletDialog({
   open,
   onClose,
   onSaved,
