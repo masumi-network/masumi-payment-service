@@ -4,6 +4,7 @@ import { ArrowRight, CheckCircle2, ChevronDown, Coins, Link2, Wallet } from 'luc
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import { useAppContext } from '@/lib/contexts/AppContext';
 import { useX402Budgets, useX402Networks, useX402Wallets } from '@/lib/hooks/useX402';
 import { X402Network } from '@/lib/api/generated';
 import { CreateWalletDialog } from './WalletsTab';
@@ -26,6 +27,7 @@ type DialogKind = 'wallet' | 'chain' | 'budget' | null;
  */
 export function X402SetupGuide() {
   const queryClient = useQueryClient();
+  const { apiClient, authorized } = useAppContext();
   const { wallets, isLoading: walletsLoading } = useX402Wallets();
   const { networks, isLoading: networksLoading } = useX402Networks();
   const { budgets, isLoading: budgetsLoading } = useX402Budgets();
@@ -43,9 +45,11 @@ export function X402SetupGuide() {
   // paying). We intentionally don't require both — an operator may only do one side.
   const usable = hasWallet && (hasFacilitator || hasBudget);
 
-  // Avoid flashing an "incomplete" guide before data loads, and step aside once the
+  // Wait for auth before deciding anything: the x402 hooks return empty arrays while
+  // disabled (unauthenticated), which would otherwise flash the guide on a fully
+  // configured rail. Then avoid flashing during the real load, and step aside once the
   // rail can actually do something.
-  if (loading || usable) return null;
+  if (!apiClient || !authorized || loading || usable) return null;
 
   // Prefer attaching a facilitator to an existing enabled chain — Base ships
   // preconfigured by the seed — and fall back to adding a brand new chain.
