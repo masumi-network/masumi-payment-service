@@ -1,0 +1,41 @@
+name: Docker Build Check
+
+# Builds the Docker `backend-builder` stage on PRs to `dev` (the entry point of
+# the PR->dev->main flow), so build-context regressions are caught before merge.
+#
+# Why a Docker build and not a plain `tsc`: the failures this guards against are
+# build-CONTEXT regressions (e.g. the Dockerfile not COPYing `packages/`), which
+# make workspace imports like `@masumi/payment-core/db` unresolvable and cascade
+# into hundreds of downstream type errors. A normal `tsc`/`pnpm build` on a full
+# checkout (as in dev.yml/e2e.yml) cannot catch these, because the omitted files
+# are present on disk there — the error only exists inside the Docker context.
+#
+# `backend-builder` is the stage that runs `prisma generate && tsc && pkgroll`
+# plus swagger generation — i.e. the stage that fails on a context regression.
+on:
+  pull_request:
+    branches:
+      - dev
+
+permissions:
+  contents: read
+
+jobs:
+  docker-build:
+    name: Build backend-builder stage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build backend-builder stage
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: backend-builder
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
