@@ -11,6 +11,7 @@ export const apiKeyExample = {
 	canAdmin: true,
 	usageLimited: true,
 	NetworkLimit: [Network.Preprod],
+	ChainIdLimit: ['cardano:preprod'],
 	RemainingUsageCredits: [
 		{
 			unit: '',

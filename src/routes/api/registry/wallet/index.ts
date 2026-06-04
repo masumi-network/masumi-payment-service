@@ -75,7 +75,7 @@ export const metadataSchema = z.object({
 			fixedPricing: z
 				.array(
 					z.object({
-						amount: z.coerce.number().int().min(1),
+						amount: z.coerce.bigint().refine((amount) => amount > 0n, 'Amount must be greater than zero'),
 						unit: z
 							.string()
 							.min(1)

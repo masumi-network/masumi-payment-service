@@ -14,6 +14,7 @@ import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 import { retryOnSerializationConflict } from '@/utils/db/retry';
 import { mapA2ARegistryRequestToOutput } from '@/routes/api/registry/utils';
+import { serializeSupportedPaymentSources } from '../serializers';
 
 const a2aInclude = {
 	Pricing: {
@@ -231,6 +232,13 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 										network: true,
 										paymentSourceType: true,
 										address: true,
+										scheme: true,
+										asset: true,
+										amount: true,
+										decimals: true,
+										payTo: true,
+										resource: true,
+										extra: true,
 									},
 								},
 								CurrentTransaction: {
@@ -282,7 +290,7 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 							pricingType: result.Pricing.pricingType,
 						},
 			sendFundingLovelace: result.sendFundingLovelace?.toString() ?? null,
-			supportedPaymentSources: result.SupportedPaymentSources.length > 0 ? result.SupportedPaymentSources : null,
+			supportedPaymentSources: serializeSupportedPaymentSources(result.SupportedPaymentSources),
 			Tags: result.tags,
 			RecipientWallet: result.RecipientWallet,
 			CurrentTransaction: result.CurrentTransaction

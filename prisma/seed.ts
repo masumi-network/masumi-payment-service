@@ -141,6 +141,11 @@ export const seed = async (prisma: PrismaClient) => {
 				canPay: true,
 				canAdmin: true,
 				status: ApiKeyStatus.Active,
+				// networkLimit is now a NOT NULL CAIP-2 String[] with no DB default (the
+				// x402 migration dropped it). Admin keys store an empty list — auth grants
+				// all networks regardless — mirroring addAPIKeyEndpointPost (`isAdmin ? []`).
+				// Backwards compatible: the legacy Network[] column also defaulted to empty.
+				networkLimit: [],
 			},
 			update: {
 				encryptedToken: encrypt(adminKey),

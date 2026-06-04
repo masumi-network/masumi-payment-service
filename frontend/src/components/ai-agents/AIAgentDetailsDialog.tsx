@@ -26,6 +26,7 @@ import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtende
 import { extractApiErrorMessage } from '@/lib/api-error';
 import { findPaymentSourceWalletByVkey } from '@/lib/wallet-lookup';
 import { VerifyAndPublishAgentDialog } from './VerifyAndPublishAgentDialog';
+import { AgentX402Options } from './AgentX402Options';
 
 type AIAgent = RegistryEntry | A2aRegistryEntry;
 
@@ -559,6 +560,8 @@ export function AIAgentDetailsDialog({
                             </div>
                           </CardContent>
                         </Card>
+
+                        <AgentX402Options sources={agent.supportedPaymentSources} />
 
                         <div className="flex items-center gap-4 pt-2">
                           <Separator className="flex-1" />

@@ -2,8 +2,8 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import { deleteInboxAgentsResponseTransformer, deletePaymentSourceExtendedResponseTransformer, deleteWalletLowBalanceResponseTransformer, deleteWebhooksResponseTransformer, getInboxAgentsDiffResponseTransformer, getInboxAgentsResponseTransformer, getInvoiceMonthlyMissingResponseTransformer, getInvoiceMonthlyResponseTransformer, getPaymentDiffNextActionResponseTransformer, getPaymentDiffOnchainStateOrResultResponseTransformer, getPaymentDiffResponseTransformer, getPaymentResponseTransformer, getPaymentSourceExtendedResponseTransformer, getPaymentSourceResponseTransformer, getPurchaseDiffNextActionResponseTransformer, getPurchaseDiffOnchainStateOrResultResponseTransformer, getPurchaseDiffResponseTransformer, getPurchaseResponseTransformer, getRegistryA2aResponseTransformer, getRegistryDiffResponseTransformer, getRegistryResponseTransformer, getRpcApiKeysResponseTransformer, getWalletLowBalanceResponseTransformer, getWalletResponseTransformer, getWebhooksResponseTransformer, patchPaymentSourceExtendedResponseTransformer, patchWalletLowBalanceResponseTransformer, patchWalletResponseTransformer, patchWebhooksResponseTransformer, postInboxAgentsDeregisterResponseTransformer, postInboxAgentsResponseTransformer, postPaymentAuthorizeRefundResponseTransformer, postPaymentErrorStateRecoveryResponseTransformer, postPaymentIncomeResponseTransformer, postPaymentResolveBlockchainIdentifierResponseTransformer, postPaymentResponseTransformer, postPaymentSourceExtendedResponseTransformer, postPaymentSubmitResultResponseTransformer, postPurchaseCancelRefundRequestResponseTransformer, postPurchaseErrorStateRecoveryResponseTransformer, postPurchaseRequestRefundResponseTransformer, postPurchaseResolveBlockchainIdentifierResponseTransformer, postPurchaseResponseTransformer, postPurchaseSpendingResponseTransformer, postRegistryA2aResponseTransformer, postRegistryResponseTransformer, postRegistryUpdateResponseTransformer, postWalletLowBalanceResponseTransformer, postWebhooksResponseTransformer } from './transformers.gen';
-import type { DeleteApiKeyData, DeleteApiKeyErrors, DeleteApiKeyResponses, DeleteInboxAgentsData, DeleteInboxAgentsResponses, DeletePaymentSourceExtendedData, DeletePaymentSourceExtendedResponses, DeleteRegistryData, DeleteRegistryErrors, DeleteRegistryResponses, DeleteWalletLowBalanceData, DeleteWalletLowBalanceErrors, DeleteWalletLowBalanceResponses, DeleteWebhooksData, DeleteWebhooksErrors, DeleteWebhooksResponses, GetApiKeyData, GetApiKeyErrors, GetApiKeyResponses, GetApiKeyStatusData, GetApiKeyStatusResponses, GetHealthData, GetHealthResponses, GetInboxAgentsAgentIdentifierData, GetInboxAgentsAgentIdentifierErrors, GetInboxAgentsAgentIdentifierResponses, GetInboxAgentsCountData, GetInboxAgentsCountResponses, GetInboxAgentsData, GetInboxAgentsDiffData, GetInboxAgentsDiffErrors, GetInboxAgentsDiffResponses, GetInboxAgentsResponses, GetInboxAgentsWalletData, GetInboxAgentsWalletResponses, GetInvoiceMonthlyData, GetInvoiceMonthlyMissingData, GetInvoiceMonthlyMissingResponses, GetInvoiceMonthlyResponses, GetMonitoringData, GetMonitoringErrors, GetMonitoringResponses, GetPaymentCountData, GetPaymentCountResponses, GetPaymentData, GetPaymentDiffData, GetPaymentDiffErrors, GetPaymentDiffNextActionData, GetPaymentDiffNextActionErrors, GetPaymentDiffNextActionResponses, GetPaymentDiffOnchainStateOrResultData, GetPaymentDiffOnchainStateOrResultErrors, GetPaymentDiffOnchainStateOrResultResponses, GetPaymentDiffResponses, GetPaymentErrors, GetPaymentResponses, GetPaymentSourceData, GetPaymentSourceExtendedData, GetPaymentSourceExtendedResponses, GetPaymentSourceResponses, GetPurchaseCountData, GetPurchaseCountResponses, GetPurchaseData, GetPurchaseDiffData, GetPurchaseDiffErrors, GetPurchaseDiffNextActionData, GetPurchaseDiffNextActionErrors, GetPurchaseDiffNextActionResponses, GetPurchaseDiffOnchainStateOrResultData, GetPurchaseDiffOnchainStateOrResultErrors, GetPurchaseDiffOnchainStateOrResultResponses, GetPurchaseDiffResponses, GetPurchaseErrors, GetPurchaseResponses, GetRegistryA2aData, GetRegistryA2aErrors, GetRegistryA2aResponses, GetRegistryAgentIdentifierData, GetRegistryAgentIdentifierErrors, GetRegistryAgentIdentifierResponses, GetRegistryCountData, GetRegistryCountResponses, GetRegistryData, GetRegistryDiffData, GetRegistryDiffErrors, GetRegistryDiffResponses, GetRegistryResponses, GetRegistryWalletData, GetRegistryWalletResponses, GetRpcApiKeysData, GetRpcApiKeysErrors, GetRpcApiKeysResponses, GetSwapConfirmData, GetSwapConfirmErrors, GetSwapConfirmResponses, GetSwapEstimateData, GetSwapEstimateErrors, GetSwapEstimateResponses, GetSwapTransactionsData, GetSwapTransactionsErrors, GetSwapTransactionsResponses, GetUtxosData, GetUtxosResponses, GetWalletData, GetWalletLowBalanceData, GetWalletLowBalanceResponses, GetWalletResponses, GetWebhooksData, GetWebhooksErrors, GetWebhooksResponses, PatchApiKeyData, PatchApiKeyErrors, PatchApiKeyResponses, PatchPaymentSourceExtendedData, PatchPaymentSourceExtendedResponses, PatchWalletData, PatchWalletErrors, PatchWalletLowBalanceData, PatchWalletLowBalanceErrors, PatchWalletLowBalanceResponses, PatchWalletResponses, PatchWebhooksData, PatchWebhooksErrors, PatchWebhooksResponses, PostApiKeyData, PostApiKeyErrors, PostApiKeyResponses, PostInboxAgentsData, PostInboxAgentsDeregisterData, PostInboxAgentsDeregisterResponses, PostInboxAgentsResponses, PostInvoiceMonthlyData, PostInvoiceMonthlyInternalData, PostInvoiceMonthlyInternalResponses, PostInvoiceMonthlyResponses, PostMonitoringStartData, PostMonitoringStartErrors, PostMonitoringStartResponses, PostMonitoringStopData, PostMonitoringStopErrors, PostMonitoringStopResponses, PostMonitoringTriggerCycleData, PostMonitoringTriggerCycleErrors, PostMonitoringTriggerCycleResponses, PostPaymentAuthorizeRefundData, PostPaymentAuthorizeRefundErrors, PostPaymentAuthorizeRefundResponses, PostPaymentData, PostPaymentErrors, PostPaymentErrorStateRecoveryData, PostPaymentErrorStateRecoveryErrors, PostPaymentErrorStateRecoveryResponses, PostPaymentIncomeData, PostPaymentIncomeErrors, PostPaymentIncomeResponses, PostPaymentResolveBlockchainIdentifierData, PostPaymentResolveBlockchainIdentifierErrors, PostPaymentResolveBlockchainIdentifierResponses, PostPaymentResponses, PostPaymentSourceExtendedData, PostPaymentSourceExtendedResponses, PostPaymentSubmitResultData, PostPaymentSubmitResultErrors, PostPaymentSubmitResultResponses, PostPaymentX402Data, PostPaymentX402Errors, PostPaymentX402Responses, PostPurchaseCancelRefundRequestData, PostPurchaseCancelRefundRequestErrors, PostPurchaseCancelRefundRequestResponses, PostPurchaseData, PostPurchaseErrors, PostPurchaseErrorStateRecoveryData, PostPurchaseErrorStateRecoveryErrors, PostPurchaseErrorStateRecoveryResponses, PostPurchaseRequestRefundData, PostPurchaseRequestRefundErrors, PostPurchaseRequestRefundResponses, PostPurchaseResolveBlockchainIdentifierData, PostPurchaseResolveBlockchainIdentifierErrors, PostPurchaseResolveBlockchainIdentifierResponses, PostPurchaseResponses, PostPurchaseSpendingData, PostPurchaseSpendingErrors, PostPurchaseSpendingResponses, PostRegistryA2aData, PostRegistryA2aErrors, PostRegistryA2aResponses, PostRegistryData, PostRegistryDeregisterData, PostRegistryDeregisterResponses, PostRegistryResponses, PostRegistryUpdateData, PostRegistryUpdateResponses, PostSignatureSignCreateInvoiceMonthlyData, PostSignatureSignCreateInvoiceMonthlyResponses, PostSignatureSignVerifyAndPublishAgentData, PostSignatureSignVerifyAndPublishAgentResponses, PostSignatureVerifyRevealDataData, PostSignatureVerifyRevealDataErrors, PostSignatureVerifyRevealDataResponses, PostSwapAcknowledgeTimeoutData, PostSwapAcknowledgeTimeoutErrors, PostSwapAcknowledgeTimeoutResponses, PostSwapCancelData, PostSwapCancelErrors, PostSwapCancelResponses, PostSwapData, PostSwapErrors, PostSwapResponses, PostWalletData, PostWalletLowBalanceData, PostWalletLowBalanceErrors, PostWalletLowBalanceResponses, PostWalletResponses, PostWebhooksData, PostWebhooksErrors, PostWebhooksResponses, PostWebhooksTestData, PostWebhooksTestErrors, PostWebhooksTestResponses } from './types.gen';
+import { deleteInboxAgentsResponseTransformer, deletePaymentSourceExtendedResponseTransformer, deleteWalletLowBalanceResponseTransformer, deleteWebhooksResponseTransformer, getInboxAgentsDiffResponseTransformer, getInboxAgentsResponseTransformer, getInvoiceMonthlyMissingResponseTransformer, getInvoiceMonthlyResponseTransformer, getPaymentDiffNextActionResponseTransformer, getPaymentDiffOnchainStateOrResultResponseTransformer, getPaymentDiffResponseTransformer, getPaymentResponseTransformer, getPaymentSourceExtendedResponseTransformer, getPaymentSourceResponseTransformer, getPurchaseDiffNextActionResponseTransformer, getPurchaseDiffOnchainStateOrResultResponseTransformer, getPurchaseDiffResponseTransformer, getPurchaseResponseTransformer, getRegistryA2aResponseTransformer, getRegistryDiffResponseTransformer, getRegistryResponseTransformer, getRpcApiKeysResponseTransformer, getWalletLowBalanceResponseTransformer, getWalletResponseTransformer, getWebhooksResponseTransformer, getX402BudgetsResponseTransformer, getX402NetworksResponseTransformer, getX402PaymentsResponseTransformer, getX402SettlementsResponseTransformer, getX402WalletsResponseTransformer, patchPaymentSourceExtendedResponseTransformer, patchWalletLowBalanceResponseTransformer, patchWalletResponseTransformer, patchWebhooksResponseTransformer, postInboxAgentsDeregisterResponseTransformer, postInboxAgentsResponseTransformer, postPaymentAuthorizeRefundResponseTransformer, postPaymentErrorStateRecoveryResponseTransformer, postPaymentIncomeResponseTransformer, postPaymentResolveBlockchainIdentifierResponseTransformer, postPaymentResponseTransformer, postPaymentSourceExtendedResponseTransformer, postPaymentSubmitResultResponseTransformer, postPurchaseCancelRefundRequestResponseTransformer, postPurchaseErrorStateRecoveryResponseTransformer, postPurchaseRequestRefundResponseTransformer, postPurchaseResolveBlockchainIdentifierResponseTransformer, postPurchaseResponseTransformer, postPurchaseSpendingResponseTransformer, postRegistryA2aResponseTransformer, postRegistryResponseTransformer, postRegistryUpdateResponseTransformer, postWalletLowBalanceResponseTransformer, postWebhooksResponseTransformer, postX402BudgetsResponseTransformer, postX402NetworksResponseTransformer, postX402WalletsResponseTransformer } from './transformers.gen';
+import type { DeleteApiKeyData, DeleteApiKeyErrors, DeleteApiKeyResponses, DeleteInboxAgentsData, DeleteInboxAgentsResponses, DeletePaymentSourceExtendedData, DeletePaymentSourceExtendedResponses, DeleteRegistryData, DeleteRegistryErrors, DeleteRegistryResponses, DeleteWalletLowBalanceData, DeleteWalletLowBalanceErrors, DeleteWalletLowBalanceResponses, DeleteWebhooksData, DeleteWebhooksErrors, DeleteWebhooksResponses, GetApiKeyData, GetApiKeyErrors, GetApiKeyResponses, GetApiKeyStatusData, GetApiKeyStatusResponses, GetHealthData, GetHealthResponses, GetInboxAgentsAgentIdentifierData, GetInboxAgentsAgentIdentifierErrors, GetInboxAgentsAgentIdentifierResponses, GetInboxAgentsCountData, GetInboxAgentsCountResponses, GetInboxAgentsData, GetInboxAgentsDiffData, GetInboxAgentsDiffErrors, GetInboxAgentsDiffResponses, GetInboxAgentsResponses, GetInboxAgentsWalletData, GetInboxAgentsWalletResponses, GetInvoiceMonthlyData, GetInvoiceMonthlyMissingData, GetInvoiceMonthlyMissingResponses, GetInvoiceMonthlyResponses, GetMonitoringData, GetMonitoringErrors, GetMonitoringResponses, GetPaymentCountData, GetPaymentCountResponses, GetPaymentData, GetPaymentDiffData, GetPaymentDiffErrors, GetPaymentDiffNextActionData, GetPaymentDiffNextActionErrors, GetPaymentDiffNextActionResponses, GetPaymentDiffOnchainStateOrResultData, GetPaymentDiffOnchainStateOrResultErrors, GetPaymentDiffOnchainStateOrResultResponses, GetPaymentDiffResponses, GetPaymentErrors, GetPaymentResponses, GetPaymentSourceData, GetPaymentSourceExtendedData, GetPaymentSourceExtendedResponses, GetPaymentSourceResponses, GetPurchaseCountData, GetPurchaseCountResponses, GetPurchaseData, GetPurchaseDiffData, GetPurchaseDiffErrors, GetPurchaseDiffNextActionData, GetPurchaseDiffNextActionErrors, GetPurchaseDiffNextActionResponses, GetPurchaseDiffOnchainStateOrResultData, GetPurchaseDiffOnchainStateOrResultErrors, GetPurchaseDiffOnchainStateOrResultResponses, GetPurchaseDiffResponses, GetPurchaseErrors, GetPurchaseResponses, GetRegistryA2aData, GetRegistryA2aErrors, GetRegistryA2aResponses, GetRegistryAgentIdentifierData, GetRegistryAgentIdentifierErrors, GetRegistryAgentIdentifierResponses, GetRegistryCountData, GetRegistryCountResponses, GetRegistryData, GetRegistryDiffData, GetRegistryDiffErrors, GetRegistryDiffResponses, GetRegistryResponses, GetRegistryWalletData, GetRegistryWalletResponses, GetRpcApiKeysData, GetRpcApiKeysErrors, GetRpcApiKeysResponses, GetSwapConfirmData, GetSwapConfirmErrors, GetSwapConfirmResponses, GetSwapEstimateData, GetSwapEstimateErrors, GetSwapEstimateResponses, GetSwapTransactionsData, GetSwapTransactionsErrors, GetSwapTransactionsResponses, GetUtxosData, GetUtxosResponses, GetWalletData, GetWalletLowBalanceData, GetWalletLowBalanceResponses, GetWalletResponses, GetWebhooksData, GetWebhooksErrors, GetWebhooksResponses, GetX402BudgetsData, GetX402BudgetsResponses, GetX402NetworksData, GetX402NetworksResponses, GetX402PaymentsData, GetX402PaymentsResponses, GetX402SettlementsData, GetX402SettlementsResponses, GetX402WalletsData, GetX402WalletsResponses, PatchApiKeyData, PatchApiKeyErrors, PatchApiKeyResponses, PatchPaymentSourceExtendedData, PatchPaymentSourceExtendedResponses, PatchWalletData, PatchWalletErrors, PatchWalletLowBalanceData, PatchWalletLowBalanceErrors, PatchWalletLowBalanceResponses, PatchWalletResponses, PatchWebhooksData, PatchWebhooksErrors, PatchWebhooksResponses, PostApiKeyData, PostApiKeyErrors, PostApiKeyResponses, PostInboxAgentsData, PostInboxAgentsDeregisterData, PostInboxAgentsDeregisterResponses, PostInboxAgentsResponses, PostInvoiceMonthlyData, PostInvoiceMonthlyInternalData, PostInvoiceMonthlyInternalResponses, PostInvoiceMonthlyResponses, PostMonitoringStartData, PostMonitoringStartErrors, PostMonitoringStartResponses, PostMonitoringStopData, PostMonitoringStopErrors, PostMonitoringStopResponses, PostMonitoringTriggerCycleData, PostMonitoringTriggerCycleErrors, PostMonitoringTriggerCycleResponses, PostPaymentAuthorizeRefundData, PostPaymentAuthorizeRefundErrors, PostPaymentAuthorizeRefundResponses, PostPaymentData, PostPaymentErrors, PostPaymentErrorStateRecoveryData, PostPaymentErrorStateRecoveryErrors, PostPaymentErrorStateRecoveryResponses, PostPaymentIncomeData, PostPaymentIncomeErrors, PostPaymentIncomeResponses, PostPaymentResolveBlockchainIdentifierData, PostPaymentResolveBlockchainIdentifierErrors, PostPaymentResolveBlockchainIdentifierResponses, PostPaymentResponses, PostPaymentSourceExtendedData, PostPaymentSourceExtendedResponses, PostPaymentSubmitResultData, PostPaymentSubmitResultErrors, PostPaymentSubmitResultResponses, PostPaymentX402Data, PostPaymentX402Errors, PostPaymentX402Responses, PostPurchaseCancelRefundRequestData, PostPurchaseCancelRefundRequestErrors, PostPurchaseCancelRefundRequestResponses, PostPurchaseData, PostPurchaseErrors, PostPurchaseErrorStateRecoveryData, PostPurchaseErrorStateRecoveryErrors, PostPurchaseErrorStateRecoveryResponses, PostPurchaseRequestRefundData, PostPurchaseRequestRefundErrors, PostPurchaseRequestRefundResponses, PostPurchaseResolveBlockchainIdentifierData, PostPurchaseResolveBlockchainIdentifierErrors, PostPurchaseResolveBlockchainIdentifierResponses, PostPurchaseResponses, PostPurchaseSpendingData, PostPurchaseSpendingErrors, PostPurchaseSpendingResponses, PostRegistryA2aData, PostRegistryA2aErrors, PostRegistryA2aResponses, PostRegistryData, PostRegistryDeregisterData, PostRegistryDeregisterResponses, PostRegistryResponses, PostRegistryUpdateData, PostRegistryUpdateResponses, PostSignatureSignCreateInvoiceMonthlyData, PostSignatureSignCreateInvoiceMonthlyResponses, PostSignatureSignVerifyAndPublishAgentData, PostSignatureSignVerifyAndPublishAgentResponses, PostSignatureVerifyRevealDataData, PostSignatureVerifyRevealDataErrors, PostSignatureVerifyRevealDataResponses, PostSwapAcknowledgeTimeoutData, PostSwapAcknowledgeTimeoutErrors, PostSwapAcknowledgeTimeoutResponses, PostSwapCancelData, PostSwapCancelErrors, PostSwapCancelResponses, PostSwapData, PostSwapErrors, PostSwapResponses, PostWalletData, PostWalletLowBalanceData, PostWalletLowBalanceErrors, PostWalletLowBalanceResponses, PostWalletResponses, PostWebhooksData, PostWebhooksErrors, PostWebhooksResponses, PostWebhooksTestData, PostWebhooksTestErrors, PostWebhooksTestResponses, PostX402BudgetsData, PostX402BudgetsResponses, PostX402NetworksData, PostX402NetworksResponses, PostX402PayData, PostX402PayResponses, PostX402SettleData, PostX402SettleResponses, PostX402VerifyData, PostX402VerifyResponses, PostX402WalletsData, PostX402WalletsDeleteData, PostX402WalletsDeleteResponses, PostX402WalletsResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -1258,5 +1258,185 @@ export const postMonitoringStop = <ThrowOnError extends boolean = false>(options
     responseType: 'json',
     security: [{ name: 'token', type: 'apiKey' }],
     url: '/monitoring/stop',
+    ...options
+});
+
+/**
+ * List configured x402 EVM chains. (admin access required)
+ *
+ * Lists the EVM chains configured for the standard x402 payment rail.
+ */
+export const getX402Networks = <ThrowOnError extends boolean = false>(options?: Options<GetX402NetworksData, ThrowOnError>) => (options?.client ?? client).get<GetX402NetworksResponses, unknown, ThrowOnError>({
+    responseTransformer: getX402NetworksResponseTransformer,
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/x402/networks',
+    ...options
+});
+
+/**
+ * Create or update an x402 EVM chain. (admin access required)
+ *
+ * Creates or updates an EVM chain configuration, keyed by its CAIP-2 id.
+ */
+export const postX402Networks = <ThrowOnError extends boolean = false>(options?: Options<PostX402NetworksData, ThrowOnError>) => (options?.client ?? client).post<PostX402NetworksResponses, unknown, ThrowOnError>({
+    responseTransformer: postX402NetworksResponseTransformer,
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/x402/networks',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+    }
+});
+
+/**
+ * List managed x402 EVM wallets. (admin access required)
+ *
+ * Lists the managed EVM wallets used to fund x402 payments and settle inbound payments.
+ */
+export const getX402Wallets = <ThrowOnError extends boolean = false>(options?: Options<GetX402WalletsData, ThrowOnError>) => (options?.client ?? client).get<GetX402WalletsResponses, unknown, ThrowOnError>({
+    responseTransformer: getX402WalletsResponseTransformer,
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/x402/wallets',
+    ...options
+});
+
+/**
+ * Create a managed x402 EVM wallet. (admin access required)
+ *
+ * Creates a managed EVM wallet. A new private key is generated when none is supplied; the key is stored encrypted and never returned.
+ */
+export const postX402Wallets = <ThrowOnError extends boolean = false>(options?: Options<PostX402WalletsData, ThrowOnError>) => (options?.client ?? client).post<PostX402WalletsResponses, unknown, ThrowOnError>({
+    responseTransformer: postX402WalletsResponseTransformer,
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/x402/wallets',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+    }
+});
+
+/**
+ * Retire a managed x402 EVM wallet. (admin access required)
+ *
+ * Retires a managed EVM wallet: soft-deletes it, disables its budgets, and detaches it from any chain it facilitates so a compromised key can no longer sign or settle.
+ */
+export const postX402WalletsDelete = <ThrowOnError extends boolean = false>(options?: Options<PostX402WalletsDeleteData, ThrowOnError>) => (options?.client ?? client).post<PostX402WalletsDeleteResponses, unknown, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/x402/wallets/delete',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+    }
+});
+
+/**
+ * List x402 wallet budgets. (admin access required)
+ *
+ * Lists per-API-key spend budgets for managed x402 wallets, optionally filtered by API key.
+ */
+export const getX402Budgets = <ThrowOnError extends boolean = false>(options?: Options<GetX402BudgetsData, ThrowOnError>) => (options?.client ?? client).get<GetX402BudgetsResponses, unknown, ThrowOnError>({
+    responseTransformer: getX402BudgetsResponseTransformer,
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/x402/budgets',
+    ...options
+});
+
+/**
+ * Set an x402 wallet budget. (admin access required)
+ *
+ * Sets the remaining spend budget for an (API key, managed wallet, chain, asset) tuple. Replaces the remaining amount.
+ */
+export const postX402Budgets = <ThrowOnError extends boolean = false>(options?: Options<PostX402BudgetsData, ThrowOnError>) => (options?.client ?? client).post<PostX402BudgetsResponses, unknown, ThrowOnError>({
+    responseTransformer: postX402BudgetsResponseTransformer,
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/x402/budgets',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+    }
+});
+
+/**
+ * Verify an inbound x402 payment. (pay access required)
+ *
+ * Verifies a buyer x402 payment payload against a registered resource without settling it, so a resource server can check a payment before serving content.
+ */
+export const postX402Verify = <ThrowOnError extends boolean = false>(options?: Options<PostX402VerifyData, ThrowOnError>) => (options?.client ?? client).post<PostX402VerifyResponses, unknown, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/x402/verify',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+    }
+});
+
+/**
+ * Settle an inbound x402 payment on-chain. (pay access required)
+ *
+ * Settles a buyer x402 payment payload on-chain for a registered resource and records the settlement. Idempotent per payment payload hash.
+ */
+export const postX402Settle = <ThrowOnError extends boolean = false>(options?: Options<PostX402SettleData, ThrowOnError>) => (options?.client ?? client).post<PostX402SettleResponses, unknown, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/x402/settle',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+    }
+});
+
+/**
+ * Sign a payment for a forwarded 402. (pay access required)
+ *
+ * Signs a payment for a forwarded 402 using a managed EVM wallet, charged against the caller budget. Returns the X-PAYMENT header for the caller to send with its own retried request; this service never fetches the resource itself.
+ */
+export const postX402Pay = <ThrowOnError extends boolean = false>(options?: Options<PostX402PayData, ThrowOnError>) => (options?.client ?? client).post<PostX402PayResponses, unknown, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/x402/pay',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+    }
+});
+
+/**
+ * List x402 payment attempts. (admin access required)
+ *
+ * Lists x402 payment attempts (inbound verify/settle and outbound payments), newest first, with their settlement result.
+ */
+export const getX402Payments = <ThrowOnError extends boolean = false>(options?: Options<GetX402PaymentsData, ThrowOnError>) => (options?.client ?? client).get<GetX402PaymentsResponses, unknown, ThrowOnError>({
+    responseTransformer: getX402PaymentsResponseTransformer,
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/x402/payments',
+    ...options
+});
+
+/**
+ * List x402 settlements. (admin access required)
+ *
+ * Lists x402 on-chain settlements, newest first.
+ */
+export const getX402Settlements = <ThrowOnError extends boolean = false>(options?: Options<GetX402SettlementsData, ThrowOnError>) => (options?.client ?? client).get<GetX402SettlementsResponses, unknown, ThrowOnError>({
+    responseTransformer: getX402SettlementsResponseTransformer,
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/x402/settlements',
     ...options
 });

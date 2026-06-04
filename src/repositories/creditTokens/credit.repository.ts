@@ -1,4 +1,5 @@
 import { prisma } from '@masumi/payment-core/db';
+import { cardanoNetworkToCaip2 } from '@masumi/payment-core/network';
 import createHttpError from 'http-errors';
 import { InsufficientFundsError } from '@/utils/errors/insufficient-funds-error';
 import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
@@ -86,7 +87,7 @@ async function handlePurchaseCreditInit({
 					if (!result) {
 						throw createHttpError(404, 'Invalid id: ' + id);
 					}
-					if (!result.canAdmin && !result.networkLimit.includes(network)) {
+					if (!result.canAdmin && !result.networkLimit.includes(cardanoNetworkToCaip2(network))) {
 						throw createHttpError(403, 'No permission for network: ' + network + ' for id: ' + id);
 					}
 

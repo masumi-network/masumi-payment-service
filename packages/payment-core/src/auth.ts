@@ -6,4 +6,9 @@ export const payAuthenticatedEndpointFactory = endpointFactory.addMiddleware(aut
 export const readAuthenticatedEndpointFactory = endpointFactory.addMiddleware(authMiddleware({ canRead: true }));
 export const unauthenticatedEndpointFactory = endpointFactory;
 
-export { authMiddleware, checkIsAllowedNetworkOrThrowUnauthorized, type AuthContext } from './auth-middleware';
+export {
+	authMiddleware,
+	checkIsAllowedCaip2NetworkOrThrowUnauthorized,
+	checkIsAllowedNetworkOrThrowUnauthorized,
+	type AuthContext,
+} from './auth-middleware';

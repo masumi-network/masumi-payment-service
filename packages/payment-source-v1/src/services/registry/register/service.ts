@@ -29,13 +29,17 @@ import {
 	resolveRegistryFundingLovelace,
 	resolveRegistryRecipientWalletAddress,
 } from '@/services/registry/shared';
-import {
-	SupportedPaymentSourceChain,
-	type RegistryMetadataPaymentSource,
-	type SupportedPaymentSource,
-} from '@/types/payment-source';
+import { SupportedPaymentSourceChain, type RegistryMetadataPaymentSource } from '@/types/payment-source';
 
 const mutex = new Mutex();
+
+type RegistrySupportedPaymentSourceMetadataRow = {
+	chain: string;
+	network: string;
+	paymentSourceType: PaymentSourceType | null;
+	address: string;
+	payTo?: string | null;
+};
 
 function validateRegistrationPricing(request: {
 	Pricing: {
@@ -61,7 +65,7 @@ function validateRegistrationPricing(request: {
 	}
 }
 
-function buildAgentMetadata(
+export function buildAgentMetadata(
 	request: {
 		name: string;
 		description: string | null;
@@ -84,13 +88,16 @@ function buildAgentMetadata(
 			} | null;
 		};
 		metadataVersion: number;
-		SupportedPaymentSources: SupportedPaymentSource[];
+		SupportedPaymentSources: RegistrySupportedPaymentSourceMetadataRow[];
 	},
 	paymentSource: RegistryMetadataPaymentSource,
 ): RegistryMetadata {
+	const cardanoSupportedPaymentSources = request.SupportedPaymentSources.filter(
+		(source) => source.chain === SupportedPaymentSourceChain.Cardano,
+	);
 	const supportedPaymentSources =
-		request.SupportedPaymentSources.length > 0
-			? request.SupportedPaymentSources
+		cardanoSupportedPaymentSources.length > 0
+			? cardanoSupportedPaymentSources
 			: [
 					{
 						chain: SupportedPaymentSourceChain.Cardano,
@@ -146,9 +153,10 @@ function buildAgentMetadata(
 			request.metadataVersion >= DEFAULTS.DEFAULT_REGISTRY_METADATA_VERSION
 				? supportedPaymentSources.map((source) => ({
 						chain: stringToMetadata(source.chain),
-						network: stringToMetadata(source.network),
-						paymentSourceType: stringToMetadata(source.paymentSourceType),
-						address: stringToMetadata(source.address),
+						network: stringToMetadata(String(source.network)),
+						paymentSourceType:
+							source.paymentSourceType != null ? stringToMetadata(source.paymentSourceType) : undefined,
+						address: stringToMetadata(source.chain === 'EVM' ? (source.address ?? source.payTo) : source.address),
 					}))
 				: undefined,
 	};

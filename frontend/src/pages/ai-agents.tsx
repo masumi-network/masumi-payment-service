@@ -16,6 +16,7 @@ import {
   A2aRegistryEntry,
   postRegistryDeregister,
 } from '@/lib/api/generated';
+import { agentHasX402Options } from '@/components/ai-agents/AgentX402Options';
 import { toast } from 'react-toastify';
 import { handleApiCall } from '@/lib/utils';
 import Head from 'next/head';
@@ -659,6 +660,12 @@ export default function AIAgentsPage() {
                                     : `${formatPrice(price.amount)} ${price.unit === getUsdcxConfig(network).fullAssetId ? 'USDCx' : price.unit === getUsdmConfig(network).fullAssetId ? (network === 'Mainnet' ? 'USDM' : 'tUSDM') : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
                                 </div>
                               ))}
+                            {!('agentCardUrl' in agent) &&
+                              agentHasX402Options(agent.supportedPaymentSources) && (
+                                <div className="mt-1">
+                                  <Badge variant="secondary">x402</Badge>
+                                </div>
+                              )}
                           </td>
                           <td className="p-4">
                             {agent.Tags.length > 0 && (

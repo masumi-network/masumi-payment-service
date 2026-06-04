@@ -22,6 +22,9 @@ export const apiKeyOutputSchema = z
 		canAdmin: z.boolean().describe('Whether this API key has admin access'),
 		usageLimited: z.boolean().describe('Whether the API key has usage limits'),
 		NetworkLimit: z.array(z.nativeEnum(Network)).describe('List of Cardano networks this API key is allowed to access'),
+		ChainIdLimit: z
+			.array(z.string().min(1).max(120))
+			.describe('CAIP-2 chain identifiers this API key is allowed to access'),
 		RemainingUsageCredits: z
 			.array(
 				z.object({
@@ -83,7 +86,20 @@ export const addAPIKeySchemaInput = z.object({
 		.array(z.nativeEnum(Network))
 		.max(3)
 		.default([Network.Mainnet, Network.Preprod])
-		.describe('The networks the API key is allowed to use'),
+		.describe('The Cardano networks the API key is allowed to use'),
+	ChainIdLimit: z
+		.array(
+			z
+				.string()
+				.regex(/^[-a-z0-9]{3,8}:[-_a-zA-Z0-9]{1,32}$/, 'Each entry must be a CAIP-2 chain id like eip155:8453')
+				.refine(
+					(chainId) => !chainId.toLowerCase().startsWith('cardano:'),
+					'Use NetworkLimit for Cardano networks; ChainIdLimit is for non-Cardano CAIP-2 chain ids',
+				),
+		)
+		.max(50)
+		.default([])
+		.describe('Additional non-Cardano CAIP-2 chain identifiers the API key is allowed to use'),
 	/** @deprecated Use canRead, canPay, canAdmin flags instead. Will be removed in a future version. */
 	permission: z
 		.enum(['Read', 'ReadAndPay', 'Admin'])
@@ -136,9 +152,21 @@ export const updateAPIKeySchemaInput = z.object({
 	NetworkLimit: z
 		.array(z.nativeEnum(Network))
 		.max(3)
-		.default([Network.Mainnet, Network.Preprod])
 		.optional()
-		.describe('The networks the API key is allowed to use'),
+		.describe('Replaces the Cardano-network half of the access list. Omit to leave Cardano access unchanged.'),
+	ChainIdLimit: z
+		.array(
+			z
+				.string()
+				.regex(/^[-a-z0-9]{3,8}:[-_a-zA-Z0-9]{1,32}$/, 'Each entry must be a CAIP-2 chain id like eip155:8453')
+				.refine(
+					(chainId) => !chainId.toLowerCase().startsWith('cardano:'),
+					'Use NetworkLimit for Cardano networks; ChainIdLimit is for non-Cardano CAIP-2 chain ids',
+				),
+		)
+		.max(50)
+		.optional()
+		.describe('Replaces the EVM (CAIP-2) half of the access list. Omit to leave EVM access unchanged.'),
 	walletScopeEnabled: z.boolean().optional().describe('Whether to enable wallet scope filtering for this API key'),
 	WalletScopeHotWalletIds: z
 		.array(z.string().max(150))
