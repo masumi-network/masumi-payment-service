@@ -1,4 +1,5 @@
 import { CONFIG } from '@masumi/payment-core/config';
+import { syncSimpleApiListings } from '@/services/simple-api-sync';
 import { web3CardanoV1, web3CardanoV2 } from '@/services/payment-source-types';
 import {
 	checkLatestTransactions,
@@ -278,5 +279,12 @@ export const scheduledJobs: JobDefinition[] = [
 		startMessage: 'Starting orphan action-data cleanup',
 		finishMessage: 'Finished orphan action-data cleanup',
 		run: cleanupOrphanActionData,
+	},
+	{
+		initialDelayMs: 55000,
+		intervalMs: CONFIG.SIMPLE_API_SYNC_INTERVAL * 1000,
+		startMessage: 'Starting SimpleApi registry sync',
+		finishMessage: 'Finished SimpleApi registry sync',
+		run: syncSimpleApiListings,
 	},
 ];
