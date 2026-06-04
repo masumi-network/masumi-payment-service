@@ -1,10 +1,15 @@
-import { CONSTANTS } from '@/utils/config';
-import { DecodedV1ContractDatum, decodeV1ContractDatum } from '@/utils/converter/string-datum-convert';
+import { CONSTANTS } from '@masumi/payment-core/config';
+import {
+	DecodedV1ContractDatum,
+	decodeV1ContractDatum,
+	decodeV2ContractDatum,
+} from '@/utils/converter/string-datum-convert';
 import { SmartContractState } from '@/utils/generator/contract-generator';
+import { logger } from '@masumi/payment-core/logger';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
-import { PlutusDatumSchema, Transaction } from '@emurgo/cardano-serialization-lib-nodejs';
+import { PlutusDatumSchema, RedeemerTagKind, Transaction } from '@emurgo/cardano-serialization-lib-nodejs';
 import { deserializeDatum, resolvePaymentKeyHash } from '@meshsdk/core';
-import { Network, OnChainState } from '@/generated/prisma/client';
+import { Network, OnChainState, PaymentSourceType } from '@/generated/prisma/client';
 import { getSmartContractInteractionTxHistoryList, TransactionMetadata } from '../blockchain';
 
 export function calculateValueChange(
@@ -101,33 +106,63 @@ export function checkPaymentAmountsMatch(
 	});
 }
 
-export function getCardanoFeesSeller(redeemerVersion: number, tx: TransactionMetadata) {
+// `tx.fees` is the WHOLE tx fee. With multi-redeemer batches, each per-entry
+// `updateTransaction` call shouldn't book the whole-tx fee — it should book
+// its share. The `share` param accepts a pre-computed slice (e.g.
+// `tx.fees / entries.length` for an even split). Single-redeemer V1 txs pass
+// `share = tx.fees` to preserve the original behavior.
+//
+// Redeemer alts (identical across V1 and V2 — see
+// smart-contracts/payment/validators/vested_pay.ak and
+// smart-contracts/payment-v2/validators/vested_pay.ak):
+//   0 Withdraw            seller
+//   1 SetRefundRequested  buyer
+//   2 UnSetRefundRequested (V1, buyer) | AuthorizeWithdrawal (V2, buyer)
+//                         Both validators `expect must_be_signed_by(buyer_vk)`
+//                         (V1: vested_pay.ak:259-260; V2: vested_pay.ak:491-492)
+//                         and the V2 service lives under purchases/
+//                         (packages/payment-source-v2/src/services/purchases/
+//                         authorize-withdrawal/service.ts), so the buyer's
+//                         hot wallet supplies the inputs and pays the fee on
+//                         both source types.
+//   3 WithdrawRefund      buyer
+//   4 WithdrawDisputed    admin (admin wallet pays the on-chain fee)
+//   5 SubmitResult        seller
+//   6 AuthorizeRefund     seller
+//
+// `paymentSourceType` is retained on both helpers for forward-compatibility:
+// future redeemer alts may diverge between V1 and V2.
+export function getCardanoFeesSeller(redeemerVersion: number, share: bigint, _paymentSourceType: PaymentSourceType) {
 	if (redeemerVersion == 0) {
 		//Withdraw
-		return tx.fees;
+		return share;
 	} else if (redeemerVersion == 5) {
 		//SubmitResult
-		return tx.fees;
+		return share;
 	} else if (redeemerVersion == 6) {
-		//AllowRefund
-		return tx.fees;
+		//AuthorizeRefund (seller cooperates with a disputed refund)
+		return share;
 	}
 	return BigInt(0);
 }
 
-export function getCardanoFeesBuyer(redeemerVersion: number, tx: TransactionMetadata) {
+export function getCardanoFeesBuyer(redeemerVersion: number, share: bigint, _paymentSourceType: PaymentSourceType) {
 	if (redeemerVersion == 1) {
 		//RequestRefund
-		return tx.fees;
+		return share;
 	} else if (redeemerVersion == 2) {
-		//CancelRefundRequest
-		return tx.fees;
+		//V1 CancelRefundRequest and V2 AuthorizeWithdrawal are both
+		//buyer-signed and buyer-paid.
+		return share;
 	} else if (redeemerVersion == 3) {
 		//WithdrawRefund
-		return tx.fees;
-	} else if (redeemerVersion == 6) {
-		//WithdrawDisputed
-		return tx.fees;
+		return share;
+	} else if (redeemerVersion == 4) {
+		//WithdrawDisputed — admin-only redeemer. The admin wallet signs and
+		//pays the on-chain fee, so neither buyer nor seller is debited here.
+		//Disputed payouts to buyer and seller are derived from UTxO outputs by
+		//`calculateValueChange` in the DisputedWithdrawn branch downstream.
+		return BigInt(0);
 	}
 	return BigInt(0);
 }
@@ -151,12 +186,21 @@ export function redeemerToOnChainState(
 			return OnChainState.RefundRequested;
 		}
 	} else if (redeemerVersion == 2) {
-		//CancelRefundRequest
+		//Alt 2 has different meaning per source type:
+		//  V2 → AuthorizeWithdrawal (seller): contract transitions to
+		//       WithdrawAuthorized. We discriminate on the new datum state.
+		//  V1 → UnSetRefundRequested / CancelRefund (buyer): contract reverts to
+		//       the pre-refund-request state (FundsLocked, ResultSubmitted, or
+		//       Disputed depending on whether a result was submitted).
+		if (decodedNewContract?.state == SmartContractState.WithdrawAuthorized) {
+			return OnChainState.WithdrawAuthorized;
+		}
 		if (decodedNewContract?.resultHash != null && decodedNewContract?.resultHash != '') {
-			return OnChainState.ResultSubmitted;
+			return decodedNewContract.state == SmartContractState.Disputed
+				? OnChainState.Disputed
+				: OnChainState.ResultSubmitted;
 		} else {
 			//Ensure the amounts match, to prevent state change attacks
-
 			return valueMatches == true ? OnChainState.FundsLocked : OnChainState.FundsOrDatumInvalid;
 		}
 	} else if (redeemerVersion == 3) {
@@ -176,72 +220,78 @@ export function redeemerToOnChainState(
 			return OnChainState.ResultSubmitted;
 		}
 	} else if (redeemerVersion == 6) {
-		//AllowRefund
-		return OnChainState.RefundRequested;
+		//AuthorizeRefund (seller action)
+		return decodedNewContract?.state == SmartContractState.RefundAuthorized
+			? OnChainState.RefundAuthorized
+			: OnChainState.RefundRequested;
 	} else {
 		//invalid transaction
 		return null;
 	}
 }
 
+type ScriptValueInput = {
+	address: string;
+	amount: Array<{ unit: string; quantity: string }>;
+	tx_hash: string;
+	output_index: number;
+	data_hash: string | null;
+	inline_datum: string | null;
+	reference_script_hash: string | null;
+	collateral: boolean;
+	reference?: boolean;
+};
+
+type ScriptValueOutput = {
+	address: string;
+	amount: Array<{ unit: string; quantity: string }>;
+	output_index: number;
+	data_hash: string | null;
+	inline_datum: string | null;
+	collateral: boolean;
+	reference_script_hash: string | null;
+	consumed_by_tx?: string | null;
+};
+
+/**
+ * One (script-input, paired-continuation-output) pair extracted from a tx.
+ *
+ * Single-redeemer V1 txs produce exactly ONE entry (the historical shape).
+ * V2 batch txs (multiple smart-contract spends in one tx) produce N entries.
+ * Each entry feeds one `updateTransaction` call which maps to exactly one
+ * `PaymentRequest` / `PurchaseRequest` row via `decodedOldContract.blockchainIdentifier`.
+ */
+export type ExtractedTransactionEntry = {
+	redeemerVersion: number;
+	// Position of this redeemer's input in the canonically-sorted tx body
+	// inputs list. Mesh-sdk and the ledger both index `RedeemerTag::Spend`
+	// against this sort, NOT against off-chain `.txIn()` call order. We store
+	// it so downstream code (e.g. fee allocation by ex_units) can correlate.
+	redeemerIndex: number;
+	valueInput: ScriptValueInput;
+	valueOutput: ScriptValueOutput | null;
+	decodedOldContract: DecodedV1ContractDatum;
+	decodedNewContract: DecodedV1ContractDatum | null;
+	// Pro-rated tx fee attributable to this entry. Whole-tx fee is split
+	// evenly across entries (`tx.fees / N`). Per-redeemer ex_units-weighted
+	// pro-rating would be more precise but requires re-evaluating the tx; an
+	// even split is exact for same-kind batches (every action of the same
+	// kind has the same fee responsibility V1/V2-wise).
+	feesShare: bigint;
+};
+
 export type ExtractOnChainTransactionDataOutput =
-	| {
-			type: 'Initial';
-			valueOutputs: Array<{
-				address: string;
-				amount: Array<{
-					unit: string;
-					quantity: string;
-				}>;
-				output_index: number;
-				data_hash: string | null;
-				inline_datum: string | null;
-				collateral: boolean;
-				reference_script_hash: string | null;
-				consumed_by_tx?: string | null;
-			}>;
-	  }
+	| { type: 'Initial'; valueOutputs: ScriptValueOutput[] }
 	| { type: 'Invalid'; error: string }
 	| {
 			type: 'Transaction';
-			valueInputs: Array<{
-				address: string;
-				amount: Array<{
-					unit: string;
-					quantity: string;
-				}>;
-				tx_hash: string;
-				output_index: number;
-				data_hash: string | null;
-				inline_datum: string | null;
-				reference_script_hash: string | null;
-				collateral: boolean;
-				reference?: boolean;
-			}>;
-			valueOutputs: Array<{
-				address: string;
-				amount: Array<{
-					unit: string;
-					quantity: string;
-				}>;
-				output_index: number;
-				data_hash: string | null;
-				inline_datum: string | null;
-				collateral: boolean;
-				reference_script_hash: string | null;
-				consumed_by_tx?: string | null;
-			}>;
-			valueOutput: {
-				address: string;
-				amount: Array<{
-					unit: string;
-					quantity: string;
-				}>;
-			} | null;
-			redeemerVersion: number;
-			decodedNewContract: DecodedV1ContractDatum | null;
-			decodedOldContract: DecodedV1ContractDatum;
+			// Shared tx context, kept once so call sites avoid recomputing it
+			// across entries.
+			valueInputs: ScriptValueInput[];
+			valueOutputs: ScriptValueOutput[];
+			entries: ExtractedTransactionEntry[];
 	  };
+
 export function extractOnChainTransactionData(
 	tx: {
 		blockTime: number;
@@ -251,39 +301,15 @@ export function extractOnChainTransactionData(
 		block: {
 			confirmations: number;
 		};
+		metadata: TransactionMetadata;
 		utxos: {
 			hash: string;
-			inputs: Array<{
-				address: string;
-				amount: Array<{
-					unit: string;
-					quantity: string;
-				}>;
-				tx_hash: string;
-				output_index: number;
-				data_hash: string | null;
-				inline_datum: string | null;
-				reference_script_hash: string | null;
-				collateral: boolean;
-				reference?: boolean;
-			}>;
-			outputs: Array<{
-				address: string;
-				amount: Array<{
-					unit: string;
-					quantity: string;
-				}>;
-				output_index: number;
-				data_hash: string | null;
-				inline_datum: string | null;
-				collateral: boolean;
-				reference_script_hash: string | null;
-				consumed_by_tx?: string | null;
-			}>;
+			inputs: ScriptValueInput[];
+			outputs: ScriptValueOutput[];
 		};
 		transaction: Transaction;
 	},
-	paymentContract: { smartContractAddress: string; network: Network },
+	paymentContract: { smartContractAddress: string; network: Network; paymentSourceType: PaymentSourceType },
 ): ExtractOnChainTransactionDataOutput {
 	const valueInputs = tx.utxos.inputs.filter((x) => {
 		return x.address == paymentContract.smartContractAddress;
@@ -298,88 +324,179 @@ export function extractOnChainTransactionData(
 		};
 	}
 	const redeemers = tx.transaction.witness_set().redeemers();
-	//TODO: We need to fix the redeemer check to support other smart contracts
 	if (valueInputs.length == 0 && !redeemers) return { type: 'Initial', valueOutputs };
-	if (valueInputs.length != 1)
+	if (valueInputs.length == 0) {
 		return {
 			type: 'Invalid',
-			error: 'Smart Contract value input invalid length (bigger than 0) ',
+			error: 'Smart Contract has redeemers but no value inputs at the contract address',
 		};
+	}
 	if (!redeemers) {
 		return {
 			type: 'Invalid',
 			error: 'Smart Contract redeemer invalid',
 		};
 	}
-	if (redeemers.len() != 1) {
-		return {
-			type: 'Invalid',
-			error: 'Smart Contract redeemer invalid length: ' + redeemers.len().toString() + ' (expected 1)',
-		};
-	}
-	const valueInput = valueInputs[0];
-	if (valueInput.reference_script_hash)
+	if (valueInputs.some((input) => input.reference_script_hash)) {
 		return {
 			type: 'Invalid',
 			error: 'Smart Contract value input has reference script set',
 		};
-	const inputDatum = valueInput.inline_datum;
-	if (inputDatum == null) {
+	}
+	if (valueInputs.some((input) => input.inline_datum == null)) {
 		return {
 			type: 'Invalid',
 			error: 'Smart Contract value input has no datum',
 		};
 	}
 
-	const decodedInputDatum: unknown = deserializeDatum(inputDatum);
-	const decodedOldContract = decodeV1ContractDatum(
-		decodedInputDatum,
-		paymentContract.network == Network.Mainnet ? 'mainnet' : 'preprod',
-	);
-	if (decodedOldContract == null) {
+	const datumNetwork = paymentContract.network == Network.Mainnet ? 'mainnet' : 'preprod';
+	const decodeDatum = (datum: unknown): DecodedV1ContractDatum | null =>
+		paymentContract.paymentSourceType === PaymentSourceType.Web3CardanoV2
+			? decodeV2ContractDatum(datum, datumNetwork, paymentContract.smartContractAddress)
+			: decodeV1ContractDatum(datum, datumNetwork);
+
+	// Build a map from "canonical sorted tx body input index" → ScriptValueInput.
+	// Cardano serializes inputs as a sorted set keyed by (tx_id, output_index)
+	// before computing the script_data_hash, and the ledger's Redeemer.index
+	// for `Spend` references THAT sorted position — NOT the order in which
+	// inputs were added off-chain. We use the parsed Transaction body's input
+	// list (which IS the canonical sorted set) as the index reference.
+	const bodyInputs = tx.transaction.body().inputs();
+	const scriptInputsByBodyIndex = new Map<number, ScriptValueInput>();
+	for (let i = 0; i < bodyInputs.len(); i++) {
+		const bodyInput = bodyInputs.get(i);
+		const txHash = Buffer.from(bodyInput.transaction_id().to_bytes()).toString('hex');
+		const outputIndex = bodyInput.index();
+		const matched = valueInputs.find((vi) => vi.tx_hash === txHash && vi.output_index === outputIndex);
+		if (matched != null) {
+			scriptInputsByBodyIndex.set(i, matched);
+		}
+	}
+
+	// Walk every redeemer; pair the `Spend` ones with their script input, decode
+	// the input's datum, and find the matching continuation output via the
+	// datum's `referenceSignature` (which the on-chain validator keeps stable
+	// across transitions and uniquely identifies a payment thread). Terminal
+	// redeemers (Withdraw=0, WithdrawRefund=3, WithdrawDisputed=4) have no
+	// continuation output → `valueOutput: null`.
+	//
+	// Outputs at the script address that are NOT continuation datums (e.g. the
+	// `OutputReference == own_ref` tagged outputs for buyer-collateral-return
+	// in V2 Withdraw) are ignored here — those don't have a payment-thread
+	// `referenceSignature`.
+	const entries: ExtractedTransactionEntry[] = [];
+	const decodedOutputs = valueOutputs.map((output) => {
+		const decodedOutputDatum: unknown = output.inline_datum != null ? deserializeDatum(output.inline_datum) : null;
+		return { output, decoded: decodeDatum(decodedOutputDatum) };
+	});
+	const usedOutputIndices = new Set<number>();
+
+	for (let i = 0; i < redeemers.len(); i++) {
+		const redeemer = redeemers.get(i);
+		if (redeemer.tag().kind() !== RedeemerTagKind.Spend) continue;
+		const redeemerIndex = Number(redeemer.index().to_str());
+		const valueInput = scriptInputsByBodyIndex.get(redeemerIndex);
+		if (valueInput == null) continue;
+
+		const decodedInputDatum: unknown = deserializeDatum(valueInput.inline_datum as string);
+		const decodedOldContract = decodeDatum(decodedInputDatum);
+		if (decodedOldContract == null) {
+			return {
+				type: 'Invalid',
+				error: 'Smart Contract value input has no decodable datum',
+			};
+		}
+
+		const redeemerJson = redeemer.data().to_json(PlutusDatumSchema.BasicConversions);
+		const redeemerJsonObject = JSON.parse(redeemerJson) as { constructor: number };
+		const redeemerVersion = redeemerJsonObject.constructor;
+
+		// Pair with continuation output by reference_signature. For a tx with
+		// only one script input + one script output (the historical V1 case),
+		// the pairing collapses to direct position correspondence; reference
+		// signatures still match because both datums share the field.
+		let pairedOutputIdx = -1;
+		for (let j = 0; j < decodedOutputs.length; j++) {
+			if (usedOutputIndices.has(j)) continue;
+			const candidate = decodedOutputs[j];
+			if (candidate.decoded == null) continue;
+			if (candidate.decoded.referenceSignature === decodedOldContract.referenceSignature) {
+				pairedOutputIdx = j;
+				break;
+			}
+		}
+		const valueOutput = pairedOutputIdx >= 0 ? decodedOutputs[pairedOutputIdx].output : null;
+		const decodedNewContract = pairedOutputIdx >= 0 ? decodedOutputs[pairedOutputIdx].decoded : null;
+		if (pairedOutputIdx >= 0) {
+			usedOutputIndices.add(pairedOutputIdx);
+		}
+
+		// Terminal redeemers (Withdraw, WithdrawRefund, WithdrawDisputed) are
+		// allowed to have no continuation. All others MUST have one.
+		if (redeemerVersion !== 0 && redeemerVersion !== 3 && redeemerVersion !== 4 && decodedNewContract == null) {
+			logger.warn('No continuation output paired with non-terminal redeemer', {
+				txHash: tx.tx.tx_hash,
+				redeemerVersion,
+				inputTxHash: valueInput.tx_hash,
+				inputOutputIndex: valueInput.output_index,
+			});
+			return {
+				type: 'Invalid',
+				error: 'Possible invalid state in smart contract detected',
+			};
+		}
+
+		entries.push({
+			redeemerVersion,
+			redeemerIndex,
+			valueInput,
+			valueOutput,
+			decodedOldContract,
+			decodedNewContract,
+			// Even fee split. Refined per-redeemer ex_units weighting would
+			// require running `evaluateTx` again on sync, which is wasteful.
+			// Same-kind batches have the same fee responsibility so the split
+			// is exact for the realistic case.
+			feesShare: BigInt(0), // placeholder; filled after loop once N is known
+		});
+	}
+
+	if (entries.length === 0) {
 		return {
 			type: 'Invalid',
-			error: 'Smart Contract value input has no datum',
+			error: 'Smart Contract redeemer set has no matching Spend redeemer for a script input',
 		};
 	}
 
-	if (valueOutputs.length > 1) {
+	// Continuation outputs at the script address that didn't pair with any
+	// input's reference_signature: phase-1-valid but unexpected. Flag as
+	// invalid so we don't silently mis-attribute funds.
+	const unpaired = decodedOutputs.filter((o, idx) => o.decoded != null && !usedOutputIndices.has(idx));
+	if (unpaired.length > 0) {
 		return {
 			type: 'Invalid',
-			error: 'Smart Contract value output invalid length (bigger than 0) ',
+			error: `Smart Contract has ${unpaired.length} continuation output(s) with no matching input reference_signature`,
 		};
 	}
-	const valueOutput = valueOutputs.length == 1 ? valueOutputs[0] : null;
 
-	const outputDatum = valueOutput?.inline_datum ?? null;
-	const decodedOutputDatum: unknown = outputDatum != null ? deserializeDatum(outputDatum) : null;
-	const decodedNewContract = decodeV1ContractDatum(
-		decodedOutputDatum,
-		paymentContract.network == Network.Mainnet ? 'mainnet' : 'preprod',
-	);
-
-	const redeemer = redeemers.get(0);
-	const redeemerJson = redeemer.data().to_json(PlutusDatumSchema.BasicConversions);
-	const redeemerJsonObject = JSON.parse(redeemerJson) as {
-		constructor: number;
-	};
-	const redeemerVersion = redeemerJsonObject.constructor;
-
-	if (redeemerVersion != 0 && redeemerVersion != 3 && redeemerVersion != 4 && decodedNewContract == null) {
-		return {
-			type: 'Invalid',
-			error: 'Possible invalid state in smart contract detected',
-		};
-	}
+	// Pro-rate the whole-tx fee evenly across entries. Integer-divide with
+	// remainder applied to the first entry so the per-entry sum equals the
+	// total fee exactly (no rounding loss).
+	const totalFees = tx.metadata.fees;
+	const n = BigInt(entries.length);
+	const perEntry = totalFees / n;
+	const remainder = totalFees - perEntry * n;
+	const entriesWithFees = entries.map((entry, idx) => ({
+		...entry,
+		feesShare: idx === 0 ? perEntry + remainder : perEntry,
+	}));
 
 	return {
 		type: 'Transaction',
 		valueInputs,
 		valueOutputs,
-		valueOutput,
-		redeemerVersion,
-		decodedNewContract,
-		decodedOldContract,
+		entries: entriesWithFees,
 	};
 }
 

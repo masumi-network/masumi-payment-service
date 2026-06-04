@@ -1,7 +1,7 @@
-import { prisma } from '@/utils/db';
-import { AuthContext } from '@/utils/middleware/auth-middleware';
+import { prisma } from '@masumi/payment-core/db';
+import { AuthContext } from '@masumi/payment-core/auth';
 import { buildHotWalletScopeFilter } from '@/utils/shared/wallet-scope';
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
 import { paymentSourceSchemaInput } from './schemas';
 
 export type PaymentSourceListQueryInput = z.infer<typeof paymentSourceSchemaInput>;

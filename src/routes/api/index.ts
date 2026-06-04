@@ -43,6 +43,7 @@ import { queryAgentFromWalletGet } from './registry/wallet';
 import { resolvePaymentRequestPost } from './payments/resolve-blockchain-identifier';
 import { resolvePurchaseRequestPost } from './purchases/resolve-blockchain-identifier';
 import { unregisterAgentPost } from './registry/deregister';
+import { updateAgentPost } from './registry/update';
 import { revealDataEndpointPost } from './signature/verify/reveal-data';
 import { postMonthlySignatureEndpoint } from './signature/sign/create-invoice/monthly';
 import { postVerifyAndPublishAgentSignatureEndpoint } from './signature/sign/verify-and-publish-agent';
@@ -87,6 +88,20 @@ import {
 	cancelSwapEndpointPost,
 	acknowledgeSwapTimeoutEndpointPost,
 } from './swap';
+import {
+	createX402PaymentPost,
+	createX402WalletPost,
+	deleteX402WalletPost,
+	listX402BudgetsGet,
+	listX402NetworksGet,
+	listX402PaymentAttemptsGet,
+	listX402SettlementsGet,
+	listX402WalletsGet,
+	setX402BudgetPost,
+	settleX402Post,
+	upsertX402NetworkPost,
+	verifyX402Post,
+} from './x402';
 
 export const apiRouter: Routing = {
 	v1: {
@@ -169,6 +184,9 @@ export const apiRouter: Routing = {
 			deregister: {
 				post: unregisterAgentPost,
 			},
+			update: {
+				post: updateAgentPost,
+			},
 			'agent-identifier': {
 				get: queryAgentByIdentifierGet,
 			},
@@ -250,6 +268,38 @@ export const apiRouter: Routing = {
 		},
 		'payment-source': {
 			get: paymentSourceEndpointGet,
+		},
+		x402: {
+			verify: {
+				post: verifyX402Post,
+			},
+			settle: {
+				post: settleX402Post,
+			},
+			pay: {
+				post: createX402PaymentPost,
+			},
+			wallets: {
+				get: listX402WalletsGet,
+				post: createX402WalletPost,
+				delete: {
+					post: deleteX402WalletPost,
+				},
+			},
+			networks: {
+				get: listX402NetworksGet,
+				post: upsertX402NetworkPost,
+			},
+			budgets: {
+				get: listX402BudgetsGet,
+				post: setX402BudgetPost,
+			},
+			payments: {
+				get: listX402PaymentAttemptsGet,
+			},
+			settlements: {
+				get: listX402SettlementsGet,
+			},
 		},
 		swap: {
 			post: swapTokensEndpointPost,

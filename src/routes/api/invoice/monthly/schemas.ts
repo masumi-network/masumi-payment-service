@@ -1,4 +1,4 @@
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
 import { invoiceGenerationBaseSchema, invoiceGenerationSchemaOutput } from './shared';
 
 export const getMonthlyInvoiceListSchemaInput = z.object({

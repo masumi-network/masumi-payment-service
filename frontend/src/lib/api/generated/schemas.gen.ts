@@ -47,6 +47,15 @@ export const APIKeySchema = {
             },
             description: 'List of Cardano networks this API key is allowed to access'
         },
+        ChainIdLimit: {
+            type: 'array',
+            items: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 120
+            },
+            description: 'CAIP-2 chain identifiers this API key is allowed to access'
+        },
         RemainingUsageCredits: {
             type: 'array',
             items: {
@@ -106,6 +115,7 @@ export const APIKeySchema = {
         'canAdmin',
         'usageLimited',
         'NetworkLimit',
+        'ChainIdLimit',
         'RemainingUsageCredits',
         'status',
         'walletScopeEnabled',
@@ -374,6 +384,16 @@ export const PaymentSchema = {
             nullable: true,
             description: 'Amount of collateral to return in lovelace. Null if no collateral'
         },
+        buyerReturnAddress: {
+            type: 'string',
+            nullable: true,
+            description: 'Optional buyer return address stored with the request'
+        },
+        sellerReturnAddress: {
+            type: 'string',
+            nullable: true,
+            description: 'Optional seller return address stored with the request'
+        },
         externalDisputeUnlockTime: {
             type: 'string',
             description: 'Unix timestamp (in milliseconds) after which external dispute resolution can occur'
@@ -432,6 +452,8 @@ export const PaymentSchema = {
                 'ResultSubmitted',
                 'RefundRequested',
                 'Disputed',
+                'WithdrawAuthorized',
+                'RefundAuthorized',
                 'Withdrawn',
                 'RefundWithdrawn',
                 'DisputedWithdrawn',
@@ -620,6 +642,8 @@ export const PaymentSchema = {
                         'ResultSubmitted',
                         'RefundRequested',
                         'Disputed',
+                        'WithdrawAuthorized',
+                        'RefundAuthorized',
                         'Withdrawn',
                         'RefundWithdrawn',
                         'DisputedWithdrawn',
@@ -636,6 +660,8 @@ export const PaymentSchema = {
                         'ResultSubmitted',
                         'RefundRequested',
                         'Disputed',
+                        'WithdrawAuthorized',
+                        'RefundAuthorized',
                         'Withdrawn',
                         'RefundWithdrawn',
                         'DisputedWithdrawn',
@@ -724,6 +750,8 @@ export const PaymentSchema = {
                             'ResultSubmitted',
                             'RefundRequested',
                             'Disputed',
+                            'WithdrawAuthorized',
+                            'RefundAuthorized',
                             'Withdrawn',
                             'RefundWithdrawn',
                             'DisputedWithdrawn',
@@ -740,6 +768,8 @@ export const PaymentSchema = {
                             'ResultSubmitted',
                             'RefundRequested',
                             'Disputed',
+                            'WithdrawAuthorized',
+                            'RefundAuthorized',
                             'Withdrawn',
                             'RefundWithdrawn',
                             'DisputedWithdrawn',
@@ -846,6 +876,14 @@ export const PaymentSchema = {
                     ],
                     description: 'The Cardano network (Mainnet, Preprod, or Preview)'
                 },
+                paymentSourceType: {
+                    type: 'string',
+                    enum: [
+                        'Web3CardanoV1',
+                        'Web3CardanoV2'
+                    ],
+                    description: 'Payment source type for adapter dispatch'
+                },
                 smartContractAddress: {
                     type: 'string',
                     description: 'Address of the smart contract managing this payment'
@@ -859,6 +897,7 @@ export const PaymentSchema = {
             required: [
                 'id',
                 'network',
+                'paymentSourceType',
                 'smartContractAddress',
                 'policyId'
             ],
@@ -925,6 +964,8 @@ export const PaymentSchema = {
         'submitResultTime',
         'unlockTime',
         'collateralReturnLovelace',
+        'buyerReturnAddress',
+        'sellerReturnAddress',
         'externalDisputeUnlockTime',
         'requestedById',
         'resultHash',
@@ -1045,6 +1086,8 @@ export const PurchaseSchema = {
                 'ResultSubmitted',
                 'RefundRequested',
                 'Disputed',
+                'WithdrawAuthorized',
+                'RefundAuthorized',
                 'Withdrawn',
                 'RefundWithdrawn',
                 'DisputedWithdrawn',
@@ -1056,6 +1099,16 @@ export const PurchaseSchema = {
             type: 'string',
             nullable: true,
             description: 'Amount of collateral to return in lovelace. Null if no collateral'
+        },
+        buyerReturnAddress: {
+            type: 'string',
+            nullable: true,
+            description: 'Optional buyer return address stored with the request'
+        },
+        sellerReturnAddress: {
+            type: 'string',
+            nullable: true,
+            description: 'Optional seller return address stored with the request'
         },
         cooldownTime: {
             type: 'number',
@@ -1091,7 +1144,9 @@ export const PurchaseSchema = {
                         'UnSetRefundRequestedRequested',
                         'UnSetRefundRequestedInitiated',
                         'WithdrawRefundRequested',
-                        'WithdrawRefundInitiated'
+                        'WithdrawRefundInitiated',
+                        'AuthorizeWithdrawalRequested',
+                        'AuthorizeWithdrawalInitiated'
                     ],
                     description: 'Next action required for this purchase'
                 },
@@ -1153,7 +1208,9 @@ export const PurchaseSchema = {
                             'UnSetRefundRequestedRequested',
                             'UnSetRefundRequestedInitiated',
                             'WithdrawRefundRequested',
-                            'WithdrawRefundInitiated'
+                            'WithdrawRefundInitiated',
+                            'AuthorizeWithdrawalRequested',
+                            'AuthorizeWithdrawalInitiated'
                         ],
                         description: 'Next action required for this purchase'
                     },
@@ -1244,6 +1301,8 @@ export const PurchaseSchema = {
                         'ResultSubmitted',
                         'RefundRequested',
                         'Disputed',
+                        'WithdrawAuthorized',
+                        'RefundAuthorized',
                         'Withdrawn',
                         'RefundWithdrawn',
                         'DisputedWithdrawn',
@@ -1260,6 +1319,8 @@ export const PurchaseSchema = {
                         'ResultSubmitted',
                         'RefundRequested',
                         'Disputed',
+                        'WithdrawAuthorized',
+                        'RefundAuthorized',
                         'Withdrawn',
                         'RefundWithdrawn',
                         'DisputedWithdrawn',
@@ -1348,6 +1409,8 @@ export const PurchaseSchema = {
                             'ResultSubmitted',
                             'RefundRequested',
                             'Disputed',
+                            'WithdrawAuthorized',
+                            'RefundAuthorized',
                             'Withdrawn',
                             'RefundWithdrawn',
                             'DisputedWithdrawn',
@@ -1364,6 +1427,8 @@ export const PurchaseSchema = {
                             'ResultSubmitted',
                             'RefundRequested',
                             'Disputed',
+                            'WithdrawAuthorized',
+                            'RefundAuthorized',
                             'Withdrawn',
                             'RefundWithdrawn',
                             'DisputedWithdrawn',
@@ -1460,6 +1525,13 @@ export const PurchaseSchema = {
                         'Mainnet'
                     ]
                 },
+                paymentSourceType: {
+                    type: 'string',
+                    enum: [
+                        'Web3CardanoV1',
+                        'Web3CardanoV2'
+                    ]
+                },
                 smartContractAddress: {
                     type: 'string'
                 },
@@ -1471,6 +1543,7 @@ export const PurchaseSchema = {
             required: [
                 'id',
                 'network',
+                'paymentSourceType',
                 'smartContractAddress',
                 'policyId'
             ]
@@ -1544,6 +1617,8 @@ export const PurchaseSchema = {
         'requestedById',
         'onChainState',
         'collateralReturnLovelace',
+        'buyerReturnAddress',
+        'sellerReturnAddress',
         'cooldownTime',
         'cooldownTimeOtherParty',
         'inputHash',
@@ -1792,8 +1867,140 @@ export const AgentMetadataSchema = {
                 metadataVersion: {
                     type: 'integer',
                     minimum: 1,
-                    maximum: 1,
-                    description: 'Version of the metadata schema (currently only version 1 is supported)'
+                    maximum: 2,
+                    description: 'Version of the metadata schema'
+                },
+                supportedPaymentSources: {
+                    type: 'array',
+                    nullable: true,
+                    items: {
+                        oneOf: [
+                            {
+                                type: 'object',
+                                properties: {
+                                    chain: {
+                                        type: 'string',
+                                        enum: [
+                                            'Cardano'
+                                        ],
+                                        description: 'The blockchain this payment source is available on'
+                                    },
+                                    network: {
+                                        type: 'string',
+                                        enum: [
+                                            'Preprod',
+                                            'Mainnet'
+                                        ],
+                                        description: 'The Cardano network this payment source is available on'
+                                    },
+                                    paymentSourceType: {
+                                        type: 'string',
+                                        enum: [
+                                            'Web3CardanoV1',
+                                            'Web3CardanoV2'
+                                        ],
+                                        description: 'The configured payment source type'
+                                    },
+                                    address: {
+                                        type: 'string',
+                                        maxLength: 250,
+                                        description: 'The escrow smart contract address for this payment source'
+                                    }
+                                },
+                                required: [
+                                    'chain',
+                                    'network',
+                                    'paymentSourceType',
+                                    'address'
+                                ]
+                            },
+                            {
+                                type: 'object',
+                                properties: {
+                                    chain: {
+                                        type: 'string',
+                                        enum: [
+                                            'EVM'
+                                        ],
+                                        description: 'The chain family used by standard x402'
+                                    },
+                                    network: {
+                                        type: 'string',
+                                        pattern: '^eip155:\\d+$',
+                                        description: 'CAIP-2 EVM network id, for example eip155:8453'
+                                    },
+                                    paymentSourceType: {
+                                        type: 'string',
+                                        nullable: true,
+                                        enum: [
+                                            'Web3CardanoV1',
+                                            'Web3CardanoV2',
+                                            null
+                                        ],
+                                        description: 'The configured payment source type'
+                                    },
+                                    address: {
+                                        type: 'string',
+                                        pattern: '^0x[a-fA-F0-9]{40}$',
+                                        description: 'Alias for payTo, kept for existing payment-source shape'
+                                    },
+                                    scheme: {
+                                        type: 'string',
+                                        enum: [
+                                            'Exact'
+                                        ],
+                                        description: 'x402 payment scheme'
+                                    },
+                                    asset: {
+                                        type: 'string',
+                                        pattern: '^0x[a-fA-F0-9]{40}$',
+                                        description: 'ERC-20 token contract address'
+                                    },
+                                    amount: {
+                                        type: 'string',
+                                        pattern: '^\\d+$',
+                                        description: 'Atomic token amount'
+                                    },
+                                    decimals: {
+                                        type: 'integer',
+                                        minimum: 0,
+                                        maximum: 255,
+                                        description: 'ERC-20 token decimals'
+                                    },
+                                    payTo: {
+                                        type: 'string',
+                                        pattern: '^0x[a-fA-F0-9]{40}$',
+                                        description: 'EVM address receiving the x402 payment'
+                                    },
+                                    resource: {
+                                        type: 'string',
+                                        maxLength: 500,
+                                        format: 'uri',
+                                        description: 'Optional absolute resource URL this x402 option protects'
+                                    },
+                                    extra: {
+                                        type: 'object',
+                                        additionalProperties: {
+                                            nullable: true
+                                        },
+                                        description: 'Additional x402 metadata'
+                                    }
+                                },
+                                required: [
+                                    'chain',
+                                    'network',
+                                    'scheme',
+                                    'asset',
+                                    'amount',
+                                    'decimals',
+                                    'payTo'
+                                ]
+                            }
+                        ]
+                    },
+                    minItems: 1,
+                    maxItems: 25,
+                    description: 'Payment sources advertised by this registry entry. Null for legacy metadata.'
                 }
             },
             required: [
@@ -1804,7 +2011,8 @@ export const AgentMetadataSchema = {
                 'Author',
                 'AgentPricing',
                 'image',
-                'metadataVersion'
+                'metadataVersion',
+                'supportedPaymentSources'
             ],
             description: 'On-chain metadata for the agent'
         }
@@ -2047,8 +2255,140 @@ export const AgentIdentifierMetadataSchema = {
                 metadataVersion: {
                     type: 'integer',
                     minimum: 1,
-                    maximum: 1,
-                    description: 'Version of the metadata schema (currently only version 1 is supported)'
+                    maximum: 2,
+                    description: 'Version of the metadata schema'
+                },
+                supportedPaymentSources: {
+                    type: 'array',
+                    nullable: true,
+                    items: {
+                        oneOf: [
+                            {
+                                type: 'object',
+                                properties: {
+                                    chain: {
+                                        type: 'string',
+                                        enum: [
+                                            'Cardano'
+                                        ],
+                                        description: 'The blockchain this payment source is available on'
+                                    },
+                                    network: {
+                                        type: 'string',
+                                        enum: [
+                                            'Preprod',
+                                            'Mainnet'
+                                        ],
+                                        description: 'The Cardano network this payment source is available on'
+                                    },
+                                    paymentSourceType: {
+                                        type: 'string',
+                                        enum: [
+                                            'Web3CardanoV1',
+                                            'Web3CardanoV2'
+                                        ],
+                                        description: 'The configured payment source type'
+                                    },
+                                    address: {
+                                        type: 'string',
+                                        maxLength: 250,
+                                        description: 'The escrow smart contract address for this payment source'
+                                    }
+                                },
+                                required: [
+                                    'chain',
+                                    'network',
+                                    'paymentSourceType',
+                                    'address'
+                                ]
+                            },
+                            {
+                                type: 'object',
+                                properties: {
+                                    chain: {
+                                        type: 'string',
+                                        enum: [
+                                            'EVM'
+                                        ],
+                                        description: 'The chain family used by standard x402'
+                                    },
+                                    network: {
+                                        type: 'string',
+                                        pattern: '^eip155:\\d+$',
+                                        description: 'CAIP-2 EVM network id, for example eip155:8453'
+                                    },
+                                    paymentSourceType: {
+                                        type: 'string',
+                                        nullable: true,
+                                        enum: [
+                                            'Web3CardanoV1',
+                                            'Web3CardanoV2',
+                                            null
+                                        ],
+                                        description: 'The configured payment source type'
+                                    },
+                                    address: {
+                                        type: 'string',
+                                        pattern: '^0x[a-fA-F0-9]{40}$',
+                                        description: 'Alias for payTo, kept for existing payment-source shape'
+                                    },
+                                    scheme: {
+                                        type: 'string',
+                                        enum: [
+                                            'Exact'
+                                        ],
+                                        description: 'x402 payment scheme'
+                                    },
+                                    asset: {
+                                        type: 'string',
+                                        pattern: '^0x[a-fA-F0-9]{40}$',
+                                        description: 'ERC-20 token contract address'
+                                    },
+                                    amount: {
+                                        type: 'string',
+                                        pattern: '^\\d+$',
+                                        description: 'Atomic token amount'
+                                    },
+                                    decimals: {
+                                        type: 'integer',
+                                        minimum: 0,
+                                        maximum: 255,
+                                        description: 'ERC-20 token decimals'
+                                    },
+                                    payTo: {
+                                        type: 'string',
+                                        pattern: '^0x[a-fA-F0-9]{40}$',
+                                        description: 'EVM address receiving the x402 payment'
+                                    },
+                                    resource: {
+                                        type: 'string',
+                                        maxLength: 500,
+                                        format: 'uri',
+                                        description: 'Optional absolute resource URL this x402 option protects'
+                                    },
+                                    extra: {
+                                        type: 'object',
+                                        additionalProperties: {
+                                            nullable: true
+                                        },
+                                        description: 'Additional x402 metadata'
+                                    }
+                                },
+                                required: [
+                                    'chain',
+                                    'network',
+                                    'scheme',
+                                    'asset',
+                                    'amount',
+                                    'decimals',
+                                    'payTo'
+                                ]
+                            }
+                        ]
+                    },
+                    minItems: 1,
+                    maxItems: 25,
+                    description: 'Payment sources advertised by this registry entry. Null for legacy metadata.'
                 }
             },
             required: [
@@ -2059,7 +2399,8 @@ export const AgentIdentifierMetadataSchema = {
                 'Author',
                 'AgentPricing',
                 'image',
-                'metadataVersion'
+                'metadataVersion',
+                'supportedPaymentSources'
             ],
             description: 'On-chain metadata for the agent'
         }
@@ -2184,7 +2525,11 @@ export const RegistryEntrySchema = {
                 'DeregistrationRequested',
                 'DeregistrationInitiated',
                 'DeregistrationConfirmed',
-                'DeregistrationFailed'
+                'DeregistrationFailed',
+                'UpdateRequested',
+                'UpdateInitiated',
+                'UpdateConfirmed',
+                'UpdateFailed'
             ],
             description: 'Current state of the registration process'
         },
@@ -2327,6 +2672,138 @@ export const RegistryEntrySchema = {
             nullable: true,
             description: 'Effective lovelace amount explicitly configured for the NFT output. Null means the default minimum NFT funding is used.'
         },
+        supportedPaymentSources: {
+            type: 'array',
+            nullable: true,
+            items: {
+                oneOf: [
+                    {
+                        type: 'object',
+                        properties: {
+                            chain: {
+                                type: 'string',
+                                enum: [
+                                    'Cardano'
+                                ],
+                                description: 'The blockchain this payment source is available on'
+                            },
+                            network: {
+                                type: 'string',
+                                enum: [
+                                    'Preprod',
+                                    'Mainnet'
+                                ],
+                                description: 'The Cardano network this payment source is available on'
+                            },
+                            paymentSourceType: {
+                                type: 'string',
+                                enum: [
+                                    'Web3CardanoV1',
+                                    'Web3CardanoV2'
+                                ],
+                                description: 'The configured payment source type'
+                            },
+                            address: {
+                                type: 'string',
+                                maxLength: 250,
+                                description: 'The escrow smart contract address for this payment source'
+                            }
+                        },
+                        required: [
+                            'chain',
+                            'network',
+                            'paymentSourceType',
+                            'address'
+                        ]
+                    },
+                    {
+                        type: 'object',
+                        properties: {
+                            chain: {
+                                type: 'string',
+                                enum: [
+                                    'EVM'
+                                ],
+                                description: 'The chain family used by standard x402'
+                            },
+                            network: {
+                                type: 'string',
+                                pattern: '^eip155:\\d+$',
+                                description: 'CAIP-2 EVM network id, for example eip155:8453'
+                            },
+                            paymentSourceType: {
+                                type: 'string',
+                                nullable: true,
+                                enum: [
+                                    'Web3CardanoV1',
+                                    'Web3CardanoV2',
+                                    null
+                                ],
+                                description: 'The configured payment source type'
+                            },
+                            address: {
+                                type: 'string',
+                                pattern: '^0x[a-fA-F0-9]{40}$',
+                                description: 'Alias for payTo, kept for existing payment-source shape'
+                            },
+                            scheme: {
+                                type: 'string',
+                                enum: [
+                                    'Exact'
+                                ],
+                                description: 'x402 payment scheme'
+                            },
+                            asset: {
+                                type: 'string',
+                                pattern: '^0x[a-fA-F0-9]{40}$',
+                                description: 'ERC-20 token contract address'
+                            },
+                            amount: {
+                                type: 'string',
+                                pattern: '^\\d+$',
+                                description: 'Atomic token amount'
+                            },
+                            decimals: {
+                                type: 'integer',
+                                minimum: 0,
+                                maximum: 255,
+                                description: 'ERC-20 token decimals'
+                            },
+                            payTo: {
+                                type: 'string',
+                                pattern: '^0x[a-fA-F0-9]{40}$',
+                                description: 'EVM address receiving the x402 payment'
+                            },
+                            resource: {
+                                type: 'string',
+                                maxLength: 500,
+                                format: 'uri',
+                                description: 'Optional absolute resource URL this x402 option protects'
+                            },
+                            extra: {
+                                type: 'object',
+                                additionalProperties: {
+                                    nullable: true
+                                },
+                                description: 'Additional x402 metadata'
+                            }
+                        },
+                        required: [
+                            'chain',
+                            'network',
+                            'scheme',
+                            'asset',
+                            'amount',
+                            'decimals',
+                            'payTo'
+                        ]
+                    }
+                ]
+            },
+            minItems: 1,
+            maxItems: 25,
+            description: 'Payment sources advertised by this registry entry. Null for legacy metadata.'
+        },
         SmartContractWallet: {
             type: 'object',
             properties: {
@@ -2433,6 +2910,7 @@ export const RegistryEntrySchema = {
         'agentIdentifier',
         'AgentPricing',
         'sendFundingLovelace',
+        'supportedPaymentSources',
         'SmartContractWallet',
         'RecipientWallet',
         'CurrentTransaction'
@@ -2463,6 +2941,19 @@ export const PaymentSourceSchema = {
                 'Mainnet'
             ],
             description: 'The Cardano network (Mainnet, Preprod, or Preview)'
+        },
+        paymentSourceType: {
+            type: 'string',
+            enum: [
+                'Web3CardanoV1',
+                'Web3CardanoV2'
+            ],
+            description: 'Payment source type for adapter dispatch'
+        },
+        requiredAdminSignatures: {
+            type: 'integer',
+            nullable: true,
+            description: 'Required weighted admin signatures for Web3CardanoV2 sources. Null for Web3CardanoV1.'
         },
         policyId: {
             type: 'string',
@@ -2507,6 +2998,7 @@ export const PaymentSourceSchema = {
         },
         FeeReceiverNetworkWallet: {
             type: 'object',
+            nullable: true,
             properties: {
                 walletAddress: {
                     type: 'string',
@@ -2530,6 +3022,8 @@ export const PaymentSourceSchema = {
         'createdAt',
         'updatedAt',
         'network',
+        'paymentSourceType',
+        'requiredAdminSignatures',
         'policyId',
         'smartContractAddress',
         'lastIdentifierChecked',
@@ -2708,6 +3202,19 @@ export const PaymentSourceExtendedSchema = {
                 'Mainnet'
             ],
             description: 'The Cardano network'
+        },
+        paymentSourceType: {
+            type: 'string',
+            enum: [
+                'Web3CardanoV1',
+                'Web3CardanoV2'
+            ],
+            description: 'Payment source type for adapter dispatch'
+        },
+        requiredAdminSignatures: {
+            type: 'integer',
+            nullable: true,
+            description: 'Required weighted admin signatures for Web3CardanoV2 sources. Null for Web3CardanoV1.'
         },
         policyId: {
             type: 'string',
@@ -2907,6 +3414,7 @@ export const PaymentSourceExtendedSchema = {
         },
         FeeReceiverNetworkWallet: {
             type: 'object',
+            nullable: true,
             properties: {
                 walletAddress: {
                     type: 'string',
@@ -2930,6 +3438,8 @@ export const PaymentSourceExtendedSchema = {
         'createdAt',
         'updatedAt',
         'network',
+        'paymentSourceType',
+        'requiredAdminSignatures',
         'policyId',
         'smartContractAddress',
         'PaymentSourceConfig',
@@ -3218,7 +3728,11 @@ export const RegistryInboxEntrySchema = {
                 'DeregistrationRequested',
                 'DeregistrationInitiated',
                 'DeregistrationConfirmed',
-                'DeregistrationFailed'
+                'DeregistrationFailed',
+                'UpdateRequested',
+                'UpdateInitiated',
+                'UpdateConfirmed',
+                'UpdateFailed'
             ],
             description: 'Current state of the inbox registration process'
         },
@@ -3516,214 +4030,354 @@ export const StoppedMonitoringSchema = {
     ]
 } as const;
 
-export const SimpleApiListingSchema = {
+export const X402NetworkSchema = {
     type: 'object',
     properties: {
         id: {
-            type: 'string',
-            description: 'Local listing ID'
+            type: 'string'
         },
-        registryListingId: {
+        caip2Id: {
             type: 'string',
-            description: 'Registry-assigned listing ID'
+            pattern: '^eip155:\\d+$',
+            description: 'CAIP-2 EVM chain id, for example eip155:8453'
         },
-        entryType: {
+        displayName: {
             type: 'string',
-            enum: [
-                'SimpleApi'
-            ]
+            description: 'Human readable chain name'
         },
-        network: {
+        rpcUrl: {
             type: 'string',
-            enum: [
-                'Preprod',
-                'Mainnet'
-            ],
-            description: 'Cardano network grouping (Preprod or Mainnet)'
+            description: 'HTTP(S) RPC endpoint used to talk to the chain'
         },
-        name: {
-            type: 'string',
-            description: 'Name of the SimpleApi service'
+        isTestnet: {
+            type: 'boolean',
+            description: 'Whether this chain is a testnet (paired with the Cardano Preprod environment)'
         },
-        description: {
+        isEnabled: {
+            type: 'boolean',
+            description: 'Whether this chain may be used for x402 payments'
+        },
+        defaultAsset: {
             type: 'string',
             nullable: true,
-            description: 'Description of the service'
+            pattern: '^0x[a-fA-F0-9]{40}$',
+            description: 'Default settlement asset (token contract) for this chain'
         },
-        url: {
-            type: 'string',
-            description: 'Base URL of the service'
-        },
-        category: {
+        facilitatorWalletId: {
             type: 'string',
             nullable: true,
-            description: 'Category of the service'
+            description: 'Id of the managed EVM wallet used to settle payments on this chain'
         },
-        tags: {
-            type: 'array',
-            items: {
-                type: 'string'
-            },
-            description: 'Tags for the service'
-        },
-        httpMethod: {
+        createdById: {
             type: 'string',
             nullable: true,
-            description: 'HTTP method used to call the service'
-        },
-        status: {
-            type: 'string',
-            enum: [
-                'Online',
-                'Offline',
-                'Invalid',
-                'Deregistered'
-            ],
-            description: 'Current availability status'
-        },
-        accepts: {
-            type: 'array',
-            items: {
-                $ref: '#/components/schemas/SimpleApiAcceptEntry'
-            },
-            description: 'Payment options accepted by this service'
-        },
-        extra: {
-            type: 'object',
-            nullable: true,
-            additionalProperties: {
-                nullable: true
-            },
-            description: 'Additional metadata'
-        },
-        lastActiveAt: {
-            type: 'string',
-            nullable: true,
-            format: 'date-time',
-            description: 'Last time the service was seen Online'
-        },
-        statusUpdatedAt: {
-            type: 'string',
-            format: 'date-time',
-            description: 'Last time the status changed'
+            description: 'Id of the API key that created this chain configuration'
         },
         createdAt: {
             type: 'string',
-            format: 'date-time',
-            description: 'When this record was first synced'
+            format: 'date-time'
         },
         updatedAt: {
             type: 'string',
-            format: 'date-time',
-            description: 'When this record was last updated'
+            format: 'date-time'
         }
     },
     required: [
         'id',
-        'registryListingId',
-        'entryType',
-        'network',
-        'name',
-        'description',
-        'url',
-        'category',
-        'tags',
-        'httpMethod',
-        'status',
-        'accepts',
-        'extra',
-        'lastActiveAt',
-        'statusUpdatedAt',
+        'caip2Id',
+        'displayName',
+        'rpcUrl',
+        'isTestnet',
+        'isEnabled',
+        'defaultAsset',
+        'facilitatorWalletId',
+        'createdById',
         'createdAt',
         'updatedAt'
     ]
 } as const;
 
-export const SimpleApiAcceptEntrySchema = {
+export const X402WalletSchema = {
     type: 'object',
     properties: {
-        scheme: {
+        id: {
             type: 'string',
-            description: 'Payment scheme (e.g. exact)'
+            description: 'Unique identifier of the managed EVM wallet'
         },
-        network: {
+        address: {
             type: 'string',
-            description: 'x402 chain (e.g. base-sepolia)'
+            pattern: '^0x[a-fA-F0-9]{40}$',
+            description: 'The EVM address derived from the wallet private key'
         },
-        maxAmountRequired: {
-            type: 'string',
-            description: 'Maximum payment amount in token base units'
-        },
-        payTo: {
-            type: 'string',
-            description: 'EVM address to pay'
-        },
-        asset: {
-            type: 'string',
-            description: 'EVM token contract address'
-        },
-        resource: {
-            type: 'string',
-            description: 'API resource URL'
-        },
-        description: {
+        createdById: {
             type: 'string',
             nullable: true,
-            description: 'Description of this payment option'
+            description: 'Id of the API key that created this wallet'
         },
-        mimeType: {
+        createdAt: {
             type: 'string',
-            nullable: true,
-            description: 'MIME type of the resource response'
+            format: 'date-time'
+        },
+        updatedAt: {
+            type: 'string',
+            format: 'date-time'
         }
     },
     required: [
-        'scheme',
-        'network',
-        'maxAmountRequired',
-        'payTo',
-        'asset',
-        'resource',
-        'description',
-        'mimeType'
+        'id',
+        'address',
+        'createdById',
+        'createdAt',
+        'updatedAt'
     ]
 } as const;
 
-export const Eip3009AuthorizationSchema = {
+export const X402BudgetSchema = {
     type: 'object',
     properties: {
-        from: {
-            type: 'string',
-            description: 'EVM address of the token sender'
+        id: {
+            type: 'string'
         },
-        to: {
+        apiKeyId: {
             type: 'string',
-            description: 'EVM address of the token recipient (must match listing payTo)'
+            description: 'API key the budget is granted to'
         },
-        value: {
+        evmWalletId: {
             type: 'string',
-            pattern: '^\\d+$',
-            description: 'Amount in token base units'
+            description: 'Managed EVM wallet the budget draws from'
         },
-        validAfter: {
+        caip2Network: {
             type: 'string',
-            description: 'Authorization valid after this Unix timestamp (string)'
+            pattern: '^eip155:\\d+$'
         },
-        validBefore: {
+        asset: {
             type: 'string',
-            description: 'Authorization valid before this Unix timestamp (string)'
+            pattern: '^0x[a-fA-F0-9]{40}$',
+            description: 'Token contract the budget is denominated in'
         },
-        nonce: {
+        remainingAmount: {
             type: 'string',
-            description: 'EIP-3009 nonce (32-byte hex)'
+            description: 'Remaining spendable amount, in token base units'
+        },
+        spentAmount: {
+            type: 'string',
+            description: 'Amount already spent, in token base units'
+        },
+        createdById: {
+            type: 'string',
+            nullable: true,
+            description: 'Id of the API key that created this budget'
+        },
+        createdAt: {
+            type: 'string',
+            format: 'date-time'
+        },
+        updatedAt: {
+            type: 'string',
+            format: 'date-time'
         }
     },
     required: [
-        'from',
-        'to',
-        'value',
-        'validAfter',
-        'validBefore',
-        'nonce'
+        'id',
+        'apiKeyId',
+        'evmWalletId',
+        'caip2Network',
+        'asset',
+        'remainingAmount',
+        'spentAmount',
+        'createdById',
+        'createdAt',
+        'updatedAt'
+    ]
+} as const;
+
+export const X402PaymentAttemptSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string'
+        },
+        createdAt: {
+            type: 'string',
+            format: 'date-time'
+        },
+        updatedAt: {
+            type: 'string',
+            format: 'date-time'
+        },
+        direction: {
+            type: 'string',
+            enum: [
+                'InboundVerify',
+                'InboundSettle',
+                'OutboundPayment'
+            ]
+        },
+        status: {
+            type: 'string',
+            enum: [
+                'PaymentRequired',
+                'Verified',
+                'Settled',
+                'Failed',
+                'Replayed'
+            ]
+        },
+        apiKeyId: {
+            type: 'string'
+        },
+        evmWalletId: {
+            type: 'string',
+            nullable: true
+        },
+        registryRequestId: {
+            type: 'string',
+            nullable: true
+        },
+        supportedPaymentSourceId: {
+            type: 'string',
+            nullable: true
+        },
+        caip2Network: {
+            type: 'string'
+        },
+        asset: {
+            type: 'string'
+        },
+        amount: {
+            type: 'string',
+            description: 'Payment amount in token base units'
+        },
+        payTo: {
+            type: 'string'
+        },
+        payer: {
+            type: 'string',
+            nullable: true
+        },
+        resource: {
+            type: 'string',
+            nullable: true
+        },
+        paymentIdentifier: {
+            type: 'string',
+            nullable: true
+        },
+        errorReason: {
+            type: 'string',
+            nullable: true
+        },
+        errorMessage: {
+            type: 'string',
+            nullable: true
+        },
+        Settlement: {
+            type: 'object',
+            nullable: true,
+            properties: {
+                id: {
+                    type: 'string'
+                },
+                success: {
+                    type: 'boolean'
+                },
+                txHash: {
+                    type: 'string',
+                    nullable: true,
+                    description: 'On-chain settlement transaction hash'
+                },
+                amount: {
+                    type: 'string',
+                    nullable: true,
+                    description: 'Settled amount in token base units'
+                },
+                payer: {
+                    type: 'string',
+                    nullable: true
+                },
+                createdAt: {
+                    type: 'string',
+                    format: 'date-time'
+                }
+            },
+            required: [
+                'id',
+                'success',
+                'txHash',
+                'amount',
+                'payer',
+                'createdAt'
+            ]
+        }
+    },
+    required: [
+        'id',
+        'createdAt',
+        'updatedAt',
+        'direction',
+        'status',
+        'apiKeyId',
+        'evmWalletId',
+        'registryRequestId',
+        'supportedPaymentSourceId',
+        'caip2Network',
+        'asset',
+        'amount',
+        'payTo',
+        'payer',
+        'resource',
+        'paymentIdentifier',
+        'errorReason',
+        'errorMessage',
+        'Settlement'
+    ]
+} as const;
+
+export const X402SettlementRecordSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string'
+        },
+        createdAt: {
+            type: 'string',
+            format: 'date-time'
+        },
+        updatedAt: {
+            type: 'string',
+            format: 'date-time'
+        },
+        paymentAttemptId: {
+            type: 'string'
+        },
+        success: {
+            type: 'boolean'
+        },
+        txHash: {
+            type: 'string',
+            nullable: true
+        },
+        caip2Network: {
+            type: 'string'
+        },
+        amount: {
+            type: 'string',
+            nullable: true
+        },
+        payer: {
+            type: 'string',
+            nullable: true
+        }
+    },
+    required: [
+        'id',
+        'createdAt',
+        'updatedAt',
+        'paymentAttemptId',
+        'success',
+        'txHash',
+        'caip2Network',
+        'amount',
+        'payer'
     ]
 } as const;

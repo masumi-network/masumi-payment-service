@@ -1,4 +1,4 @@
-export const RESERVED_INBOX_SLUGS = ['favicon.ico', 'robots.txt', 'sitemap.xml'] as const;
+const RESERVED_INBOX_SLUGS = ['favicon.ico', 'robots.txt', 'sitemap.xml'] as const;
 
 function stripDiacritics(value: string): string {
 	return value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '');

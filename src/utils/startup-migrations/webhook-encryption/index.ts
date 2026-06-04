@@ -1,5 +1,5 @@
-import { prisma } from '@/utils/db';
-import { logger } from '@/utils/logger';
+import { prisma } from '@masumi/payment-core/db';
+import { logger } from '@masumi/payment-core/logger';
 import { encryptWebhookAuthToken, encryptWebhookUrl, generateWebhookUrlHash } from '@/utils/security/webhook-secrets';
 
 /**

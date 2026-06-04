@@ -1,8 +1,11 @@
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod-openapi';
 import createHttpError from 'http-errors';
-import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
-import { CONFIG } from '@/utils/config';
+import {
+	adminAuthenticatedEndpointFactory,
+	AuthContext,
+	checkIsAllowedNetworkOrThrowUnauthorized,
+} from '@masumi/payment-core/auth';
+import { CONFIG } from '@masumi/payment-core/config';
 import { registerSimpleApiSchemaInput, registerSimpleApiSchemaOutput, simpleApiListingSchema } from '../schemas';
 
 interface RegistryCreateBody {

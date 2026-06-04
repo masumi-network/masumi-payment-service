@@ -1,7 +1,7 @@
-import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
-import { z } from '@/utils/zod-openapi';
-import { recordBusinessEndpointError } from '@/utils/metrics';
-import { AuthContext } from '@/utils/middleware/auth-middleware';
+import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { z } from '@masumi/payment-core/zod';
+import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
+import { AuthContext } from '@masumi/payment-core/auth';
 import { invoiceGenerationSchemaInput, invoiceGenerationSchemaOutput, generateMonthlyInvoice } from '../shared';
 
 export const postInternalGenerateMonthlyInvoiceSchemaInput = invoiceGenerationSchemaInput;

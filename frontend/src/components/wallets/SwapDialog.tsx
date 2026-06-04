@@ -49,6 +49,8 @@ interface SwapDialogProps {
   walletVkey: string;
   network: 'Preprod' | 'Mainnet';
   onSwapComplete?: () => void;
+  /** When swap opened from wallet that uses elevatedChildStack (nested under elevated agent dialog). */
+  elevatedGrandchildStack?: boolean;
 }
 
 const TOKEN_ICONS: Record<string, typeof adaIcon> = {
@@ -132,6 +134,7 @@ export function SwapDialog({
   walletVkey,
   network,
   onSwapComplete,
+  elevatedGrandchildStack,
 }: SwapDialogProps) {
   const { apiKey, apiClient } = useAppContext();
   const [adaBalance, setAdaBalance] = useState<number>(0);
@@ -722,7 +725,10 @@ export function SwapDialog({
           }
         }}
       >
-        <DialogContent className="sm:max-w-[440px] overflow-y-hidden p-0 gap-0 border-border/50">
+        <DialogContent
+          className="sm:max-w-[440px] overflow-y-hidden p-0 gap-0 border-border/50"
+          elevatedGrandchildStack={elevatedGrandchildStack}
+        >
           {/* Header */}
           <div className="flex items-center justify-between px-5 pt-10 pb-3">
             <div>
@@ -974,7 +980,10 @@ export function SwapDialog({
       {/* Confirmation dialog */}
       {showConfirmation && (
         <Dialog open={showConfirmation} onOpenChange={() => setShowConfirmation(false)}>
-          <DialogContent className="sm:max-w-[380px] p-0 gap-0 border-border/50">
+          <DialogContent
+            className="sm:max-w-[380px] p-0 gap-0 border-border/50"
+            elevatedGrandchildStack={elevatedGrandchildStack}
+          >
             <div className="px-5 pb-5 pt-10 space-y-4">
               <DialogHeader className="space-y-1">
                 <DialogTitle className="text-base">Confirm Swap</DialogTitle>

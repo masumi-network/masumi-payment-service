@@ -23,11 +23,13 @@ import { extractApiErrorMessage } from '@/lib/api-error';
 import { findPaymentSourceWalletByVkey } from '@/lib/wallet-lookup';
 import { useMemo } from 'react';
 import { VerifyAndPublishAgentDialog } from './VerifyAndPublishAgentDialog';
+import { AgentX402Options } from './AgentX402Options';
 
 type AIAgent = RegistryEntry;
 
 interface AIAgentDetailsDialogProps {
   agent: AIAgent | null;
+  elevatedStack?: boolean;
   onClose: () => void;
   onSuccess?: () => void;
   initialTab?: 'Details' | 'Earnings';
@@ -72,6 +74,7 @@ const formatPrice = (amount: string | undefined) => {
 
 export function AIAgentDetailsDialog({
   agent,
+  elevatedStack,
   onClose,
   onSuccess,
   initialTab = 'Details',
@@ -218,6 +221,7 @@ export function AIAgentDetailsDialog({
       <Dialog open={!!agent && !isDeleteDialogOpen && !isPurchaseDialogOpen} onOpenChange={onClose}>
         <DialogContent
           className="max-w-[600px] max-h-[90vh] px-0 pb-0 flex flex-col"
+          elevatedStack={elevatedStack}
           isPushedBack={!!selectedWalletForDetails || isVerifyDialogOpen}
         >
           {agent && (
@@ -365,6 +369,8 @@ export function AIAgentDetailsDialog({
                         </div>
                       </CardContent>
                     </Card>
+
+                    <AgentX402Options sources={agent.supportedPaymentSources} />
 
                     <div className="flex items-center gap-4 pt-2">
                       <Separator className="flex-1" />
@@ -619,6 +625,7 @@ export function AIAgentDetailsDialog({
       <ConfirmDialog
         open={isDeleteDialogOpen}
         onClose={() => setIsDeleteDialogOpen(false)}
+        elevatedChildStack={elevatedStack}
         title={
           agent?.state === 'RegistrationConfirmed'
             ? `Deregister ${agent?.name}?`
@@ -637,11 +644,13 @@ export function AIAgentDetailsDialog({
         onClose={() => setSelectedWalletForDetails(null)}
         wallet={selectedWalletForDetails}
         isChild
+        elevatedChildStack={elevatedStack}
       />
       <VerifyAndPublishAgentDialog
         agent={agent}
         open={isVerifyDialogOpen}
         onClose={() => setIsVerifyDialogOpen(false)}
+        elevatedChildStack={elevatedStack}
       />
     </>
   );

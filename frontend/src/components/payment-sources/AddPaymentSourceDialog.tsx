@@ -1,12 +1,14 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
+import { useQueryClient } from '@tanstack/react-query';
 import { getUtxos, postPaymentSourceExtended, postWallet } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
-import { X, Copy, Check } from 'lucide-react';
+import { X, Copy, Check, Eye, EyeOff } from 'lucide-react';
 import {
   shortenAddress,
+  cn,
   copyToClipboard,
   handleApiCall,
   validateCardanoAddress,
@@ -20,11 +22,18 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { TOOLTIP_TEXTS } from '@/lib/constants/tooltips';
 import { HelpCircle } from 'lucide-react';
 import { extractApiErrorMessage } from '@/lib/api-error';
+import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
+import {
+  DEFAULT_PAYMENT_SOURCE_TYPE,
+  getPaymentSourceTypeLabel,
+  type PaymentSourceType,
+} from '@/lib/payment-source-type';
 
 interface AddPaymentSourceDialogProps {
   open: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  defaultPaymentSourceType?: PaymentSourceType;
 }
 
 const walletSchema = z.object({
@@ -40,17 +49,30 @@ const adminWalletSchema = z.object({
 const formSchema = z
   .object({
     network: z.enum(['Mainnet', 'Preprod']),
+    paymentSourceType: z.enum(['Web3CardanoV1', 'Web3CardanoV2']),
     blockfrostApiKey: z.string().min(1, 'Blockfrost API key is required'),
     feeReceiverWallet: z.object({
-      walletAddress: z.string().min(1, 'Fee receiver wallet is required'),
+      walletAddress: z.string().optional(),
     }),
     feePermille: z.number().min(0).max(1000),
+    // Cap mirrors the backend (payment-source-extended/schemas.ts: min(1).max(50)).
+    requiredAdminSignatures: z.number().int().min(1).max(50),
     purchasingWallets: z.array(walletSchema).min(1),
     sellingWallets: z.array(walletSchema).min(1),
     useCustomAdminWallets: z.boolean(),
-    customAdminWallets: z.tuple([adminWalletSchema, adminWalletSchema, adminWalletSchema]),
+    // V2 supports a weighted multi-admin quorum (1..50). V1's "exactly 3" is
+    // enforced cross-field in superRefine below.
+    customAdminWallets: z.array(adminWalletSchema).min(1).max(50),
   })
   .superRefine((data, ctx) => {
+    if (data.paymentSourceType === 'Web3CardanoV1' && !data.feeReceiverWallet.walletAddress) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Fee receiver wallet is required for V1 payment sources',
+        path: ['feeReceiverWallet', 'walletAddress'],
+      });
+    }
+
     if (data.useCustomAdminWallets) {
       data.customAdminWallets.forEach((wallet, i) => {
         if (!wallet.walletAddress || wallet.walletAddress.length === 0) {
@@ -61,6 +83,29 @@ const formSchema = z
           });
         }
       });
+
+      // V1 requires exactly 3 admin wallets (backend rejects otherwise) —
+      // surface synchronously instead of only on submit.
+      if (data.paymentSourceType === 'Web3CardanoV1' && data.customAdminWallets.length !== 3) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'V1 payment sources require exactly 3 admin wallets',
+          path: ['customAdminWallets'],
+        });
+      }
+
+      // V2 quorum invariant: required signatures cannot exceed admin slots
+      // (else the contract is permanently undisputable).
+      if (
+        data.paymentSourceType === 'Web3CardanoV2' &&
+        data.requiredAdminSignatures > data.customAdminWallets.length
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `requiredAdminSignatures (${data.requiredAdminSignatures}) cannot exceed admin wallet count (${data.customAdminWallets.length})`,
+          path: ['requiredAdminSignatures'],
+        });
+      }
     }
   });
 
@@ -68,7 +113,7 @@ type FormSchema = z.infer<typeof formSchema>;
 // Helper functions to avoid duplicated default value construction logic
 const getDefaultCustomAdminWallets = (
   network: 'Mainnet' | 'Preprod',
-): [{ walletAddress: string }, { walletAddress: string }, { walletAddress: string }] => [
+): Array<{ walletAddress: string }> => [
   { walletAddress: DEFAULT_ADMIN_WALLETS[network][0].walletAddress },
   { walletAddress: DEFAULT_ADMIN_WALLETS[network][1].walletAddress },
   { walletAddress: DEFAULT_ADMIN_WALLETS[network][2].walletAddress },
@@ -79,8 +124,14 @@ const getDefaultFeeConfig = (network: 'Mainnet' | 'Preprod') => ({
   feePermille: DEFAULT_FEE_CONFIG[network].feePermille,
 });
 
-export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentSourceDialogProps) {
+export function AddPaymentSourceDialog({
+  open,
+  onClose,
+  onSuccess,
+  defaultPaymentSourceType = DEFAULT_PAYMENT_SOURCE_TYPE,
+}: AddPaymentSourceDialogProps) {
   const { apiClient, network: currentNetwork } = useAppContext();
+  const queryClient = useQueryClient();
   const [error, setError] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [copiedAddresses, setCopiedAddresses] = useState<{
@@ -94,6 +145,10 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
   }>({});
   const [walletGenError, setWalletGenError] = useState<string>('');
   const [feePercentInput, setFeePercentInput] = useState('');
+  // Blockfrost API key is a long-lived secret. Mask in the DOM by default;
+  // user can click the eye toggle to reveal. Prevents accidental disclosure
+  // via screen share / over-the-shoulder / screenshots.
+  const [showApiKey, setShowApiKey] = useState(false);
 
   const {
     register,
@@ -107,11 +162,19 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
     resolver: zodResolver(formSchema),
     defaultValues: {
       network: currentNetwork,
+      paymentSourceType: defaultPaymentSourceType,
       blockfrostApiKey: '',
       feeReceiverWallet: {
-        walletAddress: '',
+        walletAddress:
+          defaultPaymentSourceType === 'Web3CardanoV2'
+            ? ''
+            : getDefaultFeeConfig(currentNetwork).walletAddress,
       },
-      feePermille: getDefaultFeeConfig(currentNetwork).feePermille,
+      feePermille:
+        defaultPaymentSourceType === 'Web3CardanoV2'
+          ? 0
+          : getDefaultFeeConfig(currentNetwork).feePermille,
+      requiredAdminSignatures: 2,
       purchasingWallets: [{ walletMnemonic: '', note: '', collectionAddress: '' }],
       sellingWallets: [{ walletMnemonic: '', note: '', collectionAddress: '' }],
       useCustomAdminWallets: false,
@@ -136,17 +199,34 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
     control,
     name: 'sellingWallets',
   });
+  const {
+    fields: customAdminWalletFields,
+    append: appendCustomAdminWallet,
+    remove: removeCustomAdminWallet,
+  } = useFieldArray({
+    control,
+    name: 'customAdminWallets',
+  });
 
+  // Only reset the full form when the dialog actually opens (false -> true
+  // transition). Re-running this effect when `currentNetwork` or
+  // `defaultPaymentSourceType` change mid-edit would clobber user input
+  // (notably `requiredAdminSignatures`, which the user can adjust between 2
+  // and 3).
+  const previousOpenRef = useRef(false);
   useEffect(() => {
-    if (open) {
+    if (open && !previousOpenRef.current) {
       const feeConfig = getDefaultFeeConfig(currentNetwork);
       reset({
         network: currentNetwork,
+        paymentSourceType: defaultPaymentSourceType,
         blockfrostApiKey: '',
         feeReceiverWallet: {
-          walletAddress: feeConfig.walletAddress,
+          walletAddress:
+            defaultPaymentSourceType === 'Web3CardanoV2' ? '' : feeConfig.walletAddress,
         },
-        feePermille: feeConfig.feePermille,
+        feePermille: defaultPaymentSourceType === 'Web3CardanoV2' ? 0 : feeConfig.feePermille,
+        requiredAdminSignatures: 2,
         purchasingWallets: [{ walletMnemonic: '', note: '', collectionAddress: '' }],
         sellingWallets: [{ walletMnemonic: '', note: '', collectionAddress: '' }],
         useCustomAdminWallets: false,
@@ -154,28 +234,62 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
       });
       queueMicrotask(() => setError(''));
     }
-  }, [open, currentNetwork, reset]);
+    previousOpenRef.current = open;
+  }, [open, currentNetwork, defaultPaymentSourceType, reset]);
 
   const network = useWatch({ control, name: 'network' });
+  const paymentSourceType = useWatch({ control, name: 'paymentSourceType' });
   const useCustomAdminWallets = useWatch({ control, name: 'useCustomAdminWallets' });
   const feePermille = useWatch({ control, name: 'feePermille' });
+  const isV2Source = paymentSourceType === 'Web3CardanoV2';
 
-  // Clear percent input when custom config is disabled so re-enabling shows derived value
+  // Clear percent input only on the meaningful TRANSITIONS:
+  //   - custom config toggles OFF (so re-enabling shows the derived value)
+  //   - V2 is selected (V2 has no fee percent)
+  // Without these transition guards, the effect re-fired on every render where
+  // either flag was truthy and discarded the user's typed value even when
+  // nothing changed — most visibly on a momentary V1→V2→V1 round-trip.
+  const prevUseCustomAdminWalletsRef = useRef(useCustomAdminWallets);
+  const prevIsV2SourceRef = useRef(isV2Source);
   useEffect(() => {
-    if (!useCustomAdminWallets) queueMicrotask(() => setFeePercentInput(''));
-  }, [useCustomAdminWallets]);
+    const customWentOff = prevUseCustomAdminWalletsRef.current && !useCustomAdminWallets;
+    const v2WentOn = !prevIsV2SourceRef.current && isV2Source;
+    if (customWentOff || v2WentOn) {
+      queueMicrotask(() => setFeePercentInput(''));
+    }
+    prevUseCustomAdminWalletsRef.current = useCustomAdminWallets;
+    prevIsV2SourceRef.current = isV2Source;
+  }, [isV2Source, useCustomAdminWallets]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    if (isV2Source) {
+      setValue('feePermille', 0, { shouldValidate: true });
+      setValue('feeReceiverWallet.walletAddress', '', { shouldValidate: true });
+      return;
+    }
+
+    if (!useCustomAdminWallets) {
+      const feeConfig = getDefaultFeeConfig(network);
+      setValue('feeReceiverWallet.walletAddress', feeConfig.walletAddress, {
+        shouldValidate: true,
+      });
+      setValue('feePermille', feeConfig.feePermille, { shouldValidate: true });
+    }
+  }, [isV2Source, network, open, setValue, useCustomAdminWallets]);
 
   // Update network-dependent values when the form's network dropdown changes
   useEffect(() => {
     if (open && network) {
       if (!useCustomAdminWallets) {
         const feeConfig = getDefaultFeeConfig(network);
-        setValue('feeReceiverWallet.walletAddress', feeConfig.walletAddress);
-        setValue('feePermille', feeConfig.feePermille);
+        setValue('feeReceiverWallet.walletAddress', isV2Source ? '' : feeConfig.walletAddress);
+        setValue('feePermille', isV2Source ? 0 : feeConfig.feePermille);
         setValue('customAdminWallets', getDefaultCustomAdminWallets(network));
       }
     }
-  }, [network, open, setValue, useCustomAdminWallets]);
+  }, [isV2Source, network, open, setValue, useCustomAdminWallets]);
 
   const handleCopy = async (address: string) => {
     await copyToClipboard(address);
@@ -204,6 +318,7 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
               ': ' +
               validation.error,
           );
+          setIsLoading(false);
           return;
         }
         const balance = await getUtxos({
@@ -233,6 +348,7 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
               ': ' +
               validation.error,
           );
+          setIsLoading(false);
           return;
         }
         const balance = await getUtxos({
@@ -258,17 +374,21 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
         toast.error(
           'Invalid admin wallet address for admin wallet ' + (index + 1) + ': ' + validation.error,
         );
+        setIsLoading(false);
         return;
       }
     }
 
-    const feeReceiverWalletValidation = validateCardanoAddress(
-      data.feeReceiverWallet.walletAddress.trim(),
-      data.network,
-    );
-    if (!feeReceiverWalletValidation.isValid) {
-      toast.error('Invalid fee receiver wallet address: ' + feeReceiverWalletValidation.error);
-      return;
+    if (data.paymentSourceType === 'Web3CardanoV1') {
+      const feeReceiverWalletValidation = validateCardanoAddress(
+        data.feeReceiverWallet.walletAddress?.trim() ?? '',
+        data.network,
+      );
+      if (!feeReceiverWalletValidation.isValid) {
+        toast.error('Invalid fee receiver wallet address: ' + feeReceiverWalletValidation.error);
+        setIsLoading(false);
+        return;
+      }
     }
 
     await handleApiCall(
@@ -277,19 +397,21 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
           client: apiClient,
           body: {
             network: data.network,
+            paymentSourceType: data.paymentSourceType,
             PaymentSourceConfig: {
               rpcProviderApiKey: data.blockfrostApiKey,
               rpcProvider: 'Blockfrost',
             },
-            feeRatePermille: data.feePermille,
+            feeRatePermille: data.paymentSourceType === 'Web3CardanoV2' ? 0 : data.feePermille,
             AdminWallets: adminWallets.map((w) => ({
               walletAddress: w.walletAddress,
-            })) as [
-              { walletAddress: string },
-              { walletAddress: string },
-              { walletAddress: string },
-            ],
-            FeeReceiverNetworkWallet: data.feeReceiverWallet,
+            })),
+            requiredAdminSignatures:
+              data.paymentSourceType === 'Web3CardanoV2' ? data.requiredAdminSignatures : undefined,
+            FeeReceiverNetworkWallet:
+              data.paymentSourceType === 'Web3CardanoV2'
+                ? undefined
+                : { walletAddress: data.feeReceiverWallet.walletAddress ?? '' },
             PurchasingWallets: data.purchasingWallets.map((wallet) => ({
               walletMnemonic: wallet.walletMnemonic,
               collectionAddress: wallet.collectionAddress || null,
@@ -305,10 +427,19 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
       {
         onSuccess: () => {
           toast.success('Payment source created successfully');
+          // Dashboard cards keyed against the previous payment-source set
+          // continue rendering against stale caches until the next refetch
+          // tick. Invalidate the sibling queries so the new source's
+          // wallets/agents/transactions are visible immediately.
+          queryClient.invalidateQueries({ queryKey: ['payment-sources-all'] });
+          queryClient.invalidateQueries({ queryKey: ['payment-source-extended'] });
+          queryClient.invalidateQueries({ queryKey: ['wallets'] });
+          queryClient.invalidateQueries({ queryKey: ['agents'] });
+          queryClient.invalidateQueries({ queryKey: ['transactions'] });
           onSuccess();
           onClose();
         },
-        onError: (error: any) => {
+        onError: (error: unknown) => {
           setError(extractApiErrorMessage(error, 'Failed to create payment source'));
         },
         onFinally: () => {
@@ -330,17 +461,20 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
           body: { network: getValues('network') },
         }),
       {
-        onSuccess: (response: any) => {
-          if (response.data?.data?.walletMnemonic) {
+        // `response` type inferred from postWallet's PostWalletResponses
+        // via handleApiCall's generic T.
+        onSuccess: (response) => {
+          const mnemonic = response.data?.data?.walletMnemonic;
+          if (mnemonic) {
             // Set the mnemonic in the form
             const fieldName = `purchasingWallets.${index}.walletMnemonic` as const;
-            setValue(fieldName, response.data.data.walletMnemonic);
+            setValue(fieldName, mnemonic);
           } else {
             setWalletGenError('Failed to generate mnemonic phrase');
             toast.error('Failed to generate mnemonic phrase');
           }
         },
-        onError: (error: any) => {
+        onError: (error: unknown) => {
           const errorMessage = extractApiErrorMessage(error, 'Failed to generate mnemonic');
           setWalletGenError(errorMessage);
           toast.error(errorMessage);
@@ -363,16 +497,19 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
           body: { network: getValues('network') },
         }),
       {
-        onSuccess: (response: any) => {
-          if (response.data?.data?.walletMnemonic) {
+        // `response` type inferred from postWallet's PostWalletResponses
+        // via handleApiCall's generic T.
+        onSuccess: (response) => {
+          const mnemonic = response.data?.data?.walletMnemonic;
+          if (mnemonic) {
             const fieldName = `sellingWallets.${index}.walletMnemonic` as const;
-            setValue(fieldName, response.data.data.walletMnemonic);
+            setValue(fieldName, mnemonic);
           } else {
             setWalletGenError('Failed to generate mnemonic phrase');
             toast.error('Failed to generate mnemonic phrase');
           }
         },
-        onError: (error: any) => {
+        onError: (error: unknown) => {
           const errorMessage = extractApiErrorMessage(error, 'Failed to generate mnemonic');
           setWalletGenError(errorMessage);
           toast.error(errorMessage);
@@ -385,17 +522,99 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
     );
   };
 
-  type AdminWalletPath = `customAdminWallets.${0 | 1 | 2}.walletAddress`;
-
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog open={open} onOpenChange={(o) => !o && !isLoading && onClose()}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Add Payment Source</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 py-4">
+          <input type="hidden" {...register('paymentSourceType')} />
           <div className="space-y-4">
             <h3 className="text-lg font-semibold">Basic Configuration</h3>
+            <div className="space-y-2">
+              <label id="payment-source-type-label" className="text-sm font-medium">
+                Payment source type <span className="text-red-500">*</span>
+              </label>
+              <div
+                role="radiogroup"
+                aria-labelledby="payment-source-type-label"
+                aria-invalid={errors.paymentSourceType ? true : undefined}
+                className="grid gap-2 sm:grid-cols-2"
+              >
+                {(() => {
+                  const radioTypes = ['Web3CardanoV2', 'Web3CardanoV1'] as const;
+                  return radioTypes.map((type, index) => {
+                    const isSelected = paymentSourceType === type;
+                    return (
+                      <button
+                        key={type}
+                        type="button"
+                        role="radio"
+                        aria-checked={isSelected}
+                        // Roving tabIndex: only the selected radio receives focus
+                        // via Tab. Arrow keys move within the group per WAI-ARIA
+                        // radiogroup pattern.
+                        tabIndex={isSelected ? 0 : -1}
+                        onKeyDown={(event) => {
+                          if (
+                            event.key !== 'ArrowRight' &&
+                            event.key !== 'ArrowLeft' &&
+                            event.key !== 'ArrowDown' &&
+                            event.key !== 'ArrowUp'
+                          ) {
+                            return;
+                          }
+                          event.preventDefault();
+                          const direction =
+                            event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : -1;
+                          const nextIndex =
+                            (index + direction + radioTypes.length) % radioTypes.length;
+                          const nextType = radioTypes[nextIndex];
+                          setValue('paymentSourceType', nextType, {
+                            shouldDirty: true,
+                            shouldValidate: true,
+                          });
+                          const container = event.currentTarget.parentElement;
+                          const nextButton =
+                            container?.querySelectorAll<HTMLButtonElement>('button[role="radio"]')[
+                              nextIndex
+                            ];
+                          nextButton?.focus();
+                        }}
+                        onClick={() =>
+                          setValue('paymentSourceType', type, {
+                            shouldDirty: true,
+                            shouldValidate: true,
+                          })
+                        }
+                        className={cn(
+                          'rounded-lg border p-3 text-left transition-colors',
+                          isSelected
+                            ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
+                            : 'hover:bg-muted/40',
+                        )}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm font-medium">
+                            {getPaymentSourceTypeLabel(type)}
+                          </span>
+                          <PaymentSourceTypeBadge paymentSourceType={type} showDefault />
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {type === 'Web3CardanoV2'
+                            ? 'Default for new agents. Zero fees and V2 registry metadata.'
+                            : 'Legacy source for agents that still depend on the V1 contract.'}
+                        </p>
+                      </button>
+                    );
+                  });
+                })()}
+              </div>
+              {errors.paymentSourceType && (
+                <p className="text-xs text-destructive mt-1">{errors.paymentSourceType.message}</p>
+              )}
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
@@ -436,12 +655,25 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <input
-                  type="text"
-                  className="w-full p-2 rounded-md bg-background border"
-                  {...register('blockfrostApiKey')}
-                  placeholder="Enter your Blockfrost API key"
-                />
+                <div className="relative">
+                  <input
+                    type={showApiKey ? 'text' : 'password'}
+                    className="w-full p-2 pr-10 rounded-md bg-background border"
+                    autoComplete="off"
+                    spellCheck={false}
+                    {...register('blockfrostApiKey')}
+                    placeholder="Enter your Blockfrost API key"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowApiKey((v) => !v)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    aria-label={showApiKey ? 'Hide API key' : 'Show API key'}
+                    tabIndex={-1}
+                  >
+                    {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
                 {errors.blockfrostApiKey && (
                   <p className="text-xs text-destructive mt-1">{errors.blockfrostApiKey.message}</p>
                 )}
@@ -449,116 +681,161 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
             </div>
           </div>
 
-          {/* Fee Configuration Section */}
           <div className="space-y-4 p-4 bg-muted/30 rounded-lg border border-border/50">
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-2">
-                <h3 className="text-lg font-semibold">Fee Configuration</h3>
+                <h3 className="text-lg font-semibold">
+                  {isV2Source ? 'V2 Configuration' : 'Fee Configuration'}
+                </h3>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p>Configure fee settings for this payment source</p>
+                    <p>
+                      {isV2Source
+                        ? 'Configure V2 admin quorum and wallets'
+                        : 'Configure fee settings for this payment source'}
+                    </p>
                   </TooltipContent>
                 </Tooltip>
               </div>
               <div className="flex items-center gap-2">
-                <label className="text-sm">Use Custom Configuration</label>
+                <label className="text-sm">
+                  {isV2Source ? 'Use custom admin wallets' : 'Use custom configuration'}
+                </label>
                 <input type="checkbox" {...register('useCustomAdminWallets')} />
               </div>
             </div>
 
-            {/* Fee Settings Grid */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <label className="text-sm font-medium">
-                    Fee (%) <span className="text-red-500">*</span>
-                  </label>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>{TOOLTIP_TEXTS.FEE_PERMILLE}</p>
-                    </TooltipContent>
-                  </Tooltip>
+            {isV2Source ? (
+              <div className="rounded-lg border bg-background/70 p-3 text-sm">
+                <div className="flex flex-wrap items-center gap-2">
+                  <PaymentSourceTypeBadge paymentSourceType="Web3CardanoV2" showDefault />
+                  <span className="font-medium">Fees are fixed at 0%</span>
                 </div>
-                <input
-                  type="number"
-                  className="w-full p-2 rounded-md bg-background border disabled:opacity-50 disabled:cursor-not-allowed"
-                  min={0}
-                  max={100}
-                  step={0.1}
-                  value={
-                    useCustomAdminWallets
-                      ? feePercentInput !== ''
-                        ? feePercentInput
+                <p className="mt-1 text-xs text-muted-foreground">
+                  V2 does not require a fee receiver wallet. The admin quorum controls dispute and
+                  refund authorization.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <label className="text-sm font-medium">
+                      Fee (%) <span className="text-red-500">*</span>
+                    </label>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{TOOLTIP_TEXTS.FEE_PERMILLE}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                  <input
+                    type="number"
+                    className="w-full p-2 rounded-md bg-background border disabled:opacity-50 disabled:cursor-not-allowed"
+                    min={0}
+                    max={100}
+                    step={0.1}
+                    value={
+                      useCustomAdminWallets
+                        ? feePercentInput !== ''
+                          ? feePercentInput
+                          : (
+                              (typeof feePermille === 'number' && !Number.isNaN(feePermille)
+                                ? feePermille
+                                : getDefaultFeeConfig(network ?? currentNetwork).feePermille) / 10
+                            ).toFixed(1)
                         : (
                             (typeof feePermille === 'number' && !Number.isNaN(feePermille)
                               ? feePermille
                               : getDefaultFeeConfig(network ?? currentNetwork).feePermille) / 10
                           ).toFixed(1)
-                      : (
-                          (typeof feePermille === 'number' && !Number.isNaN(feePermille)
-                            ? feePermille
-                            : getDefaultFeeConfig(network ?? currentNetwork).feePermille) / 10
-                        ).toFixed(1)
-                  }
-                  onChange={(e) => useCustomAdminWallets && setFeePercentInput(e.target.value)}
-                  onBlur={() => {
-                    if (!useCustomAdminWallets) return;
-                    const percent = parseFloat(feePercentInput);
-                    if (!Number.isNaN(percent)) {
-                      const permille = Math.round(Math.min(100, Math.max(0, percent)) * 10);
-                      setValue('feePermille', permille, { shouldValidate: true });
-                      setFeePercentInput((permille / 10).toFixed(1));
-                    } else {
-                      setFeePercentInput(
-                        (
-                          (typeof feePermille === 'number' && !Number.isNaN(feePermille)
-                            ? feePermille
-                            : getDefaultFeeConfig(network ?? currentNetwork).feePermille) / 10
-                        ).toFixed(1),
-                      );
                     }
-                  }}
-                  disabled={!useCustomAdminWallets}
-                />
-                <p className="text-xs text-muted-foreground">0–100%, one decimal.</p>
-                {errors.feePermille && (
-                  <p className="text-xs text-destructive mt-1">{errors.feePermille.message}</p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <label className="text-sm font-medium">
-                    Fee Receiver Wallet <span className="text-red-500">*</span>
-                  </label>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>{TOOLTIP_TEXTS.FEE_RECEIVER_WALLET}</p>
-                    </TooltipContent>
-                  </Tooltip>
+                    onChange={(e) => useCustomAdminWallets && setFeePercentInput(e.target.value)}
+                    onBlur={() => {
+                      if (!useCustomAdminWallets) return;
+                      const percent = parseFloat(feePercentInput);
+                      if (!Number.isNaN(percent)) {
+                        const permille = Math.round(Math.min(100, Math.max(0, percent)) * 10);
+                        setValue('feePermille', permille, { shouldValidate: true });
+                        setFeePercentInput((permille / 10).toFixed(1));
+                      } else {
+                        setFeePercentInput(
+                          (
+                            (typeof feePermille === 'number' && !Number.isNaN(feePermille)
+                              ? feePermille
+                              : getDefaultFeeConfig(network ?? currentNetwork).feePermille) / 10
+                          ).toFixed(1),
+                        );
+                      }
+                    }}
+                    disabled={!useCustomAdminWallets}
+                  />
+                  <p className="text-xs text-muted-foreground">0-100%, one decimal.</p>
+                  {errors.feePermille && (
+                    <p className="text-xs text-destructive mt-1">{errors.feePermille.message}</p>
+                  )}
                 </div>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <label className="text-sm font-medium">
+                      Fee Receiver Wallet <span className="text-red-500">*</span>
+                    </label>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{TOOLTIP_TEXTS.FEE_RECEIVER_WALLET}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                  <input
+                    type="text"
+                    className="w-full p-2 rounded-md bg-background border disabled:opacity-50 disabled:cursor-not-allowed"
+                    {...register('feeReceiverWallet.walletAddress')}
+                    placeholder="Enter fee receiver wallet address"
+                    disabled={!useCustomAdminWallets}
+                  />
+                  {errors.feeReceiverWallet?.walletAddress && (
+                    <p className="text-xs text-destructive mt-1">
+                      {errors.feeReceiverWallet.walletAddress.message}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {isV2Source && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">
+                  Required admin signatures <span className="text-red-500">*</span>
+                </label>
                 <input
-                  type="text"
-                  className="w-full p-2 rounded-md bg-background border disabled:opacity-50 disabled:cursor-not-allowed"
-                  {...register('feeReceiverWallet.walletAddress')}
-                  placeholder="Enter fee receiver wallet address"
-                  disabled={!useCustomAdminWallets}
+                  type="number"
+                  className="w-full p-2 rounded-md bg-background border"
+                  min={1}
+                  max={50}
+                  step={1}
+                  {...register('requiredAdminSignatures', { valueAsNumber: true })}
                 />
-                {errors.feeReceiverWallet?.walletAddress && (
+                <p className="text-xs text-muted-foreground">
+                  Weighted M-of-N quorum required to authorize V2 dispute actions. Must not exceed
+                  the number of admin wallet slots below. Duplicate addresses across slots count as
+                  weighted votes per the V2 contract semantics.
+                </p>
+                {errors.requiredAdminSignatures && (
                   <p className="text-xs text-destructive mt-1">
-                    {errors.feeReceiverWallet.walletAddress.message}
+                    {errors.requiredAdminSignatures.message}
                   </p>
                 )}
               </div>
-            </div>
+            )}
 
             {/* Admin Wallets Sub-section */}
             <div className="space-y-4 pt-4 border-t border-border/50">
@@ -575,24 +852,57 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
               </div>
               {useCustomAdminWallets ? (
                 <div className="space-y-4">
-                  {[0, 1, 2].map((i) => (
-                    <div key={i} className="space-y-2">
-                      <label className="text-sm font-medium">
-                        Admin Wallet {i + 1} <span className="text-destructive">*</span>
-                      </label>
+                  {customAdminWalletFields.map((field, i) => (
+                    <div key={field.id} className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <label className="text-sm font-medium">
+                          Admin Wallet {i + 1} <span className="text-destructive">*</span>
+                        </label>
+                        {/* V2 only: V1 is locked at exactly 3 slots. */}
+                        {isV2Source && customAdminWalletFields.length > 1 && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeCustomAdminWallet(i)}
+                            aria-label={`Remove admin wallet ${i + 1}`}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
                       <input
                         type="text"
                         className="w-full p-2 rounded-md bg-background border"
-                        {...register(`customAdminWallets.${i}.walletAddress` as AdminWalletPath)}
+                        {...register(`customAdminWallets.${i}.walletAddress` as const)}
                         placeholder="Enter admin wallet address"
                       />
                       {errors.customAdminWallets?.[i]?.walletAddress && (
                         <p className="text-xs text-destructive mt-1">
-                          {errors.customAdminWallets[i].walletAddress.message}
+                          {errors.customAdminWallets[i]?.walletAddress?.message}
                         </p>
                       )}
                     </div>
                   ))}
+                  {/* V2 only: variable-length list (1..50); V1 locked at 3. */}
+                  {isV2Source && customAdminWalletFields.length < 50 && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => appendCustomAdminWallet({ walletAddress: '' })}
+                    >
+                      Add admin wallet
+                    </Button>
+                  )}
+                  {/* Top-level error for the array as a whole (e.g. V1 exactly-3 check). */}
+                  {errors.customAdminWallets &&
+                    !Array.isArray(errors.customAdminWallets) &&
+                    'message' in errors.customAdminWallets && (
+                      <p className="text-xs text-destructive mt-1">
+                        {errors.customAdminWallets.message as string}
+                      </p>
+                    )}
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -803,11 +1113,15 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
               <p className="font-medium mb-1">Please fix the following errors:</p>
               <ul className="list-disc list-inside space-y-1">
                 {errors.network && <li>{errors.network.message}</li>}
+                {errors.paymentSourceType && <li>{errors.paymentSourceType.message}</li>}
                 {errors.blockfrostApiKey && <li>{errors.blockfrostApiKey.message}</li>}
                 {errors.feeReceiverWallet?.walletAddress && (
                   <li>Fee receiver wallet: {errors.feeReceiverWallet.walletAddress.message}</li>
                 )}
                 {errors.feePermille && <li>{errors.feePermille.message}</li>}
+                {errors.requiredAdminSignatures && (
+                  <li>{errors.requiredAdminSignatures.message}</li>
+                )}
                 {errors.purchasingWallets && <li>At least one purchasing wallet is required</li>}
                 {errors.sellingWallets && <li>At least one selling wallet is required</li>}
                 {errors.customAdminWallets && (

@@ -1,7 +1,7 @@
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 import { encrypt } from '@/utils/security/encryption';
-import { generateApiKeySecureHash } from '@/utils/crypto/api-key-hash';
-import { logger } from '@/utils/logger';
+import { generateApiKeySecureHash } from '@masumi/payment-core/api-key-hash';
+import { logger } from '@masumi/payment-core/logger';
 
 /**
  * One-time startup migration: encrypts any plaintext API key tokens still in the DB.

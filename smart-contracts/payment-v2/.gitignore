@@ -1,0 +1,17 @@
+# Aiken compilation artifacts
+artifacts/
+# Aiken's project working directory
+build/
+# Aiken's default documentation export
+docs/
+
+wallet_1.addr
+wallet_1.sk
+wallet_2.addr
+wallet_2.sk
+#wallet_3.addr
+wallet_3.sk
+#wallet_4.addr
+wallet_4.sk
+#wallet_5.addr
+wallet_5.sk

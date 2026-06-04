@@ -1,11 +1,12 @@
 import { OpenAPIRegistry, OpenApiGeneratorV3, extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
 import { registerAdminPaths } from './registrars/admin';
 import { registerPaymentPaths } from './registrars/payments';
 import { registerInvoiceAndPurchasePaths } from './registrars/invoices-purchases';
 import { registerRegistrySupportPaths } from './registrars/registry-support';
 import { registerRegistryInboxSupportPaths } from './registrars/registry-inbox-support';
 import { registerMonitoringPaths } from './registrars/monitoring';
+import { registerX402Paths } from './registrars/x402';
 import { registerSimpleApiPaths } from './registrars/simple-api';
 
 extendZodWithOpenApi(z);
@@ -26,6 +27,7 @@ export function generateOpenAPI() {
 	registerRegistrySupportPaths({ registry, apiKeyAuth });
 	registerRegistryInboxSupportPaths({ registry, apiKeyAuth });
 	registerMonitoringPaths({ registry, apiKeyAuth });
+	registerX402Paths({ registry, apiKeyAuth });
 	registerSimpleApiPaths({ registry, apiKeyAuth });
 
 	return new OpenApiGeneratorV3(registry.definitions).generateDocument({
