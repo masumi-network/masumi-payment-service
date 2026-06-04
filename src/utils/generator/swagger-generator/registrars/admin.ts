@@ -18,6 +18,10 @@ import {
 	getWalletSchemaOutput,
 	patchWalletSchemaInput,
 	patchWalletSchemaOutput,
+	postWalletFundSchemaInput,
+	postWalletFundSchemaOutput,
+	getWalletFundSchemaInput,
+	getWalletFundSchemaOutput,
 } from '@/routes/api/wallet/schemas';
 import {
 	deleteWalletLowBalanceRuleSchemaInput,
@@ -64,6 +68,9 @@ import {
 	updateWalletBodyExample,
 	walletExample,
 	walletLowBalanceRuleExample,
+	fundTransferExample,
+	postWalletFundBodyExample,
+	getWalletFundQueryExample,
 } from '@/routes/api/wallet/examples';
 import { successResponse, type SwaggerRegistrarContext } from '../shared';
 
@@ -759,6 +766,56 @@ export function registerAdminPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 			},
 			500: {
 				description: 'Internal Server Error',
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'post',
+		path: '/wallet/transfer-funds',
+		description:
+			'Queues an asynchronous transfer of lovelace (and optional native assets) from a hot wallet to a target Cardano address. The transfer is picked up by the background processor once the wallet is free. Poll GET /wallet/transfer-funds to check status.',
+		summary: 'Queue a fund transfer from a wallet. (admin access required)',
+		tags: ['wallet'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			body: {
+				description: 'Fund transfer request',
+				content: {
+					'application/json': {
+						schema: postWalletFundSchemaInput.openapi({ example: postWalletFundBodyExample }),
+					},
+				},
+			},
+		},
+		responses: {
+			200: successResponse('Fund transfer queued', postWalletFundSchemaOutput, fundTransferExample),
+			400: {
+				description: 'Bad Request (lovelaceAmount below 2 ADA minimum)',
+			},
+			404: {
+				description: 'Not Found (wallet not found)',
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'get',
+		path: '/wallet/transfer-funds',
+		description:
+			'Query the status of a fund transfer by id, or list all fund transfers for a wallet. Poll this endpoint after posting to /wallet/transfer-funds. Status values: Pending (queued or submitted), Confirmed (on-chain), FailedViaManualReset (submission error), FailedViaTimeout (no confirmation within timeout).',
+		summary: 'Get fund transfer status or history. (admin access required)',
+		tags: ['wallet'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			query: getWalletFundSchemaInput.openapi({ example: getWalletFundQueryExample }),
+		},
+		responses: {
+			200: successResponse('Fund transfer list', getWalletFundSchemaOutput, {
+				transfers: [fundTransferExample],
+			}),
+			404: {
+				description: 'Fund transfer not found',
 			},
 		},
 	});
