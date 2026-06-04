@@ -12,6 +12,7 @@
 		"./config": "./src/config.ts",
 		"./db": "./src/db.ts",
 		"./endpoint-factory": "./src/endpoint-factory.ts",
+		"./encryption": "./src/encryption.ts",
 		"./hex": "./src/hex.ts",
 		"./http-exists-error": "./src/http-exists-error.ts",
 		"./logger": "./src/logger.ts",

@@ -1,7 +1,7 @@
 import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
-import { PaymentSourceType, PricingType, RegistrationState } from '@/generated/prisma/client';
+import { PaymentSourceType, PricingType, Prisma, RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { DEFAULTS } from '@masumi/payment-core/config';
@@ -25,7 +25,7 @@ import {
 	registryRequestOutputSchema,
 } from './schemas';
 import { getRegistryEntriesForQuery } from './queries';
-import { serializeRegistryEntriesResponse } from './serializers';
+import { serializeRegistryEntriesResponse, serializeSupportedPaymentSources } from './serializers';
 import { resolveScopedRecipientWalletOrThrow, resolveScopedSellingWalletOrThrow } from './shared';
 
 export {
@@ -120,6 +120,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 						supportedPaymentSources,
 						input.network,
 						sellingWallet.PaymentSource.paymentSourceType,
+						ctx.caip2NetworkLimit,
 					);
 				} catch (error) {
 					throw createHttpError(400, error instanceof Error ? error.message : String(error));
@@ -197,7 +198,18 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 											chain: source.chain,
 											network: source.network,
 											paymentSourceType: source.paymentSourceType,
-											address: source.address,
+											address: source.chain === 'EVM' ? (source.address ?? source.payTo) : source.address,
+											...(source.chain === 'EVM'
+												? {
+														scheme: source.scheme,
+														asset: source.asset,
+														amount: BigInt(source.amount),
+														decimals: source.decimals,
+														payTo: source.payTo,
+														resource: source.resource,
+														extra: source.extra as Prisma.InputJsonValue | undefined,
+													}
+												: {}),
 										})),
 									},
 								}
@@ -271,6 +283,13 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 							network: true,
 							paymentSourceType: true,
 							address: true,
+							scheme: true,
+							asset: true,
+							amount: true,
+							decimals: true,
+							payTo: true,
+							resource: true,
+							extra: true,
 						},
 					},
 					CurrentTransaction: {
@@ -317,7 +336,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 								pricingType: result.Pricing.pricingType,
 							},
 				sendFundingLovelace: result.sendFundingLovelace?.toString() ?? null,
-				supportedPaymentSources: result.SupportedPaymentSources.length > 0 ? result.SupportedPaymentSources : null,
+				supportedPaymentSources: serializeSupportedPaymentSources(result.SupportedPaymentSources),
 				Tags: result.tags,
 				RecipientWallet: result.RecipientWallet,
 				CurrentTransaction: result.CurrentTransaction
@@ -431,6 +450,13 @@ export const deleteAgentRegistration = adminAuthenticatedEndpointFactory.build({
 							network: true,
 							paymentSourceType: true,
 							address: true,
+							scheme: true,
+							asset: true,
+							amount: true,
+							decimals: true,
+							payTo: true,
+							resource: true,
+							extra: true,
 						},
 					},
 					CurrentTransaction: {
@@ -477,7 +503,7 @@ export const deleteAgentRegistration = adminAuthenticatedEndpointFactory.build({
 								pricingType: item.Pricing.pricingType,
 							},
 				sendFundingLovelace: item.sendFundingLovelace?.toString() ?? null,
-				supportedPaymentSources: item.SupportedPaymentSources.length > 0 ? item.SupportedPaymentSources : null,
+				supportedPaymentSources: serializeSupportedPaymentSources(item.SupportedPaymentSources),
 				Tags: item.tags,
 				RecipientWallet: item.RecipientWallet,
 				CurrentTransaction: item.CurrentTransaction
