@@ -99,7 +99,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     const currentNetworkPaymentSources =
       network === 'Mainnet' ? mainnetPaymentSources : preprodPaymentSources;
     // Pages accessible even without payment sources (shown in setup sidebar)
-    const setupAccessiblePages = ['/api-keys', '/developers', '/settings'];
+    const setupAccessiblePages = ['/api-keys', '/developers', '/settings', '/x402-setup'];
     if (apiKey && isHealthy && currentNetworkPaymentSources.length === 0) {
       const protectedPages = ['/', '/ai-agents', '/inbox-agents', '/wallets', '/transactions'];
       if (protectedPages.includes(router.pathname)) {

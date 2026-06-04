@@ -16,9 +16,17 @@ import { getPreferredPaymentSource } from '@/lib/payment-source-type';
 
 export type NetworkType = 'Preprod' | 'Mainnet';
 
+// Which payment rail the UI is currently in context of. 'cardano' is the
+// historical default; 'x402' surfaces the EVM rail (chains/wallets/budgets).
+export type ActiveRail = 'cardano' | 'x402';
+
 export const AppContext = createContext<
   | {
       selectedPaymentSource: PaymentSource | null;
+      activeRail: ActiveRail;
+      setActiveRail: (rail: ActiveRail) => void;
+      selectedX402ChainId: string | null;
+      setSelectedX402ChainId: (id: string | null) => void;
       apiKey: string | null;
       updateApiKey: (apiKey: string | null) => void;
       authorized: boolean;
@@ -85,6 +93,37 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
   const [setupWizardStep, setSetupWizardStep] = useState(0);
 
+  const [activeRail, setActiveRailState] = useState<ActiveRail>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('masumi_active_rail');
+      if (stored === 'cardano' || stored === 'x402') return stored;
+    }
+    return 'cardano';
+  });
+  const setActiveRail = useCallback((value: ActiveRail) => {
+    setActiveRailState(value);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('masumi_active_rail', value);
+    }
+  }, []);
+
+  const [selectedX402ChainId, setSelectedX402ChainIdState] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('masumi_x402_chain_id') || null;
+    }
+    return null;
+  });
+  const setSelectedX402ChainId = useCallback((id: string | null) => {
+    setSelectedX402ChainIdState(id);
+    if (typeof window !== 'undefined') {
+      if (id) {
+        localStorage.setItem('masumi_x402_chain_id', id);
+      } else {
+        localStorage.removeItem('masumi_x402_chain_id');
+      }
+    }
+  }, []);
+
   const queryClient = useQueryClient();
 
   const { paymentSources } = usePaymentSourceExtendedAllWithParams({
@@ -128,8 +167,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     (newNetwork: NetworkType) => {
       setNetwork(newNetwork);
       setSelectedPaymentSourceIdAndPersist(null);
+      // The env toggle also re-groups EVM chains (testnet<->Preprod, mainnet<->Mainnet),
+      // so the previously selected chain may no longer belong to the new env.
+      setSelectedX402ChainId(null);
     },
-    [setNetwork, setSelectedPaymentSourceIdAndPersist],
+    [setNetwork, setSelectedPaymentSourceIdAndPersist, setSelectedX402ChainId],
   );
 
   useEffect(() => {
@@ -207,22 +249,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setSelectedPaymentSource(null);
     setIsChangingNetwork(false);
     setIsSetupMode(false);
+    setActiveRail('cardano');
+    setSelectedX402ChainId(null);
     setError(null);
 
     // Clear all localStorage items
     localStorage.removeItem('payment_api_key');
     localStorage.removeItem('selectedPaymentSourceId');
+    localStorage.removeItem('masumi_active_rail');
+    localStorage.removeItem('masumi_x402_chain_id');
     localStorage.removeItem('userIgnoredSetup');
     localStorage.removeItem('masumi_last_transactions_visit');
     localStorage.removeItem('masumi_new_transactions_count');
     localStorage.removeItem('masumi_network');
     localStorage.removeItem('masumi_acknowledged_wallet_alerts');
-  }, [setIsSetupMode, setNetwork]);
+  }, [setIsSetupMode, setNetwork, setActiveRail, setSelectedX402ChainId]);
 
   return (
     <AppContext.Provider
       value={{
         selectedPaymentSource,
+        activeRail,
+        setActiveRail,
+        selectedX402ChainId,
+        setSelectedX402ChainId,
         apiKey,
         updateApiKey: (newApiKey: string | null) => {
           if (newApiKey === apiKey) {

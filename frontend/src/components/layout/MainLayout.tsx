@@ -44,6 +44,7 @@ import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtende
 import { NetworkSourceCard } from '@/components/layout/PaymentSourceSelector';
 import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
 import { DEFAULT_PAYMENT_SOURCE_TYPE, isV2PaymentSource } from '@/lib/payment-source-type';
+import { X402SetupBanner } from '@/components/x402/X402SetupBanner';
 interface MainLayoutProps {
   children: React.ReactNode;
 }
@@ -76,7 +77,8 @@ export function MainLayout({ children }: MainLayoutProps) {
   const sideBarWidth = 280;
   const sideBarWidthCollapsed = 96;
   const [isMac, setIsMac] = useState(false);
-  const { network, setNetwork, isChangingNetwork, isSetupMode, setupWizardStep } = useAppContext();
+  const { network, setNetwork, isChangingNetwork, isSetupMode, setupWizardStep, activeRail } =
+    useAppContext();
   const [showNetworkSwitchConfirm, setShowNetworkSwitchConfirm] = useState(false);
   const [pendingNetwork, setPendingNetwork] = useState<'Preprod' | 'Mainnet' | null>(null);
   const isFirstNavMount = !hasAnimatedNav;
@@ -197,6 +199,53 @@ export function MainLayout({ children }: MainLayoutProps) {
       ];
     }
 
+    // Shared items appear on both rails. The rest are gated by the active rail so the
+    // sidebar fully reflects the Cardano vs x402 (EVM) context the user picked.
+    const sharedAgents: NavItem = {
+      href: '/ai-agents',
+      name: 'AI Agents',
+      icon: <Bot className="h-4 w-4" />,
+      badge: null,
+      group: 0,
+    };
+    const sharedGroup1: NavItem[] = [
+      {
+        href: '/api-keys',
+        name: 'API keys',
+        icon: <Key className="h-4 w-4" />,
+        badge: null,
+        group: 1,
+      },
+      {
+        href: '/webhooks',
+        name: 'Webhooks',
+        icon: <Bell className="h-4 w-4" />,
+        badge: null,
+        group: 1,
+      },
+      {
+        href: '/developers',
+        name: 'Developers',
+        icon: <Code className="h-4 w-4 text-violet-500" />,
+        badge: null,
+        group: 1,
+      },
+    ];
+
+    if (activeRail === 'x402') {
+      return [
+        {
+          href: '/x402',
+          name: 'x402',
+          icon: <Coins className="h-4 w-4" />,
+          badge: null,
+          group: 0,
+        },
+        sharedAgents,
+        ...sharedGroup1,
+      ];
+    }
+
     return [
       {
         href: '/',
@@ -205,13 +254,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         badge: null,
         group: 0,
       },
-      {
-        href: '/ai-agents',
-        name: 'AI Agents',
-        icon: <Bot className="h-4 w-4" />,
-        badge: null,
-        group: 0,
-      },
+      sharedAgents,
       {
         href: '/inbox-agents',
         name: 'Inbox Agents',
@@ -242,38 +285,12 @@ export function MainLayout({ children }: MainLayoutProps) {
         badge: null,
         group: 0,
       },
-      {
-        href: '/api-keys',
-        name: 'API keys',
-        icon: <Key className="h-4 w-4" />,
-        badge: null,
-        group: 1,
-      },
-      {
-        href: '/webhooks',
-        name: 'Webhooks',
-        icon: <Bell className="h-4 w-4" />,
-        badge: null,
-        group: 1,
-      },
-      {
-        href: '/x402',
-        name: 'x402',
-        icon: <Coins className="h-4 w-4" />,
-        badge: null,
-        group: 1,
-      },
-      {
-        href: '/developers',
-        name: 'Developers',
-        icon: <Code className="h-4 w-4 text-violet-500" />,
-        badge: null,
-        group: 1,
-      },
+      ...sharedGroup1,
     ];
   }, [
     isSetupMode,
     hasPaymentSources,
+    activeRail,
     newTransactionsCount,
     activeWalletAlertCount,
     walletAlertLabel,
@@ -612,7 +629,12 @@ export function MainLayout({ children }: MainLayoutProps) {
         </div>
 
         <main className="flex-1 relative z-10 w-full animate-content-fade-in">
-          {hasLegacyOnlyPaymentSources && !isSetupMode && (
+          {activeRail === 'x402' && !isSetupMode && (
+            <div className="mx-auto w-full max-w-[1400px] px-4 pt-4">
+              <X402SetupBanner />
+            </div>
+          )}
+          {activeRail !== 'x402' && hasLegacyOnlyPaymentSources && !isSetupMode && (
             <div className="border-b border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100">
               <div className="mx-auto flex max-w-[1400px] flex-col gap-3 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex gap-3">
