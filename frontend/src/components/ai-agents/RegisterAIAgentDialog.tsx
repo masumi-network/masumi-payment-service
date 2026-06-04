@@ -31,6 +31,13 @@ import { useWallets } from '@/lib/queries/useWallets';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { REGISTRY_DECIMAL_ADA_AMOUNT_PATTERN, REGISTRY_LIMITS } from '@/lib/registry-validation';
 import { convertDecimalToBaseUnits } from '@/lib/convertDecimalToBaseUnits';
+import { isV2PaymentSource } from '@/lib/payment-source-type';
+import { useX402Networks } from '@/lib/hooks/useX402';
+import {
+  X402OptionsSection,
+  validateX402Options,
+  type X402OptionDraft,
+} from './X402OptionsSection';
 
 interface RegisterAIAgentDialogProps {
   open: boolean;
@@ -204,6 +211,11 @@ const createAgentSchema = (network: 'Mainnet' | 'Preprod') => {
 
 type AgentFormValues = z.infer<ReturnType<typeof createAgentSchema>>;
 
+type EvmSupportedSource = Extract<
+  NonNullable<RegistryEntry['supportedPaymentSources']>[number],
+  { chain: 'EVM' }
+>;
+
 export function RegisterAIAgentDialog({
   open,
   onClose,
@@ -361,9 +373,24 @@ export function RegisterAIAgentDialog({
           mimeType: e.mimeType,
         })),
       });
+      setX402Options(
+        (editingAgent.supportedPaymentSources ?? [])
+          .filter((source): source is EvmSupportedSource => source.chain === 'EVM')
+          .map((source) => ({
+            caip2Network: source.network,
+            asset: source.asset,
+            amount: source.amount,
+            decimals: String(source.decimals),
+            payTo: source.payTo,
+            resource: source.resource ?? '',
+          })),
+      );
+      setX402Error(null);
       return;
     }
     reset();
+    setX402Options([]);
+    setX402Error(null);
   }, [open, reset, isUpdateMode, editingAgent, network, stablecoinUnit]);
 
   const selectedWallet = useMemo(
@@ -387,6 +414,14 @@ export function RegisterAIAgentDialog({
         : [],
     [selectedPaymentSource, selectedWallet?.wallet.walletAddress],
   );
+
+  const { networks: x402Networks } = useX402Networks({ silentErrors: true });
+  const [x402Options, setX402Options] = useState<X402OptionDraft[]>([]);
+  const [x402Error, setX402Error] = useState<string | null>(null);
+  // x402 supported payment sources are a V2-only capability; update always targets V2.
+  const isV2Target = isUpdateMode
+    ? true
+    : !!selectedPaymentSource && isV2PaymentSource(selectedPaymentSource);
 
   useEffect(() => {
     if (!selectedRecipientWalletAddress) {
@@ -494,6 +529,26 @@ export function RegisterAIAgentDialog({
             ? convertDecimalToBaseUnits(data.sendFundingAda)
             : undefined;
 
+        const evmSupportedSources = x402Options.map((option) => ({
+          chain: 'EVM' as const,
+          network: option.caip2Network,
+          scheme: 'Exact' as const,
+          asset: option.asset,
+          amount: option.amount,
+          decimals: Number(option.decimals),
+          payTo: option.payTo,
+          resource: option.resource ? option.resource : undefined,
+        }));
+        if (isV2Target && x402Options.length > 0) {
+          const x402ValidationError = validateX402Options(x402Options);
+          if (x402ValidationError) {
+            setX402Error(x402ValidationError);
+            toast.error(x402ValidationError);
+            return;
+          }
+        }
+        setX402Error(null);
+
         if (isUpdateMode && editingAgent) {
           if (!editingAgent.agentIdentifier) {
             throw new Error('Cannot update agent: Missing on-chain identifier');
@@ -501,6 +556,13 @@ export function RegisterAIAgentDialog({
           if (!editingAgentSmartContractAddress) {
             throw new Error('Cannot update agent: Missing payment source address');
           }
+          // Update replaces the full supported-payment-sources set; preserve any
+          // non-EVM (Cardano) entries and only rewrite the x402/EVM ones.
+          const existingNonEvmSources = (editingAgent.supportedPaymentSources ?? []).filter(
+            (source) => source.chain !== 'EVM',
+          );
+          const hadEvmSources =
+            (editingAgent.supportedPaymentSources ?? []).length > existingNonEvmSources.length;
           const updateResponse = await postRegistryUpdate({
             client: apiClient,
             body: {
@@ -518,6 +580,11 @@ export function RegisterAIAgentDialog({
               Author: author,
               Legal: Object.keys(legal).length > 0 ? legal : undefined,
               ExampleOutputs: exampleOutputs,
+              ...(evmSupportedSources.length > 0 || hadEvmSources
+                ? {
+                    supportedPaymentSources: [...existingNonEvmSources, ...evmSupportedSources],
+                  }
+                : {}),
             },
           });
 
@@ -548,6 +615,9 @@ export function RegisterAIAgentDialog({
             Author: author,
             Legal: Object.keys(legal).length > 0 ? legal : undefined,
             ExampleOutputs: exampleOutputs,
+            ...(isV2Target && evmSupportedSources.length > 0
+              ? { supportedPaymentSources: evmSupportedSources }
+              : {}),
           },
         });
 
@@ -578,6 +648,8 @@ export function RegisterAIAgentDialog({
       isUpdateMode,
       editingAgent,
       editingAgentSmartContractAddress,
+      x402Options,
+      isV2Target,
     ],
   );
 
@@ -948,6 +1020,24 @@ export function RegisterAIAgentDialog({
               )}
             </div>
           </div>
+
+          {isV2Target && (
+            <div className="flex items-center gap-4 pt-2">
+              <Separator className="flex-1" />
+              <h3 className="text-sm font-medium text-muted-foreground whitespace-nowrap">
+                Payment options
+              </h3>
+              <Separator className="flex-1" />
+            </div>
+          )}
+          {isV2Target && (
+            <X402OptionsSection
+              options={x402Options}
+              networks={x402Networks}
+              onChange={setX402Options}
+              error={x402Error}
+            />
+          )}
 
           <div className="flex items-center gap-4 pt-2">
             <Separator className="flex-1" />

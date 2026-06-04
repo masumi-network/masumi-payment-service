@@ -1,0 +1,20 @@
+{
+	"name": "@masumi/payment-source-x402",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts",
+		"./service": "./src/service.ts"
+	},
+	"dependencies": {
+		"@masumi/payment-core": "workspace:*",
+		"@x402/core": "2.14.0",
+		"@x402/evm": "2.14.0",
+		"@x402/extensions": "2.14.0",
+		"@x402/fetch": "2.14.0",
+		"canonical-json": "0.2.0",
+		"http-errors": "2.0.1",
+		"viem": "2.52.0"
+	}
+}

@@ -67,6 +67,15 @@
                         },
                         "description": "List of Cardano networks this API key is allowed to access"
                     },
+                    "ChainIdLimit": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120
+                        },
+                        "description": "CAIP-2 chain identifiers this API key is allowed to access"
+                    },
                     "RemainingUsageCredits": {
                         "type": "array",
                         "items": {
@@ -126,6 +135,7 @@
                     "canAdmin",
                     "usageLimited",
                     "NetworkLimit",
+                    "ChainIdLimit",
                     "RemainingUsageCredits",
                     "status",
                     "walletScopeEnabled",
@@ -1980,42 +1990,128 @@
                                 "type": "array",
                                 "nullable": true,
                                 "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "chain": {
-                                            "type": "string",
-                                            "enum": [
-                                                "Cardano"
-                                            ],
-                                            "description": "The blockchain this payment source is available on"
+                                    "oneOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "chain": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Cardano"
+                                                    ],
+                                                    "description": "The blockchain this payment source is available on"
+                                                },
+                                                "network": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Preprod",
+                                                        "Mainnet"
+                                                    ],
+                                                    "description": "The Cardano network this payment source is available on"
+                                                },
+                                                "paymentSourceType": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Web3CardanoV1",
+                                                        "Web3CardanoV2"
+                                                    ],
+                                                    "description": "The configured payment source type"
+                                                },
+                                                "address": {
+                                                    "type": "string",
+                                                    "maxLength": 250,
+                                                    "description": "The escrow smart contract address for this payment source"
+                                                }
+                                            },
+                                            "required": [
+                                                "chain",
+                                                "network",
+                                                "paymentSourceType",
+                                                "address"
+                                            ]
                                         },
-                                        "network": {
-                                            "type": "string",
-                                            "enum": [
-                                                "Preprod",
-                                                "Mainnet"
-                                            ],
-                                            "description": "The blockchain network this payment source is available on"
-                                        },
-                                        "paymentSourceType": {
-                                            "type": "string",
-                                            "enum": [
-                                                "Web3CardanoV1",
-                                                "Web3CardanoV2"
-                                            ],
-                                            "description": "The configured payment source type"
-                                        },
-                                        "address": {
-                                            "type": "string",
-                                            "maxLength": 250,
-                                            "description": "The escrow smart contract address for this payment source"
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "chain": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "EVM"
+                                                    ],
+                                                    "description": "The chain family used by standard x402"
+                                                },
+                                                "network": {
+                                                    "type": "string",
+                                                    "pattern": "^eip155:\\d+$",
+                                                    "description": "CAIP-2 EVM network id, for example eip155:8453"
+                                                },
+                                                "paymentSourceType": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "enum": [
+                                                        "Web3CardanoV1",
+                                                        "Web3CardanoV2",
+                                                        null
+                                                    ],
+                                                    "description": "The configured payment source type"
+                                                },
+                                                "address": {
+                                                    "type": "string",
+                                                    "pattern": "^0x[a-fA-F0-9]{40}$",
+                                                    "description": "Alias for payTo, kept for existing payment-source shape"
+                                                },
+                                                "scheme": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Exact"
+                                                    ],
+                                                    "description": "x402 payment scheme"
+                                                },
+                                                "asset": {
+                                                    "type": "string",
+                                                    "pattern": "^0x[a-fA-F0-9]{40}$",
+                                                    "description": "ERC-20 token contract address"
+                                                },
+                                                "amount": {
+                                                    "type": "string",
+                                                    "pattern": "^\\d+$",
+                                                    "description": "Atomic token amount"
+                                                },
+                                                "decimals": {
+                                                    "type": "integer",
+                                                    "minimum": 0,
+                                                    "maximum": 255,
+                                                    "description": "ERC-20 token decimals"
+                                                },
+                                                "payTo": {
+                                                    "type": "string",
+                                                    "pattern": "^0x[a-fA-F0-9]{40}$",
+                                                    "description": "EVM address receiving the x402 payment"
+                                                },
+                                                "resource": {
+                                                    "type": "string",
+                                                    "maxLength": 500,
+                                                    "format": "uri",
+                                                    "description": "Optional absolute resource URL this x402 option protects"
+                                                },
+                                                "extra": {
+                                                    "type": "object",
+                                                    "additionalProperties": {
+                                                        "nullable": true
+                                                    },
+                                                    "description": "Additional x402 metadata"
+                                                }
+                                            },
+                                            "required": [
+                                                "chain",
+                                                "network",
+                                                "scheme",
+                                                "asset",
+                                                "amount",
+                                                "decimals",
+                                                "payTo"
+                                            ]
                                         }
-                                    },
-                                    "required": [
-                                        "chain",
-                                        "network",
-                                        "paymentSourceType",
-                                        "address"
                                     ]
                                 },
                                 "minItems": 1,
@@ -2281,42 +2377,128 @@
                                 "type": "array",
                                 "nullable": true,
                                 "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "chain": {
-                                            "type": "string",
-                                            "enum": [
-                                                "Cardano"
-                                            ],
-                                            "description": "The blockchain this payment source is available on"
+                                    "oneOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "chain": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Cardano"
+                                                    ],
+                                                    "description": "The blockchain this payment source is available on"
+                                                },
+                                                "network": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Preprod",
+                                                        "Mainnet"
+                                                    ],
+                                                    "description": "The Cardano network this payment source is available on"
+                                                },
+                                                "paymentSourceType": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Web3CardanoV1",
+                                                        "Web3CardanoV2"
+                                                    ],
+                                                    "description": "The configured payment source type"
+                                                },
+                                                "address": {
+                                                    "type": "string",
+                                                    "maxLength": 250,
+                                                    "description": "The escrow smart contract address for this payment source"
+                                                }
+                                            },
+                                            "required": [
+                                                "chain",
+                                                "network",
+                                                "paymentSourceType",
+                                                "address"
+                                            ]
                                         },
-                                        "network": {
-                                            "type": "string",
-                                            "enum": [
-                                                "Preprod",
-                                                "Mainnet"
-                                            ],
-                                            "description": "The blockchain network this payment source is available on"
-                                        },
-                                        "paymentSourceType": {
-                                            "type": "string",
-                                            "enum": [
-                                                "Web3CardanoV1",
-                                                "Web3CardanoV2"
-                                            ],
-                                            "description": "The configured payment source type"
-                                        },
-                                        "address": {
-                                            "type": "string",
-                                            "maxLength": 250,
-                                            "description": "The escrow smart contract address for this payment source"
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "chain": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "EVM"
+                                                    ],
+                                                    "description": "The chain family used by standard x402"
+                                                },
+                                                "network": {
+                                                    "type": "string",
+                                                    "pattern": "^eip155:\\d+$",
+                                                    "description": "CAIP-2 EVM network id, for example eip155:8453"
+                                                },
+                                                "paymentSourceType": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "enum": [
+                                                        "Web3CardanoV1",
+                                                        "Web3CardanoV2",
+                                                        null
+                                                    ],
+                                                    "description": "The configured payment source type"
+                                                },
+                                                "address": {
+                                                    "type": "string",
+                                                    "pattern": "^0x[a-fA-F0-9]{40}$",
+                                                    "description": "Alias for payTo, kept for existing payment-source shape"
+                                                },
+                                                "scheme": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Exact"
+                                                    ],
+                                                    "description": "x402 payment scheme"
+                                                },
+                                                "asset": {
+                                                    "type": "string",
+                                                    "pattern": "^0x[a-fA-F0-9]{40}$",
+                                                    "description": "ERC-20 token contract address"
+                                                },
+                                                "amount": {
+                                                    "type": "string",
+                                                    "pattern": "^\\d+$",
+                                                    "description": "Atomic token amount"
+                                                },
+                                                "decimals": {
+                                                    "type": "integer",
+                                                    "minimum": 0,
+                                                    "maximum": 255,
+                                                    "description": "ERC-20 token decimals"
+                                                },
+                                                "payTo": {
+                                                    "type": "string",
+                                                    "pattern": "^0x[a-fA-F0-9]{40}$",
+                                                    "description": "EVM address receiving the x402 payment"
+                                                },
+                                                "resource": {
+                                                    "type": "string",
+                                                    "maxLength": 500,
+                                                    "format": "uri",
+                                                    "description": "Optional absolute resource URL this x402 option protects"
+                                                },
+                                                "extra": {
+                                                    "type": "object",
+                                                    "additionalProperties": {
+                                                        "nullable": true
+                                                    },
+                                                    "description": "Additional x402 metadata"
+                                                }
+                                            },
+                                            "required": [
+                                                "chain",
+                                                "network",
+                                                "scheme",
+                                                "asset",
+                                                "amount",
+                                                "decimals",
+                                                "payTo"
+                                            ]
                                         }
-                                    },
-                                    "required": [
-                                        "chain",
-                                        "network",
-                                        "paymentSourceType",
-                                        "address"
                                     ]
                                 },
                                 "minItems": 1,
@@ -2608,42 +2790,128 @@
                         "type": "array",
                         "nullable": true,
                         "items": {
-                            "type": "object",
-                            "properties": {
-                                "chain": {
-                                    "type": "string",
-                                    "enum": [
-                                        "Cardano"
-                                    ],
-                                    "description": "The blockchain this payment source is available on"
+                            "oneOf": [
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "chain": {
+                                            "type": "string",
+                                            "enum": [
+                                                "Cardano"
+                                            ],
+                                            "description": "The blockchain this payment source is available on"
+                                        },
+                                        "network": {
+                                            "type": "string",
+                                            "enum": [
+                                                "Preprod",
+                                                "Mainnet"
+                                            ],
+                                            "description": "The Cardano network this payment source is available on"
+                                        },
+                                        "paymentSourceType": {
+                                            "type": "string",
+                                            "enum": [
+                                                "Web3CardanoV1",
+                                                "Web3CardanoV2"
+                                            ],
+                                            "description": "The configured payment source type"
+                                        },
+                                        "address": {
+                                            "type": "string",
+                                            "maxLength": 250,
+                                            "description": "The escrow smart contract address for this payment source"
+                                        }
+                                    },
+                                    "required": [
+                                        "chain",
+                                        "network",
+                                        "paymentSourceType",
+                                        "address"
+                                    ]
                                 },
-                                "network": {
-                                    "type": "string",
-                                    "enum": [
-                                        "Preprod",
-                                        "Mainnet"
-                                    ],
-                                    "description": "The blockchain network this payment source is available on"
-                                },
-                                "paymentSourceType": {
-                                    "type": "string",
-                                    "enum": [
-                                        "Web3CardanoV1",
-                                        "Web3CardanoV2"
-                                    ],
-                                    "description": "The configured payment source type"
-                                },
-                                "address": {
-                                    "type": "string",
-                                    "maxLength": 250,
-                                    "description": "The escrow smart contract address for this payment source"
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "chain": {
+                                            "type": "string",
+                                            "enum": [
+                                                "EVM"
+                                            ],
+                                            "description": "The chain family used by standard x402"
+                                        },
+                                        "network": {
+                                            "type": "string",
+                                            "pattern": "^eip155:\\d+$",
+                                            "description": "CAIP-2 EVM network id, for example eip155:8453"
+                                        },
+                                        "paymentSourceType": {
+                                            "type": "string",
+                                            "nullable": true,
+                                            "enum": [
+                                                "Web3CardanoV1",
+                                                "Web3CardanoV2",
+                                                null
+                                            ],
+                                            "description": "The configured payment source type"
+                                        },
+                                        "address": {
+                                            "type": "string",
+                                            "pattern": "^0x[a-fA-F0-9]{40}$",
+                                            "description": "Alias for payTo, kept for existing payment-source shape"
+                                        },
+                                        "scheme": {
+                                            "type": "string",
+                                            "enum": [
+                                                "Exact"
+                                            ],
+                                            "description": "x402 payment scheme"
+                                        },
+                                        "asset": {
+                                            "type": "string",
+                                            "pattern": "^0x[a-fA-F0-9]{40}$",
+                                            "description": "ERC-20 token contract address"
+                                        },
+                                        "amount": {
+                                            "type": "string",
+                                            "pattern": "^\\d+$",
+                                            "description": "Atomic token amount"
+                                        },
+                                        "decimals": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "maximum": 255,
+                                            "description": "ERC-20 token decimals"
+                                        },
+                                        "payTo": {
+                                            "type": "string",
+                                            "pattern": "^0x[a-fA-F0-9]{40}$",
+                                            "description": "EVM address receiving the x402 payment"
+                                        },
+                                        "resource": {
+                                            "type": "string",
+                                            "maxLength": 500,
+                                            "format": "uri",
+                                            "description": "Optional absolute resource URL this x402 option protects"
+                                        },
+                                        "extra": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                                "nullable": true
+                                            },
+                                            "description": "Additional x402 metadata"
+                                        }
+                                    },
+                                    "required": [
+                                        "chain",
+                                        "network",
+                                        "scheme",
+                                        "asset",
+                                        "amount",
+                                        "decimals",
+                                        "payTo"
+                                    ]
                                 }
-                            },
-                            "required": [
-                                "chain",
-                                "network",
-                                "paymentSourceType",
-                                "address"
                             ]
                         },
                         "minItems": 1,
@@ -3859,6 +4127,353 @@
                     "message",
                     "stopped"
                 ]
+            },
+            "X402Network": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "caip2Id": {
+                        "type": "string",
+                        "pattern": "^eip155:\\d+$",
+                        "description": "CAIP-2 EVM chain id, for example eip155:8453"
+                    },
+                    "displayName": {
+                        "type": "string",
+                        "description": "Human readable chain name"
+                    },
+                    "rpcUrl": {
+                        "type": "string",
+                        "description": "HTTP(S) RPC endpoint used to talk to the chain"
+                    },
+                    "isTestnet": {
+                        "type": "boolean",
+                        "description": "Whether this chain is a testnet (paired with the Cardano Preprod environment)"
+                    },
+                    "isEnabled": {
+                        "type": "boolean",
+                        "description": "Whether this chain may be used for x402 payments"
+                    },
+                    "defaultAsset": {
+                        "type": "string",
+                        "nullable": true,
+                        "pattern": "^0x[a-fA-F0-9]{40}$",
+                        "description": "Default settlement asset (token contract) for this chain"
+                    },
+                    "facilitatorWalletId": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Id of the managed EVM wallet used to settle payments on this chain"
+                    },
+                    "createdById": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Id of the API key that created this chain configuration"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "required": [
+                    "id",
+                    "caip2Id",
+                    "displayName",
+                    "rpcUrl",
+                    "isTestnet",
+                    "isEnabled",
+                    "defaultAsset",
+                    "facilitatorWalletId",
+                    "createdById",
+                    "createdAt",
+                    "updatedAt"
+                ]
+            },
+            "X402Wallet": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Unique identifier of the managed EVM wallet"
+                    },
+                    "address": {
+                        "type": "string",
+                        "pattern": "^0x[a-fA-F0-9]{40}$",
+                        "description": "The EVM address derived from the wallet private key"
+                    },
+                    "createdById": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Id of the API key that created this wallet"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "required": [
+                    "id",
+                    "address",
+                    "createdById",
+                    "createdAt",
+                    "updatedAt"
+                ]
+            },
+            "X402Budget": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "apiKeyId": {
+                        "type": "string",
+                        "description": "API key the budget is granted to"
+                    },
+                    "evmWalletId": {
+                        "type": "string",
+                        "description": "Managed EVM wallet the budget draws from"
+                    },
+                    "caip2Network": {
+                        "type": "string",
+                        "pattern": "^eip155:\\d+$"
+                    },
+                    "asset": {
+                        "type": "string",
+                        "pattern": "^0x[a-fA-F0-9]{40}$",
+                        "description": "Token contract the budget is denominated in"
+                    },
+                    "remainingAmount": {
+                        "type": "string",
+                        "description": "Remaining spendable amount, in token base units"
+                    },
+                    "spentAmount": {
+                        "type": "string",
+                        "description": "Amount already spent, in token base units"
+                    },
+                    "createdById": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Id of the API key that created this budget"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "required": [
+                    "id",
+                    "apiKeyId",
+                    "evmWalletId",
+                    "caip2Network",
+                    "asset",
+                    "remainingAmount",
+                    "spentAmount",
+                    "createdById",
+                    "createdAt",
+                    "updatedAt"
+                ]
+            },
+            "X402PaymentAttempt": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "direction": {
+                        "type": "string",
+                        "enum": [
+                            "InboundVerify",
+                            "InboundSettle",
+                            "OutboundPayment"
+                        ]
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "PaymentRequired",
+                            "Verified",
+                            "Settled",
+                            "Failed",
+                            "Replayed"
+                        ]
+                    },
+                    "apiKeyId": {
+                        "type": "string"
+                    },
+                    "evmWalletId": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "registryRequestId": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "supportedPaymentSourceId": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "caip2Network": {
+                        "type": "string"
+                    },
+                    "asset": {
+                        "type": "string"
+                    },
+                    "amount": {
+                        "type": "string",
+                        "description": "Payment amount in token base units"
+                    },
+                    "payTo": {
+                        "type": "string"
+                    },
+                    "payer": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "resource": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "paymentIdentifier": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "errorReason": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "errorMessage": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "Settlement": {
+                        "type": "object",
+                        "nullable": true,
+                        "properties": {
+                            "id": {
+                                "type": "string"
+                            },
+                            "success": {
+                                "type": "boolean"
+                            },
+                            "txHash": {
+                                "type": "string",
+                                "nullable": true,
+                                "description": "On-chain settlement transaction hash"
+                            },
+                            "amount": {
+                                "type": "string",
+                                "nullable": true,
+                                "description": "Settled amount in token base units"
+                            },
+                            "payer": {
+                                "type": "string",
+                                "nullable": true
+                            },
+                            "createdAt": {
+                                "type": "string",
+                                "format": "date-time"
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "success",
+                            "txHash",
+                            "amount",
+                            "payer",
+                            "createdAt"
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "createdAt",
+                    "updatedAt",
+                    "direction",
+                    "status",
+                    "apiKeyId",
+                    "evmWalletId",
+                    "registryRequestId",
+                    "supportedPaymentSourceId",
+                    "caip2Network",
+                    "asset",
+                    "amount",
+                    "payTo",
+                    "payer",
+                    "resource",
+                    "paymentIdentifier",
+                    "errorReason",
+                    "errorMessage",
+                    "Settlement"
+                ]
+            },
+            "X402SettlementRecord": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "paymentAttemptId": {
+                        "type": "string"
+                    },
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "txHash": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "caip2Network": {
+                        "type": "string"
+                    },
+                    "amount": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "payer": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                },
+                "required": [
+                    "id",
+                    "createdAt",
+                    "updatedAt",
+                    "paymentAttemptId",
+                    "success",
+                    "txHash",
+                    "caip2Network",
+                    "amount",
+                    "payer"
+                ]
             }
         },
         "parameters": {}
@@ -3957,6 +4572,9 @@
                                             "usageLimited": true,
                                             "NetworkLimit": [
                                                 "Preprod"
+                                            ],
+                                            "ChainIdLimit": [
+                                                "cardano:preprod"
                                             ],
                                             "RemainingUsageCredits": [
                                                 {
@@ -5158,6 +5776,9 @@
                                                     "NetworkLimit": [
                                                         "Preprod"
                                                     ],
+                                                    "ChainIdLimit": [
+                                                        "cardano:preprod"
+                                                    ],
                                                     "RemainingUsageCredits": [
                                                         {
                                                             "unit": "",
@@ -5246,7 +5867,17 @@
                                             "Mainnet",
                                             "Preprod"
                                         ],
-                                        "description": "The networks the API key is allowed to use"
+                                        "description": "The Cardano networks the API key is allowed to use"
+                                    },
+                                    "ChainIdLimit": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "pattern": "^[-a-z0-9]{3,8}:[-_a-zA-Z0-9]{1,32}$"
+                                        },
+                                        "maxItems": 50,
+                                        "default": [],
+                                        "description": "Additional non-Cardano CAIP-2 chain identifiers the API key is allowed to use"
                                     },
                                     "permission": {
                                         "type": "string",
@@ -5336,6 +5967,9 @@
                                             "usageLimited": true,
                                             "NetworkLimit": [
                                                 "Preprod"
+                                            ],
+                                            "ChainIdLimit": [
+                                                "cardano:preprod"
                                             ],
                                             "RemainingUsageCredits": [
                                                 {
@@ -5439,11 +6073,16 @@
                                             ]
                                         },
                                         "maxItems": 3,
-                                        "default": [
-                                            "Mainnet",
-                                            "Preprod"
-                                        ],
-                                        "description": "The networks the API key is allowed to use"
+                                        "description": "Replaces the Cardano-network half of the access list. Omit to leave Cardano access unchanged."
+                                    },
+                                    "ChainIdLimit": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "pattern": "^[-a-z0-9]{3,8}:[-_a-zA-Z0-9]{1,32}$"
+                                        },
+                                        "maxItems": 50,
+                                        "description": "Replaces the EVM (CAIP-2) half of the access list. Omit to leave EVM access unchanged."
                                     },
                                     "walletScopeEnabled": {
                                         "type": "boolean",
@@ -5530,6 +6169,9 @@
                                             "NetworkLimit": [
                                                 "Preprod",
                                                 "Mainnet"
+                                            ],
+                                            "ChainIdLimit": [
+                                                "cardano:preprod"
                                             ],
                                             "RemainingUsageCredits": [
                                                 {
@@ -5622,6 +6264,9 @@
                                             "usageLimited": true,
                                             "NetworkLimit": [
                                                 "Preprod"
+                                            ],
+                                            "ChainIdLimit": [
+                                                "cardano:preprod"
                                             ],
                                             "RemainingUsageCredits": [
                                                 {
@@ -16860,42 +17505,128 @@
                                     "supportedPaymentSources": {
                                         "type": "array",
                                         "items": {
-                                            "type": "object",
-                                            "properties": {
-                                                "chain": {
-                                                    "type": "string",
-                                                    "enum": [
-                                                        "Cardano"
-                                                    ],
-                                                    "description": "The blockchain this payment source is available on"
+                                            "oneOf": [
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "chain": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Cardano"
+                                                            ],
+                                                            "description": "The blockchain this payment source is available on"
+                                                        },
+                                                        "network": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Preprod",
+                                                                "Mainnet"
+                                                            ],
+                                                            "description": "The Cardano network this payment source is available on"
+                                                        },
+                                                        "paymentSourceType": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Web3CardanoV1",
+                                                                "Web3CardanoV2"
+                                                            ],
+                                                            "description": "The configured payment source type"
+                                                        },
+                                                        "address": {
+                                                            "type": "string",
+                                                            "maxLength": 250,
+                                                            "description": "The escrow smart contract address for this payment source"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "chain",
+                                                        "network",
+                                                        "paymentSourceType",
+                                                        "address"
+                                                    ]
                                                 },
-                                                "network": {
-                                                    "type": "string",
-                                                    "enum": [
-                                                        "Preprod",
-                                                        "Mainnet"
-                                                    ],
-                                                    "description": "The blockchain network this payment source is available on"
-                                                },
-                                                "paymentSourceType": {
-                                                    "type": "string",
-                                                    "enum": [
-                                                        "Web3CardanoV1",
-                                                        "Web3CardanoV2"
-                                                    ],
-                                                    "description": "The configured payment source type"
-                                                },
-                                                "address": {
-                                                    "type": "string",
-                                                    "maxLength": 250,
-                                                    "description": "The escrow smart contract address for this payment source"
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "chain": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "EVM"
+                                                            ],
+                                                            "description": "The chain family used by standard x402"
+                                                        },
+                                                        "network": {
+                                                            "type": "string",
+                                                            "pattern": "^eip155:\\d+$",
+                                                            "description": "CAIP-2 EVM network id, for example eip155:8453"
+                                                        },
+                                                        "paymentSourceType": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "enum": [
+                                                                "Web3CardanoV1",
+                                                                "Web3CardanoV2",
+                                                                null
+                                                            ],
+                                                            "description": "The configured payment source type"
+                                                        },
+                                                        "address": {
+                                                            "type": "string",
+                                                            "pattern": "^0x[a-fA-F0-9]{40}$",
+                                                            "description": "Alias for payTo, kept for existing payment-source shape"
+                                                        },
+                                                        "scheme": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Exact"
+                                                            ],
+                                                            "description": "x402 payment scheme"
+                                                        },
+                                                        "asset": {
+                                                            "type": "string",
+                                                            "pattern": "^0x[a-fA-F0-9]{40}$",
+                                                            "description": "ERC-20 token contract address"
+                                                        },
+                                                        "amount": {
+                                                            "type": "string",
+                                                            "pattern": "^\\d+$",
+                                                            "description": "Atomic token amount"
+                                                        },
+                                                        "decimals": {
+                                                            "type": "integer",
+                                                            "minimum": 0,
+                                                            "maximum": 255,
+                                                            "description": "ERC-20 token decimals"
+                                                        },
+                                                        "payTo": {
+                                                            "type": "string",
+                                                            "pattern": "^0x[a-fA-F0-9]{40}$",
+                                                            "description": "EVM address receiving the x402 payment"
+                                                        },
+                                                        "resource": {
+                                                            "type": "string",
+                                                            "maxLength": 500,
+                                                            "format": "uri",
+                                                            "description": "Optional absolute resource URL this x402 option protects"
+                                                        },
+                                                        "extra": {
+                                                            "type": "object",
+                                                            "additionalProperties": {
+                                                                "nullable": true
+                                                            },
+                                                            "description": "Additional x402 metadata"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "chain",
+                                                        "network",
+                                                        "scheme",
+                                                        "asset",
+                                                        "amount",
+                                                        "decimals",
+                                                        "payTo"
+                                                    ]
                                                 }
-                                            },
-                                            "required": [
-                                                "chain",
-                                                "network",
-                                                "paymentSourceType",
-                                                "address"
                                             ]
                                         },
                                         "minItems": 1,
@@ -16950,6 +17681,7 @@
                                     "apiBaseUrl": {
                                         "type": "string",
                                         "maxLength": 250,
+                                        "format": "uri",
                                         "description": "Base URL of the agent, to request interactions"
                                     },
                                     "description": {
@@ -17791,42 +18523,128 @@
                                     "supportedPaymentSources": {
                                         "type": "array",
                                         "items": {
-                                            "type": "object",
-                                            "properties": {
-                                                "chain": {
-                                                    "type": "string",
-                                                    "enum": [
-                                                        "Cardano"
-                                                    ],
-                                                    "description": "The blockchain this payment source is available on"
+                                            "oneOf": [
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "chain": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Cardano"
+                                                            ],
+                                                            "description": "The blockchain this payment source is available on"
+                                                        },
+                                                        "network": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Preprod",
+                                                                "Mainnet"
+                                                            ],
+                                                            "description": "The Cardano network this payment source is available on"
+                                                        },
+                                                        "paymentSourceType": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Web3CardanoV1",
+                                                                "Web3CardanoV2"
+                                                            ],
+                                                            "description": "The configured payment source type"
+                                                        },
+                                                        "address": {
+                                                            "type": "string",
+                                                            "maxLength": 250,
+                                                            "description": "The escrow smart contract address for this payment source"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "chain",
+                                                        "network",
+                                                        "paymentSourceType",
+                                                        "address"
+                                                    ]
                                                 },
-                                                "network": {
-                                                    "type": "string",
-                                                    "enum": [
-                                                        "Preprod",
-                                                        "Mainnet"
-                                                    ],
-                                                    "description": "The blockchain network this payment source is available on"
-                                                },
-                                                "paymentSourceType": {
-                                                    "type": "string",
-                                                    "enum": [
-                                                        "Web3CardanoV1",
-                                                        "Web3CardanoV2"
-                                                    ],
-                                                    "description": "The configured payment source type"
-                                                },
-                                                "address": {
-                                                    "type": "string",
-                                                    "maxLength": 250,
-                                                    "description": "The escrow smart contract address for this payment source"
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "chain": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "EVM"
+                                                            ],
+                                                            "description": "The chain family used by standard x402"
+                                                        },
+                                                        "network": {
+                                                            "type": "string",
+                                                            "pattern": "^eip155:\\d+$",
+                                                            "description": "CAIP-2 EVM network id, for example eip155:8453"
+                                                        },
+                                                        "paymentSourceType": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "enum": [
+                                                                "Web3CardanoV1",
+                                                                "Web3CardanoV2",
+                                                                null
+                                                            ],
+                                                            "description": "The configured payment source type"
+                                                        },
+                                                        "address": {
+                                                            "type": "string",
+                                                            "pattern": "^0x[a-fA-F0-9]{40}$",
+                                                            "description": "Alias for payTo, kept for existing payment-source shape"
+                                                        },
+                                                        "scheme": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Exact"
+                                                            ],
+                                                            "description": "x402 payment scheme"
+                                                        },
+                                                        "asset": {
+                                                            "type": "string",
+                                                            "pattern": "^0x[a-fA-F0-9]{40}$",
+                                                            "description": "ERC-20 token contract address"
+                                                        },
+                                                        "amount": {
+                                                            "type": "string",
+                                                            "pattern": "^\\d+$",
+                                                            "description": "Atomic token amount"
+                                                        },
+                                                        "decimals": {
+                                                            "type": "integer",
+                                                            "minimum": 0,
+                                                            "maximum": 255,
+                                                            "description": "ERC-20 token decimals"
+                                                        },
+                                                        "payTo": {
+                                                            "type": "string",
+                                                            "pattern": "^0x[a-fA-F0-9]{40}$",
+                                                            "description": "EVM address receiving the x402 payment"
+                                                        },
+                                                        "resource": {
+                                                            "type": "string",
+                                                            "maxLength": 500,
+                                                            "format": "uri",
+                                                            "description": "Optional absolute resource URL this x402 option protects"
+                                                        },
+                                                        "extra": {
+                                                            "type": "object",
+                                                            "additionalProperties": {
+                                                                "nullable": true
+                                                            },
+                                                            "description": "Additional x402 metadata"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "chain",
+                                                        "network",
+                                                        "scheme",
+                                                        "asset",
+                                                        "amount",
+                                                        "decimals",
+                                                        "payTo"
+                                                    ]
                                                 }
-                                            },
-                                            "required": [
-                                                "chain",
-                                                "network",
-                                                "paymentSourceType",
-                                                "address"
                                             ]
                                         },
                                         "maxItems": 25,
@@ -17880,6 +18698,7 @@
                                     "apiBaseUrl": {
                                         "type": "string",
                                         "maxLength": 250,
+                                        "format": "uri",
                                         "description": "Base URL of the agent, to request interactions"
                                     },
                                     "description": {
@@ -22838,6 +23657,1554 @@
                     },
                     "500": {
                         "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/x402/networks": {
+            "get": {
+                "description": "Lists the EVM chains configured for the standard x402 payment rail.",
+                "summary": "List configured x402 EVM chains. (admin access required)",
+                "tags": [
+                    "x402"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Configured x402 EVM chains",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "Networks": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/X402Network"
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "Networks"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "Networks": [
+                                                {
+                                                    "id": "clx402network0001",
+                                                    "caip2Id": "eip155:8453",
+                                                    "displayName": "Base",
+                                                    "rpcUrl": "https://mainnet.base.org",
+                                                    "isTestnet": false,
+                                                    "isEnabled": true,
+                                                    "defaultAsset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+                                                    "facilitatorWalletId": "clmanagedwallet0001",
+                                                    "createdById": "api_key_id",
+                                                    "createdAt": "2026-06-02T12:00:00.000Z",
+                                                    "updatedAt": "2026-06-02T12:00:00.000Z"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Creates or updates an EVM chain configuration, keyed by its CAIP-2 id.",
+                "summary": "Create or update an x402 EVM chain. (admin access required)",
+                "tags": [
+                    "x402"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Chain configuration to upsert",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "caip2Id": {
+                                        "type": "string",
+                                        "pattern": "^eip155:\\d+$"
+                                    },
+                                    "displayName": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 120
+                                    },
+                                    "rpcUrl": {
+                                        "type": "string",
+                                        "format": "uri"
+                                    },
+                                    "isTestnet": {
+                                        "type": "boolean"
+                                    },
+                                    "isEnabled": {
+                                        "type": "boolean"
+                                    },
+                                    "defaultAsset": {
+                                        "type": "string",
+                                        "nullable": true,
+                                        "pattern": "^0x[a-fA-F0-9]{40}$"
+                                    },
+                                    "facilitatorWalletId": {
+                                        "type": "string",
+                                        "nullable": true
+                                    }
+                                },
+                                "required": [
+                                    "caip2Id",
+                                    "displayName",
+                                    "rpcUrl"
+                                ],
+                                "example": {
+                                    "caip2Id": "eip155:8453",
+                                    "displayName": "Base",
+                                    "rpcUrl": "https://mainnet.base.org",
+                                    "isTestnet": false,
+                                    "isEnabled": true,
+                                    "defaultAsset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+                                    "facilitatorWalletId": "clmanagedwallet0001"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Chain configuration saved",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/X402Network"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "id": "clx402network0001",
+                                            "caip2Id": "eip155:8453",
+                                            "displayName": "Base",
+                                            "rpcUrl": "https://mainnet.base.org",
+                                            "isTestnet": false,
+                                            "isEnabled": true,
+                                            "defaultAsset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+                                            "facilitatorWalletId": "clmanagedwallet0001",
+                                            "createdById": "api_key_id",
+                                            "createdAt": "2026-06-02T12:00:00.000Z",
+                                            "updatedAt": "2026-06-02T12:00:00.000Z"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/x402/wallets": {
+            "get": {
+                "description": "Lists the managed EVM wallets used to fund x402 payments and settle inbound payments.",
+                "summary": "List managed x402 EVM wallets. (admin access required)",
+                "tags": [
+                    "x402"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Managed x402 EVM wallets",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "Wallets": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/X402Wallet"
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "Wallets"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "Wallets": [
+                                                {
+                                                    "id": "clmanagedwallet0001",
+                                                    "address": "0x1111111111111111111111111111111111111111",
+                                                    "createdById": "api_key_id",
+                                                    "createdAt": "2026-06-02T12:00:00.000Z",
+                                                    "updatedAt": "2026-06-02T12:00:00.000Z"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Creates a managed EVM wallet. A new private key is generated when none is supplied; the key is stored encrypted and never returned.",
+                "summary": "Create a managed x402 EVM wallet. (admin access required)",
+                "tags": [
+                    "x402"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Optional private key to import",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "privateKey": {
+                                        "type": "string",
+                                        "pattern": "^0x[a-fA-F0-9]{64}$",
+                                        "description": "Optional 0x-prefixed 32-byte hex private key. A new key is generated when omitted."
+                                    }
+                                },
+                                "example": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Managed wallet created",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/X402Wallet"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "id": "clmanagedwallet0001",
+                                            "address": "0x1111111111111111111111111111111111111111",
+                                            "createdById": "api_key_id",
+                                            "createdAt": "2026-06-02T12:00:00.000Z",
+                                            "updatedAt": "2026-06-02T12:00:00.000Z"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/x402/wallets/delete": {
+            "post": {
+                "description": "Retires a managed EVM wallet: soft-deletes it, disables its budgets, and detaches it from any chain it facilitates so a compromised key can no longer sign or settle.",
+                "summary": "Retire a managed x402 EVM wallet. (admin access required)",
+                "tags": [
+                    "x402"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Managed wallet to retire",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "description": "Id of the managed EVM wallet to retire"
+                                    }
+                                },
+                                "required": [
+                                    "id"
+                                ],
+                                "example": {
+                                    "id": "clmanagedwallet0001"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Managed wallet retired",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "id"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "id": "clmanagedwallet0001"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/x402/budgets": {
+            "get": {
+                "description": "Lists per-API-key spend budgets for managed x402 wallets, optionally filtered by API key.",
+                "summary": "List x402 wallet budgets. (admin access required)",
+                "tags": [
+                    "x402"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Filter budgets to a single API key"
+                        },
+                        "required": false,
+                        "description": "Filter budgets to a single API key",
+                        "name": "apiKeyId",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "x402 wallet budgets",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "Budgets": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/X402Budget"
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "Budgets"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "Budgets": [
+                                                {
+                                                    "id": "clx402budget0001",
+                                                    "apiKeyId": "api_key_id",
+                                                    "evmWalletId": "clmanagedwallet0001",
+                                                    "caip2Network": "eip155:8453",
+                                                    "asset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+                                                    "remainingAmount": "1000000",
+                                                    "spentAmount": "0",
+                                                    "createdById": "api_key_id",
+                                                    "createdAt": "2026-06-02T12:00:00.000Z",
+                                                    "updatedAt": "2026-06-02T12:00:00.000Z"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Sets the remaining spend budget for an (API key, managed wallet, chain, asset) tuple. Replaces the remaining amount.",
+                "summary": "Set an x402 wallet budget. (admin access required)",
+                "tags": [
+                    "x402"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Budget to set",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "apiKeyId": {
+                                        "type": "string"
+                                    },
+                                    "evmWalletId": {
+                                        "type": "string"
+                                    },
+                                    "caip2Network": {
+                                        "type": "string",
+                                        "pattern": "^eip155:\\d+$"
+                                    },
+                                    "asset": {
+                                        "type": "string",
+                                        "pattern": "^0x[a-fA-F0-9]{40}$"
+                                    },
+                                    "remainingAmount": {
+                                        "type": "string",
+                                        "pattern": "^\\d+$"
+                                    }
+                                },
+                                "required": [
+                                    "apiKeyId",
+                                    "evmWalletId",
+                                    "caip2Network",
+                                    "asset",
+                                    "remainingAmount"
+                                ],
+                                "example": {
+                                    "apiKeyId": "api_key_id",
+                                    "evmWalletId": "clmanagedwallet0001",
+                                    "caip2Network": "eip155:8453",
+                                    "asset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+                                    "remainingAmount": "1000000"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Budget saved",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/X402Budget"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "id": "clx402budget0001",
+                                            "apiKeyId": "api_key_id",
+                                            "evmWalletId": "clmanagedwallet0001",
+                                            "caip2Network": "eip155:8453",
+                                            "asset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+                                            "remainingAmount": "1000000",
+                                            "spentAmount": "0",
+                                            "createdById": "api_key_id",
+                                            "createdAt": "2026-06-02T12:00:00.000Z",
+                                            "updatedAt": "2026-06-02T12:00:00.000Z"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/x402/verify": {
+            "post": {
+                "description": "Verifies a buyer x402 payment payload against a registered resource without settling it, so a resource server can check a payment before serving content.",
+                "summary": "Verify an inbound x402 payment. (pay access required)",
+                "tags": [
+                    "x402"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "The registered supported payment source id and the buyer payment payload to verify",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "supportedPaymentSourceId": {
+                                        "type": "string"
+                                    },
+                                    "paymentPayload": {
+                                        "type": "object",
+                                        "properties": {
+                                            "x402Version": {
+                                                "type": "integer"
+                                            },
+                                            "resource": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "url": {
+                                                        "type": "string"
+                                                    }
+                                                }
+                                            },
+                                            "accepted": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "scheme": {
+                                                        "type": "string"
+                                                    },
+                                                    "network": {
+                                                        "type": "string",
+                                                        "pattern": "^eip155:\\d+$"
+                                                    },
+                                                    "asset": {
+                                                        "type": "string",
+                                                        "pattern": "^0x[a-fA-F0-9]{40}$"
+                                                    },
+                                                    "amount": {
+                                                        "type": "string",
+                                                        "pattern": "^\\d+$"
+                                                    },
+                                                    "payTo": {
+                                                        "type": "string",
+                                                        "pattern": "^0x[a-fA-F0-9]{40}$"
+                                                    },
+                                                    "maxTimeoutSeconds": {
+                                                        "type": "integer",
+                                                        "minimum": 0,
+                                                        "exclusiveMinimum": true
+                                                    },
+                                                    "extra": {
+                                                        "type": "object",
+                                                        "additionalProperties": {
+                                                            "nullable": true
+                                                        }
+                                                    }
+                                                },
+                                                "required": [
+                                                    "scheme",
+                                                    "network",
+                                                    "asset",
+                                                    "amount",
+                                                    "payTo",
+                                                    "maxTimeoutSeconds"
+                                                ]
+                                            },
+                                            "payload": {
+                                                "type": "object",
+                                                "additionalProperties": {
+                                                    "nullable": true
+                                                }
+                                            },
+                                            "extensions": {
+                                                "type": "object",
+                                                "additionalProperties": {
+                                                    "nullable": true
+                                                }
+                                            }
+                                        },
+                                        "required": [
+                                            "x402Version",
+                                            "accepted",
+                                            "payload"
+                                        ]
+                                    }
+                                },
+                                "required": [
+                                    "supportedPaymentSourceId",
+                                    "paymentPayload"
+                                ],
+                                "example": {
+                                    "supportedPaymentSourceId": "supported_payment_source_id",
+                                    "paymentPayload": {
+                                        "x402Version": 1,
+                                        "resource": {
+                                            "url": "https://api.example-agent.com/run"
+                                        },
+                                        "accepted": {
+                                            "scheme": "exact",
+                                            "network": "eip155:8453",
+                                            "asset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+                                            "amount": "1000000",
+                                            "payTo": "0x2222222222222222222222222222222222222222",
+                                            "maxTimeoutSeconds": 300
+                                        },
+                                        "payload": {
+                                            "signature": "0x..."
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "x402 verification result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "attemptId": {
+                                                    "type": "string"
+                                                },
+                                                "paymentPayloadHash": {
+                                                    "type": "string"
+                                                },
+                                                "paymentIdentifier": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "verifyResponse": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "isValid": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "invalidReason": {
+                                                            "type": "string"
+                                                        },
+                                                        "invalidMessage": {
+                                                            "type": "string"
+                                                        },
+                                                        "payer": {
+                                                            "type": "string"
+                                                        },
+                                                        "extensions": {
+                                                            "type": "object",
+                                                            "additionalProperties": {
+                                                                "nullable": true
+                                                            }
+                                                        },
+                                                        "extra": {
+                                                            "type": "object",
+                                                            "additionalProperties": {
+                                                                "nullable": true
+                                                            }
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "isValid"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "attemptId",
+                                                "paymentPayloadHash",
+                                                "paymentIdentifier",
+                                                "verifyResponse"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "attemptId": "clx402attempt0001",
+                                            "paymentPayloadHash": "b3f1c2a4d5e6f70819203a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f",
+                                            "paymentIdentifier": null,
+                                            "verifyResponse": {
+                                                "isValid": true,
+                                                "payer": "0x3333333333333333333333333333333333333333"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/x402/settle": {
+            "post": {
+                "description": "Settles a buyer x402 payment payload on-chain for a registered resource and records the settlement. Idempotent per payment payload hash.",
+                "summary": "Settle an inbound x402 payment on-chain. (pay access required)",
+                "tags": [
+                    "x402"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "The registered supported payment source id and the buyer payment payload to settle",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "supportedPaymentSourceId": {
+                                        "type": "string"
+                                    },
+                                    "paymentPayload": {
+                                        "type": "object",
+                                        "properties": {
+                                            "x402Version": {
+                                                "type": "integer"
+                                            },
+                                            "resource": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "url": {
+                                                        "type": "string"
+                                                    }
+                                                }
+                                            },
+                                            "accepted": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "scheme": {
+                                                        "type": "string"
+                                                    },
+                                                    "network": {
+                                                        "type": "string",
+                                                        "pattern": "^eip155:\\d+$"
+                                                    },
+                                                    "asset": {
+                                                        "type": "string",
+                                                        "pattern": "^0x[a-fA-F0-9]{40}$"
+                                                    },
+                                                    "amount": {
+                                                        "type": "string",
+                                                        "pattern": "^\\d+$"
+                                                    },
+                                                    "payTo": {
+                                                        "type": "string",
+                                                        "pattern": "^0x[a-fA-F0-9]{40}$"
+                                                    },
+                                                    "maxTimeoutSeconds": {
+                                                        "type": "integer",
+                                                        "minimum": 0,
+                                                        "exclusiveMinimum": true
+                                                    },
+                                                    "extra": {
+                                                        "type": "object",
+                                                        "additionalProperties": {
+                                                            "nullable": true
+                                                        }
+                                                    }
+                                                },
+                                                "required": [
+                                                    "scheme",
+                                                    "network",
+                                                    "asset",
+                                                    "amount",
+                                                    "payTo",
+                                                    "maxTimeoutSeconds"
+                                                ]
+                                            },
+                                            "payload": {
+                                                "type": "object",
+                                                "additionalProperties": {
+                                                    "nullable": true
+                                                }
+                                            },
+                                            "extensions": {
+                                                "type": "object",
+                                                "additionalProperties": {
+                                                    "nullable": true
+                                                }
+                                            }
+                                        },
+                                        "required": [
+                                            "x402Version",
+                                            "accepted",
+                                            "payload"
+                                        ]
+                                    }
+                                },
+                                "required": [
+                                    "supportedPaymentSourceId",
+                                    "paymentPayload"
+                                ],
+                                "example": {
+                                    "supportedPaymentSourceId": "supported_payment_source_id",
+                                    "paymentPayload": {
+                                        "x402Version": 1,
+                                        "resource": {
+                                            "url": "https://api.example-agent.com/run"
+                                        },
+                                        "accepted": {
+                                            "scheme": "exact",
+                                            "network": "eip155:8453",
+                                            "asset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+                                            "amount": "1000000",
+                                            "payTo": "0x2222222222222222222222222222222222222222",
+                                            "maxTimeoutSeconds": 300
+                                        },
+                                        "payload": {
+                                            "signature": "0x..."
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "x402 settlement result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "attemptId": {
+                                                    "type": "string"
+                                                },
+                                                "paymentPayloadHash": {
+                                                    "type": "string"
+                                                },
+                                                "paymentIdentifier": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "replay": {
+                                                    "type": "boolean"
+                                                },
+                                                "settleResponse": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "success": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "errorReason": {
+                                                            "type": "string"
+                                                        },
+                                                        "errorMessage": {
+                                                            "type": "string"
+                                                        },
+                                                        "payer": {
+                                                            "type": "string"
+                                                        },
+                                                        "transaction": {
+                                                            "type": "string"
+                                                        },
+                                                        "network": {
+                                                            "type": "string",
+                                                            "pattern": "^eip155:\\d+$"
+                                                        },
+                                                        "amount": {
+                                                            "type": "string"
+                                                        },
+                                                        "extensions": {
+                                                            "type": "object",
+                                                            "additionalProperties": {
+                                                                "nullable": true
+                                                            }
+                                                        },
+                                                        "extra": {
+                                                            "type": "object",
+                                                            "additionalProperties": {
+                                                                "nullable": true
+                                                            }
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "success",
+                                                        "transaction",
+                                                        "network"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "attemptId",
+                                                "paymentPayloadHash",
+                                                "paymentIdentifier",
+                                                "replay",
+                                                "settleResponse"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "attemptId": "clx402attempt0001",
+                                            "paymentPayloadHash": "b3f1c2a4d5e6f70819203a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f",
+                                            "paymentIdentifier": null,
+                                            "replay": false,
+                                            "settleResponse": {
+                                                "success": true,
+                                                "payer": "0x3333333333333333333333333333333333333333",
+                                                "transaction": "0x4242424242424242424242424242424242424242424242424242424242424242",
+                                                "network": "eip155:8453",
+                                                "amount": "1000000"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/x402/pay": {
+            "post": {
+                "description": "Signs a payment for a forwarded 402 using a managed EVM wallet, charged against the caller budget. Returns the X-PAYMENT header for the caller to send with its own retried request; this service never fetches the resource itself.",
+                "summary": "Sign a payment for a forwarded 402. (pay access required)",
+                "tags": [
+                    "x402"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "The 402 Payment Required response the buyer received",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "evmWalletId": {
+                                        "type": "string",
+                                        "description": "Managed EVM wallet to sign the payment with"
+                                    },
+                                    "paymentRequired": {
+                                        "type": "object",
+                                        "properties": {
+                                            "x402Version": {
+                                                "type": "integer"
+                                            },
+                                            "resource": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "url": {
+                                                        "type": "string"
+                                                    }
+                                                }
+                                            },
+                                            "accepts": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "scheme": {
+                                                            "type": "string"
+                                                        },
+                                                        "network": {
+                                                            "type": "string"
+                                                        },
+                                                        "asset": {
+                                                            "type": "string"
+                                                        },
+                                                        "amount": {
+                                                            "type": "string",
+                                                            "pattern": "^\\d+$"
+                                                        },
+                                                        "payTo": {
+                                                            "type": "string"
+                                                        },
+                                                        "maxTimeoutSeconds": {
+                                                            "type": "integer",
+                                                            "minimum": 0,
+                                                            "exclusiveMinimum": true
+                                                        },
+                                                        "extra": {
+                                                            "type": "object",
+                                                            "additionalProperties": {
+                                                                "nullable": true
+                                                            }
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "scheme",
+                                                        "network",
+                                                        "asset",
+                                                        "amount",
+                                                        "payTo",
+                                                        "maxTimeoutSeconds"
+                                                    ]
+                                                },
+                                                "minItems": 1,
+                                                "maxItems": 20,
+                                                "description": "The payment options advertised by the 402 response"
+                                            },
+                                            "extensions": {
+                                                "type": "object",
+                                                "additionalProperties": {
+                                                    "nullable": true
+                                                }
+                                            },
+                                            "error": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "required": [
+                                            "x402Version",
+                                            "accepts"
+                                        ],
+                                        "description": "The 402 Payment Required response the buyer received"
+                                    },
+                                    "preferredNetwork": {
+                                        "type": "string",
+                                        "pattern": "^eip155:\\d+$",
+                                        "description": "Restrict signing to this CAIP-2 network"
+                                    },
+                                    "preferredAsset": {
+                                        "type": "string",
+                                        "pattern": "^0x[a-fA-F0-9]{40}$",
+                                        "description": "Restrict signing to this token asset"
+                                    },
+                                    "paymentIdentifier": {
+                                        "type": "string",
+                                        "minLength": 16,
+                                        "maxLength": 128,
+                                        "pattern": "^[a-zA-Z0-9_-]+$"
+                                    }
+                                },
+                                "required": [
+                                    "evmWalletId",
+                                    "paymentRequired"
+                                ],
+                                "example": {
+                                    "evmWalletId": "clmanagedwallet0001",
+                                    "paymentRequired": {
+                                        "x402Version": 1,
+                                        "resource": {
+                                            "url": "https://api.example-agent.com/run"
+                                        },
+                                        "accepts": [
+                                            {
+                                                "scheme": "exact",
+                                                "network": "eip155:8453",
+                                                "asset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+                                                "amount": "1000000",
+                                                "payTo": "0x2222222222222222222222222222222222222222",
+                                                "maxTimeoutSeconds": 300
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Signed x402 payment",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "attemptId": {
+                                                    "type": "string"
+                                                },
+                                                "payer": {
+                                                    "type": "string",
+                                                    "pattern": "^0x[a-fA-F0-9]{40}$",
+                                                    "description": "The managed wallet address that signed the payment"
+                                                },
+                                                "caip2Network": {
+                                                    "type": "string",
+                                                    "pattern": "^eip155:\\d+$"
+                                                },
+                                                "asset": {
+                                                    "type": "string",
+                                                    "pattern": "^0x[a-fA-F0-9]{40}$"
+                                                },
+                                                "amount": {
+                                                    "type": "string",
+                                                    "pattern": "^\\d+$",
+                                                    "description": "Signed payment amount in token base units"
+                                                },
+                                                "payTo": {
+                                                    "type": "string",
+                                                    "pattern": "^0x[a-fA-F0-9]{40}$"
+                                                },
+                                                "xPaymentHeader": {
+                                                    "type": "string",
+                                                    "description": "Base64 X-PAYMENT header value; the buyer sends this with its own retried request"
+                                                },
+                                                "paymentPayload": {
+                                                    "type": "object",
+                                                    "additionalProperties": {
+                                                        "nullable": true
+                                                    },
+                                                    "description": "The signed x402 payment payload"
+                                                },
+                                                "paymentPayloadHash": {
+                                                    "type": "string"
+                                                },
+                                                "paymentIdentifier": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                }
+                                            },
+                                            "required": [
+                                                "attemptId",
+                                                "payer",
+                                                "caip2Network",
+                                                "asset",
+                                                "amount",
+                                                "payTo",
+                                                "xPaymentHeader",
+                                                "paymentPayload",
+                                                "paymentPayloadHash",
+                                                "paymentIdentifier"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "attemptId": "clx402attempt0001",
+                                            "payer": "0x1111111111111111111111111111111111111111",
+                                            "caip2Network": "eip155:8453",
+                                            "asset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+                                            "amount": "1000000",
+                                            "payTo": "0x2222222222222222222222222222222222222222",
+                                            "xPaymentHeader": "eyJ4NDAyVmVyc2lvbiI6MSwicGF5bG9hZCI6eyJzaWduYXR1cmUiOiIweC4uLiJ9fQ==",
+                                            "paymentPayload": {
+                                                "x402Version": 1,
+                                                "accepted": {
+                                                    "scheme": "exact",
+                                                    "network": "eip155:8453",
+                                                    "asset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+                                                    "amount": "1000000",
+                                                    "payTo": "0x2222222222222222222222222222222222222222",
+                                                    "maxTimeoutSeconds": 300
+                                                },
+                                                "payload": {
+                                                    "signature": "0x..."
+                                                }
+                                            },
+                                            "paymentPayloadHash": "b3f1c2a4d5e6f70819203a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f",
+                                            "paymentIdentifier": null
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/x402/payments": {
+            "get": {
+                "description": "Lists x402 payment attempts (inbound verify/settle and outbound payments), newest first, with their settlement result.",
+                "summary": "List x402 payment attempts. (admin access required)",
+                "tags": [
+                    "x402"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "number",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 20,
+                            "description": "Number of payment attempts to return"
+                        },
+                        "required": false,
+                        "description": "Number of payment attempts to return",
+                        "name": "take",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 550,
+                            "description": "Pagination cursor (provide the id of the last returned attempt)"
+                        },
+                        "required": false,
+                        "description": "Pagination cursor (provide the id of the last returned attempt)",
+                        "name": "cursorId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "PaymentRequired",
+                                "Verified",
+                                "Settled",
+                                "Failed",
+                                "Replayed"
+                            ],
+                            "description": "Filter by payment status"
+                        },
+                        "required": false,
+                        "description": "Filter by payment status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "InboundVerify",
+                                "InboundSettle",
+                                "OutboundPayment"
+                            ],
+                            "description": "Filter by payment direction"
+                        },
+                        "required": false,
+                        "description": "Filter by payment direction",
+                        "name": "direction",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^eip155:\\d+$",
+                            "description": "Filter by CAIP-2 chain id"
+                        },
+                        "required": false,
+                        "description": "Filter by CAIP-2 chain id",
+                        "name": "caip2Network",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "x402 payment attempts",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "PaymentAttempts": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/X402PaymentAttempt"
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "PaymentAttempts"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "PaymentAttempts": [
+                                                {
+                                                    "id": "clx402attempt0001",
+                                                    "createdAt": "2026-06-02T12:00:00.000Z",
+                                                    "updatedAt": "2026-06-02T12:00:00.000Z",
+                                                    "direction": "InboundSettle",
+                                                    "status": "Settled",
+                                                    "apiKeyId": "api_key_id",
+                                                    "evmWalletId": null,
+                                                    "registryRequestId": null,
+                                                    "supportedPaymentSourceId": "supported_payment_source_id",
+                                                    "caip2Network": "eip155:8453",
+                                                    "asset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+                                                    "amount": "1000000",
+                                                    "payTo": "0x2222222222222222222222222222222222222222",
+                                                    "payer": "0x3333333333333333333333333333333333333333",
+                                                    "resource": null,
+                                                    "paymentIdentifier": null,
+                                                    "errorReason": null,
+                                                    "errorMessage": null,
+                                                    "Settlement": {
+                                                        "id": "clx402settlement0001",
+                                                        "success": true,
+                                                        "txHash": "0x4242424242424242424242424242424242424242424242424242424242424242",
+                                                        "amount": "1000000",
+                                                        "payer": "0x3333333333333333333333333333333333333333",
+                                                        "createdAt": "2026-06-02T12:00:00.000Z"
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/x402/settlements": {
+            "get": {
+                "description": "Lists x402 on-chain settlements, newest first.",
+                "summary": "List x402 settlements. (admin access required)",
+                "tags": [
+                    "x402"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "number",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 20,
+                            "description": "Number of settlements to return"
+                        },
+                        "required": false,
+                        "description": "Number of settlements to return",
+                        "name": "take",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 550,
+                            "description": "Pagination cursor (provide the id of the last returned settlement)"
+                        },
+                        "required": false,
+                        "description": "Pagination cursor (provide the id of the last returned settlement)",
+                        "name": "cursorId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^eip155:\\d+$",
+                            "description": "Filter by CAIP-2 chain id"
+                        },
+                        "required": false,
+                        "description": "Filter by CAIP-2 chain id",
+                        "name": "caip2Network",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "x402 settlements",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "Settlements": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/X402SettlementRecord"
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "Settlements"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "Settlements": [
+                                                {
+                                                    "id": "clx402settlement0001",
+                                                    "createdAt": "2026-06-02T12:00:00.000Z",
+                                                    "updatedAt": "2026-06-02T12:00:00.000Z",
+                                                    "paymentAttemptId": "clx402attempt0001",
+                                                    "success": true,
+                                                    "txHash": "0x4242424242424242424242424242424242424242424242424242424242424242",
+                                                    "caip2Network": "eip155:8453",
+                                                    "amount": "1000000",
+                                                    "payer": "0x3333333333333333333333333333333333333333"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

@@ -9,6 +9,8 @@ const moduleNameMapper = {
 	'^@masumi/payment-source-v2$': '<rootDir>/packages/payment-source-v2/src/index.ts',
 	'^@masumi/payment-source-v2/services$': '<rootDir>/packages/payment-source-v2/src/services/index.ts',
 	'^@masumi/payment-source-v2/(.*)$': '<rootDir>/packages/payment-source-v2/src/$1.ts',
+	'^@masumi/payment-source-x402$': '<rootDir>/packages/payment-source-x402/src/index.ts',
+	'^@masumi/payment-source-x402/(.*)$': '<rootDir>/packages/payment-source-x402/src/$1.ts',
 	'@/(.*)': '<rootDir>/src/$1',
 	'^@prisma/client$': '<rootDir>/src/generated/prisma/client.ts',
 	'^(\\.{1,2}/.*)\\.js$': '$1',

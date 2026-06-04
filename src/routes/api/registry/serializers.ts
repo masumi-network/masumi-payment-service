@@ -1,5 +1,73 @@
-import { PricingType } from '@/generated/prisma/client';
+import { Network, PricingType, X402PaymentScheme, type Prisma } from '@/generated/prisma/client';
+import { SupportedPaymentSourceChain, type SupportedPaymentSource } from '@/types/payment-source';
+import { logger } from '@masumi/payment-core/logger';
 import type { RegistryListRecord } from './queries';
+
+type SupportedPaymentSourceRecord = RegistryListRecord['SupportedPaymentSources'][number];
+
+function jsonObjectToRecord(value: Prisma.JsonValue | null): Prisma.JsonObject | undefined {
+	if (value != null && typeof value === 'object' && !Array.isArray(value)) {
+		return value;
+	}
+	return undefined;
+}
+
+export function serializeSupportedPaymentSources(
+	sources: SupportedPaymentSourceRecord[],
+): SupportedPaymentSource[] | null {
+	if (sources.length === 0) return null;
+	// Skip (and log) incomplete persisted rows rather than throwing: this runs inside the
+	// list serializer, so one malformed row must not fail the entire page with a 500.
+	const serialized = sources.flatMap((source): SupportedPaymentSource[] => {
+		if (source.chain === SupportedPaymentSourceChain.EVM) {
+			if (
+				source.scheme !== X402PaymentScheme.Exact ||
+				source.asset == null ||
+				source.amount == null ||
+				source.decimals == null ||
+				source.payTo == null
+			) {
+				logger.error('Skipping incomplete persisted x402 supported payment source', {
+					network: source.network,
+					address: source.address,
+				});
+				return [];
+			}
+			return [
+				{
+					chain: SupportedPaymentSourceChain.EVM,
+					network: source.network,
+					paymentSourceType: null,
+					address: source.address,
+					scheme: 'Exact',
+					asset: source.asset,
+					amount: source.amount.toString(),
+					decimals: source.decimals,
+					payTo: source.payTo,
+					resource: source.resource ?? undefined,
+					extra: jsonObjectToRecord(source.extra),
+				},
+			];
+		}
+
+		if (source.paymentSourceType == null) {
+			logger.error('Skipping persisted Cardano supported payment source missing its paymentSourceType', {
+				network: source.network,
+				address: source.address,
+			});
+			return [];
+		}
+		return [
+			{
+				chain: SupportedPaymentSourceChain.Cardano,
+				network: source.network as Network,
+				paymentSourceType: source.paymentSourceType,
+				address: source.address,
+			},
+		];
+	});
+	return serialized.length === 0 ? null : serialized;
+}
 
 export function serializeRegistryEntry(item: RegistryListRecord) {
 	return {
@@ -33,7 +101,7 @@ export function serializeRegistryEntry(item: RegistryListRecord) {
 						pricingType: item.Pricing.pricingType,
 					},
 		sendFundingLovelace: item.sendFundingLovelace?.toString() ?? null,
-		supportedPaymentSources: item.SupportedPaymentSources.length > 0 ? item.SupportedPaymentSources : null,
+		supportedPaymentSources: serializeSupportedPaymentSources(item.SupportedPaymentSources),
 		Tags: item.tags,
 		CurrentTransaction: item.CurrentTransaction
 			? {
