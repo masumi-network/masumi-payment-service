@@ -226,7 +226,7 @@ export const registerAgentSchemaInput = z.object({
 		.describe('List of example outputs from the agent'),
 	Tags: z.array(z.string().max(63)).min(1).max(15).describe('Tags used in the registry metadata'),
 	name: z.string().max(250).describe('Name of the agent'),
-	apiBaseUrl: z.string().max(250).describe('Base URL of the agent, to request interactions'),
+	apiBaseUrl: z.string().url().max(250).describe('Base URL of the agent, to request interactions'),
 	description: z.string().max(250).describe('Description of the agent'),
 	Capability: z
 		.object({

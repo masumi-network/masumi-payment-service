@@ -21,7 +21,10 @@ model ApiKey {
   canPay   Boolean
   canAdmin Boolean
 
-  networkLimit                  Network[]
+  /// CAIP-2 chain identifiers this API key may access. Cardano public APIs
+  /// remain wire-compatible with `Network` enum values and translate
+  /// Mainnet/Preprod to cardano:mainnet/cardano:preprod at the auth boundary.
+  networkLimit                  String[]
   usageLimited                  Boolean                         @default(false)
   walletScopeEnabled            Boolean                         @default(false)
   deletedAt                     DateTime?
@@ -32,6 +35,11 @@ model ApiKey {
   CreatedWebhooks               WebhookEndpoint[]
   WalletScopes                  ApiKeyWalletScope[]
   InboxAgentRegistrationRequest InboxAgentRegistrationRequest[]
+  CreatedX402Wallets            X402EvmWallet[]
+  X402WalletBudgets             X402WalletBudget[]              @relation("X402WalletBudgetGrantee")
+  CreatedX402WalletBudgets      X402WalletBudget[]              @relation("X402WalletBudgetCreatedBy")
+  CreatedX402Networks           X402Network[]
+  X402PaymentAttempts           X402PaymentAttempt[]
   SimpleApiPaymentRecords       SimpleApiPaymentRecord[]
 }
 
@@ -270,6 +278,7 @@ model RegistryRequest {
   RecipientWallet                HotWallet?               @relation("RegistryRequestRecipientWallet", fields: [recipientHotWalletId], references: [id])
   DeregistrationHotWallet        HotWallet?               @relation("RegistryRequestDeregistrationWallet", fields: [deregistrationHotWalletId], references: [id])
   RequestedBy                    ApiKey?                  @relation(fields: [requestedById], references: [id])
+  X402PaymentAttempts            X402PaymentAttempt[]
 
   @@index([recipientHotWalletId])
   @@index([deregistrationHotWalletId])
@@ -277,19 +286,153 @@ model RegistryRequest {
 }
 
 model SupportedPaymentSource {
-  id                String            @id @default(cuid())
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
+  id                String              @id @default(cuid())
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
   registryRequestId String
-  chain             Chain
-  network           Network
-  paymentSourceType PaymentSourceType
+  /// Payment rail / chain family advertised by the registry metadata.
+  /// Existing Cardano rows use `Cardano`; standard x402 rows use `EVM`.
+  chain             String
+  /// Existing Cardano rows keep `Mainnet` / `Preprod` for wire compatibility.
+  /// Standard x402 rows use CAIP-2 ids such as `eip155:8453`.
+  network           String
+  /// Cardano escrow entries keep their PaymentSourceType. Standard x402 rows
+  /// are not Masumi escrow PaymentSourceTypes and leave this null.
+  paymentSourceType PaymentSourceType?
   address           String
-  RegistryRequest   RegistryRequest   @relation(fields: [registryRequestId], references: [id], onDelete: Cascade)
+  scheme            X402PaymentScheme?
+  asset             String?
+  amount            BigInt?
+  decimals          Int?
+  payTo             String?
+  resource          String?
+  extra             Json?
+  RegistryRequest   RegistryRequest     @relation(fields: [registryRequestId], references: [id], onDelete: Cascade)
+  X402Attempts      X402PaymentAttempt[]
 
-  @@unique([registryRequestId, chain, network, paymentSourceType, address])
+  // Partial database unique indexes preserve the legacy Cardano key and the
+  // separate x402 key. Prisma cannot model those partial indexes directly.
   @@index([address])
   @@index([paymentSourceType])
+  @@index([chain, network])
+}
+
+model X402Network {
+  id                  String               @id @default(cuid())
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  caip2Id             String               @unique
+  displayName         String
+  rpcUrl              String
+  isTestnet           Boolean              @default(false)
+  isEnabled           Boolean              @default(true)
+  defaultAsset        String?
+  facilitatorWalletId String?
+  createdById         String?
+  FacilitatorWallet   X402EvmWallet?       @relation("X402NetworkFacilitatorWallet", fields: [facilitatorWalletId], references: [id], onDelete: SetNull)
+  CreatedBy           ApiKey?              @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  WalletBudgets       X402WalletBudget[]
+  PaymentAttempts     X402PaymentAttempt[]
+
+  @@index([isEnabled])
+  @@index([createdById])
+}
+
+model X402EvmWallet {
+  id                  String                @id @default(cuid())
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  address             String                @unique
+  encryptedPrivateKey String
+  note                String?
+  deletedAt           DateTime?
+  createdById         String?
+  CreatedBy           ApiKey?               @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  FacilitatesNetworks X402Network[]         @relation("X402NetworkFacilitatorWallet")
+  Budgets             X402WalletBudget[]
+  PaymentAttempts     X402PaymentAttempt[]
+
+  @@index([deletedAt])
+  @@index([createdById])
+}
+
+model X402WalletBudget {
+  id              String        @id @default(cuid())
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  apiKeyId        String
+  evmWalletId     String
+  caip2Network    String
+  asset           String
+  remainingAmount BigInt
+  spentAmount     BigInt        @default(0)
+  enabled         Boolean       @default(true)
+  createdById     String?
+  ApiKey          ApiKey        @relation("X402WalletBudgetGrantee", fields: [apiKeyId], references: [id], onDelete: Cascade)
+  CreatedBy       ApiKey?       @relation("X402WalletBudgetCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  EvmWallet       X402EvmWallet @relation(fields: [evmWalletId], references: [id], onDelete: Cascade)
+  Network         X402Network   @relation(fields: [caip2Network], references: [caip2Id], onDelete: Restrict)
+
+  @@unique([apiKeyId, evmWalletId, caip2Network, asset])
+  @@index([apiKeyId, enabled])
+  @@index([evmWalletId, enabled])
+  @@index([caip2Network, asset])
+  @@index([createdById])
+}
+
+model X402PaymentAttempt {
+  id                       String                  @id @default(cuid())
+  createdAt                DateTime                @default(now())
+  updatedAt                DateTime                @updatedAt
+  direction                X402PaymentDirection
+  status                   X402PaymentStatus
+  apiKeyId                 String
+  evmWalletId              String?
+  registryRequestId        String?
+  supportedPaymentSourceId String?
+  caip2Network             String
+  scheme                   X402PaymentScheme       @default(Exact)
+  asset                    String
+  amount                   BigInt
+  payTo                    String
+  payer                    String?
+  resource                 String?
+  paymentPayloadHash       String?
+  paymentPayload           Json?
+  paymentIdentifier        String?
+  errorReason              String?
+  errorMessage             String?
+  ApiKey                   ApiKey                  @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+  EvmWallet                X402EvmWallet?          @relation(fields: [evmWalletId], references: [id], onDelete: SetNull)
+  RegistryRequest          RegistryRequest?        @relation(fields: [registryRequestId], references: [id], onDelete: SetNull)
+  SupportedPaymentSource   SupportedPaymentSource? @relation(fields: [supportedPaymentSourceId], references: [id], onDelete: SetNull)
+  Network                  X402Network             @relation(fields: [caip2Network], references: [caip2Id], onDelete: Restrict)
+  Settlement               X402Settlement?
+
+  @@index([apiKeyId, createdAt])
+  @@index([registryRequestId, createdAt])
+  @@index([supportedPaymentSourceId])
+  @@index([paymentIdentifier])
+  @@index([caip2Network, asset])
+  @@index([status, createdAt])
+}
+
+model X402Settlement {
+  id                 String             @id @default(cuid())
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  paymentAttemptId   String             @unique
+  paymentPayloadHash String             @unique
+  success            Boolean
+  txHash             String?
+  caip2Network       String
+  amount             BigInt?
+  payer              String?
+  rawResponse        Json?
+  PaymentAttempt     X402PaymentAttempt @relation(fields: [paymentAttemptId], references: [id], onDelete: Cascade)
+
+  @@index([txHash])
+  @@index([caip2Network])
 }
 
 model InboxAgentRegistrationRequest {
@@ -687,6 +830,24 @@ enum PaymentSourceType {
 
 enum Chain {
   Cardano
+}
+
+enum X402PaymentScheme {
+  Exact
+}
+
+enum X402PaymentDirection {
+  InboundVerify
+  InboundSettle
+  OutboundPayment
+}
+
+enum X402PaymentStatus {
+  PaymentRequired
+  Verified
+  Settled
+  Failed
+  Replayed
 }
 
 enum PaymentAction {

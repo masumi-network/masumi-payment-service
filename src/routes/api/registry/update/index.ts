@@ -1,6 +1,6 @@
 import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
-import { PaymentSourceType, PricingType, RegistrationState } from '@/generated/prisma/client';
+import { PaymentSourceType, PricingType, Prisma, RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
@@ -13,6 +13,7 @@ import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 import { bumpRegistryAssetNameVersionV2 } from '@/services/registry/shared';
 import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
 import { supportedPaymentSourceSchema, validateSupportedPaymentSourcesOrThrow } from '@/types/payment-source';
+import { serializeSupportedPaymentSources } from '../serializers';
 
 const updateSupportedPaymentSourcesSchema = z
 	.array(supportedPaymentSourceSchema)
@@ -203,6 +204,7 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 						supportedPaymentSources,
 						input.network,
 						paymentSource.paymentSourceType,
+						ctx.caip2NetworkLimit,
 					);
 				} catch (error) {
 					throw createHttpError(400, error instanceof Error ? error.message : String(error));
@@ -326,7 +328,18 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 												chain: source.chain,
 												network: source.network,
 												paymentSourceType: source.paymentSourceType,
-												address: source.address,
+												address: source.chain === 'EVM' ? (source.address ?? source.payTo) : source.address,
+												...(source.chain === 'EVM'
+													? {
+															scheme: source.scheme,
+															asset: source.asset,
+															amount: BigInt(source.amount),
+															decimals: source.decimals,
+															payTo: source.payTo,
+															resource: source.resource,
+															extra: source.extra as Prisma.InputJsonValue | undefined,
+														}
+													: {}),
 											})),
 										},
 									},
@@ -366,6 +379,13 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 								network: true,
 								paymentSourceType: true,
 								address: true,
+								scheme: true,
+								asset: true,
+								amount: true,
+								decimals: true,
+								payTo: true,
+								resource: true,
+								extra: true,
 							},
 						},
 						CurrentTransaction: {
@@ -413,7 +433,7 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 								pricingType: result.Pricing.pricingType,
 							},
 				sendFundingLovelace: result.sendFundingLovelace?.toString() ?? null,
-				supportedPaymentSources: result.SupportedPaymentSources.length > 0 ? result.SupportedPaymentSources : null,
+				supportedPaymentSources: serializeSupportedPaymentSources(result.SupportedPaymentSources),
 				Tags: result.tags,
 				RecipientWallet: result.RecipientWallet,
 				CurrentTransaction: result.CurrentTransaction

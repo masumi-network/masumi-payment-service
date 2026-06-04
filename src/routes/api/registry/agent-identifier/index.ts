@@ -25,12 +25,12 @@ function filterValidSupportedPaymentSources(
 	expectedNetwork: NetworkType,
 ): SupportedPaymentSource[] | null {
 	if (sources == null) return null;
-	return sources.filter(
-		(source) =>
-			source.chain === SupportedPaymentSourceChain.Cardano &&
-			source.network === expectedNetwork &&
-			isCardanoAddressForNetwork(source.address, expectedNetwork),
-	);
+	return sources.filter((source) => {
+		if (source.chain === SupportedPaymentSourceChain.EVM) {
+			return true;
+		}
+		return source.network === expectedNetwork && isCardanoAddressForNetwork(source.address, expectedNetwork);
+	});
 }
 
 export const queryAgentByIdentifierSchemaInput = z.object({

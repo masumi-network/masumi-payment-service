@@ -102,7 +102,11 @@ Avoid: deprecated, obsolete (both imply removal that is not planned).
 
 ### Supported Payment Source
 
-A payment option advertised by an agent registry entry, identified by chain, network, [[Payment Source Type]], and address. Persisted as rows in a child table of the registry record, mirroring the on-chain registry metadata. The service does not require a matching configured [[Payment Source]] row to accept or persist a Supported Payment Source — the link is informational, not enforced by foreign key.
+A payment option advertised by an agent registry entry. Persisted as rows in a child table of the registry record, mirroring the on-chain registry metadata. The service does not require a matching configured [[Payment Source]] row to accept or persist a Supported Payment Source — the link is informational, not enforced by foreign key.
+
+Cardano Supported Payment Sources are identified by `chain = Cardano`, a legacy Cardano `network` value (`Mainnet` or `Preprod`), `paymentSourceType`, and `address`.
+
+Standard x402 Supported Payment Sources are identified by `chain = EVM`, CAIP-2 `network` (`eip155:*`), `scheme = Exact`, ERC-20 `asset`, atomic `amount`, `decimals`, and `payTo`. They intentionally do not use `PaymentSourceType`, because x402 is an HTTP payment protocol rather than a Masumi Cardano escrow contract family.
 
 The set of Supported Payment Sources on an agent registry record is the single source of truth for "does this registry entry carry payment metadata, and which kinds." An empty set means the entry has no payment metadata (formerly modelled by a separate enum value).
 
@@ -114,8 +118,47 @@ Asymmetric cross-listing rule (enforced in
 - A [[Payment Source Type]] that is canonical (currently
   `Web3CardanoV2`) MAY only carry Supported Payment Sources whose
   `paymentSourceType` matches itself. Listing a [[Legacy Payment Source
-  Type]] entry on a canonical mint is rejected at the API.
+Type]] entry on a canonical mint is rejected at the API.
 - A [[Legacy Payment Source Type]] (currently `Web3CardanoV1`) MAY
   carry Supported Payment Sources of any type, including the canonical
   one. This lets a legacy entry cross-list to the canonical type as a
   migration breadcrumb without a full re-mint.
+
+V1 Cardano registry behavior is frozen: V1 routes silently drop supplied
+Supported Payment Sources and never advertise standard x402 metadata. V2
+registry entries may advertise x402 options.
+
+### x402 Payment Rail
+
+The standard EVM x402 rail implemented by `@masumi/payment-source-x402`.
+It is separate from Cardano `PaymentSourceType` and stores its own
+networks, managed EVM wallets, budgets, attempts, and settlements.
+
+The rail has two sides. The buy side signs a payment for a 402 the
+caller forwards, charges a managed wallet budget, and returns the
+`X-PAYMENT` header for the caller's agent to send with its own request;
+the service never fetches the resource itself. The sell side is an x402
+facilitator that verifies and settles inbound payments for a registered
+resource, with settlement replay bound to that source.
+
+Internal network identifiers use CAIP-2 strings. Cardano compatibility
+helpers translate public `Mainnet` / `Preprod` API schemas to
+`cardano:mainnet` / `cardano:preprod`; x402 uses `eip155:*` values such
+as `eip155:8453` and `eip155:84532`.
+
+The x402 rail supports the x402 `exact` scheme. EVM ERC-20 payments use
+Permit2 as the universal token path; buyer wallets must already have the
+needed manual approval. The service does not sponsor approval gas.
+
+Avoid confusing this rail with the existing Cardano
+`/api/v1/payment/x402` route. That older route builds Cardano payment
+transactions; it is not the standard EVM x402 HTTP payment protocol.
+
+### Managed EVM Wallet
+
+An encrypted private-key wallet stored in `X402EvmWallet` and used by the
+standard x402 rail. Managed EVM wallets are separate from Cardano
+`HotWallet` / `WalletSecret` rows. API keys with `canAdmin` can manage
+wallets, network configuration, and budgets; API keys with `canPay` can
+spend through a managed wallet only when their CAIP-2 chain limit and
+wallet budget allow it.

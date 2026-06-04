@@ -10,7 +10,7 @@ import {
 import { prisma } from '@masumi/payment-core/db';
 import { retryOnSerializationConflict } from '@/utils/db/retry';
 import { withSerializableSlot } from '@/utils/db/serializable-semaphore';
-import { SLOT_CONFIG_NETWORK, UTxO, unixTimeToEnclosingSlot, resolveTxHash } from '@meshsdk/core';
+import { UTxO, resolveTxHash } from '@meshsdk/core';
 import type { BlockfrostProvider, MeshWallet } from '@/services/shared';
 import { Transaction } from '@/services/shared';
 import { logger } from '@masumi/payment-core/logger';
@@ -27,6 +27,7 @@ import {
 	connectPreviousAction,
 	createMeshProvider,
 	createNextPurchaseAction,
+	createTxWindow,
 } from '@/services/shared';
 import { createDatumFromBlockchainIdentifierV2 } from '@masumi/payment-source-v2';
 import { isDefinitiveNodeRejection } from '../../submit-error-classifier';
@@ -402,11 +403,7 @@ async function executeSpecificBatchPayment(
 
 	logger.info('Batching payments, purchase request initialized');
 
-	const invalidBefore =
-		unixTimeToEnclosingSlot(Date.now() - 150000, SLOT_CONFIG_NETWORK[convertNetwork(paymentContract.network)]) - 1;
-
-	const invalidAfter =
-		unixTimeToEnclosingSlot(Date.now() + 150000, SLOT_CONFIG_NETWORK[convertNetwork(paymentContract.network)]) + 5;
+	const { invalidBefore, invalidAfter } = createTxWindow(convertNetwork(paymentContract.network));
 	unsignedTx.setNetwork(convertNetwork(paymentContract.network));
 	unsignedTx.txBuilder.invalidBefore(invalidBefore);
 	unsignedTx.txBuilder.invalidHereafter(invalidAfter);

@@ -270,10 +270,10 @@ export const SERVICE_CONSTANTS = {
 
 	// Common transaction settings
 	TRANSACTION: {
-		timeBufferMs: 150000, // ±2.5 minutes buffer for all transactions
+		timeBufferMs: 300000, // ±5 minutes buffer for all transactions
 		blockTimeBufferMs: 60000, // 1 minute block time buffer
-		validitySlotBuffer: 5,
-		resultTimeSlotBuffer: 3,
+		validitySlotBuffer: 30,
+		resultTimeSlotBuffer: 18,
 	},
 
 	// Smart contract constants
