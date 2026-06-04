@@ -22,6 +22,8 @@ import { handleApiCall } from '@/lib/utils';
 import { useDynamicFavicon } from '@/hooks/useDynamicFavicon';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
+import { useX402Networks } from '@/lib/hooks/useX402';
+import { chainsForEnv } from '@/lib/x402-rail';
 
 function App({ Component, pageProps, router }: AppProps) {
   return (
@@ -72,6 +74,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     setNetwork,
     authorized,
     isSetupMode,
+    activeRail,
   } = useAppContext();
 
   // Add dynamic favicon functionality
@@ -93,6 +96,9 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
   }, []);
 
   const { mainnetPaymentSources, preprodPaymentSources, isLoading } = usePaymentSourceExtendedAll();
+  const { networks: x402Networks, isLoading: x402Loading } = useX402Networks({
+    silentErrors: true,
+  });
 
   useEffect(() => {
     if (isLoading) return;
@@ -100,7 +106,13 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
       network === 'Mainnet' ? mainnetPaymentSources : preprodPaymentSources;
     // Pages accessible even without payment sources (shown in setup sidebar)
     const setupAccessiblePages = ['/api-keys', '/developers', '/settings', '/x402-setup'];
-    if (apiKey && isHealthy && currentNetworkPaymentSources.length === 0) {
+    // The x402 rail stands alone, so don't force Cardano setup for it. Keyed on chains
+    // existing for the env (not a facilitator) so a rail mid-configuration isn't bounced to
+    // Cardano setup. A stale rail with no chains stays false, and the sidebar selector
+    // downgrades it to Cardano. The x402 redirect below routes Cardano-only pages to /x402.
+    const isX402Standalone =
+      activeRail === 'x402' && !x402Loading && chainsForEnv(x402Networks, network).length > 0;
+    if (apiKey && isHealthy && currentNetworkPaymentSources.length === 0 && !isX402Standalone) {
       const protectedPages = ['/', '/ai-agents', '/inbox-agents', '/wallets', '/transactions'];
       if (protectedPages.includes(router.pathname)) {
         router.replace('/setup?network=' + (network === 'Mainnet' ? 'Mainnet' : 'Preprod'));
@@ -117,6 +129,17 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     ) {
       router.replace('/setup?network=' + (network === 'Mainnet' ? 'Mainnet' : 'Preprod'));
     }
+    // Full context switch: on the x402 (EVM) rail, Cardano-only pages aren't in the
+    // sidebar, so bounce direct/deep-link navigations to them back to the x402 hub.
+    // Guard on confirmed x402 availability so a stale persisted rail (e.g. after the
+    // env's chains were removed) can't trap the user away from Cardano pages — the
+    // sidebar selector downgrades the rail to Cardano in that case.
+    if (apiKey && isHealthy && !isSetupMode && isX402Standalone) {
+      const cardanoOnlyPages = ['/', '/inbox-agents', '/wallets', '/transactions', '/invoices'];
+      if (cardanoOnlyPages.includes(router.pathname)) {
+        router.replace('/x402');
+      }
+    }
   }, [
     apiKey,
     isHealthy,
@@ -126,6 +149,9 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     mainnetPaymentSources,
     preprodPaymentSources,
     isSetupMode,
+    activeRail,
+    x402Loading,
+    x402Networks,
   ]);
 
   useEffect(() => {

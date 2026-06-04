@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import { FileInput, ChevronsUpDown, Settings, Check, Coins, Wand2 } from 'lucide-react';
 import { cn, shortenAddress } from '@/lib/utils';
@@ -23,7 +23,7 @@ import {
   sortPaymentSourcesByPreference,
   type PaymentSourceType,
 } from '@/lib/payment-source-type';
-import { chainsForEnv, isX402SetUpForEnv } from '@/lib/x402-rail';
+import { chainsForEnv, isX402SetUpForEnv, X402_ACCENT } from '@/lib/x402-rail';
 import type { X402Network } from '@/lib/api/generated';
 
 interface NetworkSourceCardProps {
@@ -39,7 +39,7 @@ function RailBadge({ rail, className }: { rail: 'cardano' | 'x402'; className?: 
       className={cn(
         'whitespace-nowrap px-1.5 py-0 text-[10px] font-medium',
         rail === 'x402'
-          ? 'border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-300'
+          ? X402_ACCENT.badge
           : 'border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-300',
         className,
       )}
@@ -62,25 +62,35 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
     setSelectedX402ChainId,
   } = useAppContext();
   const { paymentSources } = usePaymentSourceExtendedAll();
-  const { networks: x402Networks } = useX402Networks({ silentErrors: true });
+  const { networks: x402Networks, isLoading: x402Loading } = useX402Networks({
+    silentErrors: true,
+  });
 
-  const networkSources = sortPaymentSourcesByPreference(
-    paymentSources.filter((ps) => ps.network === network),
+  const networkSources = useMemo(
+    () => sortPaymentSourcesByPreference(paymentSources.filter((ps) => ps.network === network)),
+    [paymentSources, network],
   );
   const isOnPaymentSourcesPage = router.pathname === '/payment-sources';
   const hasSources = networkSources.length > 0;
 
   // EVM/x402 chains are payment rails within the selected Cardano environment.
-  // Testnet chains pair with Preprod, mainnet chains with Mainnet.
-  const evmChains = chainsForEnv(x402Networks, network);
+  // Testnet chains pair with Preprod, mainnet chains with Mainnet. Memoized so the
+  // selection-coherence effect below doesn't re-run on every render (new array ref).
+  const evmChains = useMemo(() => chainsForEnv(x402Networks, network), [x402Networks, network]);
   const hasEvmChains = evmChains.length > 0;
-  const x402SetUp = isX402SetUpForEnv(x402Networks, network);
+  // Only advertise "needs setup" once data has actually loaded — the hook returns an
+  // empty array before/while loading, which would otherwise flash the CTA on a
+  // configured rail.
+  const showSetupCta = !x402Loading && !isX402SetUpForEnv(x402Networks, network);
 
   const selectedChain = evmChains.find((chain) => chain.id === selectedX402ChainId) ?? null;
 
-  // Keep the x402 selection coherent with what actually exists for the active env.
-  // (We can't run this from AppContext because the x402 hook depends on the context.)
+  // Keep the x402 selection coherent with what actually exists for the active env. The
+  // sidebar (and therefore this component) mounts on every page, so this runs on every
+  // route. Gated on the loaded state so a transient empty list during load/network-switch
+  // never wrongly downgrades the rail.
   useEffect(() => {
+    if (x402Loading) return;
     if (activeRail !== 'x402') return;
     if (selectedChain) return;
     if (hasEvmChains) {
@@ -90,7 +100,15 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
       setActiveRail('cardano');
       setSelectedX402ChainId(null);
     }
-  }, [activeRail, selectedChain, hasEvmChains, evmChains, setSelectedX402ChainId, setActiveRail]);
+  }, [
+    x402Loading,
+    activeRail,
+    selectedChain,
+    hasEvmChains,
+    evmChains,
+    setSelectedX402ChainId,
+    setActiveRail,
+  ]);
 
   const selectCardanoSource = (id: string) => {
     setActiveRail('cardano');
@@ -120,7 +138,7 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
       selectedX402ChainId={selectedX402ChainId}
       onSelectCardano={selectCardanoSource}
       onSelectEvm={selectEvmChain}
-      x402SetUp={x402SetUp}
+      showSetupCta={showSetupCta}
       isOnPaymentSourcesPage={isOnPaymentSourcesPage}
     />
   );
@@ -259,7 +277,7 @@ function SourceDropdown({
   selectedX402ChainId,
   onSelectCardano,
   onSelectEvm,
-  x402SetUp,
+  showSetupCta,
   isOnPaymentSourcesPage,
 }: {
   networkSources: {
@@ -276,7 +294,7 @@ function SourceDropdown({
   selectedX402ChainId: string | null;
   onSelectCardano: (id: string) => void;
   onSelectEvm: (id: string) => void;
-  x402SetUp: boolean;
+  showSetupCta: boolean;
   isOnPaymentSourcesPage: boolean;
 }) {
   const router = useRouter();
@@ -350,11 +368,17 @@ function SourceDropdown({
                         'h-1.5 w-1.5 shrink-0 rounded-full',
                         chain.facilitatorWalletId ? 'bg-green-500' : 'bg-amber-500',
                       )}
-                      title={chain.facilitatorWalletId ? undefined : 'No facilitator wallet set'}
                     />
                     <span className="truncate text-sm">{chain.displayName}</span>
                   </div>
-                  <span className="font-mono text-xs text-muted-foreground">{chain.caip2Id}</span>
+                  <span className="text-xs text-muted-foreground">
+                    <span className="font-mono">{chain.caip2Id}</span>
+                    {!chain.facilitatorWalletId && (
+                      <span className="text-amber-600 dark:text-amber-400">
+                        {' · needs facilitator'}
+                      </span>
+                    )}
+                  </span>
                 </div>
               </DropdownMenuItem>
             );
@@ -363,16 +387,12 @@ function SourceDropdown({
       )}
 
       <DropdownMenuSeparator />
-      {!x402SetUp && (
+      {showSetupCta && (
         <DropdownMenuItem className="cursor-pointer" onSelect={() => router.push('/x402-setup')}>
           <Wand2 className="h-4 w-4 mr-2" />
           Set up x402 (EVM)
         </DropdownMenuItem>
       )}
-      <DropdownMenuItem className="cursor-pointer" onSelect={() => router.push('/x402')}>
-        <Coins className="h-4 w-4 mr-2" />
-        Manage x402
-      </DropdownMenuItem>
       <DropdownMenuItem
         className={cn('cursor-pointer', isOnPaymentSourcesPage && 'bg-accent')}
         onSelect={() => router.push('/payment-sources')}

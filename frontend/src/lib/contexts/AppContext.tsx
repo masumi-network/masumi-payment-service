@@ -249,6 +249,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setSelectedPaymentSource(null);
     setIsChangingNetwork(false);
     setIsSetupMode(false);
+    setSetupWizardStep(0);
     setActiveRail('cardano');
     setSelectedX402ChainId(null);
     setError(null);
@@ -258,6 +259,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem('selectedPaymentSourceId');
     localStorage.removeItem('masumi_active_rail');
     localStorage.removeItem('masumi_x402_chain_id');
+    localStorage.removeItem('masumi_x402_banner_dismissed_Preprod');
+    localStorage.removeItem('masumi_x402_banner_dismissed_Mainnet');
     localStorage.removeItem('userIgnoredSetup');
     localStorage.removeItem('masumi_last_transactions_visit');
     localStorage.removeItem('masumi_new_transactions_count');

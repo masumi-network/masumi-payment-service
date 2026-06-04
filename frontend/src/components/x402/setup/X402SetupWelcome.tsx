@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   ArrowRight,
+  Check,
   CheckCircle2,
   Coins,
   Link2,
@@ -16,11 +17,45 @@ import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
 import { useAppContext, type NetworkType } from '@/lib/contexts/AppContext';
 import { useX402Budgets, useX402Networks, useX402Wallets } from '@/lib/hooks/useX402';
-import { chainsForEnv, isTestnetEnv } from '@/lib/x402-rail';
+import { chainsForEnv, isTestnetEnv, X402_ACCENT } from '@/lib/x402-rail';
 import { X402Network } from '@/lib/api/generated';
 import { CreateWalletDialog } from '@/components/x402/WalletsTab';
 import { ChainDialog } from '@/components/x402/ChainsTab';
 import { BudgetDialog } from '@/components/x402/BudgetsTab';
+
+/** Three-stage progress indicator: Welcome → Configure → Ready. */
+function WizardProgress({ current }: { current: 1 | 2 | 3 }) {
+  const labels = ['Welcome', 'Configure', 'Ready'];
+  return (
+    <div className="mx-auto mb-6 flex max-w-xs items-center gap-2">
+      {labels.map((label, index) => {
+        const step = index + 1;
+        const done = step < current;
+        const active = step === current;
+        return (
+          <Fragment key={label}>
+            <div
+              className={cn(
+                'flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold transition-colors',
+                done
+                  ? 'bg-green-500 text-white'
+                  : active
+                    ? 'bg-primary text-primary-foreground'
+                    : 'border-2 border-muted-foreground/30 text-muted-foreground',
+              )}
+              title={label}
+            >
+              {done ? <Check className="h-3 w-3" /> : step}
+            </div>
+            {step < 3 && (
+              <div className={cn('h-0.5 flex-1 rounded', done ? 'bg-green-500' : 'bg-muted')} />
+            )}
+          </Fragment>
+        );
+      })}
+    </div>
+  );
+}
 
 type DialogKind = 'wallet' | 'chain' | 'budget' | null;
 
@@ -34,7 +69,7 @@ type DialogKind = 'wallet' | 'chain' | 'budget' | null;
 export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { setActiveRail, setSelectedX402ChainId } = useAppContext();
+  const { authorized, setActiveRail, setSelectedX402ChainId } = useAppContext();
   const { wallets, isLoading: walletsLoading } = useX402Wallets();
   const { networks, isLoading: networksLoading } = useX402Networks();
   const { budgets, isLoading: budgetsLoading } = useX402Budgets();
@@ -42,7 +77,10 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
   const [currentStep, setCurrentStep] = useState(0);
   const [openDialog, setOpenDialog] = useState<DialogKind>(null);
 
-  const loading = walletsLoading || networksLoading || budgetsLoading;
+  // The x402 hooks are disabled (and return []) until authorized, which would otherwise
+  // read as "nothing configured". Treat the pre-auth window as loading so step state and
+  // finish() never act on empty data.
+  const loading = !authorized || walletsLoading || networksLoading || budgetsLoading;
 
   const envChains = useMemo(() => chainsForEnv(networks, networkType), [networks, networkType]);
   const hasWallet = wallets.length > 0;
@@ -50,15 +88,15 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
   const hasBudget = budgets.length > 0;
 
   // Prefer attaching a facilitator to an enabled chain in the active env that lacks one
-  // (Base ships preconfigured by the seed), then fall back to any chain.
+  // (Base ships preconfigured by the seed), then any chain in the same env. Never cross
+  // environments: editing a mainnet chain while configuring Preprod would mislead the
+  // user. When the env has no chain yet, leave it null so the dialog opens in create mode.
   const chainToConfigure: X402Network | null = useMemo(() => {
     const wantTestnet = isTestnetEnv(networkType);
     const envScoped = networks.filter((network) => network.isTestnet === wantTestnet);
     return (
       envScoped.find((network) => network.isEnabled && !network.facilitatorWalletId) ??
       envScoped[0] ??
-      networks.find((network) => network.isEnabled && !network.facilitatorWalletId) ??
-      networks[0] ??
       null
     );
   }, [networks, networkType]);
@@ -69,13 +107,16 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
     queryClient.invalidateQueries({ queryKey: ['x402-budgets'] });
   };
 
+  // Reachable only once the receive side is usable (a facilitator exists), so the success
+  // screen's "x402 is ready" claim agrees with isX402SetUpForEnv used by the banner/selector.
   const finish = () => {
-    invalidate();
-    setActiveRail('x402');
-    const configured = chainsForEnv(networks, networkType).find(
-      (chain) => !!chain.facilitatorWalletId,
-    );
+    // Read the chain from the current render's data BEFORE invalidating — invalidation is
+    // async, so reading after it could see the pre-save list and skip the selection.
+    const configured =
+      envChains.find((chain) => !!chain.facilitatorWalletId) ?? envChains[0] ?? null;
     if (configured) setSelectedX402ChainId(configured.id);
+    setActiveRail('x402');
+    invalidate();
     router.push('/x402');
   };
 
@@ -114,9 +155,10 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
   if (currentStep === 0) {
     return (
       <div className="mx-auto max-w-2xl px-4">
+        <WizardProgress current={1} />
         <Card className="border-indigo-300/40 bg-gradient-to-br from-indigo-50/60 to-background p-8 text-center dark:border-indigo-900/40 dark:from-indigo-950/20">
           <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-500/15 ring-1 ring-indigo-500/30">
-            <Coins className="h-7 w-7 text-indigo-600 dark:text-indigo-400" />
+            <Coins className={cn('h-7 w-7', X402_ACCENT.icon)} />
           </div>
           <div className="mb-2 flex items-center justify-center gap-2">
             <h1 className="text-2xl font-semibold tracking-tight">Set up the x402 (EVM) rail</h1>
@@ -142,7 +184,7 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
                 key={feature.label}
                 className="flex flex-col items-center gap-2 rounded-lg border bg-background/60 p-4"
               >
-                <feature.icon className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+                <feature.icon className={cn('h-5 w-5', X402_ACCENT.icon)} />
                 <span className="text-xs font-medium text-muted-foreground">{feature.label}</span>
               </div>
             ))}
@@ -160,6 +202,7 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
   if (currentStep === 2) {
     return (
       <div className="mx-auto max-w-2xl px-4">
+        <WizardProgress current={3} />
         <Card className="p-8 text-center">
           <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-green-500/15 ring-1 ring-green-500/30">
             <CheckCircle2 className="h-7 w-7 text-green-600 dark:text-green-500" />
@@ -197,6 +240,7 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
   // ---- Steps screen (currentStep === 1) --------------------------------------------
   return (
     <div className="mx-auto max-w-2xl px-4">
+      <WizardProgress current={2} />
       <div className="mb-6 space-y-1 text-center">
         <h1 className="text-xl font-semibold tracking-tight">Configure the x402 rail</h1>
         <p className="text-sm text-muted-foreground">
@@ -258,10 +302,22 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
             <Button variant="ghost" onClick={() => setCurrentStep(0)}>
               Back
             </Button>
-            <Button className="gap-2" onClick={() => setCurrentStep(2)}>
-              {hasFacilitator ? 'Finish' : 'Continue'}
-              <ArrowRight className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" onClick={finish}>
+                Exit to x402
+              </Button>
+              <Button
+                className="gap-2"
+                disabled={!hasFacilitator}
+                title={
+                  hasFacilitator ? undefined : 'Enable a chain and assign a facilitator to finish'
+                }
+                onClick={() => setCurrentStep(2)}
+              >
+                Finish
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         </div>
       )}

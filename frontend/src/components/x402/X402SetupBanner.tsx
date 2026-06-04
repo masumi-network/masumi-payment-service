@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { ArrowRight, Coins, X } from 'lucide-react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { useX402Networks } from '@/lib/hooks/useX402';
-import { isX402SetUpForEnv } from '@/lib/x402-rail';
+import { isX402SetUpForEnv, X402_ACCENT } from '@/lib/x402-rail';
 import { cn } from '@/lib/utils';
 
 const DISMISSED_KEY_PREFIX = 'masumi_x402_banner_dismissed_';
@@ -77,7 +77,7 @@ export function X402SetupBanner() {
       <div className="relative px-6 py-6 sm:px-8 sm:py-7 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex gap-4 flex-1 min-w-0">
           <div className="shrink-0 flex h-12 w-12 items-center justify-center rounded-xl ring-1 bg-indigo-500/15 ring-indigo-500/30">
-            <Coins className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
+            <Coins className={cn('h-6 w-6', X402_ACCENT.icon)} />
           </div>
           <div className="space-y-2 min-w-0">
             <div className="flex flex-wrap items-center gap-2">

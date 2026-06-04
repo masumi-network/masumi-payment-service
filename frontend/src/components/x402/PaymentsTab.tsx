@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge, type BadgeProps } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -25,6 +25,7 @@ import {
   type X402PaymentFilters,
 } from '@/lib/hooks/useX402';
 import { shortenAddress } from '@/lib/utils';
+import { useAppContext } from '@/lib/contexts/AppContext';
 import { X402PaymentAttempt } from '@/lib/api/generated';
 
 const ALL = '__all__';
@@ -59,8 +60,26 @@ const DIRECTION_LABEL: Record<X402PaymentAttempt['direction'], string> = {
 
 export function PaymentsTab() {
   const { networks } = useX402Networks();
+  const { activeRail, selectedX402ChainId } = useAppContext();
   const [filters, setFilters] = useState<X402PaymentFilters>({});
   const [selected, setSelected] = useState<X402PaymentAttempt | null>(null);
+
+  // On the EVM rail, scope the payment list to the chain selected in the sidebar, and keep
+  // it in sync when that selection changes. A manual chain filter persists until the
+  // sidebar selection actually changes (tracked via ref), so this follows the chip without
+  // overriding an in-table choice on every render.
+  const selectedCaip2 = networks.find((n) => n.id === selectedX402ChainId)?.caip2Id;
+  const lastAppliedCaip2 = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (activeRail !== 'x402') return;
+    if (!selectedCaip2) return; // wait for networks to load
+    if (lastAppliedCaip2.current === selectedCaip2) return;
+    lastAppliedCaip2.current = selectedCaip2;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Syncs the table's chain filter to the sidebar chip; guarded so it only fires when the selection changes.
+    setFilters((prev) =>
+      prev.caip2Network === selectedCaip2 ? prev : { ...prev, caip2Network: selectedCaip2 },
+    );
+  }, [activeRail, selectedCaip2]);
   const { attempts, isLoading, hasMore, loadMore, isFetchingNextPage, refetch, isRefetching } =
     useX402PaymentAttempts(filters);
 

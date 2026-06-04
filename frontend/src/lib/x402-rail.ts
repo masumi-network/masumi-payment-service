@@ -2,6 +2,16 @@ import type { X402Network } from '@/lib/api/generated';
 import type { NetworkType } from '@/lib/contexts/AppContext';
 
 /**
+ * Shared visual accent for the x402 (EVM) rail, so the selector badge, setup banner and
+ * wizard stay in sync instead of each hardcoding the same indigo classes.
+ */
+export const X402_ACCENT = {
+  badge:
+    'border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-300',
+  icon: 'text-indigo-600 dark:text-indigo-400',
+} as const;
+
+/**
  * The x402 (EVM) rail has no Cardano Network of its own; chains are grouped into the
  * active environment purely by their `isTestnet` flag — testnet chains belong to the
  * Cardano Preprod environment, mainnet chains to Mainnet. This pairing is the single

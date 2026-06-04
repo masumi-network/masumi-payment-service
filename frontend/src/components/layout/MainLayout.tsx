@@ -45,6 +45,8 @@ import { NetworkSourceCard } from '@/components/layout/PaymentSourceSelector';
 import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
 import { DEFAULT_PAYMENT_SOURCE_TYPE, isV2PaymentSource } from '@/lib/payment-source-type';
 import { X402SetupBanner } from '@/components/x402/X402SetupBanner';
+import { useX402Networks } from '@/lib/hooks/useX402';
+import { chainsForEnv } from '@/lib/x402-rail';
 interface MainLayoutProps {
   children: React.ReactNode;
 }
@@ -149,6 +151,12 @@ export function MainLayout({ children }: MainLayoutProps) {
   const hasPaymentSources = currentNetworkPaymentSources.length > 0;
   const hasV2PaymentSource = currentNetworkPaymentSources.some(isV2PaymentSource);
   const hasLegacyOnlyPaymentSources = hasPaymentSources && !hasV2PaymentSource;
+  const { networks: x402Networks } = useX402Networks({ silentErrors: true });
+  // The x402 rail stands on its own: an operator working the EVM rail shouldn't be forced
+  // into Cardano setup just because no Cardano source exists. Keyed on the rail being active
+  // with chains available for the env (not on a facilitator), so the x402 nav shows while
+  // the rail is being configured, not only once fully set up.
+  const isX402Standalone = activeRail === 'x402' && chainsForEnv(x402Networks, network).length > 0;
   const {
     activeWalletAlertCount,
     unacknowledgedWalletAlertCount,
@@ -165,8 +173,9 @@ export function MainLayout({ children }: MainLayoutProps) {
   const notificationCount = newTransactionsCount + unacknowledgedWalletAlertCount;
 
   const navItems = useMemo<NavItem[]>(() => {
-    // While in setup mode, show only the setup sidebar
-    if (isSetupMode || !hasPaymentSources) {
+    // Show the setup-only sidebar while in Cardano setup, or when there are no payment
+    // sources at all — unless a configured x402 rail is active, which has its own nav.
+    if (isSetupMode || (!hasPaymentSources && !isX402Standalone)) {
       return [
         {
           href: '/setup',
@@ -290,6 +299,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   }, [
     isSetupMode,
     hasPaymentSources,
+    isX402Standalone,
     activeRail,
     newTransactionsCount,
     activeWalletAlertCount,
