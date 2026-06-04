@@ -10,7 +10,12 @@ import { Badge } from '@/components/ui/badge';
 
 import { cn, shortenAddress } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { deleteRegistry, RegistryEntry, postRegistryDeregister } from '@/lib/api/generated';
+import {
+  deleteRegistry,
+  RegistryEntry,
+  A2aRegistryEntry,
+  postRegistryDeregister,
+} from '@/lib/api/generated';
 import { agentHasX402Options } from '@/components/ai-agents/AgentX402Options';
 import { toast } from 'react-toastify';
 import { handleApiCall } from '@/lib/utils';
@@ -19,6 +24,7 @@ import { AIAgentTableSkeleton } from '@/components/skeletons/AIAgentTableSkeleto
 import { Spinner } from '@/components/ui/spinner';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAgents } from '@/lib/queries/useAgents';
+import { useA2AAgents } from '@/lib/queries/useA2AAgents';
 import formatBalance from '@/lib/formatBalance';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { FaRegClock } from 'react-icons/fa';
@@ -40,9 +46,13 @@ import { useAgentDetailsDialog } from '@/lib/contexts/AgentDetailsDialogContext'
 import { findPaymentSourceWalletByVkey } from '@/lib/wallet-lookup';
 import { isV2PaymentSource } from '@/lib/payment-source-type';
 import { MigrateAgentsDialog } from '@/components/ai-agents/MigrateAgentsDialog';
-type AIAgent = RegistryEntry;
 
-const getHoldingWallet = (agent: AIAgent) => agent.RecipientWallet ?? agent.SmartContractWallet;
+type AIAgent = RegistryEntry | A2aRegistryEntry;
+
+const getHoldingWallet = (agent: AIAgent) =>
+  'RecipientWallet' in agent
+    ? (agent.RecipientWallet ?? agent.SmartContractWallet)
+    : agent.SmartContractWallet;
 
 const usesCombinedWallet = (agent: AIAgent) =>
   getHoldingWallet(agent).walletVkey === agent.SmartContractWallet.walletVkey;
@@ -86,17 +96,43 @@ export default function AIAgentsPage() {
 
   // Use React Query for initial load (cached)
   const {
-    agents,
-    isLoading,
+    agents: standardAgents,
+    isLoading: isLoadingStandard,
     isFetching: isFetchingAgents,
     isPlaceholderData,
-    refetch,
+    refetch: refetchStandard,
     hasMore: hasMoreAgents,
     loadMore,
   } = useAgents({
     filterStatus,
     searchQuery: debouncedSearchQuery || undefined,
   });
+
+  const {
+    agents: a2aAgents,
+    isLoading: isLoadingA2A,
+    hasMore: hasMoreA2A,
+    loadMore: loadMoreA2A,
+    refetch: refetchA2A,
+  } = useA2AAgents({
+    filterStatus,
+    searchQuery: debouncedSearchQuery || undefined,
+  });
+
+  const agents = useMemo(
+    () =>
+      [...standardAgents, ...a2aAgents].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      ),
+    [standardAgents, a2aAgents],
+  );
+
+  const isLoading = isLoadingStandard || isLoadingA2A;
+
+  const refetch = useCallback(() => {
+    void refetchStandard();
+    void refetchA2A();
+  }, [refetchStandard, refetchA2A]);
 
   const queryClient = useQueryClient();
   const { openAgentDetails, closeAgentDetails } = useAgentDetailsDialog();
@@ -127,7 +163,11 @@ export default function AIAgentsPage() {
       // Backend uses hasSome (exact match against tag array), not partial
       if (agent.Tags?.some((tag) => tag.toLowerCase() === query)) return true;
       if (agent.SmartContractWallet?.walletAddress?.toLowerCase().includes(query)) return true;
-      if (agent.RecipientWallet?.walletAddress?.toLowerCase().includes(query)) return true;
+      if (
+        'RecipientWallet' in agent &&
+        agent.RecipientWallet?.walletAddress?.toLowerCase().includes(query)
+      )
+        return true;
       if (agent.state?.toLowerCase().includes(query)) return true;
       if (agent.AgentPricing?.pricingType === 'Free' && 'free'.startsWith(query)) return true;
       if (agent.AgentPricing?.pricingType === 'Dynamic' && 'dynamic'.startsWith(query)) return true;
@@ -147,7 +187,7 @@ export default function AIAgentsPage() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedAgentToDelete, setSelectedAgentToDelete] = useState<AIAgent | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [selectedAgentToUpdate, setSelectedAgentToUpdate] = useState<AIAgent | null>(null);
+  const [selectedAgentToUpdate, setSelectedAgentToUpdate] = useState<RegistryEntry | null>(null);
   // Snapshot the agent's payment-source smart-contract address AT CLICK TIME.
   // The agent list is already filtered to `selectedPaymentSource`, so at the
   // moment of the click that source IS the agent's source. We must not read the
@@ -266,6 +306,12 @@ export default function AIAgentsPage() {
   };
 
   const handleUpdateClick = (agent: AIAgent) => {
+    if ('agentCardUrl' in agent) {
+      // Update mode is a standard-agent (RegistryEntry) flow; A2A agents have
+      // no on-chain update action.
+      toast.error('Update is not supported for A2A agents');
+      return;
+    }
     if (!selectedPaymentSource?.smartContractAddress) {
       toast.error('Cannot update agent: Missing payment source');
       return;
@@ -306,7 +352,6 @@ export default function AIAgentsPage() {
             refetchAll();
           },
           onError: (error: unknown) => {
-            console.error('Error deleting agent:', error);
             toast.error(extractApiErrorMessage(error, 'Failed to delete AI agent'));
           },
           onFinally: () => {
@@ -343,7 +388,6 @@ export default function AIAgentsPage() {
             refetchAll();
           },
           onError: (error: unknown) => {
-            console.error('Error deregistering agent:', error);
             toast.error(extractApiErrorMessage(error, 'Failed to deregister AI agent'));
           },
           onFinally: () => {
@@ -364,7 +408,7 @@ export default function AIAgentsPage() {
   };
 
   const handleWalletClick = useCallback(
-    async (walletVkey: string) => {
+    (walletVkey: string) => {
       const filteredSources = currentNetworkPaymentSources.filter((source) =>
         selectedPaymentSourceId ? source.id === selectedPaymentSourceId : true,
       );
@@ -461,6 +505,9 @@ export default function AIAgentsPage() {
                       Name
                     </th>
                     <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                      Type
+                    </th>
+                    <th className="p-4 text-left text-sm font-medium text-muted-foreground">
                       Added
                     </th>
                     <th className="p-4 text-left text-sm font-medium text-muted-foreground">
@@ -487,7 +534,7 @@ export default function AIAgentsPage() {
                     <AIAgentTableSkeleton rows={5} />
                   ) : displayAgents.length === 0 ? (
                     <tr>
-                      <td colSpan={8}>
+                      <td colSpan={9}>
                         <EmptyState
                           icon={searchQuery ? 'search' : 'inbox'}
                           title={
@@ -613,11 +660,12 @@ export default function AIAgentsPage() {
                                     : `${formatPrice(price.amount)} ${price.unit === getUsdcxConfig(network).fullAssetId ? 'USDCx' : price.unit === getUsdmConfig(network).fullAssetId ? (network === 'Mainnet' ? 'USDM' : 'tUSDM') : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
                                 </div>
                               ))}
-                            {agentHasX402Options(agent.supportedPaymentSources) && (
-                              <div className="mt-1">
-                                <Badge variant="secondary">x402</Badge>
-                              </div>
-                            )}
+                            {!('agentCardUrl' in agent) &&
+                              agentHasX402Options(agent.supportedPaymentSources) && (
+                                <div className="mt-1">
+                                  <Badge variant="secondary">x402</Badge>
+                                </div>
+                              )}
                           </td>
                           <td className="p-4">
                             {agent.Tags.length > 0 && (
@@ -716,9 +764,12 @@ export default function AIAgentsPage() {
             <div className="flex flex-col gap-4 items-center">
               {!(isLoading && !agents.length) && (
                 <Pagination
-                  hasMore={hasMoreAgents}
+                  hasMore={hasMoreAgents || hasMoreA2A}
                   isLoading={isFetchingAgents}
-                  onLoadMore={loadMore}
+                  onLoadMore={() => {
+                    void loadMore();
+                    void loadMoreA2A();
+                  }}
                 />
               )}
             </div>
@@ -758,7 +809,11 @@ export default function AIAgentsPage() {
           />
 
           <VerifyAndPublishAgentDialog
-            agent={selectedAgentForVerification}
+            agent={
+              selectedAgentForVerification && 'sendFundingLovelace' in selectedAgentForVerification
+                ? selectedAgentForVerification
+                : null
+            }
             open={!!selectedAgentForVerification}
             onClose={() => setSelectedAgentForVerification(null)}
           />

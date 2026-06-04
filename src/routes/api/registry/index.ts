@@ -27,6 +27,7 @@ import {
 import { getRegistryEntriesForQuery } from './queries';
 import { serializeRegistryEntriesResponse, serializeSupportedPaymentSources } from './serializers';
 import { resolveScopedRecipientWalletOrThrow, resolveScopedSellingWalletOrThrow } from './shared';
+import { mapA2ARegistryRequestToOutput } from './utils';
 
 export {
 	deleteAgentRegistrationSchemaInput,
@@ -373,6 +374,11 @@ export const deleteAgentRegistration = adminAuthenticatedEndpointFactory.build({
 	handler: async ({ input }) => {
 		const startTime = Date.now();
 		try {
+			const validStatesForDeletion: RegistrationState[] = [
+				RegistrationState.RegistrationFailed,
+				RegistrationState.DeregistrationConfirmed,
+			];
+
 			const registryRequest = await prisma.registryRequest.findUnique({
 				where: {
 					id: input.id,
@@ -389,130 +395,176 @@ export const deleteAgentRegistration = adminAuthenticatedEndpointFactory.build({
 				},
 			});
 
-			if (!registryRequest) {
-				recordBusinessEndpointError('/api/v1/registry', 'DELETE', 404, 'Agent Registration not found', {
-					registry_id: input.id,
-					operation: 'delete_agent_registration',
-					step: 'registry_lookup',
-				});
-				throw createHttpError(404, 'Agent Registration not found');
-			}
+			if (registryRequest) {
+				if (!validStatesForDeletion.includes(registryRequest.state)) {
+					recordBusinessEndpointError(
+						'/api/v1/registry',
+						'DELETE',
+						400,
+						`Agent registration cannot be deleted in its current state: ${registryRequest.state}`,
+						{
+							registry_id: input.id,
+							operation: 'delete_agent_registration',
+							step: 'state_validation',
+							current_state: registryRequest.state,
+							valid_states: validStatesForDeletion.join(', '),
+						},
+					);
+					throw createHttpError(
+						400,
+						`Agent registration cannot be deleted in its current state: ${registryRequest.state}`,
+					);
+				}
 
-			const validStatesForDeletion: RegistrationState[] = [
-				RegistrationState.RegistrationFailed,
-				RegistrationState.DeregistrationConfirmed,
-			];
-
-			if (!validStatesForDeletion.includes(registryRequest.state)) {
-				recordBusinessEndpointError(
-					'/api/v1/registry',
-					'DELETE',
-					400,
-					`Agent registration cannot be deleted in its current state: ${registryRequest.state}`,
-					{
-						registry_id: input.id,
-						operation: 'delete_agent_registration',
-						step: 'state_validation',
-						current_state: registryRequest.state,
-						valid_states: validStatesForDeletion.join(', '),
+				const item = await prisma.registryRequest.delete({
+					where: {
+						id: registryRequest.id,
 					},
-				);
-				throw createHttpError(
-					400,
-					`Agent registration cannot be deleted in its current state: ${registryRequest.state}`,
-				);
-			}
-
-			const item = await prisma.registryRequest.delete({
-				where: {
-					id: registryRequest.id,
-				},
-				include: {
-					Pricing: {
-						include: {
-							FixedPricing: {
-								include: { Amounts: { select: { unit: true, amount: true } } },
+					include: {
+						Pricing: {
+							include: {
+								FixedPricing: {
+									include: { Amounts: { select: { unit: true, amount: true } } },
+								},
+							},
+						},
+						SmartContractWallet: {
+							select: { walletVkey: true, walletAddress: true },
+						},
+						RecipientWallet: {
+							select: { walletVkey: true, walletAddress: true },
+						},
+						ExampleOutputs: {
+							select: { name: true, url: true, mimeType: true },
+						},
+						SupportedPaymentSources: {
+							select: {
+								chain: true,
+								network: true,
+								paymentSourceType: true,
+								address: true,
+								scheme: true,
+								asset: true,
+								amount: true,
+								decimals: true,
+								payTo: true,
+								resource: true,
+								extra: true,
+							},
+						},
+						CurrentTransaction: {
+							select: {
+								txHash: true,
+								status: true,
+								confirmations: true,
+								fees: true,
+								blockHeight: true,
+								blockTime: true,
 							},
 						},
 					},
-					SmartContractWallet: {
-						select: { walletVkey: true, walletAddress: true },
+				});
+
+				return {
+					...item,
+					Capability: {
+						name: item.capabilityName,
+						version: item.capabilityVersion,
 					},
-					RecipientWallet: {
-						select: { walletVkey: true, walletAddress: true },
+					Author: {
+						name: item.authorName,
+						contactEmail: item.authorContactEmail,
+						contactOther: item.authorContactOther,
+						organization: item.authorOrganization,
 					},
-					ExampleOutputs: {
-						select: { name: true, url: true, mimeType: true },
+					Legal: {
+						privacyPolicy: item.privacyPolicy,
+						terms: item.terms,
+						other: item.other,
 					},
-					SupportedPaymentSources: {
-						select: {
-							chain: true,
-							network: true,
-							paymentSourceType: true,
-							address: true,
-							scheme: true,
-							asset: true,
-							amount: true,
-							decimals: true,
-							payTo: true,
-							resource: true,
-							extra: true,
-						},
-					},
-					CurrentTransaction: {
-						select: {
-							txHash: true,
-							status: true,
-							confirmations: true,
-							fees: true,
-							blockHeight: true,
-							blockTime: true,
-						},
-					},
-				},
+					AgentPricing:
+						item.Pricing.pricingType == PricingType.Fixed
+							? {
+									pricingType: PricingType.Fixed,
+									Pricing:
+										item.Pricing.FixedPricing?.Amounts.map((price) => ({
+											unit: price.unit,
+											amount: price.amount.toString(),
+										})) ?? [],
+								}
+							: {
+									pricingType: item.Pricing.pricingType,
+								},
+					sendFundingLovelace: item.sendFundingLovelace?.toString() ?? null,
+					supportedPaymentSources: serializeSupportedPaymentSources(item.SupportedPaymentSources),
+					Tags: item.tags,
+					RecipientWallet: item.RecipientWallet,
+					CurrentTransaction: item.CurrentTransaction
+						? {
+								...item.CurrentTransaction,
+								fees: item.CurrentTransaction.fees?.toString() ?? null,
+							}
+						: null,
+				};
+			}
+
+			const a2aRequest = await prisma.a2ARegistryRequest.findUnique({
+				where: { id: input.id },
 			});
 
-			return {
-				...item,
-				Capability: {
-					name: item.capabilityName,
-					version: item.capabilityVersion,
-				},
-				Author: {
-					name: item.authorName,
-					contactEmail: item.authorContactEmail,
-					contactOther: item.authorContactOther,
-					organization: item.authorOrganization,
-				},
-				Legal: {
-					privacyPolicy: item.privacyPolicy,
-					terms: item.terms,
-					other: item.other,
-				},
-				AgentPricing:
-					item.Pricing.pricingType == PricingType.Fixed
-						? {
-								pricingType: PricingType.Fixed,
-								Pricing:
-									item.Pricing.FixedPricing?.Amounts.map((price) => ({
-										unit: price.unit,
-										amount: price.amount.toString(),
-									})) ?? [],
-							}
-						: {
-								pricingType: item.Pricing.pricingType,
+			if (a2aRequest) {
+				if (!validStatesForDeletion.includes(a2aRequest.state)) {
+					recordBusinessEndpointError(
+						'/api/v1/registry',
+						'DELETE',
+						400,
+						`Agent registration cannot be deleted in its current state: ${a2aRequest.state}`,
+						{
+							registry_id: input.id,
+							operation: 'delete_agent_registration',
+							step: 'state_validation',
+							current_state: a2aRequest.state,
+							valid_states: validStatesForDeletion.join(', '),
+						},
+					);
+					throw createHttpError(400, `Agent registration cannot be deleted in its current state: ${a2aRequest.state}`);
+				}
+
+				const item = await prisma.a2ARegistryRequest.delete({
+					where: { id: a2aRequest.id },
+					include: {
+						Pricing: {
+							include: {
+								FixedPricing: {
+									include: { Amounts: { select: { unit: true, amount: true } } },
+								},
 							},
-				sendFundingLovelace: item.sendFundingLovelace?.toString() ?? null,
-				supportedPaymentSources: serializeSupportedPaymentSources(item.SupportedPaymentSources),
-				Tags: item.tags,
-				RecipientWallet: item.RecipientWallet,
-				CurrentTransaction: item.CurrentTransaction
-					? {
-							...item.CurrentTransaction,
-							fees: item.CurrentTransaction.fees?.toString() ?? null,
-						}
-					: null,
-			};
+						},
+						SmartContractWallet: {
+							select: { walletVkey: true, walletAddress: true },
+						},
+						CurrentTransaction: {
+							select: {
+								txHash: true,
+								status: true,
+								confirmations: true,
+								fees: true,
+								blockHeight: true,
+								blockTime: true,
+							},
+						},
+					},
+				});
+
+				return mapA2ARegistryRequestToOutput(item);
+			}
+
+			recordBusinessEndpointError('/api/v1/registry', 'DELETE', 404, 'Agent Registration not found', {
+				registry_id: input.id,
+				operation: 'delete_agent_registration',
+				step: 'registry_lookup',
+			});
+			throw createHttpError(404, 'Agent Registration not found');
 		} catch (error: unknown) {
 			// Record the business-specific error with context
 			const errorInstance = error instanceof Error ? error : new Error(String(error));

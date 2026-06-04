@@ -1,7 +1,97 @@
 import { HotWalletType, PaymentSourceType, RegistrationState } from '@/generated/prisma/client';
+import { CONFIG } from '@masumi/payment-core/config';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { withSerializableSlotRetry } from '@/utils/db/serializable-semaphore';
+
+export async function lockAndQueryA2ARegistryRequests({
+	state,
+	maxBatchSize,
+}: {
+	state: RegistrationState;
+	maxBatchSize: number;
+}) {
+	const locksSellingWallet = state === RegistrationState.RegistrationRequested;
+
+	return await prisma.$transaction(
+		async (prisma) => {
+			const paymentSources = await prisma.paymentSource.findMany({
+				where: {
+					syncInProgress: false,
+					deletedAt: null,
+					disablePaymentAt: null,
+				},
+				include: {
+					HotWallets: {
+						include: {
+							Secret: true,
+						},
+						where: {
+							...(locksSellingWallet ? { type: HotWalletType.Selling } : {}),
+							PendingTransaction: null,
+							lockedAt: null,
+							deletedAt: null,
+						},
+					},
+					AdminWallets: true,
+					FeeReceiverNetworkWallet: true,
+					PaymentSourceConfig: true,
+				},
+			});
+
+			const newPaymentSources = [];
+			for (const paymentSource of paymentSources) {
+				const a2aRegistryRequests = [];
+				for (const hotWallet of paymentSource.HotWallets) {
+					const potentialRequests = await prisma.a2ARegistryRequest.findMany({
+						where: {
+							state: state,
+							SmartContractWallet: {
+								id: hotWallet.id,
+								deletedAt: null,
+								PendingTransaction: { is: null },
+								lockedAt: null,
+							},
+						},
+						include: {
+							SmartContractWallet: {
+								include: {
+									Secret: true,
+								},
+							},
+							Pricing: {
+								include: { FixedPricing: { include: { Amounts: true } } },
+							},
+						},
+						orderBy: {
+							createdAt: 'asc',
+						},
+						take: maxBatchSize,
+					});
+					if (potentialRequests.length > 0) {
+						const hotWalletResult = await prisma.hotWallet.update({
+							where: { id: hotWallet.id, deletedAt: null },
+							data: { lockedAt: new Date() },
+						});
+						potentialRequests.forEach((req) => {
+							req.SmartContractWallet.pendingTransactionId = hotWalletResult.pendingTransactionId;
+							req.SmartContractWallet.lockedAt = hotWalletResult.lockedAt;
+						});
+						a2aRegistryRequests.push(...potentialRequests);
+					}
+				}
+				if (a2aRegistryRequests.length > 0) {
+					newPaymentSources.push({
+						...paymentSource,
+						A2ARegistryRequest: a2aRegistryRequests,
+					});
+				}
+			}
+			return newPaymentSources;
+		},
+		{ isolationLevel: 'Serializable', timeout: CONFIG.SYNC_LOCK_TIMEOUT_INTERVAL },
+	);
+}
 
 export async function lockAndQueryRegistryRequests({
 	state,
