@@ -106,13 +106,16 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
       network === 'Mainnet' ? mainnetPaymentSources : preprodPaymentSources;
     // Pages accessible even without payment sources (shown in setup sidebar)
     const setupAccessiblePages = ['/api-keys', '/developers', '/settings', '/x402-setup'];
-    // The x402 rail stands alone, so don't force Cardano setup for it. Keyed on chains
-    // existing for the env (not a facilitator) so a rail mid-configuration isn't bounced to
-    // Cardano setup. A stale rail with no chains stays false, and the sidebar selector
-    // downgrades it to Cardano. The x402 redirect below routes Cardano-only pages to /x402.
-    const isX402Standalone =
-      activeRail === 'x402' && !x402Loading && chainsForEnv(x402Networks, network).length > 0;
-    if (apiKey && isHealthy && currentNetworkPaymentSources.length === 0 && !isX402Standalone) {
+    // The x402 rail stands alone, so don't force Cardano setup for it. Two strengths:
+    // - `x402MaybeStandalone` stays true WHILE the chain list is loading, so an EVM
+    //   operator on a shared page (e.g. /ai-agents) isn't bounced to Cardano /setup during
+    //   the load window. Once loaded with no chains it becomes false and setup proceeds.
+    // - `x402Confirmed` requires loaded data, gating the Cardano-only -> /x402 redirect so a
+    //   stale rail never redirects before its availability is known.
+    const x402ChainCount = chainsForEnv(x402Networks, network).length;
+    const x402MaybeStandalone = activeRail === 'x402' && (x402Loading || x402ChainCount > 0);
+    const x402Confirmed = activeRail === 'x402' && !x402Loading && x402ChainCount > 0;
+    if (apiKey && isHealthy && currentNetworkPaymentSources.length === 0 && !x402MaybeStandalone) {
       const protectedPages = ['/', '/ai-agents', '/inbox-agents', '/wallets', '/transactions'];
       if (protectedPages.includes(router.pathname)) {
         router.replace('/setup?network=' + (network === 'Mainnet' ? 'Mainnet' : 'Preprod'));
@@ -134,7 +137,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     // Guard on confirmed x402 availability so a stale persisted rail (e.g. after the
     // env's chains were removed) can't trap the user away from Cardano pages — the
     // sidebar selector downgrades the rail to Cardano in that case.
-    if (apiKey && isHealthy && !isSetupMode && isX402Standalone) {
+    if (apiKey && isHealthy && !isSetupMode && x402Confirmed) {
       const cardanoOnlyPages = ['/', '/inbox-agents', '/wallets', '/transactions', '/invoices'];
       if (cardanoOnlyPages.includes(router.pathname)) {
         router.replace('/x402');

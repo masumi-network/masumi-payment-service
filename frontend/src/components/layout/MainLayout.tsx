@@ -151,12 +151,17 @@ export function MainLayout({ children }: MainLayoutProps) {
   const hasPaymentSources = currentNetworkPaymentSources.length > 0;
   const hasV2PaymentSource = currentNetworkPaymentSources.some(isV2PaymentSource);
   const hasLegacyOnlyPaymentSources = hasPaymentSources && !hasV2PaymentSource;
-  const { networks: x402Networks } = useX402Networks({ silentErrors: true });
+  const { networks: x402Networks, isLoading: x402Loading } = useX402Networks({
+    silentErrors: true,
+  });
   // The x402 rail stands on its own: an operator working the EVM rail shouldn't be forced
   // into Cardano setup just because no Cardano source exists. Keyed on the rail being active
   // with chains available for the env (not on a facilitator), so the x402 nav shows while
-  // the rail is being configured, not only once fully set up.
-  const isX402Standalone = activeRail === 'x402' && chainsForEnv(x402Networks, network).length > 0;
+  // the rail is being configured, not only once fully set up. Stay optimistic while the
+  // chain list is still loading so we don't flash the Cardano setup-only nav for an EVM
+  // operator; once loaded, a rail with no chains correctly drops back to setup.
+  const isX402Standalone =
+    activeRail === 'x402' && (x402Loading || chainsForEnv(x402Networks, network).length > 0);
   const {
     activeWalletAlertCount,
     unacknowledgedWalletAlertCount,
