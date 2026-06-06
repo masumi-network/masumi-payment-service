@@ -122,7 +122,7 @@ export function useSearch(enabled = true) {
   // Only load the full wallet set while the search UI is actually open — this
   // hook is mounted app-wide (MainLayout), so an unconditional fetch would
   // reintroduce the global wallet load on every page.
-  const { wallets } = useAllWallets(enabled);
+  const { wallets, isLoading: isWalletsLoading } = useAllWallets(enabled);
 
   const currentNetworkPaymentSources = useMemo(
     () => paymentSources.filter((ps) => ps.network === network),
@@ -184,5 +184,8 @@ export function useSearch(enabled = true) {
 
   return {
     handleSearch,
+    // Wallets load lazily once the search UI opens; surface this so consumers can
+    // signal that wallet matches may still be incoming.
+    isWalletsLoading,
   };
 }

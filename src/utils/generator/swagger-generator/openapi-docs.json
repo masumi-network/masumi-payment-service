@@ -4669,6 +4669,17 @@
                         "description": "Filter to the single wallet with this payment key hash",
                         "name": "walletVkey",
                         "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 250,
+                            "description": "Filter to wallets with this Cardano address"
+                        },
+                        "required": false,
+                        "description": "Filter to wallets with this Cardano address",
+                        "name": "walletAddress",
+                        "in": "query"
                     }
                 ],
                 "responses": {

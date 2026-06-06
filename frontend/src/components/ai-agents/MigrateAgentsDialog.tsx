@@ -184,10 +184,13 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
 
   // V2 target wallets come from the dedicated /wallet/list endpoint (scoped to
   // the V2 source), not from the payment-source response.
-  const { wallets: v2Wallets } = usePaymentSourceWalletsAll(
+  const { wallets: v2Wallets, isLoading: isLoadingV2Wallets } = usePaymentSourceWalletsAll(
     v2Source?.id ?? null,
     open && !!v2Source,
   );
+  // True once the V2 wallet set is known. Until then we must not infer that a
+  // V1 payout address is "missing on V2" — the set is just not loaded yet.
+  const v2WalletsReady = !v2Source || !isLoadingV2Wallets;
   const v2SellingWallets = useMemo(
     () => v2Wallets.filter((wallet) => wallet.type === 'Selling'),
     [v2Wallets],
@@ -228,12 +231,15 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
   // the selected-count summary share one computation.
   const droppedHoldingByAgentId = useMemo(() => {
     const map = new Map<string, string>();
+    // Don't flag reroutes until the V2 wallet set has loaded, otherwise every
+    // custom payout looks "missing on V2" during the fetch.
+    if (!v2WalletsReady) return map;
     for (const a of v1Agents) {
       const { droppedV1HoldingAddress } = resolveV2HoldingAddress(a, v2WalletAddresses);
       if (droppedV1HoldingAddress) map.set(a.id, droppedV1HoldingAddress);
     }
     return map;
-  }, [v1Agents, v2WalletAddresses]);
+  }, [v1Agents, v2WalletAddresses, v2WalletsReady]);
 
   const [selectedAgentIds, setSelectedAgentIds] = useState<Set<string>>(new Set());
   useEffect(() => {

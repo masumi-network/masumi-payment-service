@@ -2405,6 +2405,10 @@ export type GetWalletListData = {
          * Filter to the single wallet with this payment key hash
          */
         walletVkey?: string;
+        /**
+         * Filter to wallets with this Cardano address
+         */
+        walletAddress?: string;
     };
     url: '/wallet/list';
 };

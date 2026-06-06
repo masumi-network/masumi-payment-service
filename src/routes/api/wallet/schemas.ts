@@ -27,6 +27,7 @@ export const getWalletListSchemaInput = z.object({
 	paymentSourceId: z.string().max(250).optional().describe('Filter wallets to a single payment source'),
 	walletType: z.nativeEnum(HotWalletType).optional().describe('Filter wallets by type (Selling or Purchasing)'),
 	walletVkey: z.string().max(250).optional().describe('Filter to the single wallet with this payment key hash'),
+	walletAddress: z.string().max(250).optional().describe('Filter to wallets with this Cardano address'),
 });
 
 export const getWalletListSchemaOutput = z.object({

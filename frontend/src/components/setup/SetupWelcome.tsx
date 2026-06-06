@@ -1241,14 +1241,15 @@ function AddAiAgentScreen({
       }
 
       // Hot wallets are no longer embedded in the payment-source response; they
-      // are served by the dedicated paginated /wallet/list endpoint. Resolve the
-      // chosen selling wallet's vKey from there, scoped to this network's sources.
+      // are served by the dedicated /wallet/list endpoint. Resolve the chosen
+      // selling wallet's vKey via an exact address filter (not a capped scan, so
+      // a wallet beyond the first page is still found), scoped to this network.
       const inNetworkSourceIds = new Set(filteredSources.map((source) => source.id));
       const walletsResponse = await getWalletList({
         client: apiClient,
         query: {
-          take: 100,
           walletType: 'Selling',
+          walletAddress: sellingWallet.address,
         },
       });
 
@@ -1257,10 +1258,8 @@ function AddAiAgentScreen({
         return;
       }
 
-      const sellingWalletData = (walletsResponse.data?.data?.Wallets ?? []).find(
-        (wallet) =>
-          inNetworkSourceIds.has(wallet.paymentSourceId) &&
-          wallet.walletAddress === sellingWallet.address,
+      const sellingWalletData = (walletsResponse.data?.data?.Wallets ?? []).find((wallet) =>
+        inNetworkSourceIds.has(wallet.paymentSourceId),
       );
 
       if (!sellingWalletData?.walletVkey) {

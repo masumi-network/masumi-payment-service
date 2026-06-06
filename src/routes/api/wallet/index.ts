@@ -46,6 +46,7 @@ export const queryWalletListEndpointGet = adminAuthenticatedEndpointFactory.buil
 				...(input.walletType != null ? { type: input.walletType } : {}),
 				...(input.paymentSourceId != null ? { paymentSourceId: input.paymentSourceId } : {}),
 				...(input.walletVkey != null ? { walletVkey: input.walletVkey } : {}),
+				...(input.walletAddress != null ? { walletAddress: input.walletAddress } : {}),
 				PaymentSource: {
 					network: { in: ctx.networkLimit },
 					deletedAt: null,
