@@ -28,7 +28,11 @@ import {
 	paymentSourceExtendedUpdateSchemaInput,
 	paymentSourceExtendedUpdateSchemaOutput,
 } from './schemas';
-import { getPaymentSourceExtendedForQuery, paymentSourceExtendedInclude } from './queries';
+import {
+	getPaymentSourceExtendedForQuery,
+	getWalletCountsByPaymentSource,
+	paymentSourceExtendedInclude,
+} from './queries';
 import { serializePaymentSourceExtendedEntry, serializePaymentSourceExtendedResponse } from './serializers';
 
 export {
@@ -98,7 +102,8 @@ export const paymentSourceExtendedEndpointGet = adminAuthenticatedEndpointFactor
 	output: paymentSourceExtendedSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof paymentSourceExtendedSchemaInput>; ctx: AuthContext }) => {
 		const paymentSources = await getPaymentSourceExtendedForQuery(input, ctx.networkLimit);
-		return serializePaymentSourceExtendedResponse(paymentSources);
+		const walletCounts = await getWalletCountsByPaymentSource(paymentSources.map((source) => source.id));
+		return serializePaymentSourceExtendedResponse(paymentSources, walletCounts);
 	},
 });
 
@@ -268,7 +273,8 @@ export const paymentSourceExtendedEndpointPost = adminAuthenticatedEndpointFacto
 			include: paymentSourceExtendedInclude,
 		});
 
-		return serializePaymentSourceExtendedEntry(paymentSource);
+		const walletCounts = await getWalletCountsByPaymentSource([paymentSource.id]);
+		return serializePaymentSourceExtendedEntry(paymentSource, walletCounts.get(paymentSource.id));
 	},
 });
 
@@ -430,7 +436,11 @@ export const paymentSourceExtendedEndpointPatch = adminAuthenticatedEndpointFact
 			include: paymentSourceExtendedInclude,
 		});
 
-		return serializePaymentSourceExtendedEntry(paymentSourceWithRelations);
+		const walletCounts = await getWalletCountsByPaymentSource([paymentSourceWithRelations.id]);
+		return serializePaymentSourceExtendedEntry(
+			paymentSourceWithRelations,
+			walletCounts.get(paymentSourceWithRelations.id),
+		);
 	},
 });
 
@@ -462,6 +472,7 @@ export const paymentSourceExtendedEndpointDelete = adminAuthenticatedEndpointFac
 			data: { deletedAt: new Date() },
 			include: paymentSourceExtendedInclude,
 		});
-		return serializePaymentSourceExtendedEntry(paymentSource);
+		const walletCounts = await getWalletCountsByPaymentSource([paymentSource.id]);
+		return serializePaymentSourceExtendedEntry(paymentSource, walletCounts.get(paymentSource.id));
 	},
 });

@@ -43,16 +43,11 @@ type BudgetFormValues = z.infer<typeof budgetFormSchema>;
 export function BudgetsTab() {
   const { budgets, isLoading, isRefetching, refetch } = useX402Budgets();
   const { networks } = useX402Networks();
-  const { wallets } = useX402Wallets();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<X402Budget | null>(null);
 
   const chainLabel = (caip2: string) =>
     networks.find((n) => n.caip2Id === caip2)?.displayName ?? caip2;
-  const walletLabel = (walletId: string) => {
-    const wallet = wallets.find((w) => w.id === walletId);
-    return wallet ? shortenAddress(wallet.address, 6) : walletId;
-  };
 
   const openCreate = () => {
     setEditing(null);
@@ -113,7 +108,9 @@ export function BudgetsTab() {
               budgets.map((budget) => (
                 <tr key={budget.id} className="border-b last:border-0">
                   <td className="p-4 font-mono text-xs">{budget.apiKeyId}</td>
-                  <td className="p-4 font-mono text-sm">{walletLabel(budget.evmWalletId)}</td>
+                  <td className="p-4 font-mono text-sm">
+                    {shortenAddress(budget.evmWalletAddress, 6)}
+                  </td>
                   <td className="p-4 text-sm">{chainLabel(budget.caip2Network)}</td>
                   <td className="p-4 font-mono text-sm">{shortenAddress(budget.asset, 6)}</td>
                   <td className="p-4 text-right font-mono text-sm">{budget.remainingAmount}</td>
@@ -160,7 +157,8 @@ export function BudgetDialog({
   const { apiClient } = useAppContext();
   const { allApiKeys } = useApiKey();
   const { networks } = useX402Networks();
-  const { wallets } = useX402Wallets();
+  // Only load the full wallet set while the form is open (it feeds the picker).
+  const { wallets } = useX402Wallets(open);
   const [isSaving, setIsSaving] = useState(false);
 
   const {

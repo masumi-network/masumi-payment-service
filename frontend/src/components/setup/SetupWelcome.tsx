@@ -35,8 +35,8 @@ import {
   postPaymentSourceExtended,
   postRegistry,
   getPaymentSourceExtended,
+  getWalletList,
   type PaymentSourceExtended,
-  type SellingWallet,
 } from '@/lib/api/generated';
 import { handleApiCall, shortenAddress } from '@/lib/utils';
 import { WalletLink } from '@/components/ui/wallet-link';
@@ -1240,22 +1240,27 @@ function AddAiAgentScreen({
         return;
       }
 
-      // Prefer the source that actually owns the chosen selling wallet, then
-      // fall back to a V2 source, then to whatever's first. Locking to V2 by
-      // default silently routes V1-wallet users to a source that doesn't
-      // contain their wallet and fails downstream with an opaque vKey error.
-      const sourceContainingWallet = filteredSources.find((source: PaymentSourceExtended) =>
-        source.SellingWallets?.some(
-          (s: SellingWallet) => s.walletAddress === sellingWallet.address,
-        ),
-      );
-      const paymentSource =
-        sourceContainingWallet ??
-        filteredSources.find((source: PaymentSourceExtended) => isV2PaymentSource(source)) ??
-        filteredSources[0];
+      // Hot wallets are no longer embedded in the payment-source response; they
+      // are served by the dedicated paginated /wallet/list endpoint. Resolve the
+      // chosen selling wallet's vKey from there, scoped to this network's sources.
+      const inNetworkSourceIds = new Set(filteredSources.map((source) => source.id));
+      const walletsResponse = await getWalletList({
+        client: apiClient,
+        query: {
+          take: 100,
+          walletType: 'Selling',
+        },
+      });
 
-      const sellingWalletData = paymentSource.SellingWallets?.find(
-        (s: SellingWallet) => s.walletAddress === sellingWallet.address,
+      if (walletsResponse.error) {
+        setError(extractApiErrorMessage(walletsResponse.error, 'Failed to fetch wallets'));
+        return;
+      }
+
+      const sellingWalletData = (walletsResponse.data?.data?.Wallets ?? []).find(
+        (wallet) =>
+          inNetworkSourceIds.has(wallet.paymentSourceId) &&
+          wallet.walletAddress === sellingWallet.address,
       );
 
       if (!sellingWalletData?.walletVkey) {

@@ -9,6 +9,8 @@ import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
 import {
+	getWalletListSchemaInput,
+	getWalletListSchemaOutput,
 	getWalletSchemaInput,
 	getWalletSchemaOutput,
 	patchWalletSchemaInput,
@@ -17,8 +19,11 @@ import {
 	postWalletSchemaOutput,
 } from './schemas';
 import { serializeLowBalanceRecord, serializeLowBalanceSummary } from '@/services/wallets';
+import { buildHotWalletScopeFilter } from '@/utils/shared/wallet-scope';
 
 export {
+	getWalletListSchemaInput,
+	getWalletListSchemaOutput,
 	getWalletSchemaInput,
 	getWalletSchemaOutput,
 	patchWalletSchemaInput,
@@ -26,6 +31,59 @@ export {
 	postWalletSchemaInput,
 	postWalletSchemaOutput,
 };
+
+export const queryWalletListEndpointGet = adminAuthenticatedEndpointFactory.build({
+	method: 'get',
+	input: getWalletListSchemaInput,
+	output: getWalletListSchemaOutput,
+	handler: async ({ input, ctx }: { input: z.infer<typeof getWalletListSchemaInput>; ctx: AuthContext }) => {
+		const wallets = await prisma.hotWallet.findMany({
+			take: input.take,
+			orderBy: { createdAt: 'desc' },
+			cursor: input.cursorId ? { id: input.cursorId } : undefined,
+			where: {
+				deletedAt: null,
+				...(input.walletType != null ? { type: input.walletType } : {}),
+				...(input.paymentSourceId != null ? { paymentSourceId: input.paymentSourceId } : {}),
+				...(input.walletVkey != null ? { walletVkey: input.walletVkey } : {}),
+				PaymentSource: {
+					network: { in: ctx.networkLimit },
+					deletedAt: null,
+				},
+				...buildHotWalletScopeFilter(ctx.walletScopeIds),
+			},
+			select: {
+				id: true,
+				paymentSourceId: true,
+				walletVkey: true,
+				walletAddress: true,
+				type: true,
+				collectionAddress: true,
+				note: true,
+				LowBalanceRules: {
+					where: { enabled: true },
+					select: {
+						id: true,
+						assetUnit: true,
+						thresholdAmount: true,
+						enabled: true,
+						status: true,
+						lastKnownAmount: true,
+						lastCheckedAt: true,
+						lastAlertedAt: true,
+					},
+				},
+			},
+		});
+
+		return {
+			Wallets: wallets.map(({ LowBalanceRules, ...wallet }) => ({
+				...wallet,
+				LowBalanceSummary: serializeLowBalanceSummary(LowBalanceRules),
+			})),
+		};
+	},
+});
 
 export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
 	method: 'get',

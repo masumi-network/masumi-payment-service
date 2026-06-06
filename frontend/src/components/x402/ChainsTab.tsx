@@ -137,7 +137,10 @@ export function ChainsTab() {
                   </td>
                   <td className="p-4 text-sm">
                     {network.facilitatorWalletId ? (
-                      <FacilitatorLabel walletId={network.facilitatorWalletId} />
+                      <FacilitatorLabel
+                        address={network.facilitatorWalletAddress}
+                        walletId={network.facilitatorWalletId}
+                      />
                     ) : (
                       <span className="text-amber-600 dark:text-amber-400">Not set</span>
                     )}
@@ -168,10 +171,10 @@ export function ChainsTab() {
   );
 }
 
-function FacilitatorLabel({ walletId }: { walletId: string }) {
-  const { wallets } = useX402Wallets();
-  const wallet = wallets.find((w) => w.id === walletId);
-  return <span className="font-mono">{wallet ? shortenAddress(wallet.address, 6) : walletId}</span>;
+function FacilitatorLabel({ address, walletId }: { address: string | null; walletId: string }) {
+  // Address is denormalized onto the network response, so labelling no longer
+  // requires loading the full managed-wallet set.
+  return <span className="font-mono">{address ? shortenAddress(address, 6) : walletId}</span>;
 }
 
 export function ChainDialog({
@@ -186,7 +189,8 @@ export function ChainDialog({
   onSaved: () => void;
 }) {
   const { apiClient } = useAppContext();
-  const { wallets } = useX402Wallets();
+  // Only load the full wallet set while the form is open (it feeds the picker).
+  const { wallets } = useX402Wallets(open);
   const [isSaving, setIsSaving] = useState(false);
 
   const {

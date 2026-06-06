@@ -288,8 +288,8 @@ function SourceDropdown({
     smartContractAddress: string;
     paymentSourceType: PaymentSourceType;
     feeRatePermille: number;
-    PurchasingWallets?: { id: string }[];
-    SellingWallets?: { id: string }[];
+    PurchasingWalletsCount: number;
+    SellingWalletsCount: number;
   }[];
   evmChains: X402Network[];
   activeRail: 'cardano' | 'x402';
@@ -314,7 +314,7 @@ function SourceDropdown({
       {networkSources.map((source) => {
         const isSelected = activeRail === 'cardano' && source.id === selectedPaymentSourceId;
         const sourceWalletCount =
-          (source.PurchasingWallets?.length ?? 0) + (source.SellingWallets?.length ?? 0);
+          (source.PurchasingWalletsCount ?? 0) + (source.SellingWalletsCount ?? 0);
         return (
           <DropdownMenuItem
             key={source.id}

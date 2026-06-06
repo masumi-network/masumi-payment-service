@@ -18,7 +18,7 @@ interface SearchDialogProps {
 
 export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
   const router = useRouter();
-  const { handleSearch } = useSearch();
+  const { handleSearch } = useSearch(open);
   const [searchQuery, setSearchQuery] = useState('');
 
   const [searchResults, setSearchResults] = useState<SearchableItem[]>([]);

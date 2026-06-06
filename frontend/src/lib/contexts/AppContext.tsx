@@ -11,7 +11,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { ErrorDialog } from '@/components/ui/error-dialog';
 import { Client, createClient } from '@/lib/api/generated/client';
 import { usePaymentSourceExtendedAllWithParams } from '../hooks/usePaymentSourceExtendedAll';
-import type { PaymentSource } from '../api/generated';
+import type { PaymentSourceExtended } from '../api/generated';
 import { getPreferredPaymentSource } from '@/lib/payment-source-type';
 
 export type NetworkType = 'Preprod' | 'Mainnet';
@@ -22,7 +22,7 @@ export type ActiveRail = 'cardano' | 'x402';
 
 export const AppContext = createContext<
   | {
-      selectedPaymentSource: PaymentSource | null;
+      selectedPaymentSource: PaymentSourceExtended | null;
       activeRail: ActiveRail;
       setActiveRail: (rail: ActiveRail) => void;
       selectedX402ChainId: string | null;
@@ -144,7 +144,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return null;
   });
 
-  const [selectedPaymentSource, setSelectedPaymentSource] = useState<PaymentSource | null>(null);
+  const [selectedPaymentSource, setSelectedPaymentSource] = useState<PaymentSourceExtended | null>(
+    null,
+  );
 
   const [isChangingNetwork, setIsChangingNetwork] = useState(false);
   const previousNetworkRef = useRef<NetworkType>(network);

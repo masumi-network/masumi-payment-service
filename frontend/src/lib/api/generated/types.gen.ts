@@ -184,6 +184,54 @@ export type Wallet = {
     }>;
 };
 
+export type WalletListItem = {
+    /**
+     * Unique identifier for the wallet
+     */
+    id: string;
+    /**
+     * Id of the payment source this wallet belongs to
+     */
+    paymentSourceId: string;
+    /**
+     * Whether this is a Selling (seller side) or Purchasing (buyer side) wallet
+     */
+    type: 'Selling' | 'Purchasing';
+    /**
+     * Payment key hash of the wallet
+     */
+    walletVkey: string;
+    /**
+     * Cardano address of the wallet
+     */
+    walletAddress: string;
+    /**
+     * Optional collection address for this wallet. Null if not set
+     */
+    collectionAddress: string | null;
+    /**
+     * Optional note about this wallet. Null if not set
+     */
+    note: string | null;
+    /**
+     * Aggregated low-balance status for the wallet
+     */
+    LowBalanceSummary: {
+        /**
+         * Whether any enabled low-balance rule for this wallet is currently below threshold
+         */
+        isLow: boolean;
+        /**
+         * How many enabled rules for this wallet are currently in low state
+         */
+        lowRuleCount: number;
+        /**
+         * Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked
+         */
+        lastCheckedAt: Date | null;
+    };
+};
+
 export type GeneratedWalletSecret = {
     /**
      * 24-word mnemonic phrase for the newly generated wallet. IMPORTANT: Backup this mnemonic securely
@@ -1591,14 +1639,6 @@ export type PaymentSource = {
      */
     AdminWallets: Array<AdminWallet>;
     /**
-     * List of wallets used for purchasing (buyer side)
-     */
-    PurchasingWallets: Array<PurchasingWallet>;
-    /**
-     * List of wallets used for selling (seller side)
-     */
-    SellingWallets: Array<SellingWallet>;
-    /**
      * Wallet that receives network fees from transactions
      */
     FeeReceiverNetworkWallet: {
@@ -1622,86 +1662,6 @@ export type AdminWallet = {
      * Order/index of this admin wallet
      */
     order: number;
-};
-
-export type PurchasingWallet = {
-    /**
-     * Unique identifier for the purchasing wallet
-     */
-    id: string;
-    /**
-     * Payment key hash of the purchasing wallet
-     */
-    walletVkey: string;
-    /**
-     * Cardano address of the purchasing wallet
-     */
-    walletAddress: string;
-    /**
-     * Optional collection address for this wallet. Null if not set
-     */
-    collectionAddress: string | null;
-    /**
-     * Optional note about this wallet. Null if not set
-     */
-    note: string | null;
-    /**
-     * Aggregated low-balance status for the wallet
-     */
-    LowBalanceSummary: {
-        /**
-         * Whether any enabled low-balance rule for this wallet is currently below threshold
-         */
-        isLow: boolean;
-        /**
-         * How many enabled rules for this wallet are currently in low state
-         */
-        lowRuleCount: number;
-        /**
-         * Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked
-         */
-        lastCheckedAt: Date | null;
-    };
-};
-
-export type SellingWallet = {
-    /**
-     * Unique identifier for the selling wallet
-     */
-    id: string;
-    /**
-     * Payment key hash of the selling wallet
-     */
-    walletVkey: string;
-    /**
-     * Cardano address of the selling wallet
-     */
-    walletAddress: string;
-    /**
-     * Optional collection address for this wallet. Null if not set
-     */
-    collectionAddress: string | null;
-    /**
-     * Optional note about this wallet. Null if not set
-     */
-    note: string | null;
-    /**
-     * Aggregated low-balance status for the wallet
-     */
-    LowBalanceSummary: {
-        /**
-         * Whether any enabled low-balance rule for this wallet is currently below threshold
-         */
-        isLow: boolean;
-        /**
-         * How many enabled rules for this wallet are currently in low state
-         */
-        lowRuleCount: number;
-        /**
-         * Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked
-         */
-        lastCheckedAt: Date | null;
-    };
 };
 
 export type PaymentSourceExtended = {
@@ -1776,89 +1736,13 @@ export type PaymentSourceExtended = {
         order: number;
     }>;
     /**
-     * List of wallets used for purchasing (buyer side)
+     * Number of active purchasing wallets. Fetch the wallets themselves via GET /wallet/list.
      */
-    PurchasingWallets: Array<{
-        /**
-         * Unique identifier for the purchasing wallet
-         */
-        id: string;
-        /**
-         * Payment key hash of the purchasing wallet
-         */
-        walletVkey: string;
-        /**
-         * Cardano address of the purchasing wallet
-         */
-        walletAddress: string;
-        /**
-         * Optional collection address for this wallet. Null if not set
-         */
-        collectionAddress: string | null;
-        /**
-         * Optional note about this wallet. Null if not set
-         */
-        note: string | null;
-        /**
-         * Aggregated low-balance status for the wallet
-         */
-        LowBalanceSummary: {
-            /**
-             * Whether any enabled low-balance rule for this wallet is currently below threshold
-             */
-            isLow: boolean;
-            /**
-             * How many enabled rules for this wallet are currently in low state
-             */
-            lowRuleCount: number;
-            /**
-             * Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked
-             */
-            lastCheckedAt: Date | null;
-        };
-    }>;
+    PurchasingWalletsCount: number;
     /**
-     * List of wallets used for selling (seller side)
+     * Number of active selling wallets. Fetch the wallets themselves via GET /wallet/list.
      */
-    SellingWallets: Array<{
-        /**
-         * Unique identifier for the selling wallet
-         */
-        id: string;
-        /**
-         * Payment key hash of the selling wallet
-         */
-        walletVkey: string;
-        /**
-         * Cardano address of the selling wallet
-         */
-        walletAddress: string;
-        /**
-         * Optional collection address for this wallet. Null if not set
-         */
-        collectionAddress: string | null;
-        /**
-         * Optional note about this wallet. Null if not set
-         */
-        note: string | null;
-        /**
-         * Aggregated low-balance status for the wallet
-         */
-        LowBalanceSummary: {
-            /**
-             * Whether any enabled low-balance rule for this wallet is currently below threshold
-             */
-            isLow: boolean;
-            /**
-             * How many enabled rules for this wallet are currently in low state
-             */
-            lowRuleCount: number;
-            /**
-             * Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked
-             */
-            lastCheckedAt: Date | null;
-        };
-    }>;
+    SellingWalletsCount: number;
     /**
      * Wallet that receives network fees from transactions
      */
@@ -2250,6 +2134,10 @@ export type X402Network = {
      */
     facilitatorWalletId: string | null;
     /**
+     * Resolved address of the facilitator wallet. Null when no facilitator is set.
+     */
+    facilitatorWalletAddress: string | null;
+    /**
      * Id of the API key that created this chain configuration
      */
     createdById: string | null;
@@ -2284,6 +2172,10 @@ export type X402Budget = {
      * Managed EVM wallet the budget draws from
      */
     evmWalletId: string;
+    /**
+     * Resolved address of the managed EVM wallet the budget draws from
+     */
+    evmWalletAddress: string;
     caip2Network: string;
     /**
      * Token contract the budget is denominated in
@@ -2488,6 +2380,51 @@ export type PostWalletResponses = {
 };
 
 export type PostWalletResponse = PostWalletResponses[keyof PostWalletResponses];
+
+export type GetWalletListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * The number of wallets to return
+         */
+        take?: number;
+        /**
+         * Used to paginate through the wallets (provide the id of the last returned wallet)
+         */
+        cursorId?: string;
+        /**
+         * Filter wallets to a single payment source
+         */
+        paymentSourceId?: string;
+        /**
+         * Filter wallets by type (Selling or Purchasing)
+         */
+        walletType?: 'Selling' | 'Purchasing';
+        /**
+         * Filter to the single wallet with this payment key hash
+         */
+        walletVkey?: string;
+    };
+    url: '/wallet/list';
+};
+
+export type GetWalletListResponses = {
+    /**
+     * Paginated list of hot wallets
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * Paginated list of hot wallets
+             */
+            Wallets: Array<WalletListItem>;
+        };
+    };
+};
+
+export type GetWalletListResponse = GetWalletListResponses[keyof GetWalletListResponses];
 
 export type DeleteWalletLowBalanceData = {
     /**
@@ -10132,7 +10069,16 @@ export type PostX402NetworksResponse = PostX402NetworksResponses[keyof PostX402N
 export type GetX402WalletsData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        /**
+         * Number of managed wallets to return
+         */
+        take?: number;
+        /**
+         * Pagination cursor (provide the id of the last returned wallet)
+         */
+        cursorId?: string;
+    };
     url: '/x402/wallets';
 };
 

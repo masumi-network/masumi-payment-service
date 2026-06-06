@@ -72,14 +72,24 @@ export function PaymentsTab() {
   const lastAppliedCaip2 = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (activeRail !== 'x402') return;
-    if (!selectedCaip2) return; // wait for networks to load
+    // No chain selected (e.g. right after a network switch clears selectedX402ChainId): drop
+    // the previous chain scope so the table doesn't keep querying the old, now-invalid chain.
+    if (!selectedX402ChainId) {
+      if (lastAppliedCaip2.current !== undefined) {
+        lastAppliedCaip2.current = undefined;
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- Clears the stale chain scope when the sidebar selection is cleared.
+        setFilters((prev) => (prev.caip2Network ? { ...prev, caip2Network: undefined } : prev));
+      }
+      return;
+    }
+    if (!selectedCaip2) return; // chain selected but networks still loading
     if (lastAppliedCaip2.current === selectedCaip2) return;
     lastAppliedCaip2.current = selectedCaip2;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Syncs the table's chain filter to the sidebar chip; guarded so it only fires when the selection changes.
+
     setFilters((prev) =>
       prev.caip2Network === selectedCaip2 ? prev : { ...prev, caip2Network: selectedCaip2 },
     );
-  }, [activeRail, selectedCaip2]);
+  }, [activeRail, selectedX402ChainId, selectedCaip2]);
   const { attempts, isLoading, hasMore, loadMore, isFetchingNextPage, refetch, isRefetching } =
     useX402PaymentAttempts(filters);
 

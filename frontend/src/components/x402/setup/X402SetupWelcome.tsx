@@ -85,7 +85,15 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
   const envChains = useMemo(() => chainsForEnv(networks, networkType), [networks, networkType]);
   const hasWallet = wallets.length > 0;
   const hasFacilitator = envChains.some((chain) => !!chain.facilitatorWalletId);
-  const hasBudget = budgets.length > 0;
+  // Scope budgets to the active environment (by the budget's chain), so a budget on the
+  // other env doesn't mark this env's optional step complete or skew the success summary.
+  const envCaip2 = useMemo(() => {
+    const wantTestnet = isTestnetEnv(networkType);
+    return new Set(
+      networks.filter((network) => network.isTestnet === wantTestnet).map((n) => n.caip2Id),
+    );
+  }, [networks, networkType]);
+  const hasBudget = budgets.some((budget) => envCaip2.has(budget.caip2Network));
 
   // Prefer attaching a facilitator to an enabled chain in the active env that lacks one
   // (Base ships preconfigured by the seed), then any chain in the same env. Never cross

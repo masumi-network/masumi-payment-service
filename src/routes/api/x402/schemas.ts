@@ -153,6 +153,11 @@ export const createWalletSchemaInput = z.object({
 		.describe('Optional 0x-prefixed 32-byte hex private key. A new key is generated when omitted.'),
 });
 
+export const listWalletsSchemaInput = z.object({
+	take: z.coerce.number().min(1).max(100).default(20).describe('Number of managed wallets to return'),
+	cursorId: z.string().max(550).optional().describe('Pagination cursor (provide the id of the last returned wallet)'),
+});
+
 export const listWalletsSchemaOutput = z.object({
 	Wallets: z.array(walletSchemaOutput),
 });
@@ -172,6 +177,10 @@ export const x402NetworkSchema = z
 			.string()
 			.nullable()
 			.describe('Id of the managed EVM wallet used to settle payments on this chain'),
+		facilitatorWalletAddress: z
+			.string()
+			.nullable()
+			.describe('Resolved address of the facilitator wallet. Null when no facilitator is set.'),
 		createdById: z.string().nullable().describe('Id of the API key that created this chain configuration'),
 		createdAt: z.date(),
 		updatedAt: z.date(),
@@ -197,6 +206,7 @@ export const budgetSchema = z
 		id: z.string(),
 		apiKeyId: z.string().describe('API key the budget is granted to'),
 		evmWalletId: z.string().describe('Managed EVM wallet the budget draws from'),
+		evmWalletAddress: z.string().describe('Resolved address of the managed EVM wallet the budget draws from'),
 		caip2Network: caip2Eip155Schema,
 		asset: evmAddressSchema.describe('Token contract the budget is denominated in'),
 		remainingAmount: z.string().describe('Remaining spendable amount, in token base units'),
