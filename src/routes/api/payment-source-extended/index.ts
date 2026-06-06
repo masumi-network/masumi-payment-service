@@ -102,7 +102,10 @@ export const paymentSourceExtendedEndpointGet = adminAuthenticatedEndpointFactor
 	output: paymentSourceExtendedSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof paymentSourceExtendedSchemaInput>; ctx: AuthContext }) => {
 		const paymentSources = await getPaymentSourceExtendedForQuery(input, ctx.networkLimit);
-		const walletCounts = await getWalletCountsByPaymentSource(paymentSources.map((source) => source.id));
+		const walletCounts = await getWalletCountsByPaymentSource(
+			paymentSources.map((source) => source.id),
+			ctx.walletScopeIds,
+		);
 		return serializePaymentSourceExtendedResponse(paymentSources, walletCounts);
 	},
 });
@@ -273,7 +276,7 @@ export const paymentSourceExtendedEndpointPost = adminAuthenticatedEndpointFacto
 			include: paymentSourceExtendedInclude,
 		});
 
-		const walletCounts = await getWalletCountsByPaymentSource([paymentSource.id]);
+		const walletCounts = await getWalletCountsByPaymentSource([paymentSource.id], ctx.walletScopeIds);
 		return serializePaymentSourceExtendedEntry(paymentSource, walletCounts.get(paymentSource.id));
 	},
 });
@@ -436,7 +439,7 @@ export const paymentSourceExtendedEndpointPatch = adminAuthenticatedEndpointFact
 			include: paymentSourceExtendedInclude,
 		});
 
-		const walletCounts = await getWalletCountsByPaymentSource([paymentSourceWithRelations.id]);
+		const walletCounts = await getWalletCountsByPaymentSource([paymentSourceWithRelations.id], ctx.walletScopeIds);
 		return serializePaymentSourceExtendedEntry(
 			paymentSourceWithRelations,
 			walletCounts.get(paymentSourceWithRelations.id),
@@ -472,7 +475,7 @@ export const paymentSourceExtendedEndpointDelete = adminAuthenticatedEndpointFac
 			data: { deletedAt: new Date() },
 			include: paymentSourceExtendedInclude,
 		});
-		const walletCounts = await getWalletCountsByPaymentSource([paymentSource.id]);
+		const walletCounts = await getWalletCountsByPaymentSource([paymentSource.id], ctx.walletScopeIds);
 		return serializePaymentSourceExtendedEntry(paymentSource, walletCounts.get(paymentSource.id));
 	},
 });

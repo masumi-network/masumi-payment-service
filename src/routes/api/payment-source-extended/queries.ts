@@ -1,6 +1,7 @@
 import { prisma } from '@masumi/payment-core/db';
 import { AuthContext } from '@masumi/payment-core/auth';
 import { HotWalletType } from '@/generated/prisma/client';
+import { buildHotWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { z } from '@masumi/payment-core/zod';
 import { paymentSourceExtendedSchemaInput } from './schemas';
 
@@ -9,9 +10,14 @@ export type WalletCounts = { PurchasingWalletsCount: number; SellingWalletsCount
 /**
  * Active hot-wallet counts per payment source. Hot wallets are no longer
  * embedded in the response, so the UI relies on these aggregates for badges /
- * counts and fetches the wallets themselves lazily via GET /wallet/list.
+ * counts and fetches the wallets themselves lazily via GET /wallet/list. The
+ * same wallet-scope filter as /wallet/list is applied so a scoped key's counts
+ * never exceed the wallets it can actually load.
  */
-export async function getWalletCountsByPaymentSource(paymentSourceIds: string[]): Promise<Map<string, WalletCounts>> {
+export async function getWalletCountsByPaymentSource(
+	paymentSourceIds: string[],
+	walletScopeIds: AuthContext['walletScopeIds'],
+): Promise<Map<string, WalletCounts>> {
 	const counts = new Map<string, WalletCounts>(
 		paymentSourceIds.map((id) => [id, { PurchasingWalletsCount: 0, SellingWalletsCount: 0 }]),
 	);
@@ -21,7 +27,11 @@ export async function getWalletCountsByPaymentSource(paymentSourceIds: string[])
 
 	const grouped = await prisma.hotWallet.groupBy({
 		by: ['paymentSourceId', 'type'],
-		where: { paymentSourceId: { in: paymentSourceIds }, deletedAt: null },
+		where: {
+			paymentSourceId: { in: paymentSourceIds },
+			deletedAt: null,
+			...buildHotWalletScopeFilter(walletScopeIds),
+		},
 		_count: { _all: true },
 	});
 
