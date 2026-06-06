@@ -69,7 +69,7 @@ type DialogKind = 'wallet' | 'chain' | 'budget' | null;
 export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { authorized, setActiveRail, setSelectedX402ChainId } = useAppContext();
+  const { authorized, setActiveRail, setSelectedX402ChainId, setIsSetupMode } = useAppContext();
   const { wallets, isLoading: walletsLoading } = useX402Wallets();
   const { networks, isLoading: networksLoading } = useX402Networks();
   const { budgets, isLoading: budgetsLoading } = useX402Budgets();
@@ -116,6 +116,9 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
       envChains.find((chain) => !!chain.facilitatorWalletId) ?? envChains[0] ?? null;
     if (configured) setSelectedX402ChainId(configured.id);
     setActiveRail('x402');
+    // Clear any persisted Cardano setup mode, otherwise _app's setup-mode guard bounces
+    // /x402 straight back to /setup right after finishing the EVM setup.
+    setIsSetupMode(false);
     invalidate();
     router.push('/x402');
   };

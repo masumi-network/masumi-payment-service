@@ -143,7 +143,10 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
     />
   );
 
-  const hasAnySelectable = hasSources || hasEvmChains;
+  // Also show the trigger when there's nothing selectable yet but x402 still needs setup,
+  // so the "Set up x402 (EVM)" entry inside the dropdown stays reachable for EVM-only
+  // operators with no Cardano source and no chains.
+  const hasAnySelectable = hasSources || hasEvmChains || showSetupCta;
 
   if (collapsed) {
     return (
