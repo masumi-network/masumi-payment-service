@@ -20,6 +20,7 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Badge } from '@/components/ui/badge';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
+import { useAllWallets } from '@/lib/queries/useWallets';
 import { shortenAddress } from '@/lib/utils';
 import {
   getActiveStablecoinConfig,
@@ -95,38 +96,20 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
   const [isLoading, setIsLoading] = useState(false);
   const { apiClient, network } = useAppContext();
   const { paymentSources } = usePaymentSourceExtendedAll();
+  const { wallets: managedWallets } = useAllWallets(open);
   const { networks: evmChainOptions } = useX402Networks({ silentErrors: true });
 
   const allWallets = useMemo(() => {
-    const wallets: Array<{
-      id: string;
-      type: 'Purchasing' | 'Selling';
-      network: string;
-      walletAddress: string;
-      note: string | null;
-    }> = [];
-    for (const ps of paymentSources) {
-      for (const w of ps.PurchasingWallets ?? []) {
-        wallets.push({
-          id: w.id,
-          type: 'Purchasing',
-          network: ps.network,
-          walletAddress: w.walletAddress,
-          note: w.note,
-        });
-      }
-      for (const w of ps.SellingWallets ?? []) {
-        wallets.push({
-          id: w.id,
-          type: 'Selling',
-          network: ps.network,
-          walletAddress: w.walletAddress,
-          note: w.note,
-        });
-      }
-    }
-    return wallets;
-  }, [paymentSources]);
+    // Wallets come from /wallet/list now; join to the source for its network.
+    const networkBySourceId = new Map(paymentSources.map((ps) => [ps.id, ps.network]));
+    return managedWallets.map((wallet) => ({
+      id: wallet.id,
+      type: wallet.type,
+      network: networkBySourceId.get(wallet.paymentSourceId) ?? '',
+      walletAddress: wallet.walletAddress,
+      note: wallet.note,
+    }));
+  }, [managedWallets, paymentSources]);
 
   const {
     register,

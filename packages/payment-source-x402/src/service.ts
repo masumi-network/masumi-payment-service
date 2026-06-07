@@ -540,10 +540,12 @@ export async function createX402ManagedWallet({
 	}
 }
 
-export async function listX402ManagedWallets() {
+export async function listX402ManagedWallets(input?: { take?: number; cursorId?: string }) {
 	return prisma.x402EvmWallet.findMany({
 		where: { deletedAt: null },
 		orderBy: { createdAt: 'desc' },
+		take: input?.take,
+		cursor: input?.cursorId ? { id: input.cursorId } : undefined,
 		select: {
 			id: true,
 			address: true,
@@ -555,7 +557,7 @@ export async function listX402ManagedWallets() {
 }
 
 export async function listX402Networks() {
-	return prisma.x402Network.findMany({
+	const networks = await prisma.x402Network.findMany({
 		orderBy: { caip2Id: 'asc' },
 		select: {
 			id: true,
@@ -566,11 +568,18 @@ export async function listX402Networks() {
 			isEnabled: true,
 			defaultAsset: true,
 			facilitatorWalletId: true,
+			// Denormalize the facilitator address so the UI can label chains
+			// without loading the full managed-wallet set to resolve the id.
+			FacilitatorWallet: { select: { address: true } },
 			createdById: true,
 			createdAt: true,
 			updatedAt: true,
 		},
 	});
+	return networks.map(({ FacilitatorWallet, ...network }) => ({
+		...network,
+		facilitatorWalletAddress: FacilitatorWallet?.address ?? null,
+	}));
 }
 
 export async function upsertX402Network(input: {
@@ -593,7 +602,7 @@ export async function upsertX402Network(input: {
 		await getManagedWalletOrThrow(input.facilitatorWalletId);
 	}
 
-	return prisma.x402Network.upsert({
+	const result = await prisma.x402Network.upsert({
 		where: { caip2Id: input.caip2Id },
 		create: {
 			caip2Id: input.caip2Id,
@@ -623,11 +632,14 @@ export async function upsertX402Network(input: {
 			isEnabled: true,
 			defaultAsset: true,
 			facilitatorWalletId: true,
+			FacilitatorWallet: { select: { address: true } },
 			createdById: true,
 			createdAt: true,
 			updatedAt: true,
 		},
 	});
+	const { FacilitatorWallet, ...network } = result;
+	return { ...network, facilitatorWalletAddress: FacilitatorWallet?.address ?? null };
 }
 
 export async function setX402WalletBudget(input: {
@@ -683,6 +695,7 @@ export async function setX402WalletBudget(input: {
 			id: true,
 			apiKeyId: true,
 			evmWalletId: true,
+			EvmWallet: { select: { address: true } },
 			caip2Network: true,
 			asset: true,
 			remainingAmount: true,
@@ -702,6 +715,7 @@ export async function listX402WalletBudgets(apiKeyId?: string) {
 			id: true,
 			apiKeyId: true,
 			evmWalletId: true,
+			EvmWallet: { select: { address: true } },
 			caip2Network: true,
 			asset: true,
 			remainingAmount: true,

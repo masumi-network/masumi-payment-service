@@ -31,7 +31,7 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { useInboxAgents } from '@/lib/queries/useInboxAgents';
-import { findPaymentSourceWalletByVkey } from '@/lib/wallet-lookup';
+import { lookupWalletByVkey } from '@/lib/wallet-lookup';
 import { cn, handleApiCall, shortenAddress } from '@/lib/utils';
 
 type InboxAgent = RegistryInboxEntry;
@@ -158,11 +158,12 @@ export default function InboxAgentsPage() {
     (router.query.action === 'register_inbox_agent' && !dismissedQueryAction);
 
   const handleWalletClick = useCallback(
-    (walletVkey: string) => {
-      const filteredSources = currentNetworkPaymentSources.filter((source) =>
-        selectedPaymentSourceId ? source.id === selectedPaymentSourceId : true,
-      );
-      const wallet = findPaymentSourceWalletByVkey(filteredSources, walletVkey);
+    async (walletVkey: string) => {
+      const wallet = await lookupWalletByVkey({
+        apiClient,
+        walletVkey,
+        paymentSourceId: selectedPaymentSourceId,
+      });
 
       if (!wallet) {
         toast.error('Wallet not found');
@@ -171,7 +172,7 @@ export default function InboxAgentsPage() {
 
       setSelectedWalletForDetails(wallet);
     },
-    [currentNetworkPaymentSources, selectedPaymentSourceId],
+    [apiClient, selectedPaymentSourceId],
   );
 
   const handleDeleteClick = (agent: InboxAgent) => {

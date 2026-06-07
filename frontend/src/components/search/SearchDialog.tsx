@@ -18,7 +18,7 @@ interface SearchDialogProps {
 
 export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
   const router = useRouter();
-  const { handleSearch } = useSearch();
+  const { handleSearch, isWalletsLoading } = useSearch(open);
   const [searchQuery, setSearchQuery] = useState('');
 
   const [searchResults, setSearchResults] = useState<SearchableItem[]>([]);
@@ -103,8 +103,13 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
                   </CommandItem>
                 ))}
               </CommandGroup>
-            ) : (
+            ) : isWalletsLoading ? null : (
               <CommandEmpty>No results found.</CommandEmpty>
+            )}
+            {/* Wallets paginate in after the dialog opens; tell the user matches
+                may still be loading so an early query doesn't look complete. */}
+            {isWalletsLoading && (
+              <div className="px-3 py-2 text-xs text-muted-foreground">Loading wallets…</div>
             )}
           </CommandList>
         </Command>

@@ -21,8 +21,8 @@ import {
 } from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/WalletDetailsDialog';
-import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
-import { findPaymentSourceWalletByVkey } from '@/lib/wallet-lookup';
+import { useWalletsByVkeys } from '@/lib/queries/useWallets';
+import { toPaymentSourceWalletDetails } from '@/lib/wallet-lookup';
 import { extractApiErrorMessage } from '@/lib/api-error';
 import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
 import { useRegistryEntryByAgentIdentifier } from '@/lib/queries/useRegistryEntryByAgentIdentifier';
@@ -120,34 +120,10 @@ export default function TransactionDetailsDialog({
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
     useState<WalletWithBalance | null>(null);
 
-  const { paymentSources } = usePaymentSourceExtendedAll();
-
-  const currentNetworkPaymentSources = useMemo(
-    () => (paymentSources ?? []).filter((ps) => ps.network === network),
-    [paymentSources, network],
-  );
-
-  const isInternalWallet = useCallback(
-    (walletVkey: string) => {
-      return currentNetworkPaymentSources.some((source) =>
-        [...(source.SellingWallets || []), ...(source.PurchasingWallets || [])].some(
-          (w) => w.walletVkey === walletVkey,
-        ),
-      );
-    },
-    [currentNetworkPaymentSources],
-  );
-
-  const handleWalletClick = useCallback(
-    (walletVkey: string) => {
-      const found = findPaymentSourceWalletByVkey(currentNetworkPaymentSources, walletVkey);
-      if (!found) return;
-      setSelectedWalletForDetails(found);
-    },
-    [currentNetworkPaymentSources],
-  );
-
-  const walletInfo = useMemo(() => {
+  // Wallet parties resolved straight off the transaction (vkeys + any address
+  // the transaction already carries). Addresses missing here are resolved
+  // lazily by vkey via the dedicated endpoint, not by scanning loaded wallets.
+  const rawWalletInfo = useMemo(() => {
     if (!transaction) return null;
 
     const smartContractAddress = transaction.PaymentSource?.smartContractAddress ?? null;
@@ -169,33 +145,41 @@ export default function TransactionDetailsDialog({
       sellerVkey = transaction.SellerWallet?.walletVkey ?? null;
     }
 
-    // Try to resolve addresses for vkey-only wallets from payment sources
-    if (sellerVkey && !sellerAddress) {
-      for (const source of currentNetworkPaymentSources) {
-        const found = [...(source.SellingWallets || []), ...(source.PurchasingWallets || [])].find(
-          (w) => w.walletVkey === sellerVkey,
-        );
-        if (found) {
-          sellerAddress = found.walletAddress;
-          break;
-        }
-      }
-    }
-
-    if (buyerVkey && !buyerAddress) {
-      for (const source of currentNetworkPaymentSources) {
-        const found = [...(source.SellingWallets || []), ...(source.PurchasingWallets || [])].find(
-          (w) => w.walletVkey === buyerVkey,
-        );
-        if (found) {
-          buyerAddress = found.walletAddress;
-          break;
-        }
-      }
-    }
-
     return { smartContractAddress, sellerVkey, sellerAddress, buyerVkey, buyerAddress };
-  }, [transaction, currentNetworkPaymentSources]);
+  }, [transaction]);
+
+  const walletByVkey = useWalletsByVkeys([rawWalletInfo?.sellerVkey, rawWalletInfo?.buyerVkey]);
+
+  const isInternalWallet = useCallback(
+    (walletVkey: string) => walletByVkey.has(walletVkey),
+    [walletByVkey],
+  );
+
+  const handleWalletClick = useCallback(
+    (walletVkey: string) => {
+      const found = walletByVkey.get(walletVkey);
+      if (!found) return;
+      setSelectedWalletForDetails(toPaymentSourceWalletDetails(found));
+    },
+    [walletByVkey],
+  );
+
+  const walletInfo = useMemo(() => {
+    if (!rawWalletInfo) return null;
+
+    const sellerAddress =
+      rawWalletInfo.sellerAddress ??
+      (rawWalletInfo.sellerVkey
+        ? (walletByVkey.get(rawWalletInfo.sellerVkey)?.walletAddress ?? null)
+        : null);
+    const buyerAddress =
+      rawWalletInfo.buyerAddress ??
+      (rawWalletInfo.buyerVkey
+        ? (walletByVkey.get(rawWalletInfo.buyerVkey)?.walletAddress ?? null)
+        : null);
+
+    return { ...rawWalletInfo, sellerAddress, buyerAddress };
+  }, [rawWalletInfo, walletByVkey]);
 
   const agentIdentifier = transaction?.agentIdentifier;
   const agentNetwork = transaction?.PaymentSource?.network;

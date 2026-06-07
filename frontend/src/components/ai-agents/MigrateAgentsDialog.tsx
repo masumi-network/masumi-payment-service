@@ -42,7 +42,7 @@ import {
   type RegistryEntry,
 } from '@/lib/api/generated';
 import { isV2PaymentSource } from '@/lib/payment-source-type';
-import { fetchWalletBalance } from '@/lib/queries/useWallets';
+import { fetchWalletBalance, usePaymentSourceWalletsAll } from '@/lib/queries/useWallets';
 import { cn, handleApiCall, shortenAddress } from '@/lib/utils';
 import { extractApiErrorMessage } from '@/lib/api-error';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
@@ -74,9 +74,12 @@ interface MigrateAgentsDialogProps {
 // silently dropped because no matching managed wallet exists on the V2
 // source. Single source of truth so `buildRegistryBody` and the row warning
 // can't disagree about whether routing is preserved.
+// `v2WalletAddresses` is the set of managed wallet addresses on the V2 source
+// (null when no V2 source exists yet). Wallets are no longer embedded in the
+// payment source, so callers pass the addresses fetched via /wallet/list.
 function resolveV2HoldingAddress(
   agent: RegistryEntry,
-  v2Source: PaymentSourceExtended | undefined,
+  v2WalletAddresses: Set<string> | null,
 ): { v2HoldingAddress: string | undefined; droppedV1HoldingAddress: string | null } {
   const v1HoldingWallet =
     agent.RecipientWallet &&
@@ -86,12 +89,10 @@ function resolveV2HoldingAddress(
   if (!v1HoldingWallet) {
     return { v2HoldingAddress: undefined, droppedV1HoldingAddress: null };
   }
-  if (!v2Source) {
+  if (!v2WalletAddresses) {
     return { v2HoldingAddress: undefined, droppedV1HoldingAddress: v1HoldingWallet.walletAddress };
   }
-  const onV2 = [...(v2Source.SellingWallets ?? []), ...(v2Source.PurchasingWallets ?? [])].some(
-    (w) => w.walletAddress === v1HoldingWallet.walletAddress,
-  );
+  const onV2 = v2WalletAddresses.has(v1HoldingWallet.walletAddress);
   return onV2
     ? { v2HoldingAddress: v1HoldingWallet.walletAddress, droppedV1HoldingAddress: null }
     : { v2HoldingAddress: undefined, droppedV1HoldingAddress: v1HoldingWallet.walletAddress };
@@ -181,7 +182,23 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
     [v1Sources, selectedV1SourceId],
   );
 
-  const v2SellingWallets = useMemo(() => v2Source?.SellingWallets ?? [], [v2Source]);
+  // V2 target wallets come from the dedicated /wallet/list endpoint (scoped to
+  // the V2 source), not from the payment-source response.
+  const { wallets: v2Wallets, isLoading: isLoadingV2Wallets } = usePaymentSourceWalletsAll(
+    v2Source?.id ?? null,
+    open && !!v2Source,
+  );
+  // True once the V2 wallet set is known. Until then we must not infer that a
+  // V1 payout address is "missing on V2" — the set is just not loaded yet.
+  const v2WalletsReady = !v2Source || !isLoadingV2Wallets;
+  const v2SellingWallets = useMemo(
+    () => v2Wallets.filter((wallet) => wallet.type === 'Selling'),
+    [v2Wallets],
+  );
+  const v2WalletAddresses = useMemo(
+    () => (v2Source ? new Set(v2Wallets.map((wallet) => wallet.walletAddress)) : null),
+    [v2Source, v2Wallets],
+  );
   const [selectedV2WalletVkey, setSelectedV2WalletVkey] = useState<string>('');
   useEffect(() => {
     if (!open) return;
@@ -214,12 +231,15 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
   // the selected-count summary share one computation.
   const droppedHoldingByAgentId = useMemo(() => {
     const map = new Map<string, string>();
+    // Don't flag reroutes until the V2 wallet set has loaded, otherwise every
+    // custom payout looks "missing on V2" during the fetch.
+    if (!v2WalletsReady) return map;
     for (const a of v1Agents) {
-      const { droppedV1HoldingAddress } = resolveV2HoldingAddress(a, v2Source);
+      const { droppedV1HoldingAddress } = resolveV2HoldingAddress(a, v2WalletAddresses);
       if (droppedV1HoldingAddress) map.set(a.id, droppedV1HoldingAddress);
     }
     return map;
-  }, [v1Agents, v2Source]);
+  }, [v1Agents, v2WalletAddresses, v2WalletsReady]);
 
   const [selectedAgentIds, setSelectedAgentIds] = useState<Set<string>>(new Set());
   useEffect(() => {
@@ -406,7 +426,7 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
     // would reject the unknown address. The dropped case is also surfaced
     // per-row in the UI so the user can opt out before migrating instead of
     // silently inheriting the V2 selling wallet as their payout target.
-    const { v2HoldingAddress } = resolveV2HoldingAddress(agent, v2Source);
+    const { v2HoldingAddress } = resolveV2HoldingAddress(agent, v2WalletAddresses);
 
     return {
       network,

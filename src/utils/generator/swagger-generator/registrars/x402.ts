@@ -13,6 +13,7 @@ import {
 	listPaymentAttemptsSchemaOutput,
 	listSettlementsSchemaInput,
 	listSettlementsSchemaOutput,
+	listWalletsSchemaInput,
 	listWalletsSchemaOutput,
 	setBudgetSchemaInput,
 	settleSchemaOutput,
@@ -34,6 +35,7 @@ import {
 	listX402PaymentAttemptsResponseExample,
 	listX402SettlementsQueryExample,
 	listX402SettlementsResponseExample,
+	listX402WalletsQueryExample,
 	listX402WalletsResponseExample,
 	setX402BudgetBodyExample,
 	settleX402ResponseExample,
@@ -86,6 +88,9 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 		summary: 'List managed x402 EVM wallets. (admin access required)',
 		tags: ['x402'],
 		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			query: listWalletsSchemaInput.openapi({ example: listX402WalletsQueryExample }),
+		},
 		responses: {
 			200: successResponse('Managed x402 EVM wallets', listWalletsSchemaOutput, listX402WalletsResponseExample),
 		},
