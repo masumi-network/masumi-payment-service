@@ -37,7 +37,7 @@ import { parseAmountSearchRange } from '@/lib/parseAmountSearchRange';
 import { extractApiErrorMessage } from '@/lib/api-error';
 import { useRegistryEntryByAgentIdentifier } from '@/lib/queries/useRegistryEntryByAgentIdentifier';
 import { useAgentDetailsDialog } from '@/lib/contexts/AgentDetailsDialogContext';
-import { findPaymentSourceWalletByVkey } from '@/lib/wallet-lookup';
+import { lookupWalletByVkey } from '@/lib/wallet-lookup';
 import { isV2PaymentSource } from '@/lib/payment-source-type';
 import { MigrateAgentsDialog } from '@/components/ai-agents/MigrateAgentsDialog';
 type AIAgent = RegistryEntry;
@@ -365,10 +365,11 @@ export default function AIAgentsPage() {
 
   const handleWalletClick = useCallback(
     async (walletVkey: string) => {
-      const filteredSources = currentNetworkPaymentSources.filter((source) =>
-        selectedPaymentSourceId ? source.id === selectedPaymentSourceId : true,
-      );
-      const foundWallet = findPaymentSourceWalletByVkey(filteredSources, walletVkey);
+      const foundWallet = await lookupWalletByVkey({
+        apiClient,
+        walletVkey,
+        paymentSourceId: selectedPaymentSourceId,
+      });
 
       if (!foundWallet) {
         toast.error('Wallet not found');
@@ -377,7 +378,7 @@ export default function AIAgentsPage() {
 
       setSelectedWalletForDetails(foundWallet);
     },
-    [currentNetworkPaymentSources, selectedPaymentSourceId],
+    [apiClient, selectedPaymentSourceId],
   );
 
   return (

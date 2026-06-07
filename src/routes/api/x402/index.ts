@@ -33,6 +33,7 @@ import {
 	listPaymentAttemptsSchemaOutput,
 	listSettlementsSchemaInput,
 	listSettlementsSchemaOutput,
+	listWalletsSchemaInput,
 	listWalletsSchemaOutput,
 	setBudgetSchemaInput,
 	settleSchemaOutput,
@@ -46,6 +47,7 @@ function serializeBudget(budget: {
 	id: string;
 	apiKeyId: string;
 	evmWalletId: string;
+	EvmWallet: { address: string };
 	caip2Network: string;
 	asset: string;
 	remainingAmount: bigint;
@@ -54,8 +56,10 @@ function serializeBudget(budget: {
 	createdAt: Date;
 	updatedAt: Date;
 }) {
+	const { EvmWallet, ...rest } = budget;
 	return {
-		...budget,
+		...rest,
+		evmWalletAddress: EvmWallet.address,
 		remainingAmount: budget.remainingAmount.toString(),
 		spentAmount: budget.spentAmount.toString(),
 	};
@@ -122,10 +126,10 @@ export const createX402PaymentPost = payAuthenticatedEndpointFactory.build({
 
 export const listX402WalletsGet = adminAuthenticatedEndpointFactory.build({
 	method: 'get',
-	input: z.object({}),
+	input: listWalletsSchemaInput,
 	output: listWalletsSchemaOutput,
-	handler: async () => ({
-		Wallets: await listX402ManagedWallets(),
+	handler: async ({ input }: { input: z.infer<typeof listWalletsSchemaInput> }) => ({
+		Wallets: await listX402ManagedWallets({ take: input.take, cursorId: input.cursorId }),
 	}),
 });
 

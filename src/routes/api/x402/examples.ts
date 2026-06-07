@@ -38,6 +38,7 @@ export const x402NetworkExample = {
 	isEnabled: true,
 	defaultAsset: exampleUsdcAsset,
 	facilitatorWalletId: x402WalletExample.id,
+	facilitatorWalletAddress: x402WalletExample.address,
 	createdById: 'api_key_id',
 	createdAt: exampleDate,
 	updatedAt: exampleDate,
@@ -47,6 +48,7 @@ export const x402BudgetExample = {
 	id: 'clx402budget0001',
 	apiKeyId: 'api_key_id',
 	evmWalletId: x402WalletExample.id,
+	evmWalletAddress: x402WalletExample.address,
 	caip2Network: 'eip155:8453',
 	asset: exampleUsdcAsset,
 	remainingAmount: '1000000',
@@ -96,6 +98,11 @@ export const x402SettlementExample = {
 	amount: '1000000',
 	payer: examplePayer,
 } satisfies z.infer<typeof x402SettlementSchema>;
+
+export const listX402WalletsQueryExample = {
+	take: 20,
+	cursorId: 'clmanagedwallet0001',
+};
 
 export const listX402WalletsResponseExample = {
 	Wallets: [x402WalletExample],

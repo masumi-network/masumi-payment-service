@@ -6,8 +6,10 @@ import { useState } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { Badge } from '@/components/ui/badge';
 import { CopyButton } from '@/components/ui/copy-button';
+import { Spinner } from '@/components/ui/spinner';
 import { WalletLink } from '@/components/ui/wallet-link';
 import type { PaymentSourceExtended } from '@/lib/api/generated';
+import { usePaymentSourceWalletList } from '@/lib/queries/useWallets';
 import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
 import { getPaymentSourceTypeLabel, isV2PaymentSource } from '@/lib/payment-source-type';
 
@@ -26,6 +28,19 @@ export function PaymentSourceDialog({ open, onClose, paymentSource }: PaymentSou
     purchasing: false,
     selling: false,
     fee: false,
+  });
+
+  // Hot wallets are fetched lazily (and paginated) per section via the
+  // dedicated /wallet/list endpoint rather than embedded in the payment source.
+  const purchasingWallets = usePaymentSourceWalletList({
+    paymentSourceId: paymentSource?.id ?? null,
+    walletType: 'Purchasing',
+    enabled: open && expandedSections.purchasing,
+  });
+  const sellingWallets = usePaymentSourceWalletList({
+    paymentSourceId: paymentSource?.id ?? null,
+    walletType: 'Selling',
+    enabled: open && expandedSections.selling,
   });
 
   const toggleSection = (section: string) => {
@@ -152,7 +167,7 @@ export function PaymentSourceDialog({ open, onClose, paymentSource }: PaymentSou
               className="flex items-center justify-between w-full p-3 bg-muted rounded-md hover:bg-muted/80 transition-colors"
             >
               <h4 className="font-medium">
-                Purchasing Wallets ({paymentSource.PurchasingWallets?.length || 0})
+                Purchasing Wallets ({paymentSource.PurchasingWalletsCount})
               </h4>
               {expandedSections.purchasing ? (
                 <ChevronDown className="h-4 w-4" />
@@ -162,8 +177,8 @@ export function PaymentSourceDialog({ open, onClose, paymentSource }: PaymentSou
             </button>
             {expandedSections.purchasing && (
               <div className="space-y-3 pl-4">
-                {paymentSource.PurchasingWallets?.map((wallet, index) => (
-                  <div key={index} className="p-3 border rounded-md space-y-2">
+                {purchasingWallets.wallets.map((wallet, index) => (
+                  <div key={wallet.id} className="p-3 border rounded-md space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium">Purchasing Wallet {index + 1}</span>
                       {wallet.note && (
@@ -197,9 +212,26 @@ export function PaymentSourceDialog({ open, onClose, paymentSource }: PaymentSou
                     </div>
                   </div>
                 ))}
-                {(!paymentSource.PurchasingWallets ||
-                  paymentSource.PurchasingWallets.length === 0) && (
-                  <div className="text-sm text-muted-foreground">No purchasing wallets found</div>
+                {purchasingWallets.isLoading ? (
+                  <div className="flex justify-center py-3">
+                    <Spinner size={16} />
+                  </div>
+                ) : (
+                  purchasingWallets.wallets.length === 0 && (
+                    <div className="text-sm text-muted-foreground">No purchasing wallets found</div>
+                  )
+                )}
+                {purchasingWallets.hasMore && (
+                  <div className="flex justify-center">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={purchasingWallets.loadMore}
+                      disabled={purchasingWallets.isFetchingNextPage}
+                    >
+                      {purchasingWallets.isFetchingNextPage ? 'Loading…' : 'Load more'}
+                    </Button>
+                  </div>
                 )}
               </div>
             )}
@@ -211,9 +243,7 @@ export function PaymentSourceDialog({ open, onClose, paymentSource }: PaymentSou
               onClick={() => toggleSection('selling')}
               className="flex items-center justify-between w-full p-3 bg-muted rounded-md hover:bg-muted/80 transition-colors"
             >
-              <h4 className="font-medium">
-                Selling Wallets ({paymentSource.SellingWallets?.length || 0})
-              </h4>
+              <h4 className="font-medium">Selling Wallets ({paymentSource.SellingWalletsCount})</h4>
               {expandedSections.selling ? (
                 <ChevronDown className="h-4 w-4" />
               ) : (
@@ -222,8 +252,8 @@ export function PaymentSourceDialog({ open, onClose, paymentSource }: PaymentSou
             </button>
             {expandedSections.selling && (
               <div className="space-y-3 pl-4">
-                {paymentSource.SellingWallets?.map((wallet, index) => (
-                  <div key={index} className="p-3 border rounded-md space-y-2">
+                {sellingWallets.wallets.map((wallet, index) => (
+                  <div key={wallet.id} className="p-3 border rounded-md space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium">Selling Wallet {index + 1}</span>
                       {wallet.note && (
@@ -257,8 +287,26 @@ export function PaymentSourceDialog({ open, onClose, paymentSource }: PaymentSou
                     </div>
                   </div>
                 ))}
-                {(!paymentSource.SellingWallets || paymentSource.SellingWallets.length === 0) && (
-                  <div className="text-sm text-muted-foreground">No selling wallets found</div>
+                {sellingWallets.isLoading ? (
+                  <div className="flex justify-center py-3">
+                    <Spinner size={16} />
+                  </div>
+                ) : (
+                  sellingWallets.wallets.length === 0 && (
+                    <div className="text-sm text-muted-foreground">No selling wallets found</div>
+                  )
+                )}
+                {sellingWallets.hasMore && (
+                  <div className="flex justify-center">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={sellingWallets.loadMore}
+                      disabled={sellingWallets.isFetchingNextPage}
+                    >
+                      {sellingWallets.isFetchingNextPage ? 'Loading…' : 'Load more'}
+                    </Button>
+                  </div>
                 )}
               </div>
             )}

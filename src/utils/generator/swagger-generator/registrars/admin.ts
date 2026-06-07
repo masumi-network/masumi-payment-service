@@ -16,6 +16,8 @@ import {
 	postWalletSchemaOutput,
 	getWalletSchemaInput,
 	getWalletSchemaOutput,
+	getWalletListSchemaInput,
+	getWalletListSchemaOutput,
 	patchWalletSchemaInput,
 	patchWalletSchemaOutput,
 } from '@/routes/api/wallet/schemas';
@@ -59,6 +61,8 @@ import {
 	createWalletResponseExample,
 	deleteWalletLowBalanceRuleBodyExample,
 	getWalletQueryExample,
+	listWalletsQueryExample,
+	listWalletsResponseExample,
 	getWalletLowBalanceRulesQueryExample,
 	updateWalletLowBalanceRuleBodyExample,
 	updateWalletBodyExample,
@@ -129,6 +133,21 @@ export function registerAdminPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 					},
 				},
 			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'get',
+		path: '/wallet/list',
+		description: 'Lists hot wallets across payment sources with cursor-based pagination',
+		summary: 'List hot wallets, optionally filtered by payment source and type. (admin access required)',
+		tags: ['wallet'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			query: getWalletListSchemaInput.openapi({ example: listWalletsQueryExample }),
+		},
+		responses: {
+			200: successResponse('Paginated list of hot wallets', getWalletListSchemaOutput, listWalletsResponseExample),
 		},
 	});
 

@@ -469,10 +469,10 @@ export default function PaymentSourcesPage() {
                         <td className="p-4">
                           <div className="text-xs text-muted-foreground">
                             <span className="block truncate">
-                              {source.PurchasingWallets.length} Buying,
+                              {source.PurchasingWalletsCount} Buying,
                             </span>
                             <span className="block truncate">
-                              {source.SellingWallets.length} Selling
+                              {source.SellingWalletsCount} Selling
                             </span>
                           </div>
                         </td>

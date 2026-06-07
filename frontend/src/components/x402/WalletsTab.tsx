@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/dialog';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { useX402Wallets } from '@/lib/hooks/useX402';
+import { useX402WalletsPaginated } from '@/lib/hooks/useX402';
 import { handleApiCall, shortenAddress } from '@/lib/utils';
 import { postX402Wallets, postX402WalletsDelete } from '@/lib/api/generated';
 
@@ -26,7 +26,8 @@ const PRIVATE_KEY_REGEX = /^0x[a-fA-F0-9]{64}$/;
 export function WalletsTab() {
   const { apiClient } = useAppContext();
   const queryClient = useQueryClient();
-  const { wallets, isLoading, isRefetching, refetch } = useX402Wallets();
+  const { wallets, isLoading, isRefetching, refetch, hasMore, isFetchingNextPage, loadMore } =
+    useX402WalletsPaginated();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [retiringId, setRetiringId] = useState<string | null>(null);
 
@@ -130,6 +131,14 @@ export function WalletsTab() {
           </tbody>
         </table>
       </div>
+
+      {hasMore && (
+        <div className="flex justify-center">
+          <Button variant="outline" onClick={loadMore} disabled={isFetchingNextPage}>
+            {isFetchingNextPage ? 'Loading…' : 'Load more'}
+          </Button>
+        </div>
+      )}
 
       <CreateWalletDialog
         key={dialogOpen ? 'open' : 'closed'}

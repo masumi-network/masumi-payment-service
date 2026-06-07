@@ -23,61 +23,11 @@ export const paymentSourceExtendedExample = {
 		{ walletAddress: 'wallet_address', order: 1 },
 		{ walletAddress: 'wallet_address', order: 2 },
 	],
-	PurchasingWallets: [
-		{
-			collectionAddress: null,
-			note: 'note',
-			walletVkey: 'wallet_vkey',
-			walletAddress: 'wallet_address',
-			id: 'unique_cuid_v2_auto_generated',
-			LowBalanceSummary: {
-				isLow: false,
-				lowRuleCount: 0,
-				lastCheckedAt: new Date(1713636260),
-			},
-		},
-		{
-			collectionAddress: 'send_refunds_to_this_address',
-			note: 'note',
-			walletVkey: 'wallet_vkey',
-			walletAddress: 'wallet_address',
-			id: 'unique_cuid_v2_auto_generated',
-			LowBalanceSummary: {
-				isLow: true,
-				lowRuleCount: 1,
-				lastCheckedAt: new Date(1713636260),
-			},
-		},
-	],
-	SellingWallets: [
-		{
-			collectionAddress: 'null_will_use_the_selling_wallet_as_revenue_address',
-			note: 'note',
-			walletVkey: 'wallet_vkey',
-			walletAddress: 'wallet_address',
-			id: 'unique_cuid_v2_auto_generated',
-			LowBalanceSummary: {
-				isLow: false,
-				lowRuleCount: 0,
-				lastCheckedAt: new Date(1713636260),
-			},
-		},
-		{
-			collectionAddress: 'send_revenue_to_this_address',
-			note: 'note',
-			walletVkey: 'wallet_vkey',
-			walletAddress: 'wallet_address',
-			id: 'unique_cuid_v2_auto_generated',
-			LowBalanceSummary: {
-				isLow: false,
-				lowRuleCount: 0,
-				lastCheckedAt: new Date(1713636260),
-			},
-		},
-	],
 	FeeReceiverNetworkWallet: {
 		walletAddress: 'wallet_address',
 	},
+	PurchasingWalletsCount: 1,
+	SellingWalletsCount: 1,
 	feeRatePermille: 50,
 } satisfies z.infer<typeof paymentSourceExtendedCreateSchemaOutput>;
 
@@ -104,6 +54,8 @@ export const listPaymentSourceExtendedResponseExample = {
 				{ walletAddress: 'wallet_address', order: 1 },
 				{ walletAddress: 'wallet_address', order: 2 },
 			],
+			PurchasingWalletsCount: 1,
+			SellingWalletsCount: 1,
 			FeeReceiverNetworkWallet: {
 				walletAddress: 'wallet_address',
 			},
@@ -113,58 +65,6 @@ export const listPaymentSourceExtendedResponseExample = {
 				rpcProviderApiKey: 'rpc_provider_api_key_blockfrost',
 				rpcProvider: RPCProvider.Blockfrost,
 			},
-			PurchasingWallets: [
-				{
-					collectionAddress: null,
-					note: 'note',
-					walletVkey: 'wallet_vkey',
-					walletAddress: 'wallet_address',
-					id: 'unique_cuid_v2_auto_generated',
-					LowBalanceSummary: {
-						isLow: false,
-						lowRuleCount: 0,
-						lastCheckedAt: new Date(1713636260),
-					},
-				},
-				{
-					collectionAddress: 'send_refunds_to_this_address',
-					note: 'note',
-					walletVkey: 'wallet_vkey',
-					walletAddress: 'wallet_address',
-					id: 'unique_cuid_v2_auto_generated',
-					LowBalanceSummary: {
-						isLow: true,
-						lowRuleCount: 1,
-						lastCheckedAt: new Date(1713636260),
-					},
-				},
-			],
-			SellingWallets: [
-				{
-					collectionAddress: 'null_will_use_selling_wallet_as_revenue_address',
-					note: 'note',
-					walletVkey: 'wallet_vkey',
-					walletAddress: 'wallet_address',
-					id: 'unique_cuid_v2_auto_generated',
-					LowBalanceSummary: {
-						isLow: false,
-						lowRuleCount: 0,
-						lastCheckedAt: new Date(1713636260),
-					},
-				},
-				{
-					collectionAddress: 'send_revenue_to_this_address',
-					note: 'note',
-					walletVkey: 'wallet_vkey',
-					walletAddress: 'wallet_address',
-					id: 'unique_cuid_v2_auto_generated',
-					LowBalanceSummary: {
-						isLow: false,
-						lowRuleCount: 0,
-						lastCheckedAt: new Date(1713636260),
-					},
-				},
-			],
 		},
 	],
 };
