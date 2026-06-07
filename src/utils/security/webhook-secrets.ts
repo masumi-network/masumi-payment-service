@@ -1,6 +1,6 @@
 import { generateSHA256Hash } from '@/utils/crypto';
 import { decrypt, encrypt } from '@/utils/security/encryption';
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 
 export function generateWebhookUrlHash(url: string): string {
 	return generateSHA256Hash(url);

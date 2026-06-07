@@ -1,12 +1,12 @@
-import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
-import { z } from '@/utils/zod-openapi';
+import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { z } from '@masumi/payment-core/zod';
 import { Network, RegistrationState } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
-import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contract-generator';
-import { DEFAULTS } from '@/utils/config';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { getRegistryScriptFromNetworkHandler } from '@/utils/generator/contract-generator';
+import { DEFAULTS } from '@masumi/payment-core/config';
+import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { registryInboxRequestOutputSchema } from '@/routes/api/registry-inbox';
 import { extractAssetName } from '@/utils/converter/agent-identifier';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
@@ -61,7 +61,7 @@ export const unregisterInboxAgentPost = payAuthenticatedEndpointFactory.build({
 		}
 
 		const blockfrost = getBlockfrostInstance(input.network, paymentSource.PaymentSourceConfig.rpcProviderApiKey);
-		const { policyId } = await getRegistryScriptFromNetworkHandlerV1(paymentSource);
+		const { policyId } = await getRegistryScriptFromNetworkHandler(paymentSource);
 		const assetName = extractAssetName(input.agentIdentifier);
 		const holderWallet = await blockfrost.assetsAddresses(policyId + assetName, {
 			order: 'desc',
@@ -84,6 +84,9 @@ export const unregisterInboxAgentPost = payAuthenticatedEndpointFactory.build({
 		});
 		if (registrationRequest == null) {
 			throw createHttpError(404, 'Registration not found');
+		}
+		if (!ctx.canAdmin && (registrationRequest.requestedById == null || registrationRequest.requestedById !== ctx.id)) {
+			throw createHttpError(403, 'You are not authorized to deregister this inbox agent');
 		}
 
 		const result = await prisma.inboxAgentRegistrationRequest.update({

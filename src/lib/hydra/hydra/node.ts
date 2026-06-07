@@ -71,7 +71,7 @@ export class HydraNode extends EventEmitter {
 			const message = JSON.parse(rawMessage);
 			if (message.tag === 'SnapshotConfirmed') {
 				const parsedMessage = snapshotConfirmedMessageSchema.parse(message);
-				parsedMessage.snapshot.confirmed.forEach((tx) => {
+				parsedMessage.snapshot.confirmed.forEach((tx: { txId: string }) => {
 					this._txCircularBuffer.add(tx.txId);
 					this.emit(HydraNodeEvent.TxConfirmed, tx.txId);
 				});

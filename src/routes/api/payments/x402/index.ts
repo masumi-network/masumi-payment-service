@@ -1,15 +1,21 @@
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
 import { PaymentAction } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
-import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { BlockfrostProvider } from '@meshsdk/core';
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
-import { CONSTANTS } from '@/utils/config';
-import { buildX402FundsLockingTransaction } from '@/services/purchases/x402-build/service';
+import { createMeshProvider } from '@/services/shared';
+import { CONSTANTS } from '@masumi/payment-core/config';
+import { buildX402FundsLockingTransaction as buildX402FundsLockingTransactionV1 } from '@masumi/payment-source-v1/services/purchases/x402-build/service';
+import { buildX402FundsLockingTransactionV2 } from '@masumi/payment-source-v2/services/purchases/x402-build/service';
+import { PaymentSourceType } from '@/generated/prisma/client';
+import { assertNever } from '@/utils/assert-never';
+import { createAuthenticatedRateLimitMiddleware } from '@/utils/middleware/rate-limit';
 import { buildX402TxSchemaInput, buildX402TxSchemaOutput } from './schemas';
+import { isCardanoPubKeyBaseAddressForNetwork } from '@/types/payment-source';
 
 export { buildX402TxSchemaInput, buildX402TxSchemaOutput };
 
@@ -26,7 +32,22 @@ async function getCoinsPerUtxoSize(blockchainProvider: BlockfrostProvider): Prom
 	return coinsPerUtxoSize;
 }
 
-export const buildX402TxPost = readAuthenticatedEndpointFactory.build({
+// Intentional read-tier auth on a POST verb: this endpoint builds an
+// unsigned transaction for the caller to sign — it reads payment-source
+// metadata, queries Blockfrost, and returns CBOR. No DB writes, no
+// state-changing on-chain submit. POST is used because the input is a
+// structured payload that doesn't fit comfortably in a query string, not
+// because the operation mutates server state. Keeping this on
+// `readAuthenticatedEndpointFactory` ensures the action stays available to
+// read-only API keys, which matches the build/preview semantics.
+const x402BuildEndpointFactory = readAuthenticatedEndpointFactory.addMiddleware(
+	createAuthenticatedRateLimitMiddleware({
+		maxRequests: 30,
+		windowMs: 60_000,
+	}),
+);
+
+export const buildX402TxPost = x402BuildEndpointFactory.build({
 	method: 'post',
 	input: buildX402TxSchemaInput,
 	output: buildX402TxSchemaOutput,
@@ -59,26 +80,89 @@ export const buildX402TxPost = readAuthenticatedEndpointFactory.build({
 			throw createHttpError(400, 'Payment has expired');
 		}
 
-		const blockchainProvider = new BlockfrostProvider(payment.PaymentSource.PaymentSourceConfig.rpcProviderApiKey);
+		// V2 contract trap: `address_to_verification_key(buyer)` returns None
+		// for script-credential addresses, and every redeemer branch that
+		// touches the buyer principal does `expect Some(...)`. Funds locked
+		// with a script-credential buyer address are permanently unspendable
+		// — no `Withdraw`, no `WithdrawRefund`, no `WithdrawDisputed`. Reject
+		// at the API boundary before broadcasting the lock tx. (The same
+		// restriction is enforced in V1 for symmetry; V1's principal-vkey
+		// dereference is structurally similar.)
+		if (!isCardanoPubKeyBaseAddressForNetwork(input.buyerAddress, input.network)) {
+			throw createHttpError(
+				400,
+				'buyerAddress must be a Cardano base address with a verification-key payment credential. Script-credential addresses (smart wallets, multisig wrappers) cannot interact with the escrow contract; locked funds would be permanently unspendable.',
+			);
+		}
+
+		// Re-validate the STORED sellerReturnAddress before it flows into the
+		// V2 funds-locking tx. The create-payment handler (payments/index.ts)
+		// only enforces pubkey-base for rows it creates; `payment.sellerReturnAddress`
+		// here is read back from the DB and may predate that check (legacy row),
+		// have been written by another path, or — the original bug — have passed
+		// the looser create-time schema refine (isCardanoAddressForNetwork, which
+		// accepts enterprise/script addresses) and been returned via the
+		// idempotency-replay branch without re-validation. The V2 contract can
+		// only pay out to a pubkey base address; locking against an
+		// enterprise/script address strands the funds at an address the contract
+		// cannot resolve. Fail closed (V2 only — V1 has no such datum requirement).
+		const isV2Payment = payment.PaymentSource.paymentSourceType === PaymentSourceType.Web3CardanoV2;
+		if (
+			isV2Payment &&
+			payment.sellerReturnAddress != null &&
+			!isCardanoPubKeyBaseAddressForNetwork(payment.sellerReturnAddress, input.network)
+		) {
+			throw createHttpError(
+				409,
+				'Stored sellerReturnAddress is not a Cardano base address with a stake credential; this payment cannot be locked on the V2 contract. Recreate the payment with a valid base address.',
+			);
+		}
+
+		const blockchainProvider = await createMeshProvider(payment.PaymentSource.PaymentSourceConfig.rpcProviderApiKey);
 		const coinsPerUtxoSize = await getCoinsPerUtxoSize(blockchainProvider);
 
-		const result = await buildX402FundsLockingTransaction({
-			purchaseRequestData: {
-				blockchainIdentifier: payment.blockchainIdentifier,
-				inputHash: payment.inputHash,
-				payByTime: BigInt(payment.payByTime),
-				submitResultTime: BigInt(payment.submitResultTime),
-				unlockTime: BigInt(payment.unlockTime),
-				externalDisputeUnlockTime: BigInt(payment.externalDisputeUnlockTime),
-				sellerAddress: payment.SmartContractWallet.walletAddress,
-				paidFunds: payment.RequestedFunds.map((f) => ({ unit: f.unit, amount: f.amount })),
-			},
+		// Exhaustive switch (assertNever default) so a new PaymentSourceType is a
+		// type error, not a silent V1 fallback (ADR-0004 dispatch discipline).
+		const sourceType = payment.PaymentSource.paymentSourceType;
+		const purchaseRequestDataBase = {
+			blockchainIdentifier: payment.blockchainIdentifier,
+			inputHash: payment.inputHash,
+			payByTime: BigInt(payment.payByTime),
+			submitResultTime: BigInt(payment.submitResultTime),
+			unlockTime: BigInt(payment.unlockTime),
+			externalDisputeUnlockTime: BigInt(payment.externalDisputeUnlockTime),
+			sellerAddress: payment.SmartContractWallet.walletAddress,
+			sellerReturnAddress: payment.sellerReturnAddress,
+			buyerReturnAddress: payment.buyerReturnAddress,
+			paidFunds: payment.RequestedFunds.map((f) => ({ unit: f.unit, amount: f.amount })),
+		};
+		const sharedBuildArgs = {
 			buyerAddress: input.buyerAddress,
 			blockchainProvider,
 			network: input.network,
 			scriptAddress: payment.PaymentSource.smartContractAddress,
 			coinsPerUtxoSize,
-		});
+		};
+		let result;
+		switch (sourceType) {
+			case PaymentSourceType.Web3CardanoV2:
+				result = await buildX402FundsLockingTransactionV2({
+					purchaseRequestData: purchaseRequestDataBase,
+					...sharedBuildArgs,
+				});
+				break;
+			case PaymentSourceType.Web3CardanoV1:
+				result = await buildX402FundsLockingTransactionV1({
+					purchaseRequestData: {
+						...purchaseRequestDataBase,
+						paymentSourceType: sourceType,
+					},
+					...sharedBuildArgs,
+				});
+				break;
+			default:
+				assertNever(sourceType);
+		}
 
 		return {
 			unsignedTxCbor: result.unsignedTxCbor,

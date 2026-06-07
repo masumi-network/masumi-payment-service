@@ -1,6 +1,6 @@
-import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
-import { z } from '@/utils/zod-openapi';
-import { prisma } from '@/utils/db';
+import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { z } from '@masumi/payment-core/zod';
+import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { HydraHeadStatus } from '@/generated/prisma/client';
 import { encrypt } from '@/utils/security/encryption';

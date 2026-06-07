@@ -1,4 +1,4 @@
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 import {
 	type Network,
 	type HydraHead,

@@ -1,10 +1,10 @@
-import { prisma } from '@/utils/db';
-import { logger } from '@/utils/logger';
+import { prisma } from '@masumi/payment-core/db';
+import { logger } from '@masumi/payment-core/logger';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { TransactionStatus, OnChainState, PaymentAction, PurchasingAction, Prisma } from '@/generated/prisma/client';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { convertNewPaymentActionAndError, convertNewPurchasingActionAndError } from '@/utils/logic/state-transitions';
-import { CONSTANTS } from '@/utils/config';
+import { CONSTANTS } from '@masumi/payment-core/config';
 import { deriveExpectedOnChainState } from './derive-state';
 
 const mutex = new Mutex();
@@ -70,12 +70,16 @@ export async function checkHydraTransactions() {
 
 				logger.info(`[HydraTxHandler] L2 transaction ${tx.txHash} confirmed in head ${tx.hydraHeadId}`);
 
-				if (tx.PaymentRequestCurrent) {
-					await confirmPaymentTransaction(tx, tx.PaymentRequestCurrent);
+				// V2 batch made these relations one-to-many; an L2 (Hydra) tx maps to a
+				// single request, so resolve the first (and only) entry.
+				const paymentRequest = tx.PaymentRequestCurrent[0];
+				if (paymentRequest) {
+					await confirmPaymentTransaction(tx, paymentRequest);
 				}
 
-				if (tx.PurchaseRequestCurrent) {
-					await confirmPurchaseTransaction(tx, tx.PurchaseRequestCurrent);
+				const purchaseRequest = tx.PurchaseRequestCurrent[0];
+				if (purchaseRequest) {
+					await confirmPurchaseTransaction(tx, purchaseRequest);
 				}
 			} catch (error) {
 				logger.error(`[HydraTxHandler] Error processing L2 tx ${tx.id}`, { error });

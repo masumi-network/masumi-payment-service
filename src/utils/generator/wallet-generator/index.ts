@@ -1,8 +1,9 @@
 import { convertNetworkToId } from '@/utils/converter/network-convert';
-import { BlockfrostProvider, MeshWallet, resolvePaymentKeyHash } from '@meshsdk/core';
+import { MeshWallet, resolvePaymentKeyHash } from '@meshsdk/core';
 import { Network } from '@/generated/prisma/client';
 import { decrypt } from '@/utils/security/encryption';
 import { HydraProvider } from '@/lib/hydra';
+import { getCachedBlockfrostProvider } from '@/utils/mesh-cost-model-sync';
 
 export function generateOfflineWallet(network: Network, mnemonic: string[]) {
 	const networkId = convertNetworkToId(network);
@@ -22,7 +23,7 @@ export async function generateWalletExtended(
 	hydraProvider?: HydraProvider,
 ) {
 	const networkId = convertNetworkToId(network);
-	const blockchainProvider = hydraProvider ?? new BlockfrostProvider(rpcProviderApiKey);
+	const blockchainProvider = hydraProvider ?? getCachedBlockfrostProvider(rpcProviderApiKey);
 	const mnemonic = decrypt(encryptedSecret).split(' ');
 	const wallet = new MeshWallet({
 		networkId: networkId,

@@ -12,10 +12,11 @@ import {
 import { resolvePlutusScriptAddress } from '@meshsdk/core-cst';
 import { convertNetworkToId } from '@/utils/converter/network-convert';
 import { Network as PrismaNetwork } from '@/generated/prisma/client';
-import { logger } from '@/utils/logger';
+import { logger } from '@masumi/payment-core/logger';
 import { calculateMinUtxo, getLovelaceFromAmounts, getNativeTokenCount, calculateTopUpAmount } from '@/utils/min-utxo';
-import { CONSTANTS } from '@/utils/config';
+import { CONSTANTS } from '@masumi/payment-core/config';
 import { HydraContext } from '@/utils/hydra';
+import { getCachedChainProtocolParameters, syncMeshCostModelsFromChain } from '@/utils/mesh-cost-model-sync';
 
 function convertMeshNetworkToPrismaNetwork(network: Network): PrismaNetwork {
 	switch (network) {
@@ -29,7 +30,7 @@ function convertMeshNetworkToPrismaNetwork(network: Network): PrismaNetwork {
 }
 
 export async function generateMasumiSmartContractInteractionTransactionAutomaticFees(
-	type: 'AuthorizeRefund' | 'CancelRefund' | 'RequestRefund' | 'SubmitResult',
+	type: 'AuthorizeRefund' | 'AuthorizeWithdrawal' | 'CancelRefund' | 'RequestRefund' | 'SubmitResult',
 	blockchainProvider: BlockfrostProvider,
 	network: Network,
 	script: {
@@ -43,11 +44,29 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 	newInlineDatum: Data,
 	invalidBefore: number,
 	invalidAfter: number,
+	rpcApiKey?: string,
+	// Optional V2 single-item fallback support: when set, emit an explicit
+	// self-send "splitter" output of this many lovelace back to walletAddress
+	// before the change output. Raises the post-tx wallet UTxO floor from 2
+	// (collateral + change) to 3 (collateral + change + splitter), matching
+	// the V2 batch-builder splitter semantics. V1 callers MUST NOT pass this —
+	// V1 has no equivalent splitter convention and adding the output would
+	// change tx size + fee for V1 paths. See
+	// `packages/payment-source-v2/src/builders/batch-helpers.ts WALLET_SPLITTER_LOVELACE`.
+	walletSplitterLovelace?: bigint,
 	hydraContext?: HydraContext,
 ) {
 	const isL2 = !!hydraContext;
 	const provider = hydraContext?.hydraProvider ?? blockchainProvider;
 
+	if (rpcApiKey) {
+		// `MeshTxBuilder.protocolParams(...)` accepts a Protocol object that has
+		// NO cost-model fields. Mesh hashes the script_data against its bundled
+		// `DEFAULT_V*_COST_MODEL_LIST` arrays; if those drift from on-chain the
+		// ledger rejects with `PPViewHashesDontMatch`. Sync those arrays from
+		// chain before each build. The helper is memoized 5min.
+		await syncMeshCostModelsFromChain(rpcApiKey);
+	}
 	let coinsPerUtxoSize: number = CONSTANTS.FALLBACK_COINS_PER_UTXO_SIZE;
 	try {
 		const protocolParams = await blockchainProvider.fetchProtocolParameters();
@@ -81,6 +100,8 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 			invalidAfter,
 			undefined,
 			coinsPerUtxoSize,
+			undefined,
+			undefined,
 			true,
 		);
 	}
@@ -99,7 +120,8 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 		invalidAfter,
 		undefined,
 		coinsPerUtxoSize,
-		false,
+		rpcApiKey,
+		walletSplitterLovelace,
 	);
 
 	const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
@@ -120,12 +142,13 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 		invalidAfter,
 		estimatedFee[0].budget,
 		coinsPerUtxoSize,
-		false,
+		rpcApiKey,
+		walletSplitterLovelace,
 	);
 }
 
 async function generateMasumiSmartContractInteractionTransactionCustomFee(
-	type: 'AuthorizeRefund' | 'CancelRefund' | 'RequestRefund' | 'SubmitResult',
+	type: 'AuthorizeRefund' | 'AuthorizeWithdrawal' | 'CancelRefund' | 'RequestRefund' | 'SubmitResult',
 	blockchainProvider: IFetcher,
 	network: Network,
 	script: {
@@ -147,12 +170,26 @@ async function generateMasumiSmartContractInteractionTransactionCustomFee(
 		steps: 3e9,
 	},
 	coinsPerUtxoSize: number = CONSTANTS.FALLBACK_COINS_PER_UTXO_SIZE,
+	rpcApiKey?: string,
+	walletSplitterLovelace?: bigint,
 	isHydra = false,
 ) {
+	// Pull live chain protocol params (incl. cost models) so the computed
+	// script_data_hash matches what the ledger expects. Without this, mesh
+	// uses its bundled defaults and submissions fail with
+	// `PPViewHashesDontMatch` after a hard fork or PParam vote. See
+	// generateRegistryMintTransaction in src/services/registry/shared.ts.
+	// The outer Automatic builder already called syncMeshCostModelsFromChain
+	// which caches the mesh-format Protocol; reuse it to skip a duplicate
+	// `/epochs/latest/parameters` call. Fall back to a live fetch on cache
+	// miss (e.g. very first tx of the process).
+	const cachedParams = rpcApiKey == null ? null : getCachedChainProtocolParameters(rpcApiKey);
+	const protocolParameters = cachedParams ?? (await blockchainProvider.fetchProtocolParameters(Number.NaN));
 	const txBuilder = new MeshTxBuilder({
 		fetcher: blockchainProvider,
 		isHydra,
 	});
+	txBuilder.protocolParams(protocolParameters);
 	const redeemerData = generateRedeemerData(type);
 	const smartContractAddress: unknown = resolvePlutusScriptAddress(
 		script,
@@ -224,6 +261,14 @@ async function generateMasumiSmartContractInteractionTransactionCustomFee(
 		txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
 	}
 
+	// Optional self-send splitter for V2 single-item callers. See docstring
+	// on the public AutomaticFees entry point. Emitted BEFORE
+	// `.changeAddress(...)` so mesh's coin selection accounts for it as a
+	// required output. V1 callers omit the param → undefined → no-op.
+	if (walletSplitterLovelace != null) {
+		txBuilder.txOut(walletAddress, [{ unit: 'lovelace', quantity: walletSplitterLovelace.toString() }]);
+	}
+
 	return await txBuilder
 		.changeAddress(walletAddress)
 		.invalidBefore(invalidBefore)
@@ -237,7 +282,14 @@ async function generateMasumiSmartContractInteractionTransactionCustomFee(
 }
 
 function generateRedeemerData(
-	type: 'AuthorizeRefund' | 'CancelRefund' | 'RequestRefund' | 'SubmitResult' | 'CollectCompleted' | 'CollectRefund',
+	type:
+		| 'AuthorizeRefund'
+		| 'AuthorizeWithdrawal'
+		| 'CancelRefund'
+		| 'RequestRefund'
+		| 'SubmitResult'
+		| 'CollectCompleted'
+		| 'CollectRefund',
 ) {
 	switch (type) {
 		case 'AuthorizeRefund':
@@ -245,7 +297,11 @@ function generateRedeemerData(
 				alternative: 6,
 				fields: [],
 			};
+		// V1 cancel-refund and V2 authorize-withdrawal both occupy the same on-chain
+		// redeemer alternative (2). Labels are distinct so future contract revisions can
+		// split them without ambiguity in service-layer call sites.
 		case 'CancelRefund':
+		case 'AuthorizeWithdrawal':
 			return {
 				alternative: 2,
 				fields: [],
@@ -303,6 +359,16 @@ export async function generateMasumiSmartContractWithdrawTransactionAutomaticFee
 	} | null,
 	invalidBefore: number,
 	invalidAfter: number,
+	// V2 only: tag the main collection output with `OutputReference == own_ref`
+	// so the Aiken `outputs_with_reference_tag` filter matches it. Required when
+	// the on-chain datum has `seller_return_address`/`buyer_return_address` set
+	// (otherwise vested_pay.ak rejects the withdraw with value_returned == 0).
+	tagMainOutputAsOwnRef: boolean = false,
+	rpcApiKey?: string,
+	// Optional V2 single-item fallback support — see equivalent param on
+	// `generateMasumiSmartContractInteractionTransactionAutomaticFees`.
+	// V1 callers MUST NOT pass.
+	walletSplitterLovelace?: bigint,
 	hydraContext?: HydraContext,
 ) {
 	if (hydraContext) {
@@ -321,10 +387,17 @@ export async function generateMasumiSmartContractWithdrawTransactionAutomaticFee
 			invalidBefore,
 			invalidAfter,
 			undefined,
+			false,
+			undefined,
+			undefined,
 			true,
 		);
 	}
 
+	if (rpcApiKey) {
+		// See cost-model sync comment in the interaction builder above.
+		await syncMeshCostModelsFromChain(rpcApiKey);
+	}
 	const evaluationTx = await generateMasumiSmartContractWithdrawTransactionCustomFee(
 		type,
 		blockchainProvider,
@@ -339,6 +412,10 @@ export async function generateMasumiSmartContractWithdrawTransactionAutomaticFee
 		collateralReturn,
 		invalidBefore,
 		invalidAfter,
+		undefined,
+		tagMainOutputAsOwnRef,
+		rpcApiKey,
+		walletSplitterLovelace,
 	);
 
 	const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
@@ -360,6 +437,9 @@ export async function generateMasumiSmartContractWithdrawTransactionAutomaticFee
 		invalidBefore,
 		invalidAfter,
 		estimatedFee[0].budget,
+		tagMainOutputAsOwnRef,
+		rpcApiKey,
+		walletSplitterLovelace,
 	);
 }
 
@@ -400,12 +480,21 @@ async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 		mem: 7e6,
 		steps: 3e9,
 	},
+	tagMainOutputAsOwnRef: boolean = false,
+	rpcApiKey?: string,
+	walletSplitterLovelace?: bigint,
 	isHydra = false,
 ) {
+	// See protocolParams comment in the interaction builder above. Reuse the
+	// cached chain params populated by syncMeshCostModelsFromChain to avoid a
+	// second `/epochs/latest/parameters` roundtrip per tx build.
+	const cachedParams = rpcApiKey == null ? null : getCachedChainProtocolParameters(rpcApiKey);
+	const protocolParameters = cachedParams ?? (await blockchainProvider.fetchProtocolParameters(Number.NaN));
 	const txBuilder = new MeshTxBuilder({
 		fetcher: blockchainProvider,
 		isHydra,
 	});
+	txBuilder.protocolParams(protocolParameters);
 	const redeemerData = generateRedeemerData(type);
 
 	const deserializedAddress = txBuilder.serializer.deserializer.key.deserializeAddress(walletAddress);
@@ -425,6 +514,12 @@ async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 		.setTotalCollateral('3000000')
 		.txOut(collection.collectionAddress, collection.collectAssets);
 
+	if (tagMainOutputAsOwnRef) {
+		txBuilder.txOutInlineDatumValue(
+			mOutputReference(smartContractUtxo.input.txHash, smartContractUtxo.input.outputIndex),
+		);
+	}
+
 	for (const utxo of walletUtxos) {
 		txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
 	}
@@ -443,6 +538,12 @@ async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 				},
 			])
 			.txOutInlineDatumValue(outputReference);
+	}
+
+	// Optional V2 single-item splitter — see CustomFee equivalent on the
+	// interaction builder for full rationale.
+	if (walletSplitterLovelace != null) {
+		txBuilder.txOut(walletAddress, [{ unit: 'lovelace', quantity: walletSplitterLovelace.toString() }]);
 	}
 
 	return await txBuilder

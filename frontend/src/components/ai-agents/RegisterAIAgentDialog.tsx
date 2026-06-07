@@ -12,7 +12,13 @@ import {
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Badge } from '../ui/badge';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { PaymentSourceExtended, postRegistry, SellingWallet } from '@/lib/api/generated';
+import {
+  PaymentSourceExtended,
+  postRegistry,
+  postRegistryUpdate,
+  RegistryEntry,
+  SellingWallet,
+} from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { shortenAddress, formatFundUnit } from '@/lib/utils';
 import { Trash2 } from 'lucide-react';
@@ -25,11 +31,33 @@ import { useWallets } from '@/lib/queries/useWallets';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { REGISTRY_DECIMAL_ADA_AMOUNT_PATTERN, REGISTRY_LIMITS } from '@/lib/registry-validation';
 import { convertDecimalToBaseUnits } from '@/lib/convertDecimalToBaseUnits';
+import { isV2PaymentSource } from '@/lib/payment-source-type';
+import { useX402Networks } from '@/lib/hooks/useX402';
+import {
+  X402OptionsSection,
+  validateX402Options,
+  type X402OptionDraft,
+} from './X402OptionsSection';
 
 interface RegisterAIAgentDialogProps {
   open: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  /**
+   * When set, the dialog operates in update mode for the given agent: the
+   * form pre-fills with the agent's current metadata, the selling wallet
+   * picker is hidden (the asset's current managed holder signs the update),
+   * and submission calls the V2 update endpoint. Leave undefined for the
+   * default register flow.
+   */
+  editingAgent?: RegistryEntry | null;
+  /**
+   * Smart contract address of the payment source `editingAgent` belongs to.
+   * Threaded through to the update call so the V2 lookup hits the right
+   * source (the backend default fallback resolves to V1). Required when
+   * `editingAgent` is provided.
+   */
+  editingAgentSmartContractAddress?: string;
 }
 
 const createPriceSchema = (network: 'Mainnet' | 'Preprod') => {
@@ -183,7 +211,19 @@ const createAgentSchema = (network: 'Mainnet' | 'Preprod') => {
 
 type AgentFormValues = z.infer<ReturnType<typeof createAgentSchema>>;
 
-export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAgentDialogProps) {
+type EvmSupportedSource = Extract<
+  NonNullable<RegistryEntry['supportedPaymentSources']>[number],
+  { chain: 'EVM' }
+>;
+
+export function RegisterAIAgentDialog({
+  open,
+  onClose,
+  onSuccess,
+  editingAgent,
+  editingAgentSmartContractAddress,
+}: RegisterAIAgentDialogProps) {
+  const isUpdateMode = !!editingAgent;
   const [isLoading, setIsLoading] = useState(false);
   const [sellingWallets, setSellingWallets] = useState<
     { wallet: SellingWallet; balance: number }[]
@@ -276,10 +316,82 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
   }, [wallets]);
 
   useEffect(() => {
-    if (open) {
-      reset();
+    if (!open) return;
+    if (isUpdateMode && editingAgent) {
+      // Pre-fill the form from the existing registration. The on-chain
+      // pricing unit `''` (empty string) represents lovelace — the
+      // RegisterAIAgentDialog UI uses the literal 'lovelace' so the
+      // SelectItem value stays in range. The Pricing.unit may also be a
+      // policyId+assetName for the active stablecoin; we map that back to
+      // the symbolic option the picker exposes (`USDCx` / `tUSDM`).
+      const stablecoinFullAssetId = getActiveStablecoinConfig(network).fullAssetId;
+      const mapPricingUnitToOption = (unit: string): 'lovelace' | typeof stablecoinUnit => {
+        if (unit === '' || unit === 'lovelace') return 'lovelace';
+        if (unit === stablecoinFullAssetId) return stablecoinUnit;
+        // Unknown unit (legacy / custom) — keep raw value so the picker
+        // shows it as a validation error rather than silently dropping it.
+        return unit as 'lovelace' | typeof stablecoinUnit;
+      };
+      const mapAmount = (rawAmount: string) => {
+        // Stored as lovelace integer string; UI uses ADA decimal display.
+        if (!rawAmount || rawAmount === '0') return '0';
+        const value = Number(rawAmount) / 1_000_000;
+        return Number.isFinite(value) ? value.toString() : rawAmount;
+      };
+      reset({
+        apiUrl: editingAgent.apiBaseUrl,
+        name: editingAgent.name,
+        description: editingAgent.description ?? '',
+        // Selling wallet is fixed in update mode — the asset's managed
+        // holder signs the UpdateAction; the picker is hidden below.
+        selectedWallet: editingAgent.SmartContractWallet?.walletVkey ?? '',
+        recipientWalletAddress: editingAgent.RecipientWallet?.walletAddress ?? '',
+        sendFundingAda: editingAgent.sendFundingLovelace
+          ? mapAmount(editingAgent.sendFundingLovelace)
+          : '',
+        prices:
+          editingAgent.AgentPricing.pricingType === 'Fixed'
+            ? editingAgent.AgentPricing.Pricing.map((p) => ({
+                unit: mapPricingUnitToOption(p.unit),
+                amount: mapAmount(p.amount),
+              }))
+            : [{ unit: 'lovelace' as const, amount: '' }],
+        tags: editingAgent.Tags ?? [],
+        pricingType: editingAgent.AgentPricing.pricingType,
+        authorName: editingAgent.Author.name,
+        authorEmail: editingAgent.Author.contactEmail ?? '',
+        organization: editingAgent.Author.organization ?? '',
+        contactOther: editingAgent.Author.contactOther ?? '',
+        termsOfUseUrl: editingAgent.Legal.terms ?? '',
+        privacyPolicyUrl: editingAgent.Legal.privacyPolicy ?? '',
+        otherUrl: editingAgent.Legal.other ?? '',
+        capabilityName: editingAgent.Capability.name ?? '',
+        capabilityVersion: editingAgent.Capability.version ?? '',
+        exampleOutputs: (editingAgent.ExampleOutputs ?? []).map((e) => ({
+          name: e.name,
+          url: e.url,
+          mimeType: e.mimeType,
+        })),
+      });
+      setX402Options(
+        (editingAgent.supportedPaymentSources ?? [])
+          .filter((source): source is EvmSupportedSource => source.chain === 'EVM')
+          .map((source) => ({
+            caip2Network: source.network,
+            asset: source.asset,
+            amount: source.amount,
+            decimals: String(source.decimals),
+            payTo: source.payTo,
+            resource: source.resource ?? '',
+          })),
+      );
+      setX402Error(null);
+      return;
     }
-  }, [open, reset]);
+    reset();
+    setX402Options([]);
+    setX402Error(null);
+  }, [open, reset, isUpdateMode, editingAgent, network, stablecoinUnit]);
 
   const selectedWallet = useMemo(
     () => sellingWallets.find((wallet) => wallet.wallet.walletVkey === selectedWalletVkey),
@@ -303,6 +415,14 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
     [selectedPaymentSource, selectedWallet?.wallet.walletAddress],
   );
 
+  const { networks: x402Networks } = useX402Networks({ silentErrors: true });
+  const [x402Options, setX402Options] = useState<X402OptionDraft[]>([]);
+  const [x402Error, setX402Error] = useState<string | null>(null);
+  // x402 supported payment sources are a V2-only capability; update always targets V2.
+  const isV2Target = isUpdateMode
+    ? true
+    : !!selectedPaymentSource && isV2PaymentSource(selectedPaymentSource);
+
   useEffect(() => {
     if (!selectedRecipientWalletAddress) {
       if (selectedSendFundingAda) {
@@ -324,19 +444,26 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
       try {
         setIsLoading(true);
         const selectedWalletVkey = data.selectedWallet;
-        const selectedWalletBalance = sellingWallets.find(
-          (w) => w.wallet.walletVkey == selectedWalletVkey,
-        )?.balance;
-        if (selectedWalletBalance == undefined || selectedWalletBalance <= 3000000) {
-          toast.error('Insufficient balance in selected wallet');
-          return;
-        }
-        const paymentSource = currentNetworkPaymentSources.find((ps) =>
-          ps.SellingWallets?.some((s) => s.walletVkey == selectedWalletVkey),
-        );
-        if (!paymentSource) {
-          toast.error('Smart contract wallet not found in payment sources');
-          return;
+        // Register requires the user to pick a wallet with funds. Update
+        // is signed by whatever managed wallet currently holds the
+        // asset, so the picker is hidden and the balance gate is skipped
+        // — the backend / scheduler will surface a meaningful error if
+        // the holder wallet is under-funded.
+        if (!isUpdateMode) {
+          const selectedWalletBalance = sellingWallets.find(
+            (w) => w.wallet.walletVkey == selectedWalletVkey,
+          )?.balance;
+          if (selectedWalletBalance == undefined || selectedWalletBalance <= 3000000) {
+            toast.error('Insufficient balance in selected wallet');
+            return;
+          }
+          const paymentSource = currentNetworkPaymentSources.find((ps) =>
+            ps.SellingWallets?.some((s) => s.walletVkey == selectedWalletVkey),
+          );
+          if (!paymentSource) {
+            toast.error('Smart contract wallet not found in payment sources');
+            return;
+          }
         }
 
         const legal: {
@@ -368,52 +495,129 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
               }
             : { name: 'Custom Agent', version: '1.0.0' };
 
+        const agentPricing = (() => {
+          if (data.pricingType === 'Free') {
+            return { pricingType: 'Free' as const };
+          }
+
+          if (data.pricingType === 'Dynamic') {
+            return { pricingType: 'Dynamic' as const };
+          }
+
+          return {
+            pricingType: 'Fixed' as const,
+            Pricing: data.prices.map((price) => {
+              const unit =
+                price.unit === stablecoinUnit
+                  ? getActiveStablecoinConfig(network).fullAssetId
+                  : price.unit;
+              return {
+                unit,
+                amount: convertDecimalToBaseUnits(price.amount),
+              };
+            }),
+          };
+        })();
+        const exampleOutputs =
+          data.exampleOutputs?.map((e) => ({
+            name: e.name,
+            url: e.url,
+            mimeType: e.mimeType,
+          })) || [];
+        const sendFundingLovelace =
+          data.recipientWalletAddress && data.sendFundingAda
+            ? convertDecimalToBaseUnits(data.sendFundingAda)
+            : undefined;
+
+        const evmSupportedSources = x402Options.map((option) => ({
+          chain: 'EVM' as const,
+          network: option.caip2Network,
+          scheme: 'Exact' as const,
+          asset: option.asset,
+          amount: option.amount,
+          decimals: Number(option.decimals),
+          payTo: option.payTo,
+          resource: option.resource ? option.resource : undefined,
+        }));
+        if (isV2Target && x402Options.length > 0) {
+          const x402ValidationError = validateX402Options(x402Options);
+          if (x402ValidationError) {
+            setX402Error(x402ValidationError);
+            toast.error(x402ValidationError);
+            return;
+          }
+        }
+        setX402Error(null);
+
+        if (isUpdateMode && editingAgent) {
+          if (!editingAgent.agentIdentifier) {
+            throw new Error('Cannot update agent: Missing on-chain identifier');
+          }
+          if (!editingAgentSmartContractAddress) {
+            throw new Error('Cannot update agent: Missing payment source address');
+          }
+          // Update replaces the full supported-payment-sources set; preserve any
+          // non-EVM (Cardano) entries and only rewrite the x402/EVM ones.
+          const existingNonEvmSources = (editingAgent.supportedPaymentSources ?? []).filter(
+            (source) => source.chain !== 'EVM',
+          );
+          const hadEvmSources =
+            (editingAgent.supportedPaymentSources ?? []).length > existingNonEvmSources.length;
+          const updateResponse = await postRegistryUpdate({
+            client: apiClient,
+            body: {
+              agentIdentifier: editingAgent.agentIdentifier,
+              network,
+              smartContractAddress: editingAgentSmartContractAddress,
+              recipientWalletAddress: data.recipientWalletAddress || undefined,
+              sendFundingLovelace,
+              name: data.name,
+              description: data.description,
+              apiBaseUrl: data.apiUrl,
+              Tags: data.tags,
+              Capability: capability,
+              AgentPricing: agentPricing,
+              Author: author,
+              Legal: Object.keys(legal).length > 0 ? legal : undefined,
+              ExampleOutputs: exampleOutputs,
+              ...(evmSupportedSources.length > 0 || hadEvmSources
+                ? {
+                    supportedPaymentSources: [...existingNonEvmSources, ...evmSupportedSources],
+                  }
+                : {}),
+            },
+          });
+
+          if (!updateResponse.data?.data?.id) {
+            throw new Error('Failed to update AI agent: Invalid response from server');
+          }
+
+          toast.success('AI agent update requested');
+          onSuccess();
+          onClose();
+          reset();
+          return;
+        }
+
         const response = await postRegistry({
           client: apiClient,
           body: {
             network: network,
             sellingWalletVkey: selectedWalletVkey,
             recipientWalletAddress: data.recipientWalletAddress || undefined,
-            sendFundingLovelace:
-              data.recipientWalletAddress && data.sendFundingAda
-                ? convertDecimalToBaseUnits(data.sendFundingAda)
-                : undefined,
+            sendFundingLovelace,
             name: data.name,
             description: data.description,
             apiBaseUrl: data.apiUrl,
             Tags: data.tags,
             Capability: capability,
-            AgentPricing: (() => {
-              if (data.pricingType === 'Free') {
-                return { pricingType: 'Free' as const };
-              }
-
-              if (data.pricingType === 'Dynamic') {
-                return { pricingType: 'Dynamic' as const };
-              }
-
-              return {
-                pricingType: 'Fixed' as const,
-                Pricing: data.prices.map((price) => {
-                  const unit =
-                    price.unit === stablecoinUnit
-                      ? getActiveStablecoinConfig(network).fullAssetId
-                      : price.unit;
-                  return {
-                    unit,
-                    amount: convertDecimalToBaseUnits(price.amount),
-                  };
-                }),
-              };
-            })(),
+            AgentPricing: agentPricing,
             Author: author,
             Legal: Object.keys(legal).length > 0 ? legal : undefined,
-            ExampleOutputs:
-              data.exampleOutputs?.map((e) => ({
-                name: e.name,
-                url: e.url,
-                mimeType: e.mimeType,
-              })) || [],
+            ExampleOutputs: exampleOutputs,
+            ...(isV2Target && evmSupportedSources.length > 0
+              ? { supportedPaymentSources: evmSupportedSources }
+              : {}),
           },
         });
 
@@ -441,6 +645,11 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
       onSuccess,
       onClose,
       reset,
+      isUpdateMode,
+      editingAgent,
+      editingAgentSmartContractAddress,
+      x402Options,
+      isV2Target,
     ],
   );
 
@@ -468,9 +677,11 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[700px] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Register AI Agent</DialogTitle>
+          <DialogTitle>{isUpdateMode ? 'Update AI Agent' : 'Register AI Agent'}</DialogTitle>
           <p className="text-sm text-muted-foreground mt-2">
-            This registers your agent on the Masumi Network, making it visible to everyone.
+            {isUpdateMode
+              ? 'Updating the on-chain metadata issues an UpdateAction on the V2 registry contract: the existing asset is burned and a new asset with the incremented version is minted in a single transaction.'
+              : 'This registers your agent on the Masumi Network, making it visible to everyone.'}
           </p>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
@@ -519,46 +730,64 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
             )}
           </div>
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium">
-              Minting wallet <span className="text-red-500">*</span>
-            </label>
-            <Controller
-              control={control}
-              name="selectedWallet"
-              render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger
-                    disabled={isLoadingWallets}
-                    className={`${errors.selectedWallet ? 'border-red-500' : ''} ${isLoadingWallets ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  >
-                    <SelectValue
-                      placeholder={
-                        isLoadingWallets ? 'Loading wallets...' : 'Select a minting wallet'
-                      }
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {sellingWallets.map((wallet) => (
-                      <SelectItem
-                        disabled={wallet.balance <= 3000000}
-                        key={wallet.wallet.id}
-                        value={wallet.wallet.walletVkey}
-                      >
-                        {wallet.wallet.note
-                          ? `${wallet.wallet.note} (${shortenAddress(wallet.wallet.walletAddress)})`
-                          : shortenAddress(wallet.wallet.walletAddress)}{' '}
-                        {wallet.balance <= 3000000 ? ' - Insufficient balance' : ''}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+          {isUpdateMode ? (
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Minting wallet</label>
+              <Input
+                value={
+                  editingAgent?.SmartContractWallet?.walletAddress
+                    ? shortenAddress(editingAgent.SmartContractWallet.walletAddress)
+                    : '—'
+                }
+                disabled
+              />
+              <p className="text-xs text-muted-foreground">
+                The wallet currently holding the agent NFT signs the UpdateAction; it cannot be
+                changed here.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                Minting wallet <span className="text-red-500">*</span>
+              </label>
+              <Controller
+                control={control}
+                name="selectedWallet"
+                render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger
+                      disabled={isLoadingWallets}
+                      className={`${errors.selectedWallet ? 'border-red-500' : ''} ${isLoadingWallets ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                      <SelectValue
+                        placeholder={
+                          isLoadingWallets ? 'Loading wallets...' : 'Select a minting wallet'
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {sellingWallets.map((wallet) => (
+                        <SelectItem
+                          disabled={wallet.balance <= 3000000}
+                          key={wallet.wallet.id}
+                          value={wallet.wallet.walletVkey}
+                        >
+                          {wallet.wallet.note
+                            ? `${wallet.wallet.note} (${shortenAddress(wallet.wallet.walletAddress)})`
+                            : shortenAddress(wallet.wallet.walletAddress)}{' '}
+                          {wallet.balance <= 3000000 ? ' - Insufficient balance' : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+              {errors.selectedWallet && (
+                <p className="text-sm text-red-500">{errors.selectedWallet.message}</p>
               )}
-            />
-            {errors.selectedWallet && (
-              <p className="text-sm text-red-500">{errors.selectedWallet.message}</p>
-            )}
-          </div>
+            </div>
+          )}
 
           <div className="space-y-2">
             <label className="text-sm font-medium">Holding wallet</label>
@@ -792,6 +1021,24 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
             </div>
           </div>
 
+          {isV2Target && (
+            <div className="flex items-center gap-4 pt-2">
+              <Separator className="flex-1" />
+              <h3 className="text-sm font-medium text-muted-foreground whitespace-nowrap">
+                Payment options
+              </h3>
+              <Separator className="flex-1" />
+            </div>
+          )}
+          {isV2Target && (
+            <X402OptionsSection
+              options={x402Options}
+              networks={x402Networks}
+              onChange={setX402Options}
+              error={x402Error}
+            />
+          )}
+
           <div className="flex items-center gap-4 pt-2">
             <Separator className="flex-1" />
             <h3 className="text-sm font-medium text-muted-foreground whitespace-nowrap">
@@ -954,8 +1201,14 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
               Cancel
             </Button>
             <div className="flex items-center gap-2">
-              <Button type="submit" disabled={isLoading || isLoadingWallets}>
-                {isLoading ? 'Registering...' : 'Register'}
+              <Button type="submit" disabled={isLoading || (isLoadingWallets && !isUpdateMode)}>
+                {isLoading
+                  ? isUpdateMode
+                    ? 'Updating...'
+                    : 'Registering...'
+                  : isUpdateMode
+                    ? 'Update'
+                    : 'Register'}
               </Button>
             </div>
           </div>

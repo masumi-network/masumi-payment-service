@@ -1,5 +1,5 @@
-import { prisma } from '@/utils/db';
-import { logger } from '@/utils/logger';
+import { prisma } from '@masumi/payment-core/db';
+import { logger } from '@masumi/payment-core/logger';
 import { CustomHydraHead, HydraProvider, HydraHeadEvent, HydraNodeEvent, StatusChangeData } from '@/lib/hydra';
 import {
 	HydraHeadStatus,
@@ -13,7 +13,7 @@ import {
 	WalletType,
 } from '@/generated/prisma/client';
 import { convertNewPaymentActionAndError, convertNewPurchasingActionAndError } from '@/utils/logic/state-transitions';
-import { CONSTANTS } from '@/utils/config';
+import { CONSTANTS } from '@masumi/payment-core/config';
 import { deriveExpectedOnChainState } from '@/services/hydra-tx-handler/derive-state';
 import { HydraHeadUpdateInput } from '@/generated/prisma/models';
 import { HydraNodeConfig } from '@/lib/hydra/hydra/types';
@@ -276,8 +276,10 @@ export class HydraConnectionManager {
 
 		logger.info(`[HydraConnectionManager] Event-driven confirmation for L2 tx ${txId} in head ${hydraHeadId}`);
 
-		if (tx.PaymentRequestCurrent) {
-			const req = tx.PaymentRequestCurrent;
+		// V2 batch made this relation one-to-many; an L2 (Hydra) tx maps to a single request.
+		const paymentReq = tx.PaymentRequestCurrent[0];
+		if (paymentReq) {
+			const req = paymentReq;
 			const newState = deriveExpectedOnChainState(req.NextAction.requestedAction, req.onChainState);
 			if (!newState) return;
 
@@ -323,8 +325,9 @@ export class HydraConnectionManager {
 			);
 		}
 
-		if (tx.PurchaseRequestCurrent) {
-			const req = tx.PurchaseRequestCurrent;
+		const purchaseReq = tx.PurchaseRequestCurrent[0];
+		if (purchaseReq) {
+			const req = purchaseReq;
 			const newState = deriveExpectedOnChainState(req.NextAction.requestedAction, req.onChainState);
 			if (!newState) return;
 

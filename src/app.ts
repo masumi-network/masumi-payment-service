@@ -1,19 +1,20 @@
 import express from 'express';
-import { CONFIG } from '@/utils/config/';
-import { logger } from '@/utils/logger/';
+import { CONFIG } from '@masumi/payment-core/config';
+import { logger } from '@masumi/payment-core/logger';
 import { initJobs, stopJobs } from '@/services/monitoring';
 import { createConfig, createServer } from 'express-zod-api';
 import { router } from '@/routes/index';
 import ui, { JsonObject } from 'swagger-ui-express';
 import { generateOpenAPI } from '@/utils/generator/swagger-generator';
-import { cleanupDB, initDB, prisma } from '@/utils/db';
+import { cleanupDB, initDB, prisma } from '@masumi/payment-core/db';
 import path from 'path';
 import { requestTiming } from '@/utils/middleware/request-timing';
-import { DEFAULTS } from '@/utils/config';
+import { DEFAULTS } from '@masumi/payment-core/config';
 import { requestLogger } from '@/utils/middleware/request-logger';
-import { generateApiKeySecureHash } from '@/utils/crypto/api-key-hash';
+import { generateApiKeySecureHash } from '@masumi/payment-core/api-key-hash';
 import { migrateApiKeyEncryption } from '@/utils/startup-migrations/api-key-encryption';
 import { migrateWebhookEncryption } from '@/utils/startup-migrations/webhook-encryption';
+import { backfillTransactionAgentIdentifiers } from '@/utils/startup-migrations/backfill-transaction-agent-identifiers';
 import { blockchainStateMonitorService } from '@/services/monitoring';
 import fs from 'fs';
 import { getHydraConnectionManager } from './services/hydra-connection-manager/hydra-connection-manager.service';
@@ -26,6 +27,7 @@ async function initialize() {
 
 	await migrateApiKeyEncryption();
 	await migrateWebhookEncryption();
+	await backfillTransactionAgentIdentifiers();
 
 	const defaultAdminHash = await generateApiKeySecureHash(DEFAULTS.DEFAULT_ADMIN_KEY);
 	const defaultKeyRow = await prisma.apiKey.findFirst({

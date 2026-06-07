@@ -3,6 +3,7 @@ import { getTestEnvironment } from '../fixtures/testData';
 import dotenv from 'dotenv';
 import './globals';
 import { decodeE2EGlobalState, E2E_GLOBAL_STATE_ENV_KEY, type E2EGlobalState } from './e2eGlobalState';
+import { PaymentSourceType } from '@/generated/prisma/enums';
 
 /**
  * Global test environment setup for e2e tests
@@ -21,7 +22,7 @@ function readGlobalStateFromEnv(): E2EGlobalState {
 }
 
 beforeAll(async () => {
-	// Keep per-file setup lightweight: config + api client + read global agent info
+	// Keep per-file setup lightweight: config + api client + read global agents map
 	dotenv.config();
 
 	const config = getTestEnvironment();
@@ -34,7 +35,16 @@ beforeAll(async () => {
 	});
 
 	const state = readGlobalStateFromEnv();
-	global.testAgent = state.agent;
+	global.testAgents = state.agents;
+
+	// `global.testAgent` remains as a back-compat default so anything that hasn't
+	// been parameterized yet still has a sensible agent to fall back on. The
+	// `describe.each` blocks overwrite this per iteration with the matching type.
+	const fallbackAgent =
+		state.agents[PaymentSourceType.Web3CardanoV1] ?? state.agents[PaymentSourceType.Web3CardanoV2] ?? undefined;
+	if (fallbackAgent) {
+		global.testAgent = fallbackAgent;
+	}
 });
 
 // Global error handlers

@@ -1,14 +1,21 @@
-import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
+import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { ApiKeyStatus, Network } from '@/generated/prisma/client';
-import { prisma } from '@/utils/db';
+import { prisma } from '@masumi/payment-core/db';
 import { createId } from '@paralleldrive/cuid2';
 import createHttpError from 'http-errors';
-import { generateApiKeySecureHash } from '@/utils/crypto/api-key-hash';
+import { generateApiKeySecureHash } from '@masumi/payment-core/api-key-hash';
 import { encrypt, decrypt } from '@/utils/security/encryption';
-import { CONSTANTS } from '@/utils/config';
-import { logger } from '@/utils/logger';
+import { CONSTANTS } from '@masumi/payment-core/config';
+import { logger } from '@masumi/payment-core/logger';
 import { transformBigIntAmounts } from '@/utils/shared/transformers';
-import { z } from '@/utils/zod-openapi';
+import { withSerializableSlot } from '@/utils/db/serializable-semaphore';
+import { z } from '@masumi/payment-core/zod';
+import {
+	caip2LimitToCardanoNetworks,
+	caip2ToCardanoNetwork,
+	cardanoNetworksToCaip2,
+	mergeCaip2NetworkLimits,
+} from '@masumi/payment-core/network';
 import {
 	addAPIKeySchemaInput,
 	addAPIKeySchemaOutput,
@@ -20,7 +27,11 @@ import {
 	updateAPIKeySchemaInput,
 	updateAPIKeySchemaOutput,
 } from './schemas';
-import { computePermissionFromFlags, flagsFromLegacyPermission, LegacyPermission } from '@/utils/permissions';
+import {
+	computePermissionFromFlags,
+	flagsFromLegacyPermission,
+	LegacyPermission,
+} from '@masumi/payment-core/permissions';
 
 export {
 	addAPIKeySchemaInput,
@@ -46,12 +57,26 @@ const decryptTokenSafe = (encryptedToken: string | null): string => {
 	}
 };
 
+/**
+ * Serialize an ApiKey row to the API response shape.
+ *
+ * `options.revealToken` controls whether the response contains the
+ * decrypted plaintext token (`true`) or the pre-masked `*****xxxx`
+ * form (`false`, default). The reveal path is only safe for endpoints
+ * where the admin is creating a new key and MUST see the value once
+ * (it cannot be recovered later by design — the DB only stores the
+ * encrypted form). List/update/delete responses MUST mask, so an
+ * admin-token leak does not cascade into a full plaintext dump of
+ * every API key on the system, and so monitoring/log aggregation
+ * never captures plaintext via response logging.
+ */
 export const mapApiKeyOutput = <
 	T extends {
 		canRead: boolean;
 		canPay: boolean;
 		canAdmin: boolean;
-		networkLimit: Network[];
+		usageLimited: boolean;
+		networkLimit: string[];
 		RemainingUsageCredits: Array<{ amount: bigint; unit: string }>;
 		WalletScopes: Array<{ hotWalletId: string }>;
 		encryptedToken: string | null;
@@ -60,14 +85,29 @@ export const mapApiKeyOutput = <
 	},
 >(
 	data: T,
+	options: { revealToken?: boolean } = {},
 ) => {
 	// Explicitly destructure all sensitive/internal fields so they never reach the API response
-	const { networkLimit, RemainingUsageCredits, encryptedToken, token: _token, tokenHash: _tokenHash, ...rest } = data;
+	const {
+		networkLimit,
+		usageLimited,
+		RemainingUsageCredits,
+		encryptedToken,
+		token: storedMaskedToken,
+		tokenHash: _tokenHash,
+		...rest
+	} = data;
 	return {
 		...rest,
-		token: decryptTokenSafe(encryptedToken),
+		// Response schema expects `string`. Coalesce null (legacy row missing
+		// the stored masked form, or decrypt failure) to '*****' so the
+		// non-null contract holds. Real rows always populate `token` at
+		// create time (see addAPIKeyEndpointPost above).
+		token: (options.revealToken === true ? decryptTokenSafe(encryptedToken) : storedMaskedToken) ?? '*****',
 		permission: computePermissionFromFlags(data.canRead, data.canPay, data.canAdmin),
-		NetworkLimit: networkLimit,
+		usageLimited: data.canAdmin ? false : usageLimited,
+		NetworkLimit: data.canAdmin ? [Network.Mainnet, Network.Preprod] : caip2LimitToCardanoNetworks(networkLimit),
+		ChainIdLimit: data.canAdmin ? [] : networkLimit,
 		RemainingUsageCredits: transformBigIntAmounts(RemainingUsageCredits),
 	};
 };
@@ -137,7 +177,15 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 				canPay: canPay,
 				canAdmin: canAdmin,
 				usageLimited: isAdmin ? false : input.usageLimited,
-				networkLimit: isAdmin ? [Network.Mainnet, Network.Preprod] : input.NetworkLimit,
+				networkLimit: isAdmin
+					? []
+					: mergeCaip2NetworkLimits(
+							input.NetworkLimit,
+							// Mirror the update path: ChainIdLimit contributes only EVM (non-Cardano)
+							// chains. Cardano access is controlled solely by NetworkLimit, so a
+							// Cardano CAIP-2 id passed here is dropped rather than silently granting access.
+							input.ChainIdLimit.filter((chainId) => caip2ToCardanoNetwork(chainId) == null),
+						),
 				walletScopeEnabled: isAdmin ? false : input.walletScopeEnabled,
 				RemainingUsageCredits: {
 					createMany: {
@@ -167,7 +215,10 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 				WalletScopes: { select: { hotWalletId: true } },
 			},
 		});
-		return mapApiKeyOutput(result);
+		// Reveal-on-create: the admin must see the freshly-minted token once
+		// because the DB only stores the encrypted form afterwards. List,
+		// update, and delete endpoints below default to the masked form.
+		return mapApiKeyOutput(result, { revealToken: true });
 	},
 });
 
@@ -181,112 +232,134 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 		const newTokenHash = input.token !== undefined ? await generateApiKeySecureHash(input.token) : undefined;
 		const newMaskedToken = input.token !== undefined ? '*****' + input.token.slice(-4) : undefined;
 
-		const apiKey = await prisma.$transaction(
-			async (prisma) => {
-				const apiKey = await prisma.apiKey.findUnique({
-					where: { id: input.id },
-					include: {
-						RemainingUsageCredits: {
-							select: { id: true, amount: true, unit: true },
+		// Gate Serializable $transaction through the shared semaphore so
+		// concurrent HTTP requests don't exhaust the pg connection pool.
+		// See `src/utils/db/serializable-semaphore.ts`.
+		const apiKey = await withSerializableSlot(() =>
+			prisma.$transaction(
+				async (prisma) => {
+					const apiKey = await prisma.apiKey.findUnique({
+						where: { id: input.id },
+						include: {
+							RemainingUsageCredits: {
+								select: { id: true, amount: true, unit: true },
+							},
 						},
-					},
-				});
-				if (!apiKey) {
-					throw createHttpError(404, 'API key not found');
-				}
-				if (input.UsageCreditsToAddOrRemove) {
-					for (const usageCredit of input.UsageCreditsToAddOrRemove) {
-						const parsedAmount = BigInt(usageCredit.amount);
-						const existingCredit = apiKey.RemainingUsageCredits.find((credit) => credit.unit == usageCredit.unit);
-						if (existingCredit) {
-							existingCredit.amount += parsedAmount;
-							if (existingCredit.amount == 0n) {
-								await prisma.unitValue.delete({
-									where: { id: existingCredit.id },
-								});
-							} else if (existingCredit.amount < 0) {
-								throw createHttpError(400, 'Invalid amount');
+					});
+					if (!apiKey) {
+						throw createHttpError(404, 'API key not found');
+					}
+					if (input.UsageCreditsToAddOrRemove) {
+						for (const usageCredit of input.UsageCreditsToAddOrRemove) {
+							const parsedAmount = BigInt(usageCredit.amount);
+							const existingCredit = apiKey.RemainingUsageCredits.find((credit) => credit.unit == usageCredit.unit);
+							if (existingCredit) {
+								existingCredit.amount += parsedAmount;
+								if (existingCredit.amount == 0n) {
+									await prisma.unitValue.delete({
+										where: { id: existingCredit.id },
+									});
+								} else if (existingCredit.amount < 0) {
+									throw createHttpError(400, 'Invalid amount');
+								} else {
+									await prisma.unitValue.update({
+										where: { id: existingCredit.id },
+										data: { amount: existingCredit.amount },
+									});
+								}
 							} else {
-								await prisma.unitValue.update({
-									where: { id: existingCredit.id },
-									data: { amount: existingCredit.amount },
+								if (parsedAmount <= 0) {
+									throw createHttpError(400, 'Invalid amount');
+								}
+								await prisma.unitValue.create({
+									data: {
+										unit: usageCredit.unit,
+										amount: parsedAmount,
+										apiKeyId: apiKey.id,
+										agentFixedPricingId: null,
+										paymentRequestId: null,
+										purchaseRequestId: null,
+									},
 								});
 							}
-						} else {
-							if (parsedAmount <= 0) {
-								throw createHttpError(400, 'Invalid amount');
-							}
-							await prisma.unitValue.create({
-								data: {
-									unit: usageCredit.unit,
-									amount: parsedAmount,
-									apiKeyId: apiKey.id,
-									agentFixedPricingId: null,
-									paymentRequestId: null,
-									purchaseRequestId: null,
-								},
+						}
+					}
+
+					// Determine new flag values
+					const newCanRead = input.canRead !== undefined ? input.canRead : apiKey.canRead;
+					const newCanPay = input.canPay !== undefined ? input.canPay : apiKey.canPay;
+					const newCanAdmin = input.canAdmin !== undefined ? input.canAdmin : apiKey.canAdmin;
+
+					const resultingWalletScopeEnabled = input.walletScopeEnabled ?? apiKey.walletScopeEnabled;
+					if (newCanAdmin && resultingWalletScopeEnabled) {
+						throw createHttpError(400, 'Admin API keys cannot have wallet scope enabled');
+					}
+					if (newCanAdmin && input.usageLimited) {
+						throw createHttpError(400, 'Admin API keys cannot have usage limits');
+					}
+					// Update each half of the access list independently: NetworkLimit replaces
+					// only the Cardano-network entries, ChainIdLimit replaces only the EVM
+					// entries. An omitted field leaves its half untouched (no silent reset).
+					const nextNetworkLimit = newCanAdmin
+						? []
+						: input.NetworkLimit === undefined && input.ChainIdLimit === undefined
+							? undefined
+							: Array.from(
+									new Set([
+										...(input.NetworkLimit !== undefined
+											? cardanoNetworksToCaip2(input.NetworkLimit)
+											: apiKey.networkLimit.filter((chainId) => caip2ToCardanoNetwork(chainId) != null)),
+										...(input.ChainIdLimit !== undefined
+											? input.ChainIdLimit.filter((chainId) => caip2ToCardanoNetwork(chainId) == null)
+											: apiKey.networkLimit.filter((chainId) => caip2ToCardanoNetwork(chainId) == null)),
+									]),
+								);
+
+					if (input.WalletScopeHotWalletIds !== undefined) {
+						await prisma.apiKeyWalletScope.deleteMany({
+							where: { apiKeyId: input.id },
+						});
+						if (input.WalletScopeHotWalletIds.length > 0) {
+							await prisma.apiKeyWalletScope.createMany({
+								data: input.WalletScopeHotWalletIds.map((hotWalletId) => ({
+									apiKeyId: input.id,
+									hotWalletId,
+								})),
 							});
 						}
 					}
-				}
 
-				// Determine new flag values
-				const newCanRead = input.canRead !== undefined ? input.canRead : apiKey.canRead;
-				const newCanPay = input.canPay !== undefined ? input.canPay : apiKey.canPay;
-				const newCanAdmin = input.canAdmin !== undefined ? input.canAdmin : apiKey.canAdmin;
-
-				const resultingWalletScopeEnabled = input.walletScopeEnabled ?? apiKey.walletScopeEnabled;
-				if (newCanAdmin && resultingWalletScopeEnabled) {
-					throw createHttpError(400, 'Admin API keys cannot have wallet scope enabled');
-				}
-				if (newCanAdmin && input.usageLimited) {
-					throw createHttpError(400, 'Admin API keys cannot have usage limits');
-				}
-
-				if (input.WalletScopeHotWalletIds !== undefined) {
-					await prisma.apiKeyWalletScope.deleteMany({
-						where: { apiKeyId: input.id },
+					const result = await prisma.apiKey.update({
+						where: { id: input.id },
+						data: {
+							...(input.token !== undefined
+								? {
+										encryptedToken: newEncryptedToken,
+										tokenHash: newTokenHash,
+										token: newMaskedToken,
+									}
+								: {}),
+							usageLimited: newCanAdmin ? false : input.usageLimited,
+							status: input.status,
+							networkLimit: nextNetworkLimit,
+							walletScopeEnabled: newCanAdmin ? false : input.walletScopeEnabled,
+							canRead: newCanRead,
+							canPay: newCanPay,
+							canAdmin: newCanAdmin,
+						},
+						include: {
+							RemainingUsageCredits: { select: { amount: true, unit: true } },
+							WalletScopes: { select: { hotWalletId: true } },
+						},
 					});
-					if (input.WalletScopeHotWalletIds.length > 0) {
-						await prisma.apiKeyWalletScope.createMany({
-							data: input.WalletScopeHotWalletIds.map((hotWalletId) => ({
-								apiKeyId: input.id,
-								hotWalletId,
-							})),
-						});
-					}
-				}
-
-				const result = await prisma.apiKey.update({
-					where: { id: input.id },
-					data: {
-						...(input.token !== undefined
-							? {
-									encryptedToken: newEncryptedToken,
-									tokenHash: newTokenHash,
-									token: newMaskedToken,
-								}
-							: {}),
-						usageLimited: input.usageLimited,
-						status: input.status,
-						networkLimit: input.NetworkLimit,
-						walletScopeEnabled: input.walletScopeEnabled,
-						canRead: newCanRead,
-						canPay: newCanPay,
-						canAdmin: newCanAdmin,
-					},
-					include: {
-						RemainingUsageCredits: { select: { amount: true, unit: true } },
-						WalletScopes: { select: { hotWalletId: true } },
-					},
-				});
-				return result;
-			},
-			{
-				timeout: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
-				maxWait: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
-				isolationLevel: 'Serializable',
-			},
+					return result;
+				},
+				{
+					timeout: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
+					maxWait: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
+					isolationLevel: 'Serializable',
+				},
+			),
 		);
 		return mapApiKeyOutput(apiKey);
 	},

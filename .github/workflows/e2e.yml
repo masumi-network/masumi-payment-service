@@ -4,6 +4,13 @@ on:
   pull_request:
     branches: [dev]
 
+# Cancel an in-flight run when a newer commit lands on the same PR. E2E uses
+# real preprod wallets; stacking runs causes UTxO contention and burns CI
+# minutes on stale commits.
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   e2e:
     runs-on: ubuntu-latest
@@ -70,7 +77,13 @@ jobs:
           fi
 
           BASE_URI="${{ secrets.DATABASE_URL }}"
-          CONNECTION_URI=$(echo $BASE_URI | sed "s/@[^/]*/@$ENDPOINT_HOST/")
+          CONNECTION_URI=$(printf '%s' "$BASE_URI" | sed "s/@[^/]*/@$ENDPOINT_HOST/")
+
+          # GitHub auto-masks raw secret values, but CONNECTION_URI is derived
+          # (different host) and still embeds the user:password from
+          # DATABASE_URL. Register it explicitly so it stays masked in any
+          # downstream log emission.
+          echo "::add-mask::$CONNECTION_URI"
 
           echo "branch_id=$BRANCH_ID" >> $GITHUB_OUTPUT
           echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
@@ -92,14 +105,14 @@ jobs:
               "https://console.neon.tech/api/v2/projects/${{ secrets.NEON_PROJECT_ID }}/branches/${{ steps.create-branch.outputs.branch_id }}" \
               -H "Authorization: Bearer ${{ secrets.NEON_API_KEY }}" \
               -H "Accept: application/json")
-            
+
             STATUS=$(echo $RESPONSE | jq -r '.branch.current_state')
-            
+
             if [ "$STATUS" = "ready" ]; then
               echo "✅ Branch is ready!"
               break
             fi
-            
+
             ATTEMPT=$((ATTEMPT + 1))
             echo "Attempt $ATTEMPT/$MAX_ATTEMPTS: Branch state is '$STATUS', waiting 5 seconds..."
             sleep 5
@@ -111,6 +124,30 @@ jobs:
             exit 1
           fi
 
+      - name: Wait for Postgres endpoint to accept connections
+        # Neon reports branch state "ready" before the compute endpoint actually
+        # accepts queries (cold-start / wake delay; the wake handshake needs
+        # SSL + SNI so a plain TCP probe is not sufficient). Run a real
+        # SELECT 1 over the full SSL-enabled connection URI until it succeeds.
+        # prisma migrate deploy was failing with P1001 ("Can't reach database
+        # server") in this gap.
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client >/dev/null
+          export PGCONNECT_TIMEOUT=10
+          MAX_ATTEMPTS=60
+          ATTEMPT=0
+          until psql "${{ steps.create-branch.outputs.connection_uri }}" -tAc 'SELECT 1' >/dev/null 2>&1; do
+            ATTEMPT=$((ATTEMPT + 1))
+            if [ $ATTEMPT -ge $MAX_ATTEMPTS ]; then
+              echo "❌ Postgres endpoint not accepting queries after $MAX_ATTEMPTS attempts"
+              psql "${{ steps.create-branch.outputs.connection_uri }}" -tAc 'SELECT 1' || true
+              exit 1
+            fi
+            echo "Postgres not ready yet (attempt $ATTEMPT/$MAX_ATTEMPTS), waiting 5s..."
+            sleep 5
+          done
+          echo "✅ Postgres endpoint accepting queries"
+
       - name: Generate Prisma Client
         run: pnpm run prisma:generate
         env:
@@ -121,12 +158,25 @@ jobs:
         env:
           DATABASE_URL: ${{ steps.create-branch.outputs.connection_uri }}
 
-      - name: Seed Database
+      - name: Seed Database (V1 + V2)
+        # Single seed run creates BOTH PaymentSources when the V2 mnemonics
+        # are present (the seed gates V2 separately and skips cleanly when the
+        # V2 env vars are missing). Downstream V1 and V2 suites run against
+        # this one DB + one API server.
         run: pnpm exec prisma db seed --config prisma/prisma.config.ts
         env:
           DATABASE_URL: '${{ steps.create-branch.outputs.connection_uri }}'
           PURCHASE_WALLET_PREPROD_MNEMONIC: '${{ secrets.PURCHASE_WALLET_PREPROD_MNEMONIC }}'
           SELLING_WALLET_PREPROD_MNEMONIC: '${{ secrets.SELLING_WALLET_PREPROD_MNEMONIC }}'
+          # V2 mnemonics MUST be distinct from V1 mnemonics: HotWallet.walletVkey
+          # is globally unique, so reusing V1 mnemonics would derive the same
+          # vkeys and the V2 seed INSERT would fail with P2002
+          # UniqueConstraintViolation. Distinct wallets also avoid UTxO
+          # contention since V1 and V2 e2e suites both run against the same
+          # on-chain network in this shared-setup configuration.
+          PURCHASE_WALLET_V2_PREPROD_MNEMONIC: '${{ secrets.PURCHASE_WALLET_V2_PREPROD_MNEMONIC }}'
+          SELLING_WALLET_V2_PREPROD_MNEMONIC: '${{ secrets.SELLING_WALLET_V2_PREPROD_MNEMONIC }}'
+          COLLECTION_WALLET_V2_PREPROD_ADDRESS: '${{ secrets.COLLECTION_WALLET_V2_PREPROD_ADDRESS }}'
           BLOCKFROST_API_KEY_PREPROD: '${{ secrets.BLOCKFROST_API_KEY_PREPROD }}'
           ENCRYPTION_KEY: '${{ secrets.ENCRYPTION_KEY }}'
           ADMIN_KEY: '${{ secrets.ADMIN_KEY }}'
@@ -134,16 +184,36 @@ jobs:
       - name: Start API Server
         run: |
           echo "Starting API server..."
-          pnpm exec tsx ./src/index.ts > server.log 2>&1 &
+          # We want each log line flushed to disk immediately (Node buffers
+          # stdout when it sees a non-tty destination), AND we want a
+          # well-defined PID for the tsx process so teardown's SIGTERM
+          # actually reaches the API server.
+          #
+          # Process substitution (`cmd > >(tee server.log) 2>&1 &`) does NOT
+          # reliably leave `$!` pointing at `cmd` — depending on the bash
+          # build, `$!` can resolve to the `tee` subshell instead, which
+          # means our teardown step kills `tee` (orphaning the API) and the
+          # file never sees the final flush. The previous comment in this
+          # script claimed `$!` was tsx, but the runtime behavior on
+          # ubuntu-latest (bash 5.x) is the opposite for this exact form.
+          #
+          # Fix: use an explicit named pipe. `tee` reads from the fifo, tsx
+          # writes to it. The two backgrounds are separate jobs, so `$!`
+          # after each is unambiguous, and we record both PIDs so teardown
+          # can terminate them in order (tsx first → fifo writer closes →
+          # tee gets EOF → tee flushes server.log → tee exits).
+          mkfifo server.fifo
+          tee server.log < server.fifo &
+          TEE_PID=$!
+          echo "$TEE_PID" > tee.pid
+          pnpm exec tsx ./src/index.ts > server.fifo 2>&1 &
           SERVER_PID=$!
-          echo "Server PID: $SERVER_PID"
           echo "$SERVER_PID" > server.pid
+          echo "Server PID: $SERVER_PID (tee PID: $TEE_PID)"
 
         env:
           DATABASE_URL: '${{ steps.create-branch.outputs.connection_uri }}'
           ENCRYPTION_KEY: '${{ secrets.ENCRYPTION_KEY }}'
-          BLOCKFROST_API_KEY_PREPROD: '${{ secrets.BLOCKFROST_API_KEY_PREPROD }}'
-          ADMIN_KEY: '${{ secrets.ADMIN_KEY }}'
           NODE_ENV: 'test'
           PORT: 3001
 
@@ -164,8 +234,74 @@ jobs:
           echo "=== Server is responding, recent log tail ==="
           tail -50 server.log || true
 
-      - name: Run E2E Test Suite
-        run: pnpm run test:e2e
+      - name: Run V1 + V2 E2E in parallel
+        # Spawn ONE jest invocation per source type and run them concurrently
+        # against the shared API server + DB. The describe.each cases in each
+        # test file filter on `TEST_PAYMENT_SOURCE_TYPE`, so each invocation
+        # only runs its own iteration — V1 + V2 progress simultaneously
+        # instead of sequentially. Disjoint wallets (HotWallet.walletVkey
+        # uniqueness enforced at seed) prevent on-chain contention. The
+        # shared scheduler in the API server already processes both source
+        # types concurrently.
+        #
+        # Each invocation's stdout/stderr is sed-tagged `[V1] `/`[V2] ` so
+        # interleaved output is readable. Exit code is captured via a
+        # sentinel line written by the subshell so the pipeline (which exits
+        # with sed's status, not jest's) doesn't mask jest failures.
+        run: |
+          set +e
+
+          # NOTE on `$!` semantics here: `(subshell) | sed > log &` is one
+          # backgrounded pipeline, and `$!` returns the PID of the LAST
+          # command in that pipeline (sed), NOT the subshell that runs
+          # jest. We don't use PID_V*  for anything except `wait`, and
+          # `wait` on sed implicitly waits for the whole pipeline to
+          # drain (sed sees EOF on its stdin only after the subshell
+          # closes its write end, i.e. only after jest has exited), so
+          # the captured PID is sufficient HERE.
+          #
+          # If a future change ever needs to send a signal directly to
+          # jest (e.g. graceful cancellation, time-bounded kill), this
+          # PID is wrong — use a fifo-based redirect like the API server
+          # step above so `$!` after the `pnpm exec jest` invocation is
+          # unambiguously the jest PID.
+          # Invoke via `pnpm run test:e2e` (NOT `pnpm exec jest` directly).
+          # The npm script wraps jest with `cross-env
+          # NODE_OPTIONS=--experimental-vm-modules`, which jest needs for ESM
+          # in this repo (`"type": "module"` in root package.json + ts-jest's
+          # ESM preset in jest.e2e.config.ts). Calling `pnpm exec jest`
+          # bypasses cross-env, so jest tries to load .ts modules under
+          # CommonJS and fails with "Cannot use import statement outside a
+          # module" or similar — passes locally because devs typically run
+          # `pnpm run test:e2e`, but breaks in CI.
+          (
+            TEST_PAYMENT_SOURCE_TYPE=Web3CardanoV1 pnpm run test:e2e 2>&1
+            echo "__E2E_EXIT__=$?"
+          ) | sed -u 's/^/[V1] /' > v1.log &
+          PID_V1=$!
+
+          (
+            TEST_PAYMENT_SOURCE_TYPE=Web3CardanoV2 pnpm run test:e2e 2>&1
+            echo "__E2E_EXIT__=$?"
+          ) | sed -u 's/^/[V2] /' > v2.log &
+          PID_V2=$!
+
+          wait $PID_V1
+          wait $PID_V2
+
+          echo "=== V1 e2e log ==="
+          cat v1.log
+          echo "=== V2 e2e log ==="
+          cat v2.log
+
+          EXIT_V1=$(grep -oE '__E2E_EXIT__=[0-9]+' v1.log | tail -1 | cut -d= -f2)
+          EXIT_V2=$(grep -oE '__E2E_EXIT__=[0-9]+' v2.log | tail -1 | cut -d= -f2)
+          echo "V1 exit: ${EXIT_V1:-missing}"
+          echo "V2 exit: ${EXIT_V2:-missing}"
+
+          if [ "$EXIT_V1" != "0" ] || [ "$EXIT_V2" != "0" ]; then
+            exit 1
+          fi
         env:
           TEST_API_KEY: ${{ secrets.TEST_API_KEY }}
           TEST_API_URL: http://127.0.0.1:3001
@@ -174,26 +310,177 @@ jobs:
           DATABASE_URL: ${{ steps.create-branch.outputs.connection_uri }}
           BLOCKFROST_API_KEY_PREPROD: ${{ secrets.BLOCKFROST_API_KEY_PREPROD }}
 
-      - name: Dump Server Log
+      - name: Stop API server for log flush
         if: always()
         run: |
-          echo "=== Full server.log (tail 2000) ==="
-          tail -n 2000 server.log || echo "server.log not found"
-          echo "=== End server.log ==="
+          # Send SIGTERM to tsx (server.pid). On exit, the fifo writer closes
+          # → tee gets EOF and flushes server.log → tee exits on its own.
+          # We then wait briefly for tee to drain before falling back to
+          # SIGKILL. Order matters: killing tee first would leave tsx
+          # writing into a broken pipe (SIGPIPE) and abort it without a
+          # clean shutdown.
+          if [ -f server.pid ]; then
+            PID=$(cat server.pid)
+            if kill -0 "$PID" 2>/dev/null; then
+              kill -TERM "$PID" 2>/dev/null || true
+              for i in 1 2 3 4 5; do
+                if ! kill -0 "$PID" 2>/dev/null; then break; fi
+                sleep 1
+              done
+              kill -KILL "$PID" 2>/dev/null || true
+            fi
+          fi
+          # Now drain tee. It should exit on its own once the writer end of
+          # the fifo closes; bound the wait so a stuck reader doesn't hang
+          # the workflow.
+          if [ -f tee.pid ]; then
+            TEE_PID=$(cat tee.pid)
+            for i in 1 2 3 4 5; do
+              if ! kill -0 "$TEE_PID" 2>/dev/null; then break; fi
+              sleep 1
+            done
+            kill -KILL "$TEE_PID" 2>/dev/null || true
+          fi
+          rm -f server.fifo
+          sleep 1
 
-      - name: Upload Server Log Artifact
+      - name: Dump server log
+        if: always()
+        run: |
+          if [ ! -f server.log ]; then
+            echo "server.log not present"
+            exit 0
+          fi
+          LINES=$(wc -l < server.log || echo 0)
+          echo "=== server.log total $LINES lines ==="
+          echo "=== server.log full contents (with line numbers) ==="
+          nl -ba server.log || cat server.log
+          echo "=== end server.log ==="
+          echo ""
+          echo "=== errors and warnings (grep) ==="
+          grep -E '"level":"(error|warn)"|RegistrationFailed|Failed to|Error registering|interpretBlockchainError' server.log | tail -200 || true
+          echo "=== end grep ==="
+
+      - name: Detect V2 batch fallback usage
+        # The V2 batch services log "[batch-fallback]" when a batch-builder pass
+        # fails and the service falls back to single-item processing. Batching
+        # is the design intent; a fallback usually signals a transient chain /
+        # blockfrost / scheduler issue (still recoverable on the next tick),
+        # but it is worth surfacing so we can investigate why the batch did
+        # not land. Emit a GitHub Actions ERROR annotation and fail the job if
+        # any [batch-fallback] occurrences are present — silent degradation
+        # used to hide real batching regressions behind a yellow warning.
+        # Override with BATCH_FALLBACK_ALLOWED=N to permit up to N occurrences
+        # while investigating a known issue.
+        if: always()
+        run: |
+          if [ ! -f server.log ]; then
+            echo "server.log not present, skipping batch-fallback scan"
+            exit 0
+          fi
+          COUNT=$(grep -c '\[batch-fallback\]' server.log || true)
+          COUNT=${COUNT:-0}
+          ALLOWED=${BATCH_FALLBACK_ALLOWED:-0}
+          if [ "$COUNT" -gt 0 ]; then
+            echo "### V2 batch fallback usage" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "**$COUNT occurrence(s)** of \`[batch-fallback]\` in server.log (allowed: $ALLOWED)." >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Each occurrence means a V2 batch builder pass failed and the service degraded to single-item processing for one item; remaining items wait for the next scheduler tick." >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "<details><summary>Fallback log lines</summary>" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            grep '\[batch-fallback\]' server.log | tail -50 >> "$GITHUB_STEP_SUMMARY" || true
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo "</details>" >> "$GITHUB_STEP_SUMMARY"
+            if [ "$COUNT" -gt "$ALLOWED" ]; then
+              echo "::error title=V2 batch fallback exceeded threshold::$COUNT batch-fallback occurrence(s) in server.log (allowed: $ALLOWED). Inspect the dumped log for the preceding error context."
+              exit 1
+            else
+              echo "::warning title=V2 batch fallback (within allowed threshold)::$COUNT occurrence(s), allowed: $ALLOWED."
+            fi
+          else
+            echo "No V2 batch fallback detected (server.log is clean of [batch-fallback])."
+            echo "✅ No V2 batch fallback usage detected." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Detect V2 collateral-prep tx submissions
+        # The V2 ensureCollateralReady helper logs `[collateral-prep]` when it
+        # submits a wallet-bootstrap tx that splits a buyer wallet's single
+        # change UTxO into a collateral-reserve + change pair (otherwise the
+        # action wallet collapses to 1 UTxO and every subsequent script tx
+        # fails because Cardano forbids inputs/collateral_inputs overlap).
+        # Each occurrence costs ~0.18 ADA of preprod fees, so it's worth
+        # surfacing how often the helper had to fire. A handful per run is
+        # expected on a fresh test wallet; consistent re-fires across runs
+        # for the same wallet would indicate a loop bug.
+        if: always()
+        run: |
+          if [ ! -f server.log ]; then
+            echo "server.log not present, skipping collateral-prep scan"
+            exit 0
+          fi
+          COUNT=$(grep -c '\[collateral-prep\]' server.log || true)
+          COUNT=${COUNT:-0}
+          if [ "$COUNT" -gt 0 ]; then
+            echo "::notice title=V2 collateral-prep tx ran::$COUNT collateral-prep log occurrence(s) detected — a wallet-bootstrap tx was submitted to seed a buyer/seller wallet with a pure-ADA collateral UTxO. Expected on cold-start wallets; investigate if you see the same wallet retrying."
+            echo "### V2 collateral-prep tx activity" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "**$COUNT log line(s)** with the \`[collateral-prep]\` tag." >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Each \`V2 collateral prep tx submitted\` entry means the helper found a wallet without a usable collateral candidate and submitted a self-send prep tx to seed one. Subsequent action ticks defer until the prep confirms." >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "<details><summary>Collateral-prep log lines</summary>" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            grep '\[collateral-prep\]' server.log | tail -50 >> "$GITHUB_STEP_SUMMARY" || true
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo "</details>" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No V2 collateral-prep tx detected (no \`[collateral-prep]\` in server.log)."
+            echo "ℹ️ No V2 collateral-prep tx submissions detected." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload server.log artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: api-server-log
+          name: server-log-${{ github.run_id }}
           path: server.log
-          if-no-files-found: warn
+          if-no-files-found: ignore
           retention-days: 7
 
-      - name: Stop API Server
+      - name: Upload e2e logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-logs-${{ github.run_id }}
+          path: |
+            v1.log
+            v2.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Final cleanup of API Server pidfile
         if: always()
         run: |
-          if [ -f server.pid ]; then
-            kill $(cat server.pid) || true
-            rm server.pid
+          # Server + tee are already stopped above; clear the pidfiles and
+          # the fifo so a re-run on the same runner image starts clean.
+          rm -f server.pid tee.pid server.fifo
+
+      - name: Delete Neon Database Branch
+        if: always() && steps.create-branch.outputs.branch_id != ''
+        run: |
+          echo "Deleting database branch: ${{ steps.create-branch.outputs.branch_name }}"
+          DELETE_RESPONSE=$(curl -s -w "\n%{http_code}" -X DELETE \
+            "https://console.neon.tech/api/v2/projects/${{ secrets.NEON_PROJECT_ID }}/branches/${{ steps.create-branch.outputs.branch_id }}" \
+            -H "Authorization: Bearer ${{ secrets.NEON_API_KEY }}" \
+            -H "Accept: application/json")
+          DELETE_CODE=$(echo "$DELETE_RESPONSE" | tail -n1)
+          if [ "$DELETE_CODE" = "200" ] || [ "$DELETE_CODE" = "202" ]; then
+            echo "✅ Branch deleted (HTTP $DELETE_CODE)"
+          else
+            echo "⚠️ Branch delete returned HTTP $DELETE_CODE (auto-expiry at 24h will clean up)"
+            echo "$DELETE_RESPONSE" | sed '$d'
           fi

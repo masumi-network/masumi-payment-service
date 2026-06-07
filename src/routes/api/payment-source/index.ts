@@ -1,6 +1,6 @@
-import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
-import { z } from '@/utils/zod-openapi';
-import { AuthContext } from '@/utils/middleware/auth-middleware';
+import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { z } from '@masumi/payment-core/zod';
+import { AuthContext } from '@masumi/payment-core/auth';
 import {
 	adminWalletSchema,
 	paymentSourceOutputSchema,

@@ -1,0 +1,14 @@
+-- No-op: this migration originally recreated
+--   PaymentSource_network_policyId_active_key
+-- but that index was already created (idempotently, via IF NOT EXISTS) by
+-- the earlier migration 20260519120000_add_payment_source_type_v2_registry_metadata.
+-- The recreate was harmless (IF NOT EXISTS short-circuits on second run)
+-- but cluttered the migration history. The migration directory is kept so
+-- Prisma's `_prisma_migrations` table on already-deployed databases
+-- continues to find a matching entry (deleting the dir would surface as
+-- "drift" on next `prisma migrate status`).
+--
+-- The canonical definition of the index lives in
+--   prisma/migrations/20260519120000_add_payment_source_type_v2_registry_metadata/migration.sql
+-- (search: PaymentSource_network_policyId_active_key)
+SELECT 1;

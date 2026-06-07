@@ -1,5 +1,5 @@
 import { ApiKeyStatus, Network } from '@/generated/prisma/client';
-import { z } from '@/utils/zod-openapi';
+import { z } from '@masumi/payment-core/zod';
 import { apiKeyOutputSchema } from './schemas';
 
 export const apiKeyExample = {
@@ -11,6 +11,7 @@ export const apiKeyExample = {
 	canAdmin: true,
 	usageLimited: true,
 	NetworkLimit: [Network.Preprod],
+	ChainIdLimit: ['cardano:preprod'],
 	RemainingUsageCredits: [
 		{
 			unit: '',

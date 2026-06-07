@@ -14,7 +14,7 @@
  * - Refund Functions
  */
 
-import { Network } from '@/generated/prisma/enums';
+import { Network, PaymentSourceType } from '@/generated/prisma/enums';
 import { PaymentResponse, PurchaseResponse, RegistrationResponse } from './utils/apiClient';
 import './setup/globals';
 import { getTestWalletFromDatabase, getActiveSmartContractAddress } from './utils/paymentSourceHelper';
@@ -36,8 +36,116 @@ class FatalE2EError extends Error {
 	}
 }
 
-function sleep(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
+interface BlockchainStateWaitOptions {
+	signal?: AbortSignal;
+	timeoutMs?: number;
+	intervalMs?: number;
+}
+
+function normalizeBlockchainStateWaitOptions(
+	optionsOrSignal?: AbortSignal | BlockchainStateWaitOptions,
+): BlockchainStateWaitOptions {
+	if (optionsOrSignal == null) {
+		return {};
+	}
+	if ('aborted' in optionsOrSignal && 'addEventListener' in optionsOrSignal) {
+		return { signal: optionsOrSignal };
+	}
+	return optionsOrSignal;
+}
+
+function logBlockchainWaitMode(label: string, timeoutMs: number): void {
+	if (timeoutMs === 0) {
+		console.log(`⏳ E2E: infinite wait enabled (${label})`);
+		return;
+	}
+	console.log(`⏳ E2E: timeout enabled — waiting up to ${Math.floor(timeoutMs / 60000)} min (${label})`);
+}
+
+async function fetchPaymentAndPurchaseByBlockchainIdentifier(
+	blockchainIdentifier: string,
+	network: Network,
+): Promise<{ currentPayment?: PaymentResponse; currentPurchase?: PurchaseResponse }> {
+	const [currentPayment, currentPurchase] = await Promise.all([
+		global.testApiClient.resolvePaymentByBlockchainIdentifier({
+			blockchainIdentifier,
+			network,
+		}),
+		global.testApiClient.resolvePurchaseByBlockchainIdentifier({
+			blockchainIdentifier,
+			network,
+		}),
+	]);
+
+	return { currentPayment, currentPurchase };
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+	return new Promise((resolve, reject) => {
+		if (signal?.aborted) {
+			reject(new Error(`Aborted: ${signal.reason ?? 'signal aborted'}`));
+			return;
+		}
+		// Remove the abort listener on normal resolution. `pollUntil` reuses one
+		// signal across every iteration; `{ once: true }` only auto-removes on
+		// abort, so without this a long poll leaks a listener per sleep and trips
+		// Node's MaxListenersExceededWarning.
+		const onAbort = () => {
+			clearTimeout(timer);
+			reject(new Error(`Aborted: ${signal?.reason ?? 'signal aborted'}`));
+		};
+		const timer = setTimeout(() => {
+			signal?.removeEventListener('abort', onAbort);
+			resolve();
+		}, ms);
+		signal?.addEventListener('abort', onAbort, { once: true });
+	});
+}
+
+/**
+ * Runs all tasks concurrently and, on the FIRST rejection, aborts the rest via a
+ * shared AbortSignal. Without this, a sibling infinite `pollUntil` keeps looping
+ * (and logging) after Jest has torn the test down → "Cannot log after tests are done".
+ * Each task receives the signal and is expected to thread it into `pollUntil`.
+ */
+export async function allWithAbortOnFailure<T>(tasks: Array<(signal: AbortSignal) => Promise<T>>): Promise<T[]> {
+	const controller = new AbortController();
+	const promises = tasks.map(async (task) => {
+		try {
+			return await task(controller.signal);
+		} catch (err) {
+			if (!controller.signal.aborted) {
+				controller.abort(err);
+			}
+			throw err;
+		}
+	});
+
+	const results = await Promise.allSettled(promises);
+	let hasRejection = false;
+	let firstRejection: unknown;
+	const values: T[] = [];
+
+	for (const result of results) {
+		if (result.status === 'rejected') {
+			if (!hasRejection) {
+				firstRejection = result.reason;
+				hasRejection = true;
+			}
+		} else {
+			values.push(result.value);
+		}
+	}
+
+	if (hasRejection) {
+		throw firstRejection;
+	}
+
+	if (!controller.signal.aborted) {
+		controller.abort('batch settled');
+	}
+
+	return values;
 }
 
 async function pollUntil(
@@ -46,11 +154,13 @@ async function pollUntil(
 		timeoutMs?: number; // 0 or undefined => infinite
 		intervalMs?: number;
 		label?: string;
+		signal?: AbortSignal;
 	},
 ): Promise<void> {
 	const intervalMs = options?.intervalMs ?? 5000;
 	const timeoutMs = options?.timeoutMs ?? 0;
 	const label = options?.label ? ` (${options.label})` : '';
+	const signal = options?.signal;
 
 	const startedAt = Date.now();
 	const isInfinite = timeoutMs === 0;
@@ -60,6 +170,9 @@ async function pollUntil(
 	let pollCount = 0;
 
 	while (isInfinite || Date.now() < deadline) {
+		if (signal?.aborted) {
+			throw new Error(`Aborted${label} (polls=${pollCount}): ${signal.reason ?? 'signal aborted'}`);
+		}
 		pollCount++;
 		try {
 			await check();
@@ -69,7 +182,7 @@ async function pollUntil(
 				throw err; // fail-fast
 			}
 			lastErr = err;
-			await sleep(intervalMs);
+			await sleep(intervalMs, signal);
 		}
 	}
 
@@ -125,14 +238,20 @@ export interface TimingConfig {
 /**
  * Register an agent and wait for full confirmation with agent identifier
  * @param network - The blockchain network (Preprod, Mainnet, etc.)
+ * @param paymentSourceType - Optional override for the payment source type (defaults to `global.testConfig.paymentSourceType`)
  * @returns Confirmed agent data with identifier
  */
-export async function registerAndConfirmAgent(network: Network): Promise<ConfirmedAgent> {
+export async function registerAndConfirmAgent(
+	network: Network,
+	paymentSourceType?: PaymentSourceType,
+	signal?: AbortSignal,
+): Promise<ConfirmedAgent> {
+	const resolvedPaymentSourceType = paymentSourceType ?? global.testConfig.paymentSourceType;
 	console.log('📝 E2E: starting agent registration and confirmation...');
 
 	// Get test wallet dynamically from database
 	console.log('🔍 E2E: loading test wallet from database...');
-	const testWallet = await getTestWalletFromDatabase(network, 'seller');
+	const testWallet = await getTestWalletFromDatabase(network, 'seller', undefined, resolvedPaymentSourceType);
 	const testScenario = getTestScenarios().basicAgent;
 
 	const registrationData = generateTestRegistrationData(network, testWallet.vkey, testScenario);
@@ -140,6 +259,7 @@ export async function registerAndConfirmAgent(network: Network): Promise<Confirm
 	console.log(`🎯 E2E: registration payload:
     - Agent Name: ${registrationData.name}
     - Network: ${registrationData.network}
+    - Payment Source Type: ${resolvedPaymentSourceType}
     - Wallet: ${testWallet.name}
     - Pricing: ${registrationData.AgentPricing.Pricing.map((p) => `${p.amount} ${p.unit}`).join(', ')}
   `);
@@ -180,7 +300,11 @@ export async function registerAndConfirmAgent(network: Network): Promise<Confirm
 				`🔄 E2E: poll #${checkCount} (${elapsedMinutes} min elapsed) — registration ${registrationResponse.id}`,
 			);
 
-			const registration = await global.testApiClient.getRegistrationById(registrationResponse.id, network);
+			const registration = await global.testApiClient.getRegistrationById(
+				registrationResponse.id,
+				network,
+				resolvedPaymentSourceType,
+			);
 
 			if (!registration) {
 				throw new Error(`Registration ${registrationResponse.id} not found`);
@@ -203,6 +327,7 @@ export async function registerAndConfirmAgent(network: Network): Promise<Confirm
 			timeoutMs: registrationTimeout,
 			intervalMs: 5000,
 			label: 'registration confirmation',
+			signal,
 		},
 	);
 
@@ -213,7 +338,11 @@ export async function registerAndConfirmAgent(network: Network): Promise<Confirm
 
 	await pollUntil(
 		async () => {
-			const registration = await global.testApiClient.getRegistrationById(registrationResponse.id, network);
+			const registration = await global.testApiClient.getRegistrationById(
+				registrationResponse.id,
+				network,
+				resolvedPaymentSourceType,
+			);
 
 			if (!registration) {
 				throw new Error(`Registration ${registrationResponse.id} not found`);
@@ -240,7 +369,7 @@ export async function registerAndConfirmAgent(network: Network): Promise<Confirm
 			console.log(`⚠️ E2E: agent identifier not yet available for registration ${registrationResponse.id}`);
 			throw new Error(`Agent identifier not yet available`);
 		},
-		{ timeoutMs: 60000, intervalMs: 5000, label: 'agent identifier' },
+		{ timeoutMs: 60000, intervalMs: 5000, label: 'agent identifier', signal },
 	);
 
 	const registrationMinutes = Math.floor((Date.now() - startTime) / 60000);
@@ -271,7 +400,7 @@ export async function deregisterAgent(
 	agentIdentifier: string,
 ): Promise<{ id: string; state: string }> {
 	// Query the active smart contract address dynamically from database
-	const activeSmartContractAddress = await getActiveSmartContractAddress(network);
+	const activeSmartContractAddress = await getActiveSmartContractAddress(network, global.testConfig.paymentSourceType);
 
 	const deregisterResponse = await global.testApiClient.request<{
 		id: string;
@@ -298,19 +427,50 @@ export async function deregisterAgent(
 /**
  * Deregister an agent and wait for DeregistrationConfirmed.
  * This will fail fast if the request transitions into DeregistrationFailed.
+ *
+ * @param paymentSourceType - Optional override for the payment source type (defaults to `global.testConfig.paymentSourceType`).
+ *   When V1 and V2 teardown run concurrently (e.g. `Promise.allSettled`), each call must
+ *   carry its own type instead of racing on the shared global.
  */
 export async function deregisterAndConfirmAgent(
 	network: Network,
 	agentIdentifier: string,
 	options?: { timeoutMs?: number; intervalMs?: number },
+	paymentSourceType?: PaymentSourceType,
 ): Promise<{ id: string; state: string }> {
+	const resolvedPaymentSourceType = paymentSourceType ?? global.testConfig.paymentSourceType;
 	console.log('🔄 E2E: deregistering agent and waiting for confirmation...');
 
-	const deregisterResponse = await deregisterAgent(network, agentIdentifier);
+	// Inline the deregister request so we can thread `resolvedPaymentSourceType` through without
+	// mutating the shared `global.testConfig` (V1 + V2 teardown can run concurrently).
+	const activeSmartContractAddress = await getActiveSmartContractAddress(network, resolvedPaymentSourceType);
+
+	const deregisterResponse = await global.testApiClient.request<{
+		id: string;
+		state: string;
+	}>('/api/v1/registry/deregister', {
+		method: 'POST',
+		body: JSON.stringify({
+			network: network,
+			agentIdentifier: agentIdentifier,
+			smartContractAddress: activeSmartContractAddress,
+		}),
+	});
+
+	if (!deregisterResponse.id) {
+		throw new Error('Deregistration response ID is undefined');
+	}
+	if (!deregisterResponse.state) {
+		throw new Error('Deregistration response state is undefined');
+	}
 
 	await pollUntil(
 		async () => {
-			const registration = await global.testApiClient.getRegistrationById(deregisterResponse.id, network);
+			const registration = await global.testApiClient.getRegistrationById(
+				deregisterResponse.id,
+				network,
+				resolvedPaymentSourceType,
+			);
 
 			if (!registration) {
 				throw new Error(`Deregistration ${deregisterResponse.id} not found`);
@@ -353,10 +513,13 @@ export async function deregisterAndConfirmAgent(
 export async function createPayment(agentIdentifier: string, network: Network): Promise<PaymentResult> {
 	console.log('💰 E2E: creating payment (default timing)...');
 
-	const paymentData = generateTestPaymentData(network, agentIdentifier);
+	const paymentData = generateTestPaymentData(network, agentIdentifier, {
+		paymentSourceType: global.testConfig.paymentSourceType,
+	});
 
 	console.log(`🎯 E2E: payment payload:
     - Network: ${paymentData.network}
+    - Payment Source Type: ${paymentData.paymentSourceType}
     - Agent ID: ${agentIdentifier}
     - Purchaser ID: ${paymentData.identifierFromPurchaser}
   `);
@@ -409,11 +572,13 @@ export async function createPaymentWithCustomTiming(
   `);
 
 	const paymentData = generateTestPaymentData(network, agentIdentifier, {
+		paymentSourceType: global.testConfig.paymentSourceType,
 		customTiming,
 	});
 
 	console.log(`🎯 E2E: payment payload:
     - Network: ${paymentData.network}
+    - Payment Source Type: ${paymentData.paymentSourceType}
     - Agent ID: ${agentIdentifier}
     - Purchaser ID: ${paymentData.identifierFromPurchaser}
   `);
@@ -459,14 +624,20 @@ export async function createPurchase(paymentResult: PaymentResult, agentData: Co
 
 	// Use the blockchain identifier for purchase creation
 
-	// Create purchase data manually using the payment data
+	// Create purchase data manually using the payment data.
+	// V2 purchases require `smartContractAddress` because the V2 signed
+	// blockchainIdentifier payload binds to a specific contract, and the
+	// purchase route verifies the body's address matches what the V2 source
+	// is configured against. The payment response always carries the
+	// PaymentSource it was scoped to, so reuse that.
 	const purchaseData = {
 		blockchainIdentifier: paymentResult.blockchainIdentifier,
 		network: paymentResult.response.PaymentSource.network,
+		smartContractAddress: paymentResult.response.PaymentSource.smartContractAddress,
 		inputHash: paymentResult.inputHash,
 		sellerVkey: agentData.SmartContractWallet.walletVkey,
 		agentIdentifier: agentData.agentIdentifier,
-		paymentType: paymentResult.response.PaymentSource.paymentType,
+		paymentSourceType: paymentResult.response.PaymentSource.paymentSourceType,
 		unlockTime: paymentResult.unlockTime,
 		externalDisputeUnlockTime: paymentResult.externalDisputeUnlockTime,
 		submitResultTime: paymentResult.submitResultTime,
@@ -510,9 +681,16 @@ export async function createPurchase(paymentResult: PaymentResult, agentData: Co
  * @param blockchainIdentifier - The blockchain identifier to monitor
  * @param network - The blockchain network
  */
-export async function waitForFundsLocked(blockchainIdentifier: string, network: Network): Promise<void> {
+export async function waitForFundsLocked(
+	blockchainIdentifier: string,
+	network: Network,
+	optionsOrSignal?: AbortSignal | BlockchainStateWaitOptions,
+): Promise<void> {
 	console.log('⏳ E2E: waiting for FundsLocked (payment + purchase)...');
-	console.log('⏳ E2E: infinite wait enabled (FundsLocked)');
+	const options = normalizeBlockchainStateWaitOptions(optionsOrSignal);
+	const timeoutMs = options.timeoutMs ?? 0;
+	const intervalMs = options.intervalMs ?? 5000;
+	logBlockchainWaitMode('FundsLocked', timeoutMs);
 
 	const fundsLockedStartTime = Date.now();
 	await pollUntil(
@@ -520,19 +698,10 @@ export async function waitForFundsLocked(blockchainIdentifier: string, network: 
 			const elapsedMinutes = Math.floor((Date.now() - fundsLockedStartTime) / 60000);
 			console.log(`⏱️ E2E: polling states for FundsLocked (${elapsedMinutes} min elapsed)`);
 
-			// Query both payment and purchase states in parallel
-			const [paymentResponse, purchaseResponse] = await Promise.all([
-				global.testApiClient.queryPayments({
-					network: network,
-				}),
-				global.testApiClient.queryPurchases({
-					network: network,
-				}),
-			]);
-
-			const currentPayment = paymentResponse.Payments.find((p) => p.blockchainIdentifier === blockchainIdentifier);
-
-			const currentPurchase = purchaseResponse.Purchases.find((p) => p.blockchainIdentifier === blockchainIdentifier);
+			const { currentPayment, currentPurchase } = await fetchPaymentAndPurchaseByBlockchainIdentifier(
+				blockchainIdentifier,
+				network,
+			);
 			if (currentPayment == undefined) {
 				console.warn(`⚠️ E2E: payment not found yet (blockchainId=${blockchainIdentifier.substring(0, 50)}...)`);
 			}
@@ -588,7 +757,7 @@ export async function waitForFundsLocked(blockchainIdentifier: string, network: 
 				`📊 E2E: purchase state=${currentPurchase.onChainState}, action=${currentPurchase.NextAction.requestedAction}`,
 			);
 		},
-		{ timeoutMs: 0, intervalMs: 5000, label: 'FundsLocked' },
+		{ timeoutMs, intervalMs, label: 'FundsLocked', signal: options.signal },
 	);
 
 	const fundsLockedMinutes = Math.floor((Date.now() - fundsLockedStartTime) / 60000);
@@ -600,10 +769,16 @@ export async function waitForFundsLocked(blockchainIdentifier: string, network: 
  * @param blockchainIdentifier - The blockchain identifier to monitor
  * @param network - The blockchain network
  */
-export async function waitForResultSubmitted(blockchainIdentifier: string, network: Network): Promise<void> {
+export async function waitForResultSubmitted(
+	blockchainIdentifier: string,
+	network: Network,
+	optionsOrSignal?: AbortSignal | BlockchainStateWaitOptions,
+): Promise<void> {
 	console.log('⏳ E2E: waiting for ResultSubmitted (payment + purchase)...');
-
-	console.log('⏳ E2E: infinite wait enabled (ResultSubmitted)');
+	const options = normalizeBlockchainStateWaitOptions(optionsOrSignal);
+	const timeoutMs = options.timeoutMs ?? 0;
+	const intervalMs = options.intervalMs ?? 5000;
+	logBlockchainWaitMode('ResultSubmitted', timeoutMs);
 
 	const resultSubmittedStartTime = Date.now();
 	await pollUntil(
@@ -611,19 +786,10 @@ export async function waitForResultSubmitted(blockchainIdentifier: string, netwo
 			const elapsedMinutes = Math.floor((Date.now() - resultSubmittedStartTime) / 60000);
 			console.log(`⏱️ E2E: polling states for ResultSubmitted (${elapsedMinutes} min elapsed)`);
 
-			// Query both payment and purchase states in parallel
-			const [paymentResponse, purchaseResponse] = await Promise.all([
-				global.testApiClient.queryPayments({
-					network: network,
-				}),
-				global.testApiClient.queryPurchases({
-					network: network,
-				}),
-			]);
-
-			const currentPayment = paymentResponse.Payments.find((p) => p.blockchainIdentifier === blockchainIdentifier);
-
-			const currentPurchase = purchaseResponse.Purchases.find((p) => p.blockchainIdentifier === blockchainIdentifier);
+			const { currentPayment, currentPurchase } = await fetchPaymentAndPurchaseByBlockchainIdentifier(
+				blockchainIdentifier,
+				network,
+			);
 
 			if (currentPayment == undefined) {
 				console.warn(`⚠️ E2E: payment not found yet (blockchainId=${blockchainIdentifier.substring(0, 50)}...)`);
@@ -660,7 +826,7 @@ export async function waitForResultSubmitted(blockchainIdentifier: string, netwo
 			console.log(`✅ E2E: payment reached ResultSubmitted (state=${currentPayment!.onChainState})`);
 			console.log(`✅ E2E: purchase reached ResultSubmitted (state=${currentPurchase!.onChainState})`);
 		},
-		{ timeoutMs: 0, intervalMs: 5000, label: 'ResultSubmitted' },
+		{ timeoutMs, intervalMs, label: 'ResultSubmitted', signal: options.signal },
 	);
 
 	const resultSubmittedMinutes = Math.floor((Date.now() - resultSubmittedStartTime) / 60000);
@@ -672,9 +838,16 @@ export async function waitForResultSubmitted(blockchainIdentifier: string, netwo
  * @param blockchainIdentifier - The blockchain identifier to monitor
  * @param network - The blockchain network
  */
-export async function waitForDisputed(blockchainIdentifier: string, network: Network): Promise<void> {
+export async function waitForDisputed(
+	blockchainIdentifier: string,
+	network: Network,
+	optionsOrSignal?: AbortSignal | BlockchainStateWaitOptions,
+): Promise<void> {
 	console.log('⏳ E2E: waiting for Disputed (payment + purchase)...');
-	console.log('⏳ E2E: infinite wait enabled (Disputed)');
+	const options = normalizeBlockchainStateWaitOptions(optionsOrSignal);
+	const timeoutMs = options.timeoutMs ?? 0;
+	const intervalMs = options.intervalMs ?? 5000;
+	logBlockchainWaitMode('Disputed', timeoutMs);
 
 	const disputedWaitStartTime = Date.now();
 	await pollUntil(
@@ -682,22 +855,9 @@ export async function waitForDisputed(blockchainIdentifier: string, network: Net
 			const elapsedMinutes = Math.floor((Date.now() - disputedWaitStartTime) / 60000);
 			console.log(`⏱️ E2E: polling states for Disputed (${elapsedMinutes} min elapsed)`);
 
-			// Query both payment and purchase states in parallel
-			const [paymentResponse, purchaseResponse] = await Promise.all([
-				global.testApiClient.queryPayments({
-					network: network,
-				}),
-				global.testApiClient.queryPurchases({
-					network: network,
-				}),
-			]);
-
-			const currentPayment = paymentResponse.Payments.find(
-				(payment) => payment.blockchainIdentifier === blockchainIdentifier,
-			);
-
-			const currentPurchase = purchaseResponse.Purchases.find(
-				(purchase) => purchase.blockchainIdentifier === blockchainIdentifier,
+			const { currentPayment, currentPurchase } = await fetchPaymentAndPurchaseByBlockchainIdentifier(
+				blockchainIdentifier,
+				network,
 			);
 			if (currentPayment == undefined) {
 				console.warn(`⚠️ E2E: payment not found yet (blockchainId=${blockchainIdentifier.substring(0, 50)}...)`);
@@ -748,7 +908,7 @@ export async function waitForDisputed(blockchainIdentifier: string, network: Net
 			console.log('✅ E2E: payment is Disputed and ready for admin authorization');
 			console.log('✅ E2E: purchase is Disputed and ready for admin authorization');
 		},
-		{ timeoutMs: 0, intervalMs: 5000, label: 'Disputed' },
+		{ timeoutMs, intervalMs, label: 'Disputed', signal: options.signal },
 	);
 
 	const refundStateMinutes = Math.floor((Date.now() - disputedWaitStartTime) / 60000);
@@ -760,9 +920,16 @@ export async function waitForDisputed(blockchainIdentifier: string, network: Net
  * @param blockchainIdentifier - The blockchain identifier to monitor
  * @param network - The blockchain network
  */
-export async function waitForRefundRequested(blockchainIdentifier: string, network: Network): Promise<void> {
+export async function waitForRefundRequested(
+	blockchainIdentifier: string,
+	network: Network,
+	optionsOrSignal?: AbortSignal | BlockchainStateWaitOptions,
+): Promise<void> {
 	console.log('⏳ E2E: waiting for RefundRequested (payment + purchase)...');
-	console.log('⏳ E2E: infinite wait enabled (RefundRequested)');
+	const options = normalizeBlockchainStateWaitOptions(optionsOrSignal);
+	const timeoutMs = options.timeoutMs ?? 0;
+	const intervalMs = options.intervalMs ?? 5000;
+	logBlockchainWaitMode('RefundRequested', timeoutMs);
 
 	const refundRequestedStartTime = Date.now();
 	await pollUntil(
@@ -770,22 +937,9 @@ export async function waitForRefundRequested(blockchainIdentifier: string, netwo
 			const elapsedMinutes = Math.floor((Date.now() - refundRequestedStartTime) / 60000);
 			console.log(`⏱️ E2E: polling states for RefundRequested (${elapsedMinutes} min elapsed)`);
 
-			// Query both payment and purchase states in parallel
-			const [paymentResponse, purchaseResponse] = await Promise.all([
-				global.testApiClient.queryPayments({
-					network: network,
-				}),
-				global.testApiClient.queryPurchases({
-					network: network,
-				}),
-			]);
-
-			const currentPayment = paymentResponse.Payments.find(
-				(payment) => payment.blockchainIdentifier === blockchainIdentifier,
-			);
-
-			const currentPurchase = purchaseResponse.Purchases.find(
-				(purchase) => purchase.blockchainIdentifier === blockchainIdentifier,
+			const { currentPayment, currentPurchase } = await fetchPaymentAndPurchaseByBlockchainIdentifier(
+				blockchainIdentifier,
+				network,
 			);
 
 			if (currentPayment == undefined) {
@@ -829,7 +983,7 @@ export async function waitForRefundRequested(blockchainIdentifier: string, netwo
 			console.log('✅ E2E: payment is RefundRequested and ready for result submission');
 			console.log('✅ E2E: purchase is RefundRequested and ready for result submission');
 		},
-		{ timeoutMs: 0, intervalMs: 5000, label: 'RefundRequested' },
+		{ timeoutMs, intervalMs, label: 'RefundRequested', signal: options.signal },
 	);
 
 	const refundRequestedMinutes = Math.floor((Date.now() - refundRequestedStartTime) / 60000);
