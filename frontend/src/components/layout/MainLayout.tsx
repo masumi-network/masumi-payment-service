@@ -649,30 +649,35 @@ export function MainLayout({ children }: MainLayoutProps) {
               <X402SetupBanner />
             </div>
           )}
-          {activeRail !== 'x402' && hasLegacyOnlyPaymentSources && !isSetupMode && (
-            <div className="border-b border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100">
-              <div className="mx-auto flex max-w-[1400px] flex-col gap-3 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex gap-3">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" />
-                  <div className="space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium">V2 is not set up for {network}</span>
-                      <PaymentSourceTypeBadge
-                        paymentSourceType={DEFAULT_PAYMENT_SOURCE_TYPE}
-                        showDefault
-                      />
+          {activeRail !== 'x402' &&
+            hasLegacyOnlyPaymentSources &&
+            !isSetupMode &&
+            // The payment-sources page renders its own richer V2 setup banner, so
+            // suppress the global one there to avoid showing it twice.
+            router.pathname !== '/payment-sources' && (
+              <div className="border-b border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100">
+                <div className="mx-auto flex max-w-[1400px] flex-col gap-3 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex gap-3">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" />
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium">V2 is not set up for {network}</span>
+                        <PaymentSourceTypeBadge
+                          paymentSourceType={DEFAULT_PAYMENT_SOURCE_TYPE}
+                          showDefault
+                        />
+                      </div>
+                      <p className="opacity-85">
+                        Run the one-time V2 setup, then migrate your agents on the dashboard.
+                      </p>
                     </div>
-                    <p className="opacity-85">
-                      Run the one-time V2 setup, then migrate your agents on the dashboard.
-                    </p>
                   </div>
+                  <Button size="sm" asChild>
+                    <Link href={`/setup?network=${network}`}>Start V2 setup</Link>
+                  </Button>
                 </div>
-                <Button size="sm" asChild>
-                  <Link href={`/setup?network=${network}`}>Start V2 setup</Link>
-                </Button>
               </div>
-            </div>
-          )}
+            )}
           <div className="max-w-[1400px] mx-auto w-full p-8 px-4">{children}</div>
         </main>
       </div>

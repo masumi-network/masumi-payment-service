@@ -12,6 +12,9 @@ export const caip2Eip155Schema = z
 
 export const evmAddressSchema = z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Expected an EVM address');
 export const uintStringSchema = z.string().regex(/^\d+$/, 'Expected an unsigned integer string');
+// A boolean carried in a query string. z.coerce.boolean() is WRONG here: Boolean("false")
+// is true, so "false" would read as true. Parse the literal string instead.
+export const booleanQuerySchema = z.enum(['true', 'false']).transform((value) => value === 'true');
 export const paymentIdentifierSchema = z
 	.string()
 	.min(16)
@@ -189,7 +192,7 @@ export const paymentAttemptsCountSchemaInput = z.object({
 
 export const settlementsCountSchemaInput = z.object({
 	caip2Network: caip2Eip155Schema.optional(),
-	success: z.coerce.boolean().optional(),
+	success: booleanQuerySchema.optional(),
 });
 
 export const walletsCountSchemaInput = z.object({
@@ -261,8 +264,8 @@ export const setLowBalanceRuleSchemaInput = z.object({
 
 export const listLowBalanceRulesSchemaInput = z.object({
 	evmWalletId: z.string().optional().describe('Filter rules to a single wallet'),
-	onlyLow: z.coerce.boolean().optional().describe('Only return rules currently in the Low state'),
-	includeDisabled: z.coerce.boolean().optional().describe('Include disabled rules'),
+	onlyLow: booleanQuerySchema.optional().describe('Only return rules currently in the Low state'),
+	includeDisabled: booleanQuerySchema.optional().describe('Include disabled rules'),
 });
 
 export const updateLowBalanceRuleSchemaInput = z.object({
@@ -361,6 +364,12 @@ export const upsertNetworkSchemaInput = z.object({
 	isEnabled: z.boolean().optional(),
 	defaultAsset: evmAddressSchema.nullable().optional(),
 	facilitatorWalletId: z.string().nullable().optional(),
+});
+
+export const listNetworksSchemaInput = z.object({
+	isTestnet: booleanQuerySchema
+		.optional()
+		.describe('Filter chains by environment: true for testnet (Preprod), false for mainnet'),
 });
 
 export const listNetworksSchemaOutput = z.object({

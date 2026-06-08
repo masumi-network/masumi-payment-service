@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { useAppContext } from '@/lib/contexts/AppContext';
+import { useAppContext, type NetworkType } from '@/lib/contexts/AppContext';
+import { isTestnetEnv } from '@/lib/x402-rail';
 import {
   getX402Budgets,
   getX402LowBalance,
@@ -21,17 +22,27 @@ import {
 
 const PAGE_SIZE = 20;
 
-export function useX402Networks(options?: { silentErrors?: boolean }) {
-  const { apiClient, authorized } = useAppContext();
+export function useX402Networks(options?: { silentErrors?: boolean; network?: NetworkType }) {
+  const { apiClient, authorized, network: activeNetwork } = useAppContext();
   const silentErrors = options?.silentErrors ?? false;
+  // Always scope chains to an environment, enforced at the query level: testnet chains
+  // belong to Preprod, mainnet chains to Mainnet. Defaults to the active top-selector env;
+  // callers that own their env (e.g. the setup wizard) can pass it explicitly.
+  const network = options?.network ?? activeNetwork;
+  const isTestnet = isTestnetEnv(network);
 
   const query = useQuery({
     // Keyed by silentErrors so the silent (selector) and toasting (tab) consumers do
-    // not share one cache entry and race on which onError handler runs.
-    queryKey: ['x402-networks', silentErrors],
+    // not share one cache entry and race on which onError handler runs, and by env so
+    // switching the top selector refetches the right environment's chains.
+    queryKey: ['x402-networks', silentErrors, isTestnet],
     queryFn: async () => {
       const response = await handleApiCall(
-        () => getX402Networks({ client: apiClient }),
+        () =>
+          getX402Networks({
+            client: apiClient,
+            query: { isTestnet: isTestnet ? 'true' : 'false' },
+          }),
         // The selector renders this for every key, including non-admins that get a 401.
         // Stay silent there and fall back to an empty list instead of toasting.
         silentErrors ? { onError: () => {} } : { errorMessage: 'Failed to fetch chains' },
@@ -190,7 +201,11 @@ export function useX402LowBalanceRules(includeDisabled = true) {
     queryKey: ['x402-low-balance', includeDisabled],
     queryFn: async () => {
       const response = await handleApiCall(
-        () => getX402LowBalance({ client: apiClient, query: { includeDisabled } }),
+        () =>
+          getX402LowBalance({
+            client: apiClient,
+            query: { includeDisabled: includeDisabled ? 'true' : 'false' },
+          }),
         { errorMessage: 'Failed to fetch low-balance rules' },
       );
       return response?.data?.data?.Rules ?? [];
