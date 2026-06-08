@@ -8,6 +8,7 @@ import {
 	deleteWalletSchemaOutput,
 	listBudgetSchemaInput,
 	listBudgetSchemaOutput,
+	listNetworksSchemaInput,
 	listNetworksSchemaOutput,
 	listPaymentAttemptsSchemaInput,
 	listPaymentAttemptsSchemaOutput,
@@ -56,6 +57,7 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 		summary: 'List configured x402 EVM chains. (admin access required)',
 		tags: ['x402'],
 		security: [{ [apiKeyAuth.name]: [] }],
+		request: { query: listNetworksSchemaInput },
 		responses: {
 			200: successResponse('Configured x402 EVM chains', listNetworksSchemaOutput, listX402NetworksResponseExample),
 		},

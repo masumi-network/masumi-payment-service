@@ -23190,6 +23190,22 @@
                         "API-Key": []
                     }
                 ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "true",
+                                "false"
+                            ],
+                            "description": "Filter chains by environment: true for testnet (Preprod), false for mainnet"
+                        },
+                        "required": false,
+                        "description": "Filter chains by environment: true for testnet (Preprod), false for mainnet",
+                        "name": "isTestnet",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "Configured x402 EVM chains",
@@ -25158,8 +25174,11 @@
                     },
                     {
                         "schema": {
-                            "type": "boolean",
-                            "nullable": true,
+                            "type": "string",
+                            "enum": [
+                                "true",
+                                "false"
+                            ],
                             "description": "Only return rules currently in the Low state"
                         },
                         "required": false,
@@ -25169,8 +25188,11 @@
                     },
                     {
                         "schema": {
-                            "type": "boolean",
-                            "nullable": true,
+                            "type": "string",
+                            "enum": [
+                                "true",
+                                "false"
+                            ],
                             "description": "Include disabled rules"
                         },
                         "required": false,
@@ -25637,8 +25659,11 @@
                     },
                     {
                         "schema": {
-                            "type": "boolean",
-                            "nullable": true
+                            "type": "string",
+                            "enum": [
+                                "true",
+                                "false"
+                            ]
                         },
                         "required": false,
                         "name": "success",

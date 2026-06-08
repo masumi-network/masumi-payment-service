@@ -387,8 +387,11 @@ function assertPayloadRequirementsMatchRegisteredSource(
 	}
 }
 
-export async function listX402Networks() {
+export async function listX402Networks(input?: { isTestnet?: boolean }) {
 	const networks = await prisma.x402Network.findMany({
+		// Split by environment at the query level: testnet chains belong to the Preprod
+		// environment, mainnet chains to Mainnet. Undefined returns every chain.
+		where: { isTestnet: input?.isTestnet },
 		orderBy: { caip2Id: 'asc' },
 		select: {
 			id: true,

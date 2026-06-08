@@ -4,7 +4,7 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { Plus, Trash2, Edit2, Wand2, AlertTriangle, ShieldCheck, Eye, EyeOff } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useEffect, useMemo } from 'react';
-import { AddPaymentSourceDialog } from '@/components/payment-sources/AddPaymentSourceDialog';
+import { AddSourceDialog } from '@/components/payment-sources/AddSourceDialog';
 import { PaymentSourceDialog } from '@/components/payment-sources/PaymentSourceDialog';
 import Link from 'next/link';
 import { useQueryClient } from '@tanstack/react-query';
@@ -44,7 +44,6 @@ import {
   DEFAULT_PAYMENT_SOURCE_TYPE,
   getPaymentSourceTypeLabel,
   isV2PaymentSource,
-  type PaymentSourceType,
 } from '@/lib/payment-source-type';
 
 interface UpdatePaymentSourceDialogProps {
@@ -160,9 +159,6 @@ export default function PaymentSourcesPage() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [addPaymentSourceType, setAddPaymentSourceType] = useState<PaymentSourceType>(
-    DEFAULT_PAYMENT_SOURCE_TYPE,
-  );
 
   const [sourceToDelete, setSourceToDelete] = useState<PaymentSourceExtended | null>(null);
   const [sourceToUpdate, setSourceToUpdate] = useState<PaymentSourceExtended | null>(null);
@@ -284,13 +280,10 @@ export default function PaymentSourcesPage() {
               />
               <Button
                 className="flex items-center gap-2 btn-hover-lift"
-                onClick={() => {
-                  setAddPaymentSourceType(DEFAULT_PAYMENT_SOURCE_TYPE);
-                  setIsAddDialogOpen(true);
-                }}
+                onClick={() => setIsAddDialogOpen(true)}
               >
                 <Plus className="h-4 w-4" />
-                Add V2 source
+                Add source
               </Button>
             </div>
           </div>
@@ -332,15 +325,8 @@ export default function PaymentSourcesPage() {
                 </div>
               </div>
               {needsV2Setup && (
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    setAddPaymentSourceType(DEFAULT_PAYMENT_SOURCE_TYPE);
-                    setIsAddDialogOpen(true);
-                  }}
-                  className="shrink-0"
-                >
-                  Set up V2
+                <Button size="sm" asChild className="shrink-0">
+                  <Link href={`/setup?network=${network}`}>Set up V2</Link>
                 </Button>
               )}
             </div>
@@ -402,7 +388,7 @@ export default function PaymentSourcesPage() {
                         <EmptyState
                           icon="inbox"
                           title="No payment sources found"
-                          description="Add a V2 payment source to get started"
+                          description="Add a payment source to get started"
                           action={
                             <Button asChild>
                               <Link href={`/setup?network=${network}`}>
@@ -532,14 +518,7 @@ export default function PaymentSourcesPage() {
             </div>
           </div>
 
-          <AddPaymentSourceDialog
-            open={isAddDialogOpen}
-            onClose={() => setIsAddDialogOpen(false)}
-            onSuccess={() => {
-              refetch();
-            }}
-            defaultPaymentSourceType={addPaymentSourceType}
-          />
+          <AddSourceDialog open={isAddDialogOpen} onClose={() => setIsAddDialogOpen(false)} />
 
           <UpdatePaymentSourceDialog
             open={!!sourceToUpdate}
