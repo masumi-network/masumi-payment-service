@@ -68,6 +68,28 @@ const walletLowBalancePayloadSchema = createWebhookPayloadSchema(
 	'Wallet low-balance alert payload when a monitored wallet transitions into low balance',
 );
 
+const fundDistributionSentPayloadSchema = createWebhookPayloadSchema(
+	z.literal('FUND_DISTRIBUTION_SENT'),
+	z.object({
+		batchId: z.string().describe('Unique identifier grouping all outputs of this distribution transaction'),
+		fundWalletId: z.string().describe('Id of the fund wallet that sent the distribution'),
+		fundWalletAddress: z.string().describe('Address of the fund wallet'),
+		txHash: z.string().describe('On-chain transaction hash'),
+		network: z.nativeEnum(Network).describe('Network the transaction was submitted on'),
+		distributions: z
+			.array(
+				z.object({
+					requestId: z.string().describe('Id of the FundDistributionRequest'),
+					targetWalletId: z.string().describe('Id of the target hot wallet that received funds'),
+					targetWalletAddress: z.string().describe('Address of the target wallet'),
+					amount: z.string().describe('Amount sent in lovelace'),
+				}),
+			)
+			.describe('Individual distributions included in this batch transaction'),
+	}),
+	'Fund distribution sent payload when a fund wallet sends ADA to one or more low-balance wallets',
+);
+
 // Union schema for all webhook payloads
 const _webhookPayloadSchema = z.discriminatedUnion('event_type', [
 	purchaseOnChainStatusChangedPayloadSchema,
@@ -75,6 +97,7 @@ const _webhookPayloadSchema = z.discriminatedUnion('event_type', [
 	purchaseOnErrorPayloadSchema,
 	paymentOnErrorPayloadSchema,
 	walletLowBalancePayloadSchema,
+	fundDistributionSentPayloadSchema,
 ]);
 
 type WebhookPayload = z.infer<typeof _webhookPayloadSchema>;

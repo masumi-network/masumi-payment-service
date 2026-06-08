@@ -6,7 +6,7 @@ import {
 	reconcileAmbiguousFundingV2,
 	updateWalletTransactionHash,
 } from '@/services/transactions';
-import { walletLowBalanceMonitorService } from '@/services/wallets';
+import { walletLowBalanceMonitorService, fundDistributionService } from '@/services/wallets';
 import { webhookQueueService } from '@/services/webhooks';
 import type { JobDefinition } from '@/services/shared';
 
@@ -259,6 +259,13 @@ export const scheduledJobs: JobDefinition[] = [
 		startMessage: 'Starting low balance monitoring',
 		finishMessage: 'Finished low balance monitoring',
 		run: () => walletLowBalanceMonitorService.runScheduledMonitoringCycle(),
+	},
+	{
+		initialDelayMs: 55000,
+		intervalMs: 30 * 1000,
+		startMessage: 'Starting fund distribution processing',
+		finishMessage: 'Finished fund distribution processing',
+		run: () => fundDistributionService.processDistributionCycle(),
 	},
 	{
 		initialDelayMs: 50000,

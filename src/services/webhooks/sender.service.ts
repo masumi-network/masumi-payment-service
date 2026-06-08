@@ -522,6 +522,16 @@ class WebhookSenderService {
 			return lines.join('\n');
 		}
 
+		if (payload.event_type === WebhookEventType.FUND_DISTRIBUTION_SENT) {
+			lines.push('');
+			this.appendDetailLine(lines, '🏦', 'Fund Wallet ID', payload.data.fundWalletId);
+			this.appendDetailLine(lines, '📬', 'Fund Wallet address', payload.data.fundWalletAddress);
+			this.appendDetailLine(lines, '🔗', 'Tx hash', payload.data.txHash);
+			this.appendDetailLine(lines, '🌐', 'Network', payload.data.network);
+			this.appendDetailLine(lines, '⏱️', 'Event time', payload.timestamp);
+			return lines.join('\n');
+		}
+
 		lines.push('');
 		this.appendDetailLine(lines, '🏷️', 'ID', payload.data.id);
 		this.appendDetailLine(lines, '⛓️', 'Blockchain ID', payload.data.blockchainIdentifier);
@@ -559,6 +569,8 @@ class WebhookSenderService {
 				return { emoji: '🚨', title: 'Purchase error' };
 			case WebhookEventType.WALLET_LOW_BALANCE:
 				return { emoji: '🪫', title: 'Wallet balance low' };
+			case WebhookEventType.FUND_DISTRIBUTION_SENT:
+				return { emoji: '💸', title: 'Fund distribution sent' };
 			case WEBHOOK_TEST_EVENT_TYPE:
 				return { emoji: '🧪', title: 'Test webhook delivery' };
 			default:

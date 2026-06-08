@@ -43,6 +43,9 @@ jest.unstable_mockModule('@/generated/prisma/client', () => ({
 	HotWalletType,
 	Network,
 	PaymentSourceType,
+	FundDistributionPriority: { Warning: 'Warning', Critical: 'Critical' },
+	FundDistributionStatus: { Pending: 'Pending', Submitted: 'Submitted', Confirmed: 'Confirmed', Failed: 'Failed' },
+	TransactionStatus: { Pending: 'Pending', Submitted: 'Submitted', Confirmed: 'Confirmed' },
 }));
 
 jest.unstable_mockModule('@/generated/prisma/enums', () => ({
@@ -76,6 +79,15 @@ jest.unstable_mockModule('@masumi/payment-core/config', () => ({
 	CONFIG: {
 		LOW_BALANCE_DEFAULT_RULES_MAINNET: [],
 		LOW_BALANCE_DEFAULT_RULES_PREPROD: [],
+	},
+	CONSTANTS: {
+		MIN_TX_FEE_BUFFER_LOVELACE: 2000000n,
+	},
+}));
+
+jest.unstable_mockModule('@/services/wallets/fund-distribution', () => ({
+	fundDistributionService: {
+		requestTopup: jest.fn(),
 	},
 }));
 
