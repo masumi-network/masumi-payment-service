@@ -24,7 +24,7 @@ import {
   useX402PaymentAttempts,
   type X402PaymentFilters,
 } from '@/lib/hooks/useX402';
-import { shortenAddress } from '@/lib/utils';
+import { groupDigits, shortenAddress } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { X402PaymentAttempt } from '@/lib/api/generated';
 
@@ -98,6 +98,10 @@ export function PaymentsTab() {
 
   return (
     <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">
+        Every x402 payment this service signed (outbound) or verified and settled (inbound), newest
+        first. Filter by status, direction or chain.
+      </p>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <Select
@@ -171,14 +175,16 @@ export function PaymentsTab() {
 
       <div className="border rounded-lg overflow-x-auto">
         <table className="w-full">
-          <thead>
+          <thead className="bg-muted/30 dark:bg-muted/15">
             <tr className="border-b">
-              <th className="p-4 text-left text-sm font-medium">Direction</th>
-              <th className="p-4 text-left text-sm font-medium">Status</th>
-              <th className="p-4 text-left text-sm font-medium">Chain</th>
-              <th className="p-4 text-right text-sm font-medium">Amount (base units)</th>
-              <th className="p-4 text-left text-sm font-medium">Asset</th>
-              <th className="p-4 text-left text-sm font-medium">Created</th>
+              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Direction</th>
+              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Status</th>
+              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Chain</th>
+              <th className="p-4 text-right text-sm font-medium text-muted-foreground">
+                Amount (base units)
+              </th>
+              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Asset</th>
+              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Created</th>
             </tr>
           </thead>
           <tbody>
@@ -211,7 +217,9 @@ export function PaymentsTab() {
                     <Badge variant={STATUS_VARIANT[attempt.status]}>{attempt.status}</Badge>
                   </td>
                   <td className="p-4 text-sm">{chainLabel(attempt.caip2Network)}</td>
-                  <td className="p-4 text-right font-mono text-sm">{attempt.amount}</td>
+                  <td className="p-4 text-right font-mono text-sm">
+                    {groupDigits(attempt.amount)}
+                  </td>
                   <td className="p-4 font-mono text-sm">{shortenAddress(attempt.asset, 6)}</td>
                   <td className="p-4 text-sm text-muted-foreground">
                     {new Date(attempt.createdAt).toLocaleString()}

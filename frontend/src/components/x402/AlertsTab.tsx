@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import Link from 'next/link';
 import { useForm, Controller, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -6,7 +7,8 @@ import { toast } from 'react-toastify';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
+import { Badge, type BadgeProps } from '@/components/ui/badge';
+import { CopyButton } from '@/components/ui/copy-button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Spinner } from '@/components/ui/spinner';
 import {
@@ -27,7 +29,7 @@ import {
 import { RefreshButton } from '@/components/RefreshButton';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { useX402LowBalanceRules, useX402Networks, useX402Wallets } from '@/lib/hooks/useX402';
-import { cn, handleApiCall, shortenAddress } from '@/lib/utils';
+import { cn, formatX402Amount, groupDigits, handleApiCall, shortenAddress } from '@/lib/utils';
 import {
   deleteX402LowBalance,
   patchX402LowBalance,
@@ -37,11 +39,16 @@ import {
 
 const NATIVE = 'native';
 
-const STATUS_STYLE: Record<X402LowBalanceRule['status'], string> = {
-  Healthy: 'border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-400',
-  Low: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400',
-  Unknown: 'text-muted-foreground',
+const STATUS_VARIANT: Record<X402LowBalanceRule['status'], BadgeProps['variant']> = {
+  Healthy: 'success',
+  Low: 'warning',
+  Unknown: 'secondary',
 };
+
+// The native gas token has known 18 decimals, so show it in ETH; an ERC-20 threshold's
+// decimals are unknown here, so show grouped base units instead of a misleading decimal.
+const formatRuleAmount = (amount: string | null | undefined, asset: string) =>
+  asset === NATIVE ? `${formatX402Amount(amount, 18)} ETH` : groupDigits(amount);
 
 const ruleFormSchema = z
   .object({
@@ -128,15 +135,19 @@ export function AlertsTab() {
 
       <div className="border rounded-lg overflow-x-auto">
         <table className="w-full">
-          <thead>
+          <thead className="bg-muted/30 dark:bg-muted/15">
             <tr className="border-b">
-              <th className="p-4 text-left text-sm font-medium">Wallet</th>
-              <th className="p-4 text-left text-sm font-medium">Chain</th>
-              <th className="p-4 text-left text-sm font-medium">Asset</th>
-              <th className="p-4 text-right text-sm font-medium">Threshold</th>
-              <th className="p-4 text-right text-sm font-medium">Last seen</th>
-              <th className="p-4 text-left text-sm font-medium">Status</th>
-              <th className="p-4 text-right text-sm font-medium">Actions</th>
+              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Wallet</th>
+              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Chain</th>
+              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Asset</th>
+              <th className="p-4 text-right text-sm font-medium text-muted-foreground">
+                Threshold
+              </th>
+              <th className="p-4 text-right text-sm font-medium text-muted-foreground">
+                Last seen
+              </th>
+              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Status</th>
+              <th className="p-4 text-right text-sm font-medium text-muted-foreground">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -153,7 +164,14 @@ export function AlertsTab() {
                 <td colSpan={7}>
                   <EmptyState
                     title="No alerts configured"
-                    description="Add a low-balance alert so a wallet running out of gas or tokens does not silently break settlement."
+                    description="Add a low-balance alert so a wallet running out of gas or tokens does not silently break settlement. You need a managed wallet first."
+                    action={
+                      <Button asChild variant="outline" size="sm">
+                        <Link href={{ pathname: '/x402', query: { tab: 'Wallets' } }}>
+                          Go to Wallets
+                        </Link>
+                      </Button>
+                    }
                   />
                 </td>
               </tr>
@@ -163,19 +181,26 @@ export function AlertsTab() {
                   key={rule.id}
                   className={cn('border-b last:border-0', !rule.enabled && 'opacity-50')}
                 >
-                  <td className="p-4 font-mono text-sm">
-                    {shortenAddress(rule.evmWalletAddress, 6)}
+                  <td className="p-4">
+                    <div className="flex items-center gap-1">
+                      <span className="font-mono text-sm" title={rule.evmWalletAddress}>
+                        {shortenAddress(rule.evmWalletAddress, 6)}
+                      </span>
+                      <CopyButton value={rule.evmWalletAddress} />
+                    </div>
                   </td>
                   <td className="p-4 text-sm">{chainLabel(rule.caip2Network)}</td>
                   <td className="p-4 font-mono text-sm">{assetLabel(rule.asset)}</td>
-                  <td className="p-4 text-right font-mono text-sm">{rule.thresholdAmount}</td>
+                  <td className="p-4 text-right font-mono text-sm">
+                    {formatRuleAmount(rule.thresholdAmount, rule.asset)}
+                  </td>
                   <td className="p-4 text-right font-mono text-sm text-muted-foreground">
-                    {rule.lastKnownAmount ?? '—'}
+                    {rule.lastKnownAmount != null
+                      ? formatRuleAmount(rule.lastKnownAmount, rule.asset)
+                      : '—'}
                   </td>
                   <td className="p-4">
-                    <Badge variant="outline" className={STATUS_STYLE[rule.status]}>
-                      {rule.status}
-                    </Badge>
+                    <Badge variant={STATUS_VARIANT[rule.status]}>{rule.status}</Badge>
                   </td>
                   <td className="p-4 text-right">
                     <div className="flex items-center justify-end gap-1">
@@ -190,6 +215,7 @@ export function AlertsTab() {
                       <Button
                         variant="ghost"
                         size="sm"
+                        aria-label="Edit alert"
                         onClick={() => {
                           setEditing(rule);
                           setDialogOpen(true);
@@ -200,6 +226,7 @@ export function AlertsTab() {
                       <Button
                         variant="ghost"
                         size="sm"
+                        aria-label="Delete alert"
                         className="text-destructive hover:text-destructive"
                         disabled={busyId === rule.id}
                         onClick={() => remove(rule)}
@@ -343,7 +370,20 @@ function AlertDialog({
               control={control}
               name="caip2Network"
               render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange} disabled={!!editing}>
+                <Select
+                  value={field.value}
+                  onValueChange={(caip2) => {
+                    field.onChange(caip2);
+                    // Token contracts are chain-specific, so re-sync the asset to the new
+                    // chain's default (or clear it) when an ERC-20 is selected — otherwise a
+                    // contract from the previously chosen chain could be saved against this one.
+                    if (assetKind === 'token') {
+                      const chain = networks.find((n) => n.caip2Id === caip2);
+                      setValue('asset', chain?.defaultAsset ?? '', { shouldValidate: true });
+                    }
+                  }}
+                  disabled={!!editing}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select a chain" />
                   </SelectTrigger>

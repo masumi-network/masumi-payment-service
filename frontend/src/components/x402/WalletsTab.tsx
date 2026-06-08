@@ -125,13 +125,13 @@ export function WalletsTab() {
 
       <div className="border rounded-lg overflow-x-auto">
         <table className="w-full">
-          <thead>
+          <thead className="bg-muted/30 dark:bg-muted/15">
             <tr className="border-b">
-              <th className="p-4 text-left text-sm font-medium">Address</th>
-              <th className="p-4 text-left text-sm font-medium">Type</th>
-              <th className="p-4 text-left text-sm font-medium">Note</th>
-              <th className="p-4 text-left text-sm font-medium">Created</th>
-              <th className="p-4 text-right text-sm font-medium">Actions</th>
+              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Address</th>
+              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Type</th>
+              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Note</th>
+              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Created</th>
+              <th className="p-4 text-right text-sm font-medium text-muted-foreground">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -290,11 +290,21 @@ export function CreateWalletDialog({
           const created = extractApiPayload<{ address: string; privateKey: string | null }>(
             response,
           );
-          // A generated key is shown once for backup; an imported one needs no backup step.
-          if (keySource === 'generate' && created?.privateKey) {
-            setBackup({ address: created.address, privateKey: created.privateKey });
+          if (keySource === 'generate') {
+            // The generated key is the only copy and is returned exactly once. Show the
+            // backup step when it is present; if it is somehow missing, never report plain
+            // success — warn loudly so the operator retires this unrecoverable wallet.
+            if (created?.privateKey) {
+              setBackup({ address: created.address, privateKey: created.privateKey });
+              return;
+            }
+            toast.error(
+              'Wallet was created but its private key was not returned, so it cannot be recovered. Retire it and create a new one.',
+            );
+            onSaved();
             return;
           }
+          // Imported wallets need no backup step — the operator already holds the key.
           toast.success('Wallet created');
           onSaved();
         },

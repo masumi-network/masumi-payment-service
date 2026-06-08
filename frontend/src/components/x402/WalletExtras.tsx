@@ -13,19 +13,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { handleApiCall } from '@/lib/utils';
+import { formatX402Amount, handleApiCall } from '@/lib/utils';
 import { getX402WalletsBalance, postX402WalletsUpdate, X402Wallet } from '@/lib/api/generated';
-
-// Render a base-unit integer string at `decimals` precision, trimming trailing zeros, e.g.
-// formatUnits("4200000", 6) -> "4.2". Pure string math to avoid float rounding.
-function formatUnits(amount: string, decimals: number): string {
-  if (decimals === 0) return amount;
-  const negative = amount.startsWith('-');
-  const digits = (negative ? amount.slice(1) : amount).padStart(decimals + 1, '0');
-  const whole = digits.slice(0, digits.length - decimals);
-  const fraction = digits.slice(digits.length - decimals).replace(/0+$/, '');
-  return `${negative ? '-' : ''}${whole}${fraction ? `.${fraction}` : ''}`;
-}
 
 export function WalletBalanceDialog({
   wallet,
@@ -101,7 +90,7 @@ export function WalletBalanceDialog({
                       <div className="flex items-center justify-between">
                         <span className="text-muted-foreground">{balance.native.symbol}</span>
                         <span className="font-mono">
-                          {formatUnits(balance.native.amount, balance.native.decimals)}
+                          {formatX402Amount(balance.native.amount, balance.native.decimals)}
                         </span>
                       </div>
                     )}
@@ -111,7 +100,7 @@ export function WalletBalanceDialog({
                           {balance.asset.symbol ?? 'Token'}
                         </span>
                         <span className="font-mono">
-                          {formatUnits(balance.asset.amount, balance.asset.decimals)}
+                          {formatX402Amount(balance.asset.amount, balance.asset.decimals)}
                         </span>
                       </div>
                     )}
