@@ -44,7 +44,12 @@ export function X402SetupGuide() {
   const hasFacilitator = networks.some(
     (network) => network.isEnabled && !!network.facilitatorWalletId,
   );
-  const hasBudget = budgets.length > 0;
+  // `networks` is already scoped to the active environment (testnet chains ↔ Preprod,
+  // mainnet ↔ Mainnet), but budgets are fetched across every environment. Scope budgets
+  // to the active env by their chain, so a budget on another environment can't mark this
+  // env's rail "usable" and suppress the guide while receiving here is still unset.
+  const envChainIds = new Set(networks.map((network) => network.caip2Id));
+  const hasBudget = budgets.some((budget) => envChainIds.has(budget.caip2Network));
   const completedCount = [hasFacilitator, hasBudget].filter(Boolean).length;
   // "Usable" = at least one side works (facilitator for receiving, budget for paying).
   // We intentionally don't require both — an operator may only do one side.
