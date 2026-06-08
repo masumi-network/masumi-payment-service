@@ -4,30 +4,48 @@ import {
 	type AuthContext,
 } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
+import { webhookEventsService } from '@/services/webhooks/events.service';
 import {
+	countX402ManagedWallets,
+	countX402PaymentAttempts,
+	countX402Settlements,
 	createX402ManagedWallet,
 	createX402Payment,
+	deleteX402LowBalanceRule,
 	deleteX402ManagedWallet,
+	getX402Analytics,
+	getX402WalletBalances,
+	listX402LowBalanceRules,
 	listX402ManagedWallets,
 	listX402Networks,
 	listX402PaymentAttempts,
 	listX402Settlements,
 	listX402WalletBudgets,
+	setX402LowBalanceRule,
 	setX402WalletBudget,
 	settleX402Payment,
+	updateX402LowBalanceRule,
+	updateX402ManagedWallet,
 	upsertX402Network,
 	verifyX402Payment,
 } from '@masumi/payment-source-x402';
 import {
+	analyticsSchemaInput,
+	analyticsSchemaOutput,
 	budgetSchema,
+	countSchemaOutput,
 	createPaymentSchemaInput,
 	createPaymentSchemaOutput,
 	createWalletSchemaInput,
 	createWalletSchemaOutput,
+	deleteLowBalanceRuleSchemaInput,
+	deleteLowBalanceRuleSchemaOutput,
 	deleteWalletSchemaInput,
 	deleteWalletSchemaOutput,
 	listBudgetSchemaInput,
 	listBudgetSchemaOutput,
+	listLowBalanceRulesSchemaInput,
+	listLowBalanceRulesSchemaOutput,
 	listNetworksSchemaOutput,
 	listPaymentAttemptsSchemaInput,
 	listPaymentAttemptsSchemaOutput,
@@ -35,11 +53,21 @@ import {
 	listSettlementsSchemaOutput,
 	listWalletsSchemaInput,
 	listWalletsSchemaOutput,
+	lowBalanceRuleSchema,
+	paymentAttemptsCountSchemaInput,
 	setBudgetSchemaInput,
+	setLowBalanceRuleSchemaInput,
 	settleSchemaOutput,
+	settlementsCountSchemaInput,
+	updateLowBalanceRuleSchemaInput,
+	updateWalletSchemaInput,
 	upsertNetworkSchemaInput,
 	verifySchemaOutput,
 	verifySettleSchemaInput,
+	walletBalanceSchemaInput,
+	walletBalanceSchemaOutput,
+	walletSchemaOutput,
+	walletsCountSchemaInput,
 	x402NetworkSchema,
 } from './schemas';
 
@@ -62,6 +90,16 @@ function serializeBudget(budget: {
 		evmWalletAddress: EvmWallet.address,
 		remainingAmount: budget.remainingAmount.toString(),
 		spentAmount: budget.spentAmount.toString(),
+	};
+}
+
+function serializeLowBalanceRule(rule: Awaited<ReturnType<typeof listX402LowBalanceRules>>[number]) {
+	const { EvmWallet, ...rest } = rule;
+	return {
+		...rest,
+		evmWalletAddress: EvmWallet.address,
+		thresholdAmount: rule.thresholdAmount.toString(),
+		lastKnownAmount: rule.lastKnownAmount?.toString() ?? null,
 	};
 }
 
@@ -99,13 +137,23 @@ export const settleX402Post = payAuthenticatedEndpointFactory.build({
 	method: 'post',
 	input: verifySettleSchemaInput,
 	output: settleSchemaOutput,
-	handler: async ({ input, ctx }: { input: z.infer<typeof verifySettleSchemaInput>; ctx: AuthContext }) =>
-		settleX402Payment({
+	handler: async ({ input, ctx }: { input: z.infer<typeof verifySettleSchemaInput>; ctx: AuthContext }) => {
+		const result = await settleX402Payment({
 			apiKeyId: ctx.id,
 			caip2NetworkLimit: ctx.caip2NetworkLimit,
 			supportedPaymentSourceId: input.supportedPaymentSourceId,
 			paymentPayload: input.paymentPayload as Parameters<typeof settleX402Payment>[0]['paymentPayload'],
-		}),
+		});
+		// Notify subscribers of the settle outcome (a replay was already settled before, so
+		// it does not re-fire). Fire-and-forget: webhook delivery must not block the response.
+		if (!result.replay && result.webhook != null) {
+			void webhookEventsService.triggerX402Payment(result.webhook.success, {
+				...result.webhook,
+				settledAt: new Date().toISOString(),
+			});
+		}
+		return result;
+	},
 });
 
 export const createX402PaymentPost = payAuthenticatedEndpointFactory.build({
@@ -129,7 +177,7 @@ export const listX402WalletsGet = adminAuthenticatedEndpointFactory.build({
 	input: listWalletsSchemaInput,
 	output: listWalletsSchemaOutput,
 	handler: async ({ input }: { input: z.infer<typeof listWalletsSchemaInput> }) => ({
-		Wallets: await listX402ManagedWallets({ take: input.take, cursorId: input.cursorId }),
+		Wallets: await listX402ManagedWallets({ take: input.take, cursorId: input.cursorId, type: input.type }),
 	}),
 });
 
@@ -140,8 +188,35 @@ export const createX402WalletPost = adminAuthenticatedEndpointFactory.build({
 	handler: async ({ input, ctx }: { input: z.infer<typeof createWalletSchemaInput>; ctx: AuthContext }) =>
 		createX402ManagedWallet({
 			createdByApiKeyId: ctx.id,
+			type: input.type,
+			note: input.note,
 			privateKey: input.privateKey,
 		}),
+});
+
+export const updateX402WalletPost = adminAuthenticatedEndpointFactory.build({
+	method: 'post',
+	input: updateWalletSchemaInput,
+	output: walletSchemaOutput,
+	handler: async ({ input }: { input: z.infer<typeof updateWalletSchemaInput> }) =>
+		updateX402ManagedWallet({ id: input.id, note: input.note }),
+});
+
+export const x402WalletBalanceGet = adminAuthenticatedEndpointFactory.build({
+	method: 'get',
+	input: walletBalanceSchemaInput,
+	output: walletBalanceSchemaOutput,
+	handler: async ({ input }: { input: z.infer<typeof walletBalanceSchemaInput> }) =>
+		getX402WalletBalances({ evmWalletId: input.id, caip2Network: input.caip2Network }),
+});
+
+export const x402WalletsCountGet = adminAuthenticatedEndpointFactory.build({
+	method: 'get',
+	input: walletsCountSchemaInput,
+	output: countSchemaOutput,
+	handler: async ({ input }: { input: z.infer<typeof walletsCountSchemaInput> }) => ({
+		total: await countX402ManagedWallets({ type: input.type }),
+	}),
 });
 
 export const deleteX402WalletPost = adminAuthenticatedEndpointFactory.build({
@@ -201,4 +276,62 @@ export const listX402SettlementsGet = adminAuthenticatedEndpointFactory.build({
 	handler: async ({ input }: { input: z.infer<typeof listSettlementsSchemaInput> }) => ({
 		Settlements: (await listX402Settlements(input)).map(serializeSettlement),
 	}),
+});
+
+export const listX402LowBalanceRulesGet = adminAuthenticatedEndpointFactory.build({
+	method: 'get',
+	input: listLowBalanceRulesSchemaInput,
+	output: listLowBalanceRulesSchemaOutput,
+	handler: async ({ input }: { input: z.infer<typeof listLowBalanceRulesSchemaInput> }) => ({
+		Rules: (await listX402LowBalanceRules(input)).map(serializeLowBalanceRule),
+	}),
+});
+
+export const setX402LowBalanceRulePost = adminAuthenticatedEndpointFactory.build({
+	method: 'post',
+	input: setLowBalanceRuleSchemaInput,
+	output: lowBalanceRuleSchema,
+	handler: async ({ input }: { input: z.infer<typeof setLowBalanceRuleSchemaInput> }) =>
+		serializeLowBalanceRule(await setX402LowBalanceRule(input)),
+});
+
+export const updateX402LowBalanceRulePatch = adminAuthenticatedEndpointFactory.build({
+	method: 'patch',
+	input: updateLowBalanceRuleSchemaInput,
+	output: lowBalanceRuleSchema,
+	handler: async ({ input }: { input: z.infer<typeof updateLowBalanceRuleSchemaInput> }) =>
+		serializeLowBalanceRule(await updateX402LowBalanceRule(input)),
+});
+
+export const deleteX402LowBalanceRuleDelete = adminAuthenticatedEndpointFactory.build({
+	method: 'delete',
+	input: deleteLowBalanceRuleSchemaInput,
+	output: deleteLowBalanceRuleSchemaOutput,
+	handler: async ({ input }: { input: z.infer<typeof deleteLowBalanceRuleSchemaInput> }) =>
+		deleteX402LowBalanceRule(input.ruleId),
+});
+
+export const x402PaymentAttemptsCountGet = adminAuthenticatedEndpointFactory.build({
+	method: 'get',
+	input: paymentAttemptsCountSchemaInput,
+	output: countSchemaOutput,
+	handler: async ({ input }: { input: z.infer<typeof paymentAttemptsCountSchemaInput> }) => ({
+		total: await countX402PaymentAttempts(input),
+	}),
+});
+
+export const x402SettlementsCountGet = adminAuthenticatedEndpointFactory.build({
+	method: 'get',
+	input: settlementsCountSchemaInput,
+	output: countSchemaOutput,
+	handler: async ({ input }: { input: z.infer<typeof settlementsCountSchemaInput> }) => ({
+		total: await countX402Settlements(input),
+	}),
+});
+
+export const x402AnalyticsPost = adminAuthenticatedEndpointFactory.build({
+	method: 'post',
+	input: analyticsSchemaInput,
+	output: analyticsSchemaOutput,
+	handler: async ({ input }: { input: z.infer<typeof analyticsSchemaInput> }) => getX402Analytics(input),
 });

@@ -2155,11 +2155,26 @@ export type X402Wallet = {
      */
     address: string;
     /**
+     * Purchasing wallets fund outbound payments; Selling wallets settle inbound ones as facilitators
+     */
+    type: 'Purchasing' | 'Selling';
+    /**
+     * Optional human-readable label for the wallet
+     */
+    note: string | null;
+    /**
      * Id of the API key that created this wallet
      */
     createdById: string | null;
     createdAt: Date;
     updatedAt: Date;
+};
+
+export type X402WalletCreated = X402Wallet & {
+    /**
+     * The generated 0x-prefixed private key, returned ONCE so you can back it up. It is null when you supplied your own key, is never stored in plaintext, and can never be retrieved again. Save it now.
+     */
+    privateKey: string | null;
 };
 
 export type X402Budget = {
@@ -2245,6 +2260,25 @@ export type X402SettlementRecord = {
     caip2Network: string;
     amount: string | null;
     payer: string | null;
+};
+
+export type X402LowBalanceRule = {
+    id: string;
+    evmWalletId: string;
+    evmWalletAddress: string;
+    caip2Network: string;
+    asset: string;
+    /**
+     * Alert threshold in base units
+     */
+    thresholdAmount: string;
+    enabled: boolean;
+    status: 'Unknown' | 'Healthy' | 'Low';
+    lastKnownAmount: string | null;
+    lastCheckedAt: Date | null;
+    lastAlertedAt: Date | null;
+    createdAt: Date;
+    updatedAt: Date;
 };
 
 export type GetHealthData = {
@@ -9311,7 +9345,7 @@ export type GetWebhooksResponses = {
                 id: string;
                 url: string;
                 format: 'EXTENDED' | 'SLACK' | 'GOOGLE_CHAT' | 'DISCORD';
-                Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE'>;
+                Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
                 name: string | null;
                 isActive: boolean;
                 createdAt: Date;
@@ -9355,7 +9389,7 @@ export type PatchWebhooksData = {
         /**
          * Array of event types to subscribe to
          */
-        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE'>;
+        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
         /**
          * Human-readable name for the webhook
          */
@@ -9403,7 +9437,7 @@ export type PatchWebhooksResponses = {
             id: string;
             url: string;
             format: 'EXTENDED' | 'SLACK' | 'GOOGLE_CHAT' | 'DISCORD';
-            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE'>;
+            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
             name: string | null;
             isActive: boolean;
             createdAt: Date;
@@ -9435,7 +9469,7 @@ export type PostWebhooksData = {
         /**
          * Array of event types to subscribe to
          */
-        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE'>;
+        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
         /**
          * Human-readable name for the webhook
          */
@@ -9483,7 +9517,7 @@ export type PostWebhooksResponses = {
             id: string;
             url: string;
             format: 'EXTENDED' | 'SLACK' | 'GOOGLE_CHAT' | 'DISCORD';
-            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE'>;
+            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
             name: string | null;
             isActive: boolean;
             createdAt: Date;
@@ -10082,6 +10116,10 @@ export type GetX402WalletsData = {
          * Pagination cursor (provide the id of the last returned wallet)
          */
         cursorId?: string;
+        /**
+         * Filter wallets by direction (Purchasing or Selling)
+         */
+        type?: 'Purchasing' | 'Selling';
     };
     url: '/x402/wallets';
 };
@@ -10106,6 +10144,14 @@ export type PostX402WalletsData = {
      */
     body?: {
         /**
+         * Purchasing wallets fund outbound payments; Selling wallets settle inbound ones as facilitators
+         */
+        type: 'Purchasing' | 'Selling';
+        /**
+         * Optional human-readable label for the wallet
+         */
+        note?: string;
+        /**
          * Optional 0x-prefixed 32-byte hex private key. A new key is generated when omitted.
          */
         privateKey?: string;
@@ -10121,7 +10167,7 @@ export type PostX402WalletsResponses = {
      */
     200: {
         status: 'success';
-        data: X402Wallet;
+        data: X402WalletCreated;
     };
 };
 
@@ -10503,3 +10549,399 @@ export type GetX402SettlementsResponses = {
 };
 
 export type GetX402SettlementsResponse = GetX402SettlementsResponses[keyof GetX402SettlementsResponses];
+
+export type PostX402WalletsUpdateData = {
+    /**
+     * Wallet note to set
+     */
+    body?: {
+        /**
+         * Id of the managed EVM wallet to update
+         */
+        id: string;
+        /**
+         * New label for the wallet; null clears it
+         */
+        note: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/x402/wallets/update';
+};
+
+export type PostX402WalletsUpdateResponses = {
+    /**
+     * Managed wallet updated
+     */
+    200: {
+        status: 'success';
+        data: X402Wallet;
+    };
+};
+
+export type PostX402WalletsUpdateResponse = PostX402WalletsUpdateResponses[keyof PostX402WalletsUpdateResponses];
+
+export type GetX402WalletsBalanceData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Id of the managed EVM wallet to read balances for
+         */
+        id: string;
+        /**
+         * Restrict to a single chain; defaults to all enabled chains
+         */
+        caip2Network?: string;
+    };
+    url: '/x402/wallets/balance';
+};
+
+export type GetX402WalletsBalanceResponses = {
+    /**
+     * Managed wallet balances
+     */
+    200: {
+        status: 'success';
+        data: {
+            evmWalletId: string;
+            address: string;
+            Balances: Array<{
+                caip2Network: string;
+                displayName: string;
+                native: {
+                    symbol: string;
+                    decimals: number;
+                    /**
+                     * Native gas balance in wei
+                     */
+                    amount: string;
+                } | null;
+                asset: {
+                    asset: string;
+                    symbol: string | null;
+                    decimals: number;
+                    /**
+                     * Token balance in base units
+                     */
+                    amount: string;
+                } | null;
+                /**
+                 * Set when this chain could not be read
+                 */
+                error: string | null;
+            }>;
+        };
+    };
+};
+
+export type GetX402WalletsBalanceResponse = GetX402WalletsBalanceResponses[keyof GetX402WalletsBalanceResponses];
+
+export type GetX402WalletsCountData = {
+    body?: never;
+    path?: never;
+    query?: {
+        type?: 'Purchasing' | 'Selling';
+    };
+    url: '/x402/wallets/count';
+};
+
+export type GetX402WalletsCountResponses = {
+    /**
+     * Managed wallet count
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * Total number of matching records
+             */
+            total: number;
+        };
+    };
+};
+
+export type GetX402WalletsCountResponse = GetX402WalletsCountResponses[keyof GetX402WalletsCountResponses];
+
+export type DeleteX402LowBalanceData = {
+    /**
+     * Low-balance rule to delete
+     */
+    body?: {
+        ruleId: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/x402/low-balance';
+};
+
+export type DeleteX402LowBalanceResponses = {
+    /**
+     * Low-balance rule deleted
+     */
+    200: {
+        status: 'success';
+        data: {
+            ruleId: string;
+            deletedAt: Date;
+        };
+    };
+};
+
+export type DeleteX402LowBalanceResponse = DeleteX402LowBalanceResponses[keyof DeleteX402LowBalanceResponses];
+
+export type GetX402LowBalanceData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Filter rules to a single wallet
+         */
+        evmWalletId?: string;
+        /**
+         * Only return rules currently in the Low state
+         */
+        onlyLow?: boolean | null;
+        /**
+         * Include disabled rules
+         */
+        includeDisabled?: boolean | null;
+    };
+    url: '/x402/low-balance';
+};
+
+export type GetX402LowBalanceResponses = {
+    /**
+     * x402 low-balance rules
+     */
+    200: {
+        status: 'success';
+        data: {
+            Rules: Array<X402LowBalanceRule>;
+        };
+    };
+};
+
+export type GetX402LowBalanceResponse = GetX402LowBalanceResponses[keyof GetX402LowBalanceResponses];
+
+export type PatchX402LowBalanceData = {
+    /**
+     * Low-balance rule fields to update
+     */
+    body?: {
+        ruleId: string;
+        thresholdAmount?: string;
+        enabled?: boolean;
+    };
+    path?: never;
+    query?: never;
+    url: '/x402/low-balance';
+};
+
+export type PatchX402LowBalanceResponses = {
+    /**
+     * Low-balance rule updated
+     */
+    200: {
+        status: 'success';
+        data: X402LowBalanceRule;
+    };
+};
+
+export type PatchX402LowBalanceResponse = PatchX402LowBalanceResponses[keyof PatchX402LowBalanceResponses];
+
+export type PostX402LowBalanceData = {
+    /**
+     * Low-balance rule to set
+     */
+    body?: {
+        evmWalletId: string;
+        caip2Network: string;
+        /**
+         * Asset to monitor: "native" for the gas token, or an ERC-20 contract address
+         */
+        asset: 'native' | string;
+        /**
+         * Alert threshold in base units
+         */
+        thresholdAmount: string;
+        enabled?: boolean;
+    };
+    path?: never;
+    query?: never;
+    url: '/x402/low-balance';
+};
+
+export type PostX402LowBalanceResponses = {
+    /**
+     * Low-balance rule saved
+     */
+    200: {
+        status: 'success';
+        data: X402LowBalanceRule;
+    };
+};
+
+export type PostX402LowBalanceResponse = PostX402LowBalanceResponses[keyof PostX402LowBalanceResponses];
+
+export type GetX402PaymentsCountData = {
+    body?: never;
+    path?: never;
+    query?: {
+        status?: 'PaymentRequired' | 'Verified' | 'Settled' | 'Failed' | 'Replayed';
+        direction?: 'InboundVerify' | 'InboundSettle' | 'OutboundPayment';
+        caip2Network?: string;
+    };
+    url: '/x402/payments/count';
+};
+
+export type GetX402PaymentsCountResponses = {
+    /**
+     * x402 payment attempt count
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * Total number of matching records
+             */
+            total: number;
+        };
+    };
+};
+
+export type GetX402PaymentsCountResponse = GetX402PaymentsCountResponses[keyof GetX402PaymentsCountResponses];
+
+export type GetX402SettlementsCountData = {
+    body?: never;
+    path?: never;
+    query?: {
+        caip2Network?: string;
+        success?: boolean | null;
+    };
+    url: '/x402/settlements/count';
+};
+
+export type GetX402SettlementsCountResponses = {
+    /**
+     * x402 settlement count
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * Total number of matching records
+             */
+            total: number;
+        };
+    };
+};
+
+export type GetX402SettlementsCountResponse = GetX402SettlementsCountResponses[keyof GetX402SettlementsCountResponses];
+
+export type PostX402AnalyticsData = {
+    /**
+     * Analytics window and timezone
+     */
+    body?: {
+        /**
+         * Window start (defaults to 30 days ago)
+         */
+        startDate?: Date | null;
+        /**
+         * Window end (defaults to now)
+         */
+        endDate?: Date | null;
+        /**
+         * Restrict to a single chain
+         */
+        caip2Network?: string;
+        /**
+         * IANA timezone for day/month bucketing (default Etc/UTC)
+         */
+        timeZone?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/x402/analytics';
+};
+
+export type PostX402AnalyticsResponses = {
+    /**
+     * x402 analytics
+     */
+    200: {
+        status: 'success';
+        data: {
+            periodStart: Date;
+            periodEnd: Date;
+            /**
+             * Number of settled inbound payments
+             */
+            incomeCount: number;
+            /**
+             * Number of signed outbound payments
+             */
+            spendCount: number;
+            TotalIncome: Array<{
+                caip2Network: string;
+                asset: string;
+                /**
+                 * Summed amount in base units
+                 */
+                amount: string;
+            }>;
+            TotalSpend: Array<{
+                caip2Network: string;
+                asset: string;
+                /**
+                 * Summed amount in base units
+                 */
+                amount: string;
+            }>;
+            Daily: Array<{
+                year: number;
+                month: number;
+                day: number;
+                Income: Array<{
+                    caip2Network: string;
+                    asset: string;
+                    /**
+                     * Summed amount in base units
+                     */
+                    amount: string;
+                }>;
+                Spend: Array<{
+                    caip2Network: string;
+                    asset: string;
+                    /**
+                     * Summed amount in base units
+                     */
+                    amount: string;
+                }>;
+            }>;
+            Monthly: Array<{
+                year: number;
+                month: number;
+                Income: Array<{
+                    caip2Network: string;
+                    asset: string;
+                    /**
+                     * Summed amount in base units
+                     */
+                    amount: string;
+                }>;
+                Spend: Array<{
+                    caip2Network: string;
+                    asset: string;
+                    /**
+                     * Summed amount in base units
+                     */
+                    amount: string;
+                }>;
+            }>;
+        };
+    };
+};
+
+export type PostX402AnalyticsResponse = PostX402AnalyticsResponses[keyof PostX402AnalyticsResponses];

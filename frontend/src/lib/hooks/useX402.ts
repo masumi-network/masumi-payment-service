@@ -3,10 +3,12 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
   getX402Budgets,
+  getX402LowBalance,
   getX402Networks,
   getX402Payments,
   getX402Wallets,
   X402Budget,
+  X402LowBalanceRule,
   X402Network,
   X402PaymentAttempt,
   X402Wallet,
@@ -53,20 +55,25 @@ export function useX402Networks(options?: { silentErrors?: boolean }) {
 /**
  * Eagerly loads every managed EVM wallet (paging through /x402/wallets). Used by
  * the chain/budget pickers and setup flows that need the full set to choose
- * from. `enabled` lets form dialogs defer the load until opened. Read-only
+ * from. `enabled` lets form dialogs defer the load until opened. Pass `type` to
+ * fetch only Purchasing (budget) or Selling (facilitator) wallets. Read-only
  * labels should use the denormalized address on the network/budget instead.
  */
-export function useX402Wallets(enabled = true) {
+export function useX402Wallets(enabled = true, type?: X402Wallet['type']) {
   const { apiClient, authorized } = useAppContext();
 
   const query = useQuery({
-    queryKey: ['x402-wallets', 'all'],
+    queryKey: ['x402-wallets', 'all', type ?? 'any'],
     queryFn: async () => {
       let items: X402Wallet[] = [];
       let cursor: string | undefined;
       while (true) {
         const response = await handleApiCall(
-          () => getX402Wallets({ client: apiClient, query: { take: PAGE_SIZE, cursorId: cursor } }),
+          () =>
+            getX402Wallets({
+              client: apiClient,
+              query: { take: PAGE_SIZE, cursorId: cursor, type },
+            }),
           { errorMessage: 'Failed to fetch wallets' },
         );
         const page = (response?.data?.data?.Wallets ?? []) as X402Wallet[];
@@ -168,6 +175,32 @@ export function useX402Budgets() {
 
   return {
     budgets: (query.data ?? []) as X402Budget[],
+    isLoading: query.isLoading,
+    isRefetching: query.isRefetching,
+    refetch: async () => {
+      await query.refetch();
+    },
+  };
+}
+
+export function useX402LowBalanceRules(includeDisabled = true) {
+  const { apiClient, authorized } = useAppContext();
+
+  const query = useQuery({
+    queryKey: ['x402-low-balance', includeDisabled],
+    queryFn: async () => {
+      const response = await handleApiCall(
+        () => getX402LowBalance({ client: apiClient, query: { includeDisabled } }),
+        { errorMessage: 'Failed to fetch low-balance rules' },
+      );
+      return response?.data?.data?.Rules ?? [];
+    },
+    enabled: !!apiClient && authorized,
+    staleTime: 30000,
+  });
+
+  return {
+    rules: (query.data ?? []) as X402LowBalanceRule[],
     isLoading: query.isLoading,
     isRefetching: query.isRefetching,
     refetch: async () => {

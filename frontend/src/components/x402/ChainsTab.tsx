@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
+import { CopyButton } from '@/components/ui/copy-button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Spinner } from '@/components/ui/spinner';
 import {
@@ -83,14 +84,18 @@ export function ChainsTab() {
 
       <div className="border rounded-lg overflow-x-auto">
         <table className="w-full">
-          <thead>
+          <thead className="bg-muted/30 dark:bg-muted/15">
             <tr className="border-b">
-              <th className="p-4 text-left text-sm font-medium">Chain</th>
-              <th className="p-4 text-left text-sm font-medium">RPC URL</th>
-              <th className="p-4 text-left text-sm font-medium">Status</th>
-              <th className="p-4 text-left text-sm font-medium">Default asset</th>
-              <th className="p-4 text-left text-sm font-medium">Facilitator</th>
-              <th className="p-4 text-right text-sm font-medium">Actions</th>
+              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Chain</th>
+              <th className="p-4 text-left text-sm font-medium text-muted-foreground">RPC URL</th>
+              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Status</th>
+              <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                Default asset
+              </th>
+              <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                Facilitator
+              </th>
+              <th className="p-4 text-right text-sm font-medium text-muted-foreground">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -133,7 +138,16 @@ export function ChainsTab() {
                     </div>
                   </td>
                   <td className="p-4 text-sm font-mono">
-                    {network.defaultAsset ? shortenAddress(network.defaultAsset, 6) : '—'}
+                    {network.defaultAsset ? (
+                      <div className="flex items-center gap-1">
+                        <span title={network.defaultAsset}>
+                          {shortenAddress(network.defaultAsset, 6)}
+                        </span>
+                        <CopyButton value={network.defaultAsset} />
+                      </div>
+                    ) : (
+                      '—'
+                    )}
                   </td>
                   <td className="p-4 text-sm">
                     {network.facilitatorWalletId ? (
@@ -142,11 +156,16 @@ export function ChainsTab() {
                         walletId={network.facilitatorWalletId}
                       />
                     ) : (
-                      <span className="text-amber-600 dark:text-amber-400">Not set</span>
+                      <Badge variant="warning">Not set</Badge>
                     )}
                   </td>
                   <td className="p-4 text-right">
-                    <Button variant="ghost" size="sm" onClick={() => openEdit(network)}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-label="Edit chain"
+                      onClick={() => openEdit(network)}
+                    >
                       <Pencil className="h-4 w-4" />
                     </Button>
                   </td>
@@ -189,8 +208,9 @@ export function ChainDialog({
   onSaved: () => void;
 }) {
   const { apiClient } = useAppContext();
-  // Only load the full wallet set while the form is open (it feeds the picker).
-  const { wallets } = useX402Wallets(open);
+  // Only load the wallet set while the form is open (it feeds the picker). A facilitator
+  // settles inbound payments, so only Selling wallets are selectable.
+  const { wallets } = useX402Wallets(open, 'Selling');
   const [isSaving, setIsSaving] = useState(false);
 
   const {

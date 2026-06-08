@@ -1,8 +1,9 @@
-import { X402PaymentDirection, X402PaymentStatus } from '@/generated/prisma/client';
+import { X402EvmWalletType, X402PaymentDirection, X402PaymentStatus } from '@/generated/prisma/client';
 import { z } from '@masumi/payment-core/zod';
 import {
 	budgetSchema,
 	createPaymentSchemaOutput,
+	createWalletSchemaOutput,
 	listBudgetSchemaOutput,
 	listNetworksSchemaOutput,
 	listPaymentAttemptsSchemaOutput,
@@ -24,6 +25,20 @@ const examplePayer = '0x3333333333333333333333333333333333333333';
 export const x402WalletExample = {
 	id: 'clmanagedwallet0001',
 	address: '0x1111111111111111111111111111111111111111',
+	type: X402EvmWalletType.Purchasing,
+	note: 'Agent payout buyer wallet',
+	createdById: 'api_key_id',
+	createdAt: exampleDate,
+	updatedAt: exampleDate,
+} satisfies z.infer<typeof walletSchemaOutput>;
+
+// A Selling wallet settles inbound payments, so the facilitator examples reference this
+// one rather than the Purchasing wallet above.
+export const x402FacilitatorWalletExample = {
+	id: 'clmanagedwallet0002',
+	address: '0x5555555555555555555555555555555555555555',
+	type: X402EvmWalletType.Selling,
+	note: 'Base facilitator',
 	createdById: 'api_key_id',
 	createdAt: exampleDate,
 	updatedAt: exampleDate,
@@ -37,8 +52,8 @@ export const x402NetworkExample = {
 	isTestnet: false,
 	isEnabled: true,
 	defaultAsset: exampleUsdcAsset,
-	facilitatorWalletId: x402WalletExample.id,
-	facilitatorWalletAddress: x402WalletExample.address,
+	facilitatorWalletId: x402FacilitatorWalletExample.id,
+	facilitatorWalletAddress: x402FacilitatorWalletExample.address,
 	createdById: 'api_key_id',
 	createdAt: exampleDate,
 	updatedAt: exampleDate,
@@ -105,7 +120,7 @@ export const listX402WalletsQueryExample = {
 };
 
 export const listX402WalletsResponseExample = {
-	Wallets: [x402WalletExample],
+	Wallets: [x402WalletExample, x402FacilitatorWalletExample],
 } satisfies z.infer<typeof listWalletsSchemaOutput>;
 
 export const listX402NetworksResponseExample = {
@@ -125,7 +140,15 @@ export const listX402SettlementsResponseExample = {
 } satisfies z.infer<typeof listSettlementsSchemaOutput>;
 
 // Request examples. privateKey is intentionally omitted so a new key is generated server-side.
-export const createX402WalletBodyExample = {};
+export const createX402WalletBodyExample = {
+	type: X402EvmWalletType.Purchasing,
+};
+
+// The create response returns the generated key once for backup (null when imported).
+export const createX402WalletResponseExample = {
+	...x402WalletExample,
+	privateKey: '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d',
+} satisfies z.infer<typeof createWalletSchemaOutput>;
 
 export const upsertX402NetworkBodyExample = {
 	caip2Id: 'eip155:8453',
@@ -134,7 +157,7 @@ export const upsertX402NetworkBodyExample = {
 	isTestnet: false,
 	isEnabled: true,
 	defaultAsset: exampleUsdcAsset,
-	facilitatorWalletId: x402WalletExample.id,
+	facilitatorWalletId: x402FacilitatorWalletExample.id,
 };
 
 export const setX402BudgetBodyExample = {
@@ -247,3 +270,99 @@ export const settleX402ResponseExample = {
 		amount: '1000000',
 	},
 } satisfies z.infer<typeof settleSchemaOutput>;
+
+// --- Management endpoint examples (wallet update/balance/count, low-balance, analytics) ---
+
+export const updateX402WalletBodyExample = {
+	id: x402WalletExample.id,
+	note: 'Renamed buyer wallet',
+};
+
+export const x402WalletBalanceQueryExample = {
+	id: x402WalletExample.id,
+};
+
+export const x402WalletBalanceResponseExample = {
+	evmWalletId: x402WalletExample.id,
+	address: x402WalletExample.address,
+	Balances: [
+		{
+			caip2Network: 'eip155:8453',
+			displayName: 'Base',
+			native: { symbol: 'ETH', decimals: 18, amount: '12000000000000000' },
+			asset: { asset: exampleUsdcAsset, symbol: 'USDC', decimals: 6, amount: '4200000' },
+			error: null,
+		},
+	],
+};
+
+export const x402CountResponseExample = { total: 3 };
+
+export const x402LowBalanceRuleExample = {
+	id: 'clx402lbrule0001',
+	evmWalletId: x402FacilitatorWalletExample.id,
+	evmWalletAddress: x402FacilitatorWalletExample.address,
+	caip2Network: 'eip155:8453',
+	asset: 'native',
+	thresholdAmount: '10000000000000000',
+	enabled: true,
+	status: 'Healthy',
+	lastKnownAmount: '50000000000000000',
+	lastCheckedAt: exampleDate,
+	lastAlertedAt: null,
+	createdAt: exampleDate,
+	updatedAt: exampleDate,
+};
+
+export const listX402LowBalanceRulesResponseExample = {
+	Rules: [x402LowBalanceRuleExample],
+};
+
+export const setX402LowBalanceRuleBodyExample = {
+	evmWalletId: x402FacilitatorWalletExample.id,
+	caip2Network: 'eip155:8453',
+	asset: 'native',
+	thresholdAmount: '10000000000000000',
+};
+
+export const updateX402LowBalanceRuleBodyExample = {
+	ruleId: x402LowBalanceRuleExample.id,
+	thresholdAmount: '20000000000000000',
+};
+
+export const deleteX402LowBalanceRuleBodyExample = { ruleId: x402LowBalanceRuleExample.id };
+
+export const deleteX402LowBalanceRuleResponseExample = {
+	ruleId: x402LowBalanceRuleExample.id,
+	deletedAt: exampleDate,
+};
+
+export const x402AnalyticsBodyExample = {
+	timeZone: 'Etc/UTC',
+};
+
+export const x402AnalyticsResponseExample = {
+	periodStart: new Date('2026-05-09T12:00:00.000Z'),
+	periodEnd: exampleDate,
+	incomeCount: 2,
+	spendCount: 1,
+	TotalIncome: [{ caip2Network: 'eip155:8453', asset: exampleUsdcAsset, amount: '1500000' }],
+	TotalSpend: [{ caip2Network: 'eip155:8453', asset: exampleUsdcAsset, amount: '200000' }],
+	Daily: [
+		{
+			year: 2026,
+			month: 6,
+			day: 2,
+			Income: [{ caip2Network: 'eip155:8453', asset: exampleUsdcAsset, amount: '1500000' }],
+			Spend: [{ caip2Network: 'eip155:8453', asset: exampleUsdcAsset, amount: '200000' }],
+		},
+	],
+	Monthly: [
+		{
+			year: 2026,
+			month: 6,
+			Income: [{ caip2Network: 'eip155:8453', asset: exampleUsdcAsset, amount: '1500000' }],
+			Spend: [{ caip2Network: 'eip155:8453', asset: exampleUsdcAsset, amount: '200000' }],
+		},
+	],
+};
