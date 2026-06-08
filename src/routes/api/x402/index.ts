@@ -46,6 +46,7 @@ import {
 	listBudgetSchemaOutput,
 	listLowBalanceRulesSchemaInput,
 	listLowBalanceRulesSchemaOutput,
+	listNetworksSchemaInput,
 	listNetworksSchemaOutput,
 	listPaymentAttemptsSchemaInput,
 	listPaymentAttemptsSchemaOutput,
@@ -228,10 +229,10 @@ export const deleteX402WalletPost = adminAuthenticatedEndpointFactory.build({
 
 export const listX402NetworksGet = adminAuthenticatedEndpointFactory.build({
 	method: 'get',
-	input: z.object({}),
+	input: listNetworksSchemaInput,
 	output: listNetworksSchemaOutput,
-	handler: async () => ({
-		Networks: await listX402Networks(),
+	handler: async ({ input }: { input: z.infer<typeof listNetworksSchemaInput> }) => ({
+		Networks: await listX402Networks({ isTestnet: input.isTestnet }),
 	}),
 });
 

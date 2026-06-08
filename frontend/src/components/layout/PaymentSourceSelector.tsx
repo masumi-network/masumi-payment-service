@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
-import { FileInput, ChevronsUpDown, Settings, Check, Coins, Wand2 } from 'lucide-react';
+import { FileInput, ChevronsUpDown, Settings, Check, Coins } from 'lucide-react';
 import { cn, shortenAddress } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
@@ -138,14 +138,13 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
       selectedX402ChainId={selectedX402ChainId}
       onSelectCardano={selectCardanoSource}
       onSelectEvm={selectEvmChain}
-      showSetupCta={showSetupCta}
       isOnPaymentSourcesPage={isOnPaymentSourcesPage}
     />
   );
 
   // Also show the trigger when there's nothing selectable yet but x402 still needs setup,
-  // so the "Set up x402 (EVM)" entry inside the dropdown stays reachable for EVM-only
-  // operators with no Cardano source and no chains.
+  // so an EVM-only operator with no Cardano source and no chains can still open the
+  // dropdown and reach "Manage payment sources" (and from there, setup).
   const hasAnySelectable = hasSources || hasEvmChains || showSetupCta;
 
   if (collapsed) {
@@ -280,7 +279,6 @@ function SourceDropdown({
   selectedX402ChainId,
   onSelectCardano,
   onSelectEvm,
-  showSetupCta,
   isOnPaymentSourcesPage,
 }: {
   networkSources: {
@@ -297,7 +295,6 @@ function SourceDropdown({
   selectedX402ChainId: string | null;
   onSelectCardano: (id: string) => void;
   onSelectEvm: (id: string) => void;
-  showSetupCta: boolean;
   isOnPaymentSourcesPage: boolean;
 }) {
   const router = useRouter();
@@ -330,10 +327,10 @@ function SourceDropdown({
             <div className="flex min-w-0 flex-1 flex-col gap-1">
               <div className="flex items-center gap-2">
                 <PaymentSourceTypeBadge paymentSourceType={source.paymentSourceType} showDefault />
-                <span className="font-mono text-sm">
-                  {shortenAddress(source.smartContractAddress, 8)}
-                </span>
               </div>
+              <span className="font-mono text-sm break-all">
+                {shortenAddress(source.smartContractAddress, 8)}
+              </span>
               <span className="text-xs text-muted-foreground">
                 {sourceWalletCount} {sourceWalletCount === 1 ? 'wallet' : 'wallets'} ·{' '}
                 {(source.feeRatePermille / 10).toFixed(1)}% fee
@@ -356,7 +353,11 @@ function SourceDropdown({
               <DropdownMenuItem
                 key={chain.id}
                 className="cursor-pointer flex items-center gap-2"
-                onSelect={() => onSelectEvm(chain.id)}
+                // A chain with no facilitator can't settle, so selecting it is meaningless;
+                // route to setup instead. A ready chain selects as the active rail.
+                onSelect={() =>
+                  chain.facilitatorWalletId ? onSelectEvm(chain.id) : router.push('/x402-setup')
+                }
               >
                 <Check
                   className={cn(
@@ -378,7 +379,7 @@ function SourceDropdown({
                     <span className="font-mono">{chain.caip2Id}</span>
                     {!chain.facilitatorWalletId && (
                       <span className="text-amber-600 dark:text-amber-400">
-                        {' · needs facilitator'}
+                        {' · needs facilitator · set up'}
                       </span>
                     )}
                   </span>
@@ -390,18 +391,12 @@ function SourceDropdown({
       )}
 
       <DropdownMenuSeparator />
-      {showSetupCta && (
-        <DropdownMenuItem className="cursor-pointer" onSelect={() => router.push('/x402-setup')}>
-          <Wand2 className="h-4 w-4 mr-2" />
-          Set up x402 (EVM)
-        </DropdownMenuItem>
-      )}
       <DropdownMenuItem
         className={cn('cursor-pointer', isOnPaymentSourcesPage && 'bg-accent')}
         onSelect={() => router.push('/payment-sources')}
       >
         <Settings className="h-4 w-4 mr-2" />
-        Edit payment sources
+        Manage payment sources
       </DropdownMenuItem>
     </DropdownMenuContent>
   );

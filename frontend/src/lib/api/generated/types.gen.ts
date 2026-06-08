@@ -10056,7 +10056,12 @@ export type PostMonitoringStopResponse = PostMonitoringStopResponses[keyof PostM
 export type GetX402NetworksData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        /**
+         * Filter chains by environment: true for testnet (Preprod), false for mainnet
+         */
+        isTestnet?: 'true' | 'false';
+    };
     url: '/x402/networks';
 };
 
@@ -10701,11 +10706,11 @@ export type GetX402LowBalanceData = {
         /**
          * Only return rules currently in the Low state
          */
-        onlyLow?: boolean | null;
+        onlyLow?: 'true' | 'false';
         /**
          * Include disabled rules
          */
-        includeDisabled?: boolean | null;
+        includeDisabled?: 'true' | 'false';
     };
     url: '/x402/low-balance';
 };
@@ -10817,7 +10822,7 @@ export type GetX402SettlementsCountData = {
     path?: never;
     query?: {
         caip2Network?: string;
-        success?: boolean | null;
+        success?: 'true' | 'false';
     };
     url: '/x402/settlements/count';
 };
