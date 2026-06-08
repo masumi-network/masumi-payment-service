@@ -92,9 +92,12 @@ export function WalletsTab() {
     await handleApiCall(() => postX402WalletsDelete({ client: apiClient, body: { id } }), {
       onSuccess: () => {
         toast.success('Wallet retired');
-        refetch();
+        // Invalidate the whole 'x402-wallets' key space (paginated list AND the eager,
+        // type-filtered picker queries used by the Chains/Budgets/Alerts dialogs) so a
+        // retired wallet disappears from every picker immediately, not after staleTime.
+        queryClient.invalidateQueries({ queryKey: ['x402-wallets'] });
         // Retiring disables this wallet's budgets and detaches it as a chain facilitator,
-        // so refresh those caches too — refetching only the wallet list leaves them stale.
+        // so refresh those caches too.
         queryClient.invalidateQueries({ queryKey: ['x402-budgets'] });
         queryClient.invalidateQueries({ queryKey: ['x402-networks'] });
       },
@@ -214,7 +217,9 @@ export function WalletsTab() {
         onClose={() => setDialogOpen(false)}
         onSaved={() => {
           setDialogOpen(false);
-          refetch();
+          // Invalidate the whole 'x402-wallets' key space so the new wallet appears in the
+          // list and in the type-filtered pickers (Chains facilitator, Budgets, Alerts).
+          queryClient.invalidateQueries({ queryKey: ['x402-wallets'] });
           // A newly created wallet becomes selectable as a budget target.
           queryClient.invalidateQueries({ queryKey: ['x402-budgets'] });
         }}
@@ -234,7 +239,8 @@ export function WalletsTab() {
         onClose={() => setEditWallet(null)}
         onSaved={() => {
           setEditWallet(null);
-          refetch();
+          // The edited note also shows in the eager picker queries, so invalidate them all.
+          queryClient.invalidateQueries({ queryKey: ['x402-wallets'] });
         }}
       />
     </div>

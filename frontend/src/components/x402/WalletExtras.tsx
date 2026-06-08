@@ -45,10 +45,18 @@ export function WalletBalanceDialog({
         () => getX402WalletsBalance({ client: apiClient, query: { id: wallet!.id } }),
         { errorMessage: 'Failed to read balances' },
       );
-      return response?.data?.data?.Balances ?? [];
+      // handleApiCall returns null on failure (and toasts). Throw so the query enters its
+      // error state rather than resolving to [] — otherwise a failed request is
+      // indistinguishable from a wallet with no enabled chains.
+      const balances = response?.data?.data?.Balances;
+      if (balances == null) throw new Error('Failed to read balances');
+      return balances;
     },
     enabled: open && !!wallet && !!apiClient,
     staleTime: 15000,
+    // The error is already surfaced via toast + the dialog's error state; retrying would
+    // re-toast on each attempt.
+    retry: false,
   });
 
   const balances = query.data ?? [];
@@ -67,6 +75,10 @@ export function WalletBalanceDialog({
           <div className="flex justify-center py-10">
             <Spinner />
           </div>
+        ) : query.isError ? (
+          <p className="py-6 text-center text-sm text-destructive">
+            Couldn&apos;t read balances. The request failed; try again.
+          </p>
         ) : balances.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
             No enabled chains to read balances from.
