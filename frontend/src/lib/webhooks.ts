@@ -7,6 +7,9 @@ export const WEBHOOK_EVENTS = [
   'PURCHASE_ON_ERROR',
   'PAYMENT_ON_ERROR',
   'WALLET_LOW_BALANCE',
+  'X402_PAYMENT_SETTLED',
+  'X402_PAYMENT_FAILED',
+  'X402_WALLET_LOW_BALANCE',
 ] as const;
 
 export type WebhookFormat = (typeof WEBHOOK_FORMATS)[number];
@@ -26,6 +29,9 @@ export const WEBHOOK_EVENT_LABELS: Record<WebhookEvent, string> = {
   PURCHASE_ON_ERROR: 'Purchase error',
   PAYMENT_ON_ERROR: 'Payment error',
   WALLET_LOW_BALANCE: 'Wallet low balance',
+  X402_PAYMENT_SETTLED: 'x402 payment settled',
+  X402_PAYMENT_FAILED: 'x402 payment failed',
+  X402_WALLET_LOW_BALANCE: 'x402 wallet low balance',
 };
 
 export function formatWebhookDate(value: Date | string | null | undefined) {

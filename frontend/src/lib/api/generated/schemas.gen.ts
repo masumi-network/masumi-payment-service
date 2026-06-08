@@ -3929,6 +3929,19 @@ export const X402WalletSchema = {
             pattern: '^0x[a-fA-F0-9]{40}$',
             description: 'The EVM address derived from the wallet private key'
         },
+        type: {
+            type: 'string',
+            enum: [
+                'Purchasing',
+                'Selling'
+            ],
+            description: 'Purchasing wallets fund outbound payments; Selling wallets settle inbound ones as facilitators'
+        },
+        note: {
+            type: 'string',
+            nullable: true,
+            description: 'Optional human-readable label for the wallet'
+        },
         createdById: {
             type: 'string',
             nullable: true,
@@ -3946,9 +3959,32 @@ export const X402WalletSchema = {
     required: [
         'id',
         'address',
+        'type',
+        'note',
         'createdById',
         'createdAt',
         'updatedAt'
+    ]
+} as const;
+
+export const X402WalletCreatedSchema = {
+    allOf: [
+        {
+            $ref: '#/components/schemas/X402Wallet'
+        },
+        {
+            type: 'object',
+            properties: {
+                privateKey: {
+                    type: 'string',
+                    nullable: true,
+                    description: 'The generated 0x-prefixed private key, returned ONCE so you can back it up. It is null when you supplied your own key, is never stored in plaintext, and can never be retrieved again. Save it now.'
+                }
+            },
+            required: [
+                'privateKey'
+            ]
+        }
     ]
 } as const;
 
@@ -4204,5 +4240,79 @@ export const X402SettlementRecordSchema = {
         'caip2Network',
         'amount',
         'payer'
+    ]
+} as const;
+
+export const X402LowBalanceRuleSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string'
+        },
+        evmWalletId: {
+            type: 'string'
+        },
+        evmWalletAddress: {
+            type: 'string'
+        },
+        caip2Network: {
+            type: 'string',
+            pattern: '^eip155:\\d+$'
+        },
+        asset: {
+            type: 'string'
+        },
+        thresholdAmount: {
+            type: 'string',
+            description: 'Alert threshold in base units'
+        },
+        enabled: {
+            type: 'boolean'
+        },
+        status: {
+            type: 'string',
+            enum: [
+                'Unknown',
+                'Healthy',
+                'Low'
+            ]
+        },
+        lastKnownAmount: {
+            type: 'string',
+            nullable: true
+        },
+        lastCheckedAt: {
+            type: 'string',
+            nullable: true,
+            format: 'date-time'
+        },
+        lastAlertedAt: {
+            type: 'string',
+            nullable: true,
+            format: 'date-time'
+        },
+        createdAt: {
+            type: 'string',
+            format: 'date-time'
+        },
+        updatedAt: {
+            type: 'string',
+            format: 'date-time'
+        }
+    },
+    required: [
+        'id',
+        'evmWalletId',
+        'evmWalletAddress',
+        'caip2Network',
+        'asset',
+        'thresholdAmount',
+        'enabled',
+        'status',
+        'lastKnownAmount',
+        'lastCheckedAt',
+        'lastAlertedAt',
+        'createdAt',
+        'updatedAt'
     ]
 } as const;

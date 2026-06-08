@@ -6,6 +6,7 @@ import { toast } from 'react-toastify';
 import { Plus, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import Link from 'next/link';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Spinner } from '@/components/ui/spinner';
 import {
@@ -27,7 +28,8 @@ import { RefreshButton } from '@/components/RefreshButton';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { useApiKey } from '@/lib/hooks/useApiKey';
 import { useX402Budgets, useX402Networks, useX402Wallets } from '@/lib/hooks/useX402';
-import { handleApiCall, shortenAddress } from '@/lib/utils';
+import { CopyButton } from '@/components/ui/copy-button';
+import { groupDigits, handleApiCall, shortenAddress } from '@/lib/utils';
 import { postX402Budgets, X402Budget } from '@/lib/api/generated';
 
 const budgetFormSchema = z.object({
@@ -75,15 +77,17 @@ export function BudgetsTab() {
 
       <div className="border rounded-lg overflow-x-auto">
         <table className="w-full">
-          <thead>
+          <thead className="bg-muted/30 dark:bg-muted/15">
             <tr className="border-b">
-              <th className="p-4 text-left text-sm font-medium">API key</th>
-              <th className="p-4 text-left text-sm font-medium">Wallet</th>
-              <th className="p-4 text-left text-sm font-medium">Chain</th>
-              <th className="p-4 text-left text-sm font-medium">Asset</th>
-              <th className="p-4 text-right text-sm font-medium">Remaining</th>
-              <th className="p-4 text-right text-sm font-medium">Spent</th>
-              <th className="p-4 text-right text-sm font-medium">Actions</th>
+              <th className="p-4 text-left text-sm font-medium text-muted-foreground">API key</th>
+              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Wallet</th>
+              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Chain</th>
+              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Asset</th>
+              <th className="p-4 text-right text-sm font-medium text-muted-foreground">
+                Remaining
+              </th>
+              <th className="p-4 text-right text-sm font-medium text-muted-foreground">Spent</th>
+              <th className="p-4 text-right text-sm font-medium text-muted-foreground">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -100,7 +104,14 @@ export function BudgetsTab() {
                 <td colSpan={7}>
                   <EmptyState
                     title="No budgets set"
-                    description="Grant an API key a spend budget against a managed wallet."
+                    description="Grant an API key a spend budget against a Purchasing wallet. You need a Purchasing wallet first."
+                    action={
+                      <Button asChild variant="outline" size="sm">
+                        <Link href={{ pathname: '/x402', query: { tab: 'Wallets' } }}>
+                          Go to Wallets
+                        </Link>
+                      </Button>
+                    }
                   />
                 </td>
               </tr>
@@ -108,17 +119,36 @@ export function BudgetsTab() {
               budgets.map((budget) => (
                 <tr key={budget.id} className="border-b last:border-0">
                   <td className="p-4 font-mono text-xs">{budget.apiKeyId}</td>
-                  <td className="p-4 font-mono text-sm">
-                    {shortenAddress(budget.evmWalletAddress, 6)}
+                  <td className="p-4">
+                    <div className="flex items-center gap-1">
+                      <span className="font-mono text-sm" title={budget.evmWalletAddress}>
+                        {shortenAddress(budget.evmWalletAddress, 6)}
+                      </span>
+                      <CopyButton value={budget.evmWalletAddress} />
+                    </div>
                   </td>
                   <td className="p-4 text-sm">{chainLabel(budget.caip2Network)}</td>
-                  <td className="p-4 font-mono text-sm">{shortenAddress(budget.asset, 6)}</td>
-                  <td className="p-4 text-right font-mono text-sm">{budget.remainingAmount}</td>
+                  <td className="p-4">
+                    <div className="flex items-center gap-1">
+                      <span className="font-mono text-sm" title={budget.asset}>
+                        {shortenAddress(budget.asset, 6)}
+                      </span>
+                      <CopyButton value={budget.asset} />
+                    </div>
+                  </td>
+                  <td className="p-4 text-right font-mono text-sm">
+                    {groupDigits(budget.remainingAmount)}
+                  </td>
                   <td className="p-4 text-right font-mono text-sm text-muted-foreground">
-                    {budget.spentAmount}
+                    {groupDigits(budget.spentAmount)}
                   </td>
                   <td className="p-4 text-right">
-                    <Button variant="ghost" size="sm" onClick={() => openEdit(budget)}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-label="Edit budget"
+                      onClick={() => openEdit(budget)}
+                    >
                       <Pencil className="h-4 w-4" />
                     </Button>
                   </td>
@@ -157,8 +187,9 @@ export function BudgetDialog({
   const { apiClient } = useAppContext();
   const { allApiKeys } = useApiKey();
   const { networks } = useX402Networks();
-  // Only load the full wallet set while the form is open (it feeds the picker).
-  const { wallets } = useX402Wallets(open);
+  // Only load the wallet set while the form is open (it feeds the picker). Budgets fund
+  // outbound payments, so only Purchasing wallets are selectable.
+  const { wallets } = useX402Wallets(open, 'Purchasing');
   const [isSaving, setIsSaving] = useState(false);
 
   const {

@@ -1,5 +1,10 @@
 import { z } from '@masumi/payment-core/zod';
-import { X402PaymentDirection, X402PaymentStatus } from '@/generated/prisma/client';
+import {
+	LowBalanceStatus,
+	X402EvmWalletType,
+	X402PaymentDirection,
+	X402PaymentStatus,
+} from '@/generated/prisma/client';
 
 export const caip2Eip155Schema = z
 	.string()
@@ -135,10 +140,16 @@ export const deleteWalletSchemaOutput = z.object({
 	id: z.string(),
 });
 
+export const walletNoteSchema = z.string().max(250).describe('Optional human-readable label for the wallet');
+
 export const walletSchemaOutput = z
 	.object({
 		id: z.string().describe('Unique identifier of the managed EVM wallet'),
 		address: evmAddressSchema.describe('The EVM address derived from the wallet private key'),
+		type: z
+			.nativeEnum(X402EvmWalletType)
+			.describe('Purchasing wallets fund outbound payments; Selling wallets settle inbound ones as facilitators'),
+		note: z.string().nullable().describe('Optional human-readable label for the wallet'),
 		createdById: z.string().nullable().describe('Id of the API key that created this wallet'),
 		createdAt: z.date(),
 		updatedAt: z.date(),
@@ -146,6 +157,10 @@ export const walletSchemaOutput = z
 	.openapi('X402Wallet');
 
 export const createWalletSchemaInput = z.object({
+	type: z
+		.nativeEnum(X402EvmWalletType)
+		.describe('Purchasing wallets fund outbound payments; Selling wallets settle inbound ones as facilitators'),
+	note: walletNoteSchema.optional(),
 	privateKey: z
 		.string()
 		.regex(/^0x[a-fA-F0-9]{64}$/, 'privateKey must be a 32-byte hex private key')
@@ -153,16 +168,167 @@ export const createWalletSchemaInput = z.object({
 		.describe('Optional 0x-prefixed 32-byte hex private key. A new key is generated when omitted.'),
 });
 
+export const updateWalletSchemaInput = z.object({
+	id: z.string().describe('Id of the managed EVM wallet to update'),
+	note: walletNoteSchema.nullable().describe('New label for the wallet; null clears it'),
+});
+
 export const listWalletsSchemaInput = z.object({
 	take: z.coerce.number().min(1).max(100).default(20).describe('Number of managed wallets to return'),
 	cursorId: z.string().max(550).optional().describe('Pagination cursor (provide the id of the last returned wallet)'),
+	type: z.nativeEnum(X402EvmWalletType).optional().describe('Filter wallets by direction (Purchasing or Selling)'),
+});
+
+export const countSchemaOutput = z.object({ total: z.number().describe('Total number of matching records') });
+
+export const paymentAttemptsCountSchemaInput = z.object({
+	status: z.nativeEnum(X402PaymentStatus).optional(),
+	direction: z.nativeEnum(X402PaymentDirection).optional(),
+	caip2Network: caip2Eip155Schema.optional(),
+});
+
+export const settlementsCountSchemaInput = z.object({
+	caip2Network: caip2Eip155Schema.optional(),
+	success: z.coerce.boolean().optional(),
+});
+
+export const walletsCountSchemaInput = z.object({
+	type: z.nativeEnum(X402EvmWalletType).optional(),
+});
+
+export const walletBalanceSchemaInput = z.object({
+	id: z.string().describe('Id of the managed EVM wallet to read balances for'),
+	caip2Network: caip2Eip155Schema.optional().describe('Restrict to a single chain; defaults to all enabled chains'),
+});
+
+export const walletBalanceSchemaOutput = z.object({
+	evmWalletId: z.string(),
+	address: evmAddressSchema,
+	Balances: z.array(
+		z.object({
+			caip2Network: caip2Eip155Schema,
+			displayName: z.string(),
+			native: z
+				.object({
+					symbol: z.string(),
+					decimals: z.number(),
+					amount: z.string().describe('Native gas balance in wei'),
+				})
+				.nullable(),
+			asset: z
+				.object({
+					asset: evmAddressSchema,
+					symbol: z.string().nullable(),
+					decimals: z.number(),
+					amount: z.string().describe('Token balance in base units'),
+				})
+				.nullable(),
+			error: z.string().nullable().describe('Set when this chain could not be read'),
+		}),
+	),
+});
+
+// "native" denotes the chain's gas token; otherwise an ERC-20 contract address.
+export const lowBalanceAssetSchema = z
+	.union([z.literal('native'), evmAddressSchema])
+	.describe('Asset to monitor: "native" for the gas token, or an ERC-20 contract address');
+
+export const lowBalanceRuleSchema = z
+	.object({
+		id: z.string(),
+		evmWalletId: z.string(),
+		evmWalletAddress: z.string(),
+		caip2Network: caip2Eip155Schema,
+		asset: z.string(),
+		thresholdAmount: z.string().describe('Alert threshold in base units'),
+		enabled: z.boolean(),
+		status: z.nativeEnum(LowBalanceStatus),
+		lastKnownAmount: z.string().nullable(),
+		lastCheckedAt: z.date().nullable(),
+		lastAlertedAt: z.date().nullable(),
+		createdAt: z.date(),
+		updatedAt: z.date(),
+	})
+	.openapi('X402LowBalanceRule');
+
+export const setLowBalanceRuleSchemaInput = z.object({
+	evmWalletId: z.string(),
+	caip2Network: caip2Eip155Schema,
+	asset: lowBalanceAssetSchema,
+	thresholdAmount: uintStringSchema.describe('Alert threshold in base units'),
+	enabled: z.boolean().optional(),
+});
+
+export const listLowBalanceRulesSchemaInput = z.object({
+	evmWalletId: z.string().optional().describe('Filter rules to a single wallet'),
+	onlyLow: z.coerce.boolean().optional().describe('Only return rules currently in the Low state'),
+	includeDisabled: z.coerce.boolean().optional().describe('Include disabled rules'),
+});
+
+export const updateLowBalanceRuleSchemaInput = z.object({
+	ruleId: z.string(),
+	thresholdAmount: uintStringSchema.optional(),
+	enabled: z.boolean().optional(),
+});
+
+export const deleteLowBalanceRuleSchemaInput = z.object({ ruleId: z.string() });
+export const deleteLowBalanceRuleSchemaOutput = z.object({ ruleId: z.string(), deletedAt: z.date() });
+
+export const listLowBalanceRulesSchemaOutput = z.object({ Rules: z.array(lowBalanceRuleSchema) });
+
+const analyticsUnitSchema = z.object({
+	caip2Network: caip2Eip155Schema,
+	asset: z.string(),
+	amount: z.string().describe('Summed amount in base units'),
+});
+
+export const analyticsSchemaInput = z.object({
+	startDate: z.coerce.date().optional().describe('Window start (defaults to 30 days ago)'),
+	endDate: z.coerce.date().optional().describe('Window end (defaults to now)'),
+	caip2Network: caip2Eip155Schema.optional().describe('Restrict to a single chain'),
+	timeZone: z.string().optional().describe('IANA timezone for day/month bucketing (default Etc/UTC)'),
+});
+
+export const analyticsSchemaOutput = z.object({
+	periodStart: z.date(),
+	periodEnd: z.date(),
+	incomeCount: z.number().describe('Number of settled inbound payments'),
+	spendCount: z.number().describe('Number of signed outbound payments'),
+	TotalIncome: z.array(analyticsUnitSchema),
+	TotalSpend: z.array(analyticsUnitSchema),
+	Daily: z.array(
+		z.object({
+			year: z.number(),
+			month: z.number(),
+			day: z.number(),
+			Income: z.array(analyticsUnitSchema),
+			Spend: z.array(analyticsUnitSchema),
+		}),
+	),
+	Monthly: z.array(
+		z.object({
+			year: z.number(),
+			month: z.number(),
+			Income: z.array(analyticsUnitSchema),
+			Spend: z.array(analyticsUnitSchema),
+		}),
+	),
 });
 
 export const listWalletsSchemaOutput = z.object({
 	Wallets: z.array(walletSchemaOutput),
 });
 
-export const createWalletSchemaOutput = walletSchemaOutput;
+export const createWalletSchemaOutput = walletSchemaOutput
+	.extend({
+		privateKey: z
+			.string()
+			.nullable()
+			.describe(
+				'The generated 0x-prefixed private key, returned ONCE so you can back it up. It is null when you supplied your own key, is never stored in plaintext, and can never be retrieved again. Save it now.',
+			),
+	})
+	.openapi('X402WalletCreated');
 
 export const x402NetworkSchema = z
 	.object({
