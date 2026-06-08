@@ -7,8 +7,18 @@ const mockPaymentAttemptFindMany = jest.fn() as jest.Mock<any>;
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	Prisma: {},
 	LowBalanceStatus: { Unknown: 'Unknown', Healthy: 'Healthy', Low: 'Low' },
-	X402PaymentDirection: { InboundVerify: 'InboundVerify', InboundSettle: 'InboundSettle', OutboundPayment: 'OutboundPayment' },
-	X402PaymentStatus: { PaymentRequired: 'PaymentRequired', Verified: 'Verified', Settled: 'Settled', Failed: 'Failed', Replayed: 'Replayed' },
+	X402PaymentDirection: {
+		InboundVerify: 'InboundVerify',
+		InboundSettle: 'InboundSettle',
+		OutboundPayment: 'OutboundPayment',
+	},
+	X402PaymentStatus: {
+		PaymentRequired: 'PaymentRequired',
+		Verified: 'Verified',
+		Settled: 'Settled',
+		Failed: 'Failed',
+		Replayed: 'Replayed',
+	},
 	X402EvmWalletType: { Purchasing: 'Purchasing', Selling: 'Selling' },
 	prisma: {
 		x402PaymentAttempt: { findMany: mockPaymentAttemptFindMany },
