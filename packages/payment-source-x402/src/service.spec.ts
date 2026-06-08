@@ -66,6 +66,10 @@ class X402ClientMock implements MockX402Client {
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	Prisma: { PrismaClientKnownRequestError: MockPrismaClientKnownRequestError },
+	X402EvmWalletType: {
+		Purchasing: 'Purchasing',
+		Selling: 'Selling',
+	},
 	X402PaymentDirection: {
 		InboundVerify: 'InboundVerify',
 		InboundSettle: 'InboundSettle',
@@ -243,12 +247,14 @@ describe('x402 service helpers', () => {
 			isEnabled: true,
 			FacilitatorWallet: {
 				id: 'wallet-facilitator',
+				type: 'Selling',
 				encryptedPrivateKey: 'encrypted-private-key',
 			},
 		});
 		mockX402EvmWalletFindUnique.mockResolvedValue({
 			id: 'wallet-1',
 			address: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+			type: 'Purchasing',
 			encryptedPrivateKey: 'encrypted-private-key',
 			deletedAt: null,
 		});
@@ -256,6 +262,7 @@ describe('x402 service helpers', () => {
 		mockX402EvmWalletCreate.mockResolvedValue({
 			id: 'wallet-new',
 			address: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+			type: 'Purchasing',
 			createdAt: new Date('2026-01-01T00:00:00.000Z'),
 			updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 			createdById: 'api-key-1',
@@ -576,9 +583,28 @@ describe('x402 service helpers', () => {
 		await expect(
 			service.createX402ManagedWallet({
 				createdByApiKeyId: 'api-key-1',
+				type: 'Purchasing' as Parameters<typeof service.createX402ManagedWallet>[0]['type'],
 				privateKey: `0x${'a'.repeat(64)}`,
 			}),
 		).rejects.toMatchObject({ status: 409 });
+	});
+
+	it('returns the generated private key once when no key is supplied', async () => {
+		const result = await service.createX402ManagedWallet({
+			createdByApiKeyId: 'api-key-1',
+			type: 'Purchasing' as Parameters<typeof service.createX402ManagedWallet>[0]['type'],
+		});
+		// generatePrivateKey is mocked to a fixed 0xbb… key; it must be surfaced for backup.
+		expect(result.privateKey).toBe(`0x${'b'.repeat(64)}`);
+	});
+
+	it('does not echo back a caller-supplied private key', async () => {
+		const result = await service.createX402ManagedWallet({
+			createdByApiKeyId: 'api-key-1',
+			type: 'Purchasing' as Parameters<typeof service.createX402ManagedWallet>[0]['type'],
+			privateKey: `0x${'a'.repeat(64)}`,
+		});
+		expect(result.privateKey).toBeNull();
 	});
 
 	it('refuses to settle through a retired facilitator wallet', async () => {
@@ -590,6 +616,7 @@ describe('x402 service helpers', () => {
 			isEnabled: true,
 			FacilitatorWallet: {
 				id: 'wallet-facilitator',
+				type: 'Selling',
 				encryptedPrivateKey: 'encrypted-private-key',
 				deletedAt: new Date('2026-01-01T00:00:00.000Z'),
 			},
@@ -603,6 +630,51 @@ describe('x402 service helpers', () => {
 			}),
 		).rejects.toMatchObject({ status: 400 });
 		expect(mockFacilitatorSettle).not.toHaveBeenCalled();
+	});
+
+	it('refuses to settle through a facilitator wallet that is not a Selling wallet', async () => {
+		mockX402NetworkFindUnique.mockResolvedValueOnce({
+			id: 'network-1',
+			caip2Id: source.network,
+			displayName: 'Base Sepolia',
+			rpcUrl: 'https://sepolia.base.org',
+			isEnabled: true,
+			FacilitatorWallet: {
+				id: 'wallet-facilitator',
+				type: 'Purchasing',
+				encryptedPrivateKey: 'encrypted-private-key',
+				deletedAt: null,
+			},
+		});
+		await expect(
+			service.settleX402Payment({
+				apiKeyId: 'api-key-1',
+				caip2NetworkLimit: null,
+				supportedPaymentSourceId: 'source-1',
+				paymentPayload: typedPaymentPayload,
+			}),
+		).rejects.toMatchObject({ status: 400 });
+		expect(mockFacilitatorSettle).not.toHaveBeenCalled();
+	});
+
+	it('rejects granting a budget to a Selling wallet', async () => {
+		mockX402EvmWalletFindUnique.mockResolvedValueOnce({
+			id: 'wallet-selling',
+			address: '0xcccccccccccccccccccccccccccccccccccccccc',
+			type: 'Selling',
+			encryptedPrivateKey: 'encrypted-private-key',
+			deletedAt: null,
+		});
+		await expect(
+			service.setX402WalletBudget({
+				apiKeyId: 'api-key-1',
+				evmWalletId: 'wallet-selling',
+				caip2Network: source.network,
+				asset: source.asset,
+				remainingAmount: '100',
+			}),
+		).rejects.toMatchObject({ status: 400 });
+		expect(mockBudgetUpsert).not.toHaveBeenCalled();
 	});
 
 	describe('createX402Payment (buy side)', () => {
@@ -687,6 +759,29 @@ describe('x402 service helpers', () => {
 					paymentRequired,
 				}),
 			).rejects.toMatchObject({ status: 402 });
+
+			expect(mockCreatePaymentPayload).not.toHaveBeenCalled();
+		});
+
+		it('rejects signing an outbound payment with a Selling wallet', async () => {
+			// A funded budget exists, but the wallet itself is a Selling wallet, so the
+			// payment must be refused before signing.
+			mockX402EvmWalletFindUnique.mockResolvedValueOnce({
+				id: 'wallet-1',
+				address: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+				type: 'Selling',
+				encryptedPrivateKey: 'encrypted-private-key',
+				deletedAt: null,
+			});
+
+			await expect(
+				service.createX402Payment({
+					apiKeyId: 'api-key-1',
+					caip2NetworkLimit: [source.network],
+					evmWalletId: 'wallet-1',
+					paymentRequired,
+				}),
+			).rejects.toMatchObject({ status: 400 });
 
 			expect(mockCreatePaymentPayload).not.toHaveBeenCalled();
 		});

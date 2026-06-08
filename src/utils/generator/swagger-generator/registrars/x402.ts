@@ -26,6 +26,7 @@ import {
 	createX402PaymentBodyExample,
 	createX402PaymentResponseExample,
 	createX402WalletBodyExample,
+	createX402WalletResponseExample,
 	deleteX402WalletBodyExample,
 	deleteX402WalletResponseExample,
 	listX402BudgetsQueryExample,
@@ -44,7 +45,6 @@ import {
 	verifyX402ResponseExample,
 	x402BudgetExample,
 	x402NetworkExample,
-	x402WalletExample,
 } from '@/routes/api/x402/examples';
 import { successResponse, type SwaggerRegistrarContext } from '../shared';
 
@@ -114,7 +114,9 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 				},
 			},
 		},
-		responses: { 200: successResponse('Managed wallet created', createWalletSchemaOutput, x402WalletExample) },
+		responses: {
+			200: successResponse('Managed wallet created', createWalletSchemaOutput, createX402WalletResponseExample),
+		},
 	});
 
 	registry.registerPath({

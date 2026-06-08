@@ -189,8 +189,9 @@ export function ChainDialog({
   onSaved: () => void;
 }) {
   const { apiClient } = useAppContext();
-  // Only load the full wallet set while the form is open (it feeds the picker).
-  const { wallets } = useX402Wallets(open);
+  // Only load the wallet set while the form is open (it feeds the picker). A facilitator
+  // settles inbound payments, so only Selling wallets are selectable.
+  const { wallets } = useX402Wallets(open, 'Selling');
   const [isSaving, setIsSaving] = useState(false);
 
   const {

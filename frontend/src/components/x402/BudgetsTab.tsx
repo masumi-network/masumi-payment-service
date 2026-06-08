@@ -157,8 +157,9 @@ export function BudgetDialog({
   const { apiClient } = useAppContext();
   const { allApiKeys } = useApiKey();
   const { networks } = useX402Networks();
-  // Only load the full wallet set while the form is open (it feeds the picker).
-  const { wallets } = useX402Wallets(open);
+  // Only load the wallet set while the form is open (it feeds the picker). Budgets fund
+  // outbound payments, so only Purchasing wallets are selectable.
+  const { wallets } = useX402Wallets(open, 'Purchasing');
   const [isSaving, setIsSaving] = useState(false);
 
   const {

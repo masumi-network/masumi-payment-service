@@ -7,9 +7,10 @@ import { ChainsTab } from '@/components/x402/ChainsTab';
 import { WalletsTab } from '@/components/x402/WalletsTab';
 import { BudgetsTab } from '@/components/x402/BudgetsTab';
 import { PaymentsTab } from '@/components/x402/PaymentsTab';
+import { AlertsTab } from '@/components/x402/AlertsTab';
 import { X402SetupGuide } from '@/components/x402/X402SetupGuide';
 
-const TAB_NAMES = ['Chains', 'Wallets', 'Budgets', 'Payments'] as const;
+const TAB_NAMES = ['Chains', 'Wallets', 'Budgets', 'Alerts', 'Payments'] as const;
 type TabName = (typeof TAB_NAMES)[number];
 
 export default function X402Page() {
@@ -42,6 +43,7 @@ export default function X402Page() {
             {activeTab === 'Chains' && <ChainsTab />}
             {activeTab === 'Wallets' && <WalletsTab />}
             {activeTab === 'Budgets' && <BudgetsTab />}
+            {activeTab === 'Alerts' && <AlertsTab />}
             {activeTab === 'Payments' && <PaymentsTab />}
           </div>
         </div>

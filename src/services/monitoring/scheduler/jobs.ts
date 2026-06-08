@@ -8,6 +8,7 @@ import {
 } from '@/services/transactions';
 import { walletLowBalanceMonitorService } from '@/services/wallets';
 import { webhookQueueService } from '@/services/webhooks';
+import { runX402LowBalanceMonitoringCycle } from '@/services/x402/low-balance-monitor';
 import type { JobDefinition } from '@/services/shared';
 
 export const scheduledJobs: JobDefinition[] = [
@@ -259,6 +260,13 @@ export const scheduledJobs: JobDefinition[] = [
 		startMessage: 'Starting low balance monitoring',
 		finishMessage: 'Finished low balance monitoring',
 		run: () => walletLowBalanceMonitorService.runScheduledMonitoringCycle(),
+	},
+	{
+		initialDelayMs: 2750,
+		intervalMs: CONFIG.LOW_BALANCE_CHECK_INTERVAL * 1000,
+		startMessage: 'Starting x402 low balance monitoring',
+		finishMessage: 'Finished x402 low balance monitoring',
+		run: () => runX402LowBalanceMonitoringCycle(),
 	},
 	{
 		initialDelayMs: 50000,
