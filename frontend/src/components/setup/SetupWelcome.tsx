@@ -44,6 +44,7 @@ import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtende
 import { DEFAULT_ADMIN_WALLETS } from '@/lib/constants/defaultWallets';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { useQueryClient } from '@tanstack/react-query';
+import { invalidateAgentQueries } from '@/lib/queries/agent-cache';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Input } from '@/components/ui/input';
@@ -1985,7 +1986,7 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
     queryClient.invalidateQueries({ queryKey: ['payment-sources-all'] });
     queryClient.invalidateQueries({ queryKey: ['payment-source-extended'] });
     queryClient.invalidateQueries({ queryKey: ['wallets'] });
-    queryClient.invalidateQueries({ queryKey: ['agents'] });
+    invalidateAgentQueries(queryClient);
     queryClient.invalidateQueries({ queryKey: ['transactions'] });
     router.push('/');
   };
