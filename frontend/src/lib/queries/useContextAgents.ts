@@ -126,6 +126,7 @@ export function useContextAgents(params?: {
       }),
     enabled: !!apiClient && authorized && activeRail === 'cardano' && !!sourceAddress,
     staleTime: 15000,
+    placeholderData: keepPreviousData,
   });
 
   const agents = useMemo<AgentWithRelation[]>(() => {
@@ -180,9 +181,15 @@ export function useContextAgents(params?: {
     (allQuery.data?.truncated ?? false) ||
     (isRegisteredQueryActive && (registeredQuery.data?.truncated ?? false));
 
+  // True while showing the previous results during a status/search change (keepPreviousData),
+  // so the page can dim the table and run its instant client-side search filter.
+  const isPlaceholderData =
+    allQuery.isPlaceholderData || (isRegisteredQueryActive && registeredQuery.isPlaceholderData);
+
   return {
     agents,
     truncated,
+    isPlaceholderData,
     isLoading: allQuery.isLoading || registeredPending,
     isFetching: allQuery.isFetching || (isRegisteredQueryActive && registeredQuery.isFetching),
     refetch: async () => {
