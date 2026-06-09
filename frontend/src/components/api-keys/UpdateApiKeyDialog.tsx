@@ -105,7 +105,13 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
   const { apiClient, network } = useAppContext();
   const { paymentSources } = usePaymentSourceExtendedAll();
   const { wallets: managedWallets } = useAllWallets(open);
-  const { networks: evmChainOptions } = useX402Networks({ silentErrors: true });
+  // A key's NetworkLimit can span both Cardano networks, so offer EVM chains from every
+  // environment, not just the active top-selector one, or chains for the other network
+  // can't be added to ChainIdLimit in one flow.
+  const { networks: evmChainOptions } = useX402Networks({
+    silentErrors: true,
+    allEnvironments: true,
+  });
 
   const allWallets = useMemo(() => {
     // Wallets come from /wallet/list now; join to the source for its network.
