@@ -100,11 +100,14 @@ export default function WebhooksPage() {
     [railEvents],
   );
 
-  // A filter chosen on one rail isn't valid on the other; reset to "All events" when the
-  // rail (and thus the available events) changes so the list never silently empties.
-  useEffect(() => {
-    setActiveEventFilter(allEventsFilterValue);
-  }, [activeRail]);
+  // A specific event filter chosen on one rail isn't valid on the other. Rather than reset
+  // it in an effect, derive the effective filter: fall back to "All events" whenever the
+  // selected event isn't part of the active rail's events. (Create/edit dialogs are modal,
+  // so the rail/source can't change underneath an open one — no dialog-close effect needed.)
+  const effectiveEventFilter =
+    activeEventFilter !== allEventsFilterValue && railEvents.includes(activeEventFilter)
+      ? activeEventFilter
+      : allEventsFilterValue;
 
   const filteredWebhooks = useMemo(() => {
     const selectedFormat = formatTabToValue[activeFormatTab];
@@ -122,8 +125,8 @@ export default function WebhooksPage() {
       }
 
       if (
-        activeEventFilter !== allEventsFilterValue &&
-        !webhook.Events.includes(activeEventFilter)
+        effectiveEventFilter !== allEventsFilterValue &&
+        !webhook.Events.includes(effectiveEventFilter)
       ) {
         return false;
       }
@@ -141,12 +144,12 @@ export default function WebhooksPage() {
 
       return searchableValues.some((value) => value.toLowerCase().includes(query));
     });
-  }, [activeEventFilter, activeFormatTab, searchQuery, webhooks, railEvents]);
+  }, [effectiveEventFilter, activeFormatTab, searchQuery, webhooks, railEvents]);
 
   const hasActiveFilters =
     searchQuery.trim().length > 0 ||
     activeFormatTab !== 'All' ||
-    activeEventFilter !== allEventsFilterValue;
+    effectiveEventFilter !== allEventsFilterValue;
 
   const handleDeleteWebhook = async () => {
     if (!webhookToDelete) return;
@@ -274,17 +277,37 @@ export default function WebhooksPage() {
         <table className="w-full min-w-[1080px]">
           <thead className="bg-muted/30 dark:bg-muted/15">
             <tr className="border-b">
-              <th className="p-4 pl-6 text-left text-sm font-medium text-muted-foreground">Name</th>
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Format</th>
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Events</th>
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">URL</th>
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Status</th>
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+              <th
+                scope="col"
+                className="p-4 pl-6 text-left text-sm font-medium text-muted-foreground"
+              >
+                Name
+              </th>
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                Format
+              </th>
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                Events
+              </th>
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                URL
+              </th>
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                Status
+              </th>
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
                 Last success
               </th>
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Failures</th>
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Updated</th>
-              <th className="p-4 pr-6 text-right text-sm font-medium text-muted-foreground">
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                Failures
+              </th>
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                Updated
+              </th>
+              <th
+                scope="col"
+                className="p-4 pr-6 text-right text-sm font-medium text-muted-foreground"
+              >
                 Actions
               </th>
             </tr>
@@ -459,7 +482,7 @@ export default function WebhooksPage() {
 
                 <div className="flex flex-wrap gap-2">
                   {eventFilterOptions.map((option) => {
-                    const isActive = activeEventFilter === option.value;
+                    const isActive = effectiveEventFilter === option.value;
 
                     return (
                       <Button

@@ -6,6 +6,7 @@ import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useEffect, useMemo } from 'react';
 import { AddSourceDialog } from '@/components/payment-sources/AddSourceDialog';
 import { X402SourcesSection } from '@/components/payment-sources/X402SourcesSection';
+import { rowActivation } from '@/lib/a11y';
 import { PaymentSourceDialog } from '@/components/payment-sources/PaymentSourceDialog';
 import Link from 'next/link';
 import { useQueryClient } from '@tanstack/react-query';
@@ -378,16 +379,28 @@ export default function PaymentSourcesPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b">
-                    <th className="p-4 text-left text-sm font-medium truncate pl-6">
+                    <th scope="col" className="p-4 text-left text-sm font-medium truncate pl-6">
                       Contract address
                     </th>
-                    <th className="p-4 text-left text-sm font-medium">Type</th>
-                    <th className="p-4 text-left text-sm font-medium">ID</th>
-                    <th className="p-4 text-left text-sm font-medium">Network</th>
-                    <th className="p-4 text-left text-sm font-medium truncate">Fee rate (%)</th>
-                    <th className="p-4 text-left text-sm font-medium truncate">Created at</th>
-                    <th className="p-4 text-left text-sm font-medium">Wallets</th>
-                    <th className="w-20 p-4 pr-8"></th>
+                    <th scope="col" className="p-4 text-left text-sm font-medium">
+                      Type
+                    </th>
+                    <th scope="col" className="p-4 text-left text-sm font-medium">
+                      ID
+                    </th>
+                    <th scope="col" className="p-4 text-left text-sm font-medium">
+                      Network
+                    </th>
+                    <th scope="col" className="p-4 text-left text-sm font-medium truncate">
+                      Fee rate (%)
+                    </th>
+                    <th scope="col" className="p-4 text-left text-sm font-medium truncate">
+                      Created at
+                    </th>
+                    <th scope="col" className="p-4 text-left text-sm font-medium">
+                      Wallets
+                    </th>
+                    <th scope="col" className="w-20 p-4 pr-8"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -421,7 +434,9 @@ export default function PaymentSourcesPage() {
                             'bg-green-50 dark:bg-green-950/20',
                         )}
                         style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
+                        aria-label="View payment source details"
                         onClick={() => setSelectedPaymentSourceForDetails(source)}
+                        {...rowActivation(() => setSelectedPaymentSourceForDetails(source))}
                       >
                         <td
                           className={cn(

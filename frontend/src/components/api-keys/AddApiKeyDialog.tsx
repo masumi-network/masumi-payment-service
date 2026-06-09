@@ -379,8 +379,15 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
           {usageLimited && !isReadOnly && (
             <>
               <div className="space-y-2">
-                <label className="text-sm font-medium">ADA Limit</label>
-                <Input type="number" placeholder="0.00" {...register('credits.lovelace')} />
+                <label htmlFor="apikey-ada-limit" className="text-sm font-medium">
+                  ADA Limit
+                </label>
+                <Input
+                  id="apikey-ada-limit"
+                  type="number"
+                  placeholder="0.00"
+                  {...register('credits.lovelace')}
+                />
                 <p className="text-xs text-muted-foreground">
                   Amount in ADA (will be converted to lovelace)
                 </p>
@@ -392,10 +399,15 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium">
+                <label htmlFor="apikey-usdcx-limit" className="text-sm font-medium">
                   {getActiveStablecoinSymbol(network)} Limit
                 </label>
-                <Input type="number" placeholder="0.00" {...register('credits.usdcx')} />
+                <Input
+                  id="apikey-usdcx-limit"
+                  type="number"
+                  placeholder="0.00"
+                  {...register('credits.usdcx')}
+                />
                 {errors.credits && 'usdcx' in errors.credits && errors.credits.usdcx && (
                   <p className="text-xs text-destructive mt-1">
                     {(errors.credits.usdcx as any).message}

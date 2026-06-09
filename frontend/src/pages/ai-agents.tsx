@@ -19,6 +19,7 @@ import { AIAgentTableSkeleton } from '@/components/skeletons/AIAgentTableSkeleto
 import { Spinner } from '@/components/ui/spinner';
 import { useQueryClient } from '@tanstack/react-query';
 import { useContextAgents, type AgentRelation } from '@/lib/queries/useContextAgents';
+import { rowActivation } from '@/lib/a11y';
 import formatBalance from '@/lib/formatBalance';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { FaRegClock } from 'react-icons/fa';
@@ -262,8 +263,11 @@ export default function AIAgentsPage() {
 
   const [dismissedQueryAction, setDismissedQueryAction] = useState(false);
 
+  // Registration is Cardano-only, so the register_agent deep link must not pop the dialog
+  // while the x402 rail is active (the button is hidden there too).
   const shouldOpenRegisterDialog =
-    isRegisterDialogOpen || (router.query.action === 'register_agent' && !dismissedQueryAction);
+    activeRail === 'cardano' &&
+    (isRegisterDialogOpen || (router.query.action === 'register_agent' && !dismissedQueryAction));
 
   const formatDate = (date: Date | string) => {
     const dateObj = typeof date === 'string' ? new Date(date) : date;
@@ -486,28 +490,49 @@ export default function AIAgentsPage() {
               >
                 <thead className="bg-muted/30 dark:bg-muted/15">
                   <tr className="border-b">
-                    <th className="p-4 text-left text-sm font-medium text-muted-foreground pl-6">
+                    <th
+                      scope="col"
+                      className="p-4 text-left text-sm font-medium text-muted-foreground pl-6"
+                    >
                       Name
                     </th>
-                    <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                    <th
+                      scope="col"
+                      className="p-4 text-left text-sm font-medium text-muted-foreground"
+                    >
                       Added
                     </th>
-                    <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                    <th
+                      scope="col"
+                      className="p-4 text-left text-sm font-medium text-muted-foreground"
+                    >
                       Agent ID
                     </th>
-                    <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                    <th
+                      scope="col"
+                      className="p-4 text-left text-sm font-medium text-muted-foreground"
+                    >
                       Wallets
                     </th>
-                    <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                    <th
+                      scope="col"
+                      className="p-4 text-left text-sm font-medium text-muted-foreground"
+                    >
                       Price
                     </th>
-                    <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                    <th
+                      scope="col"
+                      className="p-4 text-left text-sm font-medium text-muted-foreground"
+                    >
                       Tags
                     </th>
-                    <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                    <th
+                      scope="col"
+                      className="p-4 text-left text-sm font-medium text-muted-foreground"
+                    >
                       Status
                     </th>
-                    <th className="w-20 p-4 pr-8"></th>
+                    <th scope="col" className="w-20 p-4 pr-8"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -553,7 +578,9 @@ export default function AIAgentsPage() {
                           style={{
                             animationDelay: `${Math.min(index, 9) * 40}ms`,
                           }}
+                          aria-label={`View details for ${agent.name}`}
                           onClick={() => handleAgentClick(agent)}
+                          {...rowActivation(() => handleAgentClick(agent))}
                         >
                           <td className="p-4 max-w-50 truncate pl-6">
                             <div className="text-sm font-medium">{agent.name}</div>

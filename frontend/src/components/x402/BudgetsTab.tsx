@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useForm, Controller, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -44,12 +44,22 @@ type BudgetFormValues = z.infer<typeof budgetFormSchema>;
 
 export function BudgetsTab() {
   const { budgets, isLoading, isRefetching, refetch } = useX402Budgets();
-  const { networks } = useX402Networks();
+  const { networks, isLoading: networksLoading } = useX402Networks();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<X402Budget | null>(null);
 
   const chainLabel = (caip2: string) =>
     networks.find((n) => n.caip2Id === caip2)?.displayName ?? caip2;
+
+  // Budgets are fetched across all environments, but `networks` (and the edit dialog's
+  // chain picker) are scoped to the active env. Scope the list to the active env's chains
+  // so the Preprod/Mainnet selector governs this tab like every other x402 surface, and an
+  // editable budget's chain is always present in the picker.
+  const envChainIds = useMemo(() => new Set(networks.map((n) => n.caip2Id)), [networks]);
+  const envBudgets = useMemo(
+    () => budgets.filter((budget) => envChainIds.has(budget.caip2Network)),
+    [budgets, envChainIds],
+  );
 
   const openCreate = () => {
     setEditing(null);
@@ -79,19 +89,31 @@ export function BudgetsTab() {
         <table className="w-full">
           <thead className="bg-muted/30 dark:bg-muted/15">
             <tr className="border-b">
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">API key</th>
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Wallet</th>
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Chain</th>
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Asset</th>
-              <th className="p-4 text-right text-sm font-medium text-muted-foreground">
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                API key
+              </th>
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                Wallet
+              </th>
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                Chain
+              </th>
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                Asset
+              </th>
+              <th scope="col" className="p-4 text-right text-sm font-medium text-muted-foreground">
                 Remaining
               </th>
-              <th className="p-4 text-right text-sm font-medium text-muted-foreground">Spent</th>
-              <th className="p-4 text-right text-sm font-medium text-muted-foreground">Actions</th>
+              <th scope="col" className="p-4 text-right text-sm font-medium text-muted-foreground">
+                Spent
+              </th>
+              <th scope="col" className="p-4 text-right text-sm font-medium text-muted-foreground">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody>
-            {isLoading ? (
+            {isLoading || networksLoading ? (
               <tr>
                 <td colSpan={7} className="py-10">
                   <div className="flex justify-center">
@@ -99,7 +121,7 @@ export function BudgetsTab() {
                   </div>
                 </td>
               </tr>
-            ) : budgets.length === 0 ? (
+            ) : envBudgets.length === 0 ? (
               <tr>
                 <td colSpan={7}>
                   <EmptyState
@@ -116,7 +138,7 @@ export function BudgetsTab() {
                 </td>
               </tr>
             ) : (
-              budgets.map((budget) => (
+              envBudgets.map((budget) => (
                 <tr key={budget.id} className="border-b last:border-0">
                   <td className="p-4 font-mono text-xs">{budget.apiKeyId}</td>
                   <td className="p-4">
@@ -331,8 +353,11 @@ export function BudgetDialog({
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">Asset (token contract)</label>
+            <label htmlFor="budget-asset" className="text-sm font-medium">
+              Asset (token contract)
+            </label>
             <Input
+              id="budget-asset"
               placeholder="0x…"
               className="font-mono"
               readOnly={!!editing}
@@ -342,8 +367,15 @@ export function BudgetDialog({
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">Remaining amount (base units)</label>
-            <Input placeholder="1000000" className="font-mono" {...register('remainingAmount')} />
+            <label htmlFor="budget-remainingAmount" className="text-sm font-medium">
+              Remaining amount (base units)
+            </label>
+            <Input
+              id="budget-remainingAmount"
+              placeholder="1000000"
+              className="font-mono"
+              {...register('remainingAmount')}
+            />
             {errors.remainingAmount && (
               <p className="text-xs text-destructive">{errors.remainingAmount.message}</p>
             )}

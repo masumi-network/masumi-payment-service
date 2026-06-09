@@ -103,16 +103,24 @@ export function ChainsTab() {
         <table className="w-full">
           <thead className="bg-muted/30 dark:bg-muted/15">
             <tr className="border-b">
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Chain</th>
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">RPC URL</th>
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Status</th>
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                Chain
+              </th>
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                RPC URL
+              </th>
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                Status
+              </th>
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
                 Default asset
               </th>
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
                 Facilitator
               </th>
-              <th className="p-4 text-right text-sm font-medium text-muted-foreground">Actions</th>
+              <th scope="col" className="p-4 text-right text-sm font-medium text-muted-foreground">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -290,8 +298,11 @@ export function ChainDialog({
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="space-y-2">
-            <label className="text-sm font-medium">CAIP-2 chain id</label>
+            <label htmlFor="chain-caip2Id" className="text-sm font-medium">
+              CAIP-2 chain id
+            </label>
             <Input
+              id="chain-caip2Id"
               placeholder="eip155:8453"
               className="font-mono"
               readOnly={!!editing}
@@ -301,22 +312,33 @@ export function ChainDialog({
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">Display name</label>
-            <Input placeholder="Base" {...register('displayName')} />
+            <label htmlFor="chain-displayName" className="text-sm font-medium">
+              Display name
+            </label>
+            <Input id="chain-displayName" placeholder="Base" {...register('displayName')} />
             {errors.displayName && (
               <p className="text-xs text-destructive">{errors.displayName.message}</p>
             )}
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">RPC URL</label>
-            <Input placeholder="https://mainnet.base.org" {...register('rpcUrl')} />
+            <label htmlFor="chain-rpcUrl" className="text-sm font-medium">
+              RPC URL
+            </label>
+            <Input
+              id="chain-rpcUrl"
+              placeholder="https://mainnet.base.org"
+              {...register('rpcUrl')}
+            />
             {errors.rpcUrl && <p className="text-xs text-destructive">{errors.rpcUrl.message}</p>}
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">Default asset (optional)</label>
+            <label htmlFor="chain-defaultAsset" className="text-sm font-medium">
+              Default asset (optional)
+            </label>
             <Input
+              id="chain-defaultAsset"
               placeholder="0x… token contract"
               className="font-mono"
               {...register('defaultAsset')}

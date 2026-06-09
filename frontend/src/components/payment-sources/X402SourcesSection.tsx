@@ -71,14 +71,19 @@ export function X402SourcesSection({
         <table className="w-full">
           <thead className="bg-muted/30 dark:bg-muted/15">
             <tr className="border-b">
-              <th className="p-4 pl-6 text-left text-sm font-medium text-muted-foreground">
+              <th
+                scope="col"
+                className="p-4 pl-6 text-left text-sm font-medium text-muted-foreground"
+              >
                 Chain
               </th>
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">RPC URL</th>
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                RPC URL
+              </th>
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
                 Facilitator
               </th>
-              <th className="w-20 p-4 pr-8"></th>
+              <th scope="col" className="w-20 p-4 pr-8"></th>
             </tr>
           </thead>
           <tbody>
@@ -133,7 +138,10 @@ export function X402SourcesSection({
                       <div className="font-mono text-xs text-muted-foreground">{chain.caip2Id}</div>
                     </td>
                     <td className="p-4">
-                      <div className="max-w-[220px] truncate font-mono text-xs text-muted-foreground">
+                      <div
+                        className="max-w-[220px] truncate font-mono text-xs text-muted-foreground"
+                        title={chain.rpcUrl}
+                      >
                         {chain.rpcUrl}
                       </div>
                     </td>

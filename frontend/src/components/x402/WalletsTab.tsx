@@ -35,6 +35,7 @@ import {
 } from '@/components/ui/dialog';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useAppContext } from '@/lib/contexts/AppContext';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useX402WalletsPaginated } from '@/lib/hooks/useX402';
 import { cn, handleApiCall, shortenAddress } from '@/lib/utils';
 import { extractApiPayload } from '@/lib/api-response';
@@ -79,15 +80,11 @@ export function WalletsTab() {
   const [retiringId, setRetiringId] = useState<string | null>(null);
   const [balanceWallet, setBalanceWallet] = useState<X402Wallet | null>(null);
   const [editWallet, setEditWallet] = useState<X402Wallet | null>(null);
+  const [walletToRetire, setWalletToRetire] = useState<X402Wallet | null>(null);
 
-  const retireWallet = async (id: string) => {
-    if (
-      !window.confirm(
-        'Retire this wallet? Its budgets are disabled and it is detached from any chain it facilitates. This cannot be undone.',
-      )
-    ) {
-      return;
-    }
+  const confirmRetire = async () => {
+    if (!walletToRetire) return;
+    const id = walletToRetire.id;
     setRetiringId(id);
     await handleApiCall(() => postX402WalletsDelete({ client: apiClient, body: { id } }), {
       onSuccess: () => {
@@ -101,7 +98,10 @@ export function WalletsTab() {
         queryClient.invalidateQueries({ queryKey: ['x402-budgets'] });
         queryClient.invalidateQueries({ queryKey: ['x402-networks'] });
       },
-      onFinally: () => setRetiringId(null),
+      onFinally: () => {
+        setRetiringId(null);
+        setWalletToRetire(null);
+      },
       errorMessage: 'Failed to retire wallet',
     });
   };
@@ -127,11 +127,21 @@ export function WalletsTab() {
         <table className="w-full">
           <thead className="bg-muted/30 dark:bg-muted/15">
             <tr className="border-b">
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Address</th>
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Type</th>
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Note</th>
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Created</th>
-              <th className="p-4 text-right text-sm font-medium text-muted-foreground">Actions</th>
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                Address
+              </th>
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                Type
+              </th>
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                Note
+              </th>
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                Created
+              </th>
+              <th scope="col" className="p-4 text-right text-sm font-medium text-muted-foreground">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -189,7 +199,7 @@ export function WalletsTab() {
                         size="sm"
                         className="text-destructive hover:text-destructive"
                         disabled={retiringId === wallet.id}
-                        onClick={() => retireWallet(wallet.id)}
+                        onClick={() => setWalletToRetire(wallet)}
                       >
                         <Trash2 className="h-4 w-4" />
                         {retiringId === wallet.id ? 'Retiring…' : 'Retire'}
@@ -242,6 +252,15 @@ export function WalletsTab() {
           // The edited note also shows in the eager picker queries, so invalidate them all.
           queryClient.invalidateQueries({ queryKey: ['x402-wallets'] });
         }}
+      />
+
+      <ConfirmDialog
+        open={walletToRetire !== null}
+        onClose={() => setWalletToRetire(null)}
+        title="Retire managed wallet"
+        description="This disables the wallet's budgets and detaches it from any chain it facilitates, so a compromised key can no longer sign or settle. This cannot be undone."
+        onConfirm={confirmRetire}
+        isLoading={retiringId !== null && retiringId === walletToRetire?.id}
       />
     </div>
   );
@@ -486,12 +505,10 @@ function BackupKeyStep({
 }) {
   const [revealed, setRevealed] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
+  const [confirmDownloadOpen, setConfirmDownloadOpen] = useState(false);
 
-  const download = () => {
-    const ok = window.confirm(
-      'This downloads your private key as an unencrypted .txt file. Anyone with the file can move this wallet’s funds. Continue?',
-    );
-    if (!ok) return;
+  const performDownload = () => {
+    setConfirmDownloadOpen(false);
     const contents = [
       'Masumi x402 managed wallet — PRIVATE KEY BACKUP',
       `Direction: ${type}`,
@@ -602,7 +619,7 @@ function BackupKeyStep({
             variant="outline"
             size="sm"
             className="flex-1 gap-1.5"
-            onClick={download}
+            onClick={() => setConfirmDownloadOpen(true)}
           >
             <ArrowDownToLine className="h-3.5 w-3.5" /> Download
           </Button>
@@ -631,6 +648,16 @@ function BackupKeyStep({
           <Check className="h-4 w-4" /> Done
         </Button>
       </DialogFooter>
+
+      <ConfirmDialog
+        open={confirmDownloadOpen}
+        onClose={() => setConfirmDownloadOpen(false)}
+        title="Download private key file?"
+        description="This saves your private key as an unencrypted .txt file. Anyone with the file can move this wallet's funds. Continue only if you will store it securely."
+        onConfirm={performDownload}
+        // Nested inside the create-wallet dialog, so it must stack above that overlay.
+        elevatedChildStack
+      />
     </div>
   );
 }

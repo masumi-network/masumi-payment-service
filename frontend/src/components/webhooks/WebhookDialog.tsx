@@ -167,8 +167,7 @@ export function WebhookDialog({
   });
 
   const allEventsSelected =
-    availableEvents.every((event) => selectedEvents.includes(event)) &&
-    selectedEvents.length > 0;
+    availableEvents.every((event) => selectedEvents.includes(event)) && selectedEvents.length > 0;
   const guidance = formatGuidance[selectedFormat];
   const dialogTitle = mode === 'create' ? 'Add webhook' : 'Edit webhook';
   const dialogDescription =
@@ -181,6 +180,11 @@ export function WebhookDialog({
     [availableEvents, selectedEvents],
   );
 
+  // Events the webhook already has that aren't selectable on this rail (e.g. the other
+  // rail's events on a webhook that spans both). Preserve them across toggles/save so
+  // editing on one rail never silently unsubscribes the other rail's events.
+  const preservedEvents = selectedEvents.filter((event) => !availableEvents.includes(event));
+
   const toggleEvent = (event: WebhookEvent) => {
     const nextEvents = selectedEvents.includes(event)
       ? selectedEvents.filter((value) => value !== event)
@@ -188,13 +192,15 @@ export function WebhookDialog({
 
     setValue(
       'Events',
-      availableEvents.filter((value) => nextEvents.includes(value)),
+      [...preservedEvents, ...availableEvents.filter((value) => nextEvents.includes(value))],
       { shouldValidate: true },
     );
   };
 
   const toggleAllEvents = (checked: boolean) => {
-    setValue('Events', checked ? [...availableEvents] : [], { shouldValidate: true });
+    setValue('Events', checked ? [...preservedEvents, ...availableEvents] : [...preservedEvents], {
+      shouldValidate: true,
+    });
   };
 
   const submit = async (values: WebhookFormValues) => {
@@ -255,7 +261,7 @@ export function WebhookDialog({
 
   const handleDialogChange = (nextOpen: boolean) => {
     if (!nextOpen && !isSubmitting) {
-      reset(getDefaultValues(webhook));
+      reset(getDefaultValues(webhook, availableEvents));
       onClose();
     }
   };
@@ -368,6 +374,12 @@ export function WebhookDialog({
                 <p className="text-xs text-muted-foreground mt-1">
                   Choose all events or build a custom event set for this webhook.
                 </p>
+                {preservedEvents.length > 0 && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {preservedEvents.length} event{preservedEvents.length === 1 ? '' : 's'} on the
+                    other rail will be kept.
+                  </p>
+                )}
               </div>
               <label className="inline-flex items-center gap-2 text-sm font-medium text-foreground">
                 <Checkbox

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { rowActivation } from '@/lib/a11y';
 import { Button } from '@/components/ui/button';
 import { Badge, type BadgeProps } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -177,14 +178,24 @@ export function PaymentsTab() {
         <table className="w-full">
           <thead className="bg-muted/30 dark:bg-muted/15">
             <tr className="border-b">
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Direction</th>
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Status</th>
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Chain</th>
-              <th className="p-4 text-right text-sm font-medium text-muted-foreground">
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                Direction
+              </th>
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                Status
+              </th>
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                Chain
+              </th>
+              <th scope="col" className="p-4 text-right text-sm font-medium text-muted-foreground">
                 Amount (base units)
               </th>
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Asset</th>
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Created</th>
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                Asset
+              </th>
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                Created
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -210,7 +221,9 @@ export function PaymentsTab() {
                 <tr
                   key={attempt.id}
                   className="border-b last:border-0 cursor-pointer hover:bg-muted/40"
+                  aria-label="View payment attempt details"
                   onClick={() => setSelected(attempt)}
+                  {...rowActivation(() => setSelected(attempt))}
                 >
                   <td className="p-4 text-sm">{DIRECTION_LABEL[attempt.direction]}</td>
                   <td className="p-4">
