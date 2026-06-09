@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { getRegistry, RegistryEntry } from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { useX402Networks } from '@/lib/hooks/useX402';
@@ -102,6 +102,9 @@ export function useContextAgents(params?: {
       }),
     enabled: !!apiClient && authorized,
     staleTime: 15000,
+    // Keep showing the previous results while a status/search change refetches, so the
+    // table can dim (isPlaceholderData) rather than flashing empty mid-search.
+    placeholderData: keepPreviousData,
   });
 
   // Agents registered on the selected Cardano source. Only needed on the Cardano rail, and
