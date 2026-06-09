@@ -20,6 +20,7 @@ import { RegistryEntry } from '@/lib/api/generated';
 import { useAgents } from '@/lib/queries/useAgents';
 import { useWallets, WalletWithBalance } from '@/lib/queries/useWallets';
 import { useQueryClient } from '@tanstack/react-query';
+import { invalidateAgentQueries } from '@/lib/queries/agent-cache';
 import { useTransactions } from '@/lib/hooks/useTransactions';
 import { toast } from 'react-toastify';
 import Link from 'next/link';
@@ -83,7 +84,7 @@ export default function Overview() {
 
   // Refetch functions for after mutations
   const refetchAgents = () => {
-    queryClient.invalidateQueries({ queryKey: ['agents'] });
+    invalidateAgentQueries(queryClient);
   };
 
   const refetchWallets = () => {

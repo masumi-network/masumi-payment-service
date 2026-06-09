@@ -29,7 +29,7 @@ async function fetchAllAgents(
   apiClient: ReturnType<typeof useAppContext>['apiClient'],
   network: 'Preprod' | 'Mainnet',
   extra: AgentQuery,
-): Promise<RegistryEntry[]> {
+): Promise<{ items: RegistryEntry[]; truncated: boolean }> {
   const items: RegistryEntry[] = [];
   let cursor: string | undefined;
   for (let page = 0; page < MAX_PAGES; page++) {
@@ -50,12 +50,14 @@ async function fetchAllAgents(
     );
     const batch = (response?.data?.data?.Assets ?? []) as RegistryEntry[];
     items.push(...batch);
-    if (batch.length < PAGE_SIZE) break;
+    // A short page means the cursor is fully drained — everything loaded.
+    if (batch.length < PAGE_SIZE) return { items, truncated: false };
     const last = batch[batch.length - 1];
-    if (!last?.id || last.id === cursor) break;
+    if (!last?.id || last.id === cursor) return { items, truncated: false };
     cursor = last.id;
   }
-  return items;
+  // Exhausted MAX_PAGES with every page full: more entries almost certainly remain.
+  return { items, truncated: true };
 }
 
 /**
@@ -120,7 +122,7 @@ export function useContextAgents(params?: {
   });
 
   const agents = useMemo<AgentWithRelation[]>(() => {
-    const all = allQuery.data ?? [];
+    const all = allQuery.data?.items ?? [];
 
     if (activeRail === 'x402') {
       // Registration never happens on EVM, so every match is a payment target.
@@ -134,25 +136,36 @@ export function useContextAgents(params?: {
     }
 
     if (!sourceAddress) return [];
-    const registeredIds = new Set((registeredQuery.data ?? []).map((agent) => agent.id));
-    return all
-      .filter(
-        (agent) =>
-          registeredIds.has(agent.id) ||
-          (agent.supportedPaymentSources ?? []).some(
-            (source) => source.chain === 'Cardano' && source.address === sourceAddress,
-          ),
-      )
-      .map((agent) => ({
-        ...agent,
-        relation: registeredIds.has(agent.id) ? ('registered' as const) : ('payment' as const),
-      }));
+    // Build from the source-scoped registered set (authoritative and complete for this
+    // source) so a registered agent is never dropped just because it fell outside the
+    // page-capped network-wide `all` set. Then append agents registered elsewhere that
+    // accept payment on this source, deduped against the registered ones.
+    const registered = registeredQuery.data?.items ?? [];
+    const registeredIds = new Set(registered.map((agent) => agent.id));
+    const paymentAccepted = all.filter(
+      (agent) =>
+        !registeredIds.has(agent.id) &&
+        (agent.supportedPaymentSources ?? []).some(
+          (source) => source.chain === 'Cardano' && source.address === sourceAddress,
+        ),
+    );
+    return [
+      ...registered.map((agent) => ({ ...agent, relation: 'registered' as const })),
+      ...paymentAccepted.map((agent) => ({ ...agent, relation: 'payment' as const })),
+    ];
   }, [allQuery.data, registeredQuery.data, activeRail, envChainIds, sourceAddress]);
 
   const isRegisteredQueryActive = activeRail === 'cardano' && !!sourceAddress;
 
+  // The list is fetched in full but bounded by fetchAllAgents' page cap. Surface when that
+  // cap was hit so the page can warn the operator instead of silently showing a partial set.
+  const truncated =
+    (allQuery.data?.truncated ?? false) ||
+    (isRegisteredQueryActive && (registeredQuery.data?.truncated ?? false));
+
   return {
     agents,
+    truncated,
     isLoading: allQuery.isLoading || (isRegisteredQueryActive && registeredQuery.isLoading),
     isFetching: allQuery.isFetching || (isRegisteredQueryActive && registeredQuery.isFetching),
     refetch: async () => {

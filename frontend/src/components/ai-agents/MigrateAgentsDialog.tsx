@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { invalidateAgentQueries } from '@/lib/queries/agent-cache';
 import { toast } from 'react-toastify';
 import {
   Dialog,
@@ -636,7 +637,7 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
       // the new V2 agents. Defer the dialog's own V1 list invalidation until
       // `handleClose` so the just-migrated rows stay visible on the success
       // screen — otherwise they vanish while the user is still reading results.
-      queryClient.invalidateQueries({ queryKey: ['agents'] });
+      invalidateAgentQueries(queryClient);
       queryClient.invalidateQueries({ queryKey: ['payment-sources-all'] });
       // Each successful re-mint debits ~5 ADA from the V2 selling wallet.
       // The wallet-balance / transactions caches would otherwise show

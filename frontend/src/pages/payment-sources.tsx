@@ -10,6 +10,7 @@ import { rowActivation } from '@/lib/a11y';
 import { PaymentSourceDialog } from '@/components/payment-sources/PaymentSourceDialog';
 import Link from 'next/link';
 import { useQueryClient } from '@tanstack/react-query';
+import { invalidateAgentQueries } from '@/lib/queries/agent-cache';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
   deletePaymentSourceExtended,
@@ -228,7 +229,7 @@ export default function PaymentSourcesPage() {
           queryClient.invalidateQueries({ queryKey: ['payment-sources-all'] });
           queryClient.invalidateQueries({ queryKey: ['wallets'] });
           queryClient.invalidateQueries({ queryKey: ['transactions'] });
-          queryClient.invalidateQueries({ queryKey: ['agents'] });
+          invalidateAgentQueries(queryClient);
           queryClient.invalidateQueries({ queryKey: ['payment-source-extended'] });
         },
         onError: (error: any) => {

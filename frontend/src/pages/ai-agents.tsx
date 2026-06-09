@@ -111,6 +111,7 @@ export default function AIAgentsPage() {
   // cursor to page — the load-more control is inert here.
   const {
     agents,
+    truncated,
     isLoading,
     isFetching: isFetchingAgents,
     refetch,
@@ -126,7 +127,10 @@ export default function AIAgentsPage() {
   const { openAgentDetails, closeAgentDetails } = useAgentDetailsDialog();
 
   const refetchAll = useCallback(() => {
+    // refetch() actively reloads this page's context-agents list; also invalidate the
+    // ['agents'] cache so the dashboard / testing dialogs reflect the mutation on next view.
     void refetch();
+    void queryClient.invalidateQueries({ queryKey: ['agents'] });
     void queryClient.invalidateQueries({ queryKey: ['wallets'] });
   }, [refetch, queryClient]);
 
@@ -480,6 +484,13 @@ export default function AIAgentsPage() {
                 />
               </div>
             </div>
+
+            {truncated && !isLoading && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100">
+                Showing the first {agents.length} agents. The list is capped, so some entries may
+                not appear. Use search or the status filter to narrow down to a specific agent.
+              </div>
+            )}
 
             <div className="rounded-lg border overflow-x-auto">
               <table
