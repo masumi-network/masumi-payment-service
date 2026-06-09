@@ -43,6 +43,8 @@ interface WebhookDialogProps {
   mode: 'create' | 'edit';
   paymentSourceId: string;
   webhook?: WebhookRecord | null;
+  // Events selectable in this dialog, scoped to the active rail. Defaults to all events.
+  availableEvents?: WebhookEvent[];
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -107,13 +109,16 @@ const formatGuidance: Record<
   },
 };
 
-function getDefaultValues(webhook?: WebhookRecord | null): WebhookFormValues {
+function getDefaultValues(
+  webhook: WebhookRecord | null | undefined,
+  availableEvents: WebhookEvent[],
+): WebhookFormValues {
   return {
     name: webhook?.name ?? '',
     format: webhook?.format ?? 'EXTENDED',
     url: webhook?.url ?? '',
     authToken: '',
-    Events: webhook?.Events ?? [...WEBHOOK_EVENTS],
+    Events: webhook?.Events ?? [...availableEvents],
   };
 }
 
@@ -122,6 +127,7 @@ export function WebhookDialog({
   mode,
   paymentSourceId,
   webhook,
+  availableEvents = [...WEBHOOK_EVENTS],
   onClose,
   onSuccess,
 }: WebhookDialogProps) {
@@ -137,13 +143,16 @@ export function WebhookDialog({
     setValue,
   } = useForm<WebhookFormValues>({
     resolver: zodResolver(webhookFormSchema),
-    defaultValues: getDefaultValues(webhook),
+    defaultValues: getDefaultValues(webhook, availableEvents),
   });
 
   useEffect(() => {
     if (open) {
-      reset(getDefaultValues(webhook));
+      reset(getDefaultValues(webhook, availableEvents));
     }
+    // availableEvents is derived from the active rail and stable per open; resetting on
+    // its identity is unnecessary and would clobber edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, reset, webhook]);
 
   const selectedFormat = useWatch({
@@ -154,10 +163,12 @@ export function WebhookDialog({
   const selectedEvents = useWatch({
     control,
     name: 'Events',
-    defaultValue: webhook?.Events ?? [...WEBHOOK_EVENTS],
+    defaultValue: webhook?.Events ?? [...availableEvents],
   });
 
-  const allEventsSelected = selectedEvents.length === WEBHOOK_EVENTS.length;
+  const allEventsSelected =
+    availableEvents.every((event) => selectedEvents.includes(event)) &&
+    selectedEvents.length > 0;
   const guidance = formatGuidance[selectedFormat];
   const dialogTitle = mode === 'create' ? 'Add webhook' : 'Edit webhook';
   const dialogDescription =
@@ -166,8 +177,8 @@ export function WebhookDialog({
       : 'Update the webhook settings for the currently selected payment source.';
 
   const sortedSelectedEvents = useMemo(
-    () => WEBHOOK_EVENTS.filter((event) => selectedEvents.includes(event)),
-    [selectedEvents],
+    () => availableEvents.filter((event) => selectedEvents.includes(event)),
+    [availableEvents, selectedEvents],
   );
 
   const toggleEvent = (event: WebhookEvent) => {
@@ -177,13 +188,13 @@ export function WebhookDialog({
 
     setValue(
       'Events',
-      WEBHOOK_EVENTS.filter((value) => nextEvents.includes(value)),
+      availableEvents.filter((value) => nextEvents.includes(value)),
       { shouldValidate: true },
     );
   };
 
   const toggleAllEvents = (checked: boolean) => {
-    setValue('Events', checked ? [...WEBHOOK_EVENTS] : [], { shouldValidate: true });
+    setValue('Events', checked ? [...availableEvents] : [], { shouldValidate: true });
   };
 
   const submit = async (values: WebhookFormValues) => {
@@ -369,7 +380,7 @@ export function WebhookDialog({
             </div>
 
             <div className="flex flex-wrap gap-2">
-              {WEBHOOK_EVENTS.map((event) => {
+              {availableEvents.map((event) => {
                 const isSelected = selectedEvents.includes(event);
 
                 return (

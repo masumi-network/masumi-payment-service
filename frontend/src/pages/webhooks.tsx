@@ -21,10 +21,10 @@ import { useWebhooks } from '@/lib/hooks/useWebhooks';
 import { handleApiCall, shortenAddress } from '@/lib/utils';
 import {
   WEBHOOK_EVENT_LABELS,
-  WEBHOOK_EVENTS,
   WEBHOOK_FORMAT_LABELS,
   formatWebhookDate,
   getWebhookStatus,
+  webhookEventsForRail,
   type WebhookEvent,
   type WebhookRecord,
 } from '@/lib/webhooks';
@@ -49,7 +49,11 @@ const allEventsFilterValue = 'ALL_EVENTS';
 
 export default function WebhooksPage() {
   const router = useRouter();
-  const { apiClient, selectedPaymentSource, selectedPaymentSourceId } = useAppContext();
+  const { apiClient, selectedPaymentSource, selectedPaymentSourceId, activeRail } = useAppContext();
+  // Scope webhook events to the active rail: x402 events on the EVM rail, Cardano escrow
+  // events on the Cardano rail. The event filter, the visible list, and the create/edit
+  // dialog all use this so each rail shows only its own events.
+  const railEvents = useMemo(() => webhookEventsForRail(activeRail), [activeRail]);
   const { webhooks, isLoading, isFetching, refetch } = useWebhooks();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFormatTab, setActiveFormatTab] =
@@ -88,19 +92,31 @@ export default function WebhooksPage() {
   const eventFilterOptions = useMemo(
     () => [
       { value: allEventsFilterValue, label: 'All events' },
-      ...WEBHOOK_EVENTS.map((event) => ({
+      ...railEvents.map((event) => ({
         value: event,
         label: WEBHOOK_EVENT_LABELS[event],
       })),
     ],
-    [],
+    [railEvents],
   );
+
+  // A filter chosen on one rail isn't valid on the other; reset to "All events" when the
+  // rail (and thus the available events) changes so the list never silently empties.
+  useEffect(() => {
+    setActiveEventFilter(allEventsFilterValue);
+  }, [activeRail]);
 
   const filteredWebhooks = useMemo(() => {
     const selectedFormat = formatTabToValue[activeFormatTab];
     const query = searchQuery.trim().toLowerCase();
 
     return webhooks.filter((webhook) => {
+      // Only show webhooks that subscribe to at least one event for the active rail, so the
+      // Cardano rail lists Cardano webhooks and the x402 rail lists x402 webhooks.
+      if (!webhook.Events.some((event) => railEvents.includes(event))) {
+        return false;
+      }
+
       if (selectedFormat && webhook.format !== selectedFormat) {
         return false;
       }
@@ -125,7 +141,7 @@ export default function WebhooksPage() {
 
       return searchableValues.some((value) => value.toLowerCase().includes(query));
     });
-  }, [activeEventFilter, activeFormatTab, searchQuery, webhooks]);
+  }, [activeEventFilter, activeFormatTab, searchQuery, webhooks, railEvents]);
 
   const hasActiveFilters =
     searchQuery.trim().length > 0 ||
@@ -292,7 +308,7 @@ export default function WebhooksPage() {
                   </td>
                   <td className="p-4">
                     <div className="flex max-w-sm flex-wrap gap-2">
-                      {webhook.Events.map((event) => (
+                      {webhook.Events.filter((event) => railEvents.includes(event)).map((event) => (
                         <Badge key={event} variant="secondary" className="font-medium">
                           {WEBHOOK_EVENT_LABELS[event]}
                         </Badge>
@@ -367,10 +383,14 @@ export default function WebhooksPage() {
             <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <h1 className="text-2xl font-semibold tracking-tight">Webhooks</h1>
-                <Badge variant="outline">Payment-source scoped</Badge>
+                <Badge variant="outline">
+                  {activeRail === 'x402' ? 'x402 events' : 'Cardano events'}
+                </Badge>
               </div>
               <p className="text-sm text-muted-foreground">
-                Send payment source events to custom endpoints, Slack, Google Chat, or Discord.{' '}
+                {activeRail === 'x402'
+                  ? 'Send x402 payment events to custom endpoints, Slack, Google Chat, or Discord. '
+                  : 'Send Cardano payment source events to custom endpoints, Slack, Google Chat, or Discord. '}
                 <Link
                   href="https://docs.masumi.network/api-reference/payment-service/post-webhooks"
                   target="_blank"
@@ -472,6 +492,7 @@ export default function WebhooksPage() {
             open={isAddDialogOpen}
             mode="create"
             paymentSourceId={selectedPaymentSourceId}
+            availableEvents={railEvents}
             onClose={() => setIsAddDialogOpen(false)}
             onSuccess={() => void refetch()}
           />
@@ -481,6 +502,7 @@ export default function WebhooksPage() {
             mode="edit"
             paymentSourceId={selectedPaymentSourceId}
             webhook={webhookToEdit}
+            availableEvents={railEvents}
             onClose={() => setWebhookToEdit(null)}
             onSuccess={() => void refetch()}
           />

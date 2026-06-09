@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useRouter } from 'next/router';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -34,33 +35,49 @@ import { postX402Networks, X402Network } from '@/lib/api/generated';
 
 const NO_FACILITATOR = '__none__';
 
-const chainSchema = z.object({
-  caip2Id: z
-    .string()
-    .regex(/^eip155:\d+$/, 'Must be a CAIP-2 EVM chain id, for example eip155:8453'),
-  displayName: z.string().min(1, 'Required').max(120),
-  rpcUrl: z.string().url('Must be a valid URL'),
-  isTestnet: z.boolean(),
-  isEnabled: z.boolean(),
-  defaultAsset: z
-    .string()
-    .regex(/^0x[a-fA-F0-9]{40}$/, 'Must be an EVM token address')
-    .or(z.literal(''))
-    .optional(),
-  facilitatorWalletId: z.string().optional(),
-});
+const chainSchema = z
+  .object({
+    caip2Id: z
+      .string()
+      .regex(/^eip155:\d+$/, 'Must be a CAIP-2 EVM chain id, for example eip155:8453'),
+    displayName: z.string().min(1, 'Required').max(120),
+    rpcUrl: z.string().url('Must be a valid URL'),
+    isTestnet: z.boolean(),
+    isEnabled: z.boolean(),
+    defaultAsset: z
+      .string()
+      .regex(/^0x[a-fA-F0-9]{40}$/, 'Must be an EVM token address')
+      .or(z.literal(''))
+      .optional(),
+    facilitatorWalletId: z.string().optional(),
+  })
+  // An enabled chain becomes a live payment source the moment it is saved, so it must be
+  // fully configured: a facilitator is required to settle on it. Leave the chain disabled
+  // to save an incomplete draft instead of exposing a half-configured rail.
+  .superRefine((data, ctx) => {
+    if (
+      data.isEnabled &&
+      (!data.facilitatorWalletId || data.facilitatorWalletId === NO_FACILITATOR)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'A facilitator wallet is required to enable a chain',
+        path: ['facilitatorWalletId'],
+      });
+    }
+  });
 
 type ChainFormValues = z.infer<typeof chainSchema>;
 
 export function ChainsTab() {
+  const router = useRouter();
   const { networks, isLoading, isRefetching, refetch } = useX402Networks();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<X402Network | null>(null);
 
-  const openCreate = () => {
-    setEditing(null);
-    setDialogOpen(true);
-  };
+  // Adding a chain goes through the guided setup wizard instead of the raw form, so a new
+  // chain is always created complete (wallet → facilitator) rather than as a bare row. The
+  // inline dialog stays only for editing an already-configured chain.
   const openEdit = (network: X402Network) => {
     setEditing(network);
     setDialogOpen(true);
@@ -75,7 +92,7 @@ export function ChainsTab() {
         </p>
         <div className="flex items-center gap-2">
           <RefreshButton onRefresh={refetch} isRefreshing={isRefetching} />
-          <Button onClick={openCreate} className="flex items-center gap-2">
+          <Button onClick={() => router.push('/x402-setup')} className="flex items-center gap-2">
             <Plus className="h-4 w-4" />
             Add chain
           </Button>
@@ -310,7 +327,7 @@ export function ChainDialog({
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">Facilitator wallet (optional)</label>
+            <label className="text-sm font-medium">Facilitator wallet</label>
             <Controller
               control={control}
               name="facilitatorWalletId"
@@ -330,9 +347,13 @@ export function ChainDialog({
                 </Select>
               )}
             />
-            <p className="text-xs text-muted-foreground">
-              Signs settlements for inbound payments on this chain.
-            </p>
+            {errors.facilitatorWalletId ? (
+              <p className="text-xs text-destructive">{errors.facilitatorWalletId.message}</p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Signs settlements for inbound payments on this chain. Required to enable the chain.
+              </p>
+            )}
           </div>
 
           <div className="flex items-center justify-between rounded-lg border p-3">
