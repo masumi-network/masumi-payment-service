@@ -28,10 +28,21 @@ export function chainsForEnv(chains: X402Network[], network: NetworkType): X402N
 }
 
 /**
- * Whether the x402 rail is usable for the active environment. Mirrors how Cardano "is
- * set up" is inferred from existing DB rows: here we require at least one enabled chain
- * in the env group that has a facilitator wallet assigned (the receive side works).
+ * Whether a chain can actually serve x402 payments right now: enabled, reachable (RPC
+ * URL set), and with a facilitator wallet assigned to settle on it. An enabled-but-
+ * unconfigured chain (no facilitator / blank RPC) is not selectable as an active rail —
+ * picking it should route to setup instead of pretending the rail works.
+ */
+export function isX402ChainUsable(chain: X402Network): boolean {
+  return chain.isEnabled && !!chain.facilitatorWalletId && !!chain.rpcUrl;
+}
+
+/**
+ * Whether the x402 rail is usable for the active environment: at least one chain in the
+ * env group is fully operational (see isX402ChainUsable — enabled, facilitator, and RPC).
+ * Uses the same bar as chain selection so a facilitator-but-no-RPC chain doesn't hide the
+ * setup prompt while the rail still can't actually run payments.
  */
 export function isX402SetUpForEnv(chains: X402Network[], network: NetworkType): boolean {
-  return chainsForEnv(chains, network).some((chain) => !!chain.facilitatorWalletId);
+  return chainsForEnv(chains, network).some(isX402ChainUsable);
 }

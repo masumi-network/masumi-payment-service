@@ -60,12 +60,20 @@ type X402RequirementExtra = {
 	decimals?: unknown;
 };
 
+// Largest value the Postgres BigInt (signed 64-bit) settlement-amount column can hold.
+const POSTGRES_BIGINT_MAX = 9223372036854775807n;
+
 // Parse an unsigned-integer string to BigInt, returning null for null/undefined or
 // any non-integer form. Used for amounts that arrive from external services where a
 // malformed value must not throw (e.g. after an irreversible on-chain settle).
+// Also returns null for values that overflow the int64 column: the settle already
+// happened on-chain, so recording a null amount is far better than throwing on the DB
+// write and losing the settlement record entirely (the tx hash is the source of truth).
 function parseUintStringOrNull(value: string | null | undefined): bigint | null {
 	if (value == null || !/^\d+$/.test(value)) return null;
-	return BigInt(value);
+	const parsed = BigInt(value);
+	if (parsed > POSTGRES_BIGINT_MAX) return null;
+	return parsed;
 }
 
 function toJsonValue(value: unknown): Prisma.InputJsonValue {
@@ -523,8 +531,12 @@ export async function setX402WalletBudget(input: {
 			createdById: input.createdById,
 		},
 		// createdById is intentionally not updated — it records who first set the budget.
+		// Setting a budget replaces the remaining amount with a fresh grant, so reset
+		// spentAmount too; otherwise "remaining + spent" no longer equals what was granted
+		// and the Spent column keeps stale consumption from the previous grant.
 		update: {
 			remainingAmount,
+			spentAmount: 0n,
 		},
 		select: {
 			id: true,
@@ -1007,6 +1019,14 @@ export async function createX402Payment({
 					error: updateError,
 				});
 			});
-		throw error;
+		// Intentional HttpErrors (e.g. a 400 validation reject thrown above) carry a
+		// safe, deliberate message and status — propagate them unchanged. Only unexpected
+		// errors (raw signing/RPC failures, which can embed the configured RPC URL) are
+		// sanitized so those internals can never reach the caller.
+		if (createHttpError.isHttpError(error)) {
+			throw error;
+		}
+		logger.error('x402 payment signing failed', { attemptId: reservation.attemptId, error });
+		throw createHttpError(500, 'x402 payment signing failed');
 	}
 }

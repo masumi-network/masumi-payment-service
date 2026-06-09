@@ -16,6 +16,28 @@ export type WebhookFormat = (typeof WEBHOOK_FORMATS)[number];
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 export type WebhookRecord = GetWebhooksResponses[200]['data']['Webhooks'][number];
 
+// Events split by the rail they belong to. x402 events are emitted by the EVM rail; the
+// rest are Cardano escrow/payment events. The webhooks UI scopes its event options — and
+// the visible webhook list — to the active rail so each rail shows only its own events.
+export const X402_WEBHOOK_EVENTS = [
+  'X402_PAYMENT_SETTLED',
+  'X402_PAYMENT_FAILED',
+  'X402_WALLET_LOW_BALANCE',
+] as const satisfies readonly WebhookEvent[];
+
+export const CARDANO_WEBHOOK_EVENTS = WEBHOOK_EVENTS.filter(
+  (event): event is WebhookEvent => !(X402_WEBHOOK_EVENTS as readonly string[]).includes(event),
+);
+
+export function isX402WebhookEvent(event: WebhookEvent): boolean {
+  return (X402_WEBHOOK_EVENTS as readonly string[]).includes(event);
+}
+
+/** Webhook events relevant to a given rail. */
+export function webhookEventsForRail(rail: 'cardano' | 'x402'): WebhookEvent[] {
+  return rail === 'x402' ? [...X402_WEBHOOK_EVENTS] : [...CARDANO_WEBHOOK_EVENTS];
+}
+
 export const WEBHOOK_FORMAT_LABELS: Record<WebhookFormat, string> = {
   EXTENDED: 'Extended',
   SLACK: 'Slack',

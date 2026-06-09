@@ -23,13 +23,19 @@ import {
   sortPaymentSourcesByPreference,
   type PaymentSourceType,
 } from '@/lib/payment-source-type';
-import { chainsForEnv, isX402SetUpForEnv, X402_ACCENT } from '@/lib/x402-rail';
+import { chainsForEnv, isX402ChainUsable, isX402SetUpForEnv, X402_ACCENT } from '@/lib/x402-rail';
 import type { X402Network } from '@/lib/api/generated';
 
 interface NetworkSourceCardProps {
   collapsed: boolean;
   onNetworkChange: (network: 'Preprod' | 'Mainnet') => void;
 }
+
+// Routes that only make sense on one rail. Switching rails from one of these jumps to the
+// new rail's home so the page content matches the picked context immediately, rather than
+// waiting on the async redirect in _app (which is skipped while the chain query refetches).
+const CARDANO_ONLY_PAGES = ['/', '/inbox-agents', '/wallets', '/transactions', '/invoices'];
+const X402_ONLY_PAGES = ['/x402', '/x402-setup'];
 
 /** Small pill that tells the two rails apart inside the selector. */
 function RailBadge({ rail, className }: { rail: 'cardano' | 'x402'; className?: string }) {
@@ -92,18 +98,32 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
   useEffect(() => {
     if (x402Loading) return;
     if (activeRail !== 'x402') return;
-    if (selectedChain) return;
-    if (hasEvmChains) {
-      setSelectedX402ChainId(evmChains[0].id);
-    } else {
+    // Keep the selection only if it points at a *usable* chain. A persisted/stale id that
+    // is enabled but half-configured (missing facilitator or RPC) must not pin the rail —
+    // it isn't selectable in the dropdown, so upgrade to a usable chain when one exists.
+    if (selectedChain && isX402ChainUsable(selectedChain)) return;
+    if (!hasEvmChains) {
       // No EVM chain for this env — fall back to the Cardano rail so the UI stays usable.
       setActiveRail('cardano');
       setSelectedX402ChainId(null);
+      return;
     }
+    const usable = evmChains.find(isX402ChainUsable);
+    if (usable) {
+      // Land on a chain the rail can actually act on, upgrading away from a half-configured
+      // selection. Guarded so we don't re-set (and re-render) once already there.
+      if (selectedX402ChainId !== usable.id) setSelectedX402ChainId(usable.id);
+      return;
+    }
+    // No usable chain yet: keep the rail on an enabled chain so /x402 shows its setup
+    // guide. Only set when nothing valid is selected, to avoid a render loop on the
+    // half-configured selection we intentionally leave in place.
+    if (!selectedChain) setSelectedX402ChainId(evmChains[0].id);
   }, [
     x402Loading,
     activeRail,
     selectedChain,
+    selectedX402ChainId,
     hasEvmChains,
     evmChains,
     setSelectedX402ChainId,
@@ -113,15 +133,27 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
   const selectCardanoSource = (id: string) => {
     setActiveRail('cardano');
     setSelectedPaymentSourceId(id);
+    // Leave x402-only routes so the page matches the Cardano context we just switched to.
+    if (X402_ONLY_PAGES.includes(router.pathname)) {
+      router.push('/');
+    }
   };
   const selectEvmChain = (id: string) => {
     setActiveRail('x402');
     setSelectedX402ChainId(id);
+    // Leave Cardano-only routes so the page matches the x402 context we just switched to.
+    if (CARDANO_ONLY_PAGES.includes(router.pathname)) {
+      router.push('/x402');
+    }
   };
 
   const triggerLabel =
     activeRail === 'x402'
-      ? (selectedChain?.displayName ?? 'Select x402 chain')
+      ? // Only surface a chain name once it is fully configured; a chain still mid-setup
+        // reads as "Set up x402" rather than masquerading as an active payment source.
+        selectedChain && isX402ChainUsable(selectedChain)
+        ? selectedChain.displayName
+        : 'Set up x402'
       : selectedPaymentSource
         ? `${getPaymentSourceTypeShortLabel(selectedPaymentSource.paymentSourceType)} ${shortenAddress(
             selectedPaymentSource.smartContractAddress,
@@ -298,6 +330,10 @@ function SourceDropdown({
   isOnPaymentSourcesPage: boolean;
 }) {
   const router = useRouter();
+  // Only fully configured chains are offered as selectable payment sources; the rest are
+  // surfaced as a single setup entry so the picker never lists a half-configured rail.
+  const usableEvmChains = evmChains.filter(isX402ChainUsable);
+  const hasUnconfiguredChains = evmChains.some((chain) => !isX402ChainUsable(chain));
 
   return (
     <DropdownMenuContent side="right" align="center" className="w-72">
@@ -347,17 +383,16 @@ function SourceDropdown({
             x402
             <RailBadge rail="x402" />
           </DropdownMenuLabel>
-          {evmChains.map((chain) => {
+          {/* Only fully configured chains are selectable payment sources. Chains still
+              missing a facilitator or RPC aren't listed individually; they collapse into a
+              single "set up" entry below so the picker only ever offers a ready rail. */}
+          {usableEvmChains.map((chain) => {
             const isSelected = activeRail === 'x402' && chain.id === selectedX402ChainId;
             return (
               <DropdownMenuItem
                 key={chain.id}
                 className="cursor-pointer flex items-center gap-2"
-                // A chain with no facilitator can't settle, so selecting it is meaningless;
-                // route to setup instead. A ready chain selects as the active rail.
-                onSelect={() =>
-                  chain.facilitatorWalletId ? onSelectEvm(chain.id) : router.push('/x402-setup')
-                }
+                onSelect={() => onSelectEvm(chain.id)}
               >
                 <Check
                   className={cn(
@@ -367,26 +402,25 @@ function SourceDropdown({
                 />
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
                   <div className="flex items-center gap-2">
-                    <span
-                      className={cn(
-                        'h-1.5 w-1.5 shrink-0 rounded-full',
-                        chain.facilitatorWalletId ? 'bg-green-500' : 'bg-amber-500',
-                      )}
-                    />
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-green-500" />
                     <span className="truncate text-sm">{chain.displayName}</span>
                   </div>
-                  <span className="text-xs text-muted-foreground">
-                    <span className="font-mono">{chain.caip2Id}</span>
-                    {!chain.facilitatorWalletId && (
-                      <span className="text-amber-600 dark:text-amber-400">
-                        {' · needs facilitator · set up'}
-                      </span>
-                    )}
-                  </span>
+                  <span className="font-mono text-xs text-muted-foreground">{chain.caip2Id}</span>
                 </div>
               </DropdownMenuItem>
             );
           })}
+          {hasUnconfiguredChains && (
+            <DropdownMenuItem
+              className="cursor-pointer flex items-center gap-2"
+              onSelect={() => router.push('/x402-setup')}
+            >
+              <Coins className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="text-sm">
+                {usableEvmChains.length === 0 ? 'Set up x402 (EVM)' : 'Set up another chain'}
+              </span>
+            </DropdownMenuItem>
+          )}
         </>
       )}
 

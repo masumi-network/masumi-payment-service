@@ -820,6 +820,8 @@ describe('x402 service helpers', () => {
 		it('refunds the reserved budget and fails the attempt when signing throws', async () => {
 			mockCreatePaymentPayload.mockRejectedValue(new Error('sign boom'));
 
+			// The raw signing error (which can embed the configured RPC URL) is sanitized
+			// into a generic HttpError so internals never reach the caller.
 			await expect(
 				service.createX402Payment({
 					apiKeyId: 'api-key-1',
@@ -827,7 +829,7 @@ describe('x402 service helpers', () => {
 					evmWalletId: 'wallet-1',
 					paymentRequired,
 				}),
-			).rejects.toThrow('sign boom');
+			).rejects.toMatchObject({ status: 500, message: 'x402 payment signing failed' });
 
 			expect(mockX402PaymentAttemptUpdate).toHaveBeenCalledWith(
 				expect.objectContaining({
