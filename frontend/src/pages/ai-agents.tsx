@@ -19,6 +19,7 @@ import { AIAgentTableSkeleton } from '@/components/skeletons/AIAgentTableSkeleto
 import { Spinner } from '@/components/ui/spinner';
 import { useQueryClient } from '@tanstack/react-query';
 import { useContextAgents, type AgentRelation } from '@/lib/queries/useContextAgents';
+import { invalidateAgentQueries } from '@/lib/queries/agent-cache';
 import { rowActivation } from '@/lib/a11y';
 import formatBalance from '@/lib/formatBalance';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -114,7 +115,6 @@ export default function AIAgentsPage() {
     truncated,
     isLoading,
     isFetching: isFetchingAgents,
-    refetch,
   } = useContextAgents({
     filterStatus,
     searchQuery: debouncedSearchQuery || undefined,
@@ -127,12 +127,12 @@ export default function AIAgentsPage() {
   const { openAgentDetails, closeAgentDetails } = useAgentDetailsDialog();
 
   const refetchAll = useCallback(() => {
-    // refetch() actively reloads this page's context-agents list; also invalidate the
-    // ['agents'] cache so the dashboard / testing dialogs reflect the mutation on next view.
-    void refetch();
-    void queryClient.invalidateQueries({ queryKey: ['agents'] });
+    // Invalidate the full ['context-agents'] and ['agents'] prefixes so EVERY status-tab /
+    // search variant refetches (not just the active query), and the dashboard / testing
+    // dialogs reflect the mutation too. Also refresh wallet balances (fees/settlement).
+    invalidateAgentQueries(queryClient);
     void queryClient.invalidateQueries({ queryKey: ['wallets'] });
-  }, [refetch, queryClient]);
+  }, [queryClient]);
 
   // True whenever server-authoritative results haven't arrived yet:
   // either the debounce hasn't fired, or the server fetch is still in-flight with stale data.
