@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { getRegistry, RegistryEntry } from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { useX402Networks } from '@/lib/hooks/useX402';
@@ -102,6 +102,9 @@ export function useContextAgents(params?: {
       }),
     enabled: !!apiClient && authorized,
     staleTime: 15000,
+    // Keep showing the previous results while a status/search change refetches, so the
+    // table can dim (isPlaceholderData) rather than flashing empty mid-search.
+    placeholderData: keepPreviousData,
   });
 
   // Agents registered on the selected Cardano source. Only needed on the Cardano rail, and
@@ -123,6 +126,7 @@ export function useContextAgents(params?: {
       }),
     enabled: !!apiClient && authorized && activeRail === 'cardano' && !!sourceAddress,
     staleTime: 15000,
+    placeholderData: keepPreviousData,
   });
 
   const agents = useMemo<AgentWithRelation[]>(() => {
@@ -177,9 +181,15 @@ export function useContextAgents(params?: {
     (allQuery.data?.truncated ?? false) ||
     (isRegisteredQueryActive && (registeredQuery.data?.truncated ?? false));
 
+  // True while showing the previous results during a status/search change (keepPreviousData),
+  // so the page can dim the table and run its instant client-side search filter.
+  const isPlaceholderData =
+    allQuery.isPlaceholderData || (isRegisteredQueryActive && registeredQuery.isPlaceholderData);
+
   return {
     agents,
     truncated,
+    isPlaceholderData,
     isLoading: allQuery.isLoading || registeredPending,
     isFetching: allQuery.isFetching || (isRegisteredQueryActive && registeredQuery.isFetching),
     refetch: async () => {

@@ -115,11 +115,11 @@ export default function AIAgentsPage() {
     truncated,
     isLoading,
     isFetching: isFetchingAgents,
+    isPlaceholderData,
   } = useContextAgents({
     filterStatus,
     searchQuery: debouncedSearchQuery || undefined,
   });
-  const isPlaceholderData = false;
   const hasMoreAgents = false;
   const loadMore = () => {};
 
