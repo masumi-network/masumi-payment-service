@@ -286,7 +286,7 @@ export function BudgetDialog({
               name="apiKeyId"
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange} disabled={!!editing}>
-                  <SelectTrigger>
+                  <SelectTrigger aria-label="API key">
                     <SelectValue placeholder="Select an API key" />
                   </SelectTrigger>
                   <SelectContent>
@@ -312,7 +312,7 @@ export function BudgetDialog({
               name="evmWalletId"
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange} disabled={!!editing}>
-                  <SelectTrigger>
+                  <SelectTrigger aria-label="Managed wallet">
                     <SelectValue placeholder="Select a wallet" />
                   </SelectTrigger>
                   <SelectContent>
@@ -333,7 +333,7 @@ export function BudgetDialog({
           <div className="space-y-2">
             <label className="text-sm font-medium">Chain</label>
             <Select value={selectedNetwork} onValueChange={onSelectNetwork} disabled={!!editing}>
-              <SelectTrigger>
+              <SelectTrigger aria-label="Chain">
                 <SelectValue placeholder="Select a chain" />
               </SelectTrigger>
               <SelectContent>

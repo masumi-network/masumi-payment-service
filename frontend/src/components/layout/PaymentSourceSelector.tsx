@@ -98,22 +98,32 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
   useEffect(() => {
     if (x402Loading) return;
     if (activeRail !== 'x402') return;
-    if (selectedChain) return;
-    if (hasEvmChains) {
-      // Prefer a usable chain (facilitator + RPC) so the picker lands on something the
-      // rail can actually act on; fall back to the first enabled chain so /x402 still
-      // shows its setup guide for an env whose only chain isn't configured yet.
-      const preferred = evmChains.find(isX402ChainUsable) ?? evmChains[0];
-      setSelectedX402ChainId(preferred.id);
-    } else {
+    // Keep the selection only if it points at a *usable* chain. A persisted/stale id that
+    // is enabled but half-configured (missing facilitator or RPC) must not pin the rail —
+    // it isn't selectable in the dropdown, so upgrade to a usable chain when one exists.
+    if (selectedChain && isX402ChainUsable(selectedChain)) return;
+    if (!hasEvmChains) {
       // No EVM chain for this env — fall back to the Cardano rail so the UI stays usable.
       setActiveRail('cardano');
       setSelectedX402ChainId(null);
+      return;
     }
+    const usable = evmChains.find(isX402ChainUsable);
+    if (usable) {
+      // Land on a chain the rail can actually act on, upgrading away from a half-configured
+      // selection. Guarded so we don't re-set (and re-render) once already there.
+      if (selectedX402ChainId !== usable.id) setSelectedX402ChainId(usable.id);
+      return;
+    }
+    // No usable chain yet: keep the rail on an enabled chain so /x402 shows its setup
+    // guide. Only set when nothing valid is selected, to avoid a render loop on the
+    // half-configured selection we intentionally leave in place.
+    if (!selectedChain) setSelectedX402ChainId(evmChains[0].id);
   }, [
     x402Loading,
     activeRail,
     selectedChain,
+    selectedX402ChainId,
     hasEvmChains,
     evmChains,
     setSelectedX402ChainId,

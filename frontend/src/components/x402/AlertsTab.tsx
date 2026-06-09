@@ -377,7 +377,7 @@ function AlertDialog({
               name="evmWalletId"
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange} disabled={!!editing}>
-                  <SelectTrigger>
+                  <SelectTrigger aria-label="Managed wallet">
                     <SelectValue placeholder="Select a wallet" />
                   </SelectTrigger>
                   <SelectContent>
@@ -416,7 +416,7 @@ function AlertDialog({
                   }}
                   disabled={!!editing}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger aria-label="Chain">
                     <SelectValue placeholder="Select a chain" />
                   </SelectTrigger>
                   <SelectContent>
@@ -452,7 +452,7 @@ function AlertDialog({
                   }}
                   disabled={!!editing}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger aria-label="Asset kind">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

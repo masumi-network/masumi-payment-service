@@ -250,7 +250,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
               name="permissionPreset"
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger>
+                  <SelectTrigger aria-label="Permission level">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -277,6 +277,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                   name="networks"
                   render={({ field }) => (
                     <Checkbox
+                      aria-label="Preprod"
                       checked={field.value.includes('Preprod')}
                       disabled={canAdmin}
                       onCheckedChange={() => {
@@ -297,6 +298,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                   name="networks"
                   render={({ field }) => (
                     <Checkbox
+                      aria-label="Mainnet"
                       checked={field.value.includes('Mainnet')}
                       disabled={canAdmin}
                       onCheckedChange={() => {
@@ -331,6 +333,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                     {evmChainOptions.map((chain) => (
                       <div key={chain.id} className="flex items-center gap-2">
                         <Checkbox
+                          aria-label={chain.displayName}
                           checked={field.value.includes(chain.caip2Id)}
                           onCheckedChange={() => {
                             if (field.value.includes(chain.caip2Id)) {
@@ -363,6 +366,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                 name="usageLimited"
                 render={({ field }) => (
                   <Checkbox
+                    aria-label="Limit usage"
                     checked={field.value}
                     onCheckedChange={field.onChange}
                     disabled={isReadOnly || canAdmin}
@@ -426,6 +430,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                     name="walletScopeEnabled"
                     render={({ field }) => (
                       <Checkbox
+                        aria-label="Restrict to specific wallets"
                         checked={field.value}
                         onCheckedChange={(checked) => {
                           field.onChange(checked);

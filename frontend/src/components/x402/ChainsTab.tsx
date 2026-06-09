@@ -355,7 +355,7 @@ export function ChainDialog({
               name="facilitatorWalletId"
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger>
+                  <SelectTrigger aria-label="Facilitator wallet">
                     <SelectValue placeholder="Select a managed wallet" />
                   </SelectTrigger>
                   <SelectContent>
@@ -387,7 +387,11 @@ export function ChainDialog({
               control={control}
               name="isTestnet"
               render={({ field }) => (
-                <Switch checked={field.value} onCheckedChange={field.onChange} />
+                <Switch
+                  aria-label="Testnet"
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                />
               )}
             />
           </div>
@@ -401,7 +405,11 @@ export function ChainDialog({
               control={control}
               name="isEnabled"
               render={({ field }) => (
-                <Switch checked={field.value} onCheckedChange={field.onChange} />
+                <Switch
+                  aria-label="Enabled"
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                />
               )}
             />
           </div>
