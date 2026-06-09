@@ -222,18 +222,20 @@ export function MainLayout({ children }: MainLayoutProps) {
       badge: null,
       group: 0,
     };
+    // Webhooks are scoped to the selected payment source / network, so they belong with the
+    // context-aware items (group 0), not the account-level cluster (API keys, Developers).
+    const sharedWebhooks: NavItem = {
+      href: '/webhooks',
+      name: 'Webhooks',
+      icon: <Bell className="h-4 w-4" />,
+      badge: null,
+      group: 0,
+    };
     const sharedGroup1: NavItem[] = [
       {
         href: '/api-keys',
         name: 'API keys',
         icon: <Key className="h-4 w-4" />,
-        badge: null,
-        group: 1,
-      },
-      {
-        href: '/webhooks',
-        name: 'Webhooks',
-        icon: <Bell className="h-4 w-4" />,
         badge: null,
         group: 1,
       },
@@ -256,6 +258,7 @@ export function MainLayout({ children }: MainLayoutProps) {
           group: 0,
         },
         sharedAgents,
+        sharedWebhooks,
         ...sharedGroup1,
       ];
     }
@@ -299,6 +302,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         badge: null,
         group: 0,
       },
+      sharedWebhooks,
       ...sharedGroup1,
     ];
   }, [

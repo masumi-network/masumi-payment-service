@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useForm, Controller, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/select';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useAppContext } from '@/lib/contexts/AppContext';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useX402LowBalanceRules, useX402Networks, useX402Wallets } from '@/lib/hooks/useX402';
 import { cn, formatX402Amount, groupDigits, handleApiCall, shortenAddress } from '@/lib/utils';
 import {
@@ -46,9 +47,10 @@ const STATUS_VARIANT: Record<X402LowBalanceRule['status'], BadgeProps['variant']
 };
 
 // The native gas token has known 18 decimals, so show it in ETH; an ERC-20 threshold's
-// decimals are unknown here, so show grouped base units instead of a misleading decimal.
+// decimals aren't stored on the rule, so label the grouped value explicitly as base units
+// rather than render a misleading bare number that reads like a whole-token amount.
 const formatRuleAmount = (amount: string | null | undefined, asset: string) =>
-  asset === NATIVE ? `${formatX402Amount(amount, 18)} ETH` : groupDigits(amount);
+  asset === NATIVE ? `${formatX402Amount(amount, 18)} ETH` : `${groupDigits(amount)} base units`;
 
 const ruleFormSchema = z
   .object({
@@ -70,14 +72,24 @@ const assetLabel = (asset: string) =>
 
 export function AlertsTab() {
   const { rules, isLoading, isRefetching, refetch } = useX402LowBalanceRules();
-  const { networks } = useX402Networks();
+  const { networks, isLoading: networksLoading } = useX402Networks();
   const { apiClient } = useAppContext();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<X402LowBalanceRule | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [ruleToDelete, setRuleToDelete] = useState<X402LowBalanceRule | null>(null);
 
   const chainLabel = (caip2: string) =>
     networks.find((n) => n.caip2Id === caip2)?.displayName ?? caip2;
+
+  // Rules are fetched across all environments, but `networks` (and the edit dialog's chain
+  // picker) are scoped to the active env. Scope the list to the active env's chains so the
+  // Preprod/Mainnet selector governs this tab like every other x402 surface.
+  const envChainIds = useMemo(() => new Set(networks.map((n) => n.caip2Id)), [networks]);
+  const envRules = useMemo(
+    () => rules.filter((rule) => envChainIds.has(rule.caip2Network)),
+    [rules, envChainIds],
+  );
 
   const toggleEnabled = async (rule: X402LowBalanceRule) => {
     setBusyId(rule.id);
@@ -95,20 +107,21 @@ export function AlertsTab() {
     );
   };
 
-  const remove = async (rule: X402LowBalanceRule) => {
-    if (!window.confirm('Delete this low-balance alert?')) return;
-    setBusyId(rule.id);
-    await handleApiCall(
-      () => deleteX402LowBalance({ client: apiClient, body: { ruleId: rule.id } }),
-      {
-        onSuccess: () => {
-          toast.success('Alert deleted');
-          refetch();
-        },
-        onFinally: () => setBusyId(null),
-        errorMessage: 'Failed to delete rule',
+  const confirmDelete = async () => {
+    if (!ruleToDelete) return;
+    const ruleId = ruleToDelete.id;
+    setBusyId(ruleId);
+    await handleApiCall(() => deleteX402LowBalance({ client: apiClient, body: { ruleId } }), {
+      onSuccess: () => {
+        toast.success('Alert deleted');
+        refetch();
       },
-    );
+      onFinally: () => {
+        setBusyId(null);
+        setRuleToDelete(null);
+      },
+      errorMessage: 'Failed to delete rule',
+    });
   };
 
   return (
@@ -137,21 +150,31 @@ export function AlertsTab() {
         <table className="w-full">
           <thead className="bg-muted/30 dark:bg-muted/15">
             <tr className="border-b">
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Wallet</th>
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Chain</th>
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Asset</th>
-              <th className="p-4 text-right text-sm font-medium text-muted-foreground">
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                Wallet
+              </th>
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                Chain
+              </th>
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                Asset
+              </th>
+              <th scope="col" className="p-4 text-right text-sm font-medium text-muted-foreground">
                 Threshold
               </th>
-              <th className="p-4 text-right text-sm font-medium text-muted-foreground">
+              <th scope="col" className="p-4 text-right text-sm font-medium text-muted-foreground">
                 Last seen
               </th>
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Status</th>
-              <th className="p-4 text-right text-sm font-medium text-muted-foreground">Actions</th>
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                Status
+              </th>
+              <th scope="col" className="p-4 text-right text-sm font-medium text-muted-foreground">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody>
-            {isLoading ? (
+            {isLoading || networksLoading ? (
               <tr>
                 <td colSpan={7} className="py-10">
                   <div className="flex justify-center">
@@ -159,7 +182,7 @@ export function AlertsTab() {
                   </div>
                 </td>
               </tr>
-            ) : rules.length === 0 ? (
+            ) : envRules.length === 0 ? (
               <tr>
                 <td colSpan={7}>
                   <EmptyState
@@ -176,7 +199,7 @@ export function AlertsTab() {
                 </td>
               </tr>
             ) : (
-              rules.map((rule) => (
+              envRules.map((rule) => (
                 <tr
                   key={rule.id}
                   className={cn('border-b last:border-0', !rule.enabled && 'opacity-50')}
@@ -229,7 +252,7 @@ export function AlertsTab() {
                         aria-label="Delete alert"
                         className="text-destructive hover:text-destructive"
                         disabled={busyId === rule.id}
-                        onClick={() => remove(rule)}
+                        onClick={() => setRuleToDelete(rule)}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -251,6 +274,15 @@ export function AlertsTab() {
           setDialogOpen(false);
           refetch();
         }}
+      />
+
+      <ConfirmDialog
+        open={ruleToDelete !== null}
+        onClose={() => setRuleToDelete(null)}
+        title="Delete low-balance alert"
+        description="This removes the alert rule. The wallet will no longer be monitored for this asset on this chain."
+        onConfirm={confirmDelete}
+        isLoading={busyId !== null && busyId === ruleToDelete?.id}
       />
     </div>
   );
@@ -345,7 +377,7 @@ function AlertDialog({
               name="evmWalletId"
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange} disabled={!!editing}>
-                  <SelectTrigger>
+                  <SelectTrigger aria-label="Managed wallet">
                     <SelectValue placeholder="Select a wallet" />
                   </SelectTrigger>
                   <SelectContent>
@@ -384,7 +416,7 @@ function AlertDialog({
                   }}
                   disabled={!!editing}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger aria-label="Chain">
                     <SelectValue placeholder="Select a chain" />
                   </SelectTrigger>
                   <SelectContent>
@@ -420,7 +452,7 @@ function AlertDialog({
                   }}
                   disabled={!!editing}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger aria-label="Asset kind">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -432,6 +464,7 @@ function AlertDialog({
             />
             {assetKind === 'token' && (
               <Input
+                aria-label="Token contract address"
                 placeholder="0x… token contract"
                 className="font-mono"
                 readOnly={!!editing}
@@ -442,8 +475,11 @@ function AlertDialog({
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">Threshold (base units)</label>
+            <label htmlFor="alert-thresholdAmount" className="text-sm font-medium">
+              Threshold (base units)
+            </label>
             <Input
+              id="alert-thresholdAmount"
               placeholder="10000000000000000"
               className="font-mono"
               {...register('thresholdAmount')}

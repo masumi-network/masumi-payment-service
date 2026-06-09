@@ -22,7 +22,11 @@ import {
 
 const PAGE_SIZE = 20;
 
-export function useX402Networks(options?: { silentErrors?: boolean; network?: NetworkType }) {
+export function useX402Networks(options?: {
+  silentErrors?: boolean;
+  network?: NetworkType;
+  allEnvironments?: boolean;
+}) {
   const { apiClient, authorized, network: activeNetwork } = useAppContext();
   const silentErrors = options?.silentErrors ?? false;
   // Always scope chains to an environment, enforced at the query level: testnet chains
@@ -30,18 +34,22 @@ export function useX402Networks(options?: { silentErrors?: boolean; network?: Ne
   // callers that own their env (e.g. the setup wizard) can pass it explicitly.
   const network = options?.network ?? activeNetwork;
   const isTestnet = isTestnetEnv(network);
+  // Some callers span both environments at once. API keys carry a NetworkLimit that can
+  // include both Cardano networks, so their ChainIdLimit must be choosable from every
+  // EVM chain regardless of the active top-selector env. Omitting isTestnet returns all.
+  const allEnvironments = options?.allEnvironments ?? false;
 
   const query = useQuery({
     // Keyed by silentErrors so the silent (selector) and toasting (tab) consumers do
     // not share one cache entry and race on which onError handler runs, and by env so
     // switching the top selector refetches the right environment's chains.
-    queryKey: ['x402-networks', silentErrors, isTestnet],
+    queryKey: ['x402-networks', silentErrors, allEnvironments ? 'all' : isTestnet],
     queryFn: async () => {
       const response = await handleApiCall(
         () =>
           getX402Networks({
             client: apiClient,
-            query: { isTestnet: isTestnet ? 'true' : 'false' },
+            query: allEnvironments ? {} : { isTestnet: isTestnet ? 'true' : 'false' },
           }),
         // The selector renders this for every key, including non-admins that get a 401.
         // Stay silent there and fall back to an empty list instead of toasting.

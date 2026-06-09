@@ -105,7 +105,13 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
   const { apiClient, network } = useAppContext();
   const { paymentSources } = usePaymentSourceExtendedAll();
   const { wallets: managedWallets } = useAllWallets(open);
-  const { networks: evmChainOptions } = useX402Networks({ silentErrors: true });
+  // A key's NetworkLimit can span both Cardano networks, so offer EVM chains from every
+  // environment, not just the active top-selector one, or chains for the other network
+  // can't be added to ChainIdLimit in one flow.
+  const { networks: evmChainOptions } = useX402Networks({
+    silentErrors: true,
+    allEnvironments: true,
+  });
 
   const allWallets = useMemo(() => {
     // Wallets come from /wallet/list now; join to the source for its network.
@@ -305,6 +311,7 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
                     {evmChainOptions.map((chain) => (
                       <div key={chain.id} className="flex items-center gap-2">
                         <Checkbox
+                          aria-label={chain.displayName}
                           checked={field.value.includes(chain.caip2Id)}
                           onCheckedChange={() => {
                             if (field.value.includes(chain.caip2Id)) {
@@ -337,7 +344,7 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
               name="status"
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger>
+                  <SelectTrigger aria-label="Status">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -400,6 +407,7 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
                     name="walletScopeEnabled"
                     render={({ field }) => (
                       <Checkbox
+                        aria-label="Restrict to specific wallets"
                         checked={field.value}
                         onCheckedChange={(checked) => {
                           field.onChange(checked);

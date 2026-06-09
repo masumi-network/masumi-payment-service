@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useRouter } from 'next/router';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -34,33 +35,49 @@ import { postX402Networks, X402Network } from '@/lib/api/generated';
 
 const NO_FACILITATOR = '__none__';
 
-const chainSchema = z.object({
-  caip2Id: z
-    .string()
-    .regex(/^eip155:\d+$/, 'Must be a CAIP-2 EVM chain id, for example eip155:8453'),
-  displayName: z.string().min(1, 'Required').max(120),
-  rpcUrl: z.string().url('Must be a valid URL'),
-  isTestnet: z.boolean(),
-  isEnabled: z.boolean(),
-  defaultAsset: z
-    .string()
-    .regex(/^0x[a-fA-F0-9]{40}$/, 'Must be an EVM token address')
-    .or(z.literal(''))
-    .optional(),
-  facilitatorWalletId: z.string().optional(),
-});
+const chainSchema = z
+  .object({
+    caip2Id: z
+      .string()
+      .regex(/^eip155:\d+$/, 'Must be a CAIP-2 EVM chain id, for example eip155:8453'),
+    displayName: z.string().min(1, 'Required').max(120),
+    rpcUrl: z.string().url('Must be a valid URL'),
+    isTestnet: z.boolean(),
+    isEnabled: z.boolean(),
+    defaultAsset: z
+      .string()
+      .regex(/^0x[a-fA-F0-9]{40}$/, 'Must be an EVM token address')
+      .or(z.literal(''))
+      .optional(),
+    facilitatorWalletId: z.string().optional(),
+  })
+  // An enabled chain becomes a live payment source the moment it is saved, so it must be
+  // fully configured: a facilitator is required to settle on it. Leave the chain disabled
+  // to save an incomplete draft instead of exposing a half-configured rail.
+  .superRefine((data, ctx) => {
+    if (
+      data.isEnabled &&
+      (!data.facilitatorWalletId || data.facilitatorWalletId === NO_FACILITATOR)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'A facilitator wallet is required to enable a chain',
+        path: ['facilitatorWalletId'],
+      });
+    }
+  });
 
 type ChainFormValues = z.infer<typeof chainSchema>;
 
 export function ChainsTab() {
+  const router = useRouter();
   const { networks, isLoading, isRefetching, refetch } = useX402Networks();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<X402Network | null>(null);
 
-  const openCreate = () => {
-    setEditing(null);
-    setDialogOpen(true);
-  };
+  // Adding a chain goes through the guided setup wizard instead of the raw form, so a new
+  // chain is always created complete (wallet → facilitator) rather than as a bare row. The
+  // inline dialog stays only for editing an already-configured chain.
   const openEdit = (network: X402Network) => {
     setEditing(network);
     setDialogOpen(true);
@@ -75,7 +92,7 @@ export function ChainsTab() {
         </p>
         <div className="flex items-center gap-2">
           <RefreshButton onRefresh={refetch} isRefreshing={isRefetching} />
-          <Button onClick={openCreate} className="flex items-center gap-2">
+          <Button onClick={() => router.push('/x402-setup')} className="flex items-center gap-2">
             <Plus className="h-4 w-4" />
             Add chain
           </Button>
@@ -86,16 +103,24 @@ export function ChainsTab() {
         <table className="w-full">
           <thead className="bg-muted/30 dark:bg-muted/15">
             <tr className="border-b">
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Chain</th>
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">RPC URL</th>
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">Status</th>
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                Chain
+              </th>
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                RPC URL
+              </th>
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                Status
+              </th>
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
                 Default asset
               </th>
-              <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
                 Facilitator
               </th>
-              <th className="p-4 text-right text-sm font-medium text-muted-foreground">Actions</th>
+              <th scope="col" className="p-4 text-right text-sm font-medium text-muted-foreground">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -273,8 +298,11 @@ export function ChainDialog({
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="space-y-2">
-            <label className="text-sm font-medium">CAIP-2 chain id</label>
+            <label htmlFor="chain-caip2Id" className="text-sm font-medium">
+              CAIP-2 chain id
+            </label>
             <Input
+              id="chain-caip2Id"
               placeholder="eip155:8453"
               className="font-mono"
               readOnly={!!editing}
@@ -284,22 +312,33 @@ export function ChainDialog({
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">Display name</label>
-            <Input placeholder="Base" {...register('displayName')} />
+            <label htmlFor="chain-displayName" className="text-sm font-medium">
+              Display name
+            </label>
+            <Input id="chain-displayName" placeholder="Base" {...register('displayName')} />
             {errors.displayName && (
               <p className="text-xs text-destructive">{errors.displayName.message}</p>
             )}
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">RPC URL</label>
-            <Input placeholder="https://mainnet.base.org" {...register('rpcUrl')} />
+            <label htmlFor="chain-rpcUrl" className="text-sm font-medium">
+              RPC URL
+            </label>
+            <Input
+              id="chain-rpcUrl"
+              placeholder="https://mainnet.base.org"
+              {...register('rpcUrl')}
+            />
             {errors.rpcUrl && <p className="text-xs text-destructive">{errors.rpcUrl.message}</p>}
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">Default asset (optional)</label>
+            <label htmlFor="chain-defaultAsset" className="text-sm font-medium">
+              Default asset (optional)
+            </label>
             <Input
+              id="chain-defaultAsset"
               placeholder="0x… token contract"
               className="font-mono"
               {...register('defaultAsset')}
@@ -310,13 +349,13 @@ export function ChainDialog({
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">Facilitator wallet (optional)</label>
+            <label className="text-sm font-medium">Facilitator wallet</label>
             <Controller
               control={control}
               name="facilitatorWalletId"
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger>
+                  <SelectTrigger aria-label="Facilitator wallet">
                     <SelectValue placeholder="Select a managed wallet" />
                   </SelectTrigger>
                   <SelectContent>
@@ -330,9 +369,13 @@ export function ChainDialog({
                 </Select>
               )}
             />
-            <p className="text-xs text-muted-foreground">
-              Signs settlements for inbound payments on this chain.
-            </p>
+            {errors.facilitatorWalletId ? (
+              <p className="text-xs text-destructive">{errors.facilitatorWalletId.message}</p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Signs settlements for inbound payments on this chain. Required to enable the chain.
+              </p>
+            )}
           </div>
 
           <div className="flex items-center justify-between rounded-lg border p-3">
@@ -344,7 +387,11 @@ export function ChainDialog({
               control={control}
               name="isTestnet"
               render={({ field }) => (
-                <Switch checked={field.value} onCheckedChange={field.onChange} />
+                <Switch
+                  aria-label="Testnet"
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                />
               )}
             />
           </div>
@@ -358,7 +405,11 @@ export function ChainDialog({
               control={control}
               name="isEnabled"
               render={({ field }) => (
-                <Switch checked={field.value} onCheckedChange={field.onChange} />
+                <Switch
+                  aria-label="Enabled"
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                />
               )}
             />
           </div>

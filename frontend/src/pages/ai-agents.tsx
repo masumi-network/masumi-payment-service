@@ -18,7 +18,8 @@ import Head from 'next/head';
 import { AIAgentTableSkeleton } from '@/components/skeletons/AIAgentTableSkeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { useQueryClient } from '@tanstack/react-query';
-import { useAgents } from '@/lib/queries/useAgents';
+import { useContextAgents, type AgentRelation } from '@/lib/queries/useContextAgents';
+import { rowActivation } from '@/lib/a11y';
 import formatBalance from '@/lib/formatBalance';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { FaRegClock } from 'react-icons/fa';
@@ -40,7 +41,27 @@ import { useAgentDetailsDialog } from '@/lib/contexts/AgentDetailsDialogContext'
 import { lookupWalletByVkey } from '@/lib/wallet-lookup';
 import { isV2PaymentSource } from '@/lib/payment-source-type';
 import { MigrateAgentsDialog } from '@/components/ai-agents/MigrateAgentsDialog';
-type AIAgent = RegistryEntry;
+type AIAgent = RegistryEntry & { relation?: AgentRelation };
+
+// Tells apart agents registered on the active source from those registered elsewhere that
+// merely accept payment on it (or over x402 on an EVM chain).
+function RelationBadge({ relation }: { relation?: AgentRelation }) {
+  if (relation === 'payment') {
+    return (
+      <Badge
+        variant="outline"
+        className="mt-1 border-indigo-300 bg-indigo-50 text-[10px] text-indigo-700 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-300"
+      >
+        Payment accepted
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="outline" className="mt-1 text-[10px]">
+      Registered
+    </Badge>
+  );
+}
 
 const getHoldingWallet = (agent: AIAgent) => agent.RecipientWallet ?? agent.SmartContractWallet;
 
@@ -84,19 +105,22 @@ export default function AIAgentsPage() {
     return activeTab as 'Registered' | 'Deregistered' | 'Pending' | 'Failed';
   }, [activeTab]);
 
-  // Use React Query for initial load (cached)
+  // Rail-aware agent list: shows agents registered on the active context plus those
+  // registered elsewhere that accept payment on it (Cardano source, or EVM chains over
+  // x402). The list is fetched in full and filtered client-side, so there is no server
+  // cursor to page — the load-more control is inert here.
   const {
     agents,
     isLoading,
     isFetching: isFetchingAgents,
-    isPlaceholderData,
     refetch,
-    hasMore: hasMoreAgents,
-    loadMore,
-  } = useAgents({
+  } = useContextAgents({
     filterStatus,
     searchQuery: debouncedSearchQuery || undefined,
   });
+  const isPlaceholderData = false;
+  const hasMoreAgents = false;
+  const loadMore = () => {};
 
   const queryClient = useQueryClient();
   const { openAgentDetails, closeAgentDetails } = useAgentDetailsDialog();
@@ -158,7 +182,8 @@ export default function AIAgentsPage() {
   const [updateAgentSmartContractAddress, setUpdateAgentSmartContractAddress] = useState<
     string | null
   >(null);
-  const { apiClient, network, selectedPaymentSourceId, selectedPaymentSource } = useAppContext();
+  const { apiClient, network, selectedPaymentSourceId, selectedPaymentSource, activeRail } =
+    useAppContext();
   const { paymentSources } = usePaymentSourceExtendedAll();
 
   const currentNetworkPaymentSources = useMemo(
@@ -238,8 +263,11 @@ export default function AIAgentsPage() {
 
   const [dismissedQueryAction, setDismissedQueryAction] = useState(false);
 
+  // Registration is Cardano-only, so the register_agent deep link must not pop the dialog
+  // while the x402 rail is active (the button is hidden there too).
   const shouldOpenRegisterDialog =
-    isRegisterDialogOpen || (router.query.action === 'register_agent' && !dismissedQueryAction);
+    activeRail === 'cardano' &&
+    (isRegisterDialogOpen || (router.query.action === 'register_agent' && !dismissedQueryAction));
 
   const formatDate = (date: Date | string) => {
     const dateObj = typeof date === 'string' ? new Date(date) : date;
@@ -409,7 +437,9 @@ export default function AIAgentsPage() {
                 }}
                 isRefreshing={isFetchingAgents}
               />
-              {canMigrate && (
+              {/* Registration and migration are Cardano-registry operations. On the x402
+                  rail this page is a read-only "accepts x402" view, so these don't apply. */}
+              {activeRail === 'cardano' && canMigrate && (
                 <Button
                   variant="outline"
                   className="flex items-center gap-2 btn-hover-lift"
@@ -419,13 +449,15 @@ export default function AIAgentsPage() {
                   Migrate to V2
                 </Button>
               )}
-              <Button
-                className="flex items-center gap-2 btn-hover-lift"
-                onClick={() => setIsRegisterDialogOpen(true)}
-              >
-                <Plus className="h-4 w-4" />
-                Register AI Agent
-              </Button>
+              {activeRail === 'cardano' && (
+                <Button
+                  className="flex items-center gap-2 btn-hover-lift"
+                  onClick={() => setIsRegisterDialogOpen(true)}
+                >
+                  <Plus className="h-4 w-4" />
+                  Register AI Agent
+                </Button>
+              )}
             </div>
           </div>
 
@@ -458,28 +490,49 @@ export default function AIAgentsPage() {
               >
                 <thead className="bg-muted/30 dark:bg-muted/15">
                   <tr className="border-b">
-                    <th className="p-4 text-left text-sm font-medium text-muted-foreground pl-6">
+                    <th
+                      scope="col"
+                      className="p-4 text-left text-sm font-medium text-muted-foreground pl-6"
+                    >
                       Name
                     </th>
-                    <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                    <th
+                      scope="col"
+                      className="p-4 text-left text-sm font-medium text-muted-foreground"
+                    >
                       Added
                     </th>
-                    <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                    <th
+                      scope="col"
+                      className="p-4 text-left text-sm font-medium text-muted-foreground"
+                    >
                       Agent ID
                     </th>
-                    <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                    <th
+                      scope="col"
+                      className="p-4 text-left text-sm font-medium text-muted-foreground"
+                    >
                       Wallets
                     </th>
-                    <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                    <th
+                      scope="col"
+                      className="p-4 text-left text-sm font-medium text-muted-foreground"
+                    >
                       Price
                     </th>
-                    <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                    <th
+                      scope="col"
+                      className="p-4 text-left text-sm font-medium text-muted-foreground"
+                    >
                       Tags
                     </th>
-                    <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                    <th
+                      scope="col"
+                      className="p-4 text-left text-sm font-medium text-muted-foreground"
+                    >
                       Status
                     </th>
-                    <th className="w-20 p-4 pr-8"></th>
+                    <th scope="col" className="w-20 p-4 pr-8"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -494,12 +547,16 @@ export default function AIAgentsPage() {
                           title={
                             searchQuery
                               ? 'No AI agents found matching your search'
-                              : 'No AI agents found'
+                              : activeRail === 'x402'
+                                ? 'No agents accept x402 payment here'
+                                : 'No AI agents found'
                           }
                           description={
                             searchQuery
                               ? 'Try adjusting your search terms'
-                              : 'Register your first AI agent to get started'
+                              : activeRail === 'x402'
+                                ? "Agents that accept x402 on this environment's chains will appear here."
+                                : 'Register your first AI agent to get started'
                           }
                         />
                       </td>
@@ -521,10 +578,13 @@ export default function AIAgentsPage() {
                           style={{
                             animationDelay: `${Math.min(index, 9) * 40}ms`,
                           }}
+                          aria-label={`View details for ${agent.name}`}
                           onClick={() => handleAgentClick(agent)}
+                          {...rowActivation(() => handleAgentClick(agent))}
                         >
                           <td className="p-4 max-w-50 truncate pl-6">
                             <div className="text-sm font-medium">{agent.name}</div>
+                            <RelationBadge relation={agent.relation} />
                             <div className="text-xs text-muted-foreground truncate">
                               {agent.description}
                             </div>
@@ -641,18 +701,23 @@ export default function AIAgentsPage() {
                           <td className="p-4 pr-8">
                             {['RegistrationConfirmed'].includes(agent.state) ? (
                               <div className="flex items-center gap-1">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedAgentForVerification(agent);
-                                  }}
-                                  className="text-primary hover:text-primary hover:bg-primary/10"
-                                  title="Verify and Publish"
-                                >
-                                  <ShieldCheck className="h-4 w-4" />
-                                </Button>
+                                {/* Manage actions (verify/update/delete) only apply to agents
+                                    registered on the active source. Agents shown because they
+                                    accept payment here are managed from their home source. */}
+                                {agent.relation !== 'payment' && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedAgentForVerification(agent);
+                                    }}
+                                    className="text-primary hover:text-primary hover:bg-primary/10"
+                                    title="Verify and Publish"
+                                  >
+                                    <ShieldCheck className="h-4 w-4" />
+                                  </Button>
+                                )}
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -665,7 +730,8 @@ export default function AIAgentsPage() {
                                 >
                                   <ExternalLink className="h-4 w-4" />
                                 </Button>
-                                {selectedPaymentSource &&
+                                {agent.relation !== 'payment' &&
+                                  selectedPaymentSource &&
                                   isV2PaymentSource(selectedPaymentSource) && (
                                     <Button
                                       variant="ghost"
@@ -680,17 +746,19 @@ export default function AIAgentsPage() {
                                       <Pencil className="h-4 w-4" />
                                     </Button>
                                   )}
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDeleteClick(agent);
-                                  }}
-                                  className="text-destructive hover:text-destructive hover:bg-destructive/10 group"
-                                >
-                                  <Trash2 className="h-4 w-4 transition-transform duration-200 group-hover:scale-110" />
-                                </Button>
+                                {agent.relation !== 'payment' && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteClick(agent);
+                                    }}
+                                    className="text-destructive hover:text-destructive hover:bg-destructive/10 group"
+                                  >
+                                    <Trash2 className="h-4 w-4 transition-transform duration-200 group-hover:scale-110" />
+                                  </Button>
+                                )}
                               </div>
                             ) : agent.state === 'RegistrationInitiated' ||
                               agent.state === 'DeregistrationInitiated' ? (
