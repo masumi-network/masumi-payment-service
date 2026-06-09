@@ -140,11 +140,17 @@ export function useContextAgents(params?: {
     }
 
     if (!sourceAddress) return [];
+    // Wait for the authoritative registered set before merging. If we built the list with
+    // an empty registered set while registeredQuery is still loading, an agent registered
+    // on this source that also lists it in supportedPaymentSources would be mislabeled
+    // "payment accepted" (hiding verify/update/delete) until the second query resolves.
+    // Returning [] keeps the page in its loading state (see isLoading below) until then.
+    if (registeredQuery.data === undefined) return [];
     // Build from the source-scoped registered set (authoritative and complete for this
     // source) so a registered agent is never dropped just because it fell outside the
     // page-capped network-wide `all` set. Then append agents registered elsewhere that
     // accept payment on this source, deduped against the registered ones.
-    const registered = registeredQuery.data?.items ?? [];
+    const registered = registeredQuery.data.items;
     const registeredIds = new Set(registered.map((agent) => agent.id));
     const paymentAccepted = all.filter(
       (agent) =>
@@ -160,6 +166,10 @@ export function useContextAgents(params?: {
   }, [allQuery.data, registeredQuery.data, activeRail, envChainIds, sourceAddress]);
 
   const isRegisteredQueryActive = activeRail === 'cardano' && !!sourceAddress;
+  // The registered set is authoritative for the 'registered' label, and the merged list is
+  // withheld (above) until it resolves. Treat that window as loading so the page shows a
+  // skeleton instead of an empty state or a half-labeled list.
+  const registeredPending = isRegisteredQueryActive && registeredQuery.data === undefined;
 
   // The list is fetched in full but bounded by fetchAllAgents' page cap. Surface when that
   // cap was hit so the page can warn the operator instead of silently showing a partial set.
@@ -170,7 +180,7 @@ export function useContextAgents(params?: {
   return {
     agents,
     truncated,
-    isLoading: allQuery.isLoading || (isRegisteredQueryActive && registeredQuery.isLoading),
+    isLoading: allQuery.isLoading || registeredPending,
     isFetching: allQuery.isFetching || (isRegisteredQueryActive && registeredQuery.isFetching),
     refetch: async () => {
       await Promise.all([
