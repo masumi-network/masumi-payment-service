@@ -5,6 +5,7 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { useX402Networks } from '@/lib/hooks/useX402';
 import { chainsForEnv } from '@/lib/x402-rail';
 import { handleApiCall } from '@/lib/utils';
+import { appendInclusiveCursorPage } from '@/lib/pagination/cursor-pagination';
 
 const PAGE_SIZE = 50;
 // Safety bound so a paging bug can never loop forever; far above any realistic agent count.
@@ -30,7 +31,7 @@ async function fetchAllAgents(
   network: 'Preprod' | 'Mainnet',
   extra: AgentQuery,
 ): Promise<{ items: RegistryEntry[]; truncated: boolean }> {
-  const items: RegistryEntry[] = [];
+  let items: RegistryEntry[] = [];
   let cursor: string | undefined;
   for (let page = 0; page < MAX_PAGES; page++) {
     const response = await handleApiCall(
@@ -49,7 +50,10 @@ async function fetchAllAgents(
       { errorMessage: 'Failed to load AI agents' },
     );
     const batch = (response?.data?.data?.Assets ?? []) as RegistryEntry[];
-    items.push(...batch);
+    // The Prisma cursor is inclusive, so each page after the first repeats the previous
+    // page's last row. Dedup by id while accumulating; cursor/length checks below still
+    // use the raw `batch` so end-of-list detection is unaffected.
+    items = appendInclusiveCursorPage(items, batch, (agent) => agent.id);
     // A short page means the cursor is fully drained — everything loaded.
     if (batch.length < PAGE_SIZE) return { items, truncated: false };
     const last = batch[batch.length - 1];
