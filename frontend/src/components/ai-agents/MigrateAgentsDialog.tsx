@@ -298,6 +298,16 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
   );
   const hasEnoughBalance = walletBalance !== null && walletBalance >= requiredBalance;
 
+  // The apiBaseUrl actually submitted for an agent: the trimmed override when
+  // present, else the trimmed inherited V1 value. Single source of truth shared
+  // by the validation gate and buildRegistryBody — they MUST agree byte-for-byte,
+  // or a padded V1 URL passes the (trimming) gate yet fails postRegistry's
+  // untrimmed max(250)/url() checks after the UI looked valid.
+  const resolveApiBaseUrl = useCallback(
+    (agent: RegistryEntry) => urlOverrides[agent.id]?.trim() || agent.apiBaseUrl?.trim() || '',
+    [urlOverrides],
+  );
+
   // Validate the apiBaseUrl that will actually be submitted for each selected
   // agent (the override when present, else the inherited V1 value). Mirrors the
   // registration form's URL rules so an invalid override is caught here instead
@@ -306,12 +316,11 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
     const errors = new Map<string, string>();
     for (const agent of v1Agents) {
       if (!selectedAgentIds.has(agent.id)) continue;
-      const effective = urlOverrides[agent.id]?.trim() || agent.apiBaseUrl || '';
-      const error = validateApiBaseUrl(effective);
+      const error = validateApiBaseUrl(resolveApiBaseUrl(agent));
       if (error) errors.set(agent.id, error);
     }
     return errors;
-  }, [v1Agents, selectedAgentIds, urlOverrides]);
+  }, [v1Agents, selectedAgentIds, resolveApiBaseUrl]);
   const hasInvalidUrlOverride = urlOverrideErrors.size > 0;
 
   // Migration execution
@@ -450,7 +459,8 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
       name: agent.name,
       description: agent.description ?? agent.name,
       // Use the operator's edited URL when provided, otherwise keep the V1 value.
-      apiBaseUrl: urlOverrides[agent.id]?.trim() || agent.apiBaseUrl,
+      // Trimmed (via resolveApiBaseUrl) to match exactly what the gate validated.
+      apiBaseUrl: resolveApiBaseUrl(agent),
       Tags: agent.Tags,
       Capability: {
         name: agent.Capability.name ?? 'Custom Agent',
