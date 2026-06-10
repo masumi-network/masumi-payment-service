@@ -161,6 +161,38 @@ function buildSpendBudgetMap(evaluated: EvalAction[]): Map<number, ExUnits> {
 	return map;
 }
 
+function stringifyErrorForRetry(error: unknown): string {
+	if (error instanceof Error) {
+		return `${error.name} ${error.message} ${error.stack ?? ''}`;
+	}
+	if (error != null && typeof error === 'object') {
+		try {
+			return JSON.stringify(error);
+		} catch {
+			return '[unserializable error object]';
+		}
+	}
+	return String(error);
+}
+
+export function shouldRetryWithoutOptionalWalletSplitter(params: {
+	walletUtxoCount: number;
+	includeWalletSplitter: boolean;
+	error: unknown;
+}): boolean {
+	if (!params.includeWalletSplitter || params.walletUtxoCount !== 1) {
+		return false;
+	}
+	const message = stringifyErrorForRetry(params.error).toLowerCase();
+	return (
+		message.includes('utxo fully depleted') ||
+		message.includes('inputselectionerror') ||
+		message.includes('insufficient balance') ||
+		message.includes('not enough ada') ||
+		message.includes('not enough lovelace')
+	);
+}
+
 /**
  * Build a single tx that spends N V2 smart-contract UTxOs of the same
  * interaction type. Each spend gets its own `Spend` redeemer (alt computed
@@ -233,49 +265,73 @@ export async function generateMasumiSmartContractBatchInteractionTransactionAuto
 
 	const sortedItems = sortItemsCanonical(items);
 
-	const evaluationTx = await buildBatchInteractionTx(
-		blockchainProvider,
-		network,
-		script,
-		walletAddress,
-		collateralUtxo,
-		walletUtxos,
-		sortedItems,
-		invalidBefore,
-		invalidAfter,
-		// First pass: every item gets the default budget.
-		new Map(sortedItems.map((_, idx) => [idx, { ...DEFAULT_EX_UNITS }])),
-		coinsPerUtxoSize,
-		rpcApiKey,
-	);
+	async function buildTwoPass(includeWalletSplitter: boolean): Promise<string> {
+		const evaluationTx = await buildBatchInteractionTx(
+			blockchainProvider,
+			network,
+			script,
+			walletAddress,
+			collateralUtxo,
+			walletUtxos,
+			sortedItems,
+			invalidBefore,
+			invalidAfter,
+			// First pass: every item gets the default budget.
+			new Map(sortedItems.map((_, idx) => [idx, { ...DEFAULT_EX_UNITS }])),
+			coinsPerUtxoSize,
+			rpcApiKey,
+			{ includeWalletSplitter },
+		);
 
-	const evaluated = (await blockchainProvider.evaluateTx(evaluationTx)) as EvalAction[];
-	const spendBudgets = buildSpendBudgetMap(evaluated);
+		const evaluated = (await blockchainProvider.evaluateTx(evaluationTx)) as EvalAction[];
+		const spendBudgets = buildSpendBudgetMap(evaluated);
 
-	for (let idx = 0; idx < sortedItems.length; idx++) {
-		if (!spendBudgets.has(idx)) {
-			throw new Error(
-				`evaluateTx did not return a SPEND budget for batch index ${idx}; ` +
-					`got ${evaluated.length} action(s) of which ` +
-					`${evaluated.filter((a) => a.tag === 'SPEND').length} were SPEND`,
-			);
+		for (let idx = 0; idx < sortedItems.length; idx++) {
+			if (!spendBudgets.has(idx)) {
+				throw new Error(
+					`evaluateTx did not return a SPEND budget for batch index ${idx}; ` +
+						`got ${evaluated.length} action(s) of which ` +
+						`${evaluated.filter((a) => a.tag === 'SPEND').length} were SPEND`,
+				);
+			}
 		}
+
+		return await buildBatchInteractionTx(
+			blockchainProvider,
+			network,
+			script,
+			walletAddress,
+			collateralUtxo,
+			walletUtxos,
+			sortedItems,
+			invalidBefore,
+			invalidAfter,
+			spendBudgets,
+			coinsPerUtxoSize,
+			rpcApiKey,
+			{ includeWalletSplitter },
+		);
 	}
 
-	return await buildBatchInteractionTx(
-		blockchainProvider,
-		network,
-		script,
-		walletAddress,
-		collateralUtxo,
-		walletUtxos,
-		sortedItems,
-		invalidBefore,
-		invalidAfter,
-		spendBudgets,
-		coinsPerUtxoSize,
-		rpcApiKey,
-	);
+	try {
+		return await buildTwoPass(true);
+	} catch (error) {
+		if (
+			!shouldRetryWithoutOptionalWalletSplitter({
+				walletUtxoCount: walletUtxos.length,
+				includeWalletSplitter: true,
+				error,
+			})
+		) {
+			throw error;
+		}
+		logger.warn('V2 batch interaction optional wallet splitter depleted fee input; retrying without splitter', {
+			walletUtxoCount: walletUtxos.length,
+			itemCount: sortedItems.length,
+			error: error instanceof Error ? { name: error.name, message: error.message } : error,
+		});
+		return await buildTwoPass(false);
+	}
 }
 
 async function buildBatchInteractionTx(
@@ -291,6 +347,7 @@ async function buildBatchInteractionTx(
 	exUnitsByIndex: Map<number, ExUnits>,
 	coinsPerUtxoSize: number,
 	rpcApiKey?: string,
+	options: { includeWalletSplitter?: boolean } = {},
 ): Promise<string> {
 	// Reuse the cached mesh-format chain params populated by
 	// syncMeshCostModelsFromChain (see comment in the outer Automatic builder).
@@ -422,7 +479,7 @@ async function buildBatchInteractionTx(
 	// See `batch-helpers.ts WALLET_SPLITTER_LOVELACE` for the lifecycle
 	// rationale and the cross-module invariant
 	// `WALLET_SPLITTER_LOVELACE >= COLLATERAL_RESERVE_LOVELACE`.
-	if (walletUtxos.length === 1) {
+	if ((options.includeWalletSplitter ?? true) && walletUtxos.length === 1) {
 		txBuilder.txOut(walletAddress, [{ unit: 'lovelace', quantity: WALLET_SPLITTER_LOVELACE.toString() }]);
 	}
 
