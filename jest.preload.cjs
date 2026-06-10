@@ -19,7 +19,27 @@
 // async faults still fail the run (a blanket `--unhandled-rejections=warn` would
 // mask real async faults — see the Cursor review on this change).
 
+const { webcrypto } = require('node:crypto');
+
 const GUARD = Symbol.for('masumi.libsodiumUnhandledRejectionGuard');
+
+const installLibsodiumRandomSource = () => {
+	if (!globalThis.self) {
+		Object.defineProperty(globalThis, 'self', {
+			value: globalThis,
+			configurable: true,
+		});
+	}
+
+	if (!globalThis.crypto || typeof globalThis.crypto.getRandomValues !== 'function') {
+		Object.defineProperty(globalThis, 'crypto', {
+			value: webcrypto,
+			configurable: true,
+		});
+	}
+};
+
+installLibsodiumRandomSource();
 
 if (!global[GUARD]) {
 	global[GUARD] = true;

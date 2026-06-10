@@ -16,13 +16,28 @@ const moduleNameMapper = {
 	'^(\\.{1,2}/.*)\\.js$': '$1',
 };
 
+const allE2ETestMatches = ['<rootDir>/tests/e2e/flows/**/*.test.ts', '<rootDir>/tests/e2e/v2/flows/**/*.test.ts'];
+
+// CI runs one Jest process per payment source. Do the source split at discovery
+// time instead of relying on `describe.skip`: skipped files still execute
+// top-level imports/setup, which can trigger Mesh/libsodium async init after
+// Jest tears down the file environment.
+const sourceScopedTestMatches: Record<string, string[]> = {
+	Web3CardanoV1: ['<rootDir>/tests/e2e/flows/**/*.test.ts'],
+	Web3CardanoV2: ['<rootDir>/tests/e2e/v2/flows/**/*.test.ts'],
+};
+
+const testMatch = process.env.TEST_PAYMENT_SOURCE_TYPE
+	? (sourceScopedTestMatches[process.env.TEST_PAYMENT_SOURCE_TYPE] ?? allE2ETestMatches)
+	: allE2ETestMatches;
+
 const config: Config.InitialOptions = {
 	preset: 'ts-jest/presets/default-esm',
 	displayName: 'E2E',
 	verbose: true,
 	moduleNameMapper,
 	roots: ['<rootDir>/tests/e2e', '<rootDir>/src'],
-	testMatch: ['<rootDir>/tests/e2e/flows/**/*.test.ts', '<rootDir>/tests/e2e/v2/flows/**/*.test.ts'],
+	testMatch,
 	extensionsToTreatAsEsm: ['.ts'],
 	globals: {
 		'ts-jest': {
