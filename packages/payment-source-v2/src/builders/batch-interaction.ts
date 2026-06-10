@@ -112,6 +112,28 @@ type ExUnits = { mem: number; steps: number };
 
 type EvalAction = { tag: string; index: number; budget: ExUnits };
 
+// evaluateTx returns the EXACT ex_units the PASS-1 (default-budget) tx consumed,
+// with zero slack. The final PASS-2 tx is not byte-identical: every leg's
+// declared ex_units changes (default → evaluated) and the fee changes, and both
+// the fee and the full redeemer set are part of the PlutusV3 ScriptContext the
+// validator processes. So phase-2 execution needs marginally more than the
+// reported budget — a single-leg tx absorbs the drift, but a multi-leg batch
+// serializes a much larger ScriptContext and tips over with a tiny uniform
+// overspend across every leg (observed on preprod: ~0.01% steps / ~0.4% mem).
+// Over-declaring is safe: phase-2 only rejects UNDER-declaration, and the fee is
+// recomputed by mesh's automatic-fee pass over the inflated budgets. 10% covers
+// the drift with wide margin while staying well under the per-tx ex-units max
+// for the batch sizes we build.
+const EX_UNITS_SAFETY_NUM = 11n;
+const EX_UNITS_SAFETY_DEN = 10n;
+
+function withExUnitsSafetyMargin(budget: ExUnits): ExUnits {
+	return {
+		mem: Number((BigInt(Math.ceil(budget.mem)) * EX_UNITS_SAFETY_NUM) / EX_UNITS_SAFETY_DEN),
+		steps: Number((BigInt(Math.ceil(budget.steps)) * EX_UNITS_SAFETY_NUM) / EX_UNITS_SAFETY_DEN),
+	};
+}
+
 /**
  * Map evaluateTx SPEND budgets onto our per-item sortedItems index.
  *
@@ -134,7 +156,7 @@ function buildSpendBudgetMap(evaluated: EvalAction[]): Map<number, ExUnits> {
 		.filter((action) => action.tag === 'SPEND')
 		.sort((a, b) => a.index - b.index);
 	for (let i = 0; i < spendActionsSortedByBodyIndex.length; i++) {
-		map.set(i, spendActionsSortedByBodyIndex[i].budget);
+		map.set(i, withExUnitsSafetyMargin(spendActionsSortedByBodyIndex[i].budget));
 	}
 	return map;
 }

@@ -131,6 +131,7 @@ export default [
 			'frontend/*',
 			'commitlint.config.js',
 			'jest.config.ts',
+			'jest.preload.cjs',
 			'prisma/*',
 		],
 	},

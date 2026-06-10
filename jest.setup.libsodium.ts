@@ -7,12 +7,13 @@
 //
 // This file is only the FIRST line of defense: awaiting `.ready` before tests run
 // forces most continuations to fire during the test lifecycle, so short unit
-// suites never hit the race. It is NOT sufficient on its own — a process-level
-// `unhandledRejection` handler can't help because it's registered inside the Jest
-// environment sandbox and is destroyed on teardown, before the late rejection
-// fires. The actual guarantee comes from `--unhandled-rejections=warn` in the
-// test scripts' NODE_OPTIONS (a process-mode flag the workers inherit), which
-// keeps a residual late rejection non-fatal. See package.json `test*` scripts.
+// suites never hit the race. It is NOT sufficient on its own — a handler added
+// here can't catch a POST-teardown rejection because setup files run inside the
+// Jest VM sandbox, on a `process` that is gone by the time the late rejection
+// fires. The actual guarantee comes from the `--require ./jest.preload.cjs`
+// preload in the test scripts' NODE_OPTIONS, which installs an unhandledRejection
+// handler on the REAL worker process (surviving teardown) that drops only the
+// libsodium noise and rethrows real faults. See jest.preload.cjs.
 //
 // Typed via the ambient declaration in src/libsodium-wrappers-sumo.d.ts.
 import sodium from 'libsodium-wrappers-sumo';
