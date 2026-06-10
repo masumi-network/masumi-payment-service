@@ -29,8 +29,10 @@ import {
 	generateRegistryAssetNameV2,
 	generateRegistryMintTransaction,
 	type RegistryMetadata,
+	registryNonceForIndex,
 	resolveRegistryFundingLovelace,
 	resolveRegistryRecipientWalletAddress,
+	V2_REGISTRY_MAX_MINTS_PER_UTXO,
 } from '@/services/registry/shared';
 import {
 	assertTxSizeWithinLimit,
@@ -260,14 +262,16 @@ function validateAndBuildItem(
 	utxo: UTxO,
 	policyId: string,
 	paymentSource: RegistryMetadataPaymentSource,
+	nonce: string,
 ): ValidatedRegistryItem {
 	validateRegistrationPricing(request);
 	const recipientWalletAddress = resolveRegistryRecipientWalletAddress(request);
 	const fundingLovelace = resolveRegistryFundingLovelace(request);
 	// V2 mint contract requires the structured asset name
 	// [1B nonce>0x0f | 28B blake2b_224 | 3B version 0x000000] — the V1 flat
-	// blake2b_256 layout would fail every check.
-	const assetName = generateRegistryAssetNameV2(utxo);
+	// blake2b_256 layout would fail every check. The whole batch shares one
+	// `utxo` (oneshot) and disambiguates via a distinct `nonce` per item.
+	const assetName = generateRegistryAssetNameV2(utxo, nonce);
 	const metadata = buildAgentMetadata(request, paymentSource);
 	return {
 		request,
@@ -536,46 +540,45 @@ export async function registerAgentV2() {
 						return;
 					}
 
-					// MINT-only tx: Conway phase-1 does NOT forbid the collateral UTxO
-					// from also appearing in the (non-script) spending input set, and
-					// the V1 single-tx register builder already exploits this — it
-					// passes the same UTxO as both `firstUtxo` and `collateralUtxo`,
-					// and Mesh-SDK routes them into separate body fields. We follow
-					// the same pattern here so a wallet with K UTxOs can drive a
-					// batch of min(K, registryRequests.length) items (rather than
-					// K-1, which would block a 1-UTxO wallet entirely).
+					// Oneshot rule: the V2 mint validator derives each asset's 28-byte
+					// root from `blake2b_224(firstUtxo)` and verifies that root against
+					// the spent inputs — it does NOT constrain the 1-byte nonce. So ONE
+					// consumed input can authorize the whole batch: every item shares a
+					// single `firstUtxo` and is disambiguated by a distinct nonce
+					// (0x10, 0x11, …). This means even a 1-UTxO wallet can register a
+					// full batch (the prior code wrongly demanded one wallet UTxO per
+					// agent). We pick the largest UTxO as the shared firstUtxo; the
+					// builder de-dupes it down to a single txIn, and Conway phase-1
+					// permits it to double as collateral, so no extra UTxO is needed.
 					const spendableUtxos = sortUtxosByLovelaceDesc(utxos);
+					const sharedFirstUtxo = spendableUtxos[0];
 
-					// Validate every request in parallel. Failures here become
-					// per-request RegistrationFailed updates and are removed from
-					// the batch.
+					// The nonce range caps mints-per-input at 240. REGISTRY_BATCH_SIZE is
+					// far below that, but guard anyway: process at most that many this
+					// tick and leave any overflow in RegistrationRequested for the next.
+					const mintableRequests = registryRequests.slice(0, V2_REGISTRY_MAX_MINTS_PER_UTXO);
+					if (registryRequests.length > mintableRequests.length) {
+						logger.warn(
+							`V2 register batch of ${registryRequests.length} exceeds ${V2_REGISTRY_MAX_MINTS_PER_UTXO} mints/UTxO; deferring ${registryRequests.length - mintableRequests.length} to next tick`,
+						);
+					}
+
+					// Validate every request in parallel. The async callback turns any
+					// synchronous throw (pricing validation, asset-name build) into a
+					// settled 'rejected' outcome so a single bad item can't escape
+					// Promise.allSettled and abort the whole batch via the outer catch.
 					const validations = await Promise.allSettled(
-						registryRequests.map((request, idx) => {
-							const utxo = spendableUtxos[idx];
-							if (utxo == null) {
-								throw new Error('Insufficient wallet UTXOs to assign a distinct firstUtxo to this request');
-							}
-							return Promise.resolve(validateAndBuildItem(request, utxo, policyId, paymentSource));
-						}),
+						mintableRequests.map(async (request, idx) =>
+							validateAndBuildItem(request, sharedFirstUtxo, policyId, paymentSource, registryNonceForIndex(idx)),
+						),
 					);
 
 					const validated: ValidatedRegistryItem[] = [];
 					for (let idx = 0; idx < validations.length; idx++) {
 						const outcome = validations[idx];
-						const request = registryRequests[idx];
+						const request = mintableRequests[idx];
 						if (outcome.status === 'fulfilled') {
 							validated.push(outcome.value);
-						} else if (
-							outcome.reason instanceof Error &&
-							outcome.reason.message.includes('Insufficient wallet UTXOs')
-						) {
-							// Not a per-request failure — wallet ran out of distinct
-							// UTxOs for the tail items. Leave the request in
-							// RegistrationRequested so the next tick (with more
-							// UTxOs or a smaller batch) can pick it up.
-							logger.warn(
-								`Skipping V2 register request ${request.id} this tick: not enough distinct wallet UTxOs in this batch`,
-							);
 						} else {
 							await markRequestFailed(request, outcome.reason);
 						}

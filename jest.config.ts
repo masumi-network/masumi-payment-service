@@ -24,6 +24,10 @@ const config: Config.InitialOptions = {
 	// missing env vars. Specs that need real DB connections (e2e) use the
 	// separate `jest.e2e.config.ts` configuration.
 	setupFiles: ['<rootDir>/jest.setup.env.ts'],
+	// Force libsodium's async WASM init to settle before tests so its `.ready`
+	// continuations don't fire a `require` after the env is torn down (which
+	// crashes the worker with an UnhandledPromiseRejection). See the setup file.
+	setupFilesAfterEnv: ['<rootDir>/jest.setup.libsodium.ts'],
 	roots: ['<rootDir>/src', '<rootDir>/packages'],
 	extensionsToTreatAsEsm: ['.ts'],
 	transform: {
