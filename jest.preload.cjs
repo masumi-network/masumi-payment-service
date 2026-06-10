@@ -13,24 +13,70 @@
 //   ReferenceError: You are trying to `require` a file after the Jest
 //   environment has been torn down.
 //
-// Node would otherwise escalate that to a fatal UnhandledPromiseRejection even
-// though every test passed. We swallow ONLY that specific libsodium teardown
-// noise and rethrow everything else, so genuine unhandled rejections still fail
-// the run (a blanket `--unhandled-rejections=warn` would mask real async faults
-// — see the Cursor review on this change).
+// Node would otherwise escalate that to a fatal UnhandledPromiseRejection or
+// uncaught exception even though every test passed. We swallow ONLY that
+// specific libsodium teardown noise and rethrow everything else, so genuine
+// async faults still fail the run (a blanket `--unhandled-rejections=warn` would
+// mask real async faults — see the Cursor review on this change).
 
 const GUARD = Symbol.for('masumi.libsodiumUnhandledRejectionGuard');
 
 if (!global[GUARD]) {
 	global[GUARD] = true;
 
-	process.on('unhandledRejection', (reason) => {
-		const message = typeof reason === 'string' ? reason : reason instanceof Error ? reason.message : '';
-		const isLibsodiumTeardownNoise =
-			message.includes('after the Jest environment has been torn down') ||
-			message.includes('No secure random number generator found');
+	const readTextProperty = (value, key) => {
+		try {
+			const property = Reflect.get(value, key);
+			return typeof property === 'string' ? property : '';
+		} catch {
+			return '';
+		}
+	};
 
-		if (isLibsodiumTeardownNoise) {
+	const describeReason = (reason) => {
+		if (typeof reason === 'string') {
+			return reason;
+		}
+
+		if (reason && typeof reason === 'object') {
+			const errorText = [
+				readTextProperty(reason, 'name'),
+				readTextProperty(reason, 'message'),
+				readTextProperty(reason, 'stack'),
+			]
+				.filter(Boolean)
+				.join('\n');
+
+			if (errorText) {
+				return errorText;
+			}
+		}
+
+		if (reason && typeof reason === 'object') {
+			try {
+				return JSON.stringify(reason);
+			} catch {
+				return String(reason);
+			}
+		}
+
+		return String(reason ?? '');
+	};
+
+	const isLibsodiumTeardownNoise = (reason) => {
+		const text = describeReason(reason).toLowerCase();
+		const mentionsLibsodium =
+			text.includes('libsodium') || text.includes('sodium-wrappers') || text.includes('sodium-sumo');
+		const isJestTeardownRequire = text.includes('after the jest environment has been torn down');
+		const isMissingSecureRandom = text.includes('no secure random number generator found');
+
+		return (mentionsLibsodium && isJestTeardownRequire) || isMissingSecureRandom;
+	};
+
+	process.on('unhandledRejection', (reason) => {
+		const message = describeReason(reason);
+
+		if (isLibsodiumTeardownNoise(reason)) {
 			// Benign: the test already finished; libsodium's late init has nowhere
 			// to land. Dropping it keeps the run green without masking real faults.
 			return;
@@ -41,4 +87,15 @@ if (!global[GUARD]) {
 		// real async faults that Jest doesn't tie to a specific failing test.
 		throw reason instanceof Error ? reason : new Error(message || 'Unhandled promise rejection during tests');
 	});
+
+	const onUncaughtException = (error) => {
+		if (isLibsodiumTeardownNoise(error)) {
+			return;
+		}
+
+		process.removeListener('uncaughtException', onUncaughtException);
+		throw error;
+	};
+
+	process.on('uncaughtException', onUncaughtException);
 }
