@@ -117,6 +117,7 @@
 		"jest": "30.4.2",
 		"jest-mock": "30.4.1",
 		"knip": "5.81.0",
+		"libsodium-wrappers-sumo": "0.7.15",
 		"openapi-to-postmanv2": "5.8.0",
 		"pkgroll": "2.27.1",
 		"prettier": "3.8.4",

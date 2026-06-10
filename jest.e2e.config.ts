@@ -33,7 +33,7 @@ const config: Config.InitialOptions = {
 	testEnvironment: 'node',
 	globalSetup: '<rootDir>/tests/e2e/setup/globalSetup.ts',
 	globalTeardown: '<rootDir>/tests/e2e/setup/globalTeardown.ts',
-	setupFilesAfterEnv: ['<rootDir>/tests/e2e/setup/testEnvironment.ts'],
+	setupFilesAfterEnv: ['<rootDir>/jest.setup.libsodium.ts', '<rootDir>/tests/e2e/setup/testEnvironment.ts'],
 	// Per-test timeout (applies to each `test(...)` and async hooks in test files)
 	testTimeout: 1_200_000, // 20 minutes
 	// Sequential workers: the V2 source-isolation suite mutates
