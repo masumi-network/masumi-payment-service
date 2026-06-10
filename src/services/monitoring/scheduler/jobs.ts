@@ -4,6 +4,7 @@ import {
 	checkLatestTransactions,
 	cleanupOrphanActionData,
 	reconcileAmbiguousFundingV2,
+	unlockStaleOrphanWalletLocks,
 	updateWalletTransactionHash,
 } from '@/services/transactions';
 import { walletLowBalanceMonitorService } from '@/services/wallets';
@@ -121,6 +122,17 @@ export const scheduledJobs: JobDefinition[] = [
 		startMessage: 'Starting to check for wallet transactions and wallets to unlock',
 		finishMessage: 'Finished to check for wallet transactions and wallets to unlock',
 		run: updateWalletTransactionHash,
+	},
+	{
+		// Standalone safety net: frees wallets left locked with no pending tx
+		// (a lockAndQueryX caller that threw before attaching a transaction).
+		// Independent job so it can't be starved by updateWalletTransactionHash,
+		// which carries an equivalent inline branch as defense-in-depth.
+		initialDelayMs: 42000,
+		intervalMs: CONFIG.CHECK_WALLET_TRANSACTION_HASH_INTERVAL * 1000,
+		startMessage: 'Starting stale orphan wallet-lock reaper',
+		finishMessage: 'Finished stale orphan wallet-lock reaper',
+		run: unlockStaleOrphanWalletLocks,
 	},
 	{
 		// V2 funding-tx reconciliation: resolves Pending shared Transactions
