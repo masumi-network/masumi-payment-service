@@ -48,6 +48,7 @@ import { cn, shortenAddress } from '@/lib/utils';
 import { extractApiErrorMessage } from '@/lib/api-error';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
 import { agentMigrationKey, fetchAllRegistryEntries } from '@/lib/agent-migration';
+import { REGISTRY_LIMITS, validateApiBaseUrl } from '@/lib/registry-validation';
 
 const MIN_MIGRATION_BALANCE_LOVELACE = 5_000_000; // ~5 ADA buffer per agent mint
 
@@ -111,10 +112,16 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
     () => paymentSources.filter((ps) => ps.network === network),
     [paymentSources, network],
   );
-  const v2Source = useMemo<PaymentSourceExtended | undefined>(
-    () => currentNetworkSources.find(isV2PaymentSource),
+  // Every V2 source on the network. Used to detect already-migrated agents
+  // across ALL V2 contracts (see v2AgentsQuery). The migration *target* is a
+  // single source (v2Source) — re-mints land there and wallet/payout checks are
+  // scoped to it — but "already migrated?" must consider every V2 source or the
+  // dialog would re-offer an agent already minted on a different V2 contract.
+  const v2Sources = useMemo(
+    () => currentNetworkSources.filter(isV2PaymentSource),
     [currentNetworkSources],
   );
+  const v2Source = useMemo<PaymentSourceExtended | undefined>(() => v2Sources[0], [v2Sources]);
   const v1Sources = useMemo(
     () => currentNetworkSources.filter((s) => !isV2PaymentSource(s)),
     [currentNetworkSources],
@@ -175,18 +182,24 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
     staleTime: 15_000,
   });
 
-  // Agents already registered on the V2 source. Migration re-mints with the same name +
-  // apiBaseUrl, so we match on those (agentMigrationKey) to hide already-migrated agents
-  // from the list — only entries without a V2 counterpart are offered to migrate.
+  // Agents already registered on ANY V2 source on this network. Migration re-mints
+  // with the same name + description, so we match on those (agentMigrationKey) to
+  // hide already-migrated agents from the list. Union every V2 source — not just
+  // the migration target — so an agent already minted on a different V2 contract
+  // isn't re-offered for a duplicate re-mint. Mirrors useMigrationStatus, which
+  // backs the dashboard count.
+  const v2Addresses = useMemo(() => v2Sources.map((s) => s.smartContractAddress), [v2Sources]);
   const v2AgentsQuery = useQuery<RegistryEntry[]>({
-    queryKey: ['migrate-v2-agents', network, v2Source?.smartContractAddress ?? ''],
-    queryFn: () =>
-      fetchAllRegistryEntries({
-        apiClient,
-        network,
-        smartContractAddress: v2Source!.smartContractAddress,
-      }),
-    enabled: open && !!v2Source,
+    queryKey: ['migrate-v2-agents', network, [...v2Addresses].sort()],
+    queryFn: async () => {
+      const lists = await Promise.all(
+        v2Addresses.map((smartContractAddress) =>
+          fetchAllRegistryEntries({ apiClient, network, smartContractAddress }),
+        ),
+      );
+      return lists.flat();
+    },
+    enabled: open && v2Addresses.length > 0,
     staleTime: 15_000,
   });
   const v2AgentKeys = useMemo(
@@ -284,6 +297,22 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
     selectedAgentIds.size * MIN_MIGRATION_BALANCE_LOVELACE,
   );
   const hasEnoughBalance = walletBalance !== null && walletBalance >= requiredBalance;
+
+  // Validate the apiBaseUrl that will actually be submitted for each selected
+  // agent (the override when present, else the inherited V1 value). Mirrors the
+  // registration form's URL rules so an invalid override is caught here instead
+  // of only failing when postRegistry runs. Keyed by agent id; absent = valid.
+  const urlOverrideErrors = useMemo(() => {
+    const errors = new Map<string, string>();
+    for (const agent of v1Agents) {
+      if (!selectedAgentIds.has(agent.id)) continue;
+      const effective = urlOverrides[agent.id]?.trim() || agent.apiBaseUrl || '';
+      const error = validateApiBaseUrl(effective);
+      if (error) errors.set(agent.id, error);
+    }
+    return errors;
+  }, [v1Agents, selectedAgentIds, urlOverrides]);
+  const hasInvalidUrlOverride = urlOverrideErrors.size > 0;
 
   // Migration execution
   const [results, setResults] = useState<Record<string, MigrationResult>>({});
@@ -451,6 +480,10 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
       toast.error('V2 wallet balance is too low; top up first');
       return;
     }
+    if (hasInvalidUrlOverride) {
+      toast.error('Fix the invalid API base URL before migrating');
+      return;
+    }
     // Two-step Confirm: first click flips into the confirm preview; second
     // click on "Confirm migration" triggers `runMigration`. Prevents
     // accidental kickoff of an irreversible multi-tx batch on a single
@@ -469,6 +502,10 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
     }
     if (!hasEnoughBalance) {
       toast.error('V2 wallet balance is too low; top up first');
+      return;
+    }
+    if (hasInvalidUrlOverride) {
+      toast.error('Fix the invalid API base URL before migrating');
       return;
     }
 
@@ -906,25 +943,43 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
                               )}
                               {isSelected && !result && (
                                 <div className="mt-1.5">
-                                  <Input
-                                    value={urlOverrides[agent.id] ?? agent.apiBaseUrl ?? ''}
-                                    onChange={(e) =>
-                                      setUrlOverrides((prev) => ({
-                                        ...prev,
-                                        [agent.id]: e.target.value,
-                                      }))
-                                    }
-                                    onClick={(e) => e.stopPropagation()}
-                                    onKeyDown={(e) => e.stopPropagation()}
-                                    disabled={isMigrating}
-                                    placeholder="API base URL"
-                                    aria-label={`API base URL for ${agent.name}`}
-                                    className="h-7 font-mono text-xs"
-                                  />
-                                  <p className="mt-0.5 text-[10px] text-muted-foreground">
-                                    Edit to point this agent at a new route on V2; leave as-is to
-                                    keep the V1 URL.
-                                  </p>
+                                  {(() => {
+                                    const urlError = urlOverrideErrors.get(agent.id);
+                                    return (
+                                      <>
+                                        <Input
+                                          value={urlOverrides[agent.id] ?? agent.apiBaseUrl ?? ''}
+                                          onChange={(e) =>
+                                            setUrlOverrides((prev) => ({
+                                              ...prev,
+                                              [agent.id]: e.target.value,
+                                            }))
+                                          }
+                                          onClick={(e) => e.stopPropagation()}
+                                          onKeyDown={(e) => e.stopPropagation()}
+                                          disabled={isMigrating}
+                                          maxLength={REGISTRY_LIMITS.apiBaseUrl}
+                                          placeholder="API base URL"
+                                          aria-label={`API base URL for ${agent.name}`}
+                                          aria-invalid={urlError ? true : undefined}
+                                          className={cn(
+                                            'h-7 font-mono text-xs',
+                                            urlError && 'border-red-500 focus-visible:ring-red-500',
+                                          )}
+                                        />
+                                        {urlError ? (
+                                          <p className="mt-0.5 text-[10px] text-red-600 dark:text-red-400">
+                                            {urlError}
+                                          </p>
+                                        ) : (
+                                          <p className="mt-0.5 text-[10px] text-muted-foreground">
+                                            Edit to point this agent at a new route on V2; leave
+                                            as-is to keep the V1 URL.
+                                          </p>
+                                        )}
+                                      </>
+                                    );
+                                  })()}
                                 </div>
                               )}
                               {droppedHoldingAddress && !result && (
@@ -1068,7 +1123,8 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
                       !v2Source ||
                       !selectedV2Wallet ||
                       selectedAgentIds.size === 0 ||
-                      !hasEnoughBalance
+                      !hasEnoughBalance ||
+                      hasInvalidUrlOverride
                     }
                     className="gap-2"
                   >
