@@ -15,12 +15,9 @@
 // singleton (pinned to a single 0.7.15 copy via the root `overrides`), so the
 // instance we await here is the same one Mesh later uses — awaiting it once is
 // enough and adds no measurable time to suites that don't touch crypto.
-// The package ships no type declarations, so the default import is untyped.
-// Assert the single member we depend on rather than pulling in @types.
+// Typed via the ambient declaration in src/libsodium-wrappers-sumo.d.ts.
 import sodium from 'libsodium-wrappers-sumo';
 
-const sodiumReady = (sodium as { ready: Promise<void> }).ready;
-
 beforeAll(async () => {
-	await sodiumReady;
+	await sodium.ready;
 });
