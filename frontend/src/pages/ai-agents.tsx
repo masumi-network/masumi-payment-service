@@ -59,7 +59,7 @@ function RelationBadge({ relation }: { relation?: AgentRelation }) {
   }
   return (
     <Badge variant="outline" className="mt-1 text-[10px]">
-      Registered
+      On this source
     </Badge>
   );
 }
