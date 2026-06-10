@@ -13,6 +13,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -36,7 +37,6 @@ import {
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import {
-  getRegistry,
   postRegistry,
   postRegistryDeregister,
   type PaymentSourceExtended,
@@ -44,13 +44,12 @@ import {
 } from '@/lib/api/generated';
 import { isV2PaymentSource } from '@/lib/payment-source-type';
 import { fetchWalletBalance, usePaymentSourceWalletsAll } from '@/lib/queries/useWallets';
-import { cn, handleApiCall, shortenAddress } from '@/lib/utils';
+import { cn, shortenAddress } from '@/lib/utils';
 import { extractApiErrorMessage } from '@/lib/api-error';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
-import { appendInclusiveCursorPage } from '@/lib/pagination/cursor-pagination';
+import { agentMigrationKey, fetchAllRegistryEntries } from '@/lib/agent-migration';
 
 const MIN_MIGRATION_BALANCE_LOVELACE = 5_000_000; // ~5 ADA buffer per agent mint
-const REGISTRY_FETCH_LIMIT = 100;
 
 type MigrationStatus = 'pending' | 'running' | 'success' | 'failed';
 
@@ -97,56 +96,6 @@ function resolveV2HoldingAddress(
   return onV2
     ? { v2HoldingAddress: v1HoldingWallet.walletAddress, droppedV1HoldingAddress: null }
     : { v2HoldingAddress: undefined, droppedV1HoldingAddress: v1HoldingWallet.walletAddress };
-}
-
-async function fetchAllRegistryEntries(args: {
-  apiClient: ReturnType<typeof useAppContext>['apiClient'];
-  network: 'Preprod' | 'Mainnet';
-  smartContractAddress: string;
-}) {
-  // The /registry cursor is inclusive (Prisma `cursor: { id: cursorId }` returns
-  // the cursor row again as the first item of the next page). Dedup across page
-  // boundaries via the shared cursor helper so the migration list never shows
-  // duplicates or re-registers an agent twice.
-  let entries: RegistryEntry[] = [];
-  let cursor: string | undefined;
-
-  while (true) {
-    const response = await handleApiCall(
-      () =>
-        getRegistry({
-          client: args.apiClient,
-          query: {
-            network: args.network,
-            cursorId: cursor,
-            filterSmartContractAddress: args.smartContractAddress,
-            limit: REGISTRY_FETCH_LIMIT,
-            filterStatus: 'Registered',
-          },
-        }),
-      { errorMessage: 'Failed to load V1 agents' },
-    );
-
-    const page = response?.data?.data?.Assets ?? [];
-    if (page.length === 0) break;
-    // Backend `filterStatus: 'Registered'` is inclusive of `DeregistrationFailed`
-    // (see src/routes/api/registry/queries.ts) — exclude those here to avoid
-    // re-attempting bad deregisters during V2 migration and to keep the list
-    // limited to V1 entries that are actually safe to re-register.
-    const filteredPage = page.filter((entry) => entry.state !== 'DeregistrationFailed');
-    entries = appendInclusiveCursorPage(entries, filteredPage, (a) => a.id);
-    if (page.length < REGISTRY_FETCH_LIMIT) break;
-    const last = page[page.length - 1];
-    if (!last?.id || last.id === cursor) break;
-    // NOTE: we do NOT break here when `filteredPage` was empty even though
-    // `page` was full. A full page of nothing-but-`DeregistrationFailed`
-    // entries is legitimate and the NEXT cursor advance can still surface
-    // valid `Registered` entries. The cursor-equality check above handles
-    // the only real infinite-loop risk (server returns the same id).
-    cursor = last.id;
-  }
-
-  return entries;
 }
 
 export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsDialogProps) {
@@ -225,7 +174,31 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
     enabled: open && !!selectedV1Source,
     staleTime: 15_000,
   });
-  const v1Agents = useMemo(() => v1AgentsQuery.data ?? [], [v1AgentsQuery.data]);
+
+  // Agents already registered on the V2 source. Migration re-mints with the same name +
+  // apiBaseUrl, so we match on those (agentMigrationKey) to hide already-migrated agents
+  // from the list — only entries without a V2 counterpart are offered to migrate.
+  const v2AgentsQuery = useQuery<RegistryEntry[]>({
+    queryKey: ['migrate-v2-agents', network, v2Source?.smartContractAddress ?? ''],
+    queryFn: () =>
+      fetchAllRegistryEntries({
+        apiClient,
+        network,
+        smartContractAddress: v2Source!.smartContractAddress,
+      }),
+    enabled: open && !!v2Source,
+    staleTime: 15_000,
+  });
+  const v2AgentKeys = useMemo(
+    () => new Set((v2AgentsQuery.data ?? []).map(agentMigrationKey)),
+    [v2AgentsQuery.data],
+  );
+
+  const allV1Agents = useMemo(() => v1AgentsQuery.data ?? [], [v1AgentsQuery.data]);
+  const v1Agents = useMemo(
+    () => allV1Agents.filter((agent) => !v2AgentKeys.has(agentMigrationKey(agent))),
+    [allV1Agents, v2AgentKeys],
+  );
 
   // Agents whose V1 holding wallet has no V2 counterpart — funds re-routed to
   // the V2 selling wallet on migrate. Keyed by agent.id so per-row render and
@@ -243,8 +216,15 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
   }, [v1Agents, v2WalletAddresses, v2WalletsReady]);
 
   const [selectedAgentIds, setSelectedAgentIds] = useState<Set<string>>(new Set());
+  // Optional per-agent API base URL override. The V2 re-registration copies the V1
+  // apiBaseUrl by default; editing it here lets the operator point the new entry at an
+  // updated route during migration. Keyed by agent id; absent = keep the original.
+  const [urlOverrides, setUrlOverrides] = useState<Record<string, string>>({});
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setUrlOverrides({});
+      return;
+    }
     setSelectedAgentIds((prev) => {
       const next = new Set<string>();
       for (const id of prev) {
@@ -358,6 +338,9 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
     if (hasPendingV1ListInvalidationRef.current) {
       hasPendingV1ListInvalidationRef.current = false;
       queryClient.invalidateQueries({ queryKey: ['migrate-v1-agents'] });
+      // Refresh the V2 set too, so reopening the dialog re-derives which agents are
+      // already migrated from fresh data instead of re-offering just-migrated ones.
+      queryClient.invalidateQueries({ queryKey: ['migrate-v2-agents'] });
     }
     onClose();
   }, [onClose, queryClient]);
@@ -437,7 +420,8 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
         v2HoldingAddress && agent.sendFundingLovelace ? agent.sendFundingLovelace : undefined,
       name: agent.name,
       description: agent.description ?? agent.name,
-      apiBaseUrl: agent.apiBaseUrl,
+      // Use the operator's edited URL when provided, otherwise keep the V1 value.
+      apiBaseUrl: urlOverrides[agent.id]?.trim() || agent.apiBaseUrl,
       Tags: agent.Tags,
       Capability: {
         name: agent.Capability.name ?? 'Custom Agent',
@@ -638,6 +622,10 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
       // `handleClose` so the just-migrated rows stay visible on the success
       // screen — otherwise they vanish while the user is still reading results.
       invalidateAgentQueries(queryClient);
+      // Refresh the dashboard's "N agents still on V1" nudge so the count drops as agents
+      // migrate. (The dialog's own V1/V2 lists are deferred to handleClose so just-migrated
+      // rows stay visible on the success screen.)
+      queryClient.invalidateQueries({ queryKey: ['migration-status'] });
       queryClient.invalidateQueries({ queryKey: ['payment-sources-all'] });
       // Each successful re-mint debits ~5 ADA from the V2 selling wallet.
       // The wallet-balance / transactions caches would otherwise show
@@ -682,12 +670,22 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
     );
   };
 
-  const isLoading = isLoadingSources || (!!selectedV1Source && v1AgentsQuery.isLoading);
+  const isLoading =
+    isLoadingSources ||
+    (!!selectedV1Source && v1AgentsQuery.isLoading) ||
+    // Wait for the V2 set too, so the list isn't briefly shown unfiltered (with
+    // already-migrated agents) before the V2 query resolves.
+    (!!v2Source && v2AgentsQuery.isLoading);
 
   return (
     <>
       <Dialog open={open} onOpenChange={(o) => !o && !isMigrating && handleClose()}>
-        <DialogContent className="sm:max-w-[700px] overflow-y-auto max-h-[90vh]">
+        {/* The base DialogContent is a grid whose items default to min-width:auto, so a
+            single wide child (long address, a non-wrapping line) would stretch the whole
+            dialog past its max width — clipping the right edge and pushing the footer's
+            primary button off-screen. `[&>*]:min-w-0` lets each grid row shrink/wrap, and
+            overflow-x-hidden clips any residual so the action button stays in the box. */}
+        <DialogContent className="sm:max-w-[700px] overflow-y-auto overflow-x-hidden max-h-[90vh] [&>*]:min-w-0">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <ShieldCheck className="h-5 w-5 text-primary" />
@@ -824,7 +822,7 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label className="text-sm">Agents on V1 ({v1Agents.length})</Label>
+                  <Label className="text-sm">Not yet on V2 ({v1Agents.length})</Label>
                   {v1Agents.length > 0 && (
                     <button
                       type="button"
@@ -842,7 +840,9 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
                   </div>
                 ) : v1Agents.length === 0 ? (
                   <div className="rounded-lg border border-dashed bg-muted/20 px-4 py-6 text-center text-sm text-muted-foreground">
-                    No registered V1 agents on this source.
+                    {allV1Agents.length > 0
+                      ? 'All V1 agents on this source are already on V2 — nothing left to migrate.'
+                      : 'No registered V1 agents on this source.'}
                   </div>
                 ) : (
                   <>
@@ -904,10 +904,33 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
                                   {agent.description}
                                 </p>
                               )}
+                              {isSelected && !result && (
+                                <div className="mt-1.5">
+                                  <Input
+                                    value={urlOverrides[agent.id] ?? agent.apiBaseUrl ?? ''}
+                                    onChange={(e) =>
+                                      setUrlOverrides((prev) => ({
+                                        ...prev,
+                                        [agent.id]: e.target.value,
+                                      }))
+                                    }
+                                    onClick={(e) => e.stopPropagation()}
+                                    onKeyDown={(e) => e.stopPropagation()}
+                                    disabled={isMigrating}
+                                    placeholder="API base URL"
+                                    aria-label={`API base URL for ${agent.name}`}
+                                    className="h-7 font-mono text-xs"
+                                  />
+                                  <p className="mt-0.5 text-[10px] text-muted-foreground">
+                                    Edit to point this agent at a new route on V2; leave as-is to
+                                    keep the V1 URL.
+                                  </p>
+                                </div>
+                              )}
                               {droppedHoldingAddress && !result && (
                                 <p className="text-xs text-amber-700 dark:text-amber-400 mt-1 flex items-start gap-1">
                                   <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
-                                  <span className="truncate">
+                                  <span className="truncate" title={droppedHoldingAddress}>
                                     Custom V1 payout {shortenAddress(droppedHoldingAddress)} not on
                                     V2 — funds will route to the selling wallet.
                                   </span>
@@ -985,7 +1008,21 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
             </div>
           )}
 
-          <DialogFooter className="gap-2 sm:gap-0">
+          {isDone && Object.values(results).some((r) => r.status === 'success') && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm dark:border-amber-900/50 dark:bg-amber-950/20">
+              <p className="font-medium text-amber-950 dark:text-amber-100">
+                Update your agents for the old routes
+              </p>
+              <p className="mt-1 text-amber-900/80 dark:text-amber-100/80">
+                The migrated agents are re-registered on V2. Update each agent&apos;s own
+                configuration (and anything still calling the old V1 routes) to use the V2 payment
+                source. Each agent&apos;s new V2 identifier appears on the AI Agents page once
+                minting confirms.
+              </p>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-0 sticky bottom-0 -mx-6 -mb-6 border-t bg-background px-6 py-4">
             {!isDone ? (
               <>
                 {/* Cancel-during-run: flips the `cancelRef` flag the loop
