@@ -198,11 +198,14 @@ export default function AIAgentsPage() {
     () => currentNetworkPaymentSources.some(isV2PaymentSource),
     [currentNetworkPaymentSources],
   );
-  const hasLegacySource = useMemo(
-    () => currentNetworkPaymentSources.some((s) => !isV2PaymentSource(s)),
-    [currentNetworkPaymentSources],
-  );
-  const canMigrate = hasV2Source && hasLegacySource;
+  // "Migrate to V2" only applies while viewing a legacy (V1) source — it migrates
+  // the listed agents onto the V2 contract. Hide it when the selected source is
+  // already V2 (nothing to migrate from here) or when no V2 target exists to
+  // migrate into. The dashboard nudge (useMigrationStatus) remains the entry
+  // point for migrating regardless of which source is selected.
+  const isViewingLegacySource =
+    !!selectedPaymentSource && !isV2PaymentSource(selectedPaymentSource);
+  const canMigrate = hasV2Source && isViewingLegacySource;
   const [selectedAgentForVerification, setSelectedAgentForVerification] = useState<AIAgent | null>(
     null,
   );
