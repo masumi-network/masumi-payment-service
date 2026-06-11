@@ -5,7 +5,6 @@ import {
 	PurchaseErrorType,
 	PurchasingAction,
 	Prisma,
-	TransactionLayer,
 } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 // TODO(v1-package-boundary): move db/retry, wallet-generator, blockchain-error-interpreter, min-utxo to @masumi/payment-core
@@ -19,8 +18,6 @@ import { convertNetwork } from '@masumi/payment-core/network';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { CONSTANTS } from '@masumi/payment-core/config';
-import { resolveUsableHydraHeadForPurchase } from '@/utils/hydra/resolve-hydra-head';
-import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { calculateMinUtxo, DUMMY_RESULT_HASH } from '@/utils/min-utxo';
 import { toBalanceMapFromMeshUtxos, walletLowBalanceMonitorService } from '@/services/wallets';
 import {
@@ -77,23 +74,15 @@ async function executeSpecificBatchPayment(
 	walletPairing: WalletPairing,
 	paymentContract: PaymentSourceWithWallets,
 	blockchainProvider: BlockfrostProvider,
-	hydraHeadId?: string,
 ): Promise<boolean> {
 	const wallet = walletPairing.wallet;
 	const walletId = walletPairing.walletId;
 	const batchedRequests = walletPairing.batchedRequests;
-	const isL2 = !!hydraHeadId;
-	const layer = isL2 ? TransactionLayer.L2 : TransactionLayer.L1;
 
-	const fetcher = isL2 ? getHydraConnectionManager().getProvider(hydraHeadId) : blockchainProvider;
-	if (!fetcher) {
-		throw new Error(`No active HydraProvider for head ${hydraHeadId}`);
-	}
-
+	//batch payments
 	const unsignedTx = new Transaction({
 		initiator: wallet,
-		fetcher,
-		isHydra: isL2,
+		fetcher: blockchainProvider,
 	}).setMetadata(674, {
 		msg: ['Masumi', 'PaymentBatched'],
 	});
@@ -147,7 +136,6 @@ async function executeSpecificBatchPayment(
 		await prisma.purchaseRequest.update({
 			where: { id: request.paymentRequest.id },
 			data: {
-				layer,
 				...connectPreviousAction(request.paymentRequest.nextActionId),
 				...createNextPurchaseAction(PurchasingAction.FundsLockingInitiated),
 				collateralReturnLovelace: request.overpaidLovelace,
@@ -157,7 +145,7 @@ async function executeSpecificBatchPayment(
 					},
 				},
 				buyerReturnAddress: request.paymentRequest.buyerReturnAddress ?? walletPairing.collectionAddress,
-				...createPendingTransaction(walletId, null, hydraHeadId ? { layer, hydraHeadId } : undefined),
+				...createPendingTransaction(walletId),
 				TransactionHistory: request.paymentRequest.CurrentTransaction
 					? {
 							connect: {
@@ -175,24 +163,14 @@ async function executeSpecificBatchPayment(
 	// produce the same on-chain window as the previous direct invalidBefore/invalidHereafter calls.
 	const { invalidBefore, invalidAfter } = createTxWindow(convertNetwork(paymentContract.network));
 	unsignedTx.setNetwork(convertNetwork(paymentContract.network));
-	// L2 (Hydra) heads run their own timing; only constrain the validity window on L1.
-	if (!isL2) {
-		unsignedTx.txBuilder.invalidBefore(invalidBefore);
-		unsignedTx.txBuilder.invalidHereafter(invalidAfter);
-	}
+	unsignedTx.txBuilder.invalidBefore(invalidBefore);
+	unsignedTx.txBuilder.invalidHereafter(invalidAfter);
 
 	const completeTx = await unsignedTx.build();
 	logger.info('Batching payments, complete tx built');
 	const signedTx = await wallet.signTx(completeTx);
 	logger.info('Batching payments, tx signed');
-	const txHash = isL2
-		? await Promise.race([
-				wallet.submitTx(signedTx),
-				new Promise<never>((_, reject) =>
-					setTimeout(() => reject(new Error('L2 transaction submission timed out after 30s')), 30_000),
-				),
-			])
-		: await wallet.submitTx(signedTx);
+	const txHash = await wallet.submitTx(signedTx);
 	await walletLowBalanceMonitorService.evaluateProjectedHotWalletById({
 		hotWalletId: walletId,
 		walletAddress: walletPairing.changeAddress,
@@ -384,66 +362,6 @@ export async function batchLatestPaymentEntriesV1() {
 					const potentialWallets = paymentContract.HotWallets;
 					if (potentialWallets.length == 0) {
 						logger.warn('No unlocked wallet to batch payments, skipping');
-						return;
-					}
-
-					const l2ProcessedIds = new Set<string>();
-					for (const request of paymentRequests) {
-						for (const hotWallet of potentialWallets) {
-							try {
-								const hydraHead = await resolveUsableHydraHeadForPurchase(
-									hotWallet.id,
-									request.sellerWalletId,
-									paymentContract.network,
-								);
-								if (!hydraHead) continue;
-
-								const hydraProvider = getHydraConnectionManager().getProvider(hydraHead.hydraHead.id);
-								if (!hydraProvider) continue;
-
-								const {
-									wallet: l2Wallet,
-									utxos: l2Utxos,
-									address: l2Address,
-								} = await generateWalletExtended(
-									paymentContract.network,
-									paymentContract.PaymentSourceConfig.rpcProviderApiKey,
-									hotWallet.Secret.encryptedMnemonic,
-									hydraProvider,
-								);
-
-								await executeSpecificBatchPayment(
-									{
-										wallet: l2Wallet,
-										scriptAddress: paymentContract.smartContractAddress,
-										walletId: hotWallet.id,
-										changeAddress: l2Address,
-										collectionAddress: hotWallet.collectionAddress,
-										utxos: l2Utxos,
-										batchedRequests: [{ paymentRequest: request, overpaidLovelace: 0n }],
-									},
-									paymentContract,
-									new BlockfrostProvider(paymentContract.PaymentSourceConfig.rpcProviderApiKey),
-									hydraHead.hydraHead.id,
-								);
-
-								l2ProcessedIds.add(request.id);
-								logger.info(`Routed purchase request ${request.id} via L2 head ${hydraHead.hydraHead.id}`);
-								break;
-							} catch (error) {
-								logger.warn(`L2 routing failed for request ${request.id}, falling back to L1`, { error });
-							}
-						}
-					}
-
-					const l1Deadline = Date.now() + 1000 * 57;
-					paymentContract.PurchaseRequests = paymentRequests.filter(
-						(r) => !l2ProcessedIds.has(r.id) && r.payByTime != null && r.payByTime >= l1Deadline,
-					);
-					if (paymentContract.PurchaseRequests.length === 0) {
-						if (l2ProcessedIds.size > 0) {
-							logger.info('All requests processed via L2, no L1 batch needed');
-						}
 						return;
 					}
 
