@@ -13,6 +13,21 @@ import { HydraNodeEvent, HydraTransaction, HydraUTxO, StatusChangeData } from '.
 import { jsonToString } from '@/utils/converter/json-to-string';
 import { HydraHeadStatus } from '@/generated/prisma/client';
 
+/**
+ * The head's Plutus cost models, as returned by hydra-node's
+ * `/protocol-parameters` endpoint under `costModels`. Same `{ PlutusVN: number[] }`
+ * shape Blockfrost returns under `cost_models_raw`, so the V2 cost-model sync
+ * helper consumes either source identically. Used to patch the V2 mesh line's
+ * bundled `DEFAULT_V*_COST_MODEL_LIST` arrays so an in-head (isHydra) Plutus tx
+ * computes a script-data-hash the head's ledger accepts (otherwise:
+ * `PPViewHashesDontMatch`). See docs/adr/0005.
+ */
+export type HydraRawCostModels = {
+	PlutusV1?: number[];
+	PlutusV2?: number[];
+	PlutusV3?: number[];
+};
+
 export interface IHydraNode {
 	connect(): void | Promise<void>;
 	init(): Promise<unknown>;
@@ -20,6 +35,7 @@ export interface IHydraNode {
 	cardanoTransaction(transaction: HydraTransaction): Promise<unknown>;
 	snapshotUTxO(): Promise<UTxO[]>;
 	fetchProtocolParameters(): Promise<Protocol>;
+	fetchRawCostModels(): Promise<HydraRawCostModels>;
 	newTx(transaction: HydraTransaction): Promise<string>;
 	isTxConfirmed(txHash: string): boolean;
 	awaitTx(txHash: string, checkInterval?: number): Promise<boolean>;
@@ -83,6 +99,15 @@ export class HydraNode extends EventEmitter {
 	}
 
 	async init() {
+		// The head may already be initializing or open (e.g. on reconnect, or
+		// when hydra-node transitions past Initializing before we observe it).
+		// The WS is opened with `?history=no`, so a missed HeadIsInitializing is
+		// never replayed — guard against waiting forever for a message that has
+		// already passed.
+		if (this._status === HydraHeadStatus.Initializing || this._status === HydraHeadStatus.Open) {
+			return;
+		}
+
 		this._connection.send({ tag: 'Init' });
 
 		return new Promise<void>((resolve, reject) => {
@@ -93,7 +118,15 @@ export class HydraNode extends EventEmitter {
 				};
 
 				const message = handleWsResponse(data, 'Init', rejectCb);
-				if (message.tag === 'HeadIsInitializing') {
+				// Resolve once the head has reached or passed Initializing.
+				// hydra-node 2.x can transition Init -> Open quickly, surfacing
+				// only HeadIsOpen (or a Greetings carrying the new headStatus),
+				// so accept those as init completion too.
+				if (
+					message.tag === 'HeadIsInitializing' ||
+					message.tag === 'HeadIsOpen' ||
+					(message.tag === 'Greetings' && (message.headStatus === 'Initializing' || message.headStatus === 'Open'))
+				) {
 					this._connection.removeListener('message', resolveCallback);
 					resolve();
 				}
@@ -161,6 +194,31 @@ export class HydraNode extends EventEmitter {
 		});
 
 		return parameters;
+	}
+
+	async fetchRawCostModels(): Promise<HydraRawCostModels> {
+		// `/protocol-parameters` returns the Cardano-API ProtocolParameters JSON
+		// the head was configured with; its `costModels` field carries the exact
+		// per-language arrays the head's ledger hashes into the script-data-hash.
+		// castProtocol() (used by fetchProtocolParameters above) drops these, so
+		// fetch the raw payload and extract them here.
+		const response = await this.get('/protocol-parameters');
+		const costModels = response?.costModels;
+		const toNumberArray = (value: unknown): number[] | undefined => {
+			if (!Array.isArray(value)) return undefined;
+			const out: number[] = [];
+			for (const entry of value) {
+				const n = typeof entry === 'number' ? entry : Number(entry);
+				if (!Number.isFinite(n)) return undefined;
+				out.push(n);
+			}
+			return out;
+		};
+		return {
+			PlutusV1: toNumberArray(costModels?.PlutusV1),
+			PlutusV2: toNumberArray(costModels?.PlutusV2),
+			PlutusV3: toNumberArray(costModels?.PlutusV3),
+		};
 	}
 
 	async newTx(transaction: HydraTransaction) {

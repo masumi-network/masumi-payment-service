@@ -15,7 +15,6 @@ import { Network as PrismaNetwork } from '@/generated/prisma/client';
 import { logger } from '@masumi/payment-core/logger';
 import { calculateMinUtxo, getLovelaceFromAmounts, getNativeTokenCount, calculateTopUpAmount } from '@/utils/min-utxo';
 import { CONSTANTS } from '@masumi/payment-core/config';
-import { HydraContext } from '@/utils/hydra';
 import { getCachedChainProtocolParameters, syncMeshCostModelsFromChain } from '@/utils/mesh-cost-model-sync';
 
 function convertMeshNetworkToPrismaNetwork(network: Network): PrismaNetwork {
@@ -54,11 +53,7 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 	// change tx size + fee for V1 paths. See
 	// `packages/payment-source-v2/src/builders/batch-helpers.ts WALLET_SPLITTER_LOVELACE`.
 	walletSplitterLovelace?: bigint,
-	hydraContext?: HydraContext,
 ) {
-	const isL2 = !!hydraContext;
-	const provider = hydraContext?.hydraProvider ?? blockchainProvider;
-
 	if (rpcApiKey) {
 		// `MeshTxBuilder.protocolParams(...)` accepts a Protocol object that has
 		// NO cost-model fields. Mesh hashes the script_data against its bundled
@@ -83,27 +78,6 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 			error: error instanceof Error ? error.message : String(error),
 			type,
 		});
-	}
-
-	if (isL2) {
-		return await generateMasumiSmartContractInteractionTransactionCustomFee(
-			type,
-			provider,
-			network,
-			script,
-			walletAddress,
-			smartContractUtxo,
-			collateralUtxo,
-			walletUtxos,
-			newInlineDatum,
-			invalidBefore,
-			invalidAfter,
-			undefined,
-			coinsPerUtxoSize,
-			undefined,
-			undefined,
-			true,
-		);
 	}
 
 	const evaluationTx = await generateMasumiSmartContractInteractionTransactionCustomFee(
@@ -169,10 +143,10 @@ async function generateMasumiSmartContractInteractionTransactionCustomFee(
 		mem: 7e6,
 		steps: 3e9,
 	},
+
 	coinsPerUtxoSize: number = CONSTANTS.FALLBACK_COINS_PER_UTXO_SIZE,
 	rpcApiKey?: string,
 	walletSplitterLovelace?: bigint,
-	isHydra = false,
 ) {
 	// Pull live chain protocol params (incl. cost models) so the computed
 	// script_data_hash matches what the ledger expects. Without this, mesh
@@ -187,7 +161,6 @@ async function generateMasumiSmartContractInteractionTransactionCustomFee(
 	const protocolParameters = cachedParams ?? (await blockchainProvider.fetchProtocolParameters(Number.NaN));
 	const txBuilder = new MeshTxBuilder({
 		fetcher: blockchainProvider,
-		isHydra,
 	});
 	txBuilder.protocolParams(protocolParameters);
 	const redeemerData = generateRedeemerData(type);
@@ -369,31 +342,7 @@ export async function generateMasumiSmartContractWithdrawTransactionAutomaticFee
 	// `generateMasumiSmartContractInteractionTransactionAutomaticFees`.
 	// V1 callers MUST NOT pass.
 	walletSplitterLovelace?: bigint,
-	hydraContext?: HydraContext,
 ) {
-	if (hydraContext) {
-		return await generateMasumiSmartContractWithdrawTransactionCustomFee(
-			type,
-			hydraContext.hydraProvider,
-			network,
-			script,
-			walletAddress,
-			smartContractUtxo,
-			collateralUtxo,
-			walletUtxos,
-			collection,
-			fee,
-			collateralReturn,
-			invalidBefore,
-			invalidAfter,
-			undefined,
-			false,
-			undefined,
-			undefined,
-			true,
-		);
-	}
-
 	if (rpcApiKey) {
 		// See cost-model sync comment in the interaction builder above.
 		await syncMeshCostModelsFromChain(rpcApiKey);
@@ -483,7 +432,6 @@ async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 	tagMainOutputAsOwnRef: boolean = false,
 	rpcApiKey?: string,
 	walletSplitterLovelace?: bigint,
-	isHydra = false,
 ) {
 	// See protocolParams comment in the interaction builder above. Reuse the
 	// cached chain params populated by syncMeshCostModelsFromChain to avoid a
@@ -492,7 +440,6 @@ async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 	const protocolParameters = cachedParams ?? (await blockchainProvider.fetchProtocolParameters(Number.NaN));
 	const txBuilder = new MeshTxBuilder({
 		fetcher: blockchainProvider,
-		isHydra,
 	});
 	txBuilder.protocolParams(protocolParameters);
 	const redeemerData = generateRedeemerData(type);

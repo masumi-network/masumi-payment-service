@@ -1,3 +1,4 @@
+export * from './commit-submit';
 export * from './custom-head';
 export * from './head';
 export * from './node';

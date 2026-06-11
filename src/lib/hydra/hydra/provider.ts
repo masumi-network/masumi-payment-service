@@ -13,7 +13,7 @@ import type {
 import { POLICY_ID_LENGTH } from '@meshsdk/core';
 import type { IFetcher, ISubmitter } from '@meshsdk/core';
 
-import type { IHydraNode } from './node';
+import type { HydraRawCostModels, IHydraNode } from './node';
 import { HydraTransactionType } from './types';
 import type { HydraTransaction } from './types';
 
@@ -40,8 +40,22 @@ export class HydraProvider implements IFetcher, ISubmitter {
 	}
 
 	async fetchCostModels(_epoch?: number): Promise<number[][]> {
-		// Empty array signals MeshTxBuilder to use bundled defaults (no L2 cost model override needed).
+		// NOT consumed by the V2 isHydra build path: MeshTxBuilder/core-cst compute
+		// the script-data-hash from the bundled `DEFAULT_V*_COST_MODEL_LIST` arrays,
+		// not from this fetcher method. The head's real cost models are applied to
+		// those arrays via `fetchRawCostModels()` + the V2 head sync helper instead.
+		// Kept as a no-op so the IFetcher surface stays complete.
 		return [];
+	}
+
+	/**
+	 * The head's Plutus cost models (from hydra-node `/protocol-parameters`),
+	 * used to patch the V2 mesh line's bundled cost-model arrays before an
+	 * in-head Plutus build so the script-data-hash matches what the head's
+	 * ledger expects. See `HydraNode.fetchRawCostModels` and docs/adr/0005.
+	 */
+	async fetchRawCostModels(): Promise<HydraRawCostModels> {
+		return await this._node.fetchRawCostModels();
 	}
 
 	async fetchUTxOs(hash?: string, index?: number): Promise<UTxO[]> {

@@ -321,6 +321,49 @@ describe('HydraNode', () => {
 		});
 	});
 
+	describe('init()', () => {
+		it('sends Init and resolves when HeadIsInitializing is received', async () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+
+			const initPromise = node.init();
+			expect(mockConnectionInstance.send).toHaveBeenCalledWith({ tag: 'Init' });
+
+			mockConnectionInstance.emit('message', JSON.stringify({ tag: 'HeadIsInitializing' }));
+			await expect(initPromise).resolves.toBeUndefined();
+		});
+
+		it('resolves when the head fast-forwards straight to HeadIsOpen (hydra-node 2.x)', async () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+
+			const initPromise = node.init();
+			mockConnectionInstance.emit('message', JSON.stringify({ tag: 'HeadIsOpen', headId: 'abc' }));
+			await expect(initPromise).resolves.toBeUndefined();
+		});
+
+		it('resolves when a Greetings reports the head is already Initializing', async () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+
+			const initPromise = node.init();
+			mockConnectionInstance.emit('message', JSON.stringify({ tag: 'Greetings', headStatus: 'Initializing' }));
+			await expect(initPromise).resolves.toBeUndefined();
+		});
+
+		it('returns immediately without sending Init when the head is already open', async () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+			// Drive status to Open first.
+			mockConnectionInstance.emit('message', JSON.stringify({ tag: 'HeadIsOpen' }));
+			expect(node.status).toBe(HydraHeadStatus.Open);
+
+			mockConnectionInstance.send.mockClear();
+			await expect(node.init()).resolves.toBeUndefined();
+			expect(mockConnectionInstance.send).not.toHaveBeenCalled();
+		});
+	});
+
 	describe('HTTP methods', () => {
 		it('get() calls fetch with GET and correct URL', async () => {
 			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
@@ -383,6 +426,74 @@ describe('HydraNode', () => {
 			} as unknown as Response);
 
 			await expect(node.post('/commit', {})).rejects.toThrow('Network failure');
+		});
+	});
+
+	describe('fetchRawCostModels()', () => {
+		it('extracts the head costModels from /protocol-parameters', async () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+
+			mockFetch.mockResolvedValue({
+				json: async () => ({
+					costModels: {
+						PlutusV1: [1, 2, 3],
+						PlutusV2: [4, 5, 6, 7],
+						PlutusV3: [8, 9],
+					},
+				}),
+			} as Response);
+
+			const result = await node.fetchRawCostModels();
+
+			expect(mockFetch).toHaveBeenCalledWith('http://localhost:4001/protocol-parameters', {
+				method: 'GET',
+				headers: { 'Content-Type': 'application/json' },
+			});
+			expect(result).toEqual({
+				PlutusV1: [1, 2, 3],
+				PlutusV2: [4, 5, 6, 7],
+				PlutusV3: [8, 9],
+			});
+		});
+
+		it('coerces numeric-string cost-model entries to numbers', async () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+
+			mockFetch.mockResolvedValue({
+				json: async () => ({
+					costModels: { PlutusV2: ['100', '200', 300] },
+				}),
+			} as Response);
+
+			const result = await node.fetchRawCostModels();
+
+			expect(result.PlutusV2).toEqual([100, 200, 300]);
+		});
+
+		it('returns undefined per-language when costModels is absent', async () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+
+			mockFetch.mockResolvedValue({
+				json: async () => ({ utxoCostPerByte: 4310 }),
+			} as Response);
+
+			const result = await node.fetchRawCostModels();
+
+			expect(result).toEqual({ PlutusV1: undefined, PlutusV2: undefined, PlutusV3: undefined });
+		});
+
+		it('drops a language array containing a non-finite entry', async () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+
+			mockFetch.mockResolvedValue({
+				json: async () => ({
+					costModels: { PlutusV2: [1, 'not-a-number', 3] },
+				}),
+			} as Response);
+
+			const result = await node.fetchRawCostModels();
+
+			expect(result.PlutusV2).toBeUndefined();
 		});
 	});
 });

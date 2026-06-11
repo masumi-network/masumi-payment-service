@@ -19,7 +19,7 @@ import { HydraHeadUpdateInput } from '@/generated/prisma/models';
 import { HydraNodeConfig } from '@/lib/hydra/hydra/types';
 import { HydraNode } from '@/lib/hydra/hydra/node';
 import { deserializeDatum } from '@meshsdk/core';
-import { decodeV1ContractDatum } from '@/utils/converter/string-datum-convert';
+import { decodeV2ContractDatum } from '@/utils/converter/string-datum-convert';
 import { SmartContractState } from '@/utils/generator/contract-generator';
 import { checkPaymentAmountsMatch } from '@/services/transactions/tx-sync/util';
 
@@ -415,7 +415,7 @@ export class HydraConnectionManager {
 				}
 
 				const decodedDatum: unknown = deserializeDatum(outputDatum);
-				const decodedNewContract = decodeV1ContractDatum(decodedDatum, network);
+				const decodedNewContract = decodeV2ContractDatum(decodedDatum, network, paymentSource.smartContractAddress);
 				const derivedOnChainState = this.deriveOnChainStateFromDatum(decodedNewContract);
 				if (!decodedNewContract || !derivedOnChainState) {
 					continue;

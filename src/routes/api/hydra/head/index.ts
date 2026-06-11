@@ -5,7 +5,10 @@ import createHttpError from 'http-errors';
 import { HydraHeadStatus, HydraErrorType } from '@/generated/prisma/client';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { logger } from '@masumi/payment-core/logger';
+import { resolveTxHash } from '@meshsdk/core';
+import { HydraTransactionType, interpretCardanoTxSubmitResult } from '@/lib/hydra';
 import { toPrismaJsonValue } from '@/utils/json-value';
+import { generateWalletExtended } from '@/utils/generator/wallet-generator';
 
 // --- Shared schemas ---
 
@@ -397,13 +400,70 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 		}
 
 		try {
-			const commitTx = await hydraHead.commit([], null, localParticipant.walletId);
+			// Load the local participant's hot wallet + its L1 provider so we can
+			// fund the head with REAL UTxOs. A commit must spend the committing
+			// wallet's L1 UTxOs and be signed + submitted to L1 (the hydra-node only
+			// returns an unsigned draft). An empty commit opens a head with no
+			// funds, which no escrow lock can ever spend.
+			const hotWallet = await prisma.hotWallet.findUniqueOrThrow({
+				where: { id: localParticipant.walletId },
+				include: { Secret: true, PaymentSource: { include: { PaymentSourceConfig: true } } },
+			});
+			const rpcProviderApiKey = hotWallet.PaymentSource.PaymentSourceConfig?.rpcProviderApiKey;
+			if (!rpcProviderApiKey) {
+				throw createHttpError(500, 'Payment source has no RPC provider configured for the L1 commit');
+			}
+
+			const { wallet, utxos } = await generateWalletExtended(
+				hotWallet.PaymentSource.network,
+				rpcProviderApiKey,
+				hotWallet.Secret.encryptedMnemonic,
+			);
+			if (utxos.length === 0) {
+				throw createHttpError(400, 'Local participant wallet has no L1 UTxOs available to commit');
+			}
+
+			// Commit all of the wallet's L1 UTxOs into the head (funds the buyer's
+			// in-head balance that the escrow lock will later spend). Committing the
+			// full balance is the simplest correct funding model for a dedicated
+			// head wallet; selecting a subset is a future optimization.
+			const commitDraftTx = await hydraHead.commit(utxos, null, localParticipant.walletId);
+
+			// hydra-node returns an UNSIGNED commit tx spending the wallet's L1
+			// UTxOs. Sign (partial — the draft may already carry node witnesses).
+			const signedCommitTx = await wallet.signTx(commitDraftTx.cborHex, true);
+			// resolveTxHash is typed `any` upstream; coerce to a concrete string.
+			const commitTxHash: string = String(resolveTxHash(signedCommitTx));
+
+			// Submit the signed commit tx to L1 through the hydra-node's own
+			// `/cardano-transaction` endpoint rather than the wallet's L1 provider.
+			// The hydra-node is always connected to the exact L1 the head lives on,
+			// so this works in every environment — including a local devnet whose
+			// network magic Blockfrost cannot see (the L1-provider mismatch that
+			// previously made a real commit impossible on devnet). The node then
+			// observes the commit on-chain and moves the funds into the head.
+			const submitResult = await hydraHead.cardanoTransaction(
+				{
+					type: HydraTransactionType.TxConwayEra,
+					description: '',
+					cborHex: signedCommitTx,
+				},
+				localParticipant.walletId,
+			);
+
+			// hydra-node replies `{ tag: 'TransactionSubmitted' }` on success or
+			// `{ tag: 'FailedToPostTx', failureReason }` on rejection. Fail loudly so
+			// the caller knows the commit never reached L1.
+			const interpreted = interpretCardanoTxSubmitResult(submitResult);
+			if (!interpreted.ok) {
+				throw createHttpError(502, `Hydra node rejected the commit tx submission: ${interpreted.reason}`);
+			}
 
 			await prisma.hydraLocalParticipant.update({
 				where: { id: localParticipant.id },
 				data: {
 					hasCommitted: true,
-					commitTxHash: commitTx.cborHex ?? null,
+					commitTxHash,
 				},
 			});
 
@@ -412,11 +472,11 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 				data: { latestActivityAt: new Date() },
 			});
 
-			logger.info(`[HydraAPI] Local participant committed to head ${head.id}`);
+			logger.info(`[HydraAPI] Local participant committed to head ${head.id}`, { commitTxHash });
 			return {
 				headId: head.id,
 				committed: true,
-				commitTxHash: commitTx.cborHex ?? null,
+				commitTxHash,
 			};
 		} catch (error) {
 			await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, error, 'Commit');
