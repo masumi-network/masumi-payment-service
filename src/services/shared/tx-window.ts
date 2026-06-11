@@ -1,4 +1,4 @@
-import { SLOT_CONFIG_NETWORK, unixTimeToEnclosingSlot } from '@meshsdk/core';
+import { SLOT_CONFIG_NETWORK, unixTimeToEnclosingSlot, type SlotConfig } from '@meshsdk/core';
 import { SERVICE_CONSTANTS } from '@masumi/payment-core/config';
 
 export type TxWindow = {
@@ -26,9 +26,17 @@ export function createTxWindow(
 		// containing `constrainBeforeMs`. Use to satisfy Aiken
 		// `must_start_after(validity_range, X)` checks (e.g. cooldowns).
 		constrainBeforeMs?: number | bigint;
+		// Override the slot config used to convert unix times → slots. Defaults
+		// to the static config for `network`, which is correct for L1 and for a
+		// Hydra head that settles on that same L1 (e.g. a preprod head uses
+		// preprod slots). A head on a different chain (e.g. a local devnet with
+		// its own genesis) must supply its slot config here, or the window lands
+		// on slots the head's ledger rejects (`OutsideValidityIntervalUTxO`).
+		slotConfig?: SlotConfig;
 	} = {},
 ): TxWindow {
 	const nowMs = options.nowMs ?? Date.now();
+	const slotConfig = options.slotConfig ?? SLOT_CONFIG_NETWORK[network];
 	const beforeBufferMs = options.beforeBufferMs ?? SERVICE_CONSTANTS.TRANSACTION.timeBufferMs;
 	const afterBufferMs = options.afterBufferMs ?? SERVICE_CONSTANTS.TRANSACTION.timeBufferMs;
 	const validitySlotBuffer = options.validitySlotBuffer ?? SERVICE_CONSTANTS.TRANSACTION.validitySlotBuffer;
@@ -49,13 +57,12 @@ export function createTxWindow(
 				? Number(options.constrainAfterMs)
 				: options.constrainAfterMs;
 
-	const defaultInvalidBefore = unixTimeToEnclosingSlot(nowMs - beforeBufferMs, SLOT_CONFIG_NETWORK[network]) - 1;
+	const defaultInvalidBefore = unixTimeToEnclosingSlot(nowMs - beforeBufferMs, slotConfig) - 1;
 	const invalidBefore =
 		constrainBeforeMsNum == null
 			? defaultInvalidBefore
-			: Math.max(defaultInvalidBefore, unixTimeToEnclosingSlot(constrainBeforeMsNum, SLOT_CONFIG_NETWORK[network]) + 1);
-	const defaultInvalidAfter =
-		unixTimeToEnclosingSlot(nowMs + afterBufferMs, SLOT_CONFIG_NETWORK[network]) + validitySlotBuffer;
+			: Math.max(defaultInvalidBefore, unixTimeToEnclosingSlot(constrainBeforeMsNum, slotConfig) + 1);
+	const defaultInvalidAfter = unixTimeToEnclosingSlot(nowMs + afterBufferMs, slotConfig) + validitySlotBuffer;
 
 	if (constrainAfterMsNum == null) {
 		return {
@@ -65,7 +72,7 @@ export function createTxWindow(
 	}
 
 	const constrainedInvalidAfter =
-		unixTimeToEnclosingSlot(constrainAfterMsNum + afterBufferMs, SLOT_CONFIG_NETWORK[network]) +
+		unixTimeToEnclosingSlot(constrainAfterMsNum + afterBufferMs, slotConfig) +
 		(options.constrainSlotBuffer ?? SERVICE_CONSTANTS.TRANSACTION.resultTimeSlotBuffer);
 
 	return {

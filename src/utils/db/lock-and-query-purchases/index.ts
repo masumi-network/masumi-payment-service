@@ -1,4 +1,11 @@
-import { HotWalletType, OnChainState, PaymentSourceType, Prisma, PurchasingAction } from '@/generated/prisma/client';
+import {
+	HotWalletType,
+	OnChainState,
+	PaymentSourceType,
+	Prisma,
+	PurchasingAction,
+	TransactionLayer,
+} from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { withSerializableSlotRetry } from '@/utils/db/serializable-semaphore';
@@ -12,6 +19,7 @@ export async function lockAndQueryPurchases({
 	resultHash = undefined,
 	paymentSourceType = undefined,
 	orFilters = undefined,
+	layer = undefined,
 }: {
 	purchasingAction: PurchasingAction;
 	unlockTime?: { lte?: number; gte?: number; lt?: number; gt?: number } | undefined;
@@ -28,6 +36,8 @@ export async function lockAndQueryPurchases({
 	// predicates (purchasingAction, resultHash, etc.) stay in the
 	// top-level params and are ANDed with the OR group as usual.
 	orFilters?: Prisma.PurchaseRequestWhereInput[];
+	/// When set, only lock requests on this blockchain layer (L1 vs Hydra L2).
+	layer?: TransactionLayer | undefined;
 }) {
 	try {
 		// Step 1: read the candidate payment sources + their unlocked hot
@@ -104,6 +114,7 @@ export async function lockAndQueryPurchases({
 												// onChainState / time-window constraints that differ
 												// across an `OR` axis.
 												...(orFilters != null && orFilters.length > 0 ? { OR: orFilters } : {}),
+												...(layer ? { layer } : {}),
 											},
 											orderBy: {
 												createdAt: 'asc',

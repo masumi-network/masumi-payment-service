@@ -16,7 +16,7 @@ export type Jsonified<T> = T extends Date | bigint
 					}
 				: never;
 
-function toPrismaJsonValue<T extends JsonInput>(value: T): Jsonified<T> {
+export function toPrismaJsonValue<T extends JsonInput>(value: T): Jsonified<T> {
 	if (value === null) {
 		return value as Jsonified<T>;
 	}
