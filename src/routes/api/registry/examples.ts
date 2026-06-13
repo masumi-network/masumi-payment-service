@@ -52,6 +52,30 @@ export const registryEntryExample = {
 			address: 'addr_test1wz7j4kmg2cs7yf92uat3ed4a3u97kr7axxr4avaz0lhwdsqukgwfm',
 		},
 	],
+	verifications: [
+		{
+			method: 'KERI-ACDC',
+			schemaVersion: '1',
+			issuer: {
+				aid: 'EIaIeKvfBLmZf3wfqB0oR1uM5n8m9k2pQ7rT4sV1wX3y',
+				oobi: 'https://witness.example.com/oobi/EIaIeKvfBLmZf3wfqB0oR1uM5n8m9k2pQ7rT4sV1wX3y/witness',
+			},
+			schema: {
+				said: 'EJ1gXWfzLyW2u0YY5Zb8c4d6e9f1g3h5j7k9l2m4n6p',
+				oobi: 'https://schema.example.com/oobi/EJ1gXWfzLyW2u0YY5Zb8c4d6e9f1g3h5j7k9l2m4n6p',
+			},
+			credential: {
+				said: 'EHpH79tPZoSl7VJZ7xMi3JWF4rH9wZ2ntGvKABd9N14z',
+				oobi: 'https://cred.example.com/oobi/EHpH79tPZoSl7VJZ7xMi3JWF4rH9wZ2ntGvKABd9N14z',
+				registry: 'ER7yQ3kL9mN2pT5vX8a1b4c7d0e3f6g9h2j5k8l1m4n7',
+			},
+			holder: {
+				aid: 'EBcd1ef2gh3ij4kl5mn6op7qr8st9uv0wx1yz2ab3cd4',
+				oobi: 'https://keria.example.com/oobi/EBcd1ef2gh3ij4kl5mn6op7qr8st9uv0wx1yz2ab3cd4/agent/EAgnt',
+			},
+			baseUrl: 'https://verify.example.com',
+		},
+	],
 	SmartContractWallet: {
 		walletVkey: 'wallet_vkey',
 		walletAddress: 'wallet_address',

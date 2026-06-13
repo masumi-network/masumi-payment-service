@@ -44,6 +44,7 @@ import { type BatchRegistryMintItem, generateRegistryBatchMintTransaction } from
 import { ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
 import { unlockHotWalletIfNoPendingTransaction } from '../../wallet-lock-helpers';
 import { SupportedPaymentSourceChain, type RegistryMetadataPaymentSource } from '@/types/payment-source';
+import { verificationRowToApi, verificationsToMetadata, type AgentVerificationRow } from '@/types/verification';
 
 // V2 registry batch sizing. The on-chain `MintAction` validator runs once for
 // the policy bucket and verifies every minted asset name against the set of
@@ -126,6 +127,8 @@ export function buildAgentMetadata(
 		};
 		metadataVersion: number;
 		SupportedPaymentSources: RegistrySupportedPaymentSourceMetadataRow[];
+		// Persisted AgentVerification rows; reshaped to nested form before emit.
+		Verifications?: AgentVerificationRow[];
 	},
 	paymentSource: RegistryMetadataPaymentSource,
 ): RegistryMetadata {
@@ -140,6 +143,28 @@ export function buildAgentMetadata(
 						address: paymentSource.smartContractAddress,
 					},
 				];
+	// Cardano sources advertise the agent's pricing inline (one self-contained
+	// payable option per source), mirroring how x402 sources carry their own
+	// amount. Derived from the same `request.Pricing` that still feeds the
+	// top-level `agentPricing` block, so the two stay consistent.
+	const cardanoPricingMetadata =
+		request.Pricing.pricingType == PricingType.Fixed
+			? {
+					pricingType: PricingType.Fixed,
+					fixed: (request.Pricing.FixedPricing?.Amounts ?? []).map((pricing) => ({
+						asset: stringToMetadata(pricing.unit, false),
+						amount: pricing.amount.toString(),
+					})),
+				}
+			: { pricingType: request.Pricing.pricingType };
+	// Optional KERI/Veridian verification claims (see @masumi/payment-core/
+	// verification). Gated on the same metadata version as supported_payment_sources
+	// (a v2-metadata concept); self-describing on chain for third-party verification.
+	const verificationRows = request.Verifications ?? [];
+	const verificationsMetadata =
+		request.metadataVersion >= DEFAULTS.DEFAULT_REGISTRY_METADATA_VERSION && verificationRows.length > 0
+			? verificationsToMetadata(verificationRows.map(verificationRowToApi), stringToMetadata)
+			: undefined;
 	const metadata = {
 		name: stringToMetadata(request.name),
 		description: stringToMetadata(request.description),
@@ -168,19 +193,6 @@ export function buildAgentMetadata(
 			other: stringToMetadata(request.other),
 		},
 		tags: request.tags,
-		agentPricing:
-			request.Pricing.pricingType == PricingType.Fixed
-				? {
-						pricingType: PricingType.Fixed,
-						fixedPricing:
-							request.Pricing.FixedPricing?.Amounts.map((pricing) => ({
-								unit: stringToMetadata(pricing.unit),
-								amount: pricing.amount.toString(),
-							})) ?? [],
-					}
-				: {
-						pricingType: request.Pricing.pricingType,
-					},
 		image: stringToMetadata(DEFAULTS.DEFAULT_IMAGE),
 		metadata_version: request.metadataVersion.toString(),
 		supported_payment_sources:
@@ -194,28 +206,41 @@ export function buildAgentMetadata(
 							// "null"/"undefined"; fail the registration so the bad row is surfaced.
 							throw new Error('Cannot register agent: x402 supported payment source is incomplete');
 						}
+						if (source.chain === SupportedPaymentSourceChain.EVM) {
+							return {
+								chain: stringToMetadata(source.chain),
+								network: stringToMetadata(String(source.network)),
+								settlement: {
+									scheme: stringToMetadata(source.scheme ?? X402PaymentScheme.Exact),
+									payTo: stringToMetadata(source.payTo),
+									resource: stringToMetadata(source.resource),
+									extra: source.extra,
+								},
+								pricing: {
+									pricingType: PricingType.Fixed,
+									fixed: [
+										{
+											asset: stringToMetadata(source.asset, false),
+											amount: String(source.amount),
+											decimals: String(source.decimals),
+										},
+									],
+								},
+							};
+						}
 						return {
 							chain: stringToMetadata(source.chain),
 							network: stringToMetadata(String(source.network)),
-							paymentSourceType:
-								source.paymentSourceType != null ? stringToMetadata(source.paymentSourceType) : undefined,
-							address: stringToMetadata(
-								source.chain === SupportedPaymentSourceChain.EVM ? (source.address ?? source.payTo) : source.address,
-							),
-							...(source.chain === SupportedPaymentSourceChain.EVM
-								? {
-										scheme: stringToMetadata(source.scheme ?? X402PaymentScheme.Exact),
-										asset: stringToMetadata(source.asset),
-										amount: String(source.amount),
-										decimals: String(source.decimals),
-										payTo: stringToMetadata(source.payTo),
-										resource: stringToMetadata(source.resource),
-										extra: source.extra,
-									}
-								: {}),
+							settlement: {
+								paymentSourceType:
+									source.paymentSourceType != null ? stringToMetadata(source.paymentSourceType) : undefined,
+								address: stringToMetadata(source.address),
+							},
+							pricing: cardanoPricingMetadata,
 						};
 					})
 				: undefined,
+		verifications: verificationsMetadata,
 	};
 	return cleanMetadata(metadata) as RegistryMetadata;
 }

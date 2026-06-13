@@ -21,6 +21,18 @@ export {
 } from './payment-source';
 export { SmartContractState, smartContractStateEqualsOnChainState } from './smart-contract-state';
 export {
+	VerificationMethod,
+	parseVerificationsFromMetadata,
+	verificationMetadataSchema,
+	verificationRowToApi,
+	verificationSchema,
+	verificationToRow,
+	verificationsSchema,
+	verificationsToMetadata,
+	type AgentVerificationRow,
+	type Verification,
+} from './verification';
+export {
 	decodeBlockchainIdentifier,
 	generateBlockchainIdentifier,
 	type DecodedBlockchainIdentifier,
