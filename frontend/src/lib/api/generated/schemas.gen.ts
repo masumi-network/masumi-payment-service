@@ -2077,6 +2077,135 @@ export const AgentMetadataSchema = {
                     minItems: 1,
                     maxItems: 25,
                     description: 'Payment sources advertised by this registry entry. Null for legacy metadata.'
+                },
+                verifications: {
+                    type: 'array',
+                    nullable: true,
+                    items: {
+                        type: 'object',
+                        properties: {
+                            method: {
+                                type: 'string',
+                                minLength: 1,
+                                maxLength: 40,
+                                description: 'Verification method discriminator, e.g. "KERI-ACDC"'
+                            },
+                            schemaVersion: {
+                                type: 'string',
+                                maxLength: 16,
+                                description: 'Version of this verification block'
+                            },
+                            issuer: {
+                                type: 'object',
+                                properties: {
+                                    aid: {
+                                        type: 'string',
+                                        minLength: 1,
+                                        maxLength: 128,
+                                        description: 'Issuer KERI AID (ACDC sad.i) — the root trust anchor'
+                                    },
+                                    oobi: {
+                                        type: 'string',
+                                        maxLength: 500,
+                                        format: 'uri',
+                                        description: 'OOBI resolving the issuer KEL (key state) for signature verification'
+                                    }
+                                },
+                                required: [
+                                    'aid',
+                                    'oobi'
+                                ],
+                                description: 'Credential issuer identity'
+                            },
+                            schema: {
+                                type: 'object',
+                                properties: {
+                                    said: {
+                                        type: 'string',
+                                        minLength: 1,
+                                        maxLength: 128,
+                                        description: 'Credential schema SAID (ACDC sad.s)'
+                                    },
+                                    oobi: {
+                                        type: 'string',
+                                        maxLength: 500,
+                                        format: 'uri',
+                                        description: 'OOBI resolving the JSON schema; a verifier checks its hash equals said'
+                                    }
+                                },
+                                required: [
+                                    'said',
+                                    'oobi'
+                                ],
+                                description: 'Credential schema — the ACDC structure definition'
+                            },
+                            credential: {
+                                type: 'object',
+                                properties: {
+                                    said: {
+                                        type: 'string',
+                                        minLength: 1,
+                                        maxLength: 128,
+                                        description: 'Credential SAID (ACDC sad.d)'
+                                    },
+                                    oobi: {
+                                        type: 'string',
+                                        maxLength: 500,
+                                        format: 'uri',
+                                        description: 'OOBI/endpoint serving the signed ACDC; a verifier checks its hash equals said'
+                                    },
+                                    registry: {
+                                        type: 'string',
+                                        minLength: 1,
+                                        maxLength: 128,
+                                        description: 'Credential status registry / TEL SAID (ACDC sad.ri) for independent revocation checks'
+                                    }
+                                },
+                                required: [
+                                    'said',
+                                    'oobi'
+                                ],
+                                description: 'The verifiable credential (ACDC)'
+                            },
+                            holder: {
+                                type: 'object',
+                                properties: {
+                                    aid: {
+                                        type: 'string',
+                                        minLength: 1,
+                                        maxLength: 128,
+                                        description: 'Issuee/holder KERI AID (ACDC sad.a.i)'
+                                    },
+                                    oobi: {
+                                        type: 'string',
+                                        maxLength: 500,
+                                        format: 'uri',
+                                        description: 'OOBI resolving the holder KEL'
+                                    }
+                                },
+                                required: [
+                                    'aid',
+                                    'oobi'
+                                ],
+                                description: 'Credential holder/issuee identity'
+                            },
+                            baseUrl: {
+                                type: 'string',
+                                maxLength: 500,
+                                format: 'uri',
+                                description: 'Optional witness/KERIA resolver root for live key-state ("verify at time T") and TEL queries'
+                            }
+                        },
+                        required: [
+                            'method',
+                            'issuer',
+                            'schema',
+                            'credential',
+                            'holder'
+                        ]
+                    },
+                    maxItems: 10,
+                    description: 'KERI/Veridian verification claims advertised by this registry entry. Null when none.'
                 }
             },
             required: [
@@ -2088,7 +2217,8 @@ export const AgentMetadataSchema = {
                 'AgentPricing',
                 'image',
                 'metadataVersion',
-                'supportedPaymentSources'
+                'supportedPaymentSources',
+                'verifications'
             ],
             description: 'On-chain metadata for the agent'
         }
@@ -2465,6 +2595,135 @@ export const AgentIdentifierMetadataSchema = {
                     minItems: 1,
                     maxItems: 25,
                     description: 'Payment sources advertised by this registry entry. Null for legacy metadata.'
+                },
+                verifications: {
+                    type: 'array',
+                    nullable: true,
+                    items: {
+                        type: 'object',
+                        properties: {
+                            method: {
+                                type: 'string',
+                                minLength: 1,
+                                maxLength: 40,
+                                description: 'Verification method discriminator, e.g. "KERI-ACDC"'
+                            },
+                            schemaVersion: {
+                                type: 'string',
+                                maxLength: 16,
+                                description: 'Version of this verification block'
+                            },
+                            issuer: {
+                                type: 'object',
+                                properties: {
+                                    aid: {
+                                        type: 'string',
+                                        minLength: 1,
+                                        maxLength: 128,
+                                        description: 'Issuer KERI AID (ACDC sad.i) — the root trust anchor'
+                                    },
+                                    oobi: {
+                                        type: 'string',
+                                        maxLength: 500,
+                                        format: 'uri',
+                                        description: 'OOBI resolving the issuer KEL (key state) for signature verification'
+                                    }
+                                },
+                                required: [
+                                    'aid',
+                                    'oobi'
+                                ],
+                                description: 'Credential issuer identity'
+                            },
+                            schema: {
+                                type: 'object',
+                                properties: {
+                                    said: {
+                                        type: 'string',
+                                        minLength: 1,
+                                        maxLength: 128,
+                                        description: 'Credential schema SAID (ACDC sad.s)'
+                                    },
+                                    oobi: {
+                                        type: 'string',
+                                        maxLength: 500,
+                                        format: 'uri',
+                                        description: 'OOBI resolving the JSON schema; a verifier checks its hash equals said'
+                                    }
+                                },
+                                required: [
+                                    'said',
+                                    'oobi'
+                                ],
+                                description: 'Credential schema — the ACDC structure definition'
+                            },
+                            credential: {
+                                type: 'object',
+                                properties: {
+                                    said: {
+                                        type: 'string',
+                                        minLength: 1,
+                                        maxLength: 128,
+                                        description: 'Credential SAID (ACDC sad.d)'
+                                    },
+                                    oobi: {
+                                        type: 'string',
+                                        maxLength: 500,
+                                        format: 'uri',
+                                        description: 'OOBI/endpoint serving the signed ACDC; a verifier checks its hash equals said'
+                                    },
+                                    registry: {
+                                        type: 'string',
+                                        minLength: 1,
+                                        maxLength: 128,
+                                        description: 'Credential status registry / TEL SAID (ACDC sad.ri) for independent revocation checks'
+                                    }
+                                },
+                                required: [
+                                    'said',
+                                    'oobi'
+                                ],
+                                description: 'The verifiable credential (ACDC)'
+                            },
+                            holder: {
+                                type: 'object',
+                                properties: {
+                                    aid: {
+                                        type: 'string',
+                                        minLength: 1,
+                                        maxLength: 128,
+                                        description: 'Issuee/holder KERI AID (ACDC sad.a.i)'
+                                    },
+                                    oobi: {
+                                        type: 'string',
+                                        maxLength: 500,
+                                        format: 'uri',
+                                        description: 'OOBI resolving the holder KEL'
+                                    }
+                                },
+                                required: [
+                                    'aid',
+                                    'oobi'
+                                ],
+                                description: 'Credential holder/issuee identity'
+                            },
+                            baseUrl: {
+                                type: 'string',
+                                maxLength: 500,
+                                format: 'uri',
+                                description: 'Optional witness/KERIA resolver root for live key-state ("verify at time T") and TEL queries'
+                            }
+                        },
+                        required: [
+                            'method',
+                            'issuer',
+                            'schema',
+                            'credential',
+                            'holder'
+                        ]
+                    },
+                    maxItems: 10,
+                    description: 'KERI/Veridian verification claims advertised by this registry entry. Null when none.'
                 }
             },
             required: [
@@ -2476,7 +2735,8 @@ export const AgentIdentifierMetadataSchema = {
                 'AgentPricing',
                 'image',
                 'metadataVersion',
-                'supportedPaymentSources'
+                'supportedPaymentSources',
+                'verifications'
             ],
             description: 'On-chain metadata for the agent'
         }
@@ -2880,6 +3140,135 @@ export const RegistryEntrySchema = {
             maxItems: 25,
             description: 'Payment sources advertised by this registry entry. Null for legacy metadata.'
         },
+        verifications: {
+            type: 'array',
+            nullable: true,
+            items: {
+                type: 'object',
+                properties: {
+                    method: {
+                        type: 'string',
+                        minLength: 1,
+                        maxLength: 40,
+                        description: 'Verification method discriminator, e.g. "KERI-ACDC"'
+                    },
+                    schemaVersion: {
+                        type: 'string',
+                        maxLength: 16,
+                        description: 'Version of this verification block'
+                    },
+                    issuer: {
+                        type: 'object',
+                        properties: {
+                            aid: {
+                                type: 'string',
+                                minLength: 1,
+                                maxLength: 128,
+                                description: 'Issuer KERI AID (ACDC sad.i) — the root trust anchor'
+                            },
+                            oobi: {
+                                type: 'string',
+                                maxLength: 500,
+                                format: 'uri',
+                                description: 'OOBI resolving the issuer KEL (key state) for signature verification'
+                            }
+                        },
+                        required: [
+                            'aid',
+                            'oobi'
+                        ],
+                        description: 'Credential issuer identity'
+                    },
+                    schema: {
+                        type: 'object',
+                        properties: {
+                            said: {
+                                type: 'string',
+                                minLength: 1,
+                                maxLength: 128,
+                                description: 'Credential schema SAID (ACDC sad.s)'
+                            },
+                            oobi: {
+                                type: 'string',
+                                maxLength: 500,
+                                format: 'uri',
+                                description: 'OOBI resolving the JSON schema; a verifier checks its hash equals said'
+                            }
+                        },
+                        required: [
+                            'said',
+                            'oobi'
+                        ],
+                        description: 'Credential schema — the ACDC structure definition'
+                    },
+                    credential: {
+                        type: 'object',
+                        properties: {
+                            said: {
+                                type: 'string',
+                                minLength: 1,
+                                maxLength: 128,
+                                description: 'Credential SAID (ACDC sad.d)'
+                            },
+                            oobi: {
+                                type: 'string',
+                                maxLength: 500,
+                                format: 'uri',
+                                description: 'OOBI/endpoint serving the signed ACDC; a verifier checks its hash equals said'
+                            },
+                            registry: {
+                                type: 'string',
+                                minLength: 1,
+                                maxLength: 128,
+                                description: 'Credential status registry / TEL SAID (ACDC sad.ri) for independent revocation checks'
+                            }
+                        },
+                        required: [
+                            'said',
+                            'oobi'
+                        ],
+                        description: 'The verifiable credential (ACDC)'
+                    },
+                    holder: {
+                        type: 'object',
+                        properties: {
+                            aid: {
+                                type: 'string',
+                                minLength: 1,
+                                maxLength: 128,
+                                description: 'Issuee/holder KERI AID (ACDC sad.a.i)'
+                            },
+                            oobi: {
+                                type: 'string',
+                                maxLength: 500,
+                                format: 'uri',
+                                description: 'OOBI resolving the holder KEL'
+                            }
+                        },
+                        required: [
+                            'aid',
+                            'oobi'
+                        ],
+                        description: 'Credential holder/issuee identity'
+                    },
+                    baseUrl: {
+                        type: 'string',
+                        maxLength: 500,
+                        format: 'uri',
+                        description: 'Optional witness/KERIA resolver root for live key-state ("verify at time T") and TEL queries'
+                    }
+                },
+                required: [
+                    'method',
+                    'issuer',
+                    'schema',
+                    'credential',
+                    'holder'
+                ]
+            },
+            maxItems: 10,
+            description: 'KERI/Veridian verification claims advertised by this registry entry. Null when none.'
+        },
         SmartContractWallet: {
             type: 'object',
             properties: {
@@ -2987,6 +3376,7 @@ export const RegistryEntrySchema = {
         'AgentPricing',
         'sendFundingLovelace',
         'supportedPaymentSources',
+        'verifications',
         'SmartContractWallet',
         'RecipientWallet',
         'CurrentTransaction'

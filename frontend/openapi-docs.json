@@ -2091,6 +2091,135 @@
                                 "minItems": 1,
                                 "maxItems": 25,
                                 "description": "Payment sources advertised by this registry entry. Null for legacy metadata."
+                            },
+                            "verifications": {
+                                "type": "array",
+                                "nullable": true,
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "method": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 40,
+                                            "description": "Verification method discriminator, e.g. \"KERI-ACDC\""
+                                        },
+                                        "schemaVersion": {
+                                            "type": "string",
+                                            "maxLength": 16,
+                                            "description": "Version of this verification block"
+                                        },
+                                        "issuer": {
+                                            "type": "object",
+                                            "properties": {
+                                                "aid": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 128,
+                                                    "description": "Issuer KERI AID (ACDC sad.i) — the root trust anchor"
+                                                },
+                                                "oobi": {
+                                                    "type": "string",
+                                                    "maxLength": 500,
+                                                    "format": "uri",
+                                                    "description": "OOBI resolving the issuer KEL (key state) for signature verification"
+                                                }
+                                            },
+                                            "required": [
+                                                "aid",
+                                                "oobi"
+                                            ],
+                                            "description": "Credential issuer identity"
+                                        },
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {
+                                                "said": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 128,
+                                                    "description": "Credential schema SAID (ACDC sad.s)"
+                                                },
+                                                "oobi": {
+                                                    "type": "string",
+                                                    "maxLength": 500,
+                                                    "format": "uri",
+                                                    "description": "OOBI resolving the JSON schema; a verifier checks its hash equals said"
+                                                }
+                                            },
+                                            "required": [
+                                                "said",
+                                                "oobi"
+                                            ],
+                                            "description": "Credential schema — the ACDC structure definition"
+                                        },
+                                        "credential": {
+                                            "type": "object",
+                                            "properties": {
+                                                "said": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 128,
+                                                    "description": "Credential SAID (ACDC sad.d)"
+                                                },
+                                                "oobi": {
+                                                    "type": "string",
+                                                    "maxLength": 500,
+                                                    "format": "uri",
+                                                    "description": "OOBI/endpoint serving the signed ACDC; a verifier checks its hash equals said"
+                                                },
+                                                "registry": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 128,
+                                                    "description": "Credential status registry / TEL SAID (ACDC sad.ri) for independent revocation checks"
+                                                }
+                                            },
+                                            "required": [
+                                                "said",
+                                                "oobi"
+                                            ],
+                                            "description": "The verifiable credential (ACDC)"
+                                        },
+                                        "holder": {
+                                            "type": "object",
+                                            "properties": {
+                                                "aid": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 128,
+                                                    "description": "Issuee/holder KERI AID (ACDC sad.a.i)"
+                                                },
+                                                "oobi": {
+                                                    "type": "string",
+                                                    "maxLength": 500,
+                                                    "format": "uri",
+                                                    "description": "OOBI resolving the holder KEL"
+                                                }
+                                            },
+                                            "required": [
+                                                "aid",
+                                                "oobi"
+                                            ],
+                                            "description": "Credential holder/issuee identity"
+                                        },
+                                        "baseUrl": {
+                                            "type": "string",
+                                            "maxLength": 500,
+                                            "format": "uri",
+                                            "description": "Optional witness/KERIA resolver root for live key-state (\"verify at time T\") and TEL queries"
+                                        }
+                                    },
+                                    "required": [
+                                        "method",
+                                        "issuer",
+                                        "schema",
+                                        "credential",
+                                        "holder"
+                                    ]
+                                },
+                                "maxItems": 10,
+                                "description": "KERI/Veridian verification claims advertised by this registry entry. Null when none."
                             }
                         },
                         "required": [
@@ -2102,7 +2231,8 @@
                             "AgentPricing",
                             "image",
                             "metadataVersion",
-                            "supportedPaymentSources"
+                            "supportedPaymentSources",
+                            "verifications"
                         ],
                         "description": "On-chain metadata for the agent"
                     }
@@ -2478,6 +2608,135 @@
                                 "minItems": 1,
                                 "maxItems": 25,
                                 "description": "Payment sources advertised by this registry entry. Null for legacy metadata."
+                            },
+                            "verifications": {
+                                "type": "array",
+                                "nullable": true,
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "method": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 40,
+                                            "description": "Verification method discriminator, e.g. \"KERI-ACDC\""
+                                        },
+                                        "schemaVersion": {
+                                            "type": "string",
+                                            "maxLength": 16,
+                                            "description": "Version of this verification block"
+                                        },
+                                        "issuer": {
+                                            "type": "object",
+                                            "properties": {
+                                                "aid": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 128,
+                                                    "description": "Issuer KERI AID (ACDC sad.i) — the root trust anchor"
+                                                },
+                                                "oobi": {
+                                                    "type": "string",
+                                                    "maxLength": 500,
+                                                    "format": "uri",
+                                                    "description": "OOBI resolving the issuer KEL (key state) for signature verification"
+                                                }
+                                            },
+                                            "required": [
+                                                "aid",
+                                                "oobi"
+                                            ],
+                                            "description": "Credential issuer identity"
+                                        },
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {
+                                                "said": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 128,
+                                                    "description": "Credential schema SAID (ACDC sad.s)"
+                                                },
+                                                "oobi": {
+                                                    "type": "string",
+                                                    "maxLength": 500,
+                                                    "format": "uri",
+                                                    "description": "OOBI resolving the JSON schema; a verifier checks its hash equals said"
+                                                }
+                                            },
+                                            "required": [
+                                                "said",
+                                                "oobi"
+                                            ],
+                                            "description": "Credential schema — the ACDC structure definition"
+                                        },
+                                        "credential": {
+                                            "type": "object",
+                                            "properties": {
+                                                "said": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 128,
+                                                    "description": "Credential SAID (ACDC sad.d)"
+                                                },
+                                                "oobi": {
+                                                    "type": "string",
+                                                    "maxLength": 500,
+                                                    "format": "uri",
+                                                    "description": "OOBI/endpoint serving the signed ACDC; a verifier checks its hash equals said"
+                                                },
+                                                "registry": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 128,
+                                                    "description": "Credential status registry / TEL SAID (ACDC sad.ri) for independent revocation checks"
+                                                }
+                                            },
+                                            "required": [
+                                                "said",
+                                                "oobi"
+                                            ],
+                                            "description": "The verifiable credential (ACDC)"
+                                        },
+                                        "holder": {
+                                            "type": "object",
+                                            "properties": {
+                                                "aid": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 128,
+                                                    "description": "Issuee/holder KERI AID (ACDC sad.a.i)"
+                                                },
+                                                "oobi": {
+                                                    "type": "string",
+                                                    "maxLength": 500,
+                                                    "format": "uri",
+                                                    "description": "OOBI resolving the holder KEL"
+                                                }
+                                            },
+                                            "required": [
+                                                "aid",
+                                                "oobi"
+                                            ],
+                                            "description": "Credential holder/issuee identity"
+                                        },
+                                        "baseUrl": {
+                                            "type": "string",
+                                            "maxLength": 500,
+                                            "format": "uri",
+                                            "description": "Optional witness/KERIA resolver root for live key-state (\"verify at time T\") and TEL queries"
+                                        }
+                                    },
+                                    "required": [
+                                        "method",
+                                        "issuer",
+                                        "schema",
+                                        "credential",
+                                        "holder"
+                                    ]
+                                },
+                                "maxItems": 10,
+                                "description": "KERI/Veridian verification claims advertised by this registry entry. Null when none."
                             }
                         },
                         "required": [
@@ -2489,7 +2748,8 @@
                             "AgentPricing",
                             "image",
                             "metadataVersion",
-                            "supportedPaymentSources"
+                            "supportedPaymentSources",
+                            "verifications"
                         ],
                         "description": "On-chain metadata for the agent"
                     }
@@ -2892,6 +3152,135 @@
                         "maxItems": 25,
                         "description": "Payment sources advertised by this registry entry. Null for legacy metadata."
                     },
+                    "verifications": {
+                        "type": "array",
+                        "nullable": true,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "method": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 40,
+                                    "description": "Verification method discriminator, e.g. \"KERI-ACDC\""
+                                },
+                                "schemaVersion": {
+                                    "type": "string",
+                                    "maxLength": 16,
+                                    "description": "Version of this verification block"
+                                },
+                                "issuer": {
+                                    "type": "object",
+                                    "properties": {
+                                        "aid": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 128,
+                                            "description": "Issuer KERI AID (ACDC sad.i) — the root trust anchor"
+                                        },
+                                        "oobi": {
+                                            "type": "string",
+                                            "maxLength": 500,
+                                            "format": "uri",
+                                            "description": "OOBI resolving the issuer KEL (key state) for signature verification"
+                                        }
+                                    },
+                                    "required": [
+                                        "aid",
+                                        "oobi"
+                                    ],
+                                    "description": "Credential issuer identity"
+                                },
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "said": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 128,
+                                            "description": "Credential schema SAID (ACDC sad.s)"
+                                        },
+                                        "oobi": {
+                                            "type": "string",
+                                            "maxLength": 500,
+                                            "format": "uri",
+                                            "description": "OOBI resolving the JSON schema; a verifier checks its hash equals said"
+                                        }
+                                    },
+                                    "required": [
+                                        "said",
+                                        "oobi"
+                                    ],
+                                    "description": "Credential schema — the ACDC structure definition"
+                                },
+                                "credential": {
+                                    "type": "object",
+                                    "properties": {
+                                        "said": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 128,
+                                            "description": "Credential SAID (ACDC sad.d)"
+                                        },
+                                        "oobi": {
+                                            "type": "string",
+                                            "maxLength": 500,
+                                            "format": "uri",
+                                            "description": "OOBI/endpoint serving the signed ACDC; a verifier checks its hash equals said"
+                                        },
+                                        "registry": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 128,
+                                            "description": "Credential status registry / TEL SAID (ACDC sad.ri) for independent revocation checks"
+                                        }
+                                    },
+                                    "required": [
+                                        "said",
+                                        "oobi"
+                                    ],
+                                    "description": "The verifiable credential (ACDC)"
+                                },
+                                "holder": {
+                                    "type": "object",
+                                    "properties": {
+                                        "aid": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 128,
+                                            "description": "Issuee/holder KERI AID (ACDC sad.a.i)"
+                                        },
+                                        "oobi": {
+                                            "type": "string",
+                                            "maxLength": 500,
+                                            "format": "uri",
+                                            "description": "OOBI resolving the holder KEL"
+                                        }
+                                    },
+                                    "required": [
+                                        "aid",
+                                        "oobi"
+                                    ],
+                                    "description": "Credential holder/issuee identity"
+                                },
+                                "baseUrl": {
+                                    "type": "string",
+                                    "maxLength": 500,
+                                    "format": "uri",
+                                    "description": "Optional witness/KERIA resolver root for live key-state (\"verify at time T\") and TEL queries"
+                                }
+                            },
+                            "required": [
+                                "method",
+                                "issuer",
+                                "schema",
+                                "credential",
+                                "holder"
+                            ]
+                        },
+                        "maxItems": 10,
+                        "description": "KERI/Veridian verification claims advertised by this registry entry. Null when none."
+                    },
                     "SmartContractWallet": {
                         "type": "object",
                         "properties": {
@@ -2999,6 +3388,7 @@
                     "AgentPricing",
                     "sendFundingLovelace",
                     "supportedPaymentSources",
+                    "verifications",
                     "SmartContractWallet",
                     "RecipientWallet",
                     "CurrentTransaction"
@@ -17367,6 +17757,134 @@
                                         "maxItems": 25,
                                         "description": "Payment sources to persist for this registry request. If omitted, mint metadata advertises the active payment source."
                                     },
+                                    "verifications": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "method": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 40,
+                                                    "description": "Verification method discriminator, e.g. \"KERI-ACDC\""
+                                                },
+                                                "schemaVersion": {
+                                                    "type": "string",
+                                                    "maxLength": 16,
+                                                    "description": "Version of this verification block"
+                                                },
+                                                "issuer": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "aid": {
+                                                            "type": "string",
+                                                            "minLength": 1,
+                                                            "maxLength": 128,
+                                                            "description": "Issuer KERI AID (ACDC sad.i) — the root trust anchor"
+                                                        },
+                                                        "oobi": {
+                                                            "type": "string",
+                                                            "maxLength": 500,
+                                                            "format": "uri",
+                                                            "description": "OOBI resolving the issuer KEL (key state) for signature verification"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "aid",
+                                                        "oobi"
+                                                    ],
+                                                    "description": "Credential issuer identity"
+                                                },
+                                                "schema": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "said": {
+                                                            "type": "string",
+                                                            "minLength": 1,
+                                                            "maxLength": 128,
+                                                            "description": "Credential schema SAID (ACDC sad.s)"
+                                                        },
+                                                        "oobi": {
+                                                            "type": "string",
+                                                            "maxLength": 500,
+                                                            "format": "uri",
+                                                            "description": "OOBI resolving the JSON schema; a verifier checks its hash equals said"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "said",
+                                                        "oobi"
+                                                    ],
+                                                    "description": "Credential schema — the ACDC structure definition"
+                                                },
+                                                "credential": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "said": {
+                                                            "type": "string",
+                                                            "minLength": 1,
+                                                            "maxLength": 128,
+                                                            "description": "Credential SAID (ACDC sad.d)"
+                                                        },
+                                                        "oobi": {
+                                                            "type": "string",
+                                                            "maxLength": 500,
+                                                            "format": "uri",
+                                                            "description": "OOBI/endpoint serving the signed ACDC; a verifier checks its hash equals said"
+                                                        },
+                                                        "registry": {
+                                                            "type": "string",
+                                                            "minLength": 1,
+                                                            "maxLength": 128,
+                                                            "description": "Credential status registry / TEL SAID (ACDC sad.ri) for independent revocation checks"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "said",
+                                                        "oobi"
+                                                    ],
+                                                    "description": "The verifiable credential (ACDC)"
+                                                },
+                                                "holder": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "aid": {
+                                                            "type": "string",
+                                                            "minLength": 1,
+                                                            "maxLength": 128,
+                                                            "description": "Issuee/holder KERI AID (ACDC sad.a.i)"
+                                                        },
+                                                        "oobi": {
+                                                            "type": "string",
+                                                            "maxLength": 500,
+                                                            "format": "uri",
+                                                            "description": "OOBI resolving the holder KEL"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "aid",
+                                                        "oobi"
+                                                    ],
+                                                    "description": "Credential holder/issuee identity"
+                                                },
+                                                "baseUrl": {
+                                                    "type": "string",
+                                                    "maxLength": 500,
+                                                    "format": "uri",
+                                                    "description": "Optional witness/KERIA resolver root for live key-state (\"verify at time T\") and TEL queries"
+                                                }
+                                            },
+                                            "required": [
+                                                "method",
+                                                "issuer",
+                                                "schema",
+                                                "credential",
+                                                "holder"
+                                            ]
+                                        },
+                                        "maxItems": 10,
+                                        "description": "Optional KERI/Veridian verification claims advertised in the registry metadata for independent third-party verification. Accepted on any registration; surfaced in the UI for V2 registries only."
+                                    },
                                     "ExampleOutputs": {
                                         "type": "array",
                                         "items": {
@@ -17706,6 +18224,30 @@
                                                     "address": "addr_test1wz7j4kmg2cs7yf92uat3ed4a3u97kr7axxr4avaz0lhwdsqukgwfm"
                                                 }
                                             ],
+                                            "verifications": [
+                                                {
+                                                    "method": "KERI-ACDC",
+                                                    "schemaVersion": "1",
+                                                    "issuer": {
+                                                        "aid": "EIaIeKvfBLmZf3wfqB0oR1uM5n8m9k2pQ7rT4sV1wX3y",
+                                                        "oobi": "https://witness.example.com/oobi/EIaIeKvfBLmZf3wfqB0oR1uM5n8m9k2pQ7rT4sV1wX3y/witness"
+                                                    },
+                                                    "schema": {
+                                                        "said": "EJ1gXWfzLyW2u0YY5Zb8c4d6e9f1g3h5j7k9l2m4n6p",
+                                                        "oobi": "https://schema.example.com/oobi/EJ1gXWfzLyW2u0YY5Zb8c4d6e9f1g3h5j7k9l2m4n6p"
+                                                    },
+                                                    "credential": {
+                                                        "said": "EHpH79tPZoSl7VJZ7xMi3JWF4rH9wZ2ntGvKABd9N14z",
+                                                        "oobi": "https://cred.example.com/oobi/EHpH79tPZoSl7VJZ7xMi3JWF4rH9wZ2ntGvKABd9N14z",
+                                                        "registry": "ER7yQ3kL9mN2pT5vX8a1b4c7d0e3f6g9h2j5k8l1m4n7"
+                                                    },
+                                                    "holder": {
+                                                        "aid": "EBcd1ef2gh3ij4kl5mn6op7qr8st9uv0wx1yz2ab3cd4",
+                                                        "oobi": "https://keria.example.com/oobi/EBcd1ef2gh3ij4kl5mn6op7qr8st9uv0wx1yz2ab3cd4/agent/EAgnt"
+                                                    },
+                                                    "baseUrl": "https://verify.example.com"
+                                                }
+                                            ],
                                             "SmartContractWallet": {
                                                 "walletVkey": "wallet_vkey",
                                                 "walletAddress": "wallet_address"
@@ -17828,6 +18370,30 @@
                                                     "network": "Preprod",
                                                     "paymentSourceType": "Web3CardanoV2",
                                                     "address": "addr_test1wz7j4kmg2cs7yf92uat3ed4a3u97kr7axxr4avaz0lhwdsqukgwfm"
+                                                }
+                                            ],
+                                            "verifications": [
+                                                {
+                                                    "method": "KERI-ACDC",
+                                                    "schemaVersion": "1",
+                                                    "issuer": {
+                                                        "aid": "EIaIeKvfBLmZf3wfqB0oR1uM5n8m9k2pQ7rT4sV1wX3y",
+                                                        "oobi": "https://witness.example.com/oobi/EIaIeKvfBLmZf3wfqB0oR1uM5n8m9k2pQ7rT4sV1wX3y/witness"
+                                                    },
+                                                    "schema": {
+                                                        "said": "EJ1gXWfzLyW2u0YY5Zb8c4d6e9f1g3h5j7k9l2m4n6p",
+                                                        "oobi": "https://schema.example.com/oobi/EJ1gXWfzLyW2u0YY5Zb8c4d6e9f1g3h5j7k9l2m4n6p"
+                                                    },
+                                                    "credential": {
+                                                        "said": "EHpH79tPZoSl7VJZ7xMi3JWF4rH9wZ2ntGvKABd9N14z",
+                                                        "oobi": "https://cred.example.com/oobi/EHpH79tPZoSl7VJZ7xMi3JWF4rH9wZ2ntGvKABd9N14z",
+                                                        "registry": "ER7yQ3kL9mN2pT5vX8a1b4c7d0e3f6g9h2j5k8l1m4n7"
+                                                    },
+                                                    "holder": {
+                                                        "aid": "EBcd1ef2gh3ij4kl5mn6op7qr8st9uv0wx1yz2ab3cd4",
+                                                        "oobi": "https://keria.example.com/oobi/EBcd1ef2gh3ij4kl5mn6op7qr8st9uv0wx1yz2ab3cd4/agent/EAgnt"
+                                                    },
+                                                    "baseUrl": "https://verify.example.com"
                                                 }
                                             ],
                                             "SmartContractWallet": {
@@ -18199,6 +18765,30 @@
                                                     "address": "addr_test1wz7j4kmg2cs7yf92uat3ed4a3u97kr7axxr4avaz0lhwdsqukgwfm"
                                                 }
                                             ],
+                                            "verifications": [
+                                                {
+                                                    "method": "KERI-ACDC",
+                                                    "schemaVersion": "1",
+                                                    "issuer": {
+                                                        "aid": "EIaIeKvfBLmZf3wfqB0oR1uM5n8m9k2pQ7rT4sV1wX3y",
+                                                        "oobi": "https://witness.example.com/oobi/EIaIeKvfBLmZf3wfqB0oR1uM5n8m9k2pQ7rT4sV1wX3y/witness"
+                                                    },
+                                                    "schema": {
+                                                        "said": "EJ1gXWfzLyW2u0YY5Zb8c4d6e9f1g3h5j7k9l2m4n6p",
+                                                        "oobi": "https://schema.example.com/oobi/EJ1gXWfzLyW2u0YY5Zb8c4d6e9f1g3h5j7k9l2m4n6p"
+                                                    },
+                                                    "credential": {
+                                                        "said": "EHpH79tPZoSl7VJZ7xMi3JWF4rH9wZ2ntGvKABd9N14z",
+                                                        "oobi": "https://cred.example.com/oobi/EHpH79tPZoSl7VJZ7xMi3JWF4rH9wZ2ntGvKABd9N14z",
+                                                        "registry": "ER7yQ3kL9mN2pT5vX8a1b4c7d0e3f6g9h2j5k8l1m4n7"
+                                                    },
+                                                    "holder": {
+                                                        "aid": "EBcd1ef2gh3ij4kl5mn6op7qr8st9uv0wx1yz2ab3cd4",
+                                                        "oobi": "https://keria.example.com/oobi/EBcd1ef2gh3ij4kl5mn6op7qr8st9uv0wx1yz2ab3cd4/agent/EAgnt"
+                                                    },
+                                                    "baseUrl": "https://verify.example.com"
+                                                }
+                                            ],
                                             "SmartContractWallet": {
                                                 "walletVkey": "wallet_vkey",
                                                 "walletAddress": "wallet_address"
@@ -18383,6 +18973,134 @@
                                         },
                                         "maxItems": 25,
                                         "description": "Payment sources to replace on this registry request. Provide an empty array to clear them."
+                                    },
+                                    "verifications": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "method": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 40,
+                                                    "description": "Verification method discriminator, e.g. \"KERI-ACDC\""
+                                                },
+                                                "schemaVersion": {
+                                                    "type": "string",
+                                                    "maxLength": 16,
+                                                    "description": "Version of this verification block"
+                                                },
+                                                "issuer": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "aid": {
+                                                            "type": "string",
+                                                            "minLength": 1,
+                                                            "maxLength": 128,
+                                                            "description": "Issuer KERI AID (ACDC sad.i) — the root trust anchor"
+                                                        },
+                                                        "oobi": {
+                                                            "type": "string",
+                                                            "maxLength": 500,
+                                                            "format": "uri",
+                                                            "description": "OOBI resolving the issuer KEL (key state) for signature verification"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "aid",
+                                                        "oobi"
+                                                    ],
+                                                    "description": "Credential issuer identity"
+                                                },
+                                                "schema": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "said": {
+                                                            "type": "string",
+                                                            "minLength": 1,
+                                                            "maxLength": 128,
+                                                            "description": "Credential schema SAID (ACDC sad.s)"
+                                                        },
+                                                        "oobi": {
+                                                            "type": "string",
+                                                            "maxLength": 500,
+                                                            "format": "uri",
+                                                            "description": "OOBI resolving the JSON schema; a verifier checks its hash equals said"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "said",
+                                                        "oobi"
+                                                    ],
+                                                    "description": "Credential schema — the ACDC structure definition"
+                                                },
+                                                "credential": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "said": {
+                                                            "type": "string",
+                                                            "minLength": 1,
+                                                            "maxLength": 128,
+                                                            "description": "Credential SAID (ACDC sad.d)"
+                                                        },
+                                                        "oobi": {
+                                                            "type": "string",
+                                                            "maxLength": 500,
+                                                            "format": "uri",
+                                                            "description": "OOBI/endpoint serving the signed ACDC; a verifier checks its hash equals said"
+                                                        },
+                                                        "registry": {
+                                                            "type": "string",
+                                                            "minLength": 1,
+                                                            "maxLength": 128,
+                                                            "description": "Credential status registry / TEL SAID (ACDC sad.ri) for independent revocation checks"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "said",
+                                                        "oobi"
+                                                    ],
+                                                    "description": "The verifiable credential (ACDC)"
+                                                },
+                                                "holder": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "aid": {
+                                                            "type": "string",
+                                                            "minLength": 1,
+                                                            "maxLength": 128,
+                                                            "description": "Issuee/holder KERI AID (ACDC sad.a.i)"
+                                                        },
+                                                        "oobi": {
+                                                            "type": "string",
+                                                            "maxLength": 500,
+                                                            "format": "uri",
+                                                            "description": "OOBI resolving the holder KEL"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "aid",
+                                                        "oobi"
+                                                    ],
+                                                    "description": "Credential holder/issuee identity"
+                                                },
+                                                "baseUrl": {
+                                                    "type": "string",
+                                                    "maxLength": 500,
+                                                    "format": "uri",
+                                                    "description": "Optional witness/KERIA resolver root for live key-state (\"verify at time T\") and TEL queries"
+                                                }
+                                            },
+                                            "required": [
+                                                "method",
+                                                "issuer",
+                                                "schema",
+                                                "credential",
+                                                "holder"
+                                            ]
+                                        },
+                                        "maxItems": 10,
+                                        "description": "Optional KERI/Veridian verification claims advertised in the registry metadata for independent third-party verification. Accepted on any registration; surfaced in the UI for V2 registries only."
                                     },
                                     "ExampleOutputs": {
                                         "type": "array",
@@ -18718,6 +19436,30 @@
                                                     "network": "Preprod",
                                                     "paymentSourceType": "Web3CardanoV2",
                                                     "address": "addr_test1wz7j4kmg2cs7yf92uat3ed4a3u97kr7axxr4avaz0lhwdsqukgwfm"
+                                                }
+                                            ],
+                                            "verifications": [
+                                                {
+                                                    "method": "KERI-ACDC",
+                                                    "schemaVersion": "1",
+                                                    "issuer": {
+                                                        "aid": "EIaIeKvfBLmZf3wfqB0oR1uM5n8m9k2pQ7rT4sV1wX3y",
+                                                        "oobi": "https://witness.example.com/oobi/EIaIeKvfBLmZf3wfqB0oR1uM5n8m9k2pQ7rT4sV1wX3y/witness"
+                                                    },
+                                                    "schema": {
+                                                        "said": "EJ1gXWfzLyW2u0YY5Zb8c4d6e9f1g3h5j7k9l2m4n6p",
+                                                        "oobi": "https://schema.example.com/oobi/EJ1gXWfzLyW2u0YY5Zb8c4d6e9f1g3h5j7k9l2m4n6p"
+                                                    },
+                                                    "credential": {
+                                                        "said": "EHpH79tPZoSl7VJZ7xMi3JWF4rH9wZ2ntGvKABd9N14z",
+                                                        "oobi": "https://cred.example.com/oobi/EHpH79tPZoSl7VJZ7xMi3JWF4rH9wZ2ntGvKABd9N14z",
+                                                        "registry": "ER7yQ3kL9mN2pT5vX8a1b4c7d0e3f6g9h2j5k8l1m4n7"
+                                                    },
+                                                    "holder": {
+                                                        "aid": "EBcd1ef2gh3ij4kl5mn6op7qr8st9uv0wx1yz2ab3cd4",
+                                                        "oobi": "https://keria.example.com/oobi/EBcd1ef2gh3ij4kl5mn6op7qr8st9uv0wx1yz2ab3cd4/agent/EAgnt"
+                                                    },
+                                                    "baseUrl": "https://verify.example.com"
                                                 }
                                             ],
                                             "SmartContractWallet": {

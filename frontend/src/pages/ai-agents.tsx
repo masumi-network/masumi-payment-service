@@ -12,6 +12,7 @@ import { cn, shortenAddress } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { deleteRegistry, RegistryEntry, postRegistryDeregister } from '@/lib/api/generated';
 import { agentHasX402Options } from '@/components/ai-agents/AgentX402Options';
+import { agentHasVerifications } from '@/components/ai-agents/AgentVerifications';
 import { toast } from 'react-toastify';
 import { handleApiCall } from '@/lib/utils';
 import Head from 'next/head';
@@ -691,6 +692,11 @@ export default function AIAgentsPage() {
                             {agentHasX402Options(agent.supportedPaymentSources) && (
                               <div className="mt-1">
                                 <Badge variant="secondary">x402</Badge>
+                              </div>
+                            )}
+                            {agentHasVerifications(agent.verifications) && (
+                              <div className="mt-1">
+                                <Badge variant="outline">Verifiable</Badge>
                               </div>
                             )}
                           </td>

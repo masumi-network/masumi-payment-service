@@ -6,6 +6,7 @@ import {
 	TransactionStatus,
 } from '@/generated/prisma/client';
 import { supportedPaymentSourcesSchema } from '@/types/payment-source';
+import { verificationsSchema } from '@/types/verification';
 import { z } from '@masumi/payment-core/zod';
 
 export enum FilterStatus {
@@ -135,6 +136,9 @@ export const registryRequestOutputSchema = z
 		supportedPaymentSources: supportedPaymentSourcesSchema
 			.nullable()
 			.describe('Payment sources advertised by this registry entry. Null for legacy metadata.'),
+		verifications: verificationsSchema
+			.nullable()
+			.describe('KERI/Veridian verification claims advertised by this registry entry. Null when none.'),
 		SmartContractWallet: z
 			.object({
 				walletVkey: z.string().describe('Payment key hash of the smart contract wallet'),
@@ -213,6 +217,11 @@ export const registerAgentSchemaInput = z.object({
 		.optional()
 		.describe(
 			'Payment sources to persist for this registry request. If omitted, mint metadata advertises the active payment source.',
+		),
+	verifications: verificationsSchema
+		.optional()
+		.describe(
+			'Optional KERI/Veridian verification claims advertised in the registry metadata for independent third-party verification. Accepted on any registration; surfaced in the UI for V2 registries only.',
 		),
 	ExampleOutputs: z
 		.array(

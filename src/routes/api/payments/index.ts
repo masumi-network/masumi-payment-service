@@ -13,6 +13,7 @@ import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { generateSHA256Hash } from '@/utils/crypto';
 import stringify from 'canonical-json';
 import { fetchAssetInWalletAndMetadata } from '@/services/integrations/asset-metadata';
+import { resolveAgentPricingFromMetadata } from '@/routes/api/registry/wallet';
 import { decodeBlockchainIdentifier, generateBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import { buildSignedBlockchainIdentifierPayload } from '@/utils/generator/blockchain-identifier-payload';
 import { validateHexString } from '@/utils/validator/hex';
@@ -174,7 +175,10 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 		}
 
 		const { assetInWallet, parsedMetadata } = fetchResult.data;
-		const pricing = parsedMetadata.agentPricing;
+		const pricing = resolveAgentPricingFromMetadata(parsedMetadata);
+		if (pricing == null) {
+			throw createHttpError(400, 'Agent metadata does not advertise any pricing');
+		}
 		if (pricing.pricingType == PricingType.Fixed && input.RequestedFunds != null) {
 			throw createHttpError(400, 'For fixed pricing, RequestedFunds must be null');
 		} else if (
