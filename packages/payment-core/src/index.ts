@@ -7,6 +7,7 @@ export type PaymentSourceAdapter = {
 
 export { PaymentSourceType };
 export {
+	MAX_SUPPORTED_PAYMENT_SOURCES,
 	SupportedPaymentSourceChain,
 	isCardanoAddressForNetwork,
 	isCardanoPubKeyBaseAddressForNetwork,

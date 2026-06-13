@@ -58,10 +58,15 @@ export const supportedPaymentSourceSchema = z.discriminatedUnion('chain', [
 	x402SupportedPaymentSourceSchema,
 ]);
 
+// Hard cap on advertised payment sources, enforced both on parse and when
+// emitting on-chain metadata. v2 auto-injects a Cardano source, so the emitted
+// list must be guarded against overflowing this same limit before minting.
+export const MAX_SUPPORTED_PAYMENT_SOURCES = 25;
+
 export const supportedPaymentSourcesSchema = z
 	.array(supportedPaymentSourceSchema)
 	.min(1)
-	.max(25)
+	.max(MAX_SUPPORTED_PAYMENT_SOURCES)
 	.describe('Payment sources advertised by this registry entry');
 
 export type SupportedPaymentSource = z.infer<typeof supportedPaymentSourceSchema>;

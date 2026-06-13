@@ -43,7 +43,11 @@ import {
 import { type BatchRegistryMintItem, generateRegistryBatchMintTransaction } from '../../../builders/batch-registry';
 import { ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
 import { unlockHotWalletIfNoPendingTransaction } from '../../wallet-lock-helpers';
-import { SupportedPaymentSourceChain, type RegistryMetadataPaymentSource } from '@/types/payment-source';
+import {
+	MAX_SUPPORTED_PAYMENT_SOURCES,
+	SupportedPaymentSourceChain,
+	type RegistryMetadataPaymentSource,
+} from '@/types/payment-source';
 import { verificationRowToApi, verificationsToMetadata, type AgentVerificationRow } from '@/types/verification';
 
 // V2 registry batch sizing. The on-chain `MintAction` validator runs once for
@@ -148,6 +152,20 @@ export function buildAgentMetadata(
 	const supportedPaymentSources = hasCardanoSource
 		? request.SupportedPaymentSources
 		: [defaultCardanoSource, ...request.SupportedPaymentSources];
+	// Guard the auto-injected Cardano source against overflowing the on-chain cap:
+	// emitting more than the max would make the entry fail its own re-parse, so a
+	// caller at the limit must leave room for the mandatory Cardano source.
+	if (supportedPaymentSources.length > MAX_SUPPORTED_PAYMENT_SOURCES) {
+		throw new Error(
+			`Cannot register agent: ${supportedPaymentSources.length} payment sources exceed ` +
+				`the on-chain maximum of ${MAX_SUPPORTED_PAYMENT_SOURCES}` +
+				(hasCardanoSource
+					? ''
+					: ` (a Cardano source is added automatically; provide at most ${
+							MAX_SUPPORTED_PAYMENT_SOURCES - 1
+						} other sources)`),
+		);
+	}
 	// Cardano sources advertise the agent's pricing inline (one self-contained
 	// payable option per source), mirroring how x402 sources carry their own
 	// amount. Derived from the same `request.Pricing` that still feeds the
