@@ -2,6 +2,10 @@ import { Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
+// Mirrors the backend `verificationsSchema.max(10)` cap so the form rejects
+// over-limit lists before they reach the API.
+const MAX_VERIFICATIONS = 10;
+
 // Flat form draft for one KERI/Veridian verification claim. Mapped to/from the
 // nested API shape (issuer/schema/credential/holder) by the helpers below.
 export type VerificationDraft = {
@@ -46,6 +50,9 @@ function isHttpUrl(value: string): boolean {
 // Mirrors the backend Zod constraints (AIDs/SAIDs 1–128 chars; OOBIs http(s)
 // URLs ≤500). Returns the first error message, or null when all entries are valid.
 export function validateVerifications(verifications: VerificationDraft[]): string | null {
+  if (verifications.length > MAX_VERIFICATIONS) {
+    return `At most ${MAX_VERIFICATIONS} verifications are allowed`;
+  }
   for (let i = 0; i < verifications.length; i++) {
     const v = verifications[i];
     const n = i + 1;
@@ -60,6 +67,8 @@ export function validateVerifications(verifications: VerificationDraft[]): strin
 
     if (!v.method.trim() || v.method.trim().length > 40)
       return `Verification ${n}: method is required`;
+    if (v.schemaVersion.trim() && v.schemaVersion.trim().length > 16)
+      return `Verification ${n}: schema version is too long (max 16 chars)`;
     const errors = [
       requireId('issuer AID', v.issuerAid),
       requireOobi('issuer OOBI', v.issuerOobi),
@@ -76,8 +85,8 @@ export function validateVerifications(verifications: VerificationDraft[]): strin
     if (v.credentialRegistry.trim() && v.credentialRegistry.trim().length > 128) {
       return `Verification ${n}: registry SAID is too long (max 128 chars)`;
     }
-    if (v.baseUrl.trim() && !isHttpUrl(v.baseUrl.trim())) {
-      return `Verification ${n}: base URL must be an http(s) URL`;
+    if (v.baseUrl.trim() && (!isHttpUrl(v.baseUrl.trim()) || v.baseUrl.trim().length > 500)) {
+      return `Verification ${n}: base URL must be an http(s) URL (max 500 chars)`;
     }
   }
   return null;
@@ -165,7 +174,11 @@ export function VerificationsSection({
   const update = (index: number, patch: Partial<VerificationDraft>) =>
     onChange(verifications.map((entry, i) => (i === index ? { ...entry, ...patch } : entry)));
   const remove = (index: number) => onChange(verifications.filter((_, i) => i !== index));
-  const add = () => onChange([...verifications, { ...emptyVerification }]);
+  const atLimit = verifications.length >= MAX_VERIFICATIONS;
+  const add = () => {
+    if (atLimit) return;
+    onChange([...verifications, { ...emptyVerification }]);
+  };
 
   return (
     <div className="space-y-3">
@@ -183,6 +196,8 @@ export function VerificationsSection({
           variant="outline"
           size="sm"
           onClick={add}
+          disabled={atLimit}
+          title={atLimit ? `At most ${MAX_VERIFICATIONS} verifications` : undefined}
           className="flex items-center gap-1"
         >
           <Plus className="h-4 w-4" />

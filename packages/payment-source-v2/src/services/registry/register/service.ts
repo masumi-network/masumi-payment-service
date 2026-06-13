@@ -132,17 +132,22 @@ export function buildAgentMetadata(
 	},
 	paymentSource: RegistryMetadataPaymentSource,
 ): RegistryMetadata {
-	const supportedPaymentSources =
-		request.SupportedPaymentSources.length > 0
-			? request.SupportedPaymentSources
-			: [
-					{
-						chain: SupportedPaymentSourceChain.Cardano,
-						network: paymentSource.network,
-						paymentSourceType: paymentSource.paymentSourceType,
-						address: paymentSource.smartContractAddress,
-					},
-				];
+	// A Cardano escrow source must always be present: V2 drops the top-level
+	// agentPricing and folds the agent's pricing into the Cardano source, so an
+	// entry advertising only x402/EVM sources would otherwise carry no Cardano
+	// pricing at all (breaking purchase/query, which resolve price from it).
+	const defaultCardanoSource = {
+		chain: SupportedPaymentSourceChain.Cardano,
+		network: paymentSource.network,
+		paymentSourceType: paymentSource.paymentSourceType,
+		address: paymentSource.smartContractAddress,
+	};
+	const hasCardanoSource = request.SupportedPaymentSources.some(
+		(source) => source.chain === SupportedPaymentSourceChain.Cardano,
+	);
+	const supportedPaymentSources = hasCardanoSource
+		? request.SupportedPaymentSources
+		: [defaultCardanoSource, ...request.SupportedPaymentSources];
 	// Cardano sources advertise the agent's pricing inline (one self-contained
 	// payable option per source), mirroring how x402 sources carry their own
 	// amount. Derived from the same `request.Pricing` that still feeds the
