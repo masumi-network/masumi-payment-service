@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useForm, Controller, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -6,6 +6,7 @@ import { toast } from 'react-toastify';
 import { Plus, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import Link from 'next/link';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Spinner } from '@/components/ui/spinner';
 import {
@@ -27,7 +28,8 @@ import { RefreshButton } from '@/components/RefreshButton';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { useApiKey } from '@/lib/hooks/useApiKey';
 import { useX402Budgets, useX402Networks, useX402Wallets } from '@/lib/hooks/useX402';
-import { handleApiCall, shortenAddress } from '@/lib/utils';
+import { CopyButton } from '@/components/ui/copy-button';
+import { groupDigits, handleApiCall, shortenAddress } from '@/lib/utils';
 import { postX402Budgets, X402Budget } from '@/lib/api/generated';
 
 const budgetFormSchema = z.object({
@@ -42,17 +44,22 @@ type BudgetFormValues = z.infer<typeof budgetFormSchema>;
 
 export function BudgetsTab() {
   const { budgets, isLoading, isRefetching, refetch } = useX402Budgets();
-  const { networks } = useX402Networks();
-  const { wallets } = useX402Wallets();
+  const { networks, isLoading: networksLoading } = useX402Networks();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<X402Budget | null>(null);
 
   const chainLabel = (caip2: string) =>
     networks.find((n) => n.caip2Id === caip2)?.displayName ?? caip2;
-  const walletLabel = (walletId: string) => {
-    const wallet = wallets.find((w) => w.id === walletId);
-    return wallet ? shortenAddress(wallet.address, 6) : walletId;
-  };
+
+  // Budgets are fetched across all environments, but `networks` (and the edit dialog's
+  // chain picker) are scoped to the active env. Scope the list to the active env's chains
+  // so the Preprod/Mainnet selector governs this tab like every other x402 surface, and an
+  // editable budget's chain is always present in the picker.
+  const envChainIds = useMemo(() => new Set(networks.map((n) => n.caip2Id)), [networks]);
+  const envBudgets = useMemo(
+    () => budgets.filter((budget) => envChainIds.has(budget.caip2Network)),
+    [budgets, envChainIds],
+  );
 
   const openCreate = () => {
     setEditing(null);
@@ -80,19 +87,33 @@ export function BudgetsTab() {
 
       <div className="border rounded-lg overflow-x-auto">
         <table className="w-full">
-          <thead>
+          <thead className="bg-muted/30 dark:bg-muted/15">
             <tr className="border-b">
-              <th className="p-4 text-left text-sm font-medium">API key</th>
-              <th className="p-4 text-left text-sm font-medium">Wallet</th>
-              <th className="p-4 text-left text-sm font-medium">Chain</th>
-              <th className="p-4 text-left text-sm font-medium">Asset</th>
-              <th className="p-4 text-right text-sm font-medium">Remaining</th>
-              <th className="p-4 text-right text-sm font-medium">Spent</th>
-              <th className="p-4 text-right text-sm font-medium">Actions</th>
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                API key
+              </th>
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                Wallet
+              </th>
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                Chain
+              </th>
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                Asset
+              </th>
+              <th scope="col" className="p-4 text-right text-sm font-medium text-muted-foreground">
+                Remaining
+              </th>
+              <th scope="col" className="p-4 text-right text-sm font-medium text-muted-foreground">
+                Spent
+              </th>
+              <th scope="col" className="p-4 text-right text-sm font-medium text-muted-foreground">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody>
-            {isLoading ? (
+            {isLoading || networksLoading ? (
               <tr>
                 <td colSpan={7} className="py-10">
                   <div className="flex justify-center">
@@ -100,28 +121,56 @@ export function BudgetsTab() {
                   </div>
                 </td>
               </tr>
-            ) : budgets.length === 0 ? (
+            ) : envBudgets.length === 0 ? (
               <tr>
                 <td colSpan={7}>
                   <EmptyState
                     title="No budgets set"
-                    description="Grant an API key a spend budget against a managed wallet."
+                    description="Grant an API key a spend budget against a Purchasing wallet. You need a Purchasing wallet first."
+                    action={
+                      <Button asChild variant="outline" size="sm">
+                        <Link href={{ pathname: '/x402', query: { tab: 'Wallets' } }}>
+                          Go to Wallets
+                        </Link>
+                      </Button>
+                    }
                   />
                 </td>
               </tr>
             ) : (
-              budgets.map((budget) => (
+              envBudgets.map((budget) => (
                 <tr key={budget.id} className="border-b last:border-0">
                   <td className="p-4 font-mono text-xs">{budget.apiKeyId}</td>
-                  <td className="p-4 font-mono text-sm">{walletLabel(budget.evmWalletId)}</td>
+                  <td className="p-4">
+                    <div className="flex items-center gap-1">
+                      <span className="font-mono text-sm" title={budget.evmWalletAddress}>
+                        {shortenAddress(budget.evmWalletAddress, 6)}
+                      </span>
+                      <CopyButton value={budget.evmWalletAddress} />
+                    </div>
+                  </td>
                   <td className="p-4 text-sm">{chainLabel(budget.caip2Network)}</td>
-                  <td className="p-4 font-mono text-sm">{shortenAddress(budget.asset, 6)}</td>
-                  <td className="p-4 text-right font-mono text-sm">{budget.remainingAmount}</td>
+                  <td className="p-4">
+                    <div className="flex items-center gap-1">
+                      <span className="font-mono text-sm" title={budget.asset}>
+                        {shortenAddress(budget.asset, 6)}
+                      </span>
+                      <CopyButton value={budget.asset} />
+                    </div>
+                  </td>
+                  <td className="p-4 text-right font-mono text-sm">
+                    {groupDigits(budget.remainingAmount)}
+                  </td>
                   <td className="p-4 text-right font-mono text-sm text-muted-foreground">
-                    {budget.spentAmount}
+                    {groupDigits(budget.spentAmount)}
                   </td>
                   <td className="p-4 text-right">
-                    <Button variant="ghost" size="sm" onClick={() => openEdit(budget)}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-label="Edit budget"
+                      onClick={() => openEdit(budget)}
+                    >
                       <Pencil className="h-4 w-4" />
                     </Button>
                   </td>
@@ -160,7 +209,9 @@ export function BudgetDialog({
   const { apiClient } = useAppContext();
   const { allApiKeys } = useApiKey();
   const { networks } = useX402Networks();
-  const { wallets } = useX402Wallets();
+  // Only load the wallet set while the form is open (it feeds the picker). Budgets fund
+  // outbound payments, so only Purchasing wallets are selectable.
+  const { wallets } = useX402Wallets(open, 'Purchasing');
   const [isSaving, setIsSaving] = useState(false);
 
   const {
@@ -235,7 +286,7 @@ export function BudgetDialog({
               name="apiKeyId"
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange} disabled={!!editing}>
-                  <SelectTrigger>
+                  <SelectTrigger aria-label="API key">
                     <SelectValue placeholder="Select an API key" />
                   </SelectTrigger>
                   <SelectContent>
@@ -261,7 +312,7 @@ export function BudgetDialog({
               name="evmWalletId"
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange} disabled={!!editing}>
-                  <SelectTrigger>
+                  <SelectTrigger aria-label="Managed wallet">
                     <SelectValue placeholder="Select a wallet" />
                   </SelectTrigger>
                   <SelectContent>
@@ -282,7 +333,7 @@ export function BudgetDialog({
           <div className="space-y-2">
             <label className="text-sm font-medium">Chain</label>
             <Select value={selectedNetwork} onValueChange={onSelectNetwork} disabled={!!editing}>
-              <SelectTrigger>
+              <SelectTrigger aria-label="Chain">
                 <SelectValue placeholder="Select a chain" />
               </SelectTrigger>
               <SelectContent>
@@ -302,8 +353,11 @@ export function BudgetDialog({
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">Asset (token contract)</label>
+            <label htmlFor="budget-asset" className="text-sm font-medium">
+              Asset (token contract)
+            </label>
             <Input
+              id="budget-asset"
               placeholder="0x…"
               className="font-mono"
               readOnly={!!editing}
@@ -313,8 +367,15 @@ export function BudgetDialog({
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">Remaining amount (base units)</label>
-            <Input placeholder="1000000" className="font-mono" {...register('remainingAmount')} />
+            <label htmlFor="budget-remainingAmount" className="text-sm font-medium">
+              Remaining amount (base units)
+            </label>
+            <Input
+              id="budget-remainingAmount"
+              placeholder="1000000"
+              className="font-mono"
+              {...register('remainingAmount')}
+            />
             {errors.remainingAmount && (
               <p className="text-xs text-destructive">{errors.remainingAmount.message}</p>
             )}

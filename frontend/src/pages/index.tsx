@@ -11,6 +11,7 @@ import {
   Wallet,
   ArrowUpDown,
   ArrowLeftRight,
+  ArrowUpRight,
   PlusCircle,
 } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
@@ -20,6 +21,7 @@ import { RegistryEntry } from '@/lib/api/generated';
 import { useAgents } from '@/lib/queries/useAgents';
 import { useWallets, WalletWithBalance } from '@/lib/queries/useWallets';
 import { useQueryClient } from '@tanstack/react-query';
+import { invalidateAgentQueries } from '@/lib/queries/agent-cache';
 import { useTransactions } from '@/lib/hooks/useTransactions';
 import { toast } from 'react-toastify';
 import Link from 'next/link';
@@ -43,6 +45,7 @@ import { StatCard } from '@/components/ui/stat-card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { WelcomeBanner } from '@/components/ui/welcome-banner';
 import { SetupV2Banner } from '@/components/setup/SetupV2Banner';
+import { useMigrationStatus } from '@/lib/hooks/useMigrationStatus';
 import { MigrateAgentsDialog } from '@/components/ai-agents/MigrateAgentsDialog';
 
 type AIAgent = RegistryEntry;
@@ -55,6 +58,7 @@ export const getStaticProps: GetStaticProps = async () => {
 
 export default function Overview() {
   const { network, selectedPaymentSource } = useAppContext();
+  const { unmigratedCount, canMigrate } = useMigrationStatus();
 
   const queryClient = useQueryClient();
   const {
@@ -83,7 +87,7 @@ export default function Overview() {
 
   // Refetch functions for after mutations
   const refetchAgents = () => {
-    queryClient.invalidateQueries({ queryKey: ['agents'] });
+    invalidateAgentQueries(queryClient);
   };
 
   const refetchWallets = () => {
@@ -139,6 +143,22 @@ export default function Overview() {
             </div>
 
             <SetupV2Banner onMigrateClick={() => setMigrateDialogOpen(true)} />
+
+            {canMigrate && unmigratedCount > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm dark:border-amber-900/50 dark:bg-amber-950/20">
+                <div className="flex items-center gap-2 text-amber-950 dark:text-amber-100">
+                  <ArrowUpRight className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" />
+                  <span>
+                    <span className="font-medium">{unmigratedCount}</span>{' '}
+                    {unmigratedCount === 1 ? 'agent is' : 'agents are'} still on V1 and not yet
+                    migrated to V2.
+                  </span>
+                </div>
+                <Button size="sm" onClick={() => setMigrateDialogOpen(true)} className="shrink-0">
+                  Migrate now
+                </Button>
+              </div>
+            )}
 
             <WelcomeBanner
               agentCount={agents.length}

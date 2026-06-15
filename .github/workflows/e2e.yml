@@ -236,10 +236,10 @@ jobs:
 
       - name: Run V1 + V2 E2E in parallel
         # Spawn ONE jest invocation per source type and run them concurrently
-        # against the shared API server + DB. The describe.each cases in each
-        # test file filter on `TEST_PAYMENT_SOURCE_TYPE`, so each invocation
-        # only runs its own iteration — V1 + V2 progress simultaneously
-        # instead of sequentially. Disjoint wallets (HotWallet.walletVkey
+        # against the shared API server + DB. `jest.e2e.config.ts` filters test
+        # discovery on `TEST_PAYMENT_SOURCE_TYPE`, so each invocation only loads
+        # its own files — V1 + V2 progress simultaneously instead of
+        # sequentially. Disjoint wallets (HotWallet.walletVkey
         # uniqueness enforced at seed) prevent on-chain contention. The
         # shared scheduler in the API server already processes both source
         # types concurrently.

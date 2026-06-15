@@ -12,11 +12,24 @@ function resolvePaymentSourceType(paymentSourceType?: PaymentSourceType): Paymen
 	return paymentSourceType ?? global.testConfig?.paymentSourceType ?? PaymentSourceType.Web3CardanoV1;
 }
 
-function walletKeySet(paymentSource: PaymentSourceResponse): Set<string> {
-	return new Set([
-		...paymentSource.SellingWallets.map((wallet) => wallet.walletVkey),
-		...paymentSource.PurchasingWallets.map((wallet) => wallet.walletVkey),
-	]);
+/**
+ * Fetch every wallet vkey for a payment source via the dedicated /wallet/list
+ * endpoint (hot wallets are no longer embedded in the payment-source response).
+ */
+async function fetchAllWalletVkeys(client: ApiClient, paymentSourceId: string): Promise<Set<string>> {
+	const vkeys = new Set<string>();
+	const take = 50;
+	let cursorId: string | undefined;
+	while (true) {
+		const { Wallets } = await client.queryWallets({ paymentSourceId, take, cursorId });
+		if (Wallets.length === 0) break;
+		for (const wallet of Wallets) vkeys.add(wallet.walletVkey);
+		if (Wallets.length < take) break;
+		const lastWallet = Wallets[Wallets.length - 1];
+		if (!lastWallet?.id || lastWallet.id === cursorId) break;
+		cursorId = lastWallet.id;
+	}
+	return vkeys;
 }
 
 export async function getE2EPaymentSource(
@@ -68,11 +81,20 @@ export async function getActiveWalletVKey(
 	paymentSourceType?: PaymentSourceType,
 	apiClient?: ApiClient,
 ): Promise<string> {
+	const client = apiClient || global.testApiClient;
+	if (!client) {
+		throw new Error('ApiClient not provided and global.testApiClient is not available');
+	}
 	const resolvedPaymentSourceType = resolvePaymentSourceType(paymentSourceType);
-	const paymentSource = await getE2EPaymentSource(network, resolvedPaymentSourceType, apiClient);
+	const paymentSource = await getE2EPaymentSource(network, resolvedPaymentSourceType, client);
 
-	// Get wallets based on type
-	const wallets = walletType === HotWalletType.Selling ? paymentSource.SellingWallets : paymentSource.PurchasingWallets;
+	// Hot wallets come from the dedicated /wallet/list endpoint, scoped to this
+	// source and wallet type (ordered by createdAt desc — first is newest).
+	const { Wallets: wallets } = await client.queryWallets({
+		paymentSourceId: paymentSource.id,
+		walletType,
+		take: 1,
+	});
 
 	if (wallets.length === 0) {
 		throw new Error(
@@ -80,7 +102,6 @@ export async function getActiveWalletVKey(
 		);
 	}
 
-	// Get the first wallet (payment sources are returned in descending order by createdAt)
 	const wallet = wallets[0];
 
 	console.log(
@@ -96,26 +117,32 @@ export async function validateE2EPaymentSourceWallets(
 	apiClient?: ApiClient,
 ): Promise<{ valid: boolean; errors: string[] }> {
 	const errors: string[] = [];
+	const client = apiClient || global.testApiClient;
+	if (!client) {
+		throw new Error('ApiClient not provided and global.testApiClient is not available');
+	}
 	const resolvedPaymentSourceType = resolvePaymentSourceType(paymentSourceType);
-	const paymentSource = await getE2EPaymentSource(network, resolvedPaymentSourceType, apiClient);
+	const paymentSource = await getE2EPaymentSource(network, resolvedPaymentSourceType, client);
 
-	if (paymentSource.SellingWallets.length === 0) {
+	if (paymentSource.SellingWalletsCount === 0) {
 		errors.push(`No selling wallets configured for ${resolvedPaymentSourceType} on ${network}`);
 	}
-	if (paymentSource.PurchasingWallets.length === 0) {
+	if (paymentSource.PurchasingWalletsCount === 0) {
 		errors.push(`No purchasing wallets configured for ${resolvedPaymentSourceType} on ${network}`);
 	}
 
 	if (resolvedPaymentSourceType === PaymentSourceType.Web3CardanoV2) {
-		const client = apiClient || global.testApiClient;
 		const response = await client.queryPaymentSources({ take: 100 });
 		const v1PaymentSource = response.ExtendedPaymentSources.find(
 			(ps) => ps.network === network && ps.paymentSourceType === PaymentSourceType.Web3CardanoV1,
 		);
 
 		if (v1PaymentSource != null) {
-			const v1Wallets = walletKeySet(v1PaymentSource);
-			const overlappingVkeys = [...walletKeySet(paymentSource)].filter((walletVkey) => v1Wallets.has(walletVkey));
+			const [v1Wallets, v2Wallets] = await Promise.all([
+				fetchAllWalletVkeys(client, v1PaymentSource.id),
+				fetchAllWalletVkeys(client, paymentSource.id),
+			]);
+			const overlappingVkeys = [...v2Wallets].filter((walletVkey) => v1Wallets.has(walletVkey));
 
 			if (overlappingVkeys.length > 0) {
 				errors.push(
