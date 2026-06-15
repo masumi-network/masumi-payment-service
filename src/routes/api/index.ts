@@ -31,6 +31,7 @@ import {
 	queryWalletEndpointGet,
 	postWalletFundEndpointPost,
 	getWalletFundEndpointGet,
+	queryWalletListEndpointGet,
 } from './wallet';
 import {
 	deleteWalletLowBalanceRuleEndpointDelete,
@@ -93,16 +94,26 @@ import {
 import {
 	createX402PaymentPost,
 	createX402WalletPost,
+	deleteX402LowBalanceRuleDelete,
 	deleteX402WalletPost,
 	listX402BudgetsGet,
+	listX402LowBalanceRulesGet,
 	listX402NetworksGet,
 	listX402PaymentAttemptsGet,
 	listX402SettlementsGet,
 	listX402WalletsGet,
 	setX402BudgetPost,
+	setX402LowBalanceRulePost,
 	settleX402Post,
+	updateX402LowBalanceRulePatch,
+	updateX402WalletPost,
 	upsertX402NetworkPost,
 	verifyX402Post,
+	x402AnalyticsPost,
+	x402PaymentAttemptsCountGet,
+	x402SettlementsCountGet,
+	x402WalletBalanceGet,
+	x402WalletsCountGet,
 } from './x402';
 
 export const apiRouter: Routing = {
@@ -249,6 +260,9 @@ export const apiRouter: Routing = {
 			get: queryWalletEndpointGet,
 			post: postWalletEndpointPost,
 			patch: patchWalletEndpointPatch,
+			list: {
+				get: queryWalletListEndpointGet,
+			},
 			'low-balance': {
 				get: getWalletLowBalanceRulesEndpointGet,
 				post: postWalletLowBalanceRuleEndpointPost,
@@ -288,6 +302,15 @@ export const apiRouter: Routing = {
 			wallets: {
 				get: listX402WalletsGet,
 				post: createX402WalletPost,
+				update: {
+					post: updateX402WalletPost,
+				},
+				balance: {
+					get: x402WalletBalanceGet,
+				},
+				count: {
+					get: x402WalletsCountGet,
+				},
 				delete: {
 					post: deleteX402WalletPost,
 				},
@@ -300,11 +323,26 @@ export const apiRouter: Routing = {
 				get: listX402BudgetsGet,
 				post: setX402BudgetPost,
 			},
+			'low-balance': {
+				get: listX402LowBalanceRulesGet,
+				post: setX402LowBalanceRulePost,
+				patch: updateX402LowBalanceRulePatch,
+				delete: deleteX402LowBalanceRuleDelete,
+			},
 			payments: {
 				get: listX402PaymentAttemptsGet,
+				count: {
+					get: x402PaymentAttemptsCountGet,
+				},
 			},
 			settlements: {
 				get: listX402SettlementsGet,
+				count: {
+					get: x402SettlementsCountGet,
+				},
+			},
+			analytics: {
+				post: x402AnalyticsPost,
 			},
 		},
 		swap: {

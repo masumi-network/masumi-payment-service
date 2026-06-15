@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
-import { type PaymentSource } from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
+import { usePaymentSourceWalletsAll } from '@/lib/queries/useWallets';
+import type { WalletListItem } from '@/lib/api/generated';
 
 const ACKNOWLEDGED_WALLET_ALERTS_KEY = 'masumi_acknowledged_wallet_alerts';
 
@@ -54,21 +55,8 @@ function walletDateValue(date: Date | null | undefined) {
   return new Date(date).getTime();
 }
 
-function buildWalletAlerts(selectedPaymentSource: PaymentSource | null): WalletAlertNotification[] {
-  if (!selectedPaymentSource) {
-    return [];
-  }
-
-  return [
-    ...selectedPaymentSource.PurchasingWallets.map((wallet) => ({
-      ...wallet,
-      type: 'Purchasing' as const,
-    })),
-    ...selectedPaymentSource.SellingWallets.map((wallet) => ({
-      ...wallet,
-      type: 'Selling' as const,
-    })),
-  ]
+function buildWalletAlerts(wallets: WalletListItem[]): WalletAlertNotification[] {
+  return wallets
     .filter((wallet) => wallet.LowBalanceSummary?.isLow)
     .map((wallet) => ({
       id: wallet.id,
@@ -93,13 +81,11 @@ export function clearStoredWalletAlertAcknowledgements() {
 export function useWalletAlertNotifications() {
   const { selectedPaymentSource } = useAppContext();
   const paymentSourceId = selectedPaymentSource?.id ?? null;
+  const { wallets } = usePaymentSourceWalletsAll(paymentSourceId);
   const [acknowledgementsBySourceId, setAcknowledgementsBySourceId] =
     useState<WalletAlertAcknowledgements>(() => readAcknowledgements());
 
-  const walletAlerts = useMemo(
-    () => buildWalletAlerts(selectedPaymentSource),
-    [selectedPaymentSource],
-  );
+  const walletAlerts = useMemo(() => buildWalletAlerts(wallets), [wallets]);
 
   const unacknowledgedWalletAlerts = useMemo(() => {
     const acknowledgedByWalletId = paymentSourceId

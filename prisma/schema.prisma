@@ -361,6 +361,7 @@ model X402EvmWallet {
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
   address             String                @unique
+  type                X402EvmWalletType
   encryptedPrivateKey String
   note                String?
   deletedAt           DateTime?
@@ -369,9 +370,34 @@ model X402EvmWallet {
   FacilitatesNetworks X402Network[]         @relation("X402NetworkFacilitatorWallet")
   Budgets             X402WalletBudget[]
   PaymentAttempts     X402PaymentAttempt[]
+  LowBalanceRules     X402EvmWalletLowBalanceRule[]
 
   @@index([deletedAt])
   @@index([createdById])
+  @@index([type])
+}
+
+model X402EvmWalletLowBalanceRule {
+  id              String           @id @default(cuid())
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  evmWalletId     String
+  caip2Network    String
+  // ERC-20 token contract address (lowercased), or the literal "native" for the
+  // chain's gas token (ETH). A Selling/facilitator wallet typically monitors "native"
+  // (gas to settle); a Purchasing wallet monitors its payment token plus gas.
+  asset           String
+  thresholdAmount BigInt
+  enabled         Boolean          @default(true)
+  status          LowBalanceStatus @default(Unknown)
+  lastKnownAmount BigInt?
+  lastCheckedAt   DateTime?
+  lastAlertedAt   DateTime?
+  EvmWallet       X402EvmWallet    @relation(fields: [evmWalletId], references: [id], onDelete: Cascade)
+
+  @@unique([evmWalletId, caip2Network, asset])
+  @@index([evmWalletId, enabled])
+  @@index([enabled, status])
 }
 
 model X402WalletBudget {
@@ -850,6 +876,11 @@ enum Chain {
   Cardano
 }
 
+enum X402EvmWalletType {
+  Purchasing
+  Selling
+}
+
 enum X402PaymentScheme {
   Exact
 }
@@ -1086,6 +1117,9 @@ enum WebhookEventType {
   PURCHASE_ON_ERROR
   PAYMENT_ON_ERROR
   WALLET_LOW_BALANCE
+  X402_PAYMENT_SETTLED
+  X402_PAYMENT_FAILED
+  X402_WALLET_LOW_BALANCE
 }
 
 enum WebhookFormat {

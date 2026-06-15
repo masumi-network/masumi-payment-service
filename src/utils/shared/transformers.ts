@@ -1,12 +1,3 @@
-import { HotWalletType } from '@/generated/prisma/client';
-
-export function splitWalletsByType<T extends { type: HotWalletType }>(wallets: T[]) {
-	return {
-		SellingWallets: wallets.filter((w) => w.type === HotWalletType.Selling),
-		PurchasingWallets: wallets.filter((w) => w.type === HotWalletType.Purchasing),
-	};
-}
-
 export function transformBigIntAmounts<T extends { unit: string; amount: bigint }>(
 	amounts: T[],
 ): Array<{ unit: string; amount: string }> {

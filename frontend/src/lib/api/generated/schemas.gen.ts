@@ -302,6 +302,82 @@ export const WalletSchema = {
     ]
 } as const;
 
+export const WalletListItemSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string',
+            description: 'Unique identifier for the wallet'
+        },
+        paymentSourceId: {
+            type: 'string',
+            description: 'Id of the payment source this wallet belongs to'
+        },
+        type: {
+            type: 'string',
+            enum: [
+                'Selling',
+                'Purchasing'
+            ],
+            description: 'Whether this is a Selling (seller side) or Purchasing (buyer side) wallet'
+        },
+        walletVkey: {
+            type: 'string',
+            description: 'Payment key hash of the wallet'
+        },
+        walletAddress: {
+            type: 'string',
+            description: 'Cardano address of the wallet'
+        },
+        collectionAddress: {
+            type: 'string',
+            nullable: true,
+            description: 'Optional collection address for this wallet. Null if not set'
+        },
+        note: {
+            type: 'string',
+            nullable: true,
+            description: 'Optional note about this wallet. Null if not set'
+        },
+        LowBalanceSummary: {
+            type: 'object',
+            properties: {
+                isLow: {
+                    type: 'boolean',
+                    description: 'Whether any enabled low-balance rule for this wallet is currently below threshold'
+                },
+                lowRuleCount: {
+                    type: 'integer',
+                    minimum: 0,
+                    description: 'How many enabled rules for this wallet are currently in low state'
+                },
+                lastCheckedAt: {
+                    type: 'string',
+                    nullable: true,
+                    format: 'date-time',
+                    description: 'Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked'
+                }
+            },
+            required: [
+                'isLow',
+                'lowRuleCount',
+                'lastCheckedAt'
+            ],
+            description: 'Aggregated low-balance status for the wallet'
+        }
+    },
+    required: [
+        'id',
+        'paymentSourceId',
+        'type',
+        'walletVkey',
+        'walletAddress',
+        'collectionAddress',
+        'note',
+        'LowBalanceSummary'
+    ]
+} as const;
+
 export const GeneratedWalletSecretSchema = {
     type: 'object',
     properties: {
@@ -3085,20 +3161,6 @@ export const PaymentSourceSchema = {
             },
             description: 'List of admin wallets for dispute resolution'
         },
-        PurchasingWallets: {
-            type: 'array',
-            items: {
-                $ref: '#/components/schemas/PurchasingWallet'
-            },
-            description: 'List of wallets used for purchasing (buyer side)'
-        },
-        SellingWallets: {
-            type: 'array',
-            items: {
-                $ref: '#/components/schemas/SellingWallet'
-            },
-            description: 'List of wallets used for selling (seller side)'
-        },
         FeeReceiverNetworkWallet: {
             type: 'object',
             nullable: true,
@@ -3132,8 +3194,6 @@ export const PaymentSourceSchema = {
         'lastIdentifierChecked',
         'lastCheckedAt',
         'AdminWallets',
-        'PurchasingWallets',
-        'SellingWallets',
         'FeeReceiverNetworkWallet',
         'feeRatePermille'
     ]
@@ -3154,130 +3214,6 @@ export const AdminWalletSchema = {
     required: [
         'walletAddress',
         'order'
-    ]
-} as const;
-
-export const PurchasingWalletSchema = {
-    type: 'object',
-    properties: {
-        id: {
-            type: 'string',
-            description: 'Unique identifier for the purchasing wallet'
-        },
-        walletVkey: {
-            type: 'string',
-            description: 'Payment key hash of the purchasing wallet'
-        },
-        walletAddress: {
-            type: 'string',
-            description: 'Cardano address of the purchasing wallet'
-        },
-        collectionAddress: {
-            type: 'string',
-            nullable: true,
-            description: 'Optional collection address for this wallet. Null if not set'
-        },
-        note: {
-            type: 'string',
-            nullable: true,
-            description: 'Optional note about this wallet. Null if not set'
-        },
-        LowBalanceSummary: {
-            type: 'object',
-            properties: {
-                isLow: {
-                    type: 'boolean',
-                    description: 'Whether any enabled low-balance rule for this wallet is currently below threshold'
-                },
-                lowRuleCount: {
-                    type: 'integer',
-                    minimum: 0,
-                    description: 'How many enabled rules for this wallet are currently in low state'
-                },
-                lastCheckedAt: {
-                    type: 'string',
-                    nullable: true,
-                    format: 'date-time',
-                    description: 'Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked'
-                }
-            },
-            required: [
-                'isLow',
-                'lowRuleCount',
-                'lastCheckedAt'
-            ],
-            description: 'Aggregated low-balance status for the wallet'
-        }
-    },
-    required: [
-        'id',
-        'walletVkey',
-        'walletAddress',
-        'collectionAddress',
-        'note',
-        'LowBalanceSummary'
-    ]
-} as const;
-
-export const SellingWalletSchema = {
-    type: 'object',
-    properties: {
-        id: {
-            type: 'string',
-            description: 'Unique identifier for the selling wallet'
-        },
-        walletVkey: {
-            type: 'string',
-            description: 'Payment key hash of the selling wallet'
-        },
-        walletAddress: {
-            type: 'string',
-            description: 'Cardano address of the selling wallet'
-        },
-        collectionAddress: {
-            type: 'string',
-            nullable: true,
-            description: 'Optional collection address for this wallet. Null if not set'
-        },
-        note: {
-            type: 'string',
-            nullable: true,
-            description: 'Optional note about this wallet. Null if not set'
-        },
-        LowBalanceSummary: {
-            type: 'object',
-            properties: {
-                isLow: {
-                    type: 'boolean',
-                    description: 'Whether any enabled low-balance rule for this wallet is currently below threshold'
-                },
-                lowRuleCount: {
-                    type: 'integer',
-                    minimum: 0,
-                    description: 'How many enabled rules for this wallet are currently in low state'
-                },
-                lastCheckedAt: {
-                    type: 'string',
-                    nullable: true,
-                    format: 'date-time',
-                    description: 'Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked'
-                }
-            },
-            required: [
-                'isLow',
-                'lowRuleCount',
-                'lastCheckedAt'
-            ],
-            description: 'Aggregated low-balance status for the wallet'
-        }
-    },
-    required: [
-        'id',
-        'walletVkey',
-        'walletAddress',
-        'collectionAddress',
-        'note',
-        'LowBalanceSummary'
     ]
 } as const;
 
@@ -3385,135 +3321,13 @@ export const PaymentSourceExtendedSchema = {
             },
             description: 'List of admin wallets for dispute resolution (exactly 3 required)'
         },
-        PurchasingWallets: {
-            type: 'array',
-            items: {
-                type: 'object',
-                properties: {
-                    id: {
-                        type: 'string',
-                        description: 'Unique identifier for the purchasing wallet'
-                    },
-                    walletVkey: {
-                        type: 'string',
-                        description: 'Payment key hash of the purchasing wallet'
-                    },
-                    walletAddress: {
-                        type: 'string',
-                        description: 'Cardano address of the purchasing wallet'
-                    },
-                    collectionAddress: {
-                        type: 'string',
-                        nullable: true,
-                        description: 'Optional collection address for this wallet. Null if not set'
-                    },
-                    note: {
-                        type: 'string',
-                        nullable: true,
-                        description: 'Optional note about this wallet. Null if not set'
-                    },
-                    LowBalanceSummary: {
-                        type: 'object',
-                        properties: {
-                            isLow: {
-                                type: 'boolean',
-                                description: 'Whether any enabled low-balance rule for this wallet is currently below threshold'
-                            },
-                            lowRuleCount: {
-                                type: 'integer',
-                                minimum: 0,
-                                description: 'How many enabled rules for this wallet are currently in low state'
-                            },
-                            lastCheckedAt: {
-                                type: 'string',
-                                nullable: true,
-                                format: 'date-time',
-                                description: 'Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked'
-                            }
-                        },
-                        required: [
-                            'isLow',
-                            'lowRuleCount',
-                            'lastCheckedAt'
-                        ],
-                        description: 'Aggregated low-balance status for the wallet'
-                    }
-                },
-                required: [
-                    'id',
-                    'walletVkey',
-                    'walletAddress',
-                    'collectionAddress',
-                    'note',
-                    'LowBalanceSummary'
-                ]
-            },
-            description: 'List of wallets used for purchasing (buyer side)'
+        PurchasingWalletsCount: {
+            type: 'integer',
+            description: 'Number of active purchasing wallets. Fetch the wallets themselves via GET /wallet/list.'
         },
-        SellingWallets: {
-            type: 'array',
-            items: {
-                type: 'object',
-                properties: {
-                    id: {
-                        type: 'string',
-                        description: 'Unique identifier for the selling wallet'
-                    },
-                    walletVkey: {
-                        type: 'string',
-                        description: 'Payment key hash of the selling wallet'
-                    },
-                    walletAddress: {
-                        type: 'string',
-                        description: 'Cardano address of the selling wallet'
-                    },
-                    collectionAddress: {
-                        type: 'string',
-                        nullable: true,
-                        description: 'Optional collection address for this wallet. Null if not set'
-                    },
-                    note: {
-                        type: 'string',
-                        nullable: true,
-                        description: 'Optional note about this wallet. Null if not set'
-                    },
-                    LowBalanceSummary: {
-                        type: 'object',
-                        properties: {
-                            isLow: {
-                                type: 'boolean',
-                                description: 'Whether any enabled low-balance rule for this wallet is currently below threshold'
-                            },
-                            lowRuleCount: {
-                                type: 'integer',
-                                minimum: 0,
-                                description: 'How many enabled rules for this wallet are currently in low state'
-                            },
-                            lastCheckedAt: {
-                                type: 'string',
-                                nullable: true,
-                                format: 'date-time',
-                                description: 'Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked'
-                            }
-                        },
-                        required: [
-                            'isLow',
-                            'lowRuleCount',
-                            'lastCheckedAt'
-                        ],
-                        description: 'Aggregated low-balance status for the wallet'
-                    }
-                },
-                required: [
-                    'id',
-                    'walletVkey',
-                    'walletAddress',
-                    'collectionAddress',
-                    'note',
-                    'LowBalanceSummary'
-                ]
-            },
-            description: 'List of wallets used for selling (seller side)'
+        SellingWalletsCount: {
+            type: 'integer',
+            description: 'Number of active selling wallets. Fetch the wallets themselves via GET /wallet/list.'
         },
         FeeReceiverNetworkWallet: {
             type: 'object',
@@ -3550,8 +3364,8 @@ export const PaymentSourceExtendedSchema = {
         'syncInProgress',
         'lastCheckedAt',
         'AdminWallets',
-        'PurchasingWallets',
-        'SellingWallets',
+        'PurchasingWalletsCount',
+        'SellingWalletsCount',
         'FeeReceiverNetworkWallet',
         'feeRatePermille'
     ]
@@ -4171,6 +3985,11 @@ export const X402NetworkSchema = {
             nullable: true,
             description: 'Id of the managed EVM wallet used to settle payments on this chain'
         },
+        facilitatorWalletAddress: {
+            type: 'string',
+            nullable: true,
+            description: 'Resolved address of the facilitator wallet. Null when no facilitator is set.'
+        },
         createdById: {
             type: 'string',
             nullable: true,
@@ -4194,6 +4013,7 @@ export const X402NetworkSchema = {
         'isEnabled',
         'defaultAsset',
         'facilitatorWalletId',
+        'facilitatorWalletAddress',
         'createdById',
         'createdAt',
         'updatedAt'
@@ -4212,6 +4032,19 @@ export const X402WalletSchema = {
             pattern: '^0x[a-fA-F0-9]{40}$',
             description: 'The EVM address derived from the wallet private key'
         },
+        type: {
+            type: 'string',
+            enum: [
+                'Purchasing',
+                'Selling'
+            ],
+            description: 'Purchasing wallets fund outbound payments; Selling wallets settle inbound ones as facilitators'
+        },
+        note: {
+            type: 'string',
+            nullable: true,
+            description: 'Optional human-readable label for the wallet'
+        },
         createdById: {
             type: 'string',
             nullable: true,
@@ -4229,9 +4062,32 @@ export const X402WalletSchema = {
     required: [
         'id',
         'address',
+        'type',
+        'note',
         'createdById',
         'createdAt',
         'updatedAt'
+    ]
+} as const;
+
+export const X402WalletCreatedSchema = {
+    allOf: [
+        {
+            $ref: '#/components/schemas/X402Wallet'
+        },
+        {
+            type: 'object',
+            properties: {
+                privateKey: {
+                    type: 'string',
+                    nullable: true,
+                    description: 'The generated 0x-prefixed private key, returned ONCE so you can back it up. It is null when you supplied your own key, is never stored in plaintext, and can never be retrieved again. Save it now.'
+                }
+            },
+            required: [
+                'privateKey'
+            ]
+        }
     ]
 } as const;
 
@@ -4248,6 +4104,10 @@ export const X402BudgetSchema = {
         evmWalletId: {
             type: 'string',
             description: 'Managed EVM wallet the budget draws from'
+        },
+        evmWalletAddress: {
+            type: 'string',
+            description: 'Resolved address of the managed EVM wallet the budget draws from'
         },
         caip2Network: {
             type: 'string',
@@ -4284,6 +4144,7 @@ export const X402BudgetSchema = {
         'id',
         'apiKeyId',
         'evmWalletId',
+        'evmWalletAddress',
         'caip2Network',
         'asset',
         'remainingAmount',
@@ -4482,5 +4343,79 @@ export const X402SettlementRecordSchema = {
         'caip2Network',
         'amount',
         'payer'
+    ]
+} as const;
+
+export const X402LowBalanceRuleSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string'
+        },
+        evmWalletId: {
+            type: 'string'
+        },
+        evmWalletAddress: {
+            type: 'string'
+        },
+        caip2Network: {
+            type: 'string',
+            pattern: '^eip155:\\d+$'
+        },
+        asset: {
+            type: 'string'
+        },
+        thresholdAmount: {
+            type: 'string',
+            description: 'Alert threshold in base units'
+        },
+        enabled: {
+            type: 'boolean'
+        },
+        status: {
+            type: 'string',
+            enum: [
+                'Unknown',
+                'Healthy',
+                'Low'
+            ]
+        },
+        lastKnownAmount: {
+            type: 'string',
+            nullable: true
+        },
+        lastCheckedAt: {
+            type: 'string',
+            nullable: true,
+            format: 'date-time'
+        },
+        lastAlertedAt: {
+            type: 'string',
+            nullable: true,
+            format: 'date-time'
+        },
+        createdAt: {
+            type: 'string',
+            format: 'date-time'
+        },
+        updatedAt: {
+            type: 'string',
+            format: 'date-time'
+        }
+    },
+    required: [
+        'id',
+        'evmWalletId',
+        'evmWalletAddress',
+        'caip2Network',
+        'asset',
+        'thresholdAmount',
+        'enabled',
+        'status',
+        'lastKnownAmount',
+        'lastCheckedAt',
+        'lastAlertedAt',
+        'createdAt',
+        'updatedAt'
     ]
 } as const;

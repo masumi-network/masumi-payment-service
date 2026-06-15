@@ -1,6 +1,11 @@
-import { Network, TransactionStatus } from '@/generated/prisma/client';
+import { HotWalletType, Network, TransactionStatus } from '@/generated/prisma/client';
 import { z } from '@masumi/payment-core/zod';
-import { getWalletSchemaOutput, postWalletSchemaOutput, postWalletFundSchemaOutput } from './schemas';
+import {
+	getWalletListSchemaOutput,
+	getWalletSchemaOutput,
+	postWalletSchemaOutput,
+	postWalletFundSchemaOutput,
+} from './schemas';
 
 export const walletExample = {
 	walletVkey: 'wallet_vkey',
@@ -33,6 +38,32 @@ export const getWalletQueryExample = {
 	includeSecret: 'true',
 	walletType: 'Selling',
 };
+
+export const listWalletsQueryExample = {
+	take: 10,
+	cursorId: 'unique_cuid_v2_of_last_returned_wallet',
+	paymentSourceId: 'unique_cuid_v2_of_payment_source',
+	walletType: HotWalletType.Selling,
+};
+
+export const listWalletsResponseExample = {
+	Wallets: [
+		{
+			id: 'unique_cuid_v2_auto_generated',
+			paymentSourceId: 'unique_cuid_v2_of_payment_source',
+			type: HotWalletType.Selling,
+			walletVkey: 'wallet_vkey',
+			walletAddress: 'wallet_address',
+			collectionAddress: null,
+			note: 'note',
+			LowBalanceSummary: {
+				isLow: false,
+				lowRuleCount: 0,
+				lastCheckedAt: new Date(1713636260),
+			},
+		},
+	],
+} satisfies z.infer<typeof getWalletListSchemaOutput>;
 
 export const createWalletBodyExample = {
 	network: Network.Preprod,

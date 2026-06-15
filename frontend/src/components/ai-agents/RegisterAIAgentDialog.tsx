@@ -12,13 +12,7 @@ import {
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Badge } from '../ui/badge';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import {
-  PaymentSourceExtended,
-  postRegistry,
-  postRegistryUpdate,
-  RegistryEntry,
-  SellingWallet,
-} from '@/lib/api/generated';
+import { postRegistry, postRegistryUpdate, RegistryEntry } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { shortenAddress, formatFundUnit } from '@/lib/utils';
 import { Trash2 } from 'lucide-react';
@@ -28,7 +22,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { getActiveStablecoinConfig } from '@/lib/constants/defaultWallets';
 import { Separator } from '@/components/ui/separator';
 import { useWallets } from '@/lib/queries/useWallets';
-import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
+import type { WalletListItem } from '@/lib/api/generated';
 import { REGISTRY_DECIMAL_ADA_AMOUNT_PATTERN, REGISTRY_LIMITS } from '@/lib/registry-validation';
 import { convertDecimalToBaseUnits } from '@/lib/convertDecimalToBaseUnits';
 import { isV2PaymentSource } from '@/lib/payment-source-type';
@@ -226,11 +220,11 @@ export function RegisterAIAgentDialog({
   const isUpdateMode = !!editingAgent;
   const [isLoading, setIsLoading] = useState(false);
   const [sellingWallets, setSellingWallets] = useState<
-    { wallet: SellingWallet; balance: number }[]
+    { wallet: WalletListItem; balance: number }[]
   >([]);
 
   const { wallets, isLoading: isLoadingWallets } = useWallets();
-  const { apiClient, network } = useAppContext();
+  const { apiClient, network, selectedPaymentSource } = useAppContext();
   const stablecoinUnit = network === 'Mainnet' ? 'USDCx' : 'tUSDM';
 
   const {
@@ -284,14 +278,6 @@ export function RegisterAIAgentDialog({
     name: 'exampleOutputs',
   });
 
-  const { paymentSources } = usePaymentSourceExtendedAll();
-  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] = useState<
-    PaymentSourceExtended[]
-  >([]);
-  useEffect(() => {
-    setCurrentNetworkPaymentSources(paymentSources.filter((ps) => ps.network === network));
-  }, [paymentSources, network]);
-
   const tags = watch('tags');
   const selectedWalletVkey = watch('selectedWallet');
   const selectedRecipientWalletAddress = watch('recipientWalletAddress');
@@ -304,6 +290,8 @@ export function RegisterAIAgentDialog({
         .map((w) => ({
           wallet: {
             id: w.id,
+            paymentSourceId: w.paymentSourceId,
+            type: w.type,
             walletVkey: w.walletVkey,
             walletAddress: w.walletAddress,
             collectionAddress: w.collectionAddress,
@@ -397,22 +385,15 @@ export function RegisterAIAgentDialog({
     () => sellingWallets.find((wallet) => wallet.wallet.walletVkey === selectedWalletVkey),
     [sellingWallets, selectedWalletVkey],
   );
-  const selectedPaymentSource = useMemo(
-    () =>
-      currentNetworkPaymentSources.find((paymentSource) =>
-        paymentSource.SellingWallets?.some((wallet) => wallet.walletVkey === selectedWalletVkey),
-      ),
-    [currentNetworkPaymentSources, selectedWalletVkey],
-  );
+  // The chosen minting wallet always belongs to the active payment source
+  // (the picker is scoped to it via useWallets), so its sibling holding wallets
+  // are the other wallets returned for that source.
   const recipientWalletOptions = useMemo(
     () =>
-      selectedPaymentSource
-        ? [
-            ...(selectedPaymentSource.SellingWallets ?? []),
-            ...(selectedPaymentSource.PurchasingWallets ?? []),
-          ].filter((wallet) => wallet.walletAddress !== selectedWallet?.wallet.walletAddress)
+      selectedWallet
+        ? wallets.filter((wallet) => wallet.walletAddress !== selectedWallet.wallet.walletAddress)
         : [],
-    [selectedPaymentSource, selectedWallet?.wallet.walletAddress],
+    [wallets, selectedWallet],
   );
 
   const { networks: x402Networks } = useX402Networks({ silentErrors: true });
@@ -457,10 +438,9 @@ export function RegisterAIAgentDialog({
             toast.error('Insufficient balance in selected wallet');
             return;
           }
-          const paymentSource = currentNetworkPaymentSources.find((ps) =>
-            ps.SellingWallets?.some((s) => s.walletVkey == selectedWalletVkey),
-          );
-          if (!paymentSource) {
+          // The picker only offers wallets from the active payment source, so a
+          // picked wallet implies the source is present.
+          if (!selectedPaymentSource) {
             toast.error('Smart contract wallet not found in payment sources');
             return;
           }
@@ -638,7 +618,7 @@ export function RegisterAIAgentDialog({
     },
     [
       sellingWallets,
-      currentNetworkPaymentSources,
+      selectedPaymentSource,
       apiClient,
       network,
       stablecoinUnit,
@@ -800,12 +780,12 @@ export function RegisterAIAgentDialog({
                   onValueChange={(value) => field.onChange(value === '__default' ? '' : value)}
                 >
                   <SelectTrigger
-                    disabled={isLoadingWallets || !selectedPaymentSource}
+                    disabled={isLoadingWallets || !selectedWallet}
                     className={isLoadingWallets ? 'opacity-50 cursor-not-allowed' : ''}
                   >
                     <SelectValue
                       placeholder={
-                        !selectedPaymentSource
+                        !selectedWallet
                           ? 'Select a minting wallet first'
                           : 'Use minting wallet (default)'
                       }
@@ -828,7 +808,7 @@ export function RegisterAIAgentDialog({
               Optional. The selected minting wallet still mints and pays fees, while the registry
               NFT is delivered to another managed holding wallet on the same payment source.
             </p>
-            {selectedPaymentSource && recipientWalletOptions.length === 0 && (
+            {selectedWallet && recipientWalletOptions.length === 0 && (
               <p className="text-xs text-muted-foreground">
                 No other managed wallets are available on this payment source.
               </p>

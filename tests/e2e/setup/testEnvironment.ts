@@ -47,15 +47,72 @@ beforeAll(async () => {
 	}
 });
 
+function readTextProperty(value: object, key: 'name' | 'message' | 'stack'): string {
+	try {
+		const property = Reflect.get(value, key);
+		return typeof property === 'string' ? property : '';
+	} catch {
+		return '';
+	}
+}
+
+function describeProcessError(reason: unknown): string {
+	if (typeof reason === 'string') {
+		return reason;
+	}
+
+	if (reason && typeof reason === 'object') {
+		const errorText = [
+			readTextProperty(reason, 'name'),
+			readTextProperty(reason, 'message'),
+			readTextProperty(reason, 'stack'),
+		]
+			.filter(Boolean)
+			.join('\n');
+
+		if (errorText) {
+			return errorText;
+		}
+	}
+
+	if (reason && typeof reason === 'object') {
+		try {
+			return JSON.stringify(reason);
+		} catch {
+			return String(reason);
+		}
+	}
+
+	return String(reason ?? '');
+}
+
+function isLibsodiumTeardownNoise(reason: unknown): boolean {
+	const text = describeProcessError(reason).toLowerCase();
+	const mentionsLibsodium =
+		text.includes('libsodium') || text.includes('sodium-wrappers') || text.includes('sodium-sumo');
+	const isJestTeardownRequire = text.includes('after the jest environment has been torn down');
+	const isMissingSecureRandom = text.includes('no secure random number generator found');
+
+	return (mentionsLibsodium && isJestTeardownRequire) || isMissingSecureRandom;
+}
+
 // Global error handlers
 if (!global.__e2eErrorHandlersInstalled) {
 	global.__e2eErrorHandlersInstalled = true;
 
 	process.on('unhandledRejection', (reason, promise) => {
+		if (isLibsodiumTeardownNoise(reason)) {
+			return;
+		}
+
 		console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
 	});
 
 	process.on('uncaughtException', (error) => {
+		if (isLibsodiumTeardownNoise(error)) {
+			return;
+		}
+
 		console.error('❌ Uncaught Exception:', error);
 		process.exit(1);
 	});

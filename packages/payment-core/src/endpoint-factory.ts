@@ -57,8 +57,7 @@ const customResultHandler = new ResultHandler({
 					status: 'error',
 					error: { message: error.message },
 					id: error.id,
-					// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-					object: error.object,
+					object: error.object as z.infer<typeof allowedObjectSchema>,
 				});
 			}
 			const httpError = ensureHttpError(error);

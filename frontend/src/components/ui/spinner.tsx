@@ -19,7 +19,12 @@ export function Spinner({
   containerClassName,
 }: SpinnerProps) {
   const spinner = (
-    <PiSpinnerGap className={cn('animate-spin', className)} style={{ width: size, height: size }} />
+    <PiSpinnerGap
+      role="status"
+      aria-label="Loading"
+      className={cn('animate-spin', className)}
+      style={{ width: size, height: size }}
+    />
   );
 
   if (addContainer) {

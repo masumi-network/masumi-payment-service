@@ -1,6 +1,38 @@
-import { Network, TransactionStatus } from '@/generated/prisma/client';
+import { HotWalletType, Network, TransactionStatus } from '@/generated/prisma/client';
 import { z } from '@masumi/payment-core/zod';
 import { lowBalanceRuleSchema, lowBalanceSummarySchema } from './low-balance.schemas';
+
+export const walletListItemSchema = z
+	.object({
+		id: z.string().describe('Unique identifier for the wallet'),
+		paymentSourceId: z.string().describe('Id of the payment source this wallet belongs to'),
+		type: z
+			.nativeEnum(HotWalletType)
+			.describe('Whether this is a Selling (seller side) or Purchasing (buyer side) wallet'),
+		walletVkey: z.string().describe('Payment key hash of the wallet'),
+		walletAddress: z.string().describe('Cardano address of the wallet'),
+		collectionAddress: z.string().nullable().describe('Optional collection address for this wallet. Null if not set'),
+		note: z.string().nullable().describe('Optional note about this wallet. Null if not set'),
+		LowBalanceSummary: lowBalanceSummarySchema.describe('Aggregated low-balance status for the wallet'),
+	})
+	.openapi('WalletListItem');
+
+export const getWalletListSchemaInput = z.object({
+	take: z.coerce.number().min(1).max(100).default(10).describe('The number of wallets to return'),
+	cursorId: z
+		.string()
+		.max(250)
+		.optional()
+		.describe('Used to paginate through the wallets (provide the id of the last returned wallet)'),
+	paymentSourceId: z.string().max(250).optional().describe('Filter wallets to a single payment source'),
+	walletType: z.nativeEnum(HotWalletType).optional().describe('Filter wallets by type (Selling or Purchasing)'),
+	walletVkey: z.string().max(250).optional().describe('Filter to the single wallet with this payment key hash'),
+	walletAddress: z.string().max(250).optional().describe('Filter to wallets with this Cardano address'),
+});
+
+export const getWalletListSchemaOutput = z.object({
+	Wallets: z.array(walletListItemSchema).describe('Paginated list of hot wallets'),
+});
 
 export const getWalletSchemaInput = z.object({
 	walletType: z.enum(['Selling', 'Purchasing']).describe('The type of wallet to query'),
