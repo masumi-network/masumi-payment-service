@@ -304,3 +304,45 @@ export function formatFundUnit(unit: string | undefined, network: string | undef
 
   return unit ?? '—';
 }
+
+/**
+ * Format an x402 token amount for display.
+ *
+ * x402 amounts are unsigned integer strings in a token's smallest base unit and
+ * are paired with a `decimals` value. They can exceed Number.MAX_SAFE_INTEGER,
+ * so this uses BigInt math (never parseInt) and trims trailing fractional zeros.
+ *
+ * @param amount - Amount in token base units, as a decimal string
+ * @param decimals - Token decimals (defaults to 18, the common ERC-20 default)
+ * @returns Human-readable decimal string, or '—' when the amount is missing
+ */
+export function formatX402Amount(amount: string | null | undefined, decimals: number = 18): string {
+  if (amount == null || amount === '') return '—';
+  let value: bigint;
+  try {
+    value = BigInt(amount);
+  } catch {
+    return amount;
+  }
+  if (decimals <= 0) return value.toString();
+
+  const zero = BigInt(0);
+  const negative = value < zero;
+  const abs = negative ? -value : value;
+  const base = BigInt(10) ** BigInt(decimals);
+  const whole = (abs / base).toString();
+  const fraction = (abs % base).toString().padStart(decimals, '0').replace(/0+$/, '');
+  const formatted = fraction.length > 0 ? `${whole}.${fraction}` : whole;
+  return negative ? `-${formatted}` : formatted;
+}
+
+// Group an integer string with thousand separators for readability, e.g.
+// "1000000" -> "1,000,000". Used for base-unit amounts whose token decimals are
+// unknown (budgets, payment attempts), where a decimal point can't be placed safely.
+export function groupDigits(value: string | null | undefined): string {
+  if (value == null || value === '') return '—';
+  if (!/^-?\d+$/.test(value)) return value;
+  const negative = value.startsWith('-');
+  const digits = (negative ? value.slice(1) : value).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return negative ? `-${digits}` : digits;
+}

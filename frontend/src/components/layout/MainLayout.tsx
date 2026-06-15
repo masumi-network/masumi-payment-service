@@ -20,6 +20,7 @@ import {
   Code,
   Wand2,
   AlertTriangle,
+  Coins,
 } from 'lucide-react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import { useSidebar } from '@/lib/contexts/SidebarContext';
@@ -43,6 +44,9 @@ import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtende
 import { NetworkSourceCard } from '@/components/layout/PaymentSourceSelector';
 import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
 import { DEFAULT_PAYMENT_SOURCE_TYPE, isV2PaymentSource } from '@/lib/payment-source-type';
+import { X402SetupBanner } from '@/components/x402/X402SetupBanner';
+import { useX402Networks } from '@/lib/hooks/useX402';
+import { chainsForEnv } from '@/lib/x402-rail';
 interface MainLayoutProps {
   children: React.ReactNode;
 }
@@ -75,7 +79,8 @@ export function MainLayout({ children }: MainLayoutProps) {
   const sideBarWidth = 280;
   const sideBarWidthCollapsed = 96;
   const [isMac, setIsMac] = useState(false);
-  const { network, setNetwork, isChangingNetwork, isSetupMode, setupWizardStep } = useAppContext();
+  const { network, setNetwork, isChangingNetwork, isSetupMode, setupWizardStep, activeRail } =
+    useAppContext();
   const [showNetworkSwitchConfirm, setShowNetworkSwitchConfirm] = useState(false);
   const [pendingNetwork, setPendingNetwork] = useState<'Preprod' | 'Mainnet' | null>(null);
   const isFirstNavMount = !hasAnimatedNav;
@@ -146,6 +151,17 @@ export function MainLayout({ children }: MainLayoutProps) {
   const hasPaymentSources = currentNetworkPaymentSources.length > 0;
   const hasV2PaymentSource = currentNetworkPaymentSources.some(isV2PaymentSource);
   const hasLegacyOnlyPaymentSources = hasPaymentSources && !hasV2PaymentSource;
+  const { networks: x402Networks, isLoading: x402Loading } = useX402Networks({
+    silentErrors: true,
+  });
+  // The x402 rail stands on its own: an operator working the EVM rail shouldn't be forced
+  // into Cardano setup just because no Cardano source exists. Keyed on the rail being active
+  // with chains available for the env (not on a facilitator), so the x402 nav shows while
+  // the rail is being configured, not only once fully set up. Stay optimistic while the
+  // chain list is still loading so we don't flash the Cardano setup-only nav for an EVM
+  // operator; once loaded, a rail with no chains correctly drops back to setup.
+  const isX402Standalone =
+    activeRail === 'x402' && (x402Loading || chainsForEnv(x402Networks, network).length > 0);
   const {
     activeWalletAlertCount,
     unacknowledgedWalletAlertCount,
@@ -162,8 +178,9 @@ export function MainLayout({ children }: MainLayoutProps) {
   const notificationCount = newTransactionsCount + unacknowledgedWalletAlertCount;
 
   const navItems = useMemo<NavItem[]>(() => {
-    // While in setup mode, show only the setup sidebar
-    if (isSetupMode || !hasPaymentSources) {
+    // Show the setup-only sidebar while in Cardano setup, or when there are no payment
+    // sources at all — unless a configured x402 rail is active, which has its own nav.
+    if (isSetupMode || (!hasPaymentSources && !isX402Standalone)) {
       return [
         {
           href: '/setup',
@@ -196,6 +213,56 @@ export function MainLayout({ children }: MainLayoutProps) {
       ];
     }
 
+    // Shared items appear on both rails. The rest are gated by the active rail so the
+    // sidebar fully reflects the Cardano vs x402 (EVM) context the user picked.
+    const sharedAgents: NavItem = {
+      href: '/ai-agents',
+      name: 'AI Agents',
+      icon: <Bot className="h-4 w-4" />,
+      badge: null,
+      group: 0,
+    };
+    // Webhooks are scoped to the selected payment source / network, so they belong with the
+    // context-aware items (group 0), not the account-level cluster (API keys, Developers).
+    const sharedWebhooks: NavItem = {
+      href: '/webhooks',
+      name: 'Webhooks',
+      icon: <Bell className="h-4 w-4" />,
+      badge: null,
+      group: 0,
+    };
+    const sharedGroup1: NavItem[] = [
+      {
+        href: '/api-keys',
+        name: 'API keys',
+        icon: <Key className="h-4 w-4" />,
+        badge: null,
+        group: 1,
+      },
+      {
+        href: '/developers',
+        name: 'Developers',
+        icon: <Code className="h-4 w-4 text-violet-500" />,
+        badge: null,
+        group: 1,
+      },
+    ];
+
+    if (activeRail === 'x402') {
+      return [
+        {
+          href: '/x402',
+          name: 'x402',
+          icon: <Coins className="h-4 w-4" />,
+          badge: null,
+          group: 0,
+        },
+        sharedAgents,
+        sharedWebhooks,
+        ...sharedGroup1,
+      ];
+    }
+
     return [
       {
         href: '/',
@@ -204,13 +271,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         badge: null,
         group: 0,
       },
-      {
-        href: '/ai-agents',
-        name: 'AI Agents',
-        icon: <Bot className="h-4 w-4" />,
-        badge: null,
-        group: 0,
-      },
+      sharedAgents,
       {
         href: '/inbox-agents',
         name: 'Inbox Agents',
@@ -241,31 +302,14 @@ export function MainLayout({ children }: MainLayoutProps) {
         badge: null,
         group: 0,
       },
-      {
-        href: '/api-keys',
-        name: 'API keys',
-        icon: <Key className="h-4 w-4" />,
-        badge: null,
-        group: 1,
-      },
-      {
-        href: '/webhooks',
-        name: 'Webhooks',
-        icon: <Bell className="h-4 w-4" />,
-        badge: null,
-        group: 1,
-      },
-      {
-        href: '/developers',
-        name: 'Developers',
-        icon: <Code className="h-4 w-4 text-violet-500" />,
-        badge: null,
-        group: 1,
-      },
+      sharedWebhooks,
+      ...sharedGroup1,
     ];
   }, [
     isSetupMode,
     hasPaymentSources,
+    isX402Standalone,
+    activeRail,
     newTransactionsCount,
     activeWalletAlertCount,
     walletAlertLabel,
@@ -604,30 +648,40 @@ export function MainLayout({ children }: MainLayoutProps) {
         </div>
 
         <main className="flex-1 relative z-10 w-full animate-content-fade-in">
-          {hasLegacyOnlyPaymentSources && !isSetupMode && (
-            <div className="border-b border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100">
-              <div className="mx-auto flex max-w-[1400px] flex-col gap-3 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex gap-3">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" />
-                  <div className="space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium">V2 is not set up for {network}</span>
-                      <PaymentSourceTypeBadge
-                        paymentSourceType={DEFAULT_PAYMENT_SOURCE_TYPE}
-                        showDefault
-                      />
-                    </div>
-                    <p className="opacity-85">
-                      Run the one-time V2 setup, then migrate your agents on the dashboard.
-                    </p>
-                  </div>
-                </div>
-                <Button size="sm" asChild>
-                  <Link href={`/setup?network=${network}`}>Start V2 setup</Link>
-                </Button>
-              </div>
+          {activeRail === 'x402' && !isSetupMode && (
+            <div className="mx-auto w-full max-w-[1400px] px-4 pt-4">
+              <X402SetupBanner />
             </div>
           )}
+          {activeRail !== 'x402' &&
+            hasLegacyOnlyPaymentSources &&
+            !isSetupMode &&
+            // The payment-sources page renders its own richer V2 setup banner, so
+            // suppress the global one there to avoid showing it twice.
+            router.pathname !== '/payment-sources' && (
+              <div className="border-b border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100">
+                <div className="mx-auto flex max-w-[1400px] flex-col gap-3 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex gap-3">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" />
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium">V2 is not set up for {network}</span>
+                        <PaymentSourceTypeBadge
+                          paymentSourceType={DEFAULT_PAYMENT_SOURCE_TYPE}
+                          showDefault
+                        />
+                      </div>
+                      <p className="opacity-85">
+                        Run the one-time V2 setup, then migrate your agents on the dashboard.
+                      </p>
+                    </div>
+                  </div>
+                  <Button size="sm" asChild>
+                    <Link href={`/setup?network=${network}`}>Start V2 setup</Link>
+                  </Button>
+                </div>
+              </div>
+            )}
           <div className="max-w-[1400px] mx-auto w-full p-8 px-4">{children}</div>
         </main>
       </div>

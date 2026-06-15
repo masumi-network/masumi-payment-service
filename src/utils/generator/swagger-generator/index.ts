@@ -6,6 +6,8 @@ import { registerInvoiceAndPurchasePaths } from './registrars/invoices-purchases
 import { registerRegistrySupportPaths } from './registrars/registry-support';
 import { registerRegistryInboxSupportPaths } from './registrars/registry-inbox-support';
 import { registerMonitoringPaths } from './registrars/monitoring';
+import { registerX402Paths } from './registrars/x402';
+import { registerX402ManagementPaths } from './registrars/x402-management';
 
 extendZodWithOpenApi(z);
 
@@ -25,6 +27,8 @@ export function generateOpenAPI() {
 	registerRegistrySupportPaths({ registry, apiKeyAuth });
 	registerRegistryInboxSupportPaths({ registry, apiKeyAuth });
 	registerMonitoringPaths({ registry, apiKeyAuth });
+	registerX402Paths({ registry, apiKeyAuth });
+	registerX402ManagementPaths({ registry, apiKeyAuth });
 
 	return new OpenApiGeneratorV3(registry.definitions).generateDocument({
 		openapi: '3.0.0',

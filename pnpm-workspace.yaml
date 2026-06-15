@@ -19,6 +19,9 @@ onlyBuiltDependencies:
 overrides:
   libsodium-sumo: 0.7.15
   libsodium-wrappers-sumo: 0.7.15
+  # Hold the transitive react-hooks lint plugin at the version main uses; 7.1.x
+  # enables stricter React-Compiler rules that flag pre-existing valid code.
+  eslint-plugin-react-hooks: 7.0.1
 
 patchedDependencies:
   '@sundaeswap/core': patches/@sundaeswap__core.patch

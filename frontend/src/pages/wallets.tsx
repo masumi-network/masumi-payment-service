@@ -14,7 +14,7 @@ import Head from 'next/head';
 import { useRate } from '@/lib/hooks/useRate';
 import { WalletTableSkeleton } from '@/components/skeletons/WalletTableSkeleton';
 import { Spinner } from '@/components/ui/spinner';
-import { fetchWalletBalance, useWallets } from '@/lib/queries/useWallets';
+import { fetchWalletBalance, usePaginatedWallets } from '@/lib/queries/useWallets';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
 import formatBalance from '@/lib/formatBalance';
 import { Tabs } from '@/components/ui/tabs';
@@ -45,14 +45,22 @@ export default function WalletsPage() {
     typeof router.query.searched === 'string' ? router.query.searched : '',
   );
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('All');
 
-  // Use React Query for cached wallet data
+  // The type tab is applied server-side so each tab paginates independently.
+  const walletTypeFilter =
+    activeTab === 'Purchasing' ? 'Purchasing' : activeTab === 'Selling' ? 'Selling' : undefined;
+
+  // Paginated wallet data for the selected payment source (cursor + load-more).
   const {
     wallets: walletsList,
     isLoading: isLoadingWallets,
     isFetching: isFetchingWallets,
+    isFetchingNextPage,
+    hasMore,
+    loadMore,
     refetch: refetchWalletsQuery,
-  } = useWallets();
+  } = usePaginatedWallets(walletTypeFilter);
 
   // Collection balance overrides fetched asynchronously
   const [collectionBalanceMap, setCollectionBalanceMap] = useState<
@@ -74,7 +82,6 @@ export default function WalletsPage() {
   const [selectedWalletForSwap, setSelectedWalletForSwap] = useState<WalletWithBalance | null>(
     null,
   );
-  const [activeTab, setActiveTab] = useState('All');
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
     useState<WalletWithBalance | null>(null);
 
@@ -162,12 +169,6 @@ export default function WalletsPage() {
   const filteredWallets = useMemo(() => {
     let filtered = [...allWallets];
 
-    if (activeTab === 'Purchasing') {
-      filtered = filtered.filter((wallet) => wallet.type === 'Purchasing');
-    } else if (activeTab === 'Selling') {
-      filtered = filtered.filter((wallet) => wallet.type === 'Selling');
-    }
-
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter((wallet) => {
@@ -187,7 +188,7 @@ export default function WalletsPage() {
     }
 
     return filtered;
-  }, [allWallets, searchQuery, activeTab]);
+  }, [allWallets, searchQuery]);
 
   const handleWalletClick = (wallet: WalletWithBalance) => {
     setSelectedWalletForDetails(wallet);
@@ -404,6 +405,14 @@ export default function WalletsPage() {
               </tbody>
             </table>
           </div>
+
+          {hasMore && (
+            <div className="flex justify-center">
+              <Button variant="outline" onClick={loadMore} disabled={isFetchingNextPage}>
+                {isFetchingNextPage ? 'Loading…' : 'Load more'}
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* Dialogs */}

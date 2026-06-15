@@ -33,7 +33,7 @@ function makeApiKey(overrides: Record<string, unknown> = {}) {
 		canPay: false,
 		canAdmin: false,
 		usageLimited: false,
-		networkLimit: [Network.Mainnet, Network.Preprod],
+		networkLimit: ['cardano:mainnet', 'cardano:preprod'],
 		walletScopeEnabled: false,
 		WalletScopes: [],
 		tokenHash: null,
@@ -233,6 +233,7 @@ describe('authMiddleware', () => {
 			canAdmin: false,
 			usageLimited: true,
 			networkLimit: [],
+			caip2NetworkLimit: [],
 			walletScopeIds: null,
 		});
 	});
@@ -253,6 +254,7 @@ describe('authMiddleware', () => {
 			canAdmin: false,
 			usageLimited: true,
 			networkLimit: [],
+			caip2NetworkLimit: [],
 			walletScopeIds: null,
 		});
 	});
@@ -266,7 +268,7 @@ describe('authMiddleware', () => {
 			requestProps: { method: 'POST', body: {}, headers: { token: 'valid' } },
 		});
 
-		// Admin gets all networks and usageLimited forced to false
+		// Admin gets all Cardano networks, unlimited CAIP-2 access, and usageLimited forced to false
 		expect(output).toEqual({
 			id: mockKey.id,
 			canRead: true,
@@ -274,6 +276,7 @@ describe('authMiddleware', () => {
 			canAdmin: true,
 			usageLimited: false,
 			networkLimit: [Network.Mainnet, Network.Preprod],
+			caip2NetworkLimit: null,
 			walletScopeIds: null,
 		});
 	});
@@ -289,6 +292,7 @@ describe('authMiddleware', () => {
 		});
 
 		expect((output as { networkLimit: Network[] }).networkLimit).toEqual([Network.Mainnet, Network.Preprod]);
+		expect((output as { caip2NetworkLimit: string[] | null }).caip2NetworkLimit).toBeNull();
 	});
 
 	it('admin bypasses usage limits (usageLimited forced to false)', async () => {
@@ -393,7 +397,9 @@ describe('authMiddleware', () => {
 	});
 
 	it('network-limited key respects its allowed networks', async () => {
-		mockFindUnique.mockResolvedValue(makeApiKey({ canPay: true, networkLimit: [Network.Preprod, Network.Mainnet] }));
+		mockFindUnique.mockResolvedValue(
+			makeApiKey({ canPay: true, networkLimit: ['cardano:preprod', 'cardano:mainnet'] }),
+		);
 
 		const { responseMock, output } = await testMiddleware({
 			middleware: authMiddleware({ canPay: true }),
@@ -402,5 +408,9 @@ describe('authMiddleware', () => {
 
 		expect(responseMock.statusCode).toBe(200);
 		expect((output as { networkLimit: Network[] }).networkLimit).toEqual([Network.Preprod, Network.Mainnet]);
+		expect((output as { caip2NetworkLimit: string[] }).caip2NetworkLimit).toEqual([
+			'cardano:preprod',
+			'cardano:mainnet',
+		]);
 	});
 });

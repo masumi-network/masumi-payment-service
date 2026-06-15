@@ -26,4 +26,18 @@ export {
 	type DecodedBlockchainIdentifier,
 } from './blockchain-identifier';
 export { validateHexString } from './hex';
-export { convertNetwork, convertNetworkToId } from './network';
+export {
+	BASE_MAINNET_CAIP2,
+	BASE_SEPOLIA_CAIP2,
+	CARDANO_MAINNET_CAIP2,
+	CARDANO_PREPROD_CAIP2,
+	DEFAULT_ADMIN_CAIP2_NETWORK_LIMIT,
+	caip2LimitToCardanoNetworks,
+	caip2ToCardanoNetwork,
+	cardanoNetworkToCaip2,
+	cardanoNetworksToCaip2,
+	convertNetwork,
+	convertNetworkToId,
+	isAllowedCaip2Network,
+	mergeCaip2NetworkLimits,
+} from './network';

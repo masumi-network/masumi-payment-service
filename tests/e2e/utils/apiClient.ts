@@ -1,4 +1,4 @@
-import { Network, PaymentSourceType } from '@/generated/prisma/enums';
+import { Network, PaymentSourceType, HotWalletType } from '@/generated/prisma/enums';
 
 export interface ApiClientConfig {
 	baseUrl: string;
@@ -359,8 +359,8 @@ export interface PaymentSourceResponse {
 		walletAddress: string;
 		order: number;
 	}>;
-	PurchasingWallets: PaymentSourceWallet[];
-	SellingWallets: PaymentSourceWallet[];
+	PurchasingWalletsCount: number;
+	SellingWalletsCount: number;
 	FeeReceiverNetworkWallet: {
 		walletAddress: string;
 	} | null;
@@ -369,6 +369,31 @@ export interface PaymentSourceResponse {
 
 export interface QueryPaymentSourcesResponse {
 	ExtendedPaymentSources: PaymentSourceResponse[];
+}
+
+// Hot wallets are served by the dedicated /wallet/list endpoint, not embedded
+// in the payment-source response.
+export interface WalletListItem {
+	id: string;
+	paymentSourceId: string;
+	type: HotWalletType;
+	walletVkey: string;
+	walletAddress: string;
+	collectionAddress: string | null;
+	note: string | null;
+}
+
+export interface QueryWalletsParams {
+	take?: number;
+	cursorId?: string;
+	paymentSourceId?: string;
+	walletType?: HotWalletType;
+	walletVkey?: string;
+	walletAddress?: string;
+}
+
+export interface QueryWalletsResponse {
+	Wallets: WalletListItem[];
 }
 
 export class ApiClient {
@@ -573,6 +598,22 @@ export class ApiClient {
 		const endpoint = queryString ? `/api/v1/payment-source-extended?${queryString}` : '/api/v1/payment-source-extended';
 
 		return this.makeRequest<QueryPaymentSourcesResponse>(endpoint);
+	}
+
+	async queryWallets(params?: QueryWalletsParams): Promise<QueryWalletsResponse> {
+		const searchParams = new URLSearchParams();
+
+		if (params?.take != null) searchParams.set('take', params.take.toString());
+		if (params?.cursorId) searchParams.set('cursorId', params.cursorId);
+		if (params?.paymentSourceId) searchParams.set('paymentSourceId', params.paymentSourceId);
+		if (params?.walletType) searchParams.set('walletType', params.walletType);
+		if (params?.walletVkey) searchParams.set('walletVkey', params.walletVkey);
+		if (params?.walletAddress) searchParams.set('walletAddress', params.walletAddress);
+
+		const queryString = searchParams.toString();
+		const endpoint = queryString ? `/api/v1/wallet/list?${queryString}` : '/api/v1/wallet/list';
+
+		return this.makeRequest<QueryWalletsResponse>(endpoint);
 	}
 
 	/**

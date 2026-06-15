@@ -1,6 +1,6 @@
 # Masumi Payment Service
 
-The Masumi Payment Service provides an easy-to-use service to handle decentralized payments for AI agents. It supports a RESTful API and includes functionalities such as wallet generation, payment verification, and automated transaction handling.
+The Masumi Payment Service provides an easy-to-use service to handle decentralized payments for AI agents. It supports a RESTful API and includes functionalities such as wallet generation, payment verification, and automated transaction handling, with batched on-chain settlement for registration and payment actions.
 
 [![CodeFactor](https://www.codefactor.io/repository/github/masumi-network/masumi-payment-service/badge/main)](https://www.codefactor.io/repository/github/masumi-network/masumi-payment-service/overview/main)
 
@@ -37,6 +37,7 @@ Additional guides can be found in the [docs](docs/) folder:
 - [Development and Architecture Guide](docs/development.md)
 - [Deployment Guide](docs/deployment.md)
 - [Monitoring Guide](docs/monitoring.md)
+- [x402 EVM Payment Rail Guide](docs/x402.md)
 
 ## Audit
 

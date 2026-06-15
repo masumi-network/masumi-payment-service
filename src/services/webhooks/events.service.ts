@@ -10,6 +10,9 @@ type PurchaseWebhookEvent = 'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ER
 type PaymentWebhookData = WebhookPayloadDataByEvent<PaymentWebhookEvent>;
 type PurchaseWebhookData = WebhookPayloadDataByEvent<PurchaseWebhookEvent>;
 type WalletLowBalanceWebhookData = WebhookPayloadDataByEvent<'WALLET_LOW_BALANCE'>;
+type X402PaymentWebhookEvent = 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED';
+type X402PaymentWebhookData = WebhookPayloadDataByEvent<X402PaymentWebhookEvent>;
+type X402WalletLowBalanceWebhookData = WebhookPayloadDataByEvent<'X402_WALLET_LOW_BALANCE'>;
 
 class WebhookEventsService {
 	private async queryPurchaseForWebhook(purchaseId: string) {
@@ -242,6 +245,38 @@ class WebhookEventsService {
 		} catch (error) {
 			logger.error('Failed to trigger WALLET_LOW_BALANCE webhook', {
 				walletId: payload.walletId,
+				error: error instanceof Error ? error.message : 'Unknown error',
+			});
+		}
+	}
+	// x402 (EVM) rail events. These are not tied to a Cardano PaymentSource, so the
+	// paymentSourceId selector is left undefined and global webhook endpoints receive them.
+	async triggerX402Payment(success: boolean, payload: X402PaymentWebhookData): Promise<void> {
+		const eventType: X402PaymentWebhookEvent = success
+			? WebhookEventType.X402_PAYMENT_SETTLED
+			: WebhookEventType.X402_PAYMENT_FAILED;
+		try {
+			await webhookQueueService.queueWebhook(eventType, payload, payload.attemptId, undefined);
+		} catch (error) {
+			logger.error('Failed to trigger x402 payment webhook', {
+				attemptId: payload.attemptId,
+				eventType,
+				error: error instanceof Error ? error.message : 'Unknown error',
+			});
+		}
+	}
+
+	async triggerX402WalletLowBalance(payload: X402WalletLowBalanceWebhookData): Promise<void> {
+		try {
+			await webhookQueueService.queueWebhook(
+				WebhookEventType.X402_WALLET_LOW_BALANCE,
+				payload,
+				payload.evmWalletId,
+				undefined,
+			);
+		} catch (error) {
+			logger.error('Failed to trigger X402_WALLET_LOW_BALANCE webhook', {
+				evmWalletId: payload.evmWalletId,
 				error: error instanceof Error ? error.message : 'Unknown error',
 			});
 		}

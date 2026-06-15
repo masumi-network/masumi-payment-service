@@ -8,6 +8,7 @@ import { useState, useRef, useMemo } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { patchApiKey } from '@/lib/api/generated';
+import { useX402Networks } from '@/lib/hooks/useX402';
 import { toast } from 'react-toastify';
 import {
   Select,
@@ -23,6 +24,7 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Checkbox } from '@/components/ui/checkbox';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
+import { useAllWallets } from '@/lib/queries/useWallets';
 import { shortenAddress } from '@/lib/utils';
 import {
   getActiveStablecoinConfig,
@@ -44,6 +46,7 @@ interface UpdateApiKeyDialogProps {
     // Legacy permission (for display)
     permission: 'Read' | 'ReadAndPay' | 'Admin';
     NetworkLimit: Array<'Preprod' | 'Mainnet'>;
+    ChainIdLimit: string[];
     usageLimited: boolean;
     status: 'Active' | 'Revoked';
     walletScopeEnabled: boolean;
@@ -65,6 +68,7 @@ const updateApiKeySchema = z
     }),
     walletScopeEnabled: z.boolean(),
     walletScopeIds: z.array(z.string()),
+    evmChains: z.array(z.string()),
   })
   .superRefine((val, ctx) => {
     if (val.credits?.lovelace && isNaN(parseFloat(val.credits.lovelace))) {
@@ -100,37 +104,26 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
   const tokenInputRef = useRef<HTMLInputElement | null>(null);
   const { apiClient, network } = useAppContext();
   const { paymentSources } = usePaymentSourceExtendedAll();
+  const { wallets: managedWallets } = useAllWallets(open);
+  // A key's NetworkLimit can span both Cardano networks, so offer EVM chains from every
+  // environment, not just the active top-selector one, or chains for the other network
+  // can't be added to ChainIdLimit in one flow.
+  const { networks: evmChainOptions } = useX402Networks({
+    silentErrors: true,
+    allEnvironments: true,
+  });
 
   const allWallets = useMemo(() => {
-    const wallets: Array<{
-      id: string;
-      type: 'Purchasing' | 'Selling';
-      network: string;
-      walletAddress: string;
-      note: string | null;
-    }> = [];
-    for (const ps of paymentSources) {
-      for (const w of ps.PurchasingWallets ?? []) {
-        wallets.push({
-          id: w.id,
-          type: 'Purchasing',
-          network: ps.network,
-          walletAddress: w.walletAddress,
-          note: w.note,
-        });
-      }
-      for (const w of ps.SellingWallets ?? []) {
-        wallets.push({
-          id: w.id,
-          type: 'Selling',
-          network: ps.network,
-          walletAddress: w.walletAddress,
-          note: w.note,
-        });
-      }
-    }
-    return wallets;
-  }, [paymentSources]);
+    // Wallets come from /wallet/list now; join to the source for its network.
+    const networkBySourceId = new Map(paymentSources.map((ps) => [ps.id, ps.network]));
+    return managedWallets.map((wallet) => ({
+      id: wallet.id,
+      type: wallet.type,
+      network: networkBySourceId.get(wallet.paymentSourceId) ?? '',
+      walletAddress: wallet.walletAddress,
+      note: wallet.note,
+    }));
+  }, [managedWallets, paymentSources]);
 
   const {
     register,
@@ -147,6 +140,7 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
       credits: { lovelace: '', usdcx: '' },
       walletScopeEnabled: apiKey.walletScopeEnabled,
       walletScopeIds: apiKey.WalletScopes.map((ws) => ws.hotWalletId),
+      evmChains: apiKey.ChainIdLimit.filter((chainId) => chainId.startsWith('eip155:')),
     },
   });
 
@@ -181,6 +175,10 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
       JSON.stringify([...data.walletScopeIds].sort()) !==
         JSON.stringify([...apiKey.WalletScopes.map((ws) => ws.hotWalletId)].sort());
 
+    const initialEvmChains = apiKey.ChainIdLimit.filter((chainId) => chainId.startsWith('eip155:'));
+    const evmChainsChanged =
+      JSON.stringify([...data.evmChains].sort()) !== JSON.stringify([...initialEvmChains].sort());
+
     await handleApiCall(
       () =>
         patchApiKey({
@@ -196,6 +194,16 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
               walletScopeEnabled: data.walletScopeEnabled,
               WalletScopeHotWalletIds: data.walletScopeEnabled ? data.walletScopeIds : [],
             }),
+            ...(apiKey.canPay &&
+              !apiKey.canAdmin &&
+              evmChainsChanged && {
+                // ChainIdLimit replaces the whole networkLimit on update; preserve
+                // the existing Cardano grants and only rewrite the EVM ones.
+                ChainIdLimit: [
+                  ...apiKey.ChainIdLimit.filter((chainId) => !chainId.startsWith('eip155:')),
+                  ...data.evmChains,
+                ],
+              }),
           },
         }),
       {
@@ -289,6 +297,46 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
             </p>
           </div>
 
+          {apiKey.canPay && !apiKey.canAdmin && evmChainOptions.length > 0 && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium">EVM chains (x402)</label>
+              <p className="text-xs text-muted-foreground">
+                Chains this key may settle and fetch x402 payments on.
+              </p>
+              <Controller
+                control={control}
+                name="evmChains"
+                render={({ field }) => (
+                  <div className="flex flex-col gap-2">
+                    {evmChainOptions.map((chain) => (
+                      <div key={chain.id} className="flex items-center gap-2">
+                        <Checkbox
+                          aria-label={chain.displayName}
+                          checked={field.value.includes(chain.caip2Id)}
+                          onCheckedChange={() => {
+                            if (field.value.includes(chain.caip2Id)) {
+                              field.onChange(
+                                field.value.filter((c: string) => c !== chain.caip2Id),
+                              );
+                            } else {
+                              field.onChange([...field.value, chain.caip2Id]);
+                            }
+                          }}
+                        />
+                        <label className="text-sm">
+                          {chain.displayName}{' '}
+                          <span className="font-mono text-xs text-muted-foreground">
+                            {chain.caip2Id}
+                          </span>
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              />
+            </div>
+          )}
+
           <div className="space-y-2">
             <label className="text-sm font-medium">Status</label>
             <Controller
@@ -296,7 +344,7 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
               name="status"
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger>
+                  <SelectTrigger aria-label="Status">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -359,6 +407,7 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
                     name="walletScopeEnabled"
                     render={({ field }) => (
                       <Checkbox
+                        aria-label="Restrict to specific wallets"
                         checked={field.value}
                         onCheckedChange={(checked) => {
                           field.onChange(checked);

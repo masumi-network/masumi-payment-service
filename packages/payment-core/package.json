@@ -12,6 +12,7 @@
 		"./config": "./src/config.ts",
 		"./db": "./src/db.ts",
 		"./endpoint-factory": "./src/endpoint-factory.ts",
+		"./encryption": "./src/encryption.ts",
 		"./hex": "./src/hex.ts",
 		"./http-exists-error": "./src/http-exists-error.ts",
 		"./logger": "./src/logger.ts",
@@ -27,12 +28,12 @@
 	"_meshsdk_pin_note": "V1-aligned. payment-core helpers (resolvePaymentKeyHash, address parsing) are shared across V1 and the framework; the V2 package brings its own .102 mesh line and uses it directly. See docs/adr/0005-meshsdk-version-pinning-v1-v2.md.",
 	"dependencies": {
 		"@meshsdk/core-cst": "1.9.0-beta.90",
-		"dotenv": "17.2.3",
+		"dotenv": "17.4.2",
 		"lz-string": "1.5.0"
 	},
 	"devDependencies": {
-		"@jest/globals": "30.2.0",
-		"jest-mock": "30.2.0"
+		"@jest/globals": "30.4.1",
+		"jest-mock": "30.4.1"
 	},
 	"peerDependencies": {
 		"@asteasolutions/zod-to-openapi": "*",

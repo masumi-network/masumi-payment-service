@@ -6,19 +6,57 @@
 // rather than depending on this V1-aligned version. Do not bump. See
 // docs/adr/0005-meshsdk-version-pinning-v1-v2.md.
 import { AddressType, deserializeAddress, resolvePaymentKeyHash, resolveStakeKeyHash } from '@meshsdk/core-cst';
-import { Chain, Network, PaymentSourceType } from '@prisma/client';
+import { Network, PaymentSourceType } from '@prisma/client';
 import { z } from './zod';
+import { isAllowedCaip2Network } from './network';
 
-export { Chain as SupportedPaymentSourceChain };
+export const SupportedPaymentSourceChain = {
+	Cardano: 'Cardano',
+	EVM: 'EVM',
+} as const;
 
 export const paymentSourceTypeSchema = z.nativeEnum(PaymentSourceType).describe('The configured payment source type');
 
-export const supportedPaymentSourceSchema = z.object({
-	chain: z.nativeEnum(Chain).describe('The blockchain this payment source is available on'),
-	network: z.nativeEnum(Network).describe('The blockchain network this payment source is available on'),
+const evmAddressSchema = z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Expected an EVM address');
+
+const cardanoSupportedPaymentSourceSchema = z.object({
+	chain: z.literal(SupportedPaymentSourceChain.Cardano).describe('The blockchain this payment source is available on'),
+	network: z.nativeEnum(Network).describe('The Cardano network this payment source is available on'),
 	paymentSourceType: paymentSourceTypeSchema,
 	address: z.string().max(250).describe('The escrow smart contract address for this payment source'),
 });
+
+const x402SupportedPaymentSourceSchema = z
+	.object({
+		chain: z.literal(SupportedPaymentSourceChain.EVM).describe('The chain family used by standard x402'),
+		network: z
+			.string()
+			.regex(/^eip155:\d+$/, 'x402 EVM network must be a CAIP-2 eip155 chain id')
+			.describe('CAIP-2 EVM network id, for example eip155:8453'),
+		paymentSourceType: paymentSourceTypeSchema.nullable().optional(),
+		address: evmAddressSchema.optional().describe('Alias for payTo, kept for existing payment-source shape'),
+		scheme: z.literal('Exact').describe('x402 payment scheme'),
+		asset: evmAddressSchema.describe('ERC-20 token contract address'),
+		amount: z.string().regex(/^\d+$/).describe('Atomic token amount'),
+		decimals: z.number().int().min(0).max(255).describe('ERC-20 token decimals'),
+		payTo: evmAddressSchema.describe('EVM address receiving the x402 payment'),
+		resource: z.string().url().max(500).optional().describe('Optional absolute resource URL this x402 option protects'),
+		extra: z.record(z.string(), z.unknown()).optional().describe('Additional x402 metadata'),
+	})
+	.superRefine((source, ctx) => {
+		if (source.address != null && source.address.toLowerCase() !== source.payTo.toLowerCase()) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: ['address'],
+				message: 'x402 address alias must match payTo',
+			});
+		}
+	});
+
+export const supportedPaymentSourceSchema = z.discriminatedUnion('chain', [
+	cardanoSupportedPaymentSourceSchema,
+	x402SupportedPaymentSourceSchema,
+]);
 
 export const supportedPaymentSourcesSchema = z
 	.array(supportedPaymentSourceSchema)
@@ -52,8 +90,15 @@ function metadataToString(value: string | string[] | undefined) {
 export const supportedPaymentSourceMetadataSchema = z.object({
 	chain: metadataStringSchema,
 	network: metadataStringSchema,
-	paymentSourceType: metadataStringSchema,
-	address: metadataStringSchema,
+	paymentSourceType: metadataStringSchema.optional(),
+	address: metadataStringSchema.optional(),
+	scheme: metadataStringSchema.optional(),
+	asset: metadataStringSchema.optional(),
+	amount: metadataStringSchema.optional(),
+	decimals: metadataStringSchema.optional(),
+	payTo: metadataStringSchema.optional(),
+	resource: metadataStringSchema.optional(),
+	extra: z.unknown().optional(),
 });
 
 function validateCardanoAddressForNetwork(address: string, network: Network) {
@@ -119,14 +164,29 @@ export function validateSupportedPaymentSourcesOrThrow(
 	// validation paths where the registering type is not yet bound;
 	// in that case the asymmetric rule is skipped.
 	registeringPaymentSourceType?: PaymentSourceType,
+	// CAIP-2 networks the caller is authorized to advertise on. `null` means
+	// unlimited (admin); `undefined` skips the check (off-route validation paths).
+	allowedCaip2Networks?: string[] | null,
 ) {
 	for (const supportedPaymentSource of supportedPaymentSources) {
-		if (supportedPaymentSource.network !== expectedNetwork) {
-			throw new Error('Supported payment source network must match the registry network');
+		if (supportedPaymentSource.chain === SupportedPaymentSourceChain.EVM) {
+			if (registeringPaymentSourceType !== PaymentSourceType.Web3CardanoV2) {
+				throw new Error('x402 payment sources may only be advertised by V2 registry entries.');
+			}
+			if (BigInt(supportedPaymentSource.amount) <= 0n) {
+				throw new Error('x402 payment source amount must be greater than zero');
+			}
+			if (
+				allowedCaip2Networks !== undefined &&
+				!isAllowedCaip2Network(allowedCaip2Networks, supportedPaymentSource.network)
+			) {
+				throw new Error('Not authorized to advertise x402 payment sources on this network');
+			}
+			continue;
 		}
 
-		if (supportedPaymentSource.chain !== Chain.Cardano) {
-			throw new Error('Unsupported payment source chain');
+		if (supportedPaymentSource.network !== expectedNetwork) {
+			throw new Error('Supported payment source network must match the registry network');
 		}
 
 		if (
@@ -158,6 +218,13 @@ export function parseSupportedPaymentSourcesFromMetadata(value: unknown): Suppor
 			network: metadataToString(source.network),
 			paymentSourceType: metadataToString(source.paymentSourceType),
 			address: metadataToString(source.address),
+			scheme: metadataToString(source.scheme),
+			asset: metadataToString(source.asset),
+			amount: metadataToString(source.amount),
+			decimals: metadataToString(source.decimals) != null ? Number(metadataToString(source.decimals)) : undefined,
+			payTo: metadataToString(source.payTo),
+			resource: metadataToString(source.resource),
+			extra: source.extra,
 		})),
 	);
 	return reparsed.success ? reparsed.data : null;

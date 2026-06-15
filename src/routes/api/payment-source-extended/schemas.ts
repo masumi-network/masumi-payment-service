@@ -1,6 +1,5 @@
 import { Network, PaymentSourceType, RPCProvider } from '@/generated/prisma/client';
 import { z } from '@masumi/payment-core/zod';
-import { lowBalanceSummarySchema } from '@/routes/api/wallet/low-balance.schemas';
 
 export const paymentSourceExtendedSchemaInput = z.object({
 	take: z.coerce.number().min(1).max(100).default(10).describe('The number of payment sources to return'),
@@ -41,36 +40,14 @@ export const paymentSourceExtendedOutputSchema = z
 				}),
 			)
 			.describe('List of admin wallets for dispute resolution (exactly 3 required)'),
-		PurchasingWallets: z
-			.array(
-				z.object({
-					id: z.string().describe('Unique identifier for the purchasing wallet'),
-					walletVkey: z.string().describe('Payment key hash of the purchasing wallet'),
-					walletAddress: z.string().describe('Cardano address of the purchasing wallet'),
-					collectionAddress: z
-						.string()
-						.nullable()
-						.describe('Optional collection address for this wallet. Null if not set'),
-					note: z.string().nullable().describe('Optional note about this wallet. Null if not set'),
-					LowBalanceSummary: lowBalanceSummarySchema.describe('Aggregated low-balance status for the wallet'),
-				}),
-			)
-			.describe('List of wallets used for purchasing (buyer side)'),
-		SellingWallets: z
-			.array(
-				z.object({
-					id: z.string().describe('Unique identifier for the selling wallet'),
-					walletVkey: z.string().describe('Payment key hash of the selling wallet'),
-					walletAddress: z.string().describe('Cardano address of the selling wallet'),
-					collectionAddress: z
-						.string()
-						.nullable()
-						.describe('Optional collection address for this wallet. Null if not set'),
-					note: z.string().nullable().describe('Optional note about this wallet. Null if not set'),
-					LowBalanceSummary: lowBalanceSummarySchema.describe('Aggregated low-balance status for the wallet'),
-				}),
-			)
-			.describe('List of wallets used for selling (seller side)'),
+		PurchasingWalletsCount: z
+			.number()
+			.int()
+			.describe('Number of active purchasing wallets. Fetch the wallets themselves via GET /wallet/list.'),
+		SellingWalletsCount: z
+			.number()
+			.int()
+			.describe('Number of active selling wallets. Fetch the wallets themselves via GET /wallet/list.'),
 		FeeReceiverNetworkWallet: z
 			.object({
 				walletAddress: z.string().describe('Cardano address that receives network fees'),

@@ -23,7 +23,6 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {},
 }));
 
-let HotWalletType: typeof import('@/generated/prisma/client').HotWalletType;
 let PricingType: typeof import('@/generated/prisma/client').PricingType;
 let TransactionStatus: typeof import('@/generated/prisma/client').TransactionStatus;
 let generateBlockchainIdentifier: typeof import('@masumi/payment-core/blockchain-identifier').generateBlockchainIdentifier;
@@ -35,7 +34,7 @@ let serializeSwapTransaction: typeof import('./swap/serializers').serializeSwapT
 
 describe('route serializers', () => {
 	beforeAll(async () => {
-		({ HotWalletType, PricingType, TransactionStatus } = await import('@/generated/prisma/client'));
+		({ PricingType, TransactionStatus } = await import('@/generated/prisma/client'));
 		({ generateBlockchainIdentifier } = await import('@masumi/payment-core/blockchain-identifier'));
 		({ serializePaymentSourceEntry } = await import('./payment-source/serializers'));
 		({ serializePaymentListEntry } = await import('./payments/serializers'));
@@ -207,36 +206,18 @@ describe('route serializers', () => {
 		expect(serialized.CurrentTransaction?.fees).toBe('888');
 	});
 
-	it('serializes payment sources by wallet type', () => {
+	it('serializes a payment source entry without embedding hot wallets', () => {
 		const paymentSource = {
 			id: 'source-1',
-			HotWallets: [
-				{
-					id: 'wallet-selling',
-					type: HotWalletType.Selling,
-					walletVkey: 'selling-vkey',
-					walletAddress: 'selling-address',
-					collectionAddress: null,
-					note: 'selling',
-					LowBalanceRules: [],
-				},
-				{
-					id: 'wallet-purchasing',
-					type: HotWalletType.Purchasing,
-					walletVkey: 'purchasing-vkey',
-					walletAddress: 'purchasing-address',
-					collectionAddress: null,
-					note: 'purchasing',
-					LowBalanceRules: [],
-				},
-			],
+			AdminWallets: [{ walletAddress: 'admin-address', order: 0 }],
+			FeeReceiverNetworkWallet: { walletAddress: 'fee-address' },
 		} as unknown as Parameters<typeof serializePaymentSourceEntry>[0];
 
 		const serialized = serializePaymentSourceEntry(paymentSource);
 
-		expect(serialized.SellingWallets).toHaveLength(1);
-		expect(serialized.PurchasingWallets).toHaveLength(1);
-		expect(serialized.SellingWallets[0]?.walletVkey).toBe('selling-vkey');
+		expect(serialized).toEqual(paymentSource);
+		expect('SellingWallets' in serialized).toBe(false);
+		expect('PurchasingWallets' in serialized).toBe(false);
 	});
 
 	it('serializes swap transactions with ISO timestamps intact', () => {

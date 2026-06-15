@@ -38,6 +38,10 @@ export type ApiKey = {
      */
     NetworkLimit: Array<'Preprod' | 'Mainnet'>;
     /**
+     * CAIP-2 chain identifiers this API key is allowed to access
+     */
+    ChainIdLimit: Array<string>;
+    /**
      * Remaining usage credits for this API key
      */
     RemainingUsageCredits: Array<{
@@ -178,6 +182,54 @@ export type Wallet = {
          */
         lastAlertedAt: Date | null;
     }>;
+};
+
+export type WalletListItem = {
+    /**
+     * Unique identifier for the wallet
+     */
+    id: string;
+    /**
+     * Id of the payment source this wallet belongs to
+     */
+    paymentSourceId: string;
+    /**
+     * Whether this is a Selling (seller side) or Purchasing (buyer side) wallet
+     */
+    type: 'Selling' | 'Purchasing' | 'Funding';
+    /**
+     * Payment key hash of the wallet
+     */
+    walletVkey: string;
+    /**
+     * Cardano address of the wallet
+     */
+    walletAddress: string;
+    /**
+     * Optional collection address for this wallet. Null if not set
+     */
+    collectionAddress: string | null;
+    /**
+     * Optional note about this wallet. Null if not set
+     */
+    note: string | null;
+    /**
+     * Aggregated low-balance status for the wallet
+     */
+    LowBalanceSummary: {
+        /**
+         * Whether any enabled low-balance rule for this wallet is currently below threshold
+         */
+        isLow: boolean;
+        /**
+         * How many enabled rules for this wallet are currently in low state
+         */
+        lowRuleCount: number;
+        /**
+         * Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked
+         */
+        lastCheckedAt: Date | null;
+    };
 };
 
 export type GeneratedWalletSecret = {
@@ -996,7 +1048,7 @@ export type AgentMetadata = {
              */
             chain: 'Cardano';
             /**
-             * The blockchain network this payment source is available on
+             * The Cardano network this payment source is available on
              */
             network: 'Preprod' | 'Mainnet';
             /**
@@ -1007,6 +1059,53 @@ export type AgentMetadata = {
              * The escrow smart contract address for this payment source
              */
             address: string;
+        } | {
+            /**
+             * The chain family used by standard x402
+             */
+            chain: 'EVM';
+            /**
+             * CAIP-2 EVM network id, for example eip155:8453
+             */
+            network: string;
+            /**
+             * The configured payment source type
+             */
+            paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2' | null;
+            /**
+             * Alias for payTo, kept for existing payment-source shape
+             */
+            address?: string;
+            /**
+             * x402 payment scheme
+             */
+            scheme: 'Exact';
+            /**
+             * ERC-20 token contract address
+             */
+            asset: string;
+            /**
+             * Atomic token amount
+             */
+            amount: string;
+            /**
+             * ERC-20 token decimals
+             */
+            decimals: number;
+            /**
+             * EVM address receiving the x402 payment
+             */
+            payTo: string;
+            /**
+             * Optional absolute resource URL this x402 option protects
+             */
+            resource?: string;
+            /**
+             * Additional x402 metadata
+             */
+            extra?: {
+                [key: string]: unknown;
+            };
         }> | null;
     };
 };
@@ -1161,7 +1260,7 @@ export type AgentIdentifierMetadata = {
              */
             chain: 'Cardano';
             /**
-             * The blockchain network this payment source is available on
+             * The Cardano network this payment source is available on
              */
             network: 'Preprod' | 'Mainnet';
             /**
@@ -1172,6 +1271,53 @@ export type AgentIdentifierMetadata = {
              * The escrow smart contract address for this payment source
              */
             address: string;
+        } | {
+            /**
+             * The chain family used by standard x402
+             */
+            chain: 'EVM';
+            /**
+             * CAIP-2 EVM network id, for example eip155:8453
+             */
+            network: string;
+            /**
+             * The configured payment source type
+             */
+            paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2' | null;
+            /**
+             * Alias for payTo, kept for existing payment-source shape
+             */
+            address?: string;
+            /**
+             * x402 payment scheme
+             */
+            scheme: 'Exact';
+            /**
+             * ERC-20 token contract address
+             */
+            asset: string;
+            /**
+             * Atomic token amount
+             */
+            amount: string;
+            /**
+             * ERC-20 token decimals
+             */
+            decimals: number;
+            /**
+             * EVM address receiving the x402 payment
+             */
+            payTo: string;
+            /**
+             * Optional absolute resource URL this x402 option protects
+             */
+            resource?: string;
+            /**
+             * Additional x402 metadata
+             */
+            extra?: {
+                [key: string]: unknown;
+            };
         }> | null;
     };
 };
@@ -1334,7 +1480,7 @@ export type RegistryEntry = {
          */
         chain: 'Cardano';
         /**
-         * The blockchain network this payment source is available on
+         * The Cardano network this payment source is available on
          */
         network: 'Preprod' | 'Mainnet';
         /**
@@ -1345,6 +1491,53 @@ export type RegistryEntry = {
          * The escrow smart contract address for this payment source
          */
         address: string;
+    } | {
+        /**
+         * The chain family used by standard x402
+         */
+        chain: 'EVM';
+        /**
+         * CAIP-2 EVM network id, for example eip155:8453
+         */
+        network: string;
+        /**
+         * The configured payment source type
+         */
+        paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2' | null;
+        /**
+         * Alias for payTo, kept for existing payment-source shape
+         */
+        address?: string;
+        /**
+         * x402 payment scheme
+         */
+        scheme: 'Exact';
+        /**
+         * ERC-20 token contract address
+         */
+        asset: string;
+        /**
+         * Atomic token amount
+         */
+        amount: string;
+        /**
+         * ERC-20 token decimals
+         */
+        decimals: number;
+        /**
+         * EVM address receiving the x402 payment
+         */
+        payTo: string;
+        /**
+         * Optional absolute resource URL this x402 option protects
+         */
+        resource?: string;
+        /**
+         * Additional x402 metadata
+         */
+        extra?: {
+            [key: string]: unknown;
+        };
     }> | null;
     /**
      * Smart contract wallet managing this agent registration
@@ -1446,14 +1639,6 @@ export type PaymentSource = {
      */
     AdminWallets: Array<AdminWallet>;
     /**
-     * List of wallets used for purchasing (buyer side)
-     */
-    PurchasingWallets: Array<PurchasingWallet>;
-    /**
-     * List of wallets used for selling (seller side)
-     */
-    SellingWallets: Array<SellingWallet>;
-    /**
      * Wallet that receives network fees from transactions
      */
     FeeReceiverNetworkWallet: {
@@ -1477,86 +1662,6 @@ export type AdminWallet = {
      * Order/index of this admin wallet
      */
     order: number;
-};
-
-export type PurchasingWallet = {
-    /**
-     * Unique identifier for the purchasing wallet
-     */
-    id: string;
-    /**
-     * Payment key hash of the purchasing wallet
-     */
-    walletVkey: string;
-    /**
-     * Cardano address of the purchasing wallet
-     */
-    walletAddress: string;
-    /**
-     * Optional collection address for this wallet. Null if not set
-     */
-    collectionAddress: string | null;
-    /**
-     * Optional note about this wallet. Null if not set
-     */
-    note: string | null;
-    /**
-     * Aggregated low-balance status for the wallet
-     */
-    LowBalanceSummary: {
-        /**
-         * Whether any enabled low-balance rule for this wallet is currently below threshold
-         */
-        isLow: boolean;
-        /**
-         * How many enabled rules for this wallet are currently in low state
-         */
-        lowRuleCount: number;
-        /**
-         * Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked
-         */
-        lastCheckedAt: Date | null;
-    };
-};
-
-export type SellingWallet = {
-    /**
-     * Unique identifier for the selling wallet
-     */
-    id: string;
-    /**
-     * Payment key hash of the selling wallet
-     */
-    walletVkey: string;
-    /**
-     * Cardano address of the selling wallet
-     */
-    walletAddress: string;
-    /**
-     * Optional collection address for this wallet. Null if not set
-     */
-    collectionAddress: string | null;
-    /**
-     * Optional note about this wallet. Null if not set
-     */
-    note: string | null;
-    /**
-     * Aggregated low-balance status for the wallet
-     */
-    LowBalanceSummary: {
-        /**
-         * Whether any enabled low-balance rule for this wallet is currently below threshold
-         */
-        isLow: boolean;
-        /**
-         * How many enabled rules for this wallet are currently in low state
-         */
-        lowRuleCount: number;
-        /**
-         * Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked
-         */
-        lastCheckedAt: Date | null;
-    };
 };
 
 export type PaymentSourceExtended = {
@@ -1631,89 +1736,13 @@ export type PaymentSourceExtended = {
         order: number;
     }>;
     /**
-     * List of wallets used for purchasing (buyer side)
+     * Number of active purchasing wallets. Fetch the wallets themselves via GET /wallet/list.
      */
-    PurchasingWallets: Array<{
-        /**
-         * Unique identifier for the purchasing wallet
-         */
-        id: string;
-        /**
-         * Payment key hash of the purchasing wallet
-         */
-        walletVkey: string;
-        /**
-         * Cardano address of the purchasing wallet
-         */
-        walletAddress: string;
-        /**
-         * Optional collection address for this wallet. Null if not set
-         */
-        collectionAddress: string | null;
-        /**
-         * Optional note about this wallet. Null if not set
-         */
-        note: string | null;
-        /**
-         * Aggregated low-balance status for the wallet
-         */
-        LowBalanceSummary: {
-            /**
-             * Whether any enabled low-balance rule for this wallet is currently below threshold
-             */
-            isLow: boolean;
-            /**
-             * How many enabled rules for this wallet are currently in low state
-             */
-            lowRuleCount: number;
-            /**
-             * Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked
-             */
-            lastCheckedAt: Date | null;
-        };
-    }>;
+    PurchasingWalletsCount: number;
     /**
-     * List of wallets used for selling (seller side)
+     * Number of active selling wallets. Fetch the wallets themselves via GET /wallet/list.
      */
-    SellingWallets: Array<{
-        /**
-         * Unique identifier for the selling wallet
-         */
-        id: string;
-        /**
-         * Payment key hash of the selling wallet
-         */
-        walletVkey: string;
-        /**
-         * Cardano address of the selling wallet
-         */
-        walletAddress: string;
-        /**
-         * Optional collection address for this wallet. Null if not set
-         */
-        collectionAddress: string | null;
-        /**
-         * Optional note about this wallet. Null if not set
-         */
-        note: string | null;
-        /**
-         * Aggregated low-balance status for the wallet
-         */
-        LowBalanceSummary: {
-            /**
-             * Whether any enabled low-balance rule for this wallet is currently below threshold
-             */
-            isLow: boolean;
-            /**
-             * How many enabled rules for this wallet are currently in low state
-             */
-            lowRuleCount: number;
-            /**
-             * Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked
-             */
-            lastCheckedAt: Date | null;
-        };
-    }>;
+    SellingWalletsCount: number;
     /**
      * Wallet that receives network fees from transactions
      */
@@ -2074,6 +2103,184 @@ export type StoppedMonitoring = {
     stopped: boolean;
 };
 
+export type X402Network = {
+    id: string;
+    /**
+     * CAIP-2 EVM chain id, for example eip155:8453
+     */
+    caip2Id: string;
+    /**
+     * Human readable chain name
+     */
+    displayName: string;
+    /**
+     * HTTP(S) RPC endpoint used to talk to the chain
+     */
+    rpcUrl: string;
+    /**
+     * Whether this chain is a testnet (paired with the Cardano Preprod environment)
+     */
+    isTestnet: boolean;
+    /**
+     * Whether this chain may be used for x402 payments
+     */
+    isEnabled: boolean;
+    /**
+     * Default settlement asset (token contract) for this chain
+     */
+    defaultAsset: string | null;
+    /**
+     * Id of the managed EVM wallet used to settle payments on this chain
+     */
+    facilitatorWalletId: string | null;
+    /**
+     * Resolved address of the facilitator wallet. Null when no facilitator is set.
+     */
+    facilitatorWalletAddress: string | null;
+    /**
+     * Id of the API key that created this chain configuration
+     */
+    createdById: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+};
+
+export type X402Wallet = {
+    /**
+     * Unique identifier of the managed EVM wallet
+     */
+    id: string;
+    /**
+     * The EVM address derived from the wallet private key
+     */
+    address: string;
+    /**
+     * Purchasing wallets fund outbound payments; Selling wallets settle inbound ones as facilitators
+     */
+    type: 'Purchasing' | 'Selling';
+    /**
+     * Optional human-readable label for the wallet
+     */
+    note: string | null;
+    /**
+     * Id of the API key that created this wallet
+     */
+    createdById: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+};
+
+export type X402WalletCreated = X402Wallet & {
+    /**
+     * The generated 0x-prefixed private key, returned ONCE so you can back it up. It is null when you supplied your own key, is never stored in plaintext, and can never be retrieved again. Save it now.
+     */
+    privateKey: string | null;
+};
+
+export type X402Budget = {
+    id: string;
+    /**
+     * API key the budget is granted to
+     */
+    apiKeyId: string;
+    /**
+     * Managed EVM wallet the budget draws from
+     */
+    evmWalletId: string;
+    /**
+     * Resolved address of the managed EVM wallet the budget draws from
+     */
+    evmWalletAddress: string;
+    caip2Network: string;
+    /**
+     * Token contract the budget is denominated in
+     */
+    asset: string;
+    /**
+     * Remaining spendable amount, in token base units
+     */
+    remainingAmount: string;
+    /**
+     * Amount already spent, in token base units
+     */
+    spentAmount: string;
+    /**
+     * Id of the API key that created this budget
+     */
+    createdById: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+};
+
+export type X402PaymentAttempt = {
+    id: string;
+    createdAt: Date;
+    updatedAt: Date;
+    direction: 'InboundVerify' | 'InboundSettle' | 'OutboundPayment';
+    status: 'PaymentRequired' | 'Verified' | 'Settled' | 'Failed' | 'Replayed';
+    apiKeyId: string;
+    evmWalletId: string | null;
+    registryRequestId: string | null;
+    supportedPaymentSourceId: string | null;
+    caip2Network: string;
+    asset: string;
+    /**
+     * Payment amount in token base units
+     */
+    amount: string;
+    payTo: string;
+    payer: string | null;
+    resource: string | null;
+    paymentIdentifier: string | null;
+    errorReason: string | null;
+    errorMessage: string | null;
+    Settlement: {
+        id: string;
+        success: boolean;
+        /**
+         * On-chain settlement transaction hash
+         */
+        txHash: string | null;
+        /**
+         * Settled amount in token base units
+         */
+        amount: string | null;
+        payer: string | null;
+        createdAt: Date;
+    } | null;
+};
+
+export type X402SettlementRecord = {
+    id: string;
+    createdAt: Date;
+    updatedAt: Date;
+    paymentAttemptId: string;
+    success: boolean;
+    txHash: string | null;
+    caip2Network: string;
+    amount: string | null;
+    payer: string | null;
+};
+
+export type X402LowBalanceRule = {
+    id: string;
+    evmWalletId: string;
+    evmWalletAddress: string;
+    caip2Network: string;
+    asset: string;
+    /**
+     * Alert threshold in base units
+     */
+    thresholdAmount: string;
+    enabled: boolean;
+    status: 'Unknown' | 'Healthy' | 'Low';
+    lastKnownAmount: string | null;
+    lastCheckedAt: Date | null;
+    lastAlertedAt: Date | null;
+    createdAt: Date;
+    updatedAt: Date;
+};
+
 export type GetHealthData = {
     body?: never;
     path?: never;
@@ -2207,6 +2414,55 @@ export type PostWalletResponses = {
 };
 
 export type PostWalletResponse = PostWalletResponses[keyof PostWalletResponses];
+
+export type GetWalletListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * The number of wallets to return
+         */
+        take?: number;
+        /**
+         * Used to paginate through the wallets (provide the id of the last returned wallet)
+         */
+        cursorId?: string;
+        /**
+         * Filter wallets to a single payment source
+         */
+        paymentSourceId?: string;
+        /**
+         * Filter wallets by type (Selling or Purchasing)
+         */
+        walletType?: 'Selling' | 'Purchasing' | 'Funding';
+        /**
+         * Filter to the single wallet with this payment key hash
+         */
+        walletVkey?: string;
+        /**
+         * Filter to wallets with this Cardano address
+         */
+        walletAddress?: string;
+    };
+    url: '/wallet/list';
+};
+
+export type GetWalletListResponses = {
+    /**
+     * Paginated list of hot wallets
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * Paginated list of hot wallets
+             */
+            Wallets: Array<WalletListItem>;
+        };
+    };
+};
+
+export type GetWalletListResponse = GetWalletListResponses[keyof GetWalletListResponses];
 
 export type DeleteWalletLowBalanceData = {
     /**
@@ -2743,9 +2999,13 @@ export type PatchApiKeyData = {
          */
         status?: 'Active' | 'Revoked';
         /**
-         * The networks the API key is allowed to use
+         * Replaces the Cardano-network half of the access list. Omit to leave Cardano access unchanged.
          */
         NetworkLimit?: Array<'Preprod' | 'Mainnet'>;
+        /**
+         * Replaces the EVM (CAIP-2) half of the access list. Omit to leave EVM access unchanged.
+         */
+        ChainIdLimit?: Array<string>;
         /**
          * Whether to enable wallet scope filtering for this API key
          */
@@ -2819,9 +3079,13 @@ export type PostApiKeyData = {
             amount: string;
         }>;
         /**
-         * The networks the API key is allowed to use
+         * The Cardano networks the API key is allowed to use
          */
         NetworkLimit?: Array<'Preprod' | 'Mainnet'>;
+        /**
+         * Additional non-Cardano CAIP-2 chain identifiers the API key is allowed to use
+         */
+        ChainIdLimit?: Array<string>;
         /**
          * [DEPRECATED] The permission of the API key. Use canRead/canPay/canAdmin flags instead. Will be removed in a future version.
          */
@@ -7725,7 +7989,7 @@ export type PostRegistryData = {
              */
             chain: 'Cardano';
             /**
-             * The blockchain network this payment source is available on
+             * The Cardano network this payment source is available on
              */
             network: 'Preprod' | 'Mainnet';
             /**
@@ -7736,6 +8000,53 @@ export type PostRegistryData = {
              * The escrow smart contract address for this payment source
              */
             address: string;
+        } | {
+            /**
+             * The chain family used by standard x402
+             */
+            chain: 'EVM';
+            /**
+             * CAIP-2 EVM network id, for example eip155:8453
+             */
+            network: string;
+            /**
+             * The configured payment source type
+             */
+            paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2' | null;
+            /**
+             * Alias for payTo, kept for existing payment-source shape
+             */
+            address?: string;
+            /**
+             * x402 payment scheme
+             */
+            scheme: 'Exact';
+            /**
+             * ERC-20 token contract address
+             */
+            asset: string;
+            /**
+             * Atomic token amount
+             */
+            amount: string;
+            /**
+             * ERC-20 token decimals
+             */
+            decimals: number;
+            /**
+             * EVM address receiving the x402 payment
+             */
+            payTo: string;
+            /**
+             * Optional absolute resource URL this x402 option protects
+             */
+            resource?: string;
+            /**
+             * Additional x402 metadata
+             */
+            extra?: {
+                [key: string]: unknown;
+            };
         }>;
         /**
          * List of example outputs from the agent
@@ -7987,7 +8298,7 @@ export type PostRegistryUpdateData = {
              */
             chain: 'Cardano';
             /**
-             * The blockchain network this payment source is available on
+             * The Cardano network this payment source is available on
              */
             network: 'Preprod' | 'Mainnet';
             /**
@@ -7998,6 +8309,53 @@ export type PostRegistryUpdateData = {
              * The escrow smart contract address for this payment source
              */
             address: string;
+        } | {
+            /**
+             * The chain family used by standard x402
+             */
+            chain: 'EVM';
+            /**
+             * CAIP-2 EVM network id, for example eip155:8453
+             */
+            network: string;
+            /**
+             * The configured payment source type
+             */
+            paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2' | null;
+            /**
+             * Alias for payTo, kept for existing payment-source shape
+             */
+            address?: string;
+            /**
+             * x402 payment scheme
+             */
+            scheme: 'Exact';
+            /**
+             * ERC-20 token contract address
+             */
+            asset: string;
+            /**
+             * Atomic token amount
+             */
+            amount: string;
+            /**
+             * ERC-20 token decimals
+             */
+            decimals: number;
+            /**
+             * EVM address receiving the x402 payment
+             */
+            payTo: string;
+            /**
+             * Optional absolute resource URL this x402 option protects
+             */
+            resource?: string;
+            /**
+             * Additional x402 metadata
+             */
+            extra?: {
+                [key: string]: unknown;
+            };
         }>;
         /**
          * List of example outputs from the agent
@@ -8987,7 +9345,7 @@ export type GetWebhooksResponses = {
                 id: string;
                 url: string;
                 format: 'EXTENDED' | 'SLACK' | 'GOOGLE_CHAT' | 'DISCORD';
-                Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT'>;
+                Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
                 name: string | null;
                 isActive: boolean;
                 createdAt: Date;
@@ -9031,7 +9389,7 @@ export type PatchWebhooksData = {
         /**
          * Array of event types to subscribe to
          */
-        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT'>;
+        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
         /**
          * Human-readable name for the webhook
          */
@@ -9079,7 +9437,7 @@ export type PatchWebhooksResponses = {
             id: string;
             url: string;
             format: 'EXTENDED' | 'SLACK' | 'GOOGLE_CHAT' | 'DISCORD';
-            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT'>;
+            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
             name: string | null;
             isActive: boolean;
             createdAt: Date;
@@ -9111,7 +9469,7 @@ export type PostWebhooksData = {
         /**
          * Array of event types to subscribe to
          */
-        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT'>;
+        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
         /**
          * Human-readable name for the webhook
          */
@@ -9159,7 +9517,7 @@ export type PostWebhooksResponses = {
             id: string;
             url: string;
             format: 'EXTENDED' | 'SLACK' | 'GOOGLE_CHAT' | 'DISCORD';
-            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT'>;
+            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
             name: string | null;
             isActive: boolean;
             createdAt: Date;
@@ -9694,3 +10052,901 @@ export type PostMonitoringStopResponses = {
 };
 
 export type PostMonitoringStopResponse = PostMonitoringStopResponses[keyof PostMonitoringStopResponses];
+
+export type GetX402NetworksData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Filter chains by environment: true for testnet (Preprod), false for mainnet
+         */
+        isTestnet?: 'true' | 'false';
+    };
+    url: '/x402/networks';
+};
+
+export type GetX402NetworksResponses = {
+    /**
+     * Configured x402 EVM chains
+     */
+    200: {
+        status: 'success';
+        data: {
+            Networks: Array<X402Network>;
+        };
+    };
+};
+
+export type GetX402NetworksResponse = GetX402NetworksResponses[keyof GetX402NetworksResponses];
+
+export type PostX402NetworksData = {
+    /**
+     * Chain configuration to upsert
+     */
+    body?: {
+        caip2Id: string;
+        displayName: string;
+        rpcUrl: string;
+        isTestnet?: boolean;
+        isEnabled?: boolean;
+        defaultAsset?: string | null;
+        facilitatorWalletId?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/x402/networks';
+};
+
+export type PostX402NetworksResponses = {
+    /**
+     * Chain configuration saved
+     */
+    200: {
+        status: 'success';
+        data: X402Network;
+    };
+};
+
+export type PostX402NetworksResponse = PostX402NetworksResponses[keyof PostX402NetworksResponses];
+
+export type GetX402WalletsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Number of managed wallets to return
+         */
+        take?: number;
+        /**
+         * Pagination cursor (provide the id of the last returned wallet)
+         */
+        cursorId?: string;
+        /**
+         * Filter wallets by direction (Purchasing or Selling)
+         */
+        type?: 'Purchasing' | 'Selling';
+    };
+    url: '/x402/wallets';
+};
+
+export type GetX402WalletsResponses = {
+    /**
+     * Managed x402 EVM wallets
+     */
+    200: {
+        status: 'success';
+        data: {
+            Wallets: Array<X402Wallet>;
+        };
+    };
+};
+
+export type GetX402WalletsResponse = GetX402WalletsResponses[keyof GetX402WalletsResponses];
+
+export type PostX402WalletsData = {
+    /**
+     * Optional private key to import
+     */
+    body?: {
+        /**
+         * Purchasing wallets fund outbound payments; Selling wallets settle inbound ones as facilitators
+         */
+        type: 'Purchasing' | 'Selling';
+        /**
+         * Optional human-readable label for the wallet
+         */
+        note?: string;
+        /**
+         * Optional 0x-prefixed 32-byte hex private key. A new key is generated when omitted.
+         */
+        privateKey?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/x402/wallets';
+};
+
+export type PostX402WalletsResponses = {
+    /**
+     * Managed wallet created
+     */
+    200: {
+        status: 'success';
+        data: X402WalletCreated;
+    };
+};
+
+export type PostX402WalletsResponse = PostX402WalletsResponses[keyof PostX402WalletsResponses];
+
+export type PostX402WalletsDeleteData = {
+    /**
+     * Managed wallet to retire
+     */
+    body?: {
+        /**
+         * Id of the managed EVM wallet to retire
+         */
+        id: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/x402/wallets/delete';
+};
+
+export type PostX402WalletsDeleteResponses = {
+    /**
+     * Managed wallet retired
+     */
+    200: {
+        status: 'success';
+        data: {
+            id: string;
+        };
+    };
+};
+
+export type PostX402WalletsDeleteResponse = PostX402WalletsDeleteResponses[keyof PostX402WalletsDeleteResponses];
+
+export type GetX402BudgetsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Filter budgets to a single API key
+         */
+        apiKeyId?: string;
+    };
+    url: '/x402/budgets';
+};
+
+export type GetX402BudgetsResponses = {
+    /**
+     * x402 wallet budgets
+     */
+    200: {
+        status: 'success';
+        data: {
+            Budgets: Array<X402Budget>;
+        };
+    };
+};
+
+export type GetX402BudgetsResponse = GetX402BudgetsResponses[keyof GetX402BudgetsResponses];
+
+export type PostX402BudgetsData = {
+    /**
+     * Budget to set
+     */
+    body?: {
+        apiKeyId: string;
+        evmWalletId: string;
+        caip2Network: string;
+        asset: string;
+        remainingAmount: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/x402/budgets';
+};
+
+export type PostX402BudgetsResponses = {
+    /**
+     * Budget saved
+     */
+    200: {
+        status: 'success';
+        data: X402Budget;
+    };
+};
+
+export type PostX402BudgetsResponse = PostX402BudgetsResponses[keyof PostX402BudgetsResponses];
+
+export type PostX402VerifyData = {
+    /**
+     * The registered supported payment source id and the buyer payment payload to verify
+     */
+    body?: {
+        supportedPaymentSourceId: string;
+        paymentPayload: {
+            x402Version: number;
+            resource?: {
+                url?: string;
+            };
+            accepted: {
+                scheme: string;
+                network: string;
+                asset: string;
+                amount: string;
+                payTo: string;
+                maxTimeoutSeconds: number;
+                extra?: {
+                    [key: string]: unknown;
+                };
+            };
+            payload: {
+                [key: string]: unknown;
+            };
+            extensions?: {
+                [key: string]: unknown;
+            };
+        };
+    };
+    path?: never;
+    query?: never;
+    url: '/x402/verify';
+};
+
+export type PostX402VerifyResponses = {
+    /**
+     * x402 verification result
+     */
+    200: {
+        status: 'success';
+        data: {
+            attemptId: string;
+            paymentPayloadHash: string;
+            paymentIdentifier: string | null;
+            verifyResponse: {
+                isValid: boolean;
+                invalidReason?: string;
+                invalidMessage?: string;
+                payer?: string;
+                extensions?: {
+                    [key: string]: unknown;
+                };
+                extra?: {
+                    [key: string]: unknown;
+                };
+            };
+        };
+    };
+};
+
+export type PostX402VerifyResponse = PostX402VerifyResponses[keyof PostX402VerifyResponses];
+
+export type PostX402SettleData = {
+    /**
+     * The registered supported payment source id and the buyer payment payload to settle
+     */
+    body?: {
+        supportedPaymentSourceId: string;
+        paymentPayload: {
+            x402Version: number;
+            resource?: {
+                url?: string;
+            };
+            accepted: {
+                scheme: string;
+                network: string;
+                asset: string;
+                amount: string;
+                payTo: string;
+                maxTimeoutSeconds: number;
+                extra?: {
+                    [key: string]: unknown;
+                };
+            };
+            payload: {
+                [key: string]: unknown;
+            };
+            extensions?: {
+                [key: string]: unknown;
+            };
+        };
+    };
+    path?: never;
+    query?: never;
+    url: '/x402/settle';
+};
+
+export type PostX402SettleResponses = {
+    /**
+     * x402 settlement result
+     */
+    200: {
+        status: 'success';
+        data: {
+            attemptId: string;
+            paymentPayloadHash: string;
+            paymentIdentifier: string | null;
+            replay: boolean;
+            settleResponse: {
+                success: boolean;
+                errorReason?: string;
+                errorMessage?: string;
+                payer?: string;
+                transaction: string;
+                network: string;
+                amount?: string;
+                extensions?: {
+                    [key: string]: unknown;
+                };
+                extra?: {
+                    [key: string]: unknown;
+                };
+            };
+        };
+    };
+};
+
+export type PostX402SettleResponse = PostX402SettleResponses[keyof PostX402SettleResponses];
+
+export type PostX402PayData = {
+    /**
+     * The 402 Payment Required response the buyer received
+     */
+    body?: {
+        /**
+         * Managed EVM wallet to sign the payment with
+         */
+        evmWalletId: string;
+        /**
+         * The 402 Payment Required response the buyer received
+         */
+        paymentRequired: {
+            x402Version: number;
+            resource?: {
+                url?: string;
+            };
+            /**
+             * The payment options advertised by the 402 response
+             */
+            accepts: Array<{
+                scheme: string;
+                network: string;
+                asset: string;
+                amount: string;
+                payTo: string;
+                maxTimeoutSeconds: number;
+                extra?: {
+                    [key: string]: unknown;
+                };
+            }>;
+            extensions?: {
+                [key: string]: unknown;
+            };
+            error?: string;
+        };
+        /**
+         * Restrict signing to this CAIP-2 network
+         */
+        preferredNetwork?: string;
+        /**
+         * Restrict signing to this token asset
+         */
+        preferredAsset?: string;
+        paymentIdentifier?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/x402/pay';
+};
+
+export type PostX402PayResponses = {
+    /**
+     * Signed x402 payment
+     */
+    200: {
+        status: 'success';
+        data: {
+            attemptId: string;
+            /**
+             * The managed wallet address that signed the payment
+             */
+            payer: string;
+            caip2Network: string;
+            asset: string;
+            /**
+             * Signed payment amount in token base units
+             */
+            amount: string;
+            payTo: string;
+            /**
+             * Base64 X-PAYMENT header value; the buyer sends this with its own retried request
+             */
+            xPaymentHeader: string;
+            /**
+             * The signed x402 payment payload
+             */
+            paymentPayload: {
+                [key: string]: unknown;
+            };
+            paymentPayloadHash: string;
+            paymentIdentifier: string | null;
+        };
+    };
+};
+
+export type PostX402PayResponse = PostX402PayResponses[keyof PostX402PayResponses];
+
+export type GetX402PaymentsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Number of payment attempts to return
+         */
+        take?: number;
+        /**
+         * Pagination cursor (provide the id of the last returned attempt)
+         */
+        cursorId?: string;
+        /**
+         * Filter by payment status
+         */
+        status?: 'PaymentRequired' | 'Verified' | 'Settled' | 'Failed' | 'Replayed';
+        /**
+         * Filter by payment direction
+         */
+        direction?: 'InboundVerify' | 'InboundSettle' | 'OutboundPayment';
+        /**
+         * Filter by CAIP-2 chain id
+         */
+        caip2Network?: string;
+    };
+    url: '/x402/payments';
+};
+
+export type GetX402PaymentsResponses = {
+    /**
+     * x402 payment attempts
+     */
+    200: {
+        status: 'success';
+        data: {
+            PaymentAttempts: Array<X402PaymentAttempt>;
+        };
+    };
+};
+
+export type GetX402PaymentsResponse = GetX402PaymentsResponses[keyof GetX402PaymentsResponses];
+
+export type GetX402SettlementsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Number of settlements to return
+         */
+        take?: number;
+        /**
+         * Pagination cursor (provide the id of the last returned settlement)
+         */
+        cursorId?: string;
+        /**
+         * Filter by CAIP-2 chain id
+         */
+        caip2Network?: string;
+    };
+    url: '/x402/settlements';
+};
+
+export type GetX402SettlementsResponses = {
+    /**
+     * x402 settlements
+     */
+    200: {
+        status: 'success';
+        data: {
+            Settlements: Array<X402SettlementRecord>;
+        };
+    };
+};
+
+export type GetX402SettlementsResponse = GetX402SettlementsResponses[keyof GetX402SettlementsResponses];
+
+export type PostX402WalletsUpdateData = {
+    /**
+     * Wallet note to set
+     */
+    body?: {
+        /**
+         * Id of the managed EVM wallet to update
+         */
+        id: string;
+        /**
+         * New label for the wallet; null clears it
+         */
+        note: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/x402/wallets/update';
+};
+
+export type PostX402WalletsUpdateResponses = {
+    /**
+     * Managed wallet updated
+     */
+    200: {
+        status: 'success';
+        data: X402Wallet;
+    };
+};
+
+export type PostX402WalletsUpdateResponse = PostX402WalletsUpdateResponses[keyof PostX402WalletsUpdateResponses];
+
+export type GetX402WalletsBalanceData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Id of the managed EVM wallet to read balances for
+         */
+        id: string;
+        /**
+         * Restrict to a single chain; defaults to all enabled chains
+         */
+        caip2Network?: string;
+    };
+    url: '/x402/wallets/balance';
+};
+
+export type GetX402WalletsBalanceResponses = {
+    /**
+     * Managed wallet balances
+     */
+    200: {
+        status: 'success';
+        data: {
+            evmWalletId: string;
+            address: string;
+            Balances: Array<{
+                caip2Network: string;
+                displayName: string;
+                native: {
+                    symbol: string;
+                    decimals: number;
+                    /**
+                     * Native gas balance in wei
+                     */
+                    amount: string;
+                } | null;
+                asset: {
+                    asset: string;
+                    symbol: string | null;
+                    decimals: number;
+                    /**
+                     * Token balance in base units
+                     */
+                    amount: string;
+                } | null;
+                /**
+                 * Set when this chain could not be read
+                 */
+                error: string | null;
+            }>;
+        };
+    };
+};
+
+export type GetX402WalletsBalanceResponse = GetX402WalletsBalanceResponses[keyof GetX402WalletsBalanceResponses];
+
+export type GetX402WalletsCountData = {
+    body?: never;
+    path?: never;
+    query?: {
+        type?: 'Purchasing' | 'Selling';
+    };
+    url: '/x402/wallets/count';
+};
+
+export type GetX402WalletsCountResponses = {
+    /**
+     * Managed wallet count
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * Total number of matching records
+             */
+            total: number;
+        };
+    };
+};
+
+export type GetX402WalletsCountResponse = GetX402WalletsCountResponses[keyof GetX402WalletsCountResponses];
+
+export type DeleteX402LowBalanceData = {
+    /**
+     * Low-balance rule to delete
+     */
+    body?: {
+        ruleId: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/x402/low-balance';
+};
+
+export type DeleteX402LowBalanceResponses = {
+    /**
+     * Low-balance rule deleted
+     */
+    200: {
+        status: 'success';
+        data: {
+            ruleId: string;
+            deletedAt: Date;
+        };
+    };
+};
+
+export type DeleteX402LowBalanceResponse = DeleteX402LowBalanceResponses[keyof DeleteX402LowBalanceResponses];
+
+export type GetX402LowBalanceData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Filter rules to a single wallet
+         */
+        evmWalletId?: string;
+        /**
+         * Only return rules currently in the Low state
+         */
+        onlyLow?: 'true' | 'false';
+        /**
+         * Include disabled rules
+         */
+        includeDisabled?: 'true' | 'false';
+    };
+    url: '/x402/low-balance';
+};
+
+export type GetX402LowBalanceResponses = {
+    /**
+     * x402 low-balance rules
+     */
+    200: {
+        status: 'success';
+        data: {
+            Rules: Array<X402LowBalanceRule>;
+        };
+    };
+};
+
+export type GetX402LowBalanceResponse = GetX402LowBalanceResponses[keyof GetX402LowBalanceResponses];
+
+export type PatchX402LowBalanceData = {
+    /**
+     * Low-balance rule fields to update
+     */
+    body?: {
+        ruleId: string;
+        thresholdAmount?: string;
+        enabled?: boolean;
+    };
+    path?: never;
+    query?: never;
+    url: '/x402/low-balance';
+};
+
+export type PatchX402LowBalanceResponses = {
+    /**
+     * Low-balance rule updated
+     */
+    200: {
+        status: 'success';
+        data: X402LowBalanceRule;
+    };
+};
+
+export type PatchX402LowBalanceResponse = PatchX402LowBalanceResponses[keyof PatchX402LowBalanceResponses];
+
+export type PostX402LowBalanceData = {
+    /**
+     * Low-balance rule to set
+     */
+    body?: {
+        evmWalletId: string;
+        caip2Network: string;
+        /**
+         * Asset to monitor: "native" for the gas token, or an ERC-20 contract address
+         */
+        asset: 'native' | string;
+        /**
+         * Alert threshold in base units
+         */
+        thresholdAmount: string;
+        enabled?: boolean;
+    };
+    path?: never;
+    query?: never;
+    url: '/x402/low-balance';
+};
+
+export type PostX402LowBalanceResponses = {
+    /**
+     * Low-balance rule saved
+     */
+    200: {
+        status: 'success';
+        data: X402LowBalanceRule;
+    };
+};
+
+export type PostX402LowBalanceResponse = PostX402LowBalanceResponses[keyof PostX402LowBalanceResponses];
+
+export type GetX402PaymentsCountData = {
+    body?: never;
+    path?: never;
+    query?: {
+        status?: 'PaymentRequired' | 'Verified' | 'Settled' | 'Failed' | 'Replayed';
+        direction?: 'InboundVerify' | 'InboundSettle' | 'OutboundPayment';
+        caip2Network?: string;
+    };
+    url: '/x402/payments/count';
+};
+
+export type GetX402PaymentsCountResponses = {
+    /**
+     * x402 payment attempt count
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * Total number of matching records
+             */
+            total: number;
+        };
+    };
+};
+
+export type GetX402PaymentsCountResponse = GetX402PaymentsCountResponses[keyof GetX402PaymentsCountResponses];
+
+export type GetX402SettlementsCountData = {
+    body?: never;
+    path?: never;
+    query?: {
+        caip2Network?: string;
+        success?: 'true' | 'false';
+    };
+    url: '/x402/settlements/count';
+};
+
+export type GetX402SettlementsCountResponses = {
+    /**
+     * x402 settlement count
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * Total number of matching records
+             */
+            total: number;
+        };
+    };
+};
+
+export type GetX402SettlementsCountResponse = GetX402SettlementsCountResponses[keyof GetX402SettlementsCountResponses];
+
+export type PostX402AnalyticsData = {
+    /**
+     * Analytics window and timezone
+     */
+    body?: {
+        /**
+         * Window start (defaults to 30 days ago)
+         */
+        startDate?: Date | null;
+        /**
+         * Window end (defaults to now)
+         */
+        endDate?: Date | null;
+        /**
+         * Restrict to a single chain
+         */
+        caip2Network?: string;
+        /**
+         * IANA timezone for day/month bucketing (default Etc/UTC)
+         */
+        timeZone?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/x402/analytics';
+};
+
+export type PostX402AnalyticsResponses = {
+    /**
+     * x402 analytics
+     */
+    200: {
+        status: 'success';
+        data: {
+            periodStart: Date;
+            periodEnd: Date;
+            /**
+             * Number of settled inbound payments
+             */
+            incomeCount: number;
+            /**
+             * Number of signed outbound payments
+             */
+            spendCount: number;
+            TotalIncome: Array<{
+                caip2Network: string;
+                asset: string;
+                /**
+                 * Summed amount in base units
+                 */
+                amount: string;
+            }>;
+            TotalSpend: Array<{
+                caip2Network: string;
+                asset: string;
+                /**
+                 * Summed amount in base units
+                 */
+                amount: string;
+            }>;
+            Daily: Array<{
+                year: number;
+                month: number;
+                day: number;
+                Income: Array<{
+                    caip2Network: string;
+                    asset: string;
+                    /**
+                     * Summed amount in base units
+                     */
+                    amount: string;
+                }>;
+                Spend: Array<{
+                    caip2Network: string;
+                    asset: string;
+                    /**
+                     * Summed amount in base units
+                     */
+                    amount: string;
+                }>;
+            }>;
+            Monthly: Array<{
+                year: number;
+                month: number;
+                Income: Array<{
+                    caip2Network: string;
+                    asset: string;
+                    /**
+                     * Summed amount in base units
+                     */
+                    amount: string;
+                }>;
+                Spend: Array<{
+                    caip2Network: string;
+                    asset: string;
+                    /**
+                     * Summed amount in base units
+                     */
+                    amount: string;
+                }>;
+            }>;
+        };
+    };
+};
+
+export type PostX402AnalyticsResponse = PostX402AnalyticsResponses[keyof PostX402AnalyticsResponses];

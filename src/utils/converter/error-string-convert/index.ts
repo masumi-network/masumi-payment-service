@@ -14,8 +14,7 @@ export function errorToString(error: unknown) {
 			return error;
 		}
 		try {
-			// eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-			return (error as any).toString() as string;
+			return (error as { toString(): string }).toString();
 		} catch {
 			return 'Unknown error';
 		}

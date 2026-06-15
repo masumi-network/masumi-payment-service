@@ -9,6 +9,8 @@ const moduleNameMapper = {
 	'^@masumi/payment-source-v2$': '<rootDir>/packages/payment-source-v2/src/index.ts',
 	'^@masumi/payment-source-v2/services$': '<rootDir>/packages/payment-source-v2/src/services/index.ts',
 	'^@masumi/payment-source-v2/(.*)$': '<rootDir>/packages/payment-source-v2/src/$1.ts',
+	'^@masumi/payment-source-x402$': '<rootDir>/packages/payment-source-x402/src/index.ts',
+	'^@masumi/payment-source-x402/(.*)$': '<rootDir>/packages/payment-source-x402/src/$1.ts',
 	'@/(.*)': '<rootDir>/src/$1',
 	'^@prisma/client$': '<rootDir>/src/generated/prisma/client.ts',
 	'^(\\.{1,2}/.*)\\.js$': '$1',
@@ -22,6 +24,10 @@ const config: Config.InitialOptions = {
 	// missing env vars. Specs that need real DB connections (e2e) use the
 	// separate `jest.e2e.config.ts` configuration.
 	setupFiles: ['<rootDir>/jest.setup.env.ts'],
+	// Force libsodium's async WASM init to settle before tests so its `.ready`
+	// continuations don't fire a `require` after the env is torn down (which
+	// crashes the worker with an UnhandledPromiseRejection). See the setup file.
+	setupFilesAfterEnv: ['<rootDir>/jest.setup.libsodium.ts'],
 	roots: ['<rootDir>/src', '<rootDir>/packages'],
 	extensionsToTreatAsEsm: ['.ts'],
 	transform: {

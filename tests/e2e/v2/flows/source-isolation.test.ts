@@ -46,8 +46,8 @@ describeFn(`Web3CardanoV2 source isolation (${testNetwork})`, () => {
 		const v2Source = await getE2EPaymentSource(testNetwork, PaymentSourceType.Web3CardanoV2);
 
 		expect(v2Source.paymentSourceType).toBe(PaymentSourceType.Web3CardanoV2);
-		expect(v2Source.SellingWallets.length).toBeGreaterThan(0);
-		expect(v2Source.PurchasingWallets.length).toBeGreaterThan(0);
+		expect(v2Source.SellingWalletsCount).toBeGreaterThan(0);
+		expect(v2Source.PurchasingWalletsCount).toBeGreaterThan(0);
 		expect(v2Source.feeRatePermille).toBe(0);
 		expect(v2Source.FeeReceiverNetworkWallet).toBeNull();
 
@@ -65,11 +65,14 @@ describeFn(`Web3CardanoV2 source isolation (${testNetwork})`, () => {
 			expect(v2Source.policyId).not.toBe(v1Source.policyId);
 			expect(v2Source.smartContractAddress).not.toBe(v1Source.smartContractAddress);
 
-			const v1Vkeys = new Set<string>([
-				...v1Source.SellingWallets.map((w) => w.walletVkey),
-				...v1Source.PurchasingWallets.map((w) => w.walletVkey),
+			// Hot wallets are served by /wallet/list now; fetch each source's
+			// wallets and assert no vkey overlap between V1 and V2.
+			const [{ Wallets: v1Wallets }, { Wallets: v2Wallets }] = await Promise.all([
+				global.testApiClient.queryWallets({ paymentSourceId: v1Source.id, take: 100 }),
+				global.testApiClient.queryWallets({ paymentSourceId: v2Source.id, take: 100 }),
 			]);
-			for (const wallet of [...v2Source.SellingWallets, ...v2Source.PurchasingWallets]) {
+			const v1Vkeys = new Set<string>(v1Wallets.map((w) => w.walletVkey));
+			for (const wallet of v2Wallets) {
 				expect(v1Vkeys.has(wallet.walletVkey)).toBe(false);
 			}
 		}
