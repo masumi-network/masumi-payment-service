@@ -81,7 +81,11 @@ export function NotificationsDialog({
                         Low balance alert
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {wallet.type === 'Purchasing' ? 'Buying wallet' : 'Selling wallet'}
+                        {wallet.type === 'Purchasing'
+                          ? 'Buying wallet'
+                          : wallet.type === 'Funding'
+                            ? 'Funding wallet'
+                            : 'Selling wallet'}
                         {wallet.note ? ` • ${wallet.note}` : ''}
                       </p>
                       <p className="text-xs text-muted-foreground">

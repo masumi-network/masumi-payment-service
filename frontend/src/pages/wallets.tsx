@@ -308,7 +308,11 @@ export default function WalletsPage() {
                         </td>
                         <td className="p-4">
                           <div className="text-sm font-medium truncate">
-                            {wallet.type === 'Purchasing' ? 'Buying wallet' : 'Selling wallet'}
+                            {wallet.type === 'Purchasing'
+                              ? 'Buying wallet'
+                              : wallet.type === 'Funding'
+                                ? 'Funding wallet'
+                                : 'Selling wallet'}
                           </div>
                           <div className="text-xs text-muted-foreground truncate">
                             {wallet.note || 'Created by seeding'}
