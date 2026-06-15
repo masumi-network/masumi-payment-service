@@ -20,6 +20,7 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Badge } from '@/components/ui/badge';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
+import { useAllWallets } from '@/lib/queries/useWallets';
 import { shortenAddress } from '@/lib/utils';
 import {
   getActiveStablecoinConfig,
@@ -95,38 +96,26 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
   const [isLoading, setIsLoading] = useState(false);
   const { apiClient, network } = useAppContext();
   const { paymentSources } = usePaymentSourceExtendedAll();
-  const { networks: evmChainOptions } = useX402Networks({ silentErrors: true });
+  const { wallets: managedWallets } = useAllWallets(open);
+  // A key's NetworkLimit can span both Cardano networks, so offer EVM chains from every
+  // environment, not just the active top-selector one, or chains for the other network
+  // can't be added to ChainIdLimit in one flow.
+  const { networks: evmChainOptions } = useX402Networks({
+    silentErrors: true,
+    allEnvironments: true,
+  });
 
   const allWallets = useMemo(() => {
-    const wallets: Array<{
-      id: string;
-      type: 'Purchasing' | 'Selling';
-      network: string;
-      walletAddress: string;
-      note: string | null;
-    }> = [];
-    for (const ps of paymentSources) {
-      for (const w of ps.PurchasingWallets ?? []) {
-        wallets.push({
-          id: w.id,
-          type: 'Purchasing',
-          network: ps.network,
-          walletAddress: w.walletAddress,
-          note: w.note,
-        });
-      }
-      for (const w of ps.SellingWallets ?? []) {
-        wallets.push({
-          id: w.id,
-          type: 'Selling',
-          network: ps.network,
-          walletAddress: w.walletAddress,
-          note: w.note,
-        });
-      }
-    }
-    return wallets;
-  }, [paymentSources]);
+    // Wallets come from /wallet/list now; join to the source for its network.
+    const networkBySourceId = new Map(paymentSources.map((ps) => [ps.id, ps.network]));
+    return managedWallets.map((wallet) => ({
+      id: wallet.id,
+      type: wallet.type,
+      network: networkBySourceId.get(wallet.paymentSourceId) ?? '',
+      walletAddress: wallet.walletAddress,
+      note: wallet.note,
+    }));
+  }, [managedWallets, paymentSources]);
 
   const {
     register,
@@ -261,7 +250,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
               name="permissionPreset"
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger>
+                  <SelectTrigger aria-label="Permission level">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -288,6 +277,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                   name="networks"
                   render={({ field }) => (
                     <Checkbox
+                      aria-label="Preprod"
                       checked={field.value.includes('Preprod')}
                       disabled={canAdmin}
                       onCheckedChange={() => {
@@ -308,6 +298,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                   name="networks"
                   render={({ field }) => (
                     <Checkbox
+                      aria-label="Mainnet"
                       checked={field.value.includes('Mainnet')}
                       disabled={canAdmin}
                       onCheckedChange={() => {
@@ -342,6 +333,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                     {evmChainOptions.map((chain) => (
                       <div key={chain.id} className="flex items-center gap-2">
                         <Checkbox
+                          aria-label={chain.displayName}
                           checked={field.value.includes(chain.caip2Id)}
                           onCheckedChange={() => {
                             if (field.value.includes(chain.caip2Id)) {
@@ -374,6 +366,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                 name="usageLimited"
                 render={({ field }) => (
                   <Checkbox
+                    aria-label="Limit usage"
                     checked={field.value}
                     onCheckedChange={field.onChange}
                     disabled={isReadOnly || canAdmin}
@@ -390,8 +383,15 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
           {usageLimited && !isReadOnly && (
             <>
               <div className="space-y-2">
-                <label className="text-sm font-medium">ADA Limit</label>
-                <Input type="number" placeholder="0.00" {...register('credits.lovelace')} />
+                <label htmlFor="apikey-ada-limit" className="text-sm font-medium">
+                  ADA Limit
+                </label>
+                <Input
+                  id="apikey-ada-limit"
+                  type="number"
+                  placeholder="0.00"
+                  {...register('credits.lovelace')}
+                />
                 <p className="text-xs text-muted-foreground">
                   Amount in ADA (will be converted to lovelace)
                 </p>
@@ -403,10 +403,15 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium">
+                <label htmlFor="apikey-usdcx-limit" className="text-sm font-medium">
                   {getActiveStablecoinSymbol(network)} Limit
                 </label>
-                <Input type="number" placeholder="0.00" {...register('credits.usdcx')} />
+                <Input
+                  id="apikey-usdcx-limit"
+                  type="number"
+                  placeholder="0.00"
+                  {...register('credits.usdcx')}
+                />
                 {errors.credits && 'usdcx' in errors.credits && errors.credits.usdcx && (
                   <p className="text-xs text-destructive mt-1">
                     {(errors.credits.usdcx as any).message}
@@ -425,6 +430,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                     name="walletScopeEnabled"
                     render={({ field }) => (
                       <Checkbox
+                        aria-label="Restrict to specific wallets"
                         checked={field.value}
                         onCheckedChange={(checked) => {
                           field.onChange(checked);

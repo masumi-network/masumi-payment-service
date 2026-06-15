@@ -1,32 +1,56 @@
 import { useCallback, useMemo } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { useAppContext } from '@/lib/contexts/AppContext';
+import { useAppContext, type NetworkType } from '@/lib/contexts/AppContext';
+import { isTestnetEnv } from '@/lib/x402-rail';
 import {
   getX402Budgets,
+  getX402LowBalance,
   getX402Networks,
   getX402Payments,
   getX402Wallets,
   X402Budget,
+  X402LowBalanceRule,
   X402Network,
   X402PaymentAttempt,
   X402Wallet,
 } from '@/lib/api/generated';
 import { handleApiCall } from '@/lib/utils';
-import { flattenInclusiveCursorPages } from '@/lib/pagination/cursor-pagination';
+import {
+  appendInclusiveCursorPage,
+  flattenInclusiveCursorPages,
+} from '@/lib/pagination/cursor-pagination';
 
 const PAGE_SIZE = 20;
 
-export function useX402Networks(options?: { silentErrors?: boolean }) {
-  const { apiClient, authorized } = useAppContext();
+export function useX402Networks(options?: {
+  silentErrors?: boolean;
+  network?: NetworkType;
+  allEnvironments?: boolean;
+}) {
+  const { apiClient, authorized, network: activeNetwork } = useAppContext();
   const silentErrors = options?.silentErrors ?? false;
+  // Always scope chains to an environment, enforced at the query level: testnet chains
+  // belong to Preprod, mainnet chains to Mainnet. Defaults to the active top-selector env;
+  // callers that own their env (e.g. the setup wizard) can pass it explicitly.
+  const network = options?.network ?? activeNetwork;
+  const isTestnet = isTestnetEnv(network);
+  // Some callers span both environments at once. API keys carry a NetworkLimit that can
+  // include both Cardano networks, so their ChainIdLimit must be choosable from every
+  // EVM chain regardless of the active top-selector env. Omitting isTestnet returns all.
+  const allEnvironments = options?.allEnvironments ?? false;
 
   const query = useQuery({
     // Keyed by silentErrors so the silent (selector) and toasting (tab) consumers do
-    // not share one cache entry and race on which onError handler runs.
-    queryKey: ['x402-networks', silentErrors],
+    // not share one cache entry and race on which onError handler runs, and by env so
+    // switching the top selector refetches the right environment's chains.
+    queryKey: ['x402-networks', silentErrors, allEnvironments ? 'all' : isTestnet],
     queryFn: async () => {
       const response = await handleApiCall(
-        () => getX402Networks({ client: apiClient }),
+        () =>
+          getX402Networks({
+            client: apiClient,
+            query: allEnvironments ? {} : { isTestnet: isTestnet ? 'true' : 'false' },
+          }),
         // The selector renders this for every key, including non-admins that get a 401.
         // Stay silent there and fall back to an empty list instead of toasting.
         silentErrors ? { onError: () => {} } : { errorMessage: 'Failed to fetch chains' },
@@ -47,24 +71,105 @@ export function useX402Networks(options?: { silentErrors?: boolean }) {
   };
 }
 
-export function useX402Wallets() {
+/**
+ * Eagerly loads every managed EVM wallet (paging through /x402/wallets). Used by
+ * the chain/budget pickers and setup flows that need the full set to choose
+ * from. `enabled` lets form dialogs defer the load until opened. Pass `type` to
+ * fetch only Purchasing (budget) or Selling (facilitator) wallets. Read-only
+ * labels should use the denormalized address on the network/budget instead.
+ */
+export function useX402Wallets(enabled = true, type?: X402Wallet['type']) {
   const { apiClient, authorized } = useAppContext();
 
   const query = useQuery({
-    queryKey: ['x402-wallets'],
+    queryKey: ['x402-wallets', 'all', type ?? 'any'],
     queryFn: async () => {
-      const response = await handleApiCall(() => getX402Wallets({ client: apiClient }), {
-        errorMessage: 'Failed to fetch wallets',
-      });
-      return response?.data?.data?.Wallets ?? [];
+      let items: X402Wallet[] = [];
+      let cursor: string | undefined;
+      while (true) {
+        const response = await handleApiCall(
+          () =>
+            getX402Wallets({
+              client: apiClient,
+              query: { take: PAGE_SIZE, cursorId: cursor, type },
+            }),
+          { errorMessage: 'Failed to fetch wallets' },
+        );
+        const page = (response?.data?.data?.Wallets ?? []) as X402Wallet[];
+        if (page.length === 0) break;
+        items = appendInclusiveCursorPage(items, page, (wallet) => wallet.id);
+        if (page.length < PAGE_SIZE) break;
+        const lastWallet = page[page.length - 1];
+        if (!lastWallet?.id || lastWallet.id === cursor) break;
+        cursor = lastWallet.id;
+      }
+      return items;
     },
-    enabled: !!apiClient && authorized,
+    enabled: !!apiClient && authorized && enabled,
     staleTime: 30000,
   });
 
   return {
     wallets: (query.data ?? []) as X402Wallet[],
     isLoading: query.isLoading,
+    isRefetching: query.isRefetching,
+    refetch: async () => {
+      await query.refetch();
+    },
+  };
+}
+
+/**
+ * Cursor-paginated managed EVM wallets for the wallet management list (Load
+ * More), so the table doesn't load every wallet up front.
+ */
+export function useX402WalletsPaginated() {
+  const { apiClient, authorized } = useAppContext();
+
+  const query = useInfiniteQuery({
+    queryKey: ['x402-wallets', 'paginated'],
+    queryFn: async ({ pageParam }) => {
+      const response = await handleApiCall(
+        () =>
+          getX402Wallets({
+            client: apiClient,
+            query: { take: PAGE_SIZE, cursorId: pageParam ?? undefined },
+          }),
+        { errorMessage: 'Failed to fetch wallets' },
+      );
+      const wallets = (response?.data?.data?.Wallets ?? []) as X402Wallet[];
+      const hasMore = wallets.length === PAGE_SIZE;
+      const nextCursor = hasMore ? (wallets[wallets.length - 1]?.id ?? undefined) : undefined;
+      return { wallets, nextCursor, hasMore };
+    },
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) =>
+      lastPage.hasMore && lastPage.nextCursor ? lastPage.nextCursor : undefined,
+    enabled: !!apiClient && authorized,
+    staleTime: 30000,
+  });
+
+  const wallets = useMemo(
+    () =>
+      flattenInclusiveCursorPages(
+        (query.data?.pages ?? []).map((page) => page.wallets),
+        (wallet) => wallet.id,
+      ),
+    [query.data],
+  );
+
+  const loadMore = useCallback(() => {
+    if (query.hasNextPage && !query.isFetchingNextPage) {
+      query.fetchNextPage();
+    }
+  }, [query]);
+
+  return {
+    wallets,
+    isLoading: query.isLoading,
+    hasMore: Boolean(query.hasNextPage),
+    isFetchingNextPage: query.isFetchingNextPage,
+    loadMore,
     isRefetching: query.isRefetching,
     refetch: async () => {
       await query.refetch();
@@ -89,6 +194,36 @@ export function useX402Budgets() {
 
   return {
     budgets: (query.data ?? []) as X402Budget[],
+    isLoading: query.isLoading,
+    isRefetching: query.isRefetching,
+    refetch: async () => {
+      await query.refetch();
+    },
+  };
+}
+
+export function useX402LowBalanceRules(includeDisabled = true) {
+  const { apiClient, authorized } = useAppContext();
+
+  const query = useQuery({
+    queryKey: ['x402-low-balance', includeDisabled],
+    queryFn: async () => {
+      const response = await handleApiCall(
+        () =>
+          getX402LowBalance({
+            client: apiClient,
+            query: { includeDisabled: includeDisabled ? 'true' : 'false' },
+          }),
+        { errorMessage: 'Failed to fetch low-balance rules' },
+      );
+      return response?.data?.data?.Rules ?? [];
+    },
+    enabled: !!apiClient && authorized,
+    staleTime: 30000,
+  });
+
+  return {
+    rules: (query.data ?? []) as X402LowBalanceRule[],
     isLoading: query.isLoading,
     isRefetching: query.isRefetching,
     refetch: async () => {

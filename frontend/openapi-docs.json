@@ -320,6 +320,81 @@
                     "LowBalanceRules"
                 ]
             },
+            "WalletListItem": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Unique identifier for the wallet"
+                    },
+                    "paymentSourceId": {
+                        "type": "string",
+                        "description": "Id of the payment source this wallet belongs to"
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": [
+                            "Selling",
+                            "Purchasing"
+                        ],
+                        "description": "Whether this is a Selling (seller side) or Purchasing (buyer side) wallet"
+                    },
+                    "walletVkey": {
+                        "type": "string",
+                        "description": "Payment key hash of the wallet"
+                    },
+                    "walletAddress": {
+                        "type": "string",
+                        "description": "Cardano address of the wallet"
+                    },
+                    "collectionAddress": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Optional collection address for this wallet. Null if not set"
+                    },
+                    "note": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Optional note about this wallet. Null if not set"
+                    },
+                    "LowBalanceSummary": {
+                        "type": "object",
+                        "properties": {
+                            "isLow": {
+                                "type": "boolean",
+                                "description": "Whether any enabled low-balance rule for this wallet is currently below threshold"
+                            },
+                            "lowRuleCount": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "description": "How many enabled rules for this wallet are currently in low state"
+                            },
+                            "lastCheckedAt": {
+                                "type": "string",
+                                "nullable": true,
+                                "format": "date-time",
+                                "description": "Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked"
+                            }
+                        },
+                        "required": [
+                            "isLow",
+                            "lowRuleCount",
+                            "lastCheckedAt"
+                        ],
+                        "description": "Aggregated low-balance status for the wallet"
+                    }
+                },
+                "required": [
+                    "id",
+                    "paymentSourceId",
+                    "type",
+                    "walletVkey",
+                    "walletAddress",
+                    "collectionAddress",
+                    "note",
+                    "LowBalanceSummary"
+                ]
+            },
             "GeneratedWalletSecret": {
                 "type": "object",
                 "properties": {
@@ -2994,20 +3069,6 @@
                         },
                         "description": "List of admin wallets for dispute resolution"
                     },
-                    "PurchasingWallets": {
-                        "type": "array",
-                        "items": {
-                            "$ref": "#/components/schemas/PurchasingWallet"
-                        },
-                        "description": "List of wallets used for purchasing (buyer side)"
-                    },
-                    "SellingWallets": {
-                        "type": "array",
-                        "items": {
-                            "$ref": "#/components/schemas/SellingWallet"
-                        },
-                        "description": "List of wallets used for selling (seller side)"
-                    },
                     "FeeReceiverNetworkWallet": {
                         "type": "object",
                         "nullable": true,
@@ -3041,8 +3102,6 @@
                     "lastIdentifierChecked",
                     "lastCheckedAt",
                     "AdminWallets",
-                    "PurchasingWallets",
-                    "SellingWallets",
                     "FeeReceiverNetworkWallet",
                     "feeRatePermille"
                 ]
@@ -3062,128 +3121,6 @@
                 "required": [
                     "walletAddress",
                     "order"
-                ]
-            },
-            "PurchasingWallet": {
-                "type": "object",
-                "properties": {
-                    "id": {
-                        "type": "string",
-                        "description": "Unique identifier for the purchasing wallet"
-                    },
-                    "walletVkey": {
-                        "type": "string",
-                        "description": "Payment key hash of the purchasing wallet"
-                    },
-                    "walletAddress": {
-                        "type": "string",
-                        "description": "Cardano address of the purchasing wallet"
-                    },
-                    "collectionAddress": {
-                        "type": "string",
-                        "nullable": true,
-                        "description": "Optional collection address for this wallet. Null if not set"
-                    },
-                    "note": {
-                        "type": "string",
-                        "nullable": true,
-                        "description": "Optional note about this wallet. Null if not set"
-                    },
-                    "LowBalanceSummary": {
-                        "type": "object",
-                        "properties": {
-                            "isLow": {
-                                "type": "boolean",
-                                "description": "Whether any enabled low-balance rule for this wallet is currently below threshold"
-                            },
-                            "lowRuleCount": {
-                                "type": "integer",
-                                "minimum": 0,
-                                "description": "How many enabled rules for this wallet are currently in low state"
-                            },
-                            "lastCheckedAt": {
-                                "type": "string",
-                                "nullable": true,
-                                "format": "date-time",
-                                "description": "Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked"
-                            }
-                        },
-                        "required": [
-                            "isLow",
-                            "lowRuleCount",
-                            "lastCheckedAt"
-                        ],
-                        "description": "Aggregated low-balance status for the wallet"
-                    }
-                },
-                "required": [
-                    "id",
-                    "walletVkey",
-                    "walletAddress",
-                    "collectionAddress",
-                    "note",
-                    "LowBalanceSummary"
-                ]
-            },
-            "SellingWallet": {
-                "type": "object",
-                "properties": {
-                    "id": {
-                        "type": "string",
-                        "description": "Unique identifier for the selling wallet"
-                    },
-                    "walletVkey": {
-                        "type": "string",
-                        "description": "Payment key hash of the selling wallet"
-                    },
-                    "walletAddress": {
-                        "type": "string",
-                        "description": "Cardano address of the selling wallet"
-                    },
-                    "collectionAddress": {
-                        "type": "string",
-                        "nullable": true,
-                        "description": "Optional collection address for this wallet. Null if not set"
-                    },
-                    "note": {
-                        "type": "string",
-                        "nullable": true,
-                        "description": "Optional note about this wallet. Null if not set"
-                    },
-                    "LowBalanceSummary": {
-                        "type": "object",
-                        "properties": {
-                            "isLow": {
-                                "type": "boolean",
-                                "description": "Whether any enabled low-balance rule for this wallet is currently below threshold"
-                            },
-                            "lowRuleCount": {
-                                "type": "integer",
-                                "minimum": 0,
-                                "description": "How many enabled rules for this wallet are currently in low state"
-                            },
-                            "lastCheckedAt": {
-                                "type": "string",
-                                "nullable": true,
-                                "format": "date-time",
-                                "description": "Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked"
-                            }
-                        },
-                        "required": [
-                            "isLow",
-                            "lowRuleCount",
-                            "lastCheckedAt"
-                        ],
-                        "description": "Aggregated low-balance status for the wallet"
-                    }
-                },
-                "required": [
-                    "id",
-                    "walletVkey",
-                    "walletAddress",
-                    "collectionAddress",
-                    "note",
-                    "LowBalanceSummary"
                 ]
             },
             "PaymentSourceExtended": {
@@ -3290,135 +3227,13 @@
                         },
                         "description": "List of admin wallets for dispute resolution (exactly 3 required)"
                     },
-                    "PurchasingWallets": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "id": {
-                                    "type": "string",
-                                    "description": "Unique identifier for the purchasing wallet"
-                                },
-                                "walletVkey": {
-                                    "type": "string",
-                                    "description": "Payment key hash of the purchasing wallet"
-                                },
-                                "walletAddress": {
-                                    "type": "string",
-                                    "description": "Cardano address of the purchasing wallet"
-                                },
-                                "collectionAddress": {
-                                    "type": "string",
-                                    "nullable": true,
-                                    "description": "Optional collection address for this wallet. Null if not set"
-                                },
-                                "note": {
-                                    "type": "string",
-                                    "nullable": true,
-                                    "description": "Optional note about this wallet. Null if not set"
-                                },
-                                "LowBalanceSummary": {
-                                    "type": "object",
-                                    "properties": {
-                                        "isLow": {
-                                            "type": "boolean",
-                                            "description": "Whether any enabled low-balance rule for this wallet is currently below threshold"
-                                        },
-                                        "lowRuleCount": {
-                                            "type": "integer",
-                                            "minimum": 0,
-                                            "description": "How many enabled rules for this wallet are currently in low state"
-                                        },
-                                        "lastCheckedAt": {
-                                            "type": "string",
-                                            "nullable": true,
-                                            "format": "date-time",
-                                            "description": "Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked"
-                                        }
-                                    },
-                                    "required": [
-                                        "isLow",
-                                        "lowRuleCount",
-                                        "lastCheckedAt"
-                                    ],
-                                    "description": "Aggregated low-balance status for the wallet"
-                                }
-                            },
-                            "required": [
-                                "id",
-                                "walletVkey",
-                                "walletAddress",
-                                "collectionAddress",
-                                "note",
-                                "LowBalanceSummary"
-                            ]
-                        },
-                        "description": "List of wallets used for purchasing (buyer side)"
+                    "PurchasingWalletsCount": {
+                        "type": "integer",
+                        "description": "Number of active purchasing wallets. Fetch the wallets themselves via GET /wallet/list."
                     },
-                    "SellingWallets": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "id": {
-                                    "type": "string",
-                                    "description": "Unique identifier for the selling wallet"
-                                },
-                                "walletVkey": {
-                                    "type": "string",
-                                    "description": "Payment key hash of the selling wallet"
-                                },
-                                "walletAddress": {
-                                    "type": "string",
-                                    "description": "Cardano address of the selling wallet"
-                                },
-                                "collectionAddress": {
-                                    "type": "string",
-                                    "nullable": true,
-                                    "description": "Optional collection address for this wallet. Null if not set"
-                                },
-                                "note": {
-                                    "type": "string",
-                                    "nullable": true,
-                                    "description": "Optional note about this wallet. Null if not set"
-                                },
-                                "LowBalanceSummary": {
-                                    "type": "object",
-                                    "properties": {
-                                        "isLow": {
-                                            "type": "boolean",
-                                            "description": "Whether any enabled low-balance rule for this wallet is currently below threshold"
-                                        },
-                                        "lowRuleCount": {
-                                            "type": "integer",
-                                            "minimum": 0,
-                                            "description": "How many enabled rules for this wallet are currently in low state"
-                                        },
-                                        "lastCheckedAt": {
-                                            "type": "string",
-                                            "nullable": true,
-                                            "format": "date-time",
-                                            "description": "Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked"
-                                        }
-                                    },
-                                    "required": [
-                                        "isLow",
-                                        "lowRuleCount",
-                                        "lastCheckedAt"
-                                    ],
-                                    "description": "Aggregated low-balance status for the wallet"
-                                }
-                            },
-                            "required": [
-                                "id",
-                                "walletVkey",
-                                "walletAddress",
-                                "collectionAddress",
-                                "note",
-                                "LowBalanceSummary"
-                            ]
-                        },
-                        "description": "List of wallets used for selling (seller side)"
+                    "SellingWalletsCount": {
+                        "type": "integer",
+                        "description": "Number of active selling wallets. Fetch the wallets themselves via GET /wallet/list."
                     },
                     "FeeReceiverNetworkWallet": {
                         "type": "object",
@@ -3455,8 +3270,8 @@
                     "syncInProgress",
                     "lastCheckedAt",
                     "AdminWallets",
-                    "PurchasingWallets",
-                    "SellingWallets",
+                    "PurchasingWalletsCount",
+                    "SellingWalletsCount",
                     "FeeReceiverNetworkWallet",
                     "feeRatePermille"
                 ]
@@ -4274,6 +4089,11 @@
                         "nullable": true,
                         "description": "Id of the managed EVM wallet used to settle payments on this chain"
                     },
+                    "facilitatorWalletAddress": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Resolved address of the facilitator wallet. Null when no facilitator is set."
+                    },
                     "createdById": {
                         "type": "string",
                         "nullable": true,
@@ -4297,6 +4117,7 @@
                     "isEnabled",
                     "defaultAsset",
                     "facilitatorWalletId",
+                    "facilitatorWalletAddress",
                     "createdById",
                     "createdAt",
                     "updatedAt"
@@ -4313,6 +4134,19 @@
                         "type": "string",
                         "pattern": "^0x[a-fA-F0-9]{40}$",
                         "description": "The EVM address derived from the wallet private key"
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": [
+                            "Purchasing",
+                            "Selling"
+                        ],
+                        "description": "Purchasing wallets fund outbound payments; Selling wallets settle inbound ones as facilitators"
+                    },
+                    "note": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Optional human-readable label for the wallet"
                     },
                     "createdById": {
                         "type": "string",
@@ -4331,9 +4165,31 @@
                 "required": [
                     "id",
                     "address",
+                    "type",
+                    "note",
                     "createdById",
                     "createdAt",
                     "updatedAt"
+                ]
+            },
+            "X402WalletCreated": {
+                "allOf": [
+                    {
+                        "$ref": "#/components/schemas/X402Wallet"
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "privateKey": {
+                                "type": "string",
+                                "nullable": true,
+                                "description": "The generated 0x-prefixed private key, returned ONCE so you can back it up. It is null when you supplied your own key, is never stored in plaintext, and can never be retrieved again. Save it now."
+                            }
+                        },
+                        "required": [
+                            "privateKey"
+                        ]
+                    }
                 ]
             },
             "X402Budget": {
@@ -4349,6 +4205,10 @@
                     "evmWalletId": {
                         "type": "string",
                         "description": "Managed EVM wallet the budget draws from"
+                    },
+                    "evmWalletAddress": {
+                        "type": "string",
+                        "description": "Resolved address of the managed EVM wallet the budget draws from"
                     },
                     "caip2Network": {
                         "type": "string",
@@ -4385,6 +4245,7 @@
                     "id",
                     "apiKeyId",
                     "evmWalletId",
+                    "evmWalletAddress",
                     "caip2Network",
                     "asset",
                     "remainingAmount",
@@ -4581,6 +4442,79 @@
                     "caip2Network",
                     "amount",
                     "payer"
+                ]
+            },
+            "X402LowBalanceRule": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "evmWalletId": {
+                        "type": "string"
+                    },
+                    "evmWalletAddress": {
+                        "type": "string"
+                    },
+                    "caip2Network": {
+                        "type": "string",
+                        "pattern": "^eip155:\\d+$"
+                    },
+                    "asset": {
+                        "type": "string"
+                    },
+                    "thresholdAmount": {
+                        "type": "string",
+                        "description": "Alert threshold in base units"
+                    },
+                    "enabled": {
+                        "type": "boolean"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "Unknown",
+                            "Healthy",
+                            "Low"
+                        ]
+                    },
+                    "lastKnownAmount": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "lastCheckedAt": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "date-time"
+                    },
+                    "lastAlertedAt": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "date-time"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "required": [
+                    "id",
+                    "evmWalletId",
+                    "evmWalletAddress",
+                    "caip2Network",
+                    "asset",
+                    "thresholdAmount",
+                    "enabled",
+                    "status",
+                    "lastKnownAmount",
+                    "lastCheckedAt",
+                    "lastAlertedAt",
+                    "createdAt",
+                    "updatedAt"
                 ]
             }
         },
@@ -4976,6 +4910,153 @@
                     },
                     "404": {
                         "description": "Wallet not found"
+                    }
+                }
+            }
+        },
+        "/wallet/list": {
+            "get": {
+                "description": "Lists hot wallets across payment sources with cursor-based pagination",
+                "summary": "List hot wallets, optionally filtered by payment source and type. (admin access required)",
+                "tags": [
+                    "wallet"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "number",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 10,
+                            "description": "The number of wallets to return"
+                        },
+                        "required": false,
+                        "description": "The number of wallets to return",
+                        "name": "take",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 250,
+                            "description": "Used to paginate through the wallets (provide the id of the last returned wallet)"
+                        },
+                        "required": false,
+                        "description": "Used to paginate through the wallets (provide the id of the last returned wallet)",
+                        "name": "cursorId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 250,
+                            "description": "Filter wallets to a single payment source"
+                        },
+                        "required": false,
+                        "description": "Filter wallets to a single payment source",
+                        "name": "paymentSourceId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Selling",
+                                "Purchasing"
+                            ],
+                            "description": "Filter wallets by type (Selling or Purchasing)"
+                        },
+                        "required": false,
+                        "description": "Filter wallets by type (Selling or Purchasing)",
+                        "name": "walletType",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 250,
+                            "description": "Filter to the single wallet with this payment key hash"
+                        },
+                        "required": false,
+                        "description": "Filter to the single wallet with this payment key hash",
+                        "name": "walletVkey",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 250,
+                            "description": "Filter to wallets with this Cardano address"
+                        },
+                        "required": false,
+                        "description": "Filter to wallets with this Cardano address",
+                        "name": "walletAddress",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Paginated list of hot wallets",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "Wallets": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/WalletListItem"
+                                                    },
+                                                    "description": "Paginated list of hot wallets"
+                                                }
+                                            },
+                                            "required": [
+                                                "Wallets"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "Wallets": [
+                                                {
+                                                    "id": "unique_cuid_v2_auto_generated",
+                                                    "paymentSourceId": "unique_cuid_v2_of_payment_source",
+                                                    "type": "Selling",
+                                                    "walletVkey": "wallet_vkey",
+                                                    "walletAddress": "wallet_address",
+                                                    "collectionAddress": null,
+                                                    "note": "note",
+                                                    "LowBalanceSummary": {
+                                                        "isLow": false,
+                                                        "lowRuleCount": 0,
+                                                        "lastCheckedAt": "1970-01-20T20:00:36.260Z"
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -18962,39 +19043,7 @@
                                                         "walletAddress": "wallet_address"
                                                     },
                                                     "lastCheckedAt": "1970-01-20T20:00:36.260Z",
-                                                    "lastIdentifierChecked": "identifier",
-                                                    "PurchasingWallets": [
-                                                        {
-                                                            "collectionAddress": null,
-                                                            "note": "note",
-                                                            "walletVkey": "wallet_vkey",
-                                                            "walletAddress": "wallet_address",
-                                                            "id": "unique_cuid_v2_auto_generated"
-                                                        },
-                                                        {
-                                                            "collectionAddress": "send_refunds_to_this_address",
-                                                            "note": "note",
-                                                            "walletVkey": "wallet_vkey",
-                                                            "walletAddress": "wallet_address",
-                                                            "id": "unique_cuid_v2_auto_generated"
-                                                        }
-                                                    ],
-                                                    "SellingWallets": [
-                                                        {
-                                                            "collectionAddress": "null_will_use_selling_wallet_as_revenue_address",
-                                                            "note": "note",
-                                                            "walletVkey": "wallet_vkey",
-                                                            "walletAddress": "wallet_address",
-                                                            "id": "unique_cuid_v2_auto_generated"
-                                                        },
-                                                        {
-                                                            "collectionAddress": "send_revenue_to_this_address",
-                                                            "note": "note",
-                                                            "walletVkey": "wallet_vkey",
-                                                            "walletAddress": "wallet_address",
-                                                            "id": "unique_cuid_v2_auto_generated"
-                                                        }
-                                                    ]
+                                                    "lastIdentifierChecked": "identifier"
                                                 }
                                             ]
                                         }
@@ -19104,6 +19153,8 @@
                                                             "order": 2
                                                         }
                                                     ],
+                                                    "PurchasingWalletsCount": 1,
+                                                    "SellingWalletsCount": 1,
                                                     "FeeReceiverNetworkWallet": {
                                                         "walletAddress": "wallet_address"
                                                     },
@@ -19112,59 +19163,7 @@
                                                     "PaymentSourceConfig": {
                                                         "rpcProviderApiKey": "rpc_provider_api_key_blockfrost",
                                                         "rpcProvider": "Blockfrost"
-                                                    },
-                                                    "PurchasingWallets": [
-                                                        {
-                                                            "collectionAddress": null,
-                                                            "note": "note",
-                                                            "walletVkey": "wallet_vkey",
-                                                            "walletAddress": "wallet_address",
-                                                            "id": "unique_cuid_v2_auto_generated",
-                                                            "LowBalanceSummary": {
-                                                                "isLow": false,
-                                                                "lowRuleCount": 0,
-                                                                "lastCheckedAt": "1970-01-20T20:00:36.260Z"
-                                                            }
-                                                        },
-                                                        {
-                                                            "collectionAddress": "send_refunds_to_this_address",
-                                                            "note": "note",
-                                                            "walletVkey": "wallet_vkey",
-                                                            "walletAddress": "wallet_address",
-                                                            "id": "unique_cuid_v2_auto_generated",
-                                                            "LowBalanceSummary": {
-                                                                "isLow": true,
-                                                                "lowRuleCount": 1,
-                                                                "lastCheckedAt": "1970-01-20T20:00:36.260Z"
-                                                            }
-                                                        }
-                                                    ],
-                                                    "SellingWallets": [
-                                                        {
-                                                            "collectionAddress": "null_will_use_selling_wallet_as_revenue_address",
-                                                            "note": "note",
-                                                            "walletVkey": "wallet_vkey",
-                                                            "walletAddress": "wallet_address",
-                                                            "id": "unique_cuid_v2_auto_generated",
-                                                            "LowBalanceSummary": {
-                                                                "isLow": false,
-                                                                "lowRuleCount": 0,
-                                                                "lastCheckedAt": "1970-01-20T20:00:36.260Z"
-                                                            }
-                                                        },
-                                                        {
-                                                            "collectionAddress": "send_revenue_to_this_address",
-                                                            "note": "note",
-                                                            "walletVkey": "wallet_vkey",
-                                                            "walletAddress": "wallet_address",
-                                                            "id": "unique_cuid_v2_auto_generated",
-                                                            "LowBalanceSummary": {
-                                                                "isLow": false,
-                                                                "lowRuleCount": 0,
-                                                                "lastCheckedAt": "1970-01-20T20:00:36.260Z"
-                                                            }
-                                                        }
-                                                    ]
+                                                    }
                                                 }
                                             ]
                                         }
@@ -19444,61 +19443,11 @@
                                                     "order": 2
                                                 }
                                             ],
-                                            "PurchasingWallets": [
-                                                {
-                                                    "collectionAddress": null,
-                                                    "note": "note",
-                                                    "walletVkey": "wallet_vkey",
-                                                    "walletAddress": "wallet_address",
-                                                    "id": "unique_cuid_v2_auto_generated",
-                                                    "LowBalanceSummary": {
-                                                        "isLow": false,
-                                                        "lowRuleCount": 0,
-                                                        "lastCheckedAt": "1970-01-20T20:00:36.260Z"
-                                                    }
-                                                },
-                                                {
-                                                    "collectionAddress": "send_refunds_to_this_address",
-                                                    "note": "note",
-                                                    "walletVkey": "wallet_vkey",
-                                                    "walletAddress": "wallet_address",
-                                                    "id": "unique_cuid_v2_auto_generated",
-                                                    "LowBalanceSummary": {
-                                                        "isLow": true,
-                                                        "lowRuleCount": 1,
-                                                        "lastCheckedAt": "1970-01-20T20:00:36.260Z"
-                                                    }
-                                                }
-                                            ],
-                                            "SellingWallets": [
-                                                {
-                                                    "collectionAddress": "null_will_use_the_selling_wallet_as_revenue_address",
-                                                    "note": "note",
-                                                    "walletVkey": "wallet_vkey",
-                                                    "walletAddress": "wallet_address",
-                                                    "id": "unique_cuid_v2_auto_generated",
-                                                    "LowBalanceSummary": {
-                                                        "isLow": false,
-                                                        "lowRuleCount": 0,
-                                                        "lastCheckedAt": "1970-01-20T20:00:36.260Z"
-                                                    }
-                                                },
-                                                {
-                                                    "collectionAddress": "send_revenue_to_this_address",
-                                                    "note": "note",
-                                                    "walletVkey": "wallet_vkey",
-                                                    "walletAddress": "wallet_address",
-                                                    "id": "unique_cuid_v2_auto_generated",
-                                                    "LowBalanceSummary": {
-                                                        "isLow": false,
-                                                        "lowRuleCount": 0,
-                                                        "lastCheckedAt": "1970-01-20T20:00:36.260Z"
-                                                    }
-                                                }
-                                            ],
                                             "FeeReceiverNetworkWallet": {
                                                 "walletAddress": "wallet_address"
                                             },
+                                            "PurchasingWalletsCount": 1,
+                                            "SellingWalletsCount": 1,
                                             "feeRatePermille": 50
                                         }
                                     }
@@ -19747,61 +19696,11 @@
                                                     "order": 2
                                                 }
                                             ],
-                                            "PurchasingWallets": [
-                                                {
-                                                    "collectionAddress": null,
-                                                    "note": "note",
-                                                    "walletVkey": "wallet_vkey",
-                                                    "walletAddress": "wallet_address",
-                                                    "id": "unique_cuid_v2_auto_generated",
-                                                    "LowBalanceSummary": {
-                                                        "isLow": false,
-                                                        "lowRuleCount": 0,
-                                                        "lastCheckedAt": "1970-01-20T20:00:36.260Z"
-                                                    }
-                                                },
-                                                {
-                                                    "collectionAddress": "send_refunds_to_this_address",
-                                                    "note": "note",
-                                                    "walletVkey": "wallet_vkey",
-                                                    "walletAddress": "wallet_address",
-                                                    "id": "unique_cuid_v2_auto_generated",
-                                                    "LowBalanceSummary": {
-                                                        "isLow": true,
-                                                        "lowRuleCount": 1,
-                                                        "lastCheckedAt": "1970-01-20T20:00:36.260Z"
-                                                    }
-                                                }
-                                            ],
-                                            "SellingWallets": [
-                                                {
-                                                    "collectionAddress": "null_will_use_the_selling_wallet_as_revenue_address",
-                                                    "note": "note",
-                                                    "walletVkey": "wallet_vkey",
-                                                    "walletAddress": "wallet_address",
-                                                    "id": "unique_cuid_v2_auto_generated",
-                                                    "LowBalanceSummary": {
-                                                        "isLow": false,
-                                                        "lowRuleCount": 0,
-                                                        "lastCheckedAt": "1970-01-20T20:00:36.260Z"
-                                                    }
-                                                },
-                                                {
-                                                    "collectionAddress": "send_revenue_to_this_address",
-                                                    "note": "note",
-                                                    "walletVkey": "wallet_vkey",
-                                                    "walletAddress": "wallet_address",
-                                                    "id": "unique_cuid_v2_auto_generated",
-                                                    "LowBalanceSummary": {
-                                                        "isLow": false,
-                                                        "lowRuleCount": 0,
-                                                        "lastCheckedAt": "1970-01-20T20:00:36.260Z"
-                                                    }
-                                                }
-                                            ],
                                             "FeeReceiverNetworkWallet": {
                                                 "walletAddress": "wallet_address"
                                             },
+                                            "PurchasingWalletsCount": 1,
+                                            "SellingWalletsCount": 1,
                                             "feeRatePermille": 50
                                         }
                                     }
@@ -19895,61 +19794,11 @@
                                                     "order": 2
                                                 }
                                             ],
-                                            "PurchasingWallets": [
-                                                {
-                                                    "collectionAddress": null,
-                                                    "note": "note",
-                                                    "walletVkey": "wallet_vkey",
-                                                    "walletAddress": "wallet_address",
-                                                    "id": "unique_cuid_v2_auto_generated",
-                                                    "LowBalanceSummary": {
-                                                        "isLow": false,
-                                                        "lowRuleCount": 0,
-                                                        "lastCheckedAt": "1970-01-20T20:00:36.260Z"
-                                                    }
-                                                },
-                                                {
-                                                    "collectionAddress": "send_refunds_to_this_address",
-                                                    "note": "note",
-                                                    "walletVkey": "wallet_vkey",
-                                                    "walletAddress": "wallet_address",
-                                                    "id": "unique_cuid_v2_auto_generated",
-                                                    "LowBalanceSummary": {
-                                                        "isLow": true,
-                                                        "lowRuleCount": 1,
-                                                        "lastCheckedAt": "1970-01-20T20:00:36.260Z"
-                                                    }
-                                                }
-                                            ],
-                                            "SellingWallets": [
-                                                {
-                                                    "collectionAddress": "null_will_use_the_selling_wallet_as_revenue_address",
-                                                    "note": "note",
-                                                    "walletVkey": "wallet_vkey",
-                                                    "walletAddress": "wallet_address",
-                                                    "id": "unique_cuid_v2_auto_generated",
-                                                    "LowBalanceSummary": {
-                                                        "isLow": false,
-                                                        "lowRuleCount": 0,
-                                                        "lastCheckedAt": "1970-01-20T20:00:36.260Z"
-                                                    }
-                                                },
-                                                {
-                                                    "collectionAddress": "send_revenue_to_this_address",
-                                                    "note": "note",
-                                                    "walletVkey": "wallet_vkey",
-                                                    "walletAddress": "wallet_address",
-                                                    "id": "unique_cuid_v2_auto_generated",
-                                                    "LowBalanceSummary": {
-                                                        "isLow": false,
-                                                        "lowRuleCount": 0,
-                                                        "lastCheckedAt": "1970-01-20T20:00:36.260Z"
-                                                    }
-                                                }
-                                            ],
                                             "FeeReceiverNetworkWallet": {
                                                 "walletAddress": "wallet_address"
                                             },
+                                            "PurchasingWalletsCount": 1,
+                                            "SellingWalletsCount": 1,
                                             "feeRatePermille": 50
                                         }
                                     }
@@ -21599,7 +21448,10 @@
                                                                         "PAYMENT_ON_CHAIN_STATUS_CHANGED",
                                                                         "PURCHASE_ON_ERROR",
                                                                         "PAYMENT_ON_ERROR",
-                                                                        "WALLET_LOW_BALANCE"
+                                                                        "WALLET_LOW_BALANCE",
+                                                                        "X402_PAYMENT_SETTLED",
+                                                                        "X402_PAYMENT_FAILED",
+                                                                        "X402_WALLET_LOW_BALANCE"
                                                                     ]
                                                                 }
                                                             },
@@ -21770,7 +21622,10 @@
                                                 "PAYMENT_ON_CHAIN_STATUS_CHANGED",
                                                 "PURCHASE_ON_ERROR",
                                                 "PAYMENT_ON_ERROR",
-                                                "WALLET_LOW_BALANCE"
+                                                "WALLET_LOW_BALANCE",
+                                                "X402_PAYMENT_SETTLED",
+                                                "X402_PAYMENT_FAILED",
+                                                "X402_WALLET_LOW_BALANCE"
                                             ]
                                         },
                                         "minItems": 1,
@@ -21844,7 +21699,10 @@
                                                             "PAYMENT_ON_CHAIN_STATUS_CHANGED",
                                                             "PURCHASE_ON_ERROR",
                                                             "PAYMENT_ON_ERROR",
-                                                            "WALLET_LOW_BALANCE"
+                                                            "WALLET_LOW_BALANCE",
+                                                            "X402_PAYMENT_SETTLED",
+                                                            "X402_PAYMENT_FAILED",
+                                                            "X402_WALLET_LOW_BALANCE"
                                                         ]
                                                     }
                                                 },
@@ -21970,7 +21828,10 @@
                                                 "PAYMENT_ON_CHAIN_STATUS_CHANGED",
                                                 "PURCHASE_ON_ERROR",
                                                 "PAYMENT_ON_ERROR",
-                                                "WALLET_LOW_BALANCE"
+                                                "WALLET_LOW_BALANCE",
+                                                "X402_PAYMENT_SETTLED",
+                                                "X402_PAYMENT_FAILED",
+                                                "X402_WALLET_LOW_BALANCE"
                                             ]
                                         },
                                         "minItems": 1,
@@ -22042,7 +21903,10 @@
                                                             "PAYMENT_ON_CHAIN_STATUS_CHANGED",
                                                             "PURCHASE_ON_ERROR",
                                                             "PAYMENT_ON_ERROR",
-                                                            "WALLET_LOW_BALANCE"
+                                                            "WALLET_LOW_BALANCE",
+                                                            "X402_PAYMENT_SETTLED",
+                                                            "X402_PAYMENT_FAILED",
+                                                            "X402_WALLET_LOW_BALANCE"
                                                         ]
                                                     }
                                                 },
@@ -24001,6 +23865,22 @@
                         "API-Key": []
                     }
                 ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "true",
+                                "false"
+                            ],
+                            "description": "Filter chains by environment: true for testnet (Preprod), false for mainnet"
+                        },
+                        "required": false,
+                        "description": "Filter chains by environment: true for testnet (Preprod), false for mainnet",
+                        "name": "isTestnet",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "Configured x402 EVM chains",
@@ -24046,7 +23926,8 @@
                                                     "isTestnet": false,
                                                     "isEnabled": true,
                                                     "defaultAsset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
-                                                    "facilitatorWalletId": "clmanagedwallet0001",
+                                                    "facilitatorWalletId": "clmanagedwallet0002",
+                                                    "facilitatorWalletAddress": "0x5555555555555555555555555555555555555555",
                                                     "createdById": "api_key_id",
                                                     "createdAt": "2026-06-02T12:00:00.000Z",
                                                     "updatedAt": "2026-06-02T12:00:00.000Z"
@@ -24119,7 +24000,7 @@
                                     "isTestnet": false,
                                     "isEnabled": true,
                                     "defaultAsset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
-                                    "facilitatorWalletId": "clmanagedwallet0001"
+                                    "facilitatorWalletId": "clmanagedwallet0002"
                                 }
                             }
                         }
@@ -24157,7 +24038,8 @@
                                             "isTestnet": false,
                                             "isEnabled": true,
                                             "defaultAsset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
-                                            "facilitatorWalletId": "clmanagedwallet0001",
+                                            "facilitatorWalletId": "clmanagedwallet0002",
+                                            "facilitatorWalletAddress": "0x5555555555555555555555555555555555555555",
                                             "createdById": "api_key_id",
                                             "createdAt": "2026-06-02T12:00:00.000Z",
                                             "updatedAt": "2026-06-02T12:00:00.000Z"
@@ -24180,6 +24062,46 @@
                 "security": [
                     {
                         "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "number",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 20,
+                            "description": "Number of managed wallets to return"
+                        },
+                        "required": false,
+                        "description": "Number of managed wallets to return",
+                        "name": "take",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 550,
+                            "description": "Pagination cursor (provide the id of the last returned wallet)"
+                        },
+                        "required": false,
+                        "description": "Pagination cursor (provide the id of the last returned wallet)",
+                        "name": "cursorId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Purchasing",
+                                "Selling"
+                            ],
+                            "description": "Filter wallets by direction (Purchasing or Selling)"
+                        },
+                        "required": false,
+                        "description": "Filter wallets by direction (Purchasing or Selling)",
+                        "name": "type",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -24222,6 +24144,17 @@
                                                 {
                                                     "id": "clmanagedwallet0001",
                                                     "address": "0x1111111111111111111111111111111111111111",
+                                                    "type": "Purchasing",
+                                                    "note": "Agent payout buyer wallet",
+                                                    "createdById": "api_key_id",
+                                                    "createdAt": "2026-06-02T12:00:00.000Z",
+                                                    "updatedAt": "2026-06-02T12:00:00.000Z"
+                                                },
+                                                {
+                                                    "id": "clmanagedwallet0002",
+                                                    "address": "0x5555555555555555555555555555555555555555",
+                                                    "type": "Selling",
+                                                    "note": "Base facilitator",
                                                     "createdById": "api_key_id",
                                                     "createdAt": "2026-06-02T12:00:00.000Z",
                                                     "updatedAt": "2026-06-02T12:00:00.000Z"
@@ -24253,13 +24186,31 @@
                             "schema": {
                                 "type": "object",
                                 "properties": {
+                                    "type": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Purchasing",
+                                            "Selling"
+                                        ],
+                                        "description": "Purchasing wallets fund outbound payments; Selling wallets settle inbound ones as facilitators"
+                                    },
+                                    "note": {
+                                        "type": "string",
+                                        "maxLength": 250,
+                                        "description": "Optional human-readable label for the wallet"
+                                    },
                                     "privateKey": {
                                         "type": "string",
                                         "pattern": "^0x[a-fA-F0-9]{64}$",
                                         "description": "Optional 0x-prefixed 32-byte hex private key. A new key is generated when omitted."
                                     }
                                 },
-                                "example": {}
+                                "required": [
+                                    "type"
+                                ],
+                                "example": {
+                                    "type": "Purchasing"
+                                }
                             }
                         }
                     }
@@ -24279,7 +24230,7 @@
                                             ]
                                         },
                                         "data": {
-                                            "$ref": "#/components/schemas/X402Wallet"
+                                            "$ref": "#/components/schemas/X402WalletCreated"
                                         }
                                     },
                                     "required": [
@@ -24291,9 +24242,12 @@
                                         "data": {
                                             "id": "clmanagedwallet0001",
                                             "address": "0x1111111111111111111111111111111111111111",
+                                            "type": "Purchasing",
+                                            "note": "Agent payout buyer wallet",
                                             "createdById": "api_key_id",
                                             "createdAt": "2026-06-02T12:00:00.000Z",
-                                            "updatedAt": "2026-06-02T12:00:00.000Z"
+                                            "updatedAt": "2026-06-02T12:00:00.000Z",
+                                            "privateKey": "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
                                         }
                                     }
                                 }
@@ -24445,6 +24399,7 @@
                                                     "id": "clx402budget0001",
                                                     "apiKeyId": "api_key_id",
                                                     "evmWalletId": "clmanagedwallet0001",
+                                                    "evmWalletAddress": "0x1111111111111111111111111111111111111111",
                                                     "caip2Network": "eip155:8453",
                                                     "asset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
                                                     "remainingAmount": "1000000",
@@ -24545,6 +24500,7 @@
                                             "id": "clx402budget0001",
                                             "apiKeyId": "api_key_id",
                                             "evmWalletId": "clmanagedwallet0001",
+                                            "evmWalletAddress": "0x1111111111111111111111111111111111111111",
                                             "caip2Network": "eip155:8453",
                                             "asset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
                                             "remainingAmount": "1000000",
@@ -25526,6 +25482,1259 @@
                                                     "caip2Network": "eip155:8453",
                                                     "amount": "1000000",
                                                     "payer": "0x3333333333333333333333333333333333333333"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/x402/wallets/update": {
+            "post": {
+                "description": "Updates the human-readable note of a managed EVM wallet.",
+                "summary": "Update a managed x402 EVM wallet. (admin access required)",
+                "tags": [
+                    "x402"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Wallet note to set",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "description": "Id of the managed EVM wallet to update"
+                                    },
+                                    "note": {
+                                        "type": "string",
+                                        "nullable": true,
+                                        "maxLength": 250,
+                                        "description": "New label for the wallet; null clears it"
+                                    }
+                                },
+                                "required": [
+                                    "id",
+                                    "note"
+                                ],
+                                "example": {
+                                    "id": "clmanagedwallet0001",
+                                    "note": "Renamed buyer wallet"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Managed wallet updated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/X402Wallet"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "id": "clmanagedwallet0001",
+                                            "address": "0x1111111111111111111111111111111111111111",
+                                            "type": "Purchasing",
+                                            "note": "Agent payout buyer wallet",
+                                            "createdById": "api_key_id",
+                                            "createdAt": "2026-06-02T12:00:00.000Z",
+                                            "updatedAt": "2026-06-02T12:00:00.000Z"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/x402/wallets/balance": {
+            "get": {
+                "description": "Reads on-chain balances (native gas plus the default token) of a managed EVM wallet across the enabled chains, or a single chain.",
+                "summary": "Read managed x402 wallet balances. (admin access required)",
+                "tags": [
+                    "x402"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Id of the managed EVM wallet to read balances for"
+                        },
+                        "required": true,
+                        "description": "Id of the managed EVM wallet to read balances for",
+                        "name": "id",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^eip155:\\d+$",
+                            "description": "Restrict to a single chain; defaults to all enabled chains"
+                        },
+                        "required": false,
+                        "description": "Restrict to a single chain; defaults to all enabled chains",
+                        "name": "caip2Network",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Managed wallet balances",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "evmWalletId": {
+                                                    "type": "string"
+                                                },
+                                                "address": {
+                                                    "type": "string",
+                                                    "pattern": "^0x[a-fA-F0-9]{40}$"
+                                                },
+                                                "Balances": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "caip2Network": {
+                                                                "type": "string",
+                                                                "pattern": "^eip155:\\d+$"
+                                                            },
+                                                            "displayName": {
+                                                                "type": "string"
+                                                            },
+                                                            "native": {
+                                                                "type": "object",
+                                                                "nullable": true,
+                                                                "properties": {
+                                                                    "symbol": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "decimals": {
+                                                                        "type": "number"
+                                                                    },
+                                                                    "amount": {
+                                                                        "type": "string",
+                                                                        "description": "Native gas balance in wei"
+                                                                    }
+                                                                },
+                                                                "required": [
+                                                                    "symbol",
+                                                                    "decimals",
+                                                                    "amount"
+                                                                ]
+                                                            },
+                                                            "asset": {
+                                                                "type": "object",
+                                                                "nullable": true,
+                                                                "properties": {
+                                                                    "asset": {
+                                                                        "type": "string",
+                                                                        "pattern": "^0x[a-fA-F0-9]{40}$"
+                                                                    },
+                                                                    "symbol": {
+                                                                        "type": "string",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "decimals": {
+                                                                        "type": "number"
+                                                                    },
+                                                                    "amount": {
+                                                                        "type": "string",
+                                                                        "description": "Token balance in base units"
+                                                                    }
+                                                                },
+                                                                "required": [
+                                                                    "asset",
+                                                                    "symbol",
+                                                                    "decimals",
+                                                                    "amount"
+                                                                ]
+                                                            },
+                                                            "error": {
+                                                                "type": "string",
+                                                                "nullable": true,
+                                                                "description": "Set when this chain could not be read"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "caip2Network",
+                                                            "displayName",
+                                                            "native",
+                                                            "asset",
+                                                            "error"
+                                                        ]
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "evmWalletId",
+                                                "address",
+                                                "Balances"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "evmWalletId": "clmanagedwallet0001",
+                                            "address": "0x1111111111111111111111111111111111111111",
+                                            "Balances": [
+                                                {
+                                                    "caip2Network": "eip155:8453",
+                                                    "displayName": "Base",
+                                                    "native": {
+                                                        "symbol": "ETH",
+                                                        "decimals": 18,
+                                                        "amount": "12000000000000000"
+                                                    },
+                                                    "asset": {
+                                                        "asset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+                                                        "symbol": "USDC",
+                                                        "decimals": 6,
+                                                        "amount": "4200000"
+                                                    },
+                                                    "error": null
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/x402/wallets/count": {
+            "get": {
+                "description": "Counts active managed EVM wallets, optionally filtered by direction.",
+                "summary": "Count managed x402 wallets. (admin access required)",
+                "tags": [
+                    "x402"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Purchasing",
+                                "Selling"
+                            ]
+                        },
+                        "required": false,
+                        "name": "type",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Managed wallet count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "total": {
+                                                    "type": "number",
+                                                    "description": "Total number of matching records"
+                                                }
+                                            },
+                                            "required": [
+                                                "total"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "total": 3
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/x402/low-balance": {
+            "get": {
+                "description": "Lists low-balance rules for managed EVM wallets.",
+                "summary": "List x402 low-balance rules. (admin access required)",
+                "tags": [
+                    "x402"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Filter rules to a single wallet"
+                        },
+                        "required": false,
+                        "description": "Filter rules to a single wallet",
+                        "name": "evmWalletId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "true",
+                                "false"
+                            ],
+                            "description": "Only return rules currently in the Low state"
+                        },
+                        "required": false,
+                        "description": "Only return rules currently in the Low state",
+                        "name": "onlyLow",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "true",
+                                "false"
+                            ],
+                            "description": "Include disabled rules"
+                        },
+                        "required": false,
+                        "description": "Include disabled rules",
+                        "name": "includeDisabled",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "x402 low-balance rules",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "Rules": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/X402LowBalanceRule"
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "Rules"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "Rules": [
+                                                {
+                                                    "id": "clx402lbrule0001",
+                                                    "evmWalletId": "clmanagedwallet0002",
+                                                    "evmWalletAddress": "0x5555555555555555555555555555555555555555",
+                                                    "caip2Network": "eip155:8453",
+                                                    "asset": "native",
+                                                    "thresholdAmount": "10000000000000000",
+                                                    "enabled": true,
+                                                    "status": "Healthy",
+                                                    "lastKnownAmount": "50000000000000000",
+                                                    "lastCheckedAt": "2026-06-02T12:00:00.000Z",
+                                                    "lastAlertedAt": null,
+                                                    "createdAt": "2026-06-02T12:00:00.000Z",
+                                                    "updatedAt": "2026-06-02T12:00:00.000Z"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Creates or updates a low-balance rule for a managed EVM wallet on a chain and asset (\"native\" for gas, otherwise an ERC-20 contract).",
+                "summary": "Set an x402 low-balance rule. (admin access required)",
+                "tags": [
+                    "x402"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Low-balance rule to set",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "evmWalletId": {
+                                        "type": "string"
+                                    },
+                                    "caip2Network": {
+                                        "type": "string",
+                                        "pattern": "^eip155:\\d+$"
+                                    },
+                                    "asset": {
+                                        "anyOf": [
+                                            {
+                                                "type": "string",
+                                                "enum": [
+                                                    "native"
+                                                ]
+                                            },
+                                            {
+                                                "type": "string",
+                                                "pattern": "^0x[a-fA-F0-9]{40}$"
+                                            }
+                                        ],
+                                        "description": "Asset to monitor: \"native\" for the gas token, or an ERC-20 contract address"
+                                    },
+                                    "thresholdAmount": {
+                                        "type": "string",
+                                        "pattern": "^\\d+$",
+                                        "description": "Alert threshold in base units"
+                                    },
+                                    "enabled": {
+                                        "type": "boolean"
+                                    }
+                                },
+                                "required": [
+                                    "evmWalletId",
+                                    "caip2Network",
+                                    "asset",
+                                    "thresholdAmount"
+                                ],
+                                "example": {
+                                    "evmWalletId": "clmanagedwallet0002",
+                                    "caip2Network": "eip155:8453",
+                                    "asset": "native",
+                                    "thresholdAmount": "10000000000000000"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Low-balance rule saved",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/X402LowBalanceRule"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "id": "clx402lbrule0001",
+                                            "evmWalletId": "clmanagedwallet0002",
+                                            "evmWalletAddress": "0x5555555555555555555555555555555555555555",
+                                            "caip2Network": "eip155:8453",
+                                            "asset": "native",
+                                            "thresholdAmount": "10000000000000000",
+                                            "enabled": true,
+                                            "status": "Healthy",
+                                            "lastKnownAmount": "50000000000000000",
+                                            "lastCheckedAt": "2026-06-02T12:00:00.000Z",
+                                            "lastAlertedAt": null,
+                                            "createdAt": "2026-06-02T12:00:00.000Z",
+                                            "updatedAt": "2026-06-02T12:00:00.000Z"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "Updates the threshold or enabled flag of an x402 low-balance rule.",
+                "summary": "Update an x402 low-balance rule. (admin access required)",
+                "tags": [
+                    "x402"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Low-balance rule fields to update",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "ruleId": {
+                                        "type": "string"
+                                    },
+                                    "thresholdAmount": {
+                                        "type": "string",
+                                        "pattern": "^\\d+$"
+                                    },
+                                    "enabled": {
+                                        "type": "boolean"
+                                    }
+                                },
+                                "required": [
+                                    "ruleId"
+                                ],
+                                "example": {
+                                    "ruleId": "clx402lbrule0001",
+                                    "thresholdAmount": "20000000000000000"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Low-balance rule updated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/X402LowBalanceRule"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "id": "clx402lbrule0001",
+                                            "evmWalletId": "clmanagedwallet0002",
+                                            "evmWalletAddress": "0x5555555555555555555555555555555555555555",
+                                            "caip2Network": "eip155:8453",
+                                            "asset": "native",
+                                            "thresholdAmount": "10000000000000000",
+                                            "enabled": true,
+                                            "status": "Healthy",
+                                            "lastKnownAmount": "50000000000000000",
+                                            "lastCheckedAt": "2026-06-02T12:00:00.000Z",
+                                            "lastAlertedAt": null,
+                                            "createdAt": "2026-06-02T12:00:00.000Z",
+                                            "updatedAt": "2026-06-02T12:00:00.000Z"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Deletes an x402 low-balance rule.",
+                "summary": "Delete an x402 low-balance rule. (admin access required)",
+                "tags": [
+                    "x402"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Low-balance rule to delete",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "ruleId": {
+                                        "type": "string"
+                                    }
+                                },
+                                "required": [
+                                    "ruleId"
+                                ],
+                                "example": {
+                                    "ruleId": "clx402lbrule0001"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Low-balance rule deleted",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "ruleId": {
+                                                    "type": "string"
+                                                },
+                                                "deletedAt": {
+                                                    "type": "string",
+                                                    "format": "date-time"
+                                                }
+                                            },
+                                            "required": [
+                                                "ruleId",
+                                                "deletedAt"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "ruleId": "clx402lbrule0001",
+                                            "deletedAt": "2026-06-02T12:00:00.000Z"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/x402/payments/count": {
+            "get": {
+                "description": "Counts x402 payment attempts, optionally filtered by status, direction and chain.",
+                "summary": "Count x402 payment attempts. (admin access required)",
+                "tags": [
+                    "x402"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "PaymentRequired",
+                                "Verified",
+                                "Settled",
+                                "Failed",
+                                "Replayed"
+                            ]
+                        },
+                        "required": false,
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "InboundVerify",
+                                "InboundSettle",
+                                "OutboundPayment"
+                            ]
+                        },
+                        "required": false,
+                        "name": "direction",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^eip155:\\d+$"
+                        },
+                        "required": false,
+                        "name": "caip2Network",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "x402 payment attempt count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "total": {
+                                                    "type": "number",
+                                                    "description": "Total number of matching records"
+                                                }
+                                            },
+                                            "required": [
+                                                "total"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "total": 3
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/x402/settlements/count": {
+            "get": {
+                "description": "Counts x402 settlements, optionally filtered by chain and success.",
+                "summary": "Count x402 settlements. (admin access required)",
+                "tags": [
+                    "x402"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^eip155:\\d+$"
+                        },
+                        "required": false,
+                        "name": "caip2Network",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "true",
+                                "false"
+                            ]
+                        },
+                        "required": false,
+                        "name": "success",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "x402 settlement count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "total": {
+                                                    "type": "number",
+                                                    "description": "Total number of matching records"
+                                                }
+                                            },
+                                            "required": [
+                                                "total"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "total": 3
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/x402/analytics": {
+            "post": {
+                "description": "Aggregates settled inbound (income) and signed outbound (spend) x402 flows over a window, bucketed by day and month and split by chain and asset.",
+                "summary": "x402 income/spend analytics. (admin access required)",
+                "tags": [
+                    "x402"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Analytics window and timezone",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "startDate": {
+                                        "type": "string",
+                                        "nullable": true,
+                                        "format": "date-time",
+                                        "description": "Window start (defaults to 30 days ago)"
+                                    },
+                                    "endDate": {
+                                        "type": "string",
+                                        "nullable": true,
+                                        "format": "date-time",
+                                        "description": "Window end (defaults to now)"
+                                    },
+                                    "caip2Network": {
+                                        "type": "string",
+                                        "pattern": "^eip155:\\d+$",
+                                        "description": "Restrict to a single chain"
+                                    },
+                                    "timeZone": {
+                                        "type": "string",
+                                        "description": "IANA timezone for day/month bucketing (default Etc/UTC)"
+                                    }
+                                },
+                                "example": {
+                                    "timeZone": "Etc/UTC"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "x402 analytics",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "periodStart": {
+                                                    "type": "string",
+                                                    "format": "date-time"
+                                                },
+                                                "periodEnd": {
+                                                    "type": "string",
+                                                    "format": "date-time"
+                                                },
+                                                "incomeCount": {
+                                                    "type": "number",
+                                                    "description": "Number of settled inbound payments"
+                                                },
+                                                "spendCount": {
+                                                    "type": "number",
+                                                    "description": "Number of signed outbound payments"
+                                                },
+                                                "TotalIncome": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "caip2Network": {
+                                                                "type": "string",
+                                                                "pattern": "^eip155:\\d+$"
+                                                            },
+                                                            "asset": {
+                                                                "type": "string"
+                                                            },
+                                                            "amount": {
+                                                                "type": "string",
+                                                                "description": "Summed amount in base units"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "caip2Network",
+                                                            "asset",
+                                                            "amount"
+                                                        ]
+                                                    }
+                                                },
+                                                "TotalSpend": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "caip2Network": {
+                                                                "type": "string",
+                                                                "pattern": "^eip155:\\d+$"
+                                                            },
+                                                            "asset": {
+                                                                "type": "string"
+                                                            },
+                                                            "amount": {
+                                                                "type": "string",
+                                                                "description": "Summed amount in base units"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "caip2Network",
+                                                            "asset",
+                                                            "amount"
+                                                        ]
+                                                    }
+                                                },
+                                                "Daily": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "year": {
+                                                                "type": "number"
+                                                            },
+                                                            "month": {
+                                                                "type": "number"
+                                                            },
+                                                            "day": {
+                                                                "type": "number"
+                                                            },
+                                                            "Income": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "object",
+                                                                    "properties": {
+                                                                        "caip2Network": {
+                                                                            "type": "string",
+                                                                            "pattern": "^eip155:\\d+$"
+                                                                        },
+                                                                        "asset": {
+                                                                            "type": "string"
+                                                                        },
+                                                                        "amount": {
+                                                                            "type": "string",
+                                                                            "description": "Summed amount in base units"
+                                                                        }
+                                                                    },
+                                                                    "required": [
+                                                                        "caip2Network",
+                                                                        "asset",
+                                                                        "amount"
+                                                                    ]
+                                                                }
+                                                            },
+                                                            "Spend": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "object",
+                                                                    "properties": {
+                                                                        "caip2Network": {
+                                                                            "type": "string",
+                                                                            "pattern": "^eip155:\\d+$"
+                                                                        },
+                                                                        "asset": {
+                                                                            "type": "string"
+                                                                        },
+                                                                        "amount": {
+                                                                            "type": "string",
+                                                                            "description": "Summed amount in base units"
+                                                                        }
+                                                                    },
+                                                                    "required": [
+                                                                        "caip2Network",
+                                                                        "asset",
+                                                                        "amount"
+                                                                    ]
+                                                                }
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "year",
+                                                            "month",
+                                                            "day",
+                                                            "Income",
+                                                            "Spend"
+                                                        ]
+                                                    }
+                                                },
+                                                "Monthly": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "year": {
+                                                                "type": "number"
+                                                            },
+                                                            "month": {
+                                                                "type": "number"
+                                                            },
+                                                            "Income": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "object",
+                                                                    "properties": {
+                                                                        "caip2Network": {
+                                                                            "type": "string",
+                                                                            "pattern": "^eip155:\\d+$"
+                                                                        },
+                                                                        "asset": {
+                                                                            "type": "string"
+                                                                        },
+                                                                        "amount": {
+                                                                            "type": "string",
+                                                                            "description": "Summed amount in base units"
+                                                                        }
+                                                                    },
+                                                                    "required": [
+                                                                        "caip2Network",
+                                                                        "asset",
+                                                                        "amount"
+                                                                    ]
+                                                                }
+                                                            },
+                                                            "Spend": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "object",
+                                                                    "properties": {
+                                                                        "caip2Network": {
+                                                                            "type": "string",
+                                                                            "pattern": "^eip155:\\d+$"
+                                                                        },
+                                                                        "asset": {
+                                                                            "type": "string"
+                                                                        },
+                                                                        "amount": {
+                                                                            "type": "string",
+                                                                            "description": "Summed amount in base units"
+                                                                        }
+                                                                    },
+                                                                    "required": [
+                                                                        "caip2Network",
+                                                                        "asset",
+                                                                        "amount"
+                                                                    ]
+                                                                }
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "year",
+                                                            "month",
+                                                            "Income",
+                                                            "Spend"
+                                                        ]
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "periodStart",
+                                                "periodEnd",
+                                                "incomeCount",
+                                                "spendCount",
+                                                "TotalIncome",
+                                                "TotalSpend",
+                                                "Daily",
+                                                "Monthly"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "periodStart": "2026-05-09T12:00:00.000Z",
+                                            "periodEnd": "2026-06-02T12:00:00.000Z",
+                                            "incomeCount": 2,
+                                            "spendCount": 1,
+                                            "TotalIncome": [
+                                                {
+                                                    "caip2Network": "eip155:8453",
+                                                    "asset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+                                                    "amount": "1500000"
+                                                }
+                                            ],
+                                            "TotalSpend": [
+                                                {
+                                                    "caip2Network": "eip155:8453",
+                                                    "asset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+                                                    "amount": "200000"
+                                                }
+                                            ],
+                                            "Daily": [
+                                                {
+                                                    "year": 2026,
+                                                    "month": 6,
+                                                    "day": 2,
+                                                    "Income": [
+                                                        {
+                                                            "caip2Network": "eip155:8453",
+                                                            "asset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+                                                            "amount": "1500000"
+                                                        }
+                                                    ],
+                                                    "Spend": [
+                                                        {
+                                                            "caip2Network": "eip155:8453",
+                                                            "asset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+                                                            "amount": "200000"
+                                                        }
+                                                    ]
+                                                }
+                                            ],
+                                            "Monthly": [
+                                                {
+                                                    "year": 2026,
+                                                    "month": 6,
+                                                    "Income": [
+                                                        {
+                                                            "caip2Network": "eip155:8453",
+                                                            "asset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+                                                            "amount": "1500000"
+                                                        }
+                                                    ],
+                                                    "Spend": [
+                                                        {
+                                                            "caip2Network": "eip155:8453",
+                                                            "asset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+                                                            "amount": "200000"
+                                                        }
+                                                    ]
                                                 }
                                             ]
                                         }

@@ -14,11 +14,11 @@ import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'react-toastify';
-import { PaymentSourceExtended, postInboxAgents, SellingWallet } from '@/lib/api/generated';
+import { postInboxAgents } from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { shortenAddress } from '@/lib/utils';
 import { useWallets } from '@/lib/queries/useWallets';
-import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
+import type { WalletListItem } from '@/lib/api/generated';
 import {
   INBOX_REGISTRY_LIMITS,
   REGISTRY_DECIMAL_ADA_AMOUNT_PATTERN,
@@ -91,14 +91,10 @@ export function RegisterInboxAgentDialog({
 }: RegisterInboxAgentDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [sellingWallets, setSellingWallets] = useState<
-    { wallet: SellingWallet; balance: number }[]
+    { wallet: WalletListItem; balance: number }[]
   >([]);
   const { wallets, isLoading: isLoadingWallets } = useWallets();
   const { apiClient, network } = useAppContext();
-  const { paymentSources } = usePaymentSourceExtendedAll();
-  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] = useState<
-    PaymentSourceExtended[]
-  >([]);
 
   const {
     register,
@@ -125,18 +121,14 @@ export function RegisterInboxAgentDialog({
   const selectedSendFundingAda = watch('sendFundingAda');
 
   useEffect(() => {
-    setCurrentNetworkPaymentSources(
-      paymentSources.filter((paymentSource) => paymentSource.network === network),
-    );
-  }, [paymentSources, network]);
-
-  useEffect(() => {
     setSellingWallets(
       wallets
         .filter((wallet) => wallet.type === 'Selling')
         .map((wallet) => ({
           wallet: {
             id: wallet.id,
+            paymentSourceId: wallet.paymentSourceId,
+            type: wallet.type,
             walletVkey: wallet.walletVkey,
             walletAddress: wallet.walletAddress,
             collectionAddress: wallet.collectionAddress,
@@ -159,23 +151,15 @@ export function RegisterInboxAgentDialog({
     [sellingWallets, selectedWalletVkey],
   );
 
-  const selectedPaymentSource = useMemo(
-    () =>
-      currentNetworkPaymentSources.find((paymentSource) =>
-        paymentSource.SellingWallets?.some((wallet) => wallet.walletVkey === selectedWalletVkey),
-      ),
-    [currentNetworkPaymentSources, selectedWalletVkey],
-  );
-
+  // The chosen minting wallet always belongs to the active payment source, so
+  // its sibling wallets (other managed holding wallets) are exactly the other
+  // wallets returned by useWallets for that source.
   const recipientWalletOptions = useMemo(
     () =>
-      selectedPaymentSource
-        ? [
-            ...(selectedPaymentSource.SellingWallets ?? []),
-            ...(selectedPaymentSource.PurchasingWallets ?? []),
-          ].filter((wallet) => wallet.walletAddress !== selectedWallet?.wallet.walletAddress)
+      selectedWallet
+        ? wallets.filter((wallet) => wallet.walletAddress !== selectedWallet.wallet.walletAddress)
         : [],
-    [selectedPaymentSource, selectedWallet?.wallet.walletAddress],
+    [wallets, selectedWallet],
   );
 
   useEffect(() => {
@@ -358,12 +342,12 @@ export function RegisterInboxAgentDialog({
                   onValueChange={(value) => field.onChange(value === '__default' ? '' : value)}
                 >
                   <SelectTrigger
-                    disabled={isLoadingWallets || !selectedPaymentSource}
+                    disabled={isLoadingWallets || !selectedWallet}
                     className={isLoadingWallets ? 'opacity-50 cursor-not-allowed' : ''}
                   >
                     <SelectValue
                       placeholder={
-                        !selectedPaymentSource
+                        !selectedWallet
                           ? 'Select a minting wallet first'
                           : 'Use minting wallet (default)'
                       }
@@ -387,7 +371,7 @@ export function RegisterInboxAgentDialog({
               inbox registry NFT is delivered to another managed holding wallet on the same payment
               source.
             </p>
-            {selectedPaymentSource && recipientWalletOptions.length === 0 && (
+            {selectedWallet && recipientWalletOptions.length === 0 && (
               <p className="text-xs text-muted-foreground">
                 No other managed wallets are available on this payment source.
               </p>

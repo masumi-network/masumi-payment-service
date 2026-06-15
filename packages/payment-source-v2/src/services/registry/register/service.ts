@@ -29,8 +29,10 @@ import {
 	generateRegistryAssetNameV2,
 	generateRegistryMintTransaction,
 	type RegistryMetadata,
+	registryNonceForIndex,
 	resolveRegistryFundingLovelace,
 	resolveRegistryRecipientWalletAddress,
+	V2_REGISTRY_MAX_MINTS_PER_UTXO,
 } from '@/services/registry/shared';
 import {
 	assertTxSizeWithinLimit,
@@ -260,14 +262,16 @@ function validateAndBuildItem(
 	utxo: UTxO,
 	policyId: string,
 	paymentSource: RegistryMetadataPaymentSource,
+	nonce: string,
 ): ValidatedRegistryItem {
 	validateRegistrationPricing(request);
 	const recipientWalletAddress = resolveRegistryRecipientWalletAddress(request);
 	const fundingLovelace = resolveRegistryFundingLovelace(request);
 	// V2 mint contract requires the structured asset name
 	// [1B nonce>0x0f | 28B blake2b_224 | 3B version 0x000000] — the V1 flat
-	// blake2b_256 layout would fail every check.
-	const assetName = generateRegistryAssetNameV2(utxo);
+	// blake2b_256 layout would fail every check. The whole batch shares one
+	// `utxo` (oneshot) and disambiguates via a distinct `nonce` per item.
+	const assetName = generateRegistryAssetNameV2(utxo, nonce);
 	const metadata = buildAgentMetadata(request, paymentSource);
 	return {
 		request,
@@ -448,278 +452,378 @@ export async function registerAgentV2() {
 		await Promise.allSettled(
 			paymentSourcesWithWalletLocked.map(async (paymentSource) => {
 				if (paymentSource.RegistryRequest.length === 0) return;
-				logger.info(
-					`Registering ${paymentSource.RegistryRequest.length} V2 agents for payment source ${paymentSource.id}`,
-				);
-				const network = convertNetwork(paymentSource.network);
-				const registryRequests = paymentSource.RegistryRequest;
-				if (registryRequests.length === 0) return;
-
-				// lockAndQueryRegistryRequests guarantees every request in this
-				// batch shares the same SmartContractWallet, so a single wallet
-				// session and one UTxO set drive the whole batch.
-				const firstRequest = registryRequests[0];
-				const blockchainProvider = await createMeshProvider(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
-				const rpcApiKey = paymentSource.PaymentSourceConfig.rpcProviderApiKey;
-				const { script, policyId } = await getRegistryScriptFromNetworkHandlerV2(paymentSource);
-
-				let walletSession;
+				// Wallet shared by this batch; lockAndQueryRegistryRequests already set its
+				// `lockedAt`. The catch below releases it on any unexpected throw before a tx
+				// is submitted, so a throw (createMeshProvider, script derivation,
+				// ensureCollateralReady, …) can't leave the wallet locked forever — no reaper
+				// frees a lock that carries no pending transaction.
+				const lockedWalletId = paymentSource.RegistryRequest[0].SmartContractWallet.id;
 				try {
-					walletSession = await loadHotWalletSession({
-						network: paymentSource.network,
-						rpcProviderApiKey: paymentSource.PaymentSourceConfig.rpcProviderApiKey,
-						encryptedMnemonic: firstRequest.SmartContractWallet.Secret.encryptedMnemonic,
-						hotWalletId: firstRequest.SmartContractWallet.id,
-					});
-				} catch (error) {
-					logger.warn(
-						'V2 register batch could not load wallet session; leaving items in pool for next tick [batch-fallback]',
-						{
-							error: error instanceof Error ? { message: error.message, stack: error.stack, name: error.name } : error,
-							batchSize: registryRequests.length,
-						},
+					logger.info(
+						`Registering ${paymentSource.RegistryRequest.length} V2 agents for payment source ${paymentSource.id}`,
 					);
-					// Wallet-load failure is NOT a per-item failure: every
-					// request was waiting on the same wallet. Unlock and
-					// leave the items queued; next tick re-batches them.
-					await unlockHotWallet(firstRequest.SmartContractWallet.id);
-					return;
-				}
-				const { wallet, utxos, address } = walletSession;
-				if (utxos.length === 0) {
-					logger.warn(
-						'V2 register batch hot wallet has no UTxOs; leaving items in pool for next tick [batch-fallback]',
-						{
-							batchSize: registryRequests.length,
-						},
-					);
-					// Empty wallet — transient operational state. Leave
-					// items queued; next tick after wallet has UTxOs
-					// re-batches them.
-					await unlockHotWallet(firstRequest.SmartContractWallet.id);
-					return;
-				}
+					const network = convertNetwork(paymentSource.network);
+					const registryRequests = paymentSource.RegistryRequest;
+					if (registryRequests.length === 0) return;
 
-				const collateralCheck = await ensureCollateralReady({
-					walletDbId: firstRequest.SmartContractWallet.id,
-					walletAddress: address,
-					meshWallet: wallet,
-					utxos,
-					blockchainProvider,
-					network,
-					serviceLabel: 'registry-register-batch',
-				});
-				if (collateralCheck.status !== 'ready') {
-					return;
-				}
+					// lockAndQueryRegistryRequests guarantees every request in this
+					// batch shares the same SmartContractWallet, so a single wallet
+					// session and one UTxO set drive the whole batch.
+					const firstRequest = registryRequests[0];
+					const blockchainProvider = await createMeshProvider(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
+					const rpcApiKey = paymentSource.PaymentSourceConfig.rpcProviderApiKey;
+					const { script, policyId } = await getRegistryScriptFromNetworkHandlerV2(paymentSource);
 
-				// Pick collateral FIRST (smallest pure-ADA UTxO >= 5 ADA) so the
-				// remaining sorted-by-lovelace pool can drive distinct
-				// per-item `firstUtxo`s without overlap. Conway rejects
-				// collateral that carries any non-ADA asset, so we never fall
-				// back to a non-pure UTxO — if none exists, defer to the next
-				// tick when the wallet may have more UTxOs.
-				const collateralUtxo = pickBatchCollateral(utxos, []);
-				if (collateralUtxo == null) {
-					logger.warn(
-						'V2 register batch: no wallet UTxO has enough lovelace to serve as collateral (>=5 ADA); deferring to next tick',
-					);
-					await unlockHotWallet(firstRequest.SmartContractWallet.id);
-					return;
-				}
-
-				// MINT-only tx: Conway phase-1 does NOT forbid the collateral UTxO
-				// from also appearing in the (non-script) spending input set, and
-				// the V1 single-tx register builder already exploits this — it
-				// passes the same UTxO as both `firstUtxo` and `collateralUtxo`,
-				// and Mesh-SDK routes them into separate body fields. We follow
-				// the same pattern here so a wallet with K UTxOs can drive a
-				// batch of min(K, registryRequests.length) items (rather than
-				// K-1, which would block a 1-UTxO wallet entirely).
-				const spendableUtxos = sortUtxosByLovelaceDesc(utxos);
-
-				// Validate every request in parallel. Failures here become
-				// per-request RegistrationFailed updates and are removed from
-				// the batch.
-				const validations = await Promise.allSettled(
-					registryRequests.map((request, idx) => {
-						const utxo = spendableUtxos[idx];
-						if (utxo == null) {
-							throw new Error('Insufficient wallet UTXOs to assign a distinct firstUtxo to this request');
-						}
-						return Promise.resolve(validateAndBuildItem(request, utxo, policyId, paymentSource));
-					}),
-				);
-
-				const validated: ValidatedRegistryItem[] = [];
-				for (let idx = 0; idx < validations.length; idx++) {
-					const outcome = validations[idx];
-					const request = registryRequests[idx];
-					if (outcome.status === 'fulfilled') {
-						validated.push(outcome.value);
-					} else if (outcome.reason instanceof Error && outcome.reason.message.includes('Insufficient wallet UTXOs')) {
-						// Not a per-request failure — wallet ran out of distinct
-						// UTxOs for the tail items. Leave the request in
-						// RegistrationRequested so the next tick (with more
-						// UTxOs or a smaller batch) can pick it up.
+					let walletSession;
+					try {
+						walletSession = await loadHotWalletSession({
+							network: paymentSource.network,
+							rpcProviderApiKey: paymentSource.PaymentSourceConfig.rpcProviderApiKey,
+							encryptedMnemonic: firstRequest.SmartContractWallet.Secret.encryptedMnemonic,
+							hotWalletId: firstRequest.SmartContractWallet.id,
+						});
+					} catch (error) {
 						logger.warn(
-							`Skipping V2 register request ${request.id} this tick: not enough distinct wallet UTxOs in this batch`,
+							'V2 register batch could not load wallet session; leaving items in pool for next tick [batch-fallback]',
+							{
+								error:
+									error instanceof Error ? { message: error.message, stack: error.stack, name: error.name } : error,
+								batchSize: registryRequests.length,
+							},
 						);
-					} else {
-						await markRequestFailed(request, outcome.reason);
+						// Wallet-load failure is NOT a per-item failure: every
+						// request was waiting on the same wallet. Unlock and
+						// leave the items queued; next tick re-batches them.
+						await unlockHotWallet(firstRequest.SmartContractWallet.id);
+						return;
 					}
-				}
+					const { wallet, utxos, address } = walletSession;
+					if (utxos.length === 0) {
+						logger.warn(
+							'V2 register batch hot wallet has no UTxOs; leaving items in pool for next tick [batch-fallback]',
+							{
+								batchSize: registryRequests.length,
+							},
+						);
+						// Empty wallet — transient operational state. Leave
+						// items queued; next tick after wallet has UTxOs
+						// re-batches them.
+						await unlockHotWallet(firstRequest.SmartContractWallet.id);
+						return;
+					}
 
-				if (validated.length === 0) {
-					logger.info('No V2 register requests passed validation this tick');
-					await unlockHotWallet(firstRequest.SmartContractWallet.id);
-					return;
-				}
-
-				// Shrink the batch until tx-size is safe. We do NOT pre-check
-				// no-collateral-overlap here: the mint path tolerates the
-				// `firstUtxo == collateral` case (mesh routes the ref into both
-				// body fields and dedupes the collateral side at assembly
-				// time), and enforcing disjointness would block 1-UTxO wallets
-				// from minting at all. Tx-size is checked inline after the
-				// build pass via assertTxSizeWithinLimit further down.
-				const shrinkResult = shrinkBatchToFit(validated, () => ({ ok: true }));
-
-				if (shrinkResult.fit.length === 0) {
-					logger.error('V2 register batch could not satisfy collateral non-overlap invariant', {
-						reason: shrinkResult.reason,
-					});
-					await unlockHotWallet(firstRequest.SmartContractWallet.id);
-					return;
-				}
-				if (shrinkResult.dropped.length > 0) {
-					logger.warn(
-						`V2 register batch shrunk from ${validated.length} to ${shrinkResult.fit.length} (reason=${shrinkResult.reason}); dropped items will retry next tick`,
-					);
-				}
-
-				const fit = shrinkResult.fit;
-				const items = fit.map((v) => v.item);
-
-				let unsignedTx: string;
-				try {
-					// Two-pass evaluateTx: pass 1 with default exUnits, pass 2
-					// with the single MINT redeemer budget the validator
-					// returns (V2 mint contract shares one redeemer for the
-					// whole policy bucket).
-					const evaluationTx = await generateRegistryBatchMintTransaction(
+					const collateralCheck = await ensureCollateralReady({
+						walletDbId: firstRequest.SmartContractWallet.id,
+						walletAddress: address,
+						meshWallet: wallet,
+						utxos,
 						blockchainProvider,
 						network,
-						script,
-						address,
-						policyId,
-						items,
-						collateralUtxo,
-						spendableUtxos,
-						undefined,
-						rpcApiKey,
-					);
-					const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
-						tag?: string;
-						budget: { mem: number; steps: number };
-					}>;
-					const mintBudget = estimatedFee.find((action) => action.tag === 'MINT')?.budget ?? estimatedFee[0]?.budget;
-					if (mintBudget == null) {
-						throw new Error('evaluateTx returned no MINT budget for V2 register batch');
+						serviceLabel: 'registry-register-batch',
+					});
+					if (collateralCheck.status !== 'ready') {
+						return;
 					}
-					unsignedTx = await generateRegistryBatchMintTransaction(
-						blockchainProvider,
-						network,
-						script,
-						address,
-						policyId,
-						items,
-						collateralUtxo,
-						spendableUtxos,
-						mintBudget,
-						rpcApiKey,
+
+					// Pick collateral FIRST (smallest pure-ADA UTxO >= 5 ADA) so the
+					// remaining sorted-by-lovelace pool can drive distinct
+					// per-item `firstUtxo`s without overlap. Conway rejects
+					// collateral that carries any non-ADA asset, so we never fall
+					// back to a non-pure UTxO — if none exists, defer to the next
+					// tick when the wallet may have more UTxOs.
+					const collateralUtxo = pickBatchCollateral(utxos, []);
+					if (collateralUtxo == null) {
+						logger.warn(
+							'V2 register batch: no wallet UTxO has enough lovelace to serve as collateral (>=5 ADA); deferring to next tick',
+						);
+						await unlockHotWallet(firstRequest.SmartContractWallet.id);
+						return;
+					}
+
+					// Oneshot rule: the V2 mint validator derives each asset's 28-byte
+					// root from `blake2b_224(firstUtxo)` and verifies that root against
+					// the spent inputs — it does NOT constrain the 1-byte nonce. So ONE
+					// consumed input can authorize the whole batch: every item shares a
+					// single `firstUtxo` and is disambiguated by a distinct nonce
+					// (0x10, 0x11, …). This means even a 1-UTxO wallet can register a
+					// full batch (the prior code wrongly demanded one wallet UTxO per
+					// agent). We pick the largest UTxO as the shared firstUtxo; the
+					// builder de-dupes it down to a single txIn, and Conway phase-1
+					// permits it to double as collateral, so no extra UTxO is needed.
+					const spendableUtxos = sortUtxosByLovelaceDesc(utxos);
+					const sharedFirstUtxo = spendableUtxos[0];
+
+					// The nonce range caps mints-per-input at 240. REGISTRY_BATCH_SIZE is
+					// far below that, but guard anyway: process at most that many this
+					// tick and leave any overflow in RegistrationRequested for the next.
+					const mintableRequests = registryRequests.slice(0, V2_REGISTRY_MAX_MINTS_PER_UTXO);
+					if (registryRequests.length > mintableRequests.length) {
+						logger.warn(
+							`V2 register batch of ${registryRequests.length} exceeds ${V2_REGISTRY_MAX_MINTS_PER_UTXO} mints/UTxO; deferring ${registryRequests.length - mintableRequests.length} to next tick`,
+						);
+					}
+
+					// Validate every request in parallel. The async callback turns any
+					// synchronous throw (pricing validation, asset-name build) into a
+					// settled 'rejected' outcome so a single bad item can't escape
+					// Promise.allSettled and abort the whole batch via the outer catch.
+					const validations = await Promise.allSettled(
+						mintableRequests.map(async (request, idx) =>
+							validateAndBuildItem(request, sharedFirstUtxo, policyId, paymentSource, registryNonceForIndex(idx)),
+						),
 					);
-					assertTxSizeWithinLimit(unsignedTx, 'v2-registry-batch-mint');
-				} catch (batchError) {
-					logger.warn('V2 register batch build failed; falling back to single-item processing [batch-fallback]', {
-						error:
-							batchError instanceof Error
-								? { message: batchError.message, stack: batchError.stack, name: batchError.name }
-								: batchError,
-						batchSize: fit.length,
-					});
-					await fallbackToSingleItems(fit, paymentSource, network, script);
-					return;
-				}
 
-				let signedTx: string;
-				try {
-					signedTx = await wallet.signTx(unsignedTx, true);
-				} catch (signError) {
-					logger.warn('V2 register batch sign failed; falling back to single-item processing [batch-fallback]', {
-						error:
-							signError instanceof Error
-								? { message: signError.message, stack: signError.stack, name: signError.name }
-								: signError,
-					});
-					await fallbackToSingleItems(fit, paymentSource, network, script);
-					return;
-				}
+					const validated: ValidatedRegistryItem[] = [];
+					for (let idx = 0; idx < validations.length; idx++) {
+						const outcome = validations[idx];
+						const request = mintableRequests[idx];
+						if (outcome.status === 'fulfilled') {
+							validated.push(outcome.value);
+						} else {
+							await markRequestFailed(request, outcome.reason);
+						}
+					}
 
-				// Pre-submit DB transition: create ONE shared Transaction row
-				// carrying BlocksWallet → wallet, then connect every fit item's
-				// CurrentTransaction to that shared Tx. Replaces the N-orphan
-				// pattern — HotWallet.pendingTransactionId points to the single
-				// shared Tx, so tx-sync's BlocksWallet-driven wallet unlock
-				// fires exactly once per batch.
-				let sharedTxId: string;
-				try {
-					sharedTxId = await retryOnSerializationConflict(
-						() =>
-							prisma.$transaction(
-								async (tx) => {
-									const sharedTx = await tx.transaction.create({
-										data: {
-											status: TransactionStatus.Pending,
-											// `lastCheckedAt: now` required so wallet-timeouts can poll this row.
-											// See docs/adr/0006 and docs/adr/0007 for the full rationale.
-											lastCheckedAt: new Date(),
-											BlocksWallet: { connect: { id: firstRequest.SmartContractWallet.id } },
-										},
-									});
-									for (const v of fit) {
-										await tx.registryRequest.update({
-											where: { id: v.request.id },
+					if (validated.length === 0) {
+						logger.info('No V2 register requests passed validation this tick');
+						await unlockHotWallet(firstRequest.SmartContractWallet.id);
+						return;
+					}
+
+					// Shrink the batch until tx-size is safe. We do NOT pre-check
+					// no-collateral-overlap here: the mint path tolerates the
+					// `firstUtxo == collateral` case (mesh routes the ref into both
+					// body fields and dedupes the collateral side at assembly
+					// time), and enforcing disjointness would block 1-UTxO wallets
+					// from minting at all. Tx-size is checked inline after the
+					// build pass via assertTxSizeWithinLimit further down.
+					const shrinkResult = shrinkBatchToFit(validated, () => ({ ok: true }));
+
+					if (shrinkResult.fit.length === 0) {
+						logger.error('V2 register batch could not satisfy collateral non-overlap invariant', {
+							reason: shrinkResult.reason,
+						});
+						await unlockHotWallet(firstRequest.SmartContractWallet.id);
+						return;
+					}
+					if (shrinkResult.dropped.length > 0) {
+						logger.warn(
+							`V2 register batch shrunk from ${validated.length} to ${shrinkResult.fit.length} (reason=${shrinkResult.reason}); dropped items will retry next tick`,
+						);
+					}
+
+					const fit = shrinkResult.fit;
+					const items = fit.map((v) => v.item);
+
+					let unsignedTx: string;
+					try {
+						// Two-pass evaluateTx: pass 1 with default exUnits, pass 2
+						// with the single MINT redeemer budget the validator
+						// returns (V2 mint contract shares one redeemer for the
+						// whole policy bucket).
+						const evaluationTx = await generateRegistryBatchMintTransaction(
+							blockchainProvider,
+							network,
+							script,
+							address,
+							policyId,
+							items,
+							collateralUtxo,
+							spendableUtxos,
+							undefined,
+							rpcApiKey,
+						);
+						const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
+							tag?: string;
+							budget: { mem: number; steps: number };
+						}>;
+						const mintBudget = estimatedFee.find((action) => action.tag === 'MINT')?.budget ?? estimatedFee[0]?.budget;
+						if (mintBudget == null) {
+							throw new Error('evaluateTx returned no MINT budget for V2 register batch');
+						}
+						unsignedTx = await generateRegistryBatchMintTransaction(
+							blockchainProvider,
+							network,
+							script,
+							address,
+							policyId,
+							items,
+							collateralUtxo,
+							spendableUtxos,
+							mintBudget,
+							rpcApiKey,
+						);
+						assertTxSizeWithinLimit(unsignedTx, 'v2-registry-batch-mint');
+					} catch (batchError) {
+						logger.warn('V2 register batch build failed; falling back to single-item processing [batch-fallback]', {
+							error:
+								batchError instanceof Error
+									? { message: batchError.message, stack: batchError.stack, name: batchError.name }
+									: batchError,
+							batchSize: fit.length,
+						});
+						await fallbackToSingleItems(fit, paymentSource, network, script);
+						return;
+					}
+
+					let signedTx: string;
+					try {
+						signedTx = await wallet.signTx(unsignedTx, true);
+					} catch (signError) {
+						logger.warn('V2 register batch sign failed; falling back to single-item processing [batch-fallback]', {
+							error:
+								signError instanceof Error
+									? { message: signError.message, stack: signError.stack, name: signError.name }
+									: signError,
+						});
+						await fallbackToSingleItems(fit, paymentSource, network, script);
+						return;
+					}
+
+					// Pre-submit DB transition: create ONE shared Transaction row
+					// carrying BlocksWallet → wallet, then connect every fit item's
+					// CurrentTransaction to that shared Tx. Replaces the N-orphan
+					// pattern — HotWallet.pendingTransactionId points to the single
+					// shared Tx, so tx-sync's BlocksWallet-driven wallet unlock
+					// fires exactly once per batch.
+					let sharedTxId: string;
+					try {
+						sharedTxId = await retryOnSerializationConflict(
+							() =>
+								prisma.$transaction(
+									async (tx) => {
+										const sharedTx = await tx.transaction.create({
 											data: {
-												state: RegistrationState.RegistrationInitiated,
-												...connectExistingTransaction(sharedTx.id),
+												status: TransactionStatus.Pending,
+												// `lastCheckedAt: now` required so wallet-timeouts can poll this row.
+												// See docs/adr/0006 and docs/adr/0007 for the full rationale.
+												lastCheckedAt: new Date(),
+												BlocksWallet: { connect: { id: firstRequest.SmartContractWallet.id } },
 											},
 										});
-									}
-									return sharedTx.id;
-								},
-								{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
-							),
-						{ label: 'v2-register-batch-tx' },
-					);
-				} catch (dbError) {
-					logger.error('V2 register batch DB pre-submit update failed', { error: dbError });
-					await unlockHotWallet(firstRequest.SmartContractWallet.id);
-					return;
-				}
+										for (const v of fit) {
+											await tx.registryRequest.update({
+												where: { id: v.request.id },
+												data: {
+													state: RegistrationState.RegistrationInitiated,
+													...connectExistingTransaction(sharedTx.id),
+												},
+											});
+										}
+										return sharedTx.id;
+									},
+									{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
+								),
+							{ label: 'v2-register-batch-tx' },
+						);
+					} catch (dbError) {
+						logger.error('V2 register batch DB pre-submit update failed', { error: dbError });
+						await unlockHotWallet(firstRequest.SmartContractWallet.id);
+						return;
+					}
 
-				let newTxHash: string;
-				try {
-					newTxHash = await wallet.submitTx(signedTx);
-				} catch (submitError) {
-					logger.warn('V2 register batch submit failed; rolling back DB and retrying as single items', {
-						error:
-							submitError instanceof Error
-								? { message: submitError.message, stack: submitError.stack, name: submitError.name }
-								: submitError,
-					});
-					// Rollback the pre-submit transition so a stale
-					// CurrentTransaction doesn't pin the wallet.
+					let newTxHash: string;
+					try {
+						newTxHash = await wallet.submitTx(signedTx);
+					} catch (submitError) {
+						logger.warn('V2 register batch submit failed; rolling back DB and retrying as single items', {
+							error:
+								submitError instanceof Error
+									? { message: submitError.message, stack: submitError.stack, name: submitError.name }
+									: submitError,
+						});
+						// Rollback the pre-submit transition so a stale
+						// CurrentTransaction doesn't pin the wallet.
+						try {
+							await retryOnSerializationConflict(
+								() =>
+									prisma.$transaction(
+										async (tx) => {
+											await tx.transaction.update({
+												where: { id: sharedTxId },
+												data: {
+													...disconnectTransactionWallet(),
+													// Mark the orphan shared row as RolledBack: the per-item reverts
+													// below restore each request's CurrentTransaction to its pre-batch
+													// value, leaving this row with no back-references. Without an
+													// explicit status update it would sit in `Pending` indefinitely
+													// (no wallet pointer → invisible to wallet-timeouts; no request
+													// pointer → invisible to tx-sync), accumulating as DB pollution.
+													status: TransactionStatus.RolledBack,
+												},
+											});
+											for (const v of fit) {
+												// Reconnect to the pre-batch CurrentTransaction only if that
+												// prior Tx is still in an active state (Pending / Confirmed).
+												// If the prior Tx was itself a rolled-back / failed batch
+												// (e.g. this request has cycled through multiple failed
+												// batches), re-connecting would point the request at a dead
+												// Tx — leaving wallet-timeouts and tx-sync to wade through
+												// stale pointers. Disconnecting in that case mirrors the
+												// "no pre-batch active tx" branch and lets the next scheduler
+												// tick pick the request up cleanly.
+												let shouldReconnect = false;
+												if (v.request.currentTransactionId != null) {
+													const priorTx = await tx.transaction.findUnique({
+														where: { id: v.request.currentTransactionId },
+														select: { status: true },
+													});
+													shouldReconnect =
+														priorTx != null &&
+														(priorTx.status === TransactionStatus.Pending ||
+															priorTx.status === TransactionStatus.Confirmed);
+												}
+												await tx.registryRequest.update({
+													where: { id: v.request.id },
+													data: {
+														state: RegistrationState.RegistrationRequested,
+														CurrentTransaction:
+															shouldReconnect && v.request.currentTransactionId != null
+																? { connect: { id: v.request.currentTransactionId } }
+																: { disconnect: true },
+													},
+												});
+											}
+										},
+										{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
+									),
+								{ label: 'v2-register-batch-tx' },
+							);
+						} catch (rollbackError) {
+							logger.error('V2 register batch rollback after submit failure failed; skipping single-item fallback', {
+								sharedTxId,
+								requestIds: fit.map((v) => v.request.id),
+								submitError:
+									submitError instanceof Error
+										? { message: submitError.message, stack: submitError.stack, name: submitError.name }
+										: submitError,
+								rollbackError:
+									rollbackError instanceof Error
+										? { message: rollbackError.message, stack: rollbackError.stack, name: rollbackError.name }
+										: rollbackError,
+							});
+							return;
+						}
+						await fallbackToSingleItems(fit, paymentSource, network, script);
+						// Rollback only cleared pendingTransactionId; lockedAt stays set. Conditional
+						// unlock prevents the wallet from orphan-locking when every single-item fallback
+						// deferred — preserves the lock when a single-item submit succeeded.
+						await unlockHotWalletIfNoPendingTransaction(
+							firstRequest.SmartContractWallet.id,
+							'v2-register-batch-rollback',
+						);
+						return;
+					}
+
+					try {
+						await walletSession.evaluateProjectedBalance(unsignedTx, spendableUtxos);
+					} catch (balanceError) {
+						logger.warn('V2 register batch projected balance evaluation failed (non-fatal)', { error: balanceError });
+					}
+
+					// Post-submit: write the txHash to the SHARED Transaction row
+					// (a single update covers every participating request) and
+					// stamp each item's per-request agentIdentifier.
 					try {
 						await retryOnSerializationConflict(
 							() =>
@@ -727,46 +831,13 @@ export async function registerAgentV2() {
 									async (tx) => {
 										await tx.transaction.update({
 											where: { id: sharedTxId },
-											data: {
-												...disconnectTransactionWallet(),
-												// Mark the orphan shared row as RolledBack: the per-item reverts
-												// below restore each request's CurrentTransaction to its pre-batch
-												// value, leaving this row with no back-references. Without an
-												// explicit status update it would sit in `Pending` indefinitely
-												// (no wallet pointer → invisible to wallet-timeouts; no request
-												// pointer → invisible to tx-sync), accumulating as DB pollution.
-												status: TransactionStatus.RolledBack,
-											},
+											data: { txHash: newTxHash },
 										});
 										for (const v of fit) {
-											// Reconnect to the pre-batch CurrentTransaction only if that
-											// prior Tx is still in an active state (Pending / Confirmed).
-											// If the prior Tx was itself a rolled-back / failed batch
-											// (e.g. this request has cycled through multiple failed
-											// batches), re-connecting would point the request at a dead
-											// Tx — leaving wallet-timeouts and tx-sync to wade through
-											// stale pointers. Disconnecting in that case mirrors the
-											// "no pre-batch active tx" branch and lets the next scheduler
-											// tick pick the request up cleanly.
-											let shouldReconnect = false;
-											if (v.request.currentTransactionId != null) {
-												const priorTx = await tx.transaction.findUnique({
-													where: { id: v.request.currentTransactionId },
-													select: { status: true },
-												});
-												shouldReconnect =
-													priorTx != null &&
-													(priorTx.status === TransactionStatus.Pending ||
-														priorTx.status === TransactionStatus.Confirmed);
-											}
 											await tx.registryRequest.update({
 												where: { id: v.request.id },
 												data: {
-													state: RegistrationState.RegistrationRequested,
-													CurrentTransaction:
-														shouldReconnect && v.request.currentTransactionId != null
-															? { connect: { id: v.request.currentTransactionId } }
-															: { disconnect: true },
+													agentIdentifier: v.policyId + v.assetName,
 												},
 											});
 										}
@@ -775,78 +846,34 @@ export async function registerAgentV2() {
 								),
 							{ label: 'v2-register-batch-tx' },
 						);
-					} catch (rollbackError) {
-						logger.error('V2 register batch rollback after submit failure failed; skipping single-item fallback', {
-							sharedTxId,
-							requestIds: fit.map((v) => v.request.id),
-							submitError:
-								submitError instanceof Error
-									? { message: submitError.message, stack: submitError.stack, name: submitError.name }
-									: submitError,
-							rollbackError:
-								rollbackError instanceof Error
-									? { message: rollbackError.message, stack: rollbackError.stack, name: rollbackError.name }
-									: rollbackError,
+					} catch (dbError) {
+						logger.error('V2 register batch post-submit DB update failed; rows will reconcile via tx-sync next tick', {
+							error:
+								dbError instanceof Error
+									? { message: dbError.message, stack: dbError.stack, name: dbError.name }
+									: dbError,
+							txHash: newTxHash,
 						});
-						return;
 					}
-					await fallbackToSingleItems(fit, paymentSource, network, script);
-					// Rollback only cleared pendingTransactionId; lockedAt stays set. Conditional
-					// unlock prevents the wallet from orphan-locking when every single-item fallback
-					// deferred — preserves the lock when a single-item submit succeeded.
-					await unlockHotWalletIfNoPendingTransaction(
-						firstRequest.SmartContractWallet.id,
-						'v2-register-batch-rollback',
-					);
-					return;
-				}
 
-				try {
-					await walletSession.evaluateProjectedBalance(unsignedTx, spendableUtxos);
-				} catch (balanceError) {
-					logger.warn('V2 register batch projected balance evaluation failed (non-fatal)', { error: balanceError });
-				}
-
-				// Post-submit: write the txHash to the SHARED Transaction row
-				// (a single update covers every participating request) and
-				// stamp each item's per-request agentIdentifier.
-				try {
-					await retryOnSerializationConflict(
-						() =>
-							prisma.$transaction(
-								async (tx) => {
-									await tx.transaction.update({
-										where: { id: sharedTxId },
-										data: { txHash: newTxHash },
-									});
-									for (const v of fit) {
-										await tx.registryRequest.update({
-											where: { id: v.request.id },
-											data: {
-												agentIdentifier: v.policyId + v.assetName,
-											},
-										});
-									}
-								},
-								{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
-							),
-						{ label: 'v2-register-batch-tx' },
-					);
-				} catch (dbError) {
-					logger.error('V2 register batch post-submit DB update failed; rows will reconcile via tx-sync next tick', {
-						error:
-							dbError instanceof Error
-								? { message: dbError.message, stack: dbError.stack, name: dbError.name }
-								: dbError,
-						txHash: newTxHash,
-					});
-				}
-
-				logger.debug(`Created V2 register batch transaction:
+					logger.debug(`Created V2 register batch transaction:
               Tx ID: ${newTxHash}
               Items: ${fit.length}
               View on https://${network === 'preprod' ? 'preprod.' : ''}cardanoscan.io/transaction/${newTxHash}
           `);
+				} catch (unexpectedError) {
+					logger.error('V2 register batch threw unexpectedly; releasing wallet lock [batch-fallback]', {
+						paymentSourceId: paymentSource.id,
+						hotWalletId: lockedWalletId,
+						error:
+							unexpectedError instanceof Error
+								? { message: unexpectedError.message, stack: unexpectedError.stack, name: unexpectedError.name }
+								: unexpectedError,
+					});
+					// Guarded: clears lockedAt only when no pending tx is attached, so a
+					// wallet that already submitted a (prep/mint) tx is left for tx-sync.
+					await unlockHotWalletIfNoPendingTransaction(lockedWalletId, 'registry-register-batch');
+				}
 			}),
 		);
 	} catch (error) {

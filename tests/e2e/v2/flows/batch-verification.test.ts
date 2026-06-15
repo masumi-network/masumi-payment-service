@@ -20,7 +20,7 @@
  * TEST_PAYMENT_SOURCE_TYPE, the whole suite is `describe.skip`-ed.
  */
 
-import { Network, PaymentSourceType } from '@/generated/prisma/enums';
+import { Network, PaymentSourceType, HotWalletType } from '@/generated/prisma/enums';
 import { validateTestWallets } from '../../fixtures/testWallets';
 import {
 	allWithAbortOnFailure,
@@ -95,8 +95,13 @@ async function assertPurchasingWalletFunded(): Promise<void> {
 		throw new Error(`Preflight: no Web3CardanoV2 payment source found on ${testNetwork} to check funding.`);
 	}
 	const projectId = source.PaymentSourceConfig.rpcProviderApiKey;
+	const { Wallets: purchasingWallets } = await global.testApiClient.queryWallets({
+		paymentSourceId: source.id,
+		walletType: HotWalletType.Purchasing,
+		take: 100,
+	});
 	const observed: string[] = [];
-	for (const wallet of source.PurchasingWallets) {
+	for (const wallet of purchasingWallets) {
 		const lovelace = await getAddressLovelace(wallet.walletAddress, projectId, testNetwork);
 		observed.push(`${wallet.walletAddress} = ${(Number(lovelace) / 1e6).toFixed(2)} ADA`);
 		if (lovelace >= MIN_PURCHASING_WALLET_LOVELACE) {
@@ -120,15 +125,15 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 			reject(new Error(`Aborted: ${signal.reason ?? 'signal aborted'}`));
 			return;
 		}
-		const timer = setTimeout(resolve, ms);
-		signal?.addEventListener(
-			'abort',
-			() => {
-				clearTimeout(timer);
-				reject(new Error(`Aborted: ${signal.reason ?? 'signal aborted'}`));
-			},
-			{ once: true },
-		);
+		const onAbort = () => {
+			clearTimeout(timer);
+			reject(new Error(`Aborted: ${signal?.reason ?? 'signal aborted'}`));
+		};
+		const timer = setTimeout(() => {
+			signal?.removeEventListener('abort', onAbort);
+			resolve();
+		}, ms);
+		signal?.addEventListener('abort', onAbort, { once: true });
 	});
 }
 

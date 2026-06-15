@@ -4,10 +4,13 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { Plus, Trash2, Edit2, Wand2, AlertTriangle, ShieldCheck, Eye, EyeOff } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useEffect, useMemo } from 'react';
-import { AddPaymentSourceDialog } from '@/components/payment-sources/AddPaymentSourceDialog';
+import { AddSourceDialog } from '@/components/payment-sources/AddSourceDialog';
+import { X402SourcesSection } from '@/components/payment-sources/X402SourcesSection';
+import { rowActivation } from '@/lib/a11y';
 import { PaymentSourceDialog } from '@/components/payment-sources/PaymentSourceDialog';
 import Link from 'next/link';
 import { useQueryClient } from '@tanstack/react-query';
+import { invalidateAgentQueries } from '@/lib/queries/agent-cache';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
   deletePaymentSourceExtended,
@@ -44,7 +47,6 @@ import {
   DEFAULT_PAYMENT_SOURCE_TYPE,
   getPaymentSourceTypeLabel,
   isV2PaymentSource,
-  type PaymentSourceType,
 } from '@/lib/payment-source-type';
 
 interface UpdatePaymentSourceDialogProps {
@@ -160,14 +162,11 @@ export default function PaymentSourcesPage() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [addPaymentSourceType, setAddPaymentSourceType] = useState<PaymentSourceType>(
-    DEFAULT_PAYMENT_SOURCE_TYPE,
-  );
 
   const [sourceToDelete, setSourceToDelete] = useState<PaymentSourceExtended | null>(null);
   const [sourceToUpdate, setSourceToUpdate] = useState<PaymentSourceExtended | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  const { apiClient, selectedPaymentSourceId, network, setSelectedPaymentSourceId } =
+  const { apiClient, selectedPaymentSourceId, network, setSelectedPaymentSourceId, setActiveRail } =
     useAppContext();
   const { paymentSources: ps, isLoading, refetch } = usePaymentSourceExtendedAll();
   const queryClient = useQueryClient();
@@ -230,7 +229,7 @@ export default function PaymentSourcesPage() {
           queryClient.invalidateQueries({ queryKey: ['payment-sources-all'] });
           queryClient.invalidateQueries({ queryKey: ['wallets'] });
           queryClient.invalidateQueries({ queryKey: ['transactions'] });
-          queryClient.invalidateQueries({ queryKey: ['agents'] });
+          invalidateAgentQueries(queryClient);
           queryClient.invalidateQueries({ queryKey: ['payment-source-extended'] });
         },
         onError: (error: any) => {
@@ -284,13 +283,10 @@ export default function PaymentSourcesPage() {
               />
               <Button
                 className="flex items-center gap-2 btn-hover-lift"
-                onClick={() => {
-                  setAddPaymentSourceType(DEFAULT_PAYMENT_SOURCE_TYPE);
-                  setIsAddDialogOpen(true);
-                }}
+                onClick={() => setIsAddDialogOpen(true)}
               >
                 <Plus className="h-4 w-4" />
-                Add V2 source
+                Add source
               </Button>
             </div>
           </div>
@@ -332,15 +328,8 @@ export default function PaymentSourcesPage() {
                 </div>
               </div>
               {needsV2Setup && (
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    setAddPaymentSourceType(DEFAULT_PAYMENT_SOURCE_TYPE);
-                    setIsAddDialogOpen(true);
-                  }}
-                  className="shrink-0"
-                >
-                  Set up V2
+                <Button size="sm" asChild className="shrink-0">
+                  <Link href={`/setup?network=${network}`}>Set up V2</Link>
                 </Button>
               )}
             </div>
@@ -377,20 +366,42 @@ export default function PaymentSourcesPage() {
               </div>
             </div>
 
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold">Cardano payment sources</h2>
+              <Badge
+                variant="outline"
+                className="border-sky-300 bg-sky-50 px-1.5 py-0 text-[10px] font-medium text-sky-700 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-300"
+              >
+                Cardano
+              </Badge>
+            </div>
+
             <div className="rounded-lg border overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr className="border-b">
-                    <th className="p-4 text-left text-sm font-medium truncate pl-6">
+                    <th scope="col" className="p-4 text-left text-sm font-medium truncate pl-6">
                       Contract address
                     </th>
-                    <th className="p-4 text-left text-sm font-medium">Type</th>
-                    <th className="p-4 text-left text-sm font-medium">ID</th>
-                    <th className="p-4 text-left text-sm font-medium">Network</th>
-                    <th className="p-4 text-left text-sm font-medium truncate">Fee rate (%)</th>
-                    <th className="p-4 text-left text-sm font-medium truncate">Created at</th>
-                    <th className="p-4 text-left text-sm font-medium">Wallets</th>
-                    <th className="w-20 p-4 pr-8"></th>
+                    <th scope="col" className="p-4 text-left text-sm font-medium">
+                      Type
+                    </th>
+                    <th scope="col" className="p-4 text-left text-sm font-medium">
+                      ID
+                    </th>
+                    <th scope="col" className="p-4 text-left text-sm font-medium">
+                      Network
+                    </th>
+                    <th scope="col" className="p-4 text-left text-sm font-medium truncate">
+                      Fee rate (%)
+                    </th>
+                    <th scope="col" className="p-4 text-left text-sm font-medium truncate">
+                      Created at
+                    </th>
+                    <th scope="col" className="p-4 text-left text-sm font-medium">
+                      Wallets
+                    </th>
+                    <th scope="col" className="w-20 p-4 pr-8"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -402,7 +413,7 @@ export default function PaymentSourcesPage() {
                         <EmptyState
                           icon="inbox"
                           title="No payment sources found"
-                          description="Add a V2 payment source to get started"
+                          description="Add a payment source to get started"
                           action={
                             <Button asChild>
                               <Link href={`/setup?network=${network}`}>
@@ -424,7 +435,9 @@ export default function PaymentSourcesPage() {
                             'bg-green-50 dark:bg-green-950/20',
                         )}
                         style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
+                        aria-label="View payment source details"
                         onClick={() => setSelectedPaymentSourceForDetails(source)}
+                        {...rowActivation(() => setSelectedPaymentSourceForDetails(source))}
                       >
                         <td
                           className={cn(
@@ -469,10 +482,10 @@ export default function PaymentSourcesPage() {
                         <td className="p-4">
                           <div className="text-xs text-muted-foreground">
                             <span className="block truncate">
-                              {source.PurchasingWallets.length} Buying,
+                              {source.PurchasingWalletsCount} Buying,
                             </span>
                             <span className="block truncate">
-                              {source.SellingWallets.length} Selling
+                              {source.SellingWalletsCount} Selling
                             </span>
                           </div>
                         </td>
@@ -530,16 +543,11 @@ export default function PaymentSourcesPage() {
                 </tbody>
               </table>
             </div>
+
+            <X402SourcesSection network={network} searchQuery={searchQuery} />
           </div>
 
-          <AddPaymentSourceDialog
-            open={isAddDialogOpen}
-            onClose={() => setIsAddDialogOpen(false)}
-            onSuccess={() => {
-              refetch();
-            }}
-            defaultPaymentSourceType={addPaymentSourceType}
-          />
+          <AddSourceDialog open={isAddDialogOpen} onClose={() => setIsAddDialogOpen(false)} />
 
           <UpdatePaymentSourceDialog
             open={!!sourceToUpdate}
@@ -570,6 +578,9 @@ export default function PaymentSourcesPage() {
             description={`Setting this as the active source will change which agents, wallets, and transactions are displayed across the admin interface.\n\nType: ${sourceToSelect?.paymentSourceType ? getPaymentSourceTypeLabel(sourceToSelect.paymentSourceType) : ''}\nContract Address: ${sourceToSelect?.smartContractAddress ? shortenAddress(sourceToSelect.smartContractAddress) : ''}`}
             onConfirm={() => {
               if (sourceToSelect?.id) {
+                // A Cardano source is a Cardano-rail context; switch the rail too so the
+                // sidebar/pages don't stay in x402 context after activating it.
+                setActiveRail('cardano');
                 setSelectedPaymentSourceId(sourceToSelect.id);
               }
               setSourceToSelect(undefined);

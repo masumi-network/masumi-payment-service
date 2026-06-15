@@ -6,27 +6,18 @@ import {
 	paymentSourceOutputSchema,
 	paymentSourceSchemaInput,
 	paymentSourceSchemaOutput,
-	purchasingWalletSchema,
-	sellingWalletSchema,
 } from './schemas';
 import { getPaymentSourcesForQuery } from './queries';
 import { serializePaymentSourcesResponse } from './serializers';
 
-export {
-	adminWalletSchema,
-	paymentSourceOutputSchema,
-	paymentSourceSchemaInput,
-	paymentSourceSchemaOutput,
-	purchasingWalletSchema,
-	sellingWalletSchema,
-};
+export { adminWalletSchema, paymentSourceOutputSchema, paymentSourceSchemaInput, paymentSourceSchemaOutput };
 
 export const paymentSourceEndpointGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: paymentSourceSchemaInput,
 	output: paymentSourceSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof paymentSourceSchemaInput>; ctx: AuthContext }) => {
-		const paymentSources = await getPaymentSourcesForQuery(input, ctx.networkLimit, ctx.walletScopeIds);
+		const paymentSources = await getPaymentSourcesForQuery(input, ctx.networkLimit);
 		return serializePaymentSourcesResponse(paymentSources);
 	},
 });

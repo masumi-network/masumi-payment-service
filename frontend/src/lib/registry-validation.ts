@@ -28,6 +28,27 @@ export const INBOX_REGISTRY_LIMITS = {
 
 export const REGISTRY_DECIMAL_ADA_AMOUNT_PATTERN = /^\d+(\.\d{1,6})?$/;
 
+// Client-side apiBaseUrl validation shared between registration and migration.
+// Mirrors the zod rules in RegisterAIAgentDialog (valid URL, <= 250 chars, must
+// be http(s)) so an override can't pass the UI and only fail when postRegistry
+// runs. Returns an error message, or null when the value is acceptable.
+export function validateApiBaseUrl(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return 'API URL is required';
+  try {
+    new URL(trimmed);
+  } catch {
+    return 'API URL must be a valid URL';
+  }
+  if (trimmed.length > REGISTRY_LIMITS.apiBaseUrl) {
+    return 'API URL must be less than 250 characters';
+  }
+  if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+    return 'API URL must start with http:// or https://';
+  }
+  return null;
+}
+
 export const RESERVED_INBOX_SLUGS = ['favicon.ico', 'robots.txt', 'sitemap.xml'] as const;
 
 function stripDiacritics(value: string) {

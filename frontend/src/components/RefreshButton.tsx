@@ -47,6 +47,7 @@ export function RefreshButton({
         onClick={onRefresh}
         disabled={isDisabled}
         className={cn(sizeClasses[size], isRefreshing && 'cursor-not-allowed', className)}
+        aria-label={isRefreshing ? 'Refreshing' : 'Refresh'}
         title={isRefreshing ? 'Refreshing...' : 'Refresh'}
       >
         <RefreshCw
@@ -67,6 +68,7 @@ export function RefreshButton({
       onClick={onRefresh}
       disabled={isDisabled}
       className={cn('flex items-center gap-2', isRefreshing && 'cursor-not-allowed', className)}
+      aria-label={isRefreshing ? 'Refreshing' : 'Refresh'}
       title={isRefreshing ? 'Refreshing...' : 'Refresh'}
     >
       <RefreshCw
