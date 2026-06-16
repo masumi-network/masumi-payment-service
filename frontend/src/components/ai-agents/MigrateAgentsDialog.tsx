@@ -738,8 +738,12 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
             single wide child (long address, a non-wrapping line) would stretch the whole
             dialog past its max width — clipping the right edge and pushing the footer's
             primary button off-screen. `[&>*]:min-w-0` lets each grid row shrink/wrap, and
-            overflow-x-hidden clips any residual so the action button stays in the box. */}
-        <DialogContent className="sm:max-w-[700px] overflow-y-auto overflow-x-hidden max-h-[90vh] [&>*]:min-w-0">
+            overflow-x-hidden clips any residual so the action button stays in the box.
+            `pb-0` removes the base bottom padding: a `sticky bottom-0` child anchors that
+            padding's height ABOVE the real bottom edge, which would leave a gap below the
+            footer where scrolled-out content peeks through. The footer supplies its own
+            bottom spacing via `py-4`. */}
+        <DialogContent className="sm:max-w-[700px] overflow-y-auto overflow-x-hidden max-h-[90vh] pb-0 [&>*]:min-w-0">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <ShieldCheck className="h-5 w-5 text-primary" />
@@ -1094,7 +1098,7 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
             </div>
           )}
 
-          <DialogFooter className="gap-2 sm:gap-0 sticky bottom-0 -mx-6 -mb-6 border-t bg-background px-6 py-4">
+          <DialogFooter className="gap-2 sm:gap-0 sticky bottom-0 -mx-6 border-t bg-background px-6 py-4">
             {!isDone ? (
               <>
                 {/* Cancel-during-run: flips the `cancelRef` flag the loop
