@@ -36,6 +36,7 @@ import {
 } from '@/services/registry/shared';
 import {
 	assertTxSizeWithinLimit,
+	isTxSizeWithinLimit,
 	pickBatchCollateral,
 	shrinkBatchToFit,
 	WALLET_SPLITTER_LOVELACE,
@@ -53,9 +54,17 @@ import { verificationRowToApi, verificationsToMetadata, type AgentVerificationRo
 // V2 registry batch sizing. The on-chain `MintAction` validator runs once for
 // the policy bucket and verifies every minted asset name against the set of
 // spent inputs, so the per-item cost is mostly off-chain (CIP-25 metadata + a
-// fresh wallet UTxO per asset). The cap balances tx-size headroom (we keep
-// well under MAX_SAFE_TX_BYTES) against scheduler throughput.
-const REGISTRY_BATCH_SIZE = 7;
+// fresh wallet UTxO per asset). The cap balances tx-size headroom against
+// scheduler throughput.
+//
+// Held at 5 (not 7): every item's CIP-25 metadata lands in ONE combined `721`
+// block (see batch-registry.ts), and per-agent metadata can be large once
+// verification claims, example outputs, and multiple payment sources are
+// folded in (see buildAgentMetadata). At 7 a fully-populated batch routinely
+// overran MAX_SAFE_TX_BYTES. The size-aware shrink below is the real guard —
+// this cap just keeps the common case from wasting build passes on a batch
+// that will always shrink.
+const REGISTRY_BATCH_SIZE = 5;
 
 const mutex = new Mutex();
 
@@ -481,6 +490,34 @@ async function processSingleRegistration(
           `);
 }
 
+/**
+ * Peel registry items off the END of a pre-sorted batch until the built
+ * (default-exUnits) tx fits within MAX_SAFE_TX_BYTES, returning the largest
+ * fitting prefix plus its evaluation tx (so the caller can reuse it for the
+ * evaluateTx fee pass without rebuilding). Tx size does not depend on the
+ * evaluated redeemer budget, so the default-exUnits build is a faithful size
+ * proxy for the final budgeted build.
+ *
+ * This is the async analogue of `shrinkBatchToFit`: the builder is async and
+ * therefore cannot run inside that helper's synchronous predicate. Returns
+ * `fit: []` when even a single item overruns the cap, signalling the caller to
+ * route that item through the single-item fallback.
+ */
+async function shrinkRegistryBatchToTxSize(
+	fit: ValidatedRegistryItem[],
+	buildEvalTx: (items: BatchRegistryMintItem[]) => Promise<string>,
+): Promise<{ fit: ValidatedRegistryItem[]; evaluationTx: string; dropped: number }> {
+	let working = fit;
+	while (working.length > 0) {
+		const evaluationTx = await buildEvalTx(working.map((v) => v.item));
+		if (isTxSizeWithinLimit(evaluationTx)) {
+			return { fit: working, evaluationTx, dropped: fit.length - working.length };
+		}
+		working = working.slice(0, working.length - 1);
+	}
+	return { fit: [], evaluationTx: '', dropped: fit.length };
+}
+
 export async function registerAgentV2() {
 	let release: MutexInterface.Releaser | null;
 	try {
@@ -660,27 +697,72 @@ export async function registerAgentV2() {
 						);
 					}
 
-					const fit = shrinkResult.fit;
+					// Size-aware pre-shrink. The combined CIP-25 metadata block (one
+					// `721` label spanning every item, see batch-registry.ts) grows with
+					// both batch size and per-agent metadata (verification claims, example
+					// outputs, payment sources). A full batch can overrun
+					// MAX_SAFE_TX_BYTES; without this loop the only size guard was the
+					// post-build assert below, which throws and collapses the entire tick
+					// into a one-item fallback — making registrations look sequential.
+					// Instead, build with default exUnits (tx size is independent of the
+					// evaluated budget) and peel items off the END until the batch fits,
+					// preserving the largest viable batch. Dropped items stay in
+					// RegistrationRequested and re-batch on the next tick.
+					let fit = shrinkResult.fit;
+					let evaluationTx: string;
+					try {
+						const sized = await shrinkRegistryBatchToTxSize(fit, (subsetItems) =>
+							generateRegistryBatchMintTransaction(
+								blockchainProvider,
+								network,
+								script,
+								address,
+								policyId,
+								subsetItems,
+								collateralUtxo,
+								spendableUtxos,
+								undefined,
+								rpcApiKey,
+							),
+						);
+						if (sized.fit.length === 0) {
+							// Even a single item exceeds the size cap — not a transient
+							// batch-size problem. Defer to the single-item fallback, which
+							// surfaces the real per-item failure (and marks it failed if it
+							// genuinely cannot fit on its own).
+							logger.warn(
+								'V2 register batch: even one item exceeds tx-size cap; falling back to single-item [batch-fallback]',
+							);
+							await fallbackToSingleItems(fit, paymentSource, network, script);
+							return;
+						}
+						if (sized.dropped > 0) {
+							logger.warn(
+								`V2 register batch shrunk from ${fit.length} to ${sized.fit.length} for tx-size; deferring ${sized.dropped} to next tick`,
+							);
+						}
+						fit = sized.fit;
+						evaluationTx = sized.evaluationTx;
+					} catch (sizeError) {
+						logger.warn('V2 register batch size-shrink build failed; falling back to single-item [batch-fallback]', {
+							error:
+								sizeError instanceof Error
+									? { message: sizeError.message, stack: sizeError.stack, name: sizeError.name }
+									: sizeError,
+							batchSize: fit.length,
+						});
+						await fallbackToSingleItems(fit, paymentSource, network, script);
+						return;
+					}
+
 					const items = fit.map((v) => v.item);
 
 					let unsignedTx: string;
 					try {
-						// Two-pass evaluateTx: pass 1 with default exUnits, pass 2
-						// with the single MINT redeemer budget the validator
-						// returns (V2 mint contract shares one redeemer for the
-						// whole policy bucket).
-						const evaluationTx = await generateRegistryBatchMintTransaction(
-							blockchainProvider,
-							network,
-							script,
-							address,
-							policyId,
-							items,
-							collateralUtxo,
-							spendableUtxos,
-							undefined,
-							rpcApiKey,
-						);
+						// Two-pass evaluateTx: pass 1 (the size-shrink build above, reused
+						// here as `evaluationTx`) with default exUnits; pass 2 with the
+						// single MINT redeemer budget the validator returns (V2 mint
+						// contract shares one redeemer for the whole policy bucket).
 						const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
 							tag?: string;
 							budget: { mem: number; steps: number };
