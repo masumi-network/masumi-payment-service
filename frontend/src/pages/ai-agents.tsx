@@ -176,6 +176,13 @@ export default function AIAgentsPage() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedAgentToDelete, setSelectedAgentToDelete] = useState<AIAgent | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  // Synchronous in-flight guard for delete/deregister. `setIsDeleting(true)` is
+  // async, so a fast double-click on Confirm fires `handleDeleteConfirm` twice
+  // before the button disables — sending two DELETEs for the same id. The second
+  // then races the first (the backend reports the row already gone). A ref flips
+  // synchronously on the first call so the duplicate is rejected immediately;
+  // `isDeleting` on the button is post-render defence-in-depth.
+  const isDeletingRef = useRef(false);
   const [selectedAgentToUpdate, setSelectedAgentToUpdate] = useState<AIAgent | null>(null);
   // Snapshot the agent's payment-source smart-contract address AT CLICK TIME.
   // The agent list is already filtered to `selectedPaymentSource`, so at the
@@ -321,6 +328,16 @@ export default function AIAgentsPage() {
   };
 
   const handleDeleteConfirm = async () => {
+    if (isDeletingRef.current) return;
+    isDeletingRef.current = true;
+    try {
+      await runDeleteConfirm();
+    } finally {
+      isDeletingRef.current = false;
+    }
+  };
+
+  const runDeleteConfirm = async () => {
     if (
       selectedAgentToDelete?.state === 'RegistrationFailed' ||
       selectedAgentToDelete?.state === 'DeregistrationConfirmed'
