@@ -3850,19 +3850,19 @@ export type PostPaymentData = {
         /**
          * The time after which the payment has to be submitted to the smart contract
          */
-        payByTime?: Date | Date;
+        payByTime?: Date;
         /**
          * The time after which the payment has to be submitted to the smart contract
          */
-        submitResultTime?: Date | Date;
+        submitResultTime?: Date;
         /**
          * The time after which the payment will be unlocked
          */
-        unlockTime?: Date | Date;
+        unlockTime?: Date;
         /**
          * The time after which the payment will be unlocked for external dispute
          */
-        externalDisputeUnlockTime?: Date | Date;
+        externalDisputeUnlockTime?: Date;
         /**
          * Metadata to be stored with the payment request
          */
@@ -5088,7 +5088,7 @@ export type PostPaymentErrorStateRecoveryData = {
         /**
          * The time of the last update, to ensure you clear the correct error state
          */
-        updatedAt: Date | Date;
+        updatedAt: Date;
     };
     path?: never;
     query?: never;
@@ -5417,7 +5417,7 @@ export type PostPurchaseErrorStateRecoveryData = {
         /**
          * The time of the last update, to ensure you clear the correct error state
          */
-        updatedAt: Date | Date;
+        updatedAt: Date;
     };
     path?: never;
     query?: never;
@@ -9057,11 +9057,11 @@ export type PostPurchaseSpendingData = {
         /**
          * Start date for spending calculation (date format: 2024-01-01). If null, uses earliest available data. If provided, will be converted to the local time zone of the user
          */
-        startDate?: Date | Date | unknown;
+        startDate?: Date | unknown;
         /**
          * End date for spending calculation (date format: 2024-01-31). If null, uses current date. If provided, will be converted to the local time zone of the user
          */
-        endDate?: Date | Date | unknown;
+        endDate?: Date | unknown;
         /**
          * The time zone to use for the spending calculation. If not provided, will use the UTC time zone. Must be a valid IANA time zone name, see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
          */
@@ -9248,11 +9248,11 @@ export type PostPaymentIncomeData = {
         /**
          * Start date for income calculation (date format: 2024-01-01). If null, uses earliest available data. If provided, will be converted to the local time zone of the user
          */
-        startDate?: Date | Date | unknown;
+        startDate?: Date | unknown;
         /**
          * End date for income calculation (date format: 2024-01-31). If null, uses current date. If provided, will be converted to the local time zone of the user
          */
-        endDate?: Date | Date | unknown;
+        endDate?: Date | unknown;
         /**
          * The time zone to use for the income calculation. If not provided, will use the UTC time zone. Must be a valid IANA time zone name, see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
          */
