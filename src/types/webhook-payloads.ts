@@ -1,4 +1,10 @@
-import { HotWalletType, Network, PaymentSourceType, WebhookEventType } from '@/generated/prisma/client';
+import {
+	HotWalletType,
+	Network,
+	PaymentSourceType,
+	WebhookEventType,
+	X402EvmWalletType,
+} from '@/generated/prisma/client';
 import { z } from '@masumi/payment-core/zod';
 import { queryPurchaseRequestSchemaOutput } from '@/routes/api/purchases';
 import { queryPaymentsSchemaOutput } from '@/routes/api/payments';
@@ -68,6 +74,54 @@ const walletLowBalancePayloadSchema = createWebhookPayloadSchema(
 	'Wallet low-balance alert payload when a monitored wallet transitions into low balance',
 );
 
+// x402 (EVM) webhook schemas. The settle event carries the same data on success and
+// failure so a single consumer shape covers both X402_PAYMENT_SETTLED and
+// X402_PAYMENT_FAILED.
+const x402PaymentEventData = z.object({
+	attemptId: z.string().describe('x402 payment attempt id'),
+	paymentPayloadHash: z.string().nullable().describe('Canonical hash of the settled payment payload'),
+	supportedPaymentSourceId: z.string().nullable().describe('Registered EVM payment source id'),
+	registryRequestId: z.string().nullable().describe('Registry request the payment was for'),
+	caip2Network: z.string().describe('CAIP-2 chain id'),
+	asset: z.string().describe('Token contract'),
+	amount: z.string().describe('Amount in token base units'),
+	payTo: z.string().describe('Recipient address'),
+	payer: z.string().nullable().describe('Payer address'),
+	txHash: z.string().nullable().describe('On-chain settlement transaction hash, when settled'),
+	success: z.boolean().describe('Whether the settlement succeeded'),
+	errorReason: z.string().nullable().describe('Machine-readable failure reason, when failed'),
+	errorMessage: z.string().nullable().describe('Human-readable failure message, when failed'),
+	settledAt: z.string().datetime().describe('Timestamp the settlement was recorded'),
+});
+
+const x402PaymentSettledPayloadSchema = createWebhookPayloadSchema(
+	z.literal('X402_PAYMENT_SETTLED'),
+	x402PaymentEventData,
+	'Emitted when an inbound x402 payment is settled on-chain',
+);
+
+const x402PaymentFailedPayloadSchema = createWebhookPayloadSchema(
+	z.literal('X402_PAYMENT_FAILED'),
+	x402PaymentEventData,
+	'Emitted when an inbound x402 settlement fails',
+);
+
+const x402WalletLowBalancePayloadSchema = createWebhookPayloadSchema(
+	z.literal('X402_WALLET_LOW_BALANCE'),
+	z.object({
+		ruleId: z.string().describe('Low-balance rule id'),
+		evmWalletId: z.string().describe('Managed EVM wallet id'),
+		walletAddress: z.string().describe('Managed EVM wallet address'),
+		walletType: z.nativeEnum(X402EvmWalletType).describe('Wallet direction (Purchasing or Selling)'),
+		caip2Network: z.string().describe('CAIP-2 chain id of the monitored balance'),
+		asset: z.string().describe('Monitored asset: "native" or an ERC-20 contract'),
+		thresholdAmount: z.string().describe('Configured threshold in base units'),
+		currentAmount: z.string().describe('Observed balance in base units'),
+		checkedAt: z.string().datetime().describe('Timestamp when the balance was evaluated'),
+	}),
+	'Emitted when a monitored managed EVM wallet transitions into low balance',
+);
+
 // Union schema for all webhook payloads
 const _webhookPayloadSchema = z.discriminatedUnion('event_type', [
 	purchaseOnChainStatusChangedPayloadSchema,
@@ -75,6 +129,9 @@ const _webhookPayloadSchema = z.discriminatedUnion('event_type', [
 	purchaseOnErrorPayloadSchema,
 	paymentOnErrorPayloadSchema,
 	walletLowBalancePayloadSchema,
+	x402PaymentSettledPayloadSchema,
+	x402PaymentFailedPayloadSchema,
+	x402WalletLowBalancePayloadSchema,
 ]);
 
 type WebhookPayload = z.infer<typeof _webhookPayloadSchema>;

@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { invalidateAgentQueries } from '@/lib/queries/agent-cache';
 import { AIAgentDetailsDialog } from '@/components/ai-agents/AIAgentDetailsDialog';
 import type { RegistryEntry, A2aRegistryEntry } from '@/lib/api/generated';
 
@@ -44,7 +45,7 @@ export function AgentDetailsDialogProvider({ children }: { children: ReactNode }
   const handleSuccess = useCallback(() => {
     // Matches former ai-agents dialog onSuccess: delayed refetch so balances reflect fees/settlement after deregister/delete.
     window.setTimeout(() => {
-      void queryClient.invalidateQueries({ queryKey: ['agents'] });
+      invalidateAgentQueries(queryClient);
       void queryClient.invalidateQueries({ queryKey: ['wallets'] });
     }, 2000);
   }, [queryClient]);

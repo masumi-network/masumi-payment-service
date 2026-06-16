@@ -1,21 +1,26 @@
-import { splitWalletsByType } from '@/utils/shared/transformers';
 import type { PaymentSourceExtendedListRecord } from './queries';
-import { serializeLowBalanceSummary } from '@/services/wallets';
+import type { WalletCounts } from './queries';
 
-export function serializePaymentSourceExtendedEntry(paymentSource: PaymentSourceExtendedListRecord) {
-	const { HotWallets, ...rest } = paymentSource;
-	const serializedWallets = HotWallets.map(({ LowBalanceRules, ...wallet }) => ({
-		...wallet,
-		LowBalanceSummary: serializeLowBalanceSummary(LowBalanceRules),
-	}));
+const EMPTY_WALLET_COUNTS: WalletCounts = { PurchasingWalletsCount: 0, SellingWalletsCount: 0 };
+
+export function serializePaymentSourceExtendedEntry(
+	paymentSource: PaymentSourceExtendedListRecord,
+	walletCounts: WalletCounts = EMPTY_WALLET_COUNTS,
+) {
 	return {
-		...rest,
-		...splitWalletsByType(serializedWallets),
+		...paymentSource,
+		PurchasingWalletsCount: walletCounts.PurchasingWalletsCount,
+		SellingWalletsCount: walletCounts.SellingWalletsCount,
 	};
 }
 
-export function serializePaymentSourceExtendedResponse(paymentSources: PaymentSourceExtendedListRecord[]) {
+export function serializePaymentSourceExtendedResponse(
+	paymentSources: PaymentSourceExtendedListRecord[],
+	walletCountsByPaymentSource: Map<string, WalletCounts>,
+) {
 	return {
-		ExtendedPaymentSources: paymentSources.map(serializePaymentSourceExtendedEntry),
+		ExtendedPaymentSources: paymentSources.map((paymentSource) =>
+			serializePaymentSourceExtendedEntry(paymentSource, walletCountsByPaymentSource.get(paymentSource.id)),
+		),
 	};
 }

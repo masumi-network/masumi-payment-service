@@ -55,55 +55,21 @@ export function generateRegistryAssetName(firstUtxo: UTxO): string {
 	return Buffer.from(blake2b256).toString('hex');
 }
 
-// V2 registry mint contract requires asset names of the exact structure:
-//   [ 1 byte nonce > 0x0f | 28 bytes blake2b_224(tx_id || index_be4) | 3 bytes version 0x000000 ]
-// (see smart-contracts/registry-v2/validators/mint.ak). The nonce > 0x0f guard
-// keeps registry asset names out of the CIP-67/CIP-68 label-prefix range. The
-// version field starts at 0 and increments by 1 on every UpdateAction.
-const V2_REGISTRY_INITIAL_NONCE = '10'; // 0x10 — first byte strictly > 0x0f
-const V2_REGISTRY_INITIAL_VERSION = '000000'; // 3 bytes BE, starts at 0
-const V2_REGISTRY_ASSET_NAME_HEX_LENGTH = 64; // 32 bytes
-const V2_REGISTRY_VERSION_MAX = 0xffffff;
+// V2 registry mint redeemer: UpdateAction is alternative 1 in the on-chain
+// Action enum (MintAction=0, UpdateAction=1, BurnAction=2).
 const V2_UPDATE_REDEEMER_ALTERNATIVE = 1;
 
-export function generateRegistryAssetNameV2(firstUtxo: UTxO): string {
-	const txId = firstUtxo.input.txHash;
-	const txIndex = firstUtxo.input.outputIndex;
-	const serializedOutput = txId + txIndex.toString(16).padStart(8, '0');
-	const serializedOutputUint8Array = new Uint8Array(Buffer.from(serializedOutput.toString(), 'hex'));
-	// 28-byte root hash matches the contract's `blake2b_224(...)` of the same input.
-	const rootHashBytes = blake2b(serializedOutputUint8Array, 28);
-	const rootHashHex = Buffer.from(rootHashBytes).toString('hex');
-	return V2_REGISTRY_INITIAL_NONCE + rootHashHex + V2_REGISTRY_INITIAL_VERSION;
-}
-
-// Compute the next-version V2 asset name for an UpdateAction. The on-chain
-// validator (smart-contracts/registry-v2/validators/mint.ak) requires the new
-// asset name to share the burned asset's 1-byte nonce + 28-byte root_hash and
-// to carry a 3-byte version that is the burned version + 1. Version overflow
-// past 0xFFFFFF is rejected explicitly because the chain check uses big-endian
-// from_int + 1 and a wrap-around there would produce the contract's own
-// `update_asset_rejects_max_version_overflow` failure mode.
-export function bumpRegistryAssetNameVersionV2(assetNameHex: string): string {
-	if (assetNameHex.length !== V2_REGISTRY_ASSET_NAME_HEX_LENGTH) {
-		throw new Error(
-			`V2 registry asset name must be ${V2_REGISTRY_ASSET_NAME_HEX_LENGTH} hex chars, got ${assetNameHex.length}`,
-		);
-	}
-	const noncePart = assetNameHex.slice(0, 2);
-	const rootHashPart = assetNameHex.slice(2, 58);
-	const versionPart = assetNameHex.slice(58, 64);
-	const currentVersion = parseInt(versionPart, 16);
-	if (!Number.isFinite(currentVersion)) {
-		throw new Error(`V2 registry asset name has non-hex version segment: ${versionPart}`);
-	}
-	const nextVersion = currentVersion + 1;
-	if (nextVersion > V2_REGISTRY_VERSION_MAX) {
-		throw new Error('V2 registry asset version would overflow 0xFFFFFF');
-	}
-	const nextVersionHex = nextVersion.toString(16).padStart(6, '0');
-	return noncePart + rootHashPart + nextVersionHex;
-}
+// V2 asset-name derivation lives in the mesh-free `./asset-name` module so it
+// can be unit-tested without loading `@meshsdk/core`. Re-exported here to keep
+// the existing `@/services/registry/shared` import surface stable.
+export {
+	bumpRegistryAssetNameVersionV2,
+	generateRegistryAssetNameV2,
+	registryNonceForIndex,
+	V2_REGISTRY_MAX_MINTS_PER_UTXO,
+	V2_REGISTRY_NONCE_MAX,
+	V2_REGISTRY_NONCE_MIN,
+} from './asset-name';
 
 export function resolveRegistryRecipientWalletAddress(request: {
 	SmartContractWallet: { walletAddress: string };

@@ -522,6 +522,37 @@ class WebhookSenderService {
 			return lines.join('\n');
 		}
 
+		if (
+			payload.event_type === WebhookEventType.X402_PAYMENT_SETTLED ||
+			payload.event_type === WebhookEventType.X402_PAYMENT_FAILED
+		) {
+			lines.push('');
+			this.appendDetailLine(lines, '🏷️', 'Attempt ID', payload.data.attemptId);
+			this.appendDetailLine(lines, '🌐', 'Network', payload.data.caip2Network);
+			this.appendDetailLine(lines, '🪙', 'Asset', payload.data.asset);
+			this.appendDetailLine(lines, '💰', 'Amount', payload.data.amount);
+			this.appendDetailLine(lines, '📬', 'Pay to', payload.data.payTo);
+			this.appendDetailLine(lines, '👛', 'Payer', payload.data.payer);
+			this.appendDetailLine(lines, '🔗', 'Tx hash', payload.data.txHash);
+			this.appendDetailLine(lines, '⚠️', 'Error', payload.data.errorMessage);
+			this.appendDetailLine(lines, '⏱️', 'Event time', payload.timestamp);
+			return lines.join('\n');
+		}
+
+		if (payload.event_type === WebhookEventType.X402_WALLET_LOW_BALANCE) {
+			lines.push('');
+			this.appendDetailLine(lines, '👛', 'Wallet ID', payload.data.evmWalletId);
+			this.appendDetailLine(lines, '📬', 'Wallet address', payload.data.walletAddress);
+			this.appendDetailLine(lines, '🧭', 'Direction', payload.data.walletType);
+			this.appendDetailLine(lines, '🌐', 'Network', payload.data.caip2Network);
+			this.appendDetailLine(lines, '🪙', 'Asset', payload.data.asset);
+			this.appendDetailLine(lines, '🎯', 'Threshold', payload.data.thresholdAmount);
+			this.appendDetailLine(lines, '💰', 'New balance', payload.data.currentAmount);
+			this.appendDetailLine(lines, '🕒', 'Checked at', payload.data.checkedAt);
+			this.appendDetailLine(lines, '⏱️', 'Event time', payload.timestamp);
+			return lines.join('\n');
+		}
+
 		lines.push('');
 		this.appendDetailLine(lines, '🏷️', 'ID', payload.data.id);
 		this.appendDetailLine(lines, '⛓️', 'Blockchain ID', payload.data.blockchainIdentifier);
@@ -559,6 +590,12 @@ class WebhookSenderService {
 				return { emoji: '🚨', title: 'Purchase error' };
 			case WebhookEventType.WALLET_LOW_BALANCE:
 				return { emoji: '🪫', title: 'Wallet balance low' };
+			case WebhookEventType.X402_PAYMENT_SETTLED:
+				return { emoji: '✅', title: 'x402 payment settled' };
+			case WebhookEventType.X402_PAYMENT_FAILED:
+				return { emoji: '🚨', title: 'x402 payment failed' };
+			case WebhookEventType.X402_WALLET_LOW_BALANCE:
+				return { emoji: '🪫', title: 'x402 wallet balance low' };
 			case WEBHOOK_TEST_EVENT_TYPE:
 				return { emoji: '🧪', title: 'Test webhook delivery' };
 			default:

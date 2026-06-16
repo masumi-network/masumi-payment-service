@@ -13,12 +13,10 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Badge } from '../ui/badge';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
-  PaymentSourceExtended,
   postRegistry,
   postRegistryA2A,
   postRegistryUpdate,
   RegistryEntry,
-  SellingWallet,
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { shortenAddress, formatFundUnit } from '@/lib/utils';
@@ -37,11 +35,13 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { getActiveStablecoinConfig } from '@/lib/constants/defaultWallets';
 import { Separator } from '@/components/ui/separator';
 import { useWallets } from '@/lib/queries/useWallets';
-import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
+import type { WalletListItem } from '@/lib/api/generated';
 import { REGISTRY_DECIMAL_ADA_AMOUNT_PATTERN, REGISTRY_LIMITS } from '@/lib/registry-validation';
 import { convertDecimalToBaseUnits } from '@/lib/convertDecimalToBaseUnits';
 import { isV2PaymentSource } from '@/lib/payment-source-type';
 import { useX402Networks } from '@/lib/hooks/useX402';
+import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
+import type { PaymentSourceExtended } from '@/lib/api/generated';
 import {
   X402OptionsSection,
   validateX402Options,
@@ -267,11 +267,11 @@ export function RegisterAIAgentDialog({
   const [isLoading, setIsLoading] = useState(false);
   const [agentType, setAgentType] = useState<'Standard' | 'A2A'>('Standard');
   const [sellingWallets, setSellingWallets] = useState<
-    { wallet: SellingWallet; balance: number }[]
+    { wallet: WalletListItem; balance: number }[]
   >([]);
 
   const { wallets, isLoading: isLoadingWallets } = useWallets();
-  const { apiClient, network } = useAppContext();
+  const { apiClient, network, selectedPaymentSource } = useAppContext();
   const stablecoinUnit = network === 'Mainnet' ? 'USDCx' : 'tUSDM';
 
   // ── Standard form ──────────────────────────────────────────────────────────
@@ -369,6 +369,8 @@ export function RegisterAIAgentDialog({
         .map((w) => ({
           wallet: {
             id: w.id,
+            paymentSourceId: w.paymentSourceId,
+            type: w.type,
             walletVkey: w.walletVkey,
             walletAddress: w.walletAddress,
             collectionAddress: w.collectionAddress,
@@ -470,38 +472,24 @@ export function RegisterAIAgentDialog({
         toast.error('Insufficient balance in selected wallet');
         return false;
       }
-      const paymentSource = currentNetworkPaymentSources.find((ps) =>
-        ps.SellingWallets?.some((s) => s.walletVkey == selectedWalletVkey),
-      );
-      if (!paymentSource) {
-        toast.error('Smart contract wallet not found in payment sources');
-        return false;
-      }
       return true;
     },
-    [sellingWallets, currentNetworkPaymentSources],
+    [sellingWallets],
   );
 
   const selectedWallet = useMemo(
     () => sellingWallets.find((wallet) => wallet.wallet.walletVkey === selectedWalletVkey),
     [sellingWallets, selectedWalletVkey],
   );
-  const selectedPaymentSource = useMemo(
-    () =>
-      currentNetworkPaymentSources.find((paymentSource) =>
-        paymentSource.SellingWallets?.some((wallet) => wallet.walletVkey === selectedWalletVkey),
-      ),
-    [currentNetworkPaymentSources, selectedWalletVkey],
-  );
+  // The chosen minting wallet always belongs to the active payment source
+  // (the picker is scoped to it via useWallets), so its sibling holding wallets
+  // are the other wallets returned for that source.
   const recipientWalletOptions = useMemo(
     () =>
-      selectedPaymentSource
-        ? [
-            ...(selectedPaymentSource.SellingWallets ?? []),
-            ...(selectedPaymentSource.PurchasingWallets ?? []),
-          ].filter((wallet) => wallet.walletAddress !== selectedWallet?.wallet.walletAddress)
+      selectedWallet
+        ? wallets.filter((wallet) => wallet.walletAddress !== selectedWallet.wallet.walletAddress)
         : [],
-    [selectedPaymentSource, selectedWallet?.wallet.walletAddress],
+    [wallets, selectedWallet],
   );
 
   const { networks: x402Networks } = useX402Networks({ silentErrors: true });
@@ -534,7 +522,26 @@ export function RegisterAIAgentDialog({
       try {
         setIsLoading(true);
         const selectedWalletVkey = data.selectedWallet;
-        if (!isUpdateMode && !validateWallet(selectedWalletVkey)) return;
+        // Register requires the user to pick a wallet with funds. Update
+        // is signed by whatever managed wallet currently holds the
+        // asset, so the picker is hidden and the balance gate is skipped
+        // — the backend / scheduler will surface a meaningful error if
+        // the holder wallet is under-funded.
+        if (!isUpdateMode) {
+          const selectedWalletBalance = sellingWallets.find(
+            (w) => w.wallet.walletVkey == selectedWalletVkey,
+          )?.balance;
+          if (selectedWalletBalance == undefined || selectedWalletBalance <= 3000000) {
+            toast.error('Insufficient balance in selected wallet');
+            return;
+          }
+          // The picker only offers wallets from the active payment source, so a
+          // picked wallet implies the source is present.
+          if (!selectedPaymentSource) {
+            toast.error('Smart contract wallet not found in payment sources');
+            return;
+          }
+        }
 
         const legal: { privacyPolicy?: string; terms?: string; other?: string } = {};
         if (data.privacyPolicyUrl) legal.privacyPolicy = data.privacyPolicyUrl;
@@ -697,7 +704,8 @@ export function RegisterAIAgentDialog({
       }
     },
     [
-      validateWallet,
+      sellingWallets,
+      selectedPaymentSource,
       apiClient,
       network,
       stablecoinUnit,
@@ -1031,6 +1039,52 @@ export function RegisterAIAgentDialog({
                 NFT is delivered to another managed holding wallet on the same payment source.
               </p>
               {selectedPaymentSource && recipientWalletOptions.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  No other managed wallets are available on this payment source.
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Holding wallet</label>
+              <Controller
+                control={control}
+                name="recipientWalletAddress"
+                render={({ field }) => (
+                  <Select
+                    value={field.value || '__default'}
+                    onValueChange={(value) => field.onChange(value === '__default' ? '' : value)}
+                  >
+                    <SelectTrigger
+                      disabled={isLoadingWallets || !selectedWallet}
+                      className={isLoadingWallets ? 'opacity-50 cursor-not-allowed' : ''}
+                    >
+                      <SelectValue
+                        placeholder={
+                          !selectedWallet
+                            ? 'Select a minting wallet first'
+                            : 'Use minting wallet (default)'
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__default">Use minting wallet (default)</SelectItem>
+                      {recipientWalletOptions.map((wallet) => (
+                        <SelectItem key={wallet.id} value={wallet.walletAddress}>
+                          {wallet.note
+                            ? `${wallet.note} (${shortenAddress(wallet.walletAddress)})`
+                            : shortenAddress(wallet.walletAddress)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+              <p className="text-xs text-muted-foreground">
+                Optional. The selected minting wallet still mints and pays fees, while the registry
+                NFT is delivered to another managed holding wallet on the same payment source.
+              </p>
+              {selectedWallet && recipientWalletOptions.length === 0 && (
                 <p className="text-xs text-muted-foreground">
                   No other managed wallets are available on this payment source.
                 </p>

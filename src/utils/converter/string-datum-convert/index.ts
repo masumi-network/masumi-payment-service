@@ -1,6 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { generateBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import { SmartContractState } from '@/utils/generator/contract-generator';
 import { logger } from '@masumi/payment-core/logger';
@@ -34,31 +31,43 @@ export type DecodedV1ContractDatum = {
 	sellerCooldownTime: bigint;
 };
 
-function serializeOptionalAddressObj(value: any, networkId: 0 | 1): string | null {
+// Loose structural shape for Plutus data decoded by mesh. The on-chain CBOR is
+// untyped at this boundary, so fields are optional and validated at runtime.
+type PlutusDatum = {
+	bytes?: string;
+	int?: number | bigint;
+	fields?: PlutusDatum[];
+	constructor?: unknown;
+};
+type AddressObj = Parameters<typeof serializeAddressObj>[0];
+
+function serializeOptionalAddressObj(value: unknown, networkId: 0 | 1): string | null {
 	if (typeof value !== 'object' || value === null) return null;
-	const ctor = (value as { constructor?: unknown }).constructor;
+	const datum = value as PlutusDatum;
+	const ctor = datum.constructor;
 	if (typeof ctor !== 'number' && typeof ctor !== 'bigint') return null;
-	if (value.fields == null) return null;
+	if (datum.fields == null) return null;
 
 	// Plutus Option: ctor 0 = Some, ctor 1 = None. Treat None (and any empty
 	// Some) as a null optional address.
-	if ((ctor === 1 || ctor === 1n) && value.fields.length === 0) {
+	if ((ctor === 1 || ctor === 1n) && datum.fields.length === 0) {
 		return null;
 	}
 
-	const addressValue = value.fields[0];
+	const addressValue = datum.fields[0];
 	if (addressValue == null) {
 		return null;
 	}
 
-	return serializeAddressObj(addressValue, networkId);
+	return serializeAddressObj(addressValue as AddressObj, networkId);
 }
 
 export function decodeV1ContractDatum(
-	decodedDatum: any,
+	decodedDatum: unknown,
 	network: Network,
 	_smartContractAddress?: string | null,
 ): DecodedV1ContractDatum | null {
+	const datum = decodedDatum as PlutusDatum | null;
 	try {
 		/*
   buyer: VerificationKeyHash,
@@ -78,20 +87,20 @@ export function decodeV1ContractDatum(
   buyer_cooldown_time: POSIXTime,
   state: State,
 */
-		if (decodedDatum == null) {
+		if (datum == null) {
 			//invalid transaction
 			return null;
 		}
-		const fields = decodedDatum.fields;
+		const fields = datum.fields;
 
 		if (fields?.length != 16) {
 			//invalid transaction
 			return null;
 		}
-		const buyerAddress = serializeAddressObj(fields[0], network == 'mainnet' ? 1 : 0);
+		const buyerAddress = serializeAddressObj(fields[0] as AddressObj, network == 'mainnet' ? 1 : 0);
 		const buyerVkey = resolvePaymentKeyHash(buyerAddress);
 
-		const sellerAddress = serializeAddressObj(fields[1], network == 'mainnet' ? 1 : 0);
+		const sellerAddress = serializeAddressObj(fields[1] as AddressObj, network == 'mainnet' ? 1 : 0);
 		const sellerVkey = resolvePaymentKeyHash(sellerAddress);
 
 		if (fields[2] == null || fields[2].bytes == null) {
@@ -128,7 +137,7 @@ export function decodeV1ContractDatum(
 			//invalid transaction
 			return null;
 		}
-		let inputHash: string | null = fields[7].bytes as string;
+		let inputHash: string | null = fields[7].bytes;
 		if (fields[8] == null || fields[8].bytes == null) {
 			//invalid transaction
 			return null;
@@ -137,7 +146,7 @@ export function decodeV1ContractDatum(
 			inputHash = null;
 		}
 
-		let resultHash: string | null = fields[8].bytes as string;
+		let resultHash: string | null = fields[8].bytes;
 		if (fields[9] == null || fields[9].int == null) {
 			//invalid transaction
 			return null;
@@ -186,10 +195,10 @@ export function decodeV1ContractDatum(
 		}
 
 		const blockchainIdentifier = generateBlockchainIdentifier(
-			referenceKey as string,
-			referenceSignature as string,
-			sellerNonce as string,
-			buyerNonce as string,
+			referenceKey,
+			referenceSignature,
+			sellerNonce,
+			buyerNonce,
 		);
 
 		return {
@@ -199,10 +208,10 @@ export function decodeV1ContractDatum(
 			buyerVkey: buyerVkey,
 			sellerVkey: sellerVkey,
 			state,
-			referenceKey: referenceKey as string,
-			referenceSignature: referenceSignature as string,
-			sellerNonce: sellerNonce as string,
-			buyerNonce: buyerNonce as string,
+			referenceKey: referenceKey,
+			referenceSignature: referenceSignature,
+			sellerNonce: sellerNonce,
+			buyerNonce: buyerNonce,
 			collateralReturnLovelace,
 			inputHash: inputHash,
 			resultHash: resultHash,
@@ -220,25 +229,26 @@ export function decodeV1ContractDatum(
 }
 
 export function decodeV2ContractDatum(
-	decodedDatum: any,
+	decodedDatum: unknown,
 	network: Network,
 	smartContractAddress?: string | null,
 ): DecodedV1ContractDatum | null {
+	const datum = decodedDatum as PlutusDatum | null;
 	try {
-		if (decodedDatum == null) {
+		if (datum == null) {
 			return null;
 		}
-		const fields = decodedDatum.fields;
+		const fields = datum.fields;
 
 		if (fields?.length != 19) {
 			return null;
 		}
 		const networkId = network == 'mainnet' ? 1 : 0;
-		const buyerAddress = serializeAddressObj(fields[0], networkId);
+		const buyerAddress = serializeAddressObj(fields[0] as AddressObj, networkId);
 		const buyerReturnAddress = serializeOptionalAddressObj(fields[1], networkId);
 		const buyerVkey = resolvePaymentKeyHash(buyerAddress);
 
-		const sellerAddress = serializeAddressObj(fields[2], networkId);
+		const sellerAddress = serializeAddressObj(fields[2] as AddressObj, networkId);
 		const sellerReturnAddress = serializeOptionalAddressObj(fields[3], networkId);
 		const sellerVkey = resolvePaymentKeyHash(sellerAddress);
 
@@ -342,14 +352,15 @@ export function newCooldownTime(cooldownTime: bigint) {
 	return cooldownTimeMs;
 }
 
-function valueToStatus(value: any) {
+function valueToStatus(value: unknown) {
 	if (value == null) {
 		return null;
 	}
-	if (value.constructor == null || value.fields == null || value.fields.length != 0) {
+	const datum = value as PlutusDatum;
+	if (datum.constructor == null || datum.fields == null || datum.fields.length != 0) {
 		return null;
 	}
-	const constructor = value.constructor;
+	const constructor = datum.constructor;
 	switch (constructor) {
 		case 0n:
 		case 0:

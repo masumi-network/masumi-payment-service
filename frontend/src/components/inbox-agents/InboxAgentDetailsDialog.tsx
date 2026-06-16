@@ -14,7 +14,7 @@ import { extractApiErrorMessage } from '@/lib/api-error';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import formatBalance from '@/lib/formatBalance';
-import { findPaymentSourceWalletByVkey } from '@/lib/wallet-lookup';
+import { lookupWalletByVkey } from '@/lib/wallet-lookup';
 import { cn, handleApiCall, shortenAddress } from '@/lib/utils';
 import { useCallback, useMemo, useState } from 'react';
 import { toast } from 'react-toastify';
@@ -113,11 +113,12 @@ export function InboxAgentDetailsDialog({
   }, [agent?.state]);
 
   const handleWalletClick = useCallback(
-    (walletVkey: string) => {
-      const filteredSources = currentNetworkPaymentSources.filter((source) =>
-        selectedPaymentSourceId ? source.id === selectedPaymentSourceId : true,
-      );
-      const wallet = findPaymentSourceWalletByVkey(filteredSources, walletVkey);
+    async (walletVkey: string) => {
+      const wallet = await lookupWalletByVkey({
+        apiClient,
+        walletVkey,
+        paymentSourceId: selectedPaymentSourceId,
+      });
 
       if (!wallet) {
         toast.error('Wallet not found');
@@ -126,7 +127,7 @@ export function InboxAgentDetailsDialog({
 
       setSelectedWalletForDetails(wallet);
     },
-    [currentNetworkPaymentSources, selectedPaymentSourceId],
+    [apiClient, selectedPaymentSourceId],
   );
 
   const handleDeleteOrDeregister = useCallback(async () => {

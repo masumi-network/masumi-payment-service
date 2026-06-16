@@ -34,8 +34,8 @@ export async function checkRegistryData() {
 				component: 'diagnostic',
 				operation: 'registry_check',
 			});
-			Object.entries(stateCounts).forEach(([state, count]) => {
-				logInfo(`  ${state}: ${count._count}`, {
+			stateCounts.forEach((count) => {
+				logInfo(`  ${count.state}: ${count._count}`, {
 					component: 'diagnostic',
 					operation: 'registry_check',
 				});
@@ -59,8 +59,8 @@ export async function checkRegistryData() {
 		return {
 			recentCount: recentRegistrations,
 			recent: recentRegistrations,
-			AllStates: Object.entries(allRegistrations).map(([state, count]) => ({
-				state,
+			AllStates: allRegistrations.map((count) => ({
+				state: count.state,
 				count: count._count,
 			})),
 		};
