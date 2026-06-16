@@ -175,16 +175,24 @@ export async function generateRegistryBatchMintTransaction(
 	txBuilder.protocolParams(protocolParameters);
 	const deserializedAddress = txBuilder.serializer.deserializer.key.deserializeAddress(mintingWalletAddress);
 
-	// Mint context: select the policy script ONCE, then append every asset.
-	// `mintingScript` + `mintRedeemerValue` apply to the whole policy bucket
-	// — the V2 validator validates the bucket atomically against `MintAction`.
-	txBuilder.mintPlutusScript(script.version);
+	// Mint context: attach the policy script + shared `MintAction` redeemer to
+	// EVERY asset leg. Mesh's `mint()` flushes the previous mint item via
+	// `queueMint()`, which requires that item to already carry its `scriptSource`
+	// — so the script/redeemer must be set per leg, not once after the loop
+	// (doing it once throws `queueMint: Missing mint script information` as soon
+	// as the 2nd asset's `mint()` flushes the 1st). `mintPlutusScript()` must
+	// also precede each `mint()` because it only arms `addingPlutusMint` for the
+	// very next call. `queueMint` then merges every same-policy leg into one
+	// bucket (it asserts the redeemer + scriptSource are identical across legs,
+	// which they are), so the V2 validator still validates the bucket atomically
+	// against a single `MintAction`.
 	for (const item of items) {
-		txBuilder.mint(SERVICE_CONSTANTS.SMART_CONTRACT.mintQuantity, policyId, item.assetName);
+		txBuilder
+			.mintPlutusScript(script.version)
+			.mint(SERVICE_CONSTANTS.SMART_CONTRACT.mintQuantity, policyId, item.assetName)
+			.mintingScript(script.code)
+			.mintRedeemerValue({ alternative: V2_MINT_REDEEMER_ALTERNATIVE, fields: [] }, 'Mesh', exUnits);
 	}
-	txBuilder
-		.mintingScript(script.code)
-		.mintRedeemerValue({ alternative: V2_MINT_REDEEMER_ALTERNATIVE, fields: [] }, 'Mesh', exUnits);
 
 	// Combined CIP-25 metadata: one `721` label with one policy id entry whose
 	// per-asset map covers every minted name. `version: '1'` follows the V1
@@ -389,13 +397,18 @@ async function buildBatchDeregisterTx(
 		txBuilder.txIn(item.assetUtxo.input.txHash, item.assetUtxo.input.outputIndex);
 	}
 
-	txBuilder.mintPlutusScript(script.version);
+	// Per-leg script + shared `BurnAction` redeemer attachment. See the mint
+	// builder above for why this must be done inside the loop and not once
+	// after it (Mesh's `mint()` flushes the prior leg via `queueMint()`, which
+	// requires the leg's `scriptSource` to already be set, else it throws
+	// `queueMint: Missing mint script information`).
 	for (const item of items) {
-		txBuilder.mint('-1', policyId, item.assetName);
+		txBuilder
+			.mintPlutusScript(script.version)
+			.mint('-1', policyId, item.assetName)
+			.mintingScript(script.code)
+			.mintRedeemerValue({ alternative: V2_BURN_REDEEMER_ALTERNATIVE, fields: [] }, 'Mesh', exUnits);
 	}
-	txBuilder
-		.mintingScript(script.code)
-		.mintRedeemerValue({ alternative: V2_BURN_REDEEMER_ALTERNATIVE, fields: [] }, 'Mesh', exUnits);
 
 	// Hand remaining wallet UTxOs to Mesh's coin selector instead of force-adding
 	// every one. Anything already declared as a `.txIn` above (via inputRefs) is
