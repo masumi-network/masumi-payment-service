@@ -4,6 +4,7 @@ import { handleApiCall } from '@/lib/utils';
 import type { NetworkType } from '@/lib/contexts/AppContext';
 import { buildTransactionsPage, type TransactionsPage } from '@/lib/hooks/useTransactions.helpers';
 import type { OnChainStateFilter } from '@/lib/hooks/useTransactions';
+import type { PaymentSourceType } from '@/lib/payment-source-type';
 
 const TRANSACTION_PAGE_SIZE = 10;
 
@@ -27,6 +28,7 @@ type FetchPageOptions = {
   identifiers: string[];
   cursors: AgentIdentifierCursorState[];
   filterOnChainState?: OnChainStateFilter;
+  filterPaymentSourceType?: PaymentSourceType;
   skipPayments: boolean;
   skipPurchases: boolean;
 };
@@ -39,11 +41,14 @@ const getPurchasesFromResponse = (
   response: Awaited<ReturnType<typeof getPurchase>> | null,
 ): Purchase[] => response?.data?.data?.Purchases ?? [];
 
-function initCursors(identifiers: string[]): AgentIdentifierCursorState[] {
+function initCursors(
+  identifiers: string[],
+  options?: { skipPayments?: boolean; skipPurchases?: boolean },
+): AgentIdentifierCursorState[] {
   return identifiers.map((identifier) => ({
     identifier,
-    hasMorePayments: true,
-    hasMorePurchases: true,
+    hasMorePayments: !options?.skipPayments,
+    hasMorePurchases: !options?.skipPurchases,
   }));
 }
 
@@ -62,6 +67,8 @@ export async function fetchTransactionsByAgentIdentifiersPage(
   await Promise.all(
     options.cursors.map(async (cursor) => {
       const next: AgentIdentifierCursorState = { ...cursor };
+      if (options.skipPayments) next.hasMorePayments = false;
+      if (options.skipPurchases) next.hasMorePurchases = false;
       const fetches: Promise<void>[] = [];
 
       if (!options.skipPayments && cursor.hasMorePayments) {
@@ -76,6 +83,7 @@ export async function fetchTransactionsByAgentIdentifiersPage(
                   includeHistory: 'true',
                   limit: TRANSACTION_PAGE_SIZE,
                   filterOnChainState: options.filterOnChainState,
+                  filterPaymentSourceType: options.filterPaymentSourceType,
                   searchQuery: cursor.identifier,
                 },
               }),
@@ -103,6 +111,7 @@ export async function fetchTransactionsByAgentIdentifiersPage(
                   includeHistory: 'true',
                   limit: TRANSACTION_PAGE_SIZE,
                   filterOnChainState: options.filterOnChainState,
+                  filterPaymentSourceType: options.filterPaymentSourceType,
                   searchQuery: cursor.identifier,
                 },
               }),

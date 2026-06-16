@@ -3,6 +3,7 @@ import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-qu
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { dedupeTransactions } from '@/lib/hooks/useTransactions.helpers';
 import type { OnChainStateFilter } from '@/lib/hooks/useTransactions';
+import type { PaymentSourceType } from '@/lib/payment-source-type';
 import {
   resolveAgentIdentifiersByName,
   shouldSearchTransactionsByAgentName,
@@ -16,6 +17,7 @@ import {
 
 type AgentNameTransactionQueryParams = {
   filterOnChainState?: OnChainStateFilter;
+  filterPaymentSourceType?: PaymentSourceType;
   searchQuery?: string;
   transactionType?: 'payment' | 'purchase';
 };
@@ -31,7 +33,7 @@ export function useAgentNameTransactions(
   params?: AgentNameTransactionQueryParams,
   options?: { enabled?: boolean },
 ) {
-  const { apiClient, network } = useAppContext();
+  const { apiClient, network, selectedPaymentSource } = useAppContext();
   const isCandidate =
     options?.enabled !== false &&
     !!apiClient &&
@@ -54,19 +56,24 @@ export function useAgentNameTransactions(
   const skipPurchases = params?.transactionType === 'payment';
   const skipPayments = params?.transactionType === 'purchase';
 
+  const filterPaymentSourceType =
+    params?.filterPaymentSourceType ?? selectedPaymentSource?.paymentSourceType;
+
   const query = useInfiniteQuery({
     queryKey: [
       'transactions',
       'agent-name',
       network,
       params?.filterOnChainState,
+      filterPaymentSourceType,
       searchQuery,
       params?.transactionType,
       identifiers,
     ],
     queryFn: async ({ pageParam }): Promise<AgentNameTransactionsPage> => {
       const cursorState = pageParam as AgentNameTransactionsPageParam | undefined;
-      const cursors = cursorState?.cursors ?? initCursors(identifiers);
+      const cursors =
+        cursorState?.cursors ?? initCursors(identifiers, { skipPayments, skipPurchases });
 
       const { page, cursors: nextCursors } = await fetchTransactionsByAgentIdentifiersPage({
         apiClient,
@@ -74,6 +81,7 @@ export function useAgentNameTransactions(
         identifiers,
         cursors,
         filterOnChainState: params?.filterOnChainState,
+        filterPaymentSourceType,
         skipPayments,
         skipPurchases,
       });
