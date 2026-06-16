@@ -162,6 +162,7 @@ export async function getRegistryEntriesForQuery(
 					mimeType: true,
 				},
 			},
+			Verifications: true,
 			SupportedPaymentSources: {
 				select: {
 					chain: true,

@@ -32,6 +32,13 @@ import {
   validateX402Options,
   type X402OptionDraft,
 } from './X402OptionsSection';
+import {
+  VerificationsSection,
+  validateVerifications,
+  verificationsFromApi,
+  verificationsToApi,
+  type VerificationDraft,
+} from './VerificationsSection';
 
 interface RegisterAIAgentDialogProps {
   open: boolean;
@@ -374,11 +381,15 @@ export function RegisterAIAgentDialog({
           })),
       );
       setX402Error(null);
+      setVerifications(verificationsFromApi(editingAgent.verifications));
+      setVerificationsError(null);
       return;
     }
     reset();
     setX402Options([]);
     setX402Error(null);
+    setVerifications([]);
+    setVerificationsError(null);
   }, [open, reset, isUpdateMode, editingAgent, network, stablecoinUnit]);
 
   const selectedWallet = useMemo(
@@ -399,6 +410,8 @@ export function RegisterAIAgentDialog({
   const { networks: x402Networks } = useX402Networks({ silentErrors: true });
   const [x402Options, setX402Options] = useState<X402OptionDraft[]>([]);
   const [x402Error, setX402Error] = useState<string | null>(null);
+  const [verifications, setVerifications] = useState<VerificationDraft[]>([]);
+  const [verificationsError, setVerificationsError] = useState<string | null>(null);
   // x402 supported payment sources are a V2-only capability; update always targets V2.
   const isV2Target = isUpdateMode
     ? true
@@ -528,6 +541,15 @@ export function RegisterAIAgentDialog({
           }
         }
         setX402Error(null);
+        if (isV2Target && verifications.length > 0) {
+          const verificationsValidationError = validateVerifications(verifications);
+          if (verificationsValidationError) {
+            setVerificationsError(verificationsValidationError);
+            toast.error(verificationsValidationError);
+            return;
+          }
+        }
+        setVerificationsError(null);
 
         if (isUpdateMode && editingAgent) {
           if (!editingAgent.agentIdentifier) {
@@ -565,6 +587,14 @@ export function RegisterAIAgentDialog({
                     supportedPaymentSources: [...existingNonEvmSources, ...evmSupportedSources],
                   }
                 : {}),
+              // Update is V2-only (isV2Target is forced true above) and the
+              // form's `verifications` state is the authoritative user-facing
+              // list (loaded from the agent on open). Always send it so the
+              // backend mirrors exactly what the user sees — sending `[]`
+              // clears stored rows. Gating on a derived `hadVerifications`
+              // flag would silently keep stale rows when the list API returns
+              // `verifications: null` for rows it dropped as malformed.
+              verifications: verificationsToApi(verifications),
             },
           });
 
@@ -598,6 +628,9 @@ export function RegisterAIAgentDialog({
             ...(isV2Target && evmSupportedSources.length > 0
               ? { supportedPaymentSources: evmSupportedSources }
               : {}),
+            ...(isV2Target && verifications.length > 0
+              ? { verifications: verificationsToApi(verifications) }
+              : {}),
           },
         });
 
@@ -629,6 +662,7 @@ export function RegisterAIAgentDialog({
       editingAgent,
       editingAgentSmartContractAddress,
       x402Options,
+      verifications,
       isV2Target,
     ],
   );
@@ -1016,6 +1050,14 @@ export function RegisterAIAgentDialog({
               networks={x402Networks}
               onChange={setX402Options}
               error={x402Error}
+            />
+          )}
+
+          {isV2Target && (
+            <VerificationsSection
+              verifications={verifications}
+              onChange={setVerifications}
+              error={verificationsError}
             />
           )}
 

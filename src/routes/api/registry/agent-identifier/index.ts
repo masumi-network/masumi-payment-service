@@ -8,7 +8,7 @@ import { logger } from '@masumi/payment-core/logger';
 import { extractPolicyId, extractAssetName } from '@/utils/converter/agent-identifier';
 import { validateHexString } from '@/utils/validator/hex';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
-import { metadataSchema } from '@/routes/api/registry/wallet';
+import { metadataSchema, resolveAgentPricingFromMetadata } from '@/routes/api/registry/wallet';
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import {
@@ -18,6 +18,7 @@ import {
 	supportedPaymentSourcesSchema,
 	type SupportedPaymentSource,
 } from '@/types/payment-source';
+import { parseVerificationsFromMetadata, verificationsSchema } from '@/types/verification';
 import type { Network as NetworkType } from '@/generated/prisma/client';
 
 function filterValidSupportedPaymentSources(
@@ -143,6 +144,9 @@ const agentMetadataObjectSchema = z.object({
 	supportedPaymentSources: supportedPaymentSourcesSchema
 		.nullable()
 		.describe('Payment sources advertised by this registry entry. Null for legacy metadata.'),
+	verifications: verificationsSchema
+		.nullable()
+		.describe('KERI/Veridian verification claims advertised by this registry entry. Null when none.'),
 });
 
 export const queryAgentByIdentifierSchemaOutput = z
@@ -257,6 +261,11 @@ export const queryAgentByIdentifierGet = readAuthenticatedEndpointFactory.build(
 			throw createHttpError(422, 'Agent metadata is invalid or malformed');
 		}
 
+		const resolvedAgentPricing = resolveAgentPricingFromMetadata(parsedMetadata.data);
+		if (resolvedAgentPricing == null) {
+			throw createHttpError(422, 'Agent metadata does not advertise any pricing');
+		}
+
 		// Step 9: Transform and return
 		return {
 			policyId: policyId,
@@ -293,16 +302,16 @@ export const queryAgentByIdentifierGet = readAuthenticatedEndpointFactory.build(
 					: undefined,
 				Tags: parsedMetadata.data.tags.map((tag) => metadataToString(tag)!),
 				AgentPricing:
-					parsedMetadata.data.agentPricing.pricingType == PricingType.Fixed
+					resolvedAgentPricing.pricingType == PricingType.Fixed
 						? {
-								pricingType: parsedMetadata.data.agentPricing.pricingType,
-								Pricing: parsedMetadata.data.agentPricing.fixedPricing.map((price) => ({
+								pricingType: resolvedAgentPricing.pricingType,
+								Pricing: resolvedAgentPricing.fixedPricing.map((price) => ({
 									amount: price.amount.toString(),
 									unit: metadataToString(price.unit)!,
 								})),
 							}
 						: {
-								pricingType: parsedMetadata.data.agentPricing.pricingType,
+								pricingType: resolvedAgentPricing.pricingType,
 							},
 				image: metadataToString(parsedMetadata.data.image)!,
 				metadataVersion: parsedMetadata.data.metadata_version,
@@ -310,6 +319,7 @@ export const queryAgentByIdentifierGet = readAuthenticatedEndpointFactory.build(
 					parseSupportedPaymentSourcesFromMetadata(parsedMetadata.data.supported_payment_sources),
 					input.network,
 				),
+				verifications: parseVerificationsFromMetadata(parsedMetadata.data.verifications),
 			},
 		};
 	},

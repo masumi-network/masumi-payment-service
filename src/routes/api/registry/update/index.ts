@@ -13,7 +13,8 @@ import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 import { bumpRegistryAssetNameVersionV2 } from '@/services/registry/shared';
 import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
 import { supportedPaymentSourceSchema, validateSupportedPaymentSourcesOrThrow } from '@/types/payment-source';
-import { serializeSupportedPaymentSources } from '../serializers';
+import { serializeSupportedPaymentSources, serializeVerifications } from '../serializers';
+import { verificationToRow } from '@/types/verification';
 
 const updateSupportedPaymentSourcesSchema = z
 	.array(supportedPaymentSourceSchema)
@@ -304,6 +305,17 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 						state: RegistrationState.UpdateRequested,
 						error: null,
 						tags: input.Tags,
+						// verifications is OPTIONAL on update: replace only when the caller
+						// provided the field (an empty array clears it); omitting it leaves
+						// the existing rows to carry into the re-mint.
+						...(input.verifications !== undefined
+							? {
+									Verifications: {
+										deleteMany: {},
+										createMany: { data: input.verifications.map(verificationToRow) },
+									},
+								}
+							: {}),
 						// Re-use the deregistration hot-wallet relation as the
 						// holder-side action wallet — the lock-and-query
 						// path already keys non-RegistrationRequested
@@ -373,6 +385,7 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 						SmartContractWallet: { select: { walletVkey: true, walletAddress: true } },
 						RecipientWallet: { select: { walletVkey: true, walletAddress: true } },
 						ExampleOutputs: { select: { name: true, url: true, mimeType: true } },
+						Verifications: true,
 						SupportedPaymentSources: {
 							select: {
 								chain: true,
@@ -434,6 +447,7 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 							},
 				sendFundingLovelace: result.sendFundingLovelace?.toString() ?? null,
 				supportedPaymentSources: serializeSupportedPaymentSources(result.SupportedPaymentSources),
+				verifications: serializeVerifications(result.Verifications),
 				Tags: result.tags,
 				RecipientWallet: result.RecipientWallet,
 				CurrentTransaction: result.CurrentTransaction
