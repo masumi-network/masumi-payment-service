@@ -24,6 +24,8 @@ import { lookupWalletByVkey } from '@/lib/wallet-lookup';
 import { useMemo } from 'react';
 import { VerifyAndPublishAgentDialog } from './VerifyAndPublishAgentDialog';
 import { AgentX402Options } from './AgentX402Options';
+import { AgentCardanoSources } from './AgentCardanoSources';
+import { AgentVerifications } from './AgentVerifications';
 
 type AIAgent = RegistryEntry;
 
@@ -370,7 +372,11 @@ export function AIAgentDetailsDialog({
                       </CardContent>
                     </Card>
 
+                    <AgentCardanoSources sources={agent.supportedPaymentSources} />
+
                     <AgentX402Options sources={agent.supportedPaymentSources} />
+
+                    <AgentVerifications verifications={agent.verifications} />
 
                     <div className="flex items-center gap-4 pt-2">
                       <Separator className="flex-1" />

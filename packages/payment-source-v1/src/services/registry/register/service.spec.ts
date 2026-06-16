@@ -47,8 +47,11 @@ describe('V1 registry metadata', () => {
 			{
 				chain: ['Cardano'],
 				network: [Network.Preprod],
-				paymentSourceType: [PaymentSourceType.Web3CardanoV1],
-				address: [smartContractAddress],
+				settlement: {
+					paymentSourceType: [PaymentSourceType.Web3CardanoV1],
+					address: [smartContractAddress],
+				},
+				pricing: { pricingType: PricingType.Free },
 			},
 		]);
 	});

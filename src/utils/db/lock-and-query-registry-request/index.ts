@@ -116,6 +116,7 @@ export async function lockAndQueryRegistryRequests({
 											},
 											ExampleOutputs: true,
 											SupportedPaymentSources: true,
+											Verifications: true,
 										},
 										orderBy: {
 											createdAt: 'asc',

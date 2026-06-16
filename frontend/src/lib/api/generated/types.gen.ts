@@ -1107,6 +1107,79 @@ export type AgentMetadata = {
                 [key: string]: unknown;
             };
         }> | null;
+        /**
+         * KERI/Veridian verification claims advertised by this registry entry. Null when none.
+         */
+        verifications: Array<{
+            /**
+             * Verification method discriminator, e.g. "KERI-ACDC"
+             */
+            method: string;
+            /**
+             * Version of this verification block
+             */
+            schemaVersion?: string;
+            /**
+             * Credential issuer identity
+             */
+            issuer: {
+                /**
+                 * Issuer KERI AID (ACDC sad.i) — the root trust anchor
+                 */
+                aid: string;
+                /**
+                 * OOBI resolving the issuer KEL (key state) for signature verification
+                 */
+                oobi: string;
+            };
+            /**
+             * Credential schema — the ACDC structure definition
+             */
+            schema: {
+                /**
+                 * Credential schema SAID (ACDC sad.s)
+                 */
+                said: string;
+                /**
+                 * OOBI resolving the JSON schema; a verifier checks its hash equals said
+                 */
+                oobi: string;
+            };
+            /**
+             * The verifiable credential (ACDC)
+             */
+            credential: {
+                /**
+                 * Credential SAID (ACDC sad.d)
+                 */
+                said: string;
+                /**
+                 * OOBI/endpoint serving the signed ACDC; a verifier checks its hash equals said
+                 */
+                oobi: string;
+                /**
+                 * Credential status registry / TEL SAID (ACDC sad.ri) for independent revocation checks
+                 */
+                registry?: string;
+            };
+            /**
+             * Credential holder/issuee identity
+             */
+            holder: {
+                /**
+                 * Issuee/holder KERI AID (ACDC sad.a.i)
+                 */
+                aid: string;
+                /**
+                 * OOBI resolving the holder KEL
+                 */
+                oobi: string;
+            };
+            /**
+             * Optional witness/KERIA resolver root for live key-state ("verify at time T") and TEL queries
+             */
+            baseUrl?: string;
+        }> | null;
     };
 };
 
@@ -1318,6 +1391,79 @@ export type AgentIdentifierMetadata = {
             extra?: {
                 [key: string]: unknown;
             };
+        }> | null;
+        /**
+         * KERI/Veridian verification claims advertised by this registry entry. Null when none.
+         */
+        verifications: Array<{
+            /**
+             * Verification method discriminator, e.g. "KERI-ACDC"
+             */
+            method: string;
+            /**
+             * Version of this verification block
+             */
+            schemaVersion?: string;
+            /**
+             * Credential issuer identity
+             */
+            issuer: {
+                /**
+                 * Issuer KERI AID (ACDC sad.i) — the root trust anchor
+                 */
+                aid: string;
+                /**
+                 * OOBI resolving the issuer KEL (key state) for signature verification
+                 */
+                oobi: string;
+            };
+            /**
+             * Credential schema — the ACDC structure definition
+             */
+            schema: {
+                /**
+                 * Credential schema SAID (ACDC sad.s)
+                 */
+                said: string;
+                /**
+                 * OOBI resolving the JSON schema; a verifier checks its hash equals said
+                 */
+                oobi: string;
+            };
+            /**
+             * The verifiable credential (ACDC)
+             */
+            credential: {
+                /**
+                 * Credential SAID (ACDC sad.d)
+                 */
+                said: string;
+                /**
+                 * OOBI/endpoint serving the signed ACDC; a verifier checks its hash equals said
+                 */
+                oobi: string;
+                /**
+                 * Credential status registry / TEL SAID (ACDC sad.ri) for independent revocation checks
+                 */
+                registry?: string;
+            };
+            /**
+             * Credential holder/issuee identity
+             */
+            holder: {
+                /**
+                 * Issuee/holder KERI AID (ACDC sad.a.i)
+                 */
+                aid: string;
+                /**
+                 * OOBI resolving the holder KEL
+                 */
+                oobi: string;
+            };
+            /**
+             * Optional witness/KERIA resolver root for live key-state ("verify at time T") and TEL queries
+             */
+            baseUrl?: string;
         }> | null;
     };
 };
@@ -1538,6 +1684,79 @@ export type RegistryEntry = {
         extra?: {
             [key: string]: unknown;
         };
+    }> | null;
+    /**
+     * KERI/Veridian verification claims advertised by this registry entry. Null when none.
+     */
+    verifications: Array<{
+        /**
+         * Verification method discriminator, e.g. "KERI-ACDC"
+         */
+        method: string;
+        /**
+         * Version of this verification block
+         */
+        schemaVersion?: string;
+        /**
+         * Credential issuer identity
+         */
+        issuer: {
+            /**
+             * Issuer KERI AID (ACDC sad.i) — the root trust anchor
+             */
+            aid: string;
+            /**
+             * OOBI resolving the issuer KEL (key state) for signature verification
+             */
+            oobi: string;
+        };
+        /**
+         * Credential schema — the ACDC structure definition
+         */
+        schema: {
+            /**
+             * Credential schema SAID (ACDC sad.s)
+             */
+            said: string;
+            /**
+             * OOBI resolving the JSON schema; a verifier checks its hash equals said
+             */
+            oobi: string;
+        };
+        /**
+         * The verifiable credential (ACDC)
+         */
+        credential: {
+            /**
+             * Credential SAID (ACDC sad.d)
+             */
+            said: string;
+            /**
+             * OOBI/endpoint serving the signed ACDC; a verifier checks its hash equals said
+             */
+            oobi: string;
+            /**
+             * Credential status registry / TEL SAID (ACDC sad.ri) for independent revocation checks
+             */
+            registry?: string;
+        };
+        /**
+         * Credential holder/issuee identity
+         */
+        holder: {
+            /**
+             * Issuee/holder KERI AID (ACDC sad.a.i)
+             */
+            aid: string;
+            /**
+             * OOBI resolving the holder KEL
+             */
+            oobi: string;
+        };
+        /**
+         * Optional witness/KERIA resolver root for live key-state ("verify at time T") and TEL queries
+         */
+        baseUrl?: string;
     }> | null;
     /**
      * Smart contract wallet managing this agent registration
@@ -8049,6 +8268,79 @@ export type PostRegistryData = {
             };
         }>;
         /**
+         * Optional KERI/Veridian verification claims advertised in the registry metadata for independent third-party verification. Accepted on any registration; surfaced in the UI for V2 registries only.
+         */
+        verifications?: Array<{
+            /**
+             * Verification method discriminator, e.g. "KERI-ACDC"
+             */
+            method: string;
+            /**
+             * Version of this verification block
+             */
+            schemaVersion?: string;
+            /**
+             * Credential issuer identity
+             */
+            issuer: {
+                /**
+                 * Issuer KERI AID (ACDC sad.i) — the root trust anchor
+                 */
+                aid: string;
+                /**
+                 * OOBI resolving the issuer KEL (key state) for signature verification
+                 */
+                oobi: string;
+            };
+            /**
+             * Credential schema — the ACDC structure definition
+             */
+            schema: {
+                /**
+                 * Credential schema SAID (ACDC sad.s)
+                 */
+                said: string;
+                /**
+                 * OOBI resolving the JSON schema; a verifier checks its hash equals said
+                 */
+                oobi: string;
+            };
+            /**
+             * The verifiable credential (ACDC)
+             */
+            credential: {
+                /**
+                 * Credential SAID (ACDC sad.d)
+                 */
+                said: string;
+                /**
+                 * OOBI/endpoint serving the signed ACDC; a verifier checks its hash equals said
+                 */
+                oobi: string;
+                /**
+                 * Credential status registry / TEL SAID (ACDC sad.ri) for independent revocation checks
+                 */
+                registry?: string;
+            };
+            /**
+             * Credential holder/issuee identity
+             */
+            holder: {
+                /**
+                 * Issuee/holder KERI AID (ACDC sad.a.i)
+                 */
+                aid: string;
+                /**
+                 * OOBI resolving the holder KEL
+                 */
+                oobi: string;
+            };
+            /**
+             * Optional witness/KERIA resolver root for live key-state ("verify at time T") and TEL queries
+             */
+            baseUrl?: string;
+        }>;
+        /**
          * List of example outputs from the agent
          */
         ExampleOutputs: Array<{
@@ -8356,6 +8648,79 @@ export type PostRegistryUpdateData = {
             extra?: {
                 [key: string]: unknown;
             };
+        }>;
+        /**
+         * Optional KERI/Veridian verification claims advertised in the registry metadata for independent third-party verification. Accepted on any registration; surfaced in the UI for V2 registries only.
+         */
+        verifications?: Array<{
+            /**
+             * Verification method discriminator, e.g. "KERI-ACDC"
+             */
+            method: string;
+            /**
+             * Version of this verification block
+             */
+            schemaVersion?: string;
+            /**
+             * Credential issuer identity
+             */
+            issuer: {
+                /**
+                 * Issuer KERI AID (ACDC sad.i) — the root trust anchor
+                 */
+                aid: string;
+                /**
+                 * OOBI resolving the issuer KEL (key state) for signature verification
+                 */
+                oobi: string;
+            };
+            /**
+             * Credential schema — the ACDC structure definition
+             */
+            schema: {
+                /**
+                 * Credential schema SAID (ACDC sad.s)
+                 */
+                said: string;
+                /**
+                 * OOBI resolving the JSON schema; a verifier checks its hash equals said
+                 */
+                oobi: string;
+            };
+            /**
+             * The verifiable credential (ACDC)
+             */
+            credential: {
+                /**
+                 * Credential SAID (ACDC sad.d)
+                 */
+                said: string;
+                /**
+                 * OOBI/endpoint serving the signed ACDC; a verifier checks its hash equals said
+                 */
+                oobi: string;
+                /**
+                 * Credential status registry / TEL SAID (ACDC sad.ri) for independent revocation checks
+                 */
+                registry?: string;
+            };
+            /**
+             * Credential holder/issuee identity
+             */
+            holder: {
+                /**
+                 * Issuee/holder KERI AID (ACDC sad.a.i)
+                 */
+                aid: string;
+                /**
+                 * OOBI resolving the holder KEL
+                 */
+                oobi: string;
+            };
+            /**
+             * Optional witness/KERIA resolver root for live key-state ("verify at time T") and TEL queries
+             */
+            baseUrl?: string;
         }>;
         /**
          * List of example outputs from the agent

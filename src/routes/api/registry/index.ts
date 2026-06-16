@@ -12,6 +12,7 @@ import { getBlockfrostInstance, validateAssetsOnChain } from '@/utils/blockfrost
 import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { normalizeRequestedRegistryFundingLovelace } from '@/services/registry/shared';
 import { validateSupportedPaymentSourcesOrThrow } from '@/types/payment-source';
+import { verificationToRow } from '@/types/verification';
 import {
 	deleteAgentRegistrationSchemaInput,
 	deleteAgentRegistrationSchemaOutput,
@@ -25,7 +26,11 @@ import {
 	registryRequestOutputSchema,
 } from './schemas';
 import { getRegistryEntriesForQuery } from './queries';
-import { serializeRegistryEntriesResponse, serializeSupportedPaymentSources } from './serializers';
+import {
+	serializeRegistryEntriesResponse,
+	serializeSupportedPaymentSources,
+	serializeVerifications,
+} from './serializers';
 import { resolveScopedRecipientWalletOrThrow, resolveScopedSellingWalletOrThrow } from './shared';
 
 export {
@@ -233,6 +238,9 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 						},
 					},
 					tags: input.Tags,
+					...(input.verifications && input.verifications.length > 0
+						? { Verifications: { createMany: { data: input.verifications.map(verificationToRow) } } }
+						: {}),
 					Pricing: {
 						create:
 							input.AgentPricing.pricingType == PricingType.Fixed
@@ -277,6 +285,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 							mimeType: true,
 						},
 					},
+					Verifications: true,
 					SupportedPaymentSources: {
 						select: {
 							chain: true,
@@ -337,6 +346,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 							},
 				sendFundingLovelace: result.sendFundingLovelace?.toString() ?? null,
 				supportedPaymentSources: serializeSupportedPaymentSources(result.SupportedPaymentSources),
+				verifications: serializeVerifications(result.Verifications),
 				Tags: result.tags,
 				RecipientWallet: result.RecipientWallet,
 				CurrentTransaction: result.CurrentTransaction
@@ -444,6 +454,7 @@ export const deleteAgentRegistration = adminAuthenticatedEndpointFactory.build({
 					ExampleOutputs: {
 						select: { name: true, url: true, mimeType: true },
 					},
+					Verifications: true,
 					SupportedPaymentSources: {
 						select: {
 							chain: true,
@@ -504,6 +515,7 @@ export const deleteAgentRegistration = adminAuthenticatedEndpointFactory.build({
 							},
 				sendFundingLovelace: item.sendFundingLovelace?.toString() ?? null,
 				supportedPaymentSources: serializeSupportedPaymentSources(item.SupportedPaymentSources),
+				verifications: serializeVerifications(item.Verifications),
 				Tags: item.tags,
 				RecipientWallet: item.RecipientWallet,
 				CurrentTransaction: item.CurrentTransaction

@@ -1,5 +1,11 @@
 import { Network, PricingType, X402PaymentScheme, type Prisma } from '@/generated/prisma/client';
 import { SupportedPaymentSourceChain, type SupportedPaymentSource } from '@/types/payment-source';
+import {
+	verificationRowToApi,
+	verificationsSchema,
+	type AgentVerificationRow,
+	type Verification,
+} from '@/types/verification';
 import { logger } from '@masumi/payment-core/logger';
 import type { RegistryListRecord } from './queries';
 
@@ -69,6 +75,19 @@ export function serializeSupportedPaymentSources(
 	return serialized.length === 0 ? null : serialized;
 }
 
+// Reassemble persisted AgentVerification rows into the nested API shape. Re-validate
+// and drop (with a log) rather than 500 the page if a row is somehow malformed —
+// same defensive posture as supported payment sources.
+export function serializeVerifications(rows: AgentVerificationRow[] | null | undefined): Verification[] | null {
+	if (rows == null || rows.length === 0) return null;
+	const parsed = verificationsSchema.safeParse(rows.map(verificationRowToApi));
+	if (!parsed.success) {
+		logger.error('Skipping malformed persisted verifications');
+		return null;
+	}
+	return parsed.data;
+}
+
 export function serializeRegistryEntry(item: RegistryListRecord) {
 	return {
 		...item,
@@ -102,6 +121,7 @@ export function serializeRegistryEntry(item: RegistryListRecord) {
 					},
 		sendFundingLovelace: item.sendFundingLovelace?.toString() ?? null,
 		supportedPaymentSources: serializeSupportedPaymentSources(item.SupportedPaymentSources),
+		verifications: serializeVerifications(item.Verifications),
 		Tags: item.tags,
 		CurrentTransaction: item.CurrentTransaction
 			? {
