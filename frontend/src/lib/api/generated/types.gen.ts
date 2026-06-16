@@ -8163,6 +8163,14 @@ export type GetRegistryData = {
          * When set, return only the registry entry whose on-chain agent identifier matches exactly (same scope as list: network, payment source, and wallet permissions)
          */
         filterAgentIdentifier?: string;
+        /**
+         * Return only entries that advertise a supported payment source with this address (the Cardano smart-contract address, or an EVM x402 payTo/address). Matched server-side so callers do not have to fetch every entry and filter client-side. Combined with filterSupportedPaymentSourceNetworks as a logical OR.
+         */
+        filterSupportedPaymentSourceAddress?: string;
+        /**
+         * Comma-separated list of supported-payment-source networks to match (Cardano network name, or CAIP-2 EVM chain ids such as eip155:8453). Returns entries advertising a supported payment source on any of these networks. Combined with filterSupportedPaymentSourceAddress as a logical OR.
+         */
+        filterSupportedPaymentSourceNetworks?: string;
     };
     url: '/registry';
 };

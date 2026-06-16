@@ -1,4 +1,5 @@
 import { PricingType, RegistrationState } from '@/generated/prisma/client';
+import type { Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { AuthContext } from '@masumi/payment-core/auth';
 import { parseAmountSearchRange } from '@/utils/shared/queries';
@@ -62,6 +63,21 @@ export async function getRegistryEntriesForQuery(
 		? parseAmountSearchRange(searchLower)
 		: undefined;
 
+	// Optional server-side "advertises this payment source" filter. The frontend
+	// AI Agents page needs agents that accept a given Cardano source (by address)
+	// or x402 EVM chain (by CAIP-2 network) as a PAYMENT target, regardless of
+	// where they are registered. Without this it had to page every agent on the
+	// network and match `supportedPaymentSources` client-side. Address and
+	// networks are OR-ed so a single `some` row matching either qualifies.
+	const supportedNetworks = input.filterSupportedPaymentSourceNetworks
+		?.split(',')
+		.map((value) => value.trim())
+		.filter((value) => value.length > 0);
+	const supportedPaymentSourceOr: Prisma.SupportedPaymentSourceWhereInput[] = [
+		...(input.filterSupportedPaymentSourceAddress ? [{ address: input.filterSupportedPaymentSourceAddress }] : []),
+		...(supportedNetworks && supportedNetworks.length > 0 ? [{ network: { in: supportedNetworks } }] : []),
+	];
+
 	return prisma.registryRequest.findMany({
 		where: {
 			PaymentSource: {
@@ -74,6 +90,9 @@ export async function getRegistryEntriesForQuery(
 			...buildManagedHolderWalletScopeFilter(walletScopeIds),
 			...(stateFilter ? { state: { in: stateFilter } } : {}),
 			...(input.filterAgentIdentifier ? { agentIdentifier: input.filterAgentIdentifier } : {}),
+			...(supportedPaymentSourceOr.length > 0
+				? { SupportedPaymentSources: { some: { OR: supportedPaymentSourceOr } } }
+				: {}),
 			...(searchLower
 				? {
 						OR: [

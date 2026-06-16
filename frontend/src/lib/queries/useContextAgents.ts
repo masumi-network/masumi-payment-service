@@ -24,6 +24,11 @@ type AgentQuery = {
   filterStatus?: 'Registered' | 'Deregistered' | 'Pending' | 'Failed';
   searchQuery?: string;
   filterSmartContractAddress?: string;
+  // Server-side "advertises this payment source" filters. Either matches an
+  // entry's supportedPaymentSources so the payment-target list no longer pages
+  // every agent on the network and filters client-side.
+  filterSupportedPaymentSourceAddress?: string;
+  filterSupportedPaymentSourceNetworks?: string;
 };
 
 async function fetchAllAgents(
@@ -45,6 +50,8 @@ async function fetchAllAgents(
             filterStatus: extra.filterStatus,
             searchQuery: extra.searchQuery || undefined,
             filterSmartContractAddress: extra.filterSmartContractAddress,
+            filterSupportedPaymentSourceAddress: extra.filterSupportedPaymentSourceAddress,
+            filterSupportedPaymentSourceNetworks: extra.filterSupportedPaymentSourceNetworks,
           },
         }),
       { errorMessage: 'Failed to load AI agents' },
@@ -91,16 +98,41 @@ export function useContextAgents(params?: {
   const sourceAddress =
     selectedPaymentSource?.network === network ? selectedPaymentSource.smartContractAddress : null;
 
-  // Every agent on the network, used to find entries that accept payment on this context
-  // regardless of where they are registered.
+  // CAIP-2 ids of the EVM chains active in this environment, as the comma-separated
+  // value the registry endpoint's filterSupportedPaymentSourceNetworks expects.
+  const envChainIdsCsv = useMemo(() => [...envChainIds].join(','), [envChainIds]);
+
+  // Agents that accept payment on THIS context as a payment target (regardless of where
+  // they are registered). Previously this paged every agent on the network and matched
+  // `supportedPaymentSources` client-side; now the registry endpoint filters by the
+  // selected source address (Cardano) or active EVM chain ids (x402) server-side.
+  // Disabled until we have something to scope by, so we never fetch the whole network.
+  const paymentScope: Pick<
+    AgentQuery,
+    'filterSupportedPaymentSourceAddress' | 'filterSupportedPaymentSourceNetworks'
+  > =
+    activeRail === 'x402'
+      ? { filterSupportedPaymentSourceNetworks: envChainIdsCsv || undefined }
+      : { filterSupportedPaymentSourceAddress: sourceAddress ?? undefined };
+  const hasPaymentScope = activeRail === 'x402' ? !!envChainIdsCsv : !!sourceAddress;
+
   const allQuery = useQuery({
-    queryKey: ['context-agents', 'all', network, params?.filterStatus, params?.searchQuery],
+    queryKey: [
+      'context-agents',
+      'payment',
+      network,
+      activeRail,
+      activeRail === 'x402' ? envChainIdsCsv : sourceAddress,
+      params?.filterStatus,
+      params?.searchQuery,
+    ],
     queryFn: () =>
       fetchAllAgents(apiClient, network, {
         filterStatus: params?.filterStatus,
         searchQuery: params?.searchQuery,
+        ...paymentScope,
       }),
-    enabled: !!apiClient && authorized,
+    enabled: !!apiClient && authorized && hasPaymentScope,
     staleTime: 15000,
     // Keep showing the previous results while a status/search change refetches, so the
     // table can dim (isPlaceholderData) rather than flashing empty mid-search.
