@@ -565,7 +565,6 @@ export function RegisterAIAgentDialog({
           );
           const hadEvmSources =
             (editingAgent.supportedPaymentSources ?? []).length > existingNonEvmSources.length;
-          const hadVerifications = (editingAgent.verifications ?? []).length > 0;
           const updateResponse = await postRegistryUpdate({
             client: apiClient,
             body: {
@@ -588,9 +587,14 @@ export function RegisterAIAgentDialog({
                     supportedPaymentSources: [...existingNonEvmSources, ...evmSupportedSources],
                   }
                 : {}),
-              ...(verifications.length > 0 || hadVerifications
-                ? { verifications: verificationsToApi(verifications) }
-                : {}),
+              // Update is V2-only (isV2Target is forced true above) and the
+              // form's `verifications` state is the authoritative user-facing
+              // list (loaded from the agent on open). Always send it so the
+              // backend mirrors exactly what the user sees — sending `[]`
+              // clears stored rows. Gating on a derived `hadVerifications`
+              // flag would silently keep stale rows when the list API returns
+              // `verifications: null` for rows it dropped as malformed.
+              verifications: verificationsToApi(verifications),
             },
           });
 
