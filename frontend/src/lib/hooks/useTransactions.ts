@@ -86,9 +86,10 @@ const getPurchasesFromResponse = (response: PurchaseApiResponse | null): Purchas
 
 export function useTransactions(
   params?: TransactionQueryParams,
-  options?: { trackVisit?: boolean },
+  options?: { trackVisit?: boolean; enabled?: boolean },
 ) {
   const trackVisit = options?.trackVisit !== false;
+  const queryEnabled = options?.enabled !== false;
   const { apiClient, network, selectedPaymentSource } = useAppContext();
   const router = useRouter();
   const [newTransactionsCount, setNewTransactionsCount] = useState(0);
@@ -175,7 +176,7 @@ export function useTransactions(
     initialPageParam: undefined as TransactionsPageParam | undefined,
     getNextPageParam: (lastPage: TransactionsPage) => lastPage.nextPageParam,
     refetchInterval: 25000,
-    enabled: !!apiClient,
+    enabled: !!apiClient && queryEnabled,
     staleTime: 15000,
     placeholderData: keepPreviousData,
   });

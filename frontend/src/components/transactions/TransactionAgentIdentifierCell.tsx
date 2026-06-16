@@ -9,6 +9,8 @@ import type { NetworkType } from '@/lib/contexts/AppContext';
 type Props = {
   agentIdentifier: string | null | undefined;
   smartContractAddress: string | null | undefined;
+  /** Pre-resolved name (e.g. from agent-name transaction search). */
+  agentName?: string | null;
   /** Payment source network for this row — keeps registry lookup stable if global network changes. */
   network?: NetworkType | null | undefined;
 };
@@ -17,13 +19,18 @@ type Props = {
 export function TransactionAgentIdentifierCell({
   agentIdentifier,
   smartContractAddress,
+  agentName,
   network,
 }: Props) {
   const { openAgentDetails } = useAgentDetailsDialog();
   const containerRef = useRef<HTMLDivElement>(null);
-  const [shouldResolve, setShouldResolve] = useState(false);
+  const [shouldResolve, setShouldResolve] = useState(Boolean(agentName));
 
   useEffect(() => {
+    if (agentName) {
+      queueMicrotask(() => setShouldResolve(true));
+      return;
+    }
     if (!agentIdentifier || !smartContractAddress) return;
     const el = containerRef.current;
     if (!el) return;
@@ -45,13 +52,13 @@ export function TransactionAgentIdentifierCell({
 
     observer.observe(el);
     return () => observer.disconnect();
-  }, [agentIdentifier, smartContractAddress]);
+  }, [agentIdentifier, smartContractAddress, agentName]);
 
   const { data: registryEntry, isLoading } = useRegistryEntryByAgentIdentifier({
     agentIdentifier,
     smartContractAddress,
     network,
-    enabled: Boolean(agentIdentifier && smartContractAddress && shouldResolve),
+    enabled: Boolean(agentIdentifier && smartContractAddress && shouldResolve && !agentName),
   });
 
   if (!agentIdentifier) {
@@ -59,17 +66,7 @@ export function TransactionAgentIdentifierCell({
   }
 
   const short = shortenAddress(agentIdentifier);
-
-  if (!smartContractAddress) {
-    return (
-      <div className="flex items-center gap-2 min-w-0">
-        <span className="font-mono text-sm text-muted-foreground truncate" title={agentIdentifier}>
-          {short}
-        </span>
-        <CopyButton value={agentIdentifier} />
-      </div>
-    );
-  }
+  const resolvedName = agentName ?? registryEntry?.name ?? null;
 
   const mutedIdentifier = (
     <>
@@ -81,7 +78,39 @@ export function TransactionAgentIdentifierCell({
   );
 
   let cellBody: ReactNode;
-  if (!shouldResolve || isLoading) {
+  if (resolvedName) {
+    const label = (
+      <span className="text-sm truncate" title={resolvedName}>
+        {resolvedName}
+      </span>
+    );
+
+    if (registryEntry) {
+      cellBody = (
+        <>
+          <button
+            type="button"
+            className="text-sm text-primary hover:underline truncate text-left"
+            title={`${resolvedName} (${agentIdentifier})`}
+            onClick={(e) => {
+              e.stopPropagation();
+              openAgentDetails(registryEntry);
+            }}
+          >
+            {resolvedName}
+          </button>
+          <CopyButton value={agentIdentifier} />
+        </>
+      );
+    } else {
+      cellBody = (
+        <>
+          {label}
+          <CopyButton value={agentIdentifier} />
+        </>
+      );
+    }
+  } else if (!shouldResolve || isLoading) {
     cellBody = !shouldResolve ? mutedIdentifier : <Skeleton className="h-5 w-full max-w-[140px]" />;
   } else if (registryEntry) {
     cellBody = (
@@ -100,13 +129,20 @@ export function TransactionAgentIdentifierCell({
         <CopyButton value={agentIdentifier} />
       </>
     );
+  } else if (!smartContractAddress) {
+    cellBody = mutedIdentifier;
   } else {
     cellBody = mutedIdentifier;
   }
 
   return (
-    <div ref={containerRef} className="flex items-center gap-2 min-w-0">
-      {cellBody}
+    <div ref={containerRef} className="flex flex-col gap-0.5 min-w-0">
+      <div className="flex items-center gap-2 min-w-0">{cellBody}</div>
+      {resolvedName ? (
+        <span className="font-mono text-xs text-muted-foreground truncate" title={agentIdentifier}>
+          {short}
+        </span>
+      ) : null}
     </div>
   );
 }

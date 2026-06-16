@@ -16,6 +16,8 @@ import { DownloadDetailsDialog } from '@/components/transactions/DownloadDetails
 import { Download } from 'lucide-react';
 import { dateRangeUtils } from '@/lib/utils';
 import { useTransactions, OnChainStateFilter, ON_CHAIN_STATES } from '@/lib/hooks/useTransactions';
+import { useAgentNameTransactions } from '@/lib/hooks/useAgentNameTransactions';
+import { shouldSearchTransactionsByAgentName } from '@/lib/transactions/agent-name-search';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { SearchInput } from '@/components/ui/search-input';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -67,6 +69,27 @@ export default function Transactions() {
     return params;
   }, [activeTab, debouncedSearchQuery]);
 
+  const isAgentNameSearch = shouldSearchTransactionsByAgentName(debouncedSearchQuery);
+
+  const agentNameTransactions = useAgentNameTransactions(filterParams, {
+    enabled: isAgentNameSearch,
+  });
+
+  const useStandardSearch = !isAgentNameSearch || agentNameTransactions.shouldFallbackToStandard;
+
+  const standardFilterParams = useMemo(() => {
+    if (useStandardSearch) return filterParams;
+    const { searchQuery: _searchQuery, ...rest } = filterParams;
+    return rest;
+  }, [filterParams, useStandardSearch]);
+
+  const standardTransactions = useTransactions(standardFilterParams, {
+    trackVisit: false,
+    enabled: useStandardSearch,
+  });
+
+  const useAgentNameResults = isAgentNameSearch && !agentNameTransactions.shouldFallbackToStandard;
+
   const {
     transactions,
     isLoading,
@@ -76,7 +99,11 @@ export default function Transactions() {
     isFetchingNextPage,
     isFetching: isFetchingTransactions,
     isPlaceholderData,
-  } = useTransactions(filterParams, { trackVisit: false });
+  } = useAgentNameResults ? agentNameTransactions : standardTransactions;
+
+  const agentNameByIdentifier = useAgentNameResults
+    ? agentNameTransactions.nameByIdentifier
+    : undefined;
 
   // Unfiltered call for tab badge counts (reuses dashboard cache when no args); only this instance updates localStorage
   const { transactions: allTransactionsForCounts, markAllAsRead } = useTransactions();
@@ -142,7 +169,9 @@ export default function Transactions() {
   // True whenever server-authoritative results haven't arrived yet:
   // either the debounce hasn't fired, or the server fetch is still in-flight with stale data.
   const isSearchPending =
-    searchQuery !== debouncedSearchQuery || (isFetchingTransactions && isPlaceholderData);
+    searchQuery !== debouncedSearchQuery ||
+    (isAgentNameSearch && agentNameTransactions.isResolvingAgents) ||
+    (isFetchingTransactions && isPlaceholderData);
 
   // Client-side filter for instant feedback while server results are pending.
   // Mirrors the backend Prisma OR filter in src/utils/shared/queries.ts
@@ -169,6 +198,10 @@ export default function Transactions() {
       if (matchingStates.length > 0 && tx.onChainState && matchingStates.includes(tx.onChainState))
         return true;
       if (tx.agentIdentifier?.toLowerCase().includes(query)) return true;
+      if (tx.agentIdentifier && agentNameByIdentifier) {
+        const agentName = agentNameByIdentifier.get(tx.agentIdentifier);
+        if (agentName?.toLowerCase().includes(query)) return true;
+      }
       if (amountRange) {
         const funds =
           tx.type === 'payment' ? tx.RequestedFunds : tx.type === 'purchase' ? tx.PaidFunds : [];
@@ -182,7 +215,13 @@ export default function Transactions() {
       }
       return false;
     });
-  }, [filteredTransactions, searchQuery, debouncedSearchQuery, isPlaceholderData]);
+  }, [
+    filteredTransactions,
+    searchQuery,
+    debouncedSearchQuery,
+    isPlaceholderData,
+    agentNameByIdentifier,
+  ]);
 
   // When context changes, clear "new transactions" badge via the hook (single source of truth for localStorage)
   const markAllAsReadRef = useRef(markAllAsRead);
@@ -194,8 +233,11 @@ export default function Transactions() {
   }, [network, apiClient, selectedPaymentSourceId]);
 
   const refreshTransactions = useCallback(() => {
-    refetchTransactions?.();
-  }, [refetchTransactions]);
+    void refetchTransactions?.();
+    if (useAgentNameResults) {
+      void agentNameTransactions.refetch?.();
+    }
+  }, [refetchTransactions, useAgentNameResults, agentNameTransactions]);
 
   const handleLoadMore = useCallback(() => {
     if (hasMore && !isLoadingMore) {
@@ -363,7 +405,7 @@ export default function Transactions() {
               <SearchInput
                 value={searchQuery}
                 onChange={setSearchQuery}
-                placeholder="Search by ID, hash, status, amount, or source..."
+                placeholder="Search by agent name, ID, hash, status, amount..."
                 className="max-w-xs"
                 isLoading={isSearchPending && !!searchQuery}
               />
@@ -385,9 +427,7 @@ export default function Transactions() {
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">
                     Transaction Hash
                   </th>
-                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">
-                    Agent identifier
-                  </th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">Agent</th>
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">
                     Amount
                   </th>
@@ -468,6 +508,11 @@ export default function Transactions() {
                       <td className="p-4">
                         <TransactionAgentIdentifierCell
                           agentIdentifier={transaction.agentIdentifier}
+                          agentName={
+                            transaction.agentIdentifier
+                              ? agentNameByIdentifier?.get(transaction.agentIdentifier)
+                              : undefined
+                          }
                           smartContractAddress={
                             transaction.PaymentSource?.smartContractAddress ?? null
                           }
