@@ -88,7 +88,7 @@ export function useContextAgents(params?: {
   searchQuery?: string;
 }) {
   const { apiClient, authorized, network, activeRail, selectedPaymentSource } = useAppContext();
-  const { networks } = useX402Networks({ silentErrors: true });
+  const { networks, isLoading: isX402NetworksLoading } = useX402Networks({ silentErrors: true });
 
   const envChainIds = useMemo(
     () => new Set(chainsForEnv(networks, network).map((chain) => chain.caip2Id)),
@@ -207,6 +207,12 @@ export function useContextAgents(params?: {
   // skeleton instead of an empty state or a half-labeled list.
   const registeredPending = isRegisteredQueryActive && registeredQuery.data === undefined;
 
+  // On the x402 rail the payment-scoped query is disabled until the active EVM
+  // chain ids resolve from useX402Networks. Without surfacing that window as
+  // loading, `isLoading` would be false with an empty list and the page would
+  // flash the "no agents accept x402 here" empty state before the chains load.
+  const x402ScopePending = activeRail === 'x402' && isX402NetworksLoading;
+
   // The list is fetched in full but bounded by fetchAllAgents' page cap. Surface when that
   // cap was hit so the page can warn the operator instead of silently showing a partial set.
   const truncated =
@@ -222,7 +228,7 @@ export function useContextAgents(params?: {
     agents,
     truncated,
     isPlaceholderData,
-    isLoading: allQuery.isLoading || registeredPending,
+    isLoading: allQuery.isLoading || registeredPending || x402ScopePending,
     isFetching: allQuery.isFetching || (isRegisteredQueryActive && registeredQuery.isFetching),
     refetch: async () => {
       await Promise.all([
