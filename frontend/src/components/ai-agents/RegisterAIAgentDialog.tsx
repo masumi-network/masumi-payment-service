@@ -474,7 +474,10 @@ export function RegisterAIAgentDialog({
           contactOther?: string;
           organization?: string;
         } = {
-          name: data.authorName || 'Default Author', // Default in case it's empty
+          // Preserve the operator's real input, empty included. The backend
+          // accepts an empty author name; defaulting it to a placeholder would
+          // fabricate on-chain authorship that was never entered.
+          name: data.authorName ?? '',
         };
         if (data.authorEmail) author.contactEmail = data.authorEmail;
         if (data.contactOther) author.contactOther = data.contactOther;

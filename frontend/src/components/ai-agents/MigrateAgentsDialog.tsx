@@ -438,7 +438,11 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
       contactEmail?: string;
       contactOther?: string;
       organization?: string;
-    } = { name: agent.Author.name || 'Migrated Agent' };
+      // Preserve the real V1 author name verbatim — including empty. The
+      // backend accepts an empty author name (Author.name is `z.string()` with
+      // no min), so defaulting an empty value to a placeholder would fabricate
+      // on-chain authorship the operator never set. Empty in → empty out.
+    } = { name: agent.Author.name };
     if (agent.Author.contactEmail) author.contactEmail = agent.Author.contactEmail;
     if (agent.Author.contactOther) author.contactOther = agent.Author.contactOther;
     if (agent.Author.organization) author.organization = agent.Author.organization;
@@ -457,7 +461,10 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
       sendFundingLovelace:
         v2HoldingAddress && agent.sendFundingLovelace ? agent.sendFundingLovelace : undefined,
       name: agent.name,
-      description: agent.description ?? agent.name,
+      // Preserve the real V1 description, empty included. The backend accepts
+      // an empty description; substituting the agent name would fabricate
+      // copy the operator never wrote.
+      description: agent.description ?? '',
       // Use the operator's edited URL when provided, otherwise keep the V1 value.
       // Trimmed (via resolveApiBaseUrl) to match exactly what the gate validated.
       apiBaseUrl: resolveApiBaseUrl(agent),
