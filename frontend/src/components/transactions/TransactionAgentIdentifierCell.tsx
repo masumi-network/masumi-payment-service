@@ -9,7 +9,7 @@ import type { NetworkType } from '@/lib/contexts/AppContext';
 type Props = {
   agentIdentifier: string | null | undefined;
   smartContractAddress: string | null | undefined;
-  /** Pre-resolved name (e.g. from agent-name transaction search). */
+  /** Denormalized name from the transaction API; registry lookup still runs for the details link. */
   agentName?: string | null;
   /** Payment source network for this row — keeps registry lookup stable if global network changes. */
   network?: NetworkType | null | undefined;
@@ -24,13 +24,9 @@ export function TransactionAgentIdentifierCell({
 }: Props) {
   const { openAgentDetails } = useAgentDetailsDialog();
   const containerRef = useRef<HTMLDivElement>(null);
-  const [shouldResolve, setShouldResolve] = useState(Boolean(agentName));
+  const [shouldResolve, setShouldResolve] = useState(false);
 
   useEffect(() => {
-    if (agentName) {
-      queueMicrotask(() => setShouldResolve(true));
-      return;
-    }
     if (!agentIdentifier || !smartContractAddress) return;
     const el = containerRef.current;
     if (!el) return;
@@ -52,13 +48,13 @@ export function TransactionAgentIdentifierCell({
 
     observer.observe(el);
     return () => observer.disconnect();
-  }, [agentIdentifier, smartContractAddress, agentName]);
+  }, [agentIdentifier, smartContractAddress]);
 
   const { data: registryEntry, isLoading } = useRegistryEntryByAgentIdentifier({
     agentIdentifier,
     smartContractAddress,
     network,
-    enabled: Boolean(agentIdentifier && smartContractAddress && shouldResolve && !agentName),
+    enabled: Boolean(agentIdentifier && smartContractAddress && shouldResolve),
   });
 
   if (!agentIdentifier) {
@@ -79,12 +75,6 @@ export function TransactionAgentIdentifierCell({
 
   let cellBody: ReactNode;
   if (resolvedName) {
-    const label = (
-      <span className="text-sm truncate" title={resolvedName}>
-        {resolvedName}
-      </span>
-    );
-
     if (registryEntry) {
       cellBody = (
         <>
@@ -105,7 +95,9 @@ export function TransactionAgentIdentifierCell({
     } else {
       cellBody = (
         <>
-          {label}
+          <span className="text-sm truncate" title={resolvedName}>
+            {resolvedName}
+          </span>
           <CopyButton value={agentIdentifier} />
         </>
       );
