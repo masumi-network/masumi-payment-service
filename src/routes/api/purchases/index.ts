@@ -10,6 +10,7 @@ import { HttpExistsError } from '@masumi/payment-core/http-exists-error';
 import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
 import { lovelaceToAdaNumberSafe } from '@/utils/lovelace';
 import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
+import { resolveTransactionAgentName } from '@/utils/shared/resolve-transaction-agent-name';
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { resolvePurchaseCreationContext } from './shared';
@@ -307,6 +308,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 			}
 			const {
 				externalDisputeUnlockTime,
+				onChainAgentName,
 				payByTime,
 				pricingType,
 				requestedCost,
@@ -367,6 +369,10 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 				pricingType,
 				buyerReturnAddress: input.buyerReturnAddress ?? null,
 				sellerReturnAddress,
+				agentName: await resolveTransactionAgentName({
+					agentIdentifier: input.agentIdentifier,
+					onChainName: onChainAgentName,
+				}),
 			});
 
 			return {

@@ -16,8 +16,6 @@ import { DownloadDetailsDialog } from '@/components/transactions/DownloadDetails
 import { Download } from 'lucide-react';
 import { dateRangeUtils } from '@/lib/utils';
 import { useTransactions, OnChainStateFilter, ON_CHAIN_STATES } from '@/lib/hooks/useTransactions';
-import { useAgentNameTransactions } from '@/lib/hooks/useAgentNameTransactions';
-import { shouldSearchTransactionsByAgentName } from '@/lib/transactions/agent-name-search';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { SearchInput } from '@/components/ui/search-input';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -69,27 +67,6 @@ export default function Transactions() {
     return params;
   }, [activeTab, debouncedSearchQuery]);
 
-  const isAgentNameSearch = shouldSearchTransactionsByAgentName(debouncedSearchQuery);
-
-  const agentNameTransactions = useAgentNameTransactions(filterParams, {
-    enabled: isAgentNameSearch,
-  });
-
-  const useStandardSearch = !isAgentNameSearch || agentNameTransactions.shouldFallbackToStandard;
-
-  const standardFilterParams = useMemo(() => {
-    if (useStandardSearch) return filterParams;
-    const { searchQuery: _searchQuery, ...rest } = filterParams;
-    return rest;
-  }, [filterParams, useStandardSearch]);
-
-  const standardTransactions = useTransactions(standardFilterParams, {
-    trackVisit: false,
-    enabled: useStandardSearch,
-  });
-
-  const useAgentNameResults = isAgentNameSearch && !agentNameTransactions.shouldFallbackToStandard;
-
   const {
     transactions,
     isLoading,
@@ -99,11 +76,7 @@ export default function Transactions() {
     isFetchingNextPage,
     isFetching: isFetchingTransactions,
     isPlaceholderData,
-  } = useAgentNameResults ? agentNameTransactions : standardTransactions;
-
-  const agentNameByIdentifier = useAgentNameResults
-    ? agentNameTransactions.nameByIdentifier
-    : undefined;
+  } = useTransactions(filterParams, { trackVisit: false });
 
   // Unfiltered call for tab badge counts (reuses dashboard cache when no args); only this instance updates localStorage
   const { transactions: allTransactionsForCounts, markAllAsRead } = useTransactions();
@@ -169,9 +142,7 @@ export default function Transactions() {
   // True whenever server-authoritative results haven't arrived yet:
   // either the debounce hasn't fired, or the server fetch is still in-flight with stale data.
   const isSearchPending =
-    searchQuery !== debouncedSearchQuery ||
-    (isAgentNameSearch && agentNameTransactions.isResolvingAgents) ||
-    (isFetchingTransactions && isPlaceholderData);
+    searchQuery !== debouncedSearchQuery || (isFetchingTransactions && isPlaceholderData);
 
   // Client-side filter for instant feedback while server results are pending.
   // Mirrors the backend Prisma OR filter in src/utils/shared/queries.ts
@@ -198,10 +169,7 @@ export default function Transactions() {
       if (matchingStates.length > 0 && tx.onChainState && matchingStates.includes(tx.onChainState))
         return true;
       if (tx.agentIdentifier?.toLowerCase().includes(query)) return true;
-      if (tx.agentIdentifier && agentNameByIdentifier) {
-        const agentName = agentNameByIdentifier.get(tx.agentIdentifier);
-        if (agentName?.toLowerCase().includes(query)) return true;
-      }
+      if (tx.agentName?.toLowerCase().includes(query)) return true;
       if (amountRange) {
         const funds =
           tx.type === 'payment' ? tx.RequestedFunds : tx.type === 'purchase' ? tx.PaidFunds : [];
@@ -215,13 +183,7 @@ export default function Transactions() {
       }
       return false;
     });
-  }, [
-    filteredTransactions,
-    searchQuery,
-    debouncedSearchQuery,
-    isPlaceholderData,
-    agentNameByIdentifier,
-  ]);
+  }, [filteredTransactions, searchQuery, debouncedSearchQuery, isPlaceholderData]);
 
   // When context changes, clear "new transactions" badge via the hook (single source of truth for localStorage)
   const markAllAsReadRef = useRef(markAllAsRead);
@@ -234,10 +196,7 @@ export default function Transactions() {
 
   const refreshTransactions = useCallback(() => {
     void refetchTransactions?.();
-    if (useAgentNameResults) {
-      void agentNameTransactions.refetch?.();
-    }
-  }, [refetchTransactions, useAgentNameResults, agentNameTransactions]);
+  }, [refetchTransactions]);
 
   const handleLoadMore = useCallback(() => {
     if (hasMore && !isLoadingMore) {
@@ -273,6 +232,7 @@ export default function Transactions() {
       const headers = [
         'Transaction Type',
         'Transaction Hash',
+        'Agent Name',
         'Agent Identifier',
         'Payment Amounts',
         'Network',
@@ -304,6 +264,7 @@ export default function Transactions() {
         const amount = paymentAmounts.map((amount) => `${amount.amount} ${amount.unit}`).join(', ');
 
         const hash = transaction.CurrentTransaction?.txHash || '—';
+        const agentName = transaction.agentName?.trim() || '—';
         const agentIdentifier = transaction.agentIdentifier?.trim() || '—';
         const status = formatStatus(transaction.onChainState);
         const date = new Date(transaction.createdAt).toLocaleString();
@@ -311,6 +272,7 @@ export default function Transactions() {
         return [
           transaction.type,
           hash,
+          agentName,
           agentIdentifier,
           amount,
           transaction.PaymentSource.network,
@@ -508,11 +470,7 @@ export default function Transactions() {
                       <td className="p-4">
                         <TransactionAgentIdentifierCell
                           agentIdentifier={transaction.agentIdentifier}
-                          agentName={
-                            transaction.agentIdentifier
-                              ? agentNameByIdentifier?.get(transaction.agentIdentifier)
-                              : undefined
-                          }
+                          agentName={transaction.agentName}
                           smartContractAddress={
                             transaction.PaymentSource?.smartContractAddress ?? null
                           }
