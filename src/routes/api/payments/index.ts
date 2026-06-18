@@ -372,7 +372,7 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 
 		const agentName = await resolveTransactionAgentName({
 			agentIdentifier: input.agentIdentifier,
-			onChainName: metadataToString(parsedMetadata.data.name),
+			onChainName: metadataToString(parsedMetadata.name),
 		});
 
 		const payment = await prisma.paymentRequest.create({
