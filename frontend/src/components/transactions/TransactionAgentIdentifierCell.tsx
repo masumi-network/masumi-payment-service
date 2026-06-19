@@ -121,8 +121,6 @@ export function TransactionAgentIdentifierCell({
         <CopyButton value={agentIdentifier} />
       </>
     );
-  } else if (!smartContractAddress) {
-    cellBody = mutedIdentifier;
   } else {
     cellBody = mutedIdentifier;
   }

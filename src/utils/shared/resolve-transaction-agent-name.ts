@@ -18,7 +18,6 @@ export async function lookupAgentNameFromRegistry(
 	const entry = await db.registryRequest.findFirst({
 		where: { agentIdentifier },
 		select: { name: true },
-		orderBy: { updatedAt: 'desc' },
 	});
 
 	return normalizeAgentName(entry?.name);
