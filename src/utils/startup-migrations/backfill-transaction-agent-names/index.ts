@@ -1,12 +1,20 @@
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
-import { lookupAgentNamesByIdentifiers } from '@/utils/shared/resolve-transaction-agent-name';
+import type { Network } from '@/generated/prisma/client';
+import { getBlockfrostInstance } from '@/utils/blockfrost';
+import { lookupAgentNameFromOnChainMetadata } from '@/services/integrations/asset-metadata';
+import { lookupAgentNameFromRegistry } from '@/utils/shared/resolve-transaction-agent-name';
 
 const BATCH = 250;
 
+type PaymentSourceRpc = {
+	network: Network;
+	rpcProviderApiKey: string;
+};
+
 /**
  * Idempotent startup migration: fills `agentName` (and `agentNameSyncedAt`) for legacy rows.
- * Uses registry `name` when `agentIdentifier` is known; stamps null name when not.
+ * Resolves names from on-chain metadata first (covers external agents on purchases), then registry.
  */
 export async function backfillTransactionAgentNames(): Promise<void> {
 	const paymentPending = await prisma.paymentRequest.count({
@@ -26,6 +34,47 @@ export async function backfillTransactionAgentNames(): Promise<void> {
 		purchasePending,
 	});
 
+	const paymentSources = await prisma.paymentSource.findMany({
+		where: { deletedAt: null },
+		select: {
+			id: true,
+			network: true,
+			PaymentSourceConfig: { select: { rpcProviderApiKey: true } },
+		},
+	});
+	const sourceById = new Map<string, PaymentSourceRpc>(
+		paymentSources.map((ps) => [
+			ps.id,
+			{ network: ps.network, rpcProviderApiKey: ps.PaymentSourceConfig.rpcProviderApiKey },
+		]),
+	);
+
+	const nameCache = new Map<string, string | null>();
+
+	const resolveName = async (paymentSourceId: string, agentIdentifier: string | null): Promise<string | null> => {
+		if (!agentIdentifier) {
+			return null;
+		}
+
+		const cacheKey = `${paymentSourceId}:${agentIdentifier}`;
+		if (nameCache.has(cacheKey)) {
+			return nameCache.get(cacheKey) ?? null;
+		}
+
+		let name: string | null = null;
+		const source = sourceById.get(paymentSourceId);
+		if (source) {
+			const blockfrost = getBlockfrostInstance(source.network, source.rpcProviderApiKey);
+			name = await lookupAgentNameFromOnChainMetadata(blockfrost, agentIdentifier);
+		}
+		if (!name) {
+			name = await lookupAgentNameFromRegistry(agentIdentifier);
+		}
+
+		nameCache.set(cacheKey, name);
+		return name;
+	};
+
 	let paymentsDone = 0;
 	let purchasesDone = 0;
 	const syncedAt = new Date();
@@ -33,58 +82,38 @@ export async function backfillTransactionAgentNames(): Promise<void> {
 	for (;;) {
 		const chunk = await prisma.paymentRequest.findMany({
 			where: { agentNameSyncedAt: null },
-			select: { id: true, agentIdentifier: true },
+			select: { id: true, agentIdentifier: true, paymentSourceId: true },
 			take: BATCH,
 			orderBy: { createdAt: 'asc' },
 		});
 		if (chunk.length === 0) break;
 
-		await prisma.$transaction(
-			async (tx) => {
-				const nameByIdentifier = await lookupAgentNamesByIdentifiers(
-					chunk.map((row) => row.agentIdentifier).filter((id): id is string => Boolean(id)),
-					tx,
-				);
-
-				for (const row of chunk) {
-					const agentName = row.agentIdentifier ? (nameByIdentifier.get(row.agentIdentifier) ?? null) : null;
-					await tx.paymentRequest.update({
-						where: { id: row.id },
-						data: { agentName, agentNameSyncedAt: syncedAt },
-					});
-				}
-			},
-			{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
-		);
+		for (const row of chunk) {
+			const agentName = await resolveName(row.paymentSourceId, row.agentIdentifier);
+			await prisma.paymentRequest.update({
+				where: { id: row.id },
+				data: { agentName, agentNameSyncedAt: syncedAt },
+			});
+		}
 		paymentsDone += chunk.length;
 	}
 
 	for (;;) {
 		const chunk = await prisma.purchaseRequest.findMany({
 			where: { agentNameSyncedAt: null },
-			select: { id: true, agentIdentifier: true },
+			select: { id: true, agentIdentifier: true, paymentSourceId: true },
 			take: BATCH,
 			orderBy: { createdAt: 'asc' },
 		});
 		if (chunk.length === 0) break;
 
-		await prisma.$transaction(
-			async (tx) => {
-				const nameByIdentifier = await lookupAgentNamesByIdentifiers(
-					chunk.map((row) => row.agentIdentifier).filter((id): id is string => Boolean(id)),
-					tx,
-				);
-
-				for (const row of chunk) {
-					const agentName = row.agentIdentifier ? (nameByIdentifier.get(row.agentIdentifier) ?? null) : null;
-					await tx.purchaseRequest.update({
-						where: { id: row.id },
-						data: { agentName, agentNameSyncedAt: syncedAt },
-					});
-				}
-			},
-			{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
-		);
+		for (const row of chunk) {
+			const agentName = await resolveName(row.paymentSourceId, row.agentIdentifier);
+			await prisma.purchaseRequest.update({
+				where: { id: row.id },
+				data: { agentName, agentNameSyncedAt: syncedAt },
+			});
+		}
 		purchasesDone += chunk.length;
 	}
 

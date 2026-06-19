@@ -372,6 +372,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 				agentName: await resolveTransactionAgentName({
 					agentIdentifier: input.agentIdentifier,
 					onChainName: onChainAgentName,
+					preferOnChain: true,
 				}),
 			});
 

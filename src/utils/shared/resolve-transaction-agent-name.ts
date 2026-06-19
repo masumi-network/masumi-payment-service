@@ -26,11 +26,17 @@ export async function lookupAgentNameFromRegistry(
 export async function resolveTransactionAgentName(options: {
 	agentIdentifier: string | null | undefined;
 	onChainName?: string | null | undefined;
+	/** When true, prefer the supplied on-chain metadata name over the local registry row. */
+	preferOnChain?: boolean;
 	db?: Prisma.TransactionClient | typeof prisma;
 }): Promise<string | null> {
+	const onChain = normalizeAgentName(options.onChainName);
+	if (options.preferOnChain && onChain) {
+		return onChain;
+	}
 	const fromRegistry = await lookupAgentNameFromRegistry(options.agentIdentifier, options.db);
 	if (fromRegistry) return fromRegistry;
-	return normalizeAgentName(options.onChainName);
+	return onChain;
 }
 
 export async function lookupAgentNamesByIdentifiers(
@@ -44,7 +50,6 @@ export async function lookupAgentNamesByIdentifiers(
 	const entries = await db.registryRequest.findMany({
 		where: { agentIdentifier: { in: unique } },
 		select: { agentIdentifier: true, name: true },
-		orderBy: { updatedAt: 'desc' },
 	});
 
 	for (const entry of entries) {
