@@ -272,6 +272,7 @@ model RegistryRequest {
   requestedById                  String?
   ExampleOutputs                 ExampleOutput[]
   SupportedPaymentSources        SupportedPaymentSource[]
+  Verifications                  AgentVerification[]
   Pricing                        AgentPricing             @relation(fields: [agentPricingId], references: [id])
   CurrentTransaction             Transaction?             @relation(fields: [currentTransactionId], references: [id])
   PaymentSource                  PaymentSource            @relation(fields: [paymentSourceId], references: [id])
@@ -284,6 +285,40 @@ model RegistryRequest {
   @@index([recipientHotWalletId])
   @@index([deregistrationHotWalletId])
   @@index([requestedById])
+}
+
+/// One KERI/Veridian verification claim advertised by a registry entry. Flat,
+/// queryable columns (no JSON blob); the nested issuer/schema/credential/holder
+/// grouping is reconstructed at the API boundary (see @masumi/payment-core/
+/// verification). Emitted into CIP-25 mint/update metadata for trustless,
+/// issuer-agnostic third-party verification.
+model AgentVerification {
+  id                 String          @id @default(cuid())
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  registryRequestId  String
+  /// Verification method discriminator, e.g. "KERI-ACDC".
+  method             String
+  schemaVersion      String?
+  /// Issuer KERI AID (ACDC sad.i) + OOBI resolving its KEL.
+  issuerAid          String
+  issuerOobi         String
+  /// Credential schema SAID (ACDC sad.s) + OOBI resolving the JSON schema.
+  schemaSaid         String
+  schemaOobi         String
+  /// Credential SAID (ACDC sad.d) + OOBI serving the signed ACDC.
+  credentialSaid     String
+  credentialOobi     String
+  /// Credential status registry / TEL SAID (ACDC sad.ri) for revocation. Optional.
+  credentialRegistry String?
+  /// Issuee/holder KERI AID (ACDC sad.a.i) + OOBI resolving its KEL.
+  holderAid          String
+  holderOobi         String
+  /// Optional witness/KERIA resolver root for live key-state and TEL queries.
+  baseUrl            String?
+  RegistryRequest    RegistryRequest @relation(fields: [registryRequestId], references: [id], onDelete: Cascade)
+
+  @@index([registryRequestId])
 }
 
 model SupportedPaymentSource {

@@ -27,6 +27,8 @@ import { extractApiErrorMessage } from '@/lib/api-error';
 import { lookupWalletByVkey } from '@/lib/wallet-lookup';
 import { VerifyAndPublishAgentDialog } from './VerifyAndPublishAgentDialog';
 import { AgentX402Options } from './AgentX402Options';
+import { AgentCardanoSources } from './AgentCardanoSources';
+import { AgentVerifications } from './AgentVerifications';
 
 type AIAgent = RegistryEntry | A2aRegistryEntry;
 
@@ -511,7 +513,7 @@ export function AIAgentDetailsDialog({
                       </CardContent>
                     </Card>
 
-                    {/* ── Standard-only sections ────────────────────────── */}
+                    {/* ── Standard-only sections ── */}
                     {!('agentCardUrl' in agent) && (
                       <>
                         {/* Pricing */}
@@ -561,7 +563,11 @@ export function AIAgentDetailsDialog({
                           </CardContent>
                         </Card>
 
+                        <AgentCardanoSources sources={agent.supportedPaymentSources} />
+
                         <AgentX402Options sources={agent.supportedPaymentSources} />
+
+                        <AgentVerifications verifications={agent.verifications} />
 
                         <div className="flex items-center gap-4 pt-2">
                           <Separator className="flex-1" />
@@ -576,47 +582,39 @@ export function AIAgentDetailsDialog({
                           <div>
                             <h3 className="font-medium mb-4">Author</h3>
                             <div className="space-y-3 text-sm">
-                              {agent.Author ? (
-                                <>
-                                  <div className="flex justify-between">
-                                    <span className="text-muted-foreground">Name:</span>
-                                    <span>{agent.Author.name}</span>
-                                  </div>
-                                  {agent.Author.contactEmail && (
-                                    <div className="flex justify-between">
-                                      <span className="text-muted-foreground">Email:</span>
-                                      <a
-                                        href={`mailto:${agent.Author.contactEmail}`}
-                                        className="text-primary hover:underline"
-                                      >
-                                        {agent.Author.contactEmail}
-                                      </a>
-                                    </div>
-                                  )}
-                                  {agent.Author.organization && (
-                                    <div className="flex justify-between">
-                                      <span className="text-muted-foreground">Organization:</span>
-                                      <span>{agent.Author.organization}</span>
-                                    </div>
-                                  )}
-                                  {agent.Author.contactOther && (
-                                    <div className="flex justify-between">
-                                      <span className="text-muted-foreground">Website:</span>
-                                      <a
-                                        href={agent.Author.contactOther}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-primary hover:underline flex items-center gap-1"
-                                      >
-                                        {agent.Author.contactOther} <Link2 className="h-3 w-3" />
-                                      </a>
-                                    </div>
-                                  )}
-                                </>
-                              ) : (
-                                <span className="text-muted-foreground">
-                                  No author information provided.
-                                </span>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Name:</span>
+                                <span>{agent.Author.name}</span>
+                              </div>
+                              {agent.Author.contactEmail && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Email:</span>
+                                  <a
+                                    href={`mailto:${agent.Author.contactEmail}`}
+                                    className="text-primary hover:underline"
+                                  >
+                                    {agent.Author.contactEmail}
+                                  </a>
+                                </div>
+                              )}
+                              {agent.Author.organization && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Organization:</span>
+                                  <span>{agent.Author.organization}</span>
+                                </div>
+                              )}
+                              {agent.Author.contactOther && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Website:</span>
+                                  <a
+                                    href={agent.Author.contactOther}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-primary hover:underline flex items-center gap-1"
+                                  >
+                                    {agent.Author.contactOther} <Link2 className="h-3 w-3" />
+                                  </a>
+                                </div>
                               )}
                             </div>
                           </div>
@@ -679,9 +677,8 @@ export function AIAgentDetailsDialog({
                               <div className="flex justify-between text-sm p-3 bg-muted/40 rounded-md">
                                 <span className="text-muted-foreground">Model:</span>
                                 <span>
-                                  {agent.Capability.name && agent.Capability.version
-                                    ? `${agent.Capability.name} (v${agent.Capability.version})`
-                                    : (agent.Capability.name ?? `v${agent.Capability.version}`)}
+                                  {agent.Capability.name} (v
+                                  {agent.Capability.version})
                                 </span>
                               </div>
                             </div>

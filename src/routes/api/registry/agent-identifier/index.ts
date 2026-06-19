@@ -8,7 +8,12 @@ import { logger } from '@masumi/payment-core/logger';
 import { extractPolicyId, extractAssetName } from '@/utils/converter/agent-identifier';
 import { validateHexString } from '@/utils/validator/hex';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
-import { metadataSchemaCombined, metadataSchema, metadataSchemaV2 } from '@/routes/api/registry/wallet';
+import {
+	metadataSchemaCombined,
+	metadataSchema,
+	metadataSchemaV2,
+	resolveAgentPricingFromMetadata,
+} from '@/routes/api/registry/wallet';
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import {
@@ -18,6 +23,7 @@ import {
 	supportedPaymentSourcesSchema,
 	type SupportedPaymentSource,
 } from '@/types/payment-source';
+import { parseVerificationsFromMetadata, verificationsSchema } from '@/types/verification';
 import type { Network as NetworkType } from '@/generated/prisma/client';
 
 function filterValidSupportedPaymentSources(
@@ -155,6 +161,9 @@ const agentMetadataObjectSchema = z.object({
 		.nullable()
 		.optional()
 		.describe('Payment sources advertised by this registry entry. Null for legacy metadata.'),
+	verifications: verificationsSchema
+		.nullable()
+		.describe('KERI/Veridian verification claims advertised by this registry entry. Null when none.'),
 });
 
 export const queryAgentByIdentifierSchemaOutput = z
@@ -292,11 +301,18 @@ export const queryAgentByIdentifierGet = readAuthenticatedEndpointFactory.build(
 					AgentPricing: undefined,
 					image: metadataToString(data.image) ?? '',
 					metadataVersion: 2,
+					verifications: null,
 				},
 			};
 		}
 
 		const data = parsedMetadata.data as z.infer<typeof metadataSchema>;
+		// V1 (MIP-002) agents advertise pricing on-chain; resolve it for the
+		// standard path. A2A/v2 agents returned above carry no on-chain pricing.
+		const resolvedAgentPricing = resolveAgentPricingFromMetadata(data);
+		if (resolvedAgentPricing == null) {
+			throw createHttpError(422, 'Agent metadata does not advertise any pricing');
+		}
 		return {
 			policyId: policyId,
 			assetName: extractAssetName(input.agentIdentifier),
@@ -334,16 +350,16 @@ export const queryAgentByIdentifierGet = readAuthenticatedEndpointFactory.build(
 					: undefined,
 				Tags: data.tags.map((tag) => metadataToString(tag)!),
 				AgentPricing:
-					data.agentPricing.pricingType == PricingType.Fixed
+					resolvedAgentPricing.pricingType == PricingType.Fixed
 						? {
-								pricingType: data.agentPricing.pricingType,
-								Pricing: data.agentPricing.fixedPricing.map((price) => ({
+								pricingType: resolvedAgentPricing.pricingType,
+								Pricing: resolvedAgentPricing.fixedPricing.map((price) => ({
 									amount: price.amount.toString(),
 									unit: metadataToString(price.unit)!,
 								})),
 							}
 						: {
-								pricingType: data.agentPricing.pricingType,
+								pricingType: resolvedAgentPricing.pricingType,
 							},
 				image: metadataToString(data.image)!,
 				metadataVersion: data.metadata_version,
@@ -351,6 +367,7 @@ export const queryAgentByIdentifierGet = readAuthenticatedEndpointFactory.build(
 					parseSupportedPaymentSourcesFromMetadata(data.supported_payment_sources),
 					input.network,
 				),
+				verifications: parseVerificationsFromMetadata(data.verifications),
 			},
 		};
 	},

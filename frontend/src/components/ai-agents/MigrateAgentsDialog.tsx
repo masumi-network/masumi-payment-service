@@ -438,7 +438,11 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
       contactEmail?: string;
       contactOther?: string;
       organization?: string;
-    } = { name: agent.Author.name || 'Migrated Agent' };
+      // Preserve the real V1 author name verbatim — including empty. The
+      // backend accepts an empty author name (Author.name is `z.string()` with
+      // no min), so defaulting an empty value to a placeholder would fabricate
+      // on-chain authorship the operator never set. Empty in → empty out.
+    } = { name: agent.Author.name };
     if (agent.Author.contactEmail) author.contactEmail = agent.Author.contactEmail;
     if (agent.Author.contactOther) author.contactOther = agent.Author.contactOther;
     if (agent.Author.organization) author.organization = agent.Author.organization;
@@ -457,7 +461,10 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
       sendFundingLovelace:
         v2HoldingAddress && agent.sendFundingLovelace ? agent.sendFundingLovelace : undefined,
       name: agent.name,
-      description: agent.description ?? agent.name,
+      // Preserve the real V1 description, empty included. The backend accepts
+      // an empty description; substituting the agent name would fabricate
+      // copy the operator never wrote.
+      description: agent.description ?? '',
       // Use the operator's edited URL when provided, otherwise keep the V1 value.
       // Trimmed (via resolveApiBaseUrl) to match exactly what the gate validated.
       apiBaseUrl: resolveApiBaseUrl(agent),
@@ -731,8 +738,12 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
             single wide child (long address, a non-wrapping line) would stretch the whole
             dialog past its max width — clipping the right edge and pushing the footer's
             primary button off-screen. `[&>*]:min-w-0` lets each grid row shrink/wrap, and
-            overflow-x-hidden clips any residual so the action button stays in the box. */}
-        <DialogContent className="sm:max-w-[700px] overflow-y-auto overflow-x-hidden max-h-[90vh] [&>*]:min-w-0">
+            overflow-x-hidden clips any residual so the action button stays in the box.
+            `pb-0` removes the base bottom padding: a `sticky bottom-0` child anchors that
+            padding's height ABOVE the real bottom edge, which would leave a gap below the
+            footer where scrolled-out content peeks through. The footer supplies its own
+            bottom spacing via `py-4`. */}
+        <DialogContent className="sm:max-w-[700px] overflow-y-auto overflow-x-hidden max-h-[90vh] pb-0 [&>*]:min-w-0">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <ShieldCheck className="h-5 w-5 text-primary" />
@@ -1087,7 +1098,7 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
             </div>
           )}
 
-          <DialogFooter className="gap-2 sm:gap-0 sticky bottom-0 -mx-6 -mb-6 border-t bg-background px-6 py-4">
+          <DialogFooter className="gap-2 sm:gap-0 sticky bottom-0 -mx-6 border-t bg-background px-6 py-4">
             {!isDone ? (
               <>
                 {/* Cancel-during-run: flips the `cancelRef` flag the loop

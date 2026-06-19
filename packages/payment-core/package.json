@@ -22,6 +22,7 @@
 		"./payment-source": "./src/payment-source.ts",
 		"./permissions": "./src/permissions.ts",
 		"./smart-contract-state": "./src/smart-contract-state.ts",
+		"./verification": "./src/verification.ts",
 		"./zod": "./src/zod.ts",
 		"./zod-openapi": "./src/zod-openapi.ts"
 	},

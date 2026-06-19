@@ -24,6 +24,11 @@ type AgentQuery = {
   filterStatus?: 'Registered' | 'Deregistered' | 'Pending' | 'Failed';
   searchQuery?: string;
   filterSmartContractAddress?: string;
+  // Server-side "advertises this payment source" filters. Either matches an
+  // entry's supportedPaymentSources so the payment-target list no longer pages
+  // every agent on the network and filters client-side.
+  filterSupportedPaymentSourceAddress?: string;
+  filterSupportedPaymentSourceNetworks?: string;
 };
 
 async function fetchAllAgents(
@@ -45,6 +50,8 @@ async function fetchAllAgents(
             filterStatus: extra.filterStatus,
             searchQuery: extra.searchQuery || undefined,
             filterSmartContractAddress: extra.filterSmartContractAddress,
+            filterSupportedPaymentSourceAddress: extra.filterSupportedPaymentSourceAddress,
+            filterSupportedPaymentSourceNetworks: extra.filterSupportedPaymentSourceNetworks,
           },
         }),
       { errorMessage: 'Failed to load AI agents' },
@@ -81,7 +88,7 @@ export function useContextAgents(params?: {
   searchQuery?: string;
 }) {
   const { apiClient, authorized, network, activeRail, selectedPaymentSource } = useAppContext();
-  const { networks } = useX402Networks({ silentErrors: true });
+  const { networks, isLoading: isX402NetworksLoading } = useX402Networks({ silentErrors: true });
 
   const envChainIds = useMemo(
     () => new Set(chainsForEnv(networks, network).map((chain) => chain.caip2Id)),
@@ -91,16 +98,41 @@ export function useContextAgents(params?: {
   const sourceAddress =
     selectedPaymentSource?.network === network ? selectedPaymentSource.smartContractAddress : null;
 
-  // Every agent on the network, used to find entries that accept payment on this context
-  // regardless of where they are registered.
+  // CAIP-2 ids of the EVM chains active in this environment, as the comma-separated
+  // value the registry endpoint's filterSupportedPaymentSourceNetworks expects.
+  const envChainIdsCsv = useMemo(() => [...envChainIds].join(','), [envChainIds]);
+
+  // Agents that accept payment on THIS context as a payment target (regardless of where
+  // they are registered). Previously this paged every agent on the network and matched
+  // `supportedPaymentSources` client-side; now the registry endpoint filters by the
+  // selected source address (Cardano) or active EVM chain ids (x402) server-side.
+  // Disabled until we have something to scope by, so we never fetch the whole network.
+  const paymentScope: Pick<
+    AgentQuery,
+    'filterSupportedPaymentSourceAddress' | 'filterSupportedPaymentSourceNetworks'
+  > =
+    activeRail === 'x402'
+      ? { filterSupportedPaymentSourceNetworks: envChainIdsCsv || undefined }
+      : { filterSupportedPaymentSourceAddress: sourceAddress ?? undefined };
+  const hasPaymentScope = activeRail === 'x402' ? !!envChainIdsCsv : !!sourceAddress;
+
   const allQuery = useQuery({
-    queryKey: ['context-agents', 'all', network, params?.filterStatus, params?.searchQuery],
+    queryKey: [
+      'context-agents',
+      'payment',
+      network,
+      activeRail,
+      activeRail === 'x402' ? envChainIdsCsv : sourceAddress,
+      params?.filterStatus,
+      params?.searchQuery,
+    ],
     queryFn: () =>
       fetchAllAgents(apiClient, network, {
         filterStatus: params?.filterStatus,
         searchQuery: params?.searchQuery,
+        ...paymentScope,
       }),
-    enabled: !!apiClient && authorized,
+    enabled: !!apiClient && authorized && hasPaymentScope,
     staleTime: 15000,
     // Keep showing the previous results while a status/search change refetches, so the
     // table can dim (isPlaceholderData) rather than flashing empty mid-search.
@@ -175,6 +207,12 @@ export function useContextAgents(params?: {
   // skeleton instead of an empty state or a half-labeled list.
   const registeredPending = isRegisteredQueryActive && registeredQuery.data === undefined;
 
+  // On the x402 rail the payment-scoped query is disabled until the active EVM
+  // chain ids resolve from useX402Networks. Without surfacing that window as
+  // loading, `isLoading` would be false with an empty list and the page would
+  // flash the "no agents accept x402 here" empty state before the chains load.
+  const x402ScopePending = activeRail === 'x402' && isX402NetworksLoading;
+
   // The list is fetched in full but bounded by fetchAllAgents' page cap. Surface when that
   // cap was hit so the page can warn the operator instead of silently showing a partial set.
   const truncated =
@@ -190,7 +228,7 @@ export function useContextAgents(params?: {
     agents,
     truncated,
     isPlaceholderData,
-    isLoading: allQuery.isLoading || registeredPending,
+    isLoading: allQuery.isLoading || registeredPending || x402ScopePending,
     isFetching: allQuery.isFetching || (isRegisteredQueryActive && registeredQuery.isFetching),
     refetch: async () => {
       await Promise.all([

@@ -30,6 +30,7 @@ import {
 	resolveRegistryRecipientWalletAddress,
 } from '@/services/registry/shared';
 import { SupportedPaymentSourceChain, type RegistryMetadataPaymentSource } from '@/types/payment-source';
+import { verificationRowToApi, verificationsToMetadata, type AgentVerificationRow } from '@/types/verification';
 
 const mutex = new Mutex();
 
@@ -89,6 +90,8 @@ export function buildAgentMetadata(
 		};
 		metadataVersion: number;
 		SupportedPaymentSources: RegistrySupportedPaymentSourceMetadataRow[];
+		// Persisted AgentVerification rows; reshaped to nested form before emit.
+		Verifications?: AgentVerificationRow[];
 	},
 	paymentSource: RegistryMetadataPaymentSource,
 ): RegistryMetadata {
@@ -106,6 +109,27 @@ export function buildAgentMetadata(
 						address: paymentSource.smartContractAddress,
 					},
 				];
+	// Cardano sources advertise the agent's pricing inline (one self-contained
+	// payable option per source). Derived from the same `request.Pricing` that
+	// still feeds the top-level `agentPricing` block, so the two stay consistent.
+	const cardanoPricingMetadata =
+		request.Pricing.pricingType == PricingType.Fixed
+			? {
+					pricingType: PricingType.Fixed,
+					fixed: (request.Pricing.FixedPricing?.Amounts ?? []).map((pricing) => ({
+						asset: stringToMetadata(pricing.unit, false),
+						amount: pricing.amount.toString(),
+					})),
+				}
+			: { pricingType: request.Pricing.pricingType };
+	// Optional KERI/Veridian verification claims (see @masumi/payment-core/
+	// verification). Gated on the same metadata version as supported_payment_sources
+	// (a v2-metadata concept); self-describing on chain for third-party verification.
+	const verificationRows = request.Verifications ?? [];
+	const verificationsMetadata =
+		request.metadataVersion >= DEFAULTS.DEFAULT_REGISTRY_METADATA_VERSION && verificationRows.length > 0
+			? verificationsToMetadata(verificationRows.map(verificationRowToApi), stringToMetadata)
+			: undefined;
 	const metadata = {
 		name: stringToMetadata(request.name),
 		description: stringToMetadata(request.description),
@@ -134,6 +158,9 @@ export function buildAgentMetadata(
 			other: stringToMetadata(request.other),
 		},
 		tags: request.tags,
+		// V1 (legacy) registries keep the top-level agentPricing block. Only V2
+		// drops it in favour of the per-source pricing folded into each Cardano
+		// supported payment source.
 		agentPricing:
 			request.Pricing.pricingType == PricingType.Fixed
 				? {
@@ -154,11 +181,15 @@ export function buildAgentMetadata(
 				? supportedPaymentSources.map((source) => ({
 						chain: stringToMetadata(source.chain),
 						network: stringToMetadata(String(source.network)),
-						paymentSourceType:
-							source.paymentSourceType != null ? stringToMetadata(source.paymentSourceType) : undefined,
-						address: stringToMetadata(source.chain === 'EVM' ? (source.address ?? source.payTo) : source.address),
+						settlement: {
+							paymentSourceType:
+								source.paymentSourceType != null ? stringToMetadata(source.paymentSourceType) : undefined,
+							address: stringToMetadata(source.address),
+						},
+						pricing: cardanoPricingMetadata,
 					}))
 				: undefined,
+		verifications: verificationsMetadata,
 	};
 	return cleanMetadata(metadata) as RegistryMetadata;
 }
