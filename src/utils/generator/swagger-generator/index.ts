@@ -8,6 +8,7 @@ import { registerRegistryInboxSupportPaths } from './registrars/registry-inbox-s
 import { registerMonitoringPaths } from './registrars/monitoring';
 import { registerX402Paths } from './registrars/x402';
 import { registerX402ManagementPaths } from './registrars/x402-management';
+import { registerSimpleApiPaths } from './registrars/simple-api';
 
 extendZodWithOpenApi(z);
 
@@ -29,6 +30,7 @@ export function generateOpenAPI() {
 	registerMonitoringPaths({ registry, apiKeyAuth });
 	registerX402Paths({ registry, apiKeyAuth });
 	registerX402ManagementPaths({ registry, apiKeyAuth });
+	registerSimpleApiPaths({ registry, apiKeyAuth });
 
 	return new OpenApiGeneratorV3(registry.definitions).generateDocument({
 		openapi: '3.0.0',
