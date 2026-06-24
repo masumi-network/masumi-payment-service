@@ -56,6 +56,10 @@ function matchesPermissionTab(apiKey: ApiKey, tab: string): boolean {
   }
 }
 
+function isRedactedApiKeyToken(token: string): boolean {
+  return token.startsWith('*****');
+}
+
 export default function ApiKeys() {
   const router = useRouter();
   const { apiClient, network, apiKey } = useAppContext();
@@ -268,7 +272,7 @@ export default function ApiKeys() {
                           <span className="font-mono text-sm text-muted-foreground">
                             {shortenAddress(key.token)}
                           </span>
-                          <CopyButton value={key.token} />
+                          {!isRedactedApiKeyToken(key.token) && <CopyButton value={key.token} />}
                         </div>
                       </td>
                       <td className="p-4 text-sm">{getPermissionLabel(key)}</td>
