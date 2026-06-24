@@ -8,7 +8,12 @@ import { logger } from '@masumi/payment-core/logger';
 import { extractPolicyId, extractAssetName } from '@/utils/converter/agent-identifier';
 import { validateHexString } from '@/utils/validator/hex';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
-import { metadataSchema, resolveAgentPricingFromMetadata } from '@/routes/api/registry/wallet';
+import {
+	metadataSchemaCombined,
+	metadataSchema,
+	metadataSchemaV2,
+	resolveAgentPricingFromMetadata,
+} from '@/routes/api/registry/wallet';
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import {
@@ -52,7 +57,8 @@ const agentMetadataObjectSchema = z.object({
 			}),
 		)
 		.max(25)
-		.describe('List of example outputs from the agent'),
+		.optional()
+		.describe('List of example outputs from the agent. Empty for A2A agents'),
 	Tags: z.array(z.string().max(250)).describe('List of tags categorizing the agent'),
 	Capability: z
 		.object({
@@ -89,7 +95,9 @@ const agentMetadataObjectSchema = z.object({
 				.optional()
 				.describe('Organization of the author. Null if not provided'),
 		})
-		.describe('Author information for the agent'),
+		.nullable()
+		.optional()
+		.describe('Author information for the agent. Null for A2A agents'),
 	Legal: z
 		.object({
 			privacyPolicy: z
@@ -138,11 +146,20 @@ const agentMetadataObjectSchema = z.object({
 					.describe('Pricing type for the agent (Dynamic). Amounts are provided per payment/purchase request'),
 			}),
 		)
-		.describe('Pricing information for the agent'),
+		.optional()
+		.describe('Pricing information for the agent. Absent for A2A agents (pricing is off-chain)'),
 	image: z.string().max(250).describe('URL to the agent image/logo'),
-	metadataVersion: z.coerce.number().int().min(1).max(2).describe('Version of the metadata schema'),
+	metadataVersion: z.coerce
+		.number()
+		.int()
+		.min(1)
+		.max(2)
+		.describe('Version of the metadata schema (1=standard MIP-002, 2=MIP-002-A2A)'),
+	agentCardUrl: z.string().nullable().optional().describe('Agent Card URL for A2A agents. Null for standard agents'),
+	a2aProtocolVersions: z.array(z.string()).optional().describe('A2A protocol versions. Empty for standard agents'),
 	supportedPaymentSources: supportedPaymentSourcesSchema
 		.nullable()
+		.optional()
 		.describe('Payment sources advertised by this registry entry. Null for legacy metadata.'),
 	verifications: verificationsSchema
 		.nullable()
@@ -251,8 +268,8 @@ export const queryAgentByIdentifierGet = readAuthenticatedEndpointFactory.build(
 			throw createHttpError(404, 'Agent registry metadata not found');
 		}
 
-		// Step 8: Parse and validate metadata structure
-		const parsedMetadata = metadataSchema.safeParse(assetInfo.onchain_metadata);
+		// Step 8: Parse and validate metadata structure (supports v1 and v2)
+		const parsedMetadata = metadataSchemaCombined.safeParse(assetInfo.onchain_metadata);
 		if (!parsedMetadata.success) {
 			logger.error('Error parsing agent metadata', {
 				error: parsedMetadata.error,
@@ -261,46 +278,77 @@ export const queryAgentByIdentifierGet = readAuthenticatedEndpointFactory.build(
 			throw createHttpError(422, 'Agent metadata is invalid or malformed');
 		}
 
-		const resolvedAgentPricing = resolveAgentPricingFromMetadata(parsedMetadata.data);
+		const isV2 = parsedMetadata.data.metadata_version === 2;
+
+		// Step 9: Transform and return
+		if (isV2) {
+			const data = parsedMetadata.data as z.infer<typeof metadataSchemaV2>;
+			return {
+				policyId: policyId,
+				assetName: extractAssetName(input.agentIdentifier),
+				agentIdentifier: input.agentIdentifier,
+				Metadata: {
+					name: metadataToString(data.name)!,
+					description: metadataToString(data.description),
+					apiBaseUrl: metadataToString(data.api_url)!,
+					agentCardUrl: metadataToString(data.agent_card_url) ?? null,
+					a2aProtocolVersions: data.a2a_protocol_versions,
+					ExampleOutputs: [],
+					Capability: null,
+					Author: null,
+					Legal: null,
+					Tags: (data.tags ?? []).map((tag) => metadataToString(tag)!),
+					AgentPricing: undefined,
+					image: metadataToString(data.image) ?? '',
+					metadataVersion: 2,
+					verifications: null,
+				},
+			};
+		}
+
+		const data = parsedMetadata.data as z.infer<typeof metadataSchema>;
+		// V1 (MIP-002) agents advertise pricing on-chain; resolve it for the
+		// standard path. A2A/v2 agents returned above carry no on-chain pricing.
+		const resolvedAgentPricing = resolveAgentPricingFromMetadata(data);
 		if (resolvedAgentPricing == null) {
 			throw createHttpError(422, 'Agent metadata does not advertise any pricing');
 		}
-
-		// Step 9: Transform and return
 		return {
 			policyId: policyId,
 			assetName: extractAssetName(input.agentIdentifier),
 			agentIdentifier: input.agentIdentifier,
 			Metadata: {
-				name: metadataToString(parsedMetadata.data.name)!,
-				description: metadataToString(parsedMetadata.data.description),
-				apiBaseUrl: metadataToString(parsedMetadata.data.api_base_url)!,
+				name: metadataToString(data.name)!,
+				description: metadataToString(data.description),
+				apiBaseUrl: metadataToString(data.api_base_url)!,
+				agentCardUrl: null,
+				a2aProtocolVersions: [],
 				ExampleOutputs:
-					parsedMetadata.data.example_output?.map((exampleOutput) => ({
+					data.example_output?.map((exampleOutput) => ({
 						name: metadataToString(exampleOutput.name)!,
 						mimeType: metadataToString(exampleOutput.mime_type)!,
 						url: metadataToString(exampleOutput.url)!,
 					})) ?? [],
-				Capability: parsedMetadata.data.capability
+				Capability: data.capability
 					? {
-							name: metadataToString(parsedMetadata.data.capability.name)!,
-							version: metadataToString(parsedMetadata.data.capability.version)!,
+							name: metadataToString(data.capability.name)!,
+							version: metadataToString(data.capability.version)!,
 						}
 					: undefined,
 				Author: {
-					name: metadataToString(parsedMetadata.data.author.name)!,
-					contactEmail: metadataToString(parsedMetadata.data.author.contact_email),
-					contactOther: metadataToString(parsedMetadata.data.author.contact_other),
-					organization: metadataToString(parsedMetadata.data.author.organization),
+					name: metadataToString(data.author.name)!,
+					contactEmail: metadataToString(data.author.contact_email),
+					contactOther: metadataToString(data.author.contact_other),
+					organization: metadataToString(data.author.organization),
 				},
-				Legal: parsedMetadata.data.legal
+				Legal: data.legal
 					? {
-							privacyPolicy: metadataToString(parsedMetadata.data.legal.privacy_policy),
-							terms: metadataToString(parsedMetadata.data.legal.terms),
-							other: metadataToString(parsedMetadata.data.legal.other),
+							privacyPolicy: metadataToString(data.legal.privacy_policy),
+							terms: metadataToString(data.legal.terms),
+							other: metadataToString(data.legal.other),
 						}
 					: undefined,
-				Tags: parsedMetadata.data.tags.map((tag) => metadataToString(tag)!),
+				Tags: data.tags.map((tag) => metadataToString(tag)!),
 				AgentPricing:
 					resolvedAgentPricing.pricingType == PricingType.Fixed
 						? {
@@ -313,13 +361,13 @@ export const queryAgentByIdentifierGet = readAuthenticatedEndpointFactory.build(
 						: {
 								pricingType: resolvedAgentPricing.pricingType,
 							},
-				image: metadataToString(parsedMetadata.data.image)!,
-				metadataVersion: parsedMetadata.data.metadata_version,
+				image: metadataToString(data.image)!,
+				metadataVersion: data.metadata_version,
 				supportedPaymentSources: filterValidSupportedPaymentSources(
-					parseSupportedPaymentSourcesFromMetadata(parsedMetadata.data.supported_payment_sources),
+					parseSupportedPaymentSourcesFromMetadata(data.supported_payment_sources),
 					input.network,
 				),
-				verifications: parseVerificationsFromMetadata(parsedMetadata.data.verifications),
+				verifications: parseVerificationsFromMetadata(data.verifications),
 			},
 		};
 	},

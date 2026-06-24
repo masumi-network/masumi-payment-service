@@ -71,6 +71,9 @@ if ! pnpm run format; then
     exit 4
 fi
 
+# Remove session scratch files that ESLint's projectService would reject
+rm -f .remember/tmp/*.ts
+
 # Run backend ESLint
 echo "${BLUE}🔍 Running backend ESLint...${NC}"
 if ! pnpm run lint:backend; then
