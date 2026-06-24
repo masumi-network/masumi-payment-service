@@ -1,6 +1,35 @@
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { metadataSchema } from '@/routes/api/registry/wallet';
+import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { z } from '@masumi/payment-core/zod';
+
+const MAX_AGENT_NAME_LENGTH = 250;
+
+function normalizeAgentName(name: string | null | undefined): string | null {
+	const trimmed = name?.trim();
+	if (!trimmed) return null;
+	return trimmed.length > MAX_AGENT_NAME_LENGTH ? trimmed.slice(0, MAX_AGENT_NAME_LENGTH) : trimmed;
+}
+
+/** Reads the agent display name from on-chain registry metadata (no wallet-holding check). */
+export async function lookupAgentNameFromOnChainMetadata(
+	provider: BlockFrostAPI,
+	agentIdentifier: string,
+): Promise<string | null> {
+	try {
+		const assetMetadata = await provider.assetsById(agentIdentifier);
+		if (!assetMetadata?.onchain_metadata) {
+			return null;
+		}
+		const parsed = metadataSchema.safeParse(assetMetadata.onchain_metadata);
+		if (!parsed.success) {
+			return null;
+		}
+		return normalizeAgentName(metadataToString(parsed.data.name));
+	} catch {
+		return null;
+	}
+}
 
 type FetchAssetInWalletAndMetadataSuccess = {
 	data: {

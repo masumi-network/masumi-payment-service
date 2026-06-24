@@ -427,6 +427,11 @@ export const PaymentSchema = {
             nullable: true,
             description: 'Identifier of the agent that is being paid'
         },
+        agentName: {
+            type: 'string',
+            nullable: true,
+            description: 'Display name of the agent when known'
+        },
         pricingType: {
             type: 'string',
             enum: [
@@ -1034,6 +1039,7 @@ export const PaymentSchema = {
         'updatedAt',
         'blockchainIdentifier',
         'agentIdentifier',
+        'agentName',
         'pricingType',
         'lastCheckedAt',
         'payByTime',
@@ -1093,6 +1099,11 @@ export const PurchaseSchema = {
             type: 'string',
             nullable: true,
             description: 'Identifier of the agent that is being purchased'
+        },
+        agentName: {
+            type: 'string',
+            nullable: true,
+            description: 'Display name of the agent when known'
         },
         pricingType: {
             type: 'string',
@@ -1679,6 +1690,7 @@ export const PurchaseSchema = {
         'updatedAt',
         'blockchainIdentifier',
         'agentIdentifier',
+        'agentName',
         'pricingType',
         'lastCheckedAt',
         'payByTime',

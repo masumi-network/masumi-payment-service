@@ -9,6 +9,8 @@ import type { NetworkType } from '@/lib/contexts/AppContext';
 type Props = {
   agentIdentifier: string | null | undefined;
   smartContractAddress: string | null | undefined;
+  /** Denormalized name from the transaction API; registry lookup still runs for the details link. */
+  agentName?: string | null;
   /** Payment source network for this row — keeps registry lookup stable if global network changes. */
   network?: NetworkType | null | undefined;
 };
@@ -17,6 +19,7 @@ type Props = {
 export function TransactionAgentIdentifierCell({
   agentIdentifier,
   smartContractAddress,
+  agentName,
   network,
 }: Props) {
   const { openAgentDetails } = useAgentDetailsDialog();
@@ -59,17 +62,7 @@ export function TransactionAgentIdentifierCell({
   }
 
   const short = shortenAddress(agentIdentifier);
-
-  if (!smartContractAddress) {
-    return (
-      <div className="flex items-center gap-2 min-w-0">
-        <span className="font-mono text-sm text-muted-foreground truncate" title={agentIdentifier}>
-          {short}
-        </span>
-        <CopyButton value={agentIdentifier} />
-      </div>
-    );
-  }
+  const resolvedName = agentName ?? registryEntry?.name ?? null;
 
   const mutedIdentifier = (
     <>
@@ -81,7 +74,35 @@ export function TransactionAgentIdentifierCell({
   );
 
   let cellBody: ReactNode;
-  if (!shouldResolve || isLoading) {
+  if (resolvedName) {
+    if (registryEntry) {
+      cellBody = (
+        <>
+          <button
+            type="button"
+            className="text-sm text-primary hover:underline truncate text-left"
+            title={`${resolvedName} (${agentIdentifier})`}
+            onClick={(e) => {
+              e.stopPropagation();
+              openAgentDetails(registryEntry);
+            }}
+          >
+            {resolvedName}
+          </button>
+          <CopyButton value={agentIdentifier} />
+        </>
+      );
+    } else {
+      cellBody = (
+        <>
+          <span className="text-sm truncate" title={resolvedName}>
+            {resolvedName}
+          </span>
+          <CopyButton value={agentIdentifier} />
+        </>
+      );
+    }
+  } else if (!shouldResolve || isLoading) {
     cellBody = !shouldResolve ? mutedIdentifier : <Skeleton className="h-5 w-full max-w-[140px]" />;
   } else if (registryEntry) {
     cellBody = (
@@ -105,8 +126,13 @@ export function TransactionAgentIdentifierCell({
   }
 
   return (
-    <div ref={containerRef} className="flex items-center gap-2 min-w-0">
-      {cellBody}
+    <div ref={containerRef} className="flex flex-col gap-0.5 min-w-0">
+      <div className="flex items-center gap-2 min-w-0">{cellBody}</div>
+      {resolvedName ? (
+        <span className="font-mono text-xs text-muted-foreground truncate" title={agentIdentifier}>
+          {short}
+        </span>
+      ) : null}
     </div>
   );
 }

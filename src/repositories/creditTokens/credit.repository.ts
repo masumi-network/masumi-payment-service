@@ -25,6 +25,7 @@ async function handlePurchaseCreditInit({
 	collateralReturnLovelace,
 	buyerReturnAddress,
 	sellerReturnAddress,
+	agentName,
 }: {
 	id: string;
 	walletScopeIds: string[] | null;
@@ -44,6 +45,7 @@ async function handlePurchaseCreditInit({
 	collateralReturnLovelace?: bigint;
 	buyerReturnAddress?: string | null;
 	sellerReturnAddress?: string | null;
+	agentName?: string | null;
 }) {
 	// Gate Serializable $transaction through the shared semaphore so concurrent
 	// HTTP requests don't exhaust the pg connection pool. See
@@ -179,6 +181,8 @@ async function handlePurchaseCreditInit({
 							blockchainIdentifier: blockchainIdentifier,
 							agentIdentifier,
 							agentIdentifierSyncedAt: new Date(),
+							agentName: agentName ?? null,
+							agentNameSyncedAt: new Date(),
 							inputHash: inputHash,
 							NextAction: {
 								create: {
