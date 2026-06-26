@@ -28,8 +28,15 @@ export const queryRegistryDiffSchemaInput = z.object({
 		.string()
 		.optional()
 		.nullable()
-		.describe('The smart contract address of the payment source'),
-	filterPaymentSourceType: z.nativeEnum(PaymentSourceType).optional().describe('Filter by payment source type'),
+		.describe(
+			'The smart contract address of the payment source. When omitted with no explicit payment source type, registry diff defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.',
+		),
+	filterPaymentSourceType: z
+		.nativeEnum(PaymentSourceType)
+		.optional()
+		.describe(
+			'Filter by payment source type. When omitted with no smart-contract-address filter, registry diff defaults to Web3CardanoV1 for backwards compatibility.',
+		),
 });
 
 function buildRegistryDiffWhere({

@@ -28,7 +28,9 @@ export const queryRegistryInboxDiffSchemaInput = z.object({
 		.string()
 		.optional()
 		.nullable()
-		.describe('The smart contract address of the payment source'),
+		.describe(
+			'The smart contract address of the payment source. When omitted, inbox registry diff defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.',
+		),
 });
 
 function buildRegistryInboxDiffWhere({

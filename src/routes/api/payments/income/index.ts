@@ -49,7 +49,12 @@ export const postPaymentIncomeSchemaInput = z.object({
 			'The time zone to use for the income calculation. If not provided, will use the UTC time zone. Must be a valid IANA time zone name, see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones',
 		),
 	network: z.nativeEnum(Network).describe('The Cardano network to query income from'),
-	filterPaymentSourceType: z.nativeEnum(PaymentSourceType).optional().describe('Filter by payment source type'),
+	filterPaymentSourceType: z
+		.nativeEnum(PaymentSourceType)
+		.optional()
+		.describe(
+			'Filter by payment source type. When omitted, income totals default to Web3CardanoV1 for backwards compatibility.',
+		),
 });
 
 const unitAmountSchema = z
