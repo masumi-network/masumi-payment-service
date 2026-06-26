@@ -607,8 +607,15 @@ export async function registerAgentV2() {
 					// with the single MINT redeemer budget the validator
 					// returns (V2 mint contract shares one redeemer for the
 					// whole policy bucket).
+					// The shared provider is built on the V1 mesh line; the V2 batch
+					// builder types its fetcher as the V2-line IFetcher. The two are
+					// structurally compatible (only the unused fetchCostModels differs;
+					// IFetcher is byte-identical across the lines — see ADR-0005).
+					const batchFetcher = blockchainProvider as unknown as Parameters<
+						typeof generateRegistryBatchMintTransaction
+					>[0];
 					const evaluationTx = await generateRegistryBatchMintTransaction(
-						blockchainProvider,
+						batchFetcher,
 						network,
 						script,
 						address,
@@ -628,7 +635,7 @@ export async function registerAgentV2() {
 						throw new Error('evaluateTx returned no MINT budget for V2 register batch');
 					}
 					unsignedTx = await generateRegistryBatchMintTransaction(
-						blockchainProvider,
+						batchFetcher,
 						network,
 						script,
 						address,

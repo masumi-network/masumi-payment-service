@@ -10,12 +10,15 @@
 #
 # Usage:
 #   ./run-hydra-e2e.sh up        # devnet + test DB + open & fund a head   (run once)
+#   ./run-hydra-e2e.sh demo      # ONE-SHOT DEMO: up → all 7 ops with LIVE logs (~30 min)
 #   ./run-hydra-e2e.sh all       # up → flow2 → flow1 → flow3 (full lifecycle, ~30 min)
 #   ./run-hydra-e2e.sh flow1     # happy path : lock → submit → collection (seller paid)
 #   ./run-hydra-e2e.sh flow2     # refund path: lock → request → authorize → collect (buyer refunded)
 #   ./run-hydra-e2e.sh flow3     # dispute    : lock → submit → request(→Disputed) → authorize-withdrawal
 #   ./run-hydra-e2e.sh verify    # print last head verdict + in-head escrow UTxOs
 #   ./run-hydra-e2e.sh fund      # top the buyer/seller back up inside the head
+#   ./run-hydra-e2e.sh evidence  # render the per-op proof report (hash↔node-log↔DB) for devs
+#   ./run-hydra-e2e.sh settle    # Close → Fanout: settle in-head balances back to L1 (run LAST)
 #   ./run-hydra-e2e.sh down      # stop the devnet + remove the test DB
 #
 # Flows 1 and 3 include the contract's own cooldown waits (~10–16 min) — that is
@@ -33,13 +36,45 @@ set -uo pipefail
 REPO="${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 # Path to the external cardano-scaling/hydra demo dir. Prefer HYDRA_DEMO_DIR;
 # fall back to a sibling checkout next to the repo, else error in preflight.
-DEMO="${DEMO:-${HYDRA_DEMO_DIR:-$(cd "$REPO/../.." 2>/dev/null && pwd)/hydra/demo}}"
+DEMO="${DEMO:-${HYDRA_DEMO_DIR:-$( \
+  for d in "$REPO/../hydra/demo" "$REPO/../../hydra/demo"; do \
+    [ -d "$d" ] && { (cd "$d" && pwd); break; }; \
+  done )}}"
 DB_CONTAINER="${DB_CONTAINER:-masumi-hydra-test-db}"
 export DATABASE_URL="${DATABASE_URL:-postgresql://postgres:testpass@localhost:5433/masumi_hydra_test?schema=public}"
-NODE1="${NODE1:-http://localhost:4001}"
+# 127.0.0.1, not localhost: the native hydra-node binds its API to 127.0.0.1,
+# and on macOS `localhost` resolves to IPv6 ::1 first — curl then fails to
+# connect (the node isn't listening on ::1) and the head reads as "down".
+NODE1="${NODE1:-http://127.0.0.1:4001}"
 CARDANO_CONTAINER="${CARDANO_CONTAINER:-demo-cardano-node-1}"
 HYDRA_NODE_CONTAINER="${HYDRA_NODE_CONTAINER:-demo-hydra-node-1-1}"
-HYDRA_IMAGE="${HYDRA_IMAGE:-ghcr.io/cardano-scaling/hydra-node:2.1.0}"
+HYDRA_IMAGE="${HYDRA_IMAGE:-ghcr.io/cardano-scaling/hydra-node:2.2.0}"
+
+# Hydra 2.2.0 added a Rust BLS accumulator (Partial Fanout). The published
+# linux/amd64 images run under Docker Desktop's Rosetta on Apple Silicon, where
+# that native crypto pegs a core at 100% CPU and never finishes — publish-scripts
+# and even node startup hang. So on arm64 macOS we run the hydra-nodes NATIVELY
+# (see hydra-native.sh); cardano-node stays in Docker. Override with HYDRA_NATIVE.
+if [ -z "${HYDRA_NATIVE:-}" ]; then
+  if [ "$(uname -s)" = "Darwin" ] && [ "$(uname -m)" = "arm64" ]; then HYDRA_NATIVE=1; else HYDRA_NATIVE=0; fi
+fi
+NATIVE_SH="$REPO/hydra-l2-flow/hydra-native.sh"
+NATIVE_STATE="$REPO/hydra-l2-flow/.native-state"
+NATIVE_LOG="$NATIVE_STATE/node1.log"
+
+# Per-op evidence ledger. step() appends one TSV row per escrow operation as it
+# runs (op<TAB>headTxId<TAB>masumiDbHash<TAB>match<TAB>slot<TAB>iso8601). The
+# `evidence` subcommand renders it into a developer-facing report with node-log
+# + DB + in-head correlation and copy-paste self-verify commands.
+EVIDENCE_TSV="${EVIDENCE_TSV:-$REPO/hydra-l2-flow/.native-state/evidence.tsv}"
+# Settlement facts written by the settle step; build-evidence folds them into EVIDENCE.md.
+SETTLEMENT_STATE="${SETTLEMENT_STATE:-$REPO/hydra-l2-flow/.native-state/settlement.json}"
+
+# hydra-node-1's log source — a docker container (emulated path) or the native
+# node1 logfile (native path). Used by verdict()/verify().
+node1_logs(){
+  if [ "$HYDRA_NATIVE" = 1 ]; then cat "$NATIVE_LOG" 2>/dev/null; else docker logs "$HYDRA_NODE_CONTAINER" 2>&1; fi
+}
 
 cd "$REPO" || { echo "repo not found: $REPO"; exit 1; }
 
@@ -82,41 +117,140 @@ unlock(){ docker exec "$DB_CONTAINER" psql -U postgres -d masumi_hydra_test \
   -c 'UPDATE "HotWallet" SET "lockedAt"=NULL, "pendingTransactionId"=NULL;' >/dev/null 2>&1; }
 
 # Run a tsx flow script with a timeout (these scripts can leave an open handle
-# on exit). Streams output; returns the script's PASS/FAIL line.
+# on exit). Forwards any extra args ("$@") to the script. In VERBOSE=1 mode the
+# full output is streamed live (for demos); otherwise only the PASS/FAIL summary
+# lines are shown and full output is appended to /tmp/hydra-e2e.log.
 run_tsx(){
   local script="$1"; shift
   local timeout_s="${RUN_TIMEOUT:-120}"
   local out; out="$(mktemp)"
-  pnpm exec tsx "$script" >"$out" 2>&1 &
-  local pid=$!
-  local i=0
-  while kill -0 "$pid" 2>/dev/null; do
-    [ "$i" -ge "$timeout_s" ] && { kill "$pid" 2>/dev/null; break; }
-    sleep 1; i=$((i+1))
-  done
-  grep -iE "PASSED|did not|ERROR DETAIL|repointed|created" "$out" | head -6
+  if [ "${VERBOSE:-0}" = 1 ]; then
+    # Stream full output to the terminal AND capture it; watchdog enforces timeout.
+    pnpm exec tsx "$script" "$@" 2>&1 | tee "$out" &
+    local pid=$!
+    ( sleep "$timeout_s"; kill "$pid" 2>/dev/null ) >/dev/null 2>&1 &
+    local wd=$!
+    wait "$pid" 2>/dev/null
+    kill "$wd" 2>/dev/null
+  else
+    pnpm exec tsx "$script" "$@" >"$out" 2>&1 &
+    local pid=$!
+    local i=0
+    while kill -0 "$pid" 2>/dev/null; do
+      [ "$i" -ge "$timeout_s" ] && { kill "$pid" 2>/dev/null; break; }
+      sleep 1; i=$((i+1))
+    done
+    grep -iE "PASSED|did not|ERROR DETAIL|repointed|created" "$out" | head -6
+  fi
   cat "$out" >> /tmp/hydra-e2e.log
   rm -f "$out"
 }
 
-verdict(){ docker logs "$HYDRA_NODE_CONTAINER" 2>&1 \
+# Visible countdown for the contract cooldowns (so a long sleep doesn't look
+# like a hang during a live demo).
+countdown(){
+  local secs="$1" label="${2:-cooldown}"
+  while [ "$secs" -gt 0 ]; do
+    printf '\r   \033[36m%s: %4ds remaining…\033[0m' "$label" "$secs"
+    sleep 5; secs=$((secs-5))
+  done
+  printf '\r   \033[32m%s: done.                 \033[0m\n' "$label"
+}
+
+# Big stage banner for the demo.
+banner(){ printf '\n\033[1;35m══════════════════════════════════════════════════════════\n  %s\n══════════════════════════════════════════════════════════\033[0m\n' "$*"; }
+
+verdict(){ node1_logs \
   | grep -oE '"tag":"(TxValid|TxInvalid)"|OutsideValidityIntervalUTxO|OutsideForecast|PPViewHashesDontMatch' | tail -1; }
+
+# Current node1 log length (works native: cat logfile; docker: full `docker logs`).
+nlog_len(){ node1_logs 2>/dev/null | wc -l | tr -d ' '; }
+
+# Newest L2 tx hash Masumi recorded — the hash a step's own service produced.
+latest_l2_hash(){ docker exec "$DB_CONTAINER" psql -U postgres -d masumi_hydra_test -t \
+  -c 'SELECT "txHash" FROM "Transaction" WHERE layer='"'"'L2'"'"' AND "txHash" IS NOT NULL ORDER BY "createdAt" DESC LIMIT 1;' \
+  2>/dev/null | tr -d '[:space:]'; }
+
+# The single TxValid id the head emitted since log line $1 (this step's real
+# head tx), or empty if the step put nothing into the head.
+head_tx_since(){ node1_logs 2>/dev/null | tail -n +"$(($1 + 1))" \
+  | grep '"tag":"TxValid"' | grep -oE '"transactionId":"[0-9a-f]{64}"' \
+  | grep -oE '[0-9a-f]{64}' | tail -1; }
+
+# HONEST per-step verdict. Inspects ONLY the node1 log lines appended since the
+# step started ($1 = pre-step line count) and reports the head's ACTUAL outcome
+# for THIS step's tx: a real validated tx id, a concrete rejection reason, or
+# "NO HEAD TX" when nothing reached the head. (The old verdict() grepped the
+# whole log and printed a stale setup TxValid, so every step looked green even
+# when its own tx never executed — see node-log/head/DB correlation findings.)
+verdict_since(){
+  local from="$1"
+  local new; new="$(node1_logs 2>/dev/null | tail -n +"$((from + 1))")"
+  local valid; valid="$(printf '%s\n' "$new" | grep '"tag":"TxValid"' \
+    | grep -oE '"transactionId":"[0-9a-f]{64}"' | grep -oE '[0-9a-f]{64}' | tail -1)"
+  if [ -n "$valid" ]; then
+    local db; db="$(latest_l2_hash)"
+    if [ "$db" = "$valid" ]; then
+      printf 'TxValid %s…  (head id == Masumi DB hash ✓ — built by Masumi V2)' "${valid:0:16}"
+    else
+      printf 'TxValid %s…  (head accepted; Masumi DB hash=%s…)' "${valid:0:16}" "${db:0:16}"
+    fi
+    return
+  fi
+  local bad; bad="$(printf '%s\n' "$new" \
+    | grep -oE 'TxInvalid|OutsideValidityIntervalUTxO|OutsideForecast|PPViewHashesDontMatch|ValueNotConservedUTxO|FeeTooSmallUTxO|BadInputsUTxO' \
+    | tail -1)"
+  if [ -n "$bad" ]; then printf 'FAIL: %s (step tx rejected by head)' "$bad"; return; fi
+  printf 'NO HEAD TX — nothing this step reached the head (submit failed / no-op)'
+}
 
 # ── up : devnet + test DB + open & fund a head ───────────────────────────────
 cmd_up(){
   c_blu "[1/5] Hydra devnet…"
-  if docker compose -f "$DEMO/docker-compose.yaml" ps 2>/dev/null | grep -q "hydra-node-1"; then
+  if { [ "$HYDRA_NATIVE" = 1 ] && curl -s "$NODE1/protocol-parameters" >/dev/null 2>&1; } \
+     || { [ "$HYDRA_NATIVE" != 1 ] && docker compose -f "$DEMO/docker-compose.yaml" ps 2>/dev/null | grep -q "hydra-node-1"; }; then
     c_grn "  already running"
   else
     ( cd "$DEMO" && ./prepare-devnet.sh && docker compose up -d cardano-node )
     for i in $(seq 1 40); do [ -S "$DEMO/devnet/node.socket" ] && break; sleep 1; done
-    ( cd "$DEMO" && ./seed-devnet.sh )
-    local txid; txid="$(docker run --rm -v "$DEMO/devnet:/devnet" "$HYDRA_IMAGE" -- \
-      publish-scripts --testnet-magic 42 --node-socket /devnet/node.socket \
-      --cardano-signing-key /devnet/credentials/faucet.sk 2>/dev/null | tail -1)"
-    printf 'HYDRA_SCRIPTS_TX_ID=%s\n' "$txid" > "$DEMO/.env"
-    ( cd "$DEMO" && docker compose up -d hydra-node-1 hydra-node-2 hydra-node-3 )
-    sleep 8
+    # In native mode we publish reference scripts ourselves (the emulated image
+    # hangs on 2.2.0's BLS path), so tell seed-devnet.sh to skip publishing.
+    ( cd "$DEMO" && SKIP_PUBLISH="$([ "$HYDRA_NATIVE" = 1 ] && echo 1 || echo 0)" ./seed-devnet.sh )
+    # Align the head's Plutus cost models with the V2 mesh line (.102 / preprod)
+    # BEFORE the hydra nodes read protocol-parameters.json at startup. The demo's
+    # cardano-node emits an older 251-param PlutusV3 model; mesh produces a
+    # 297-param script-data-hash → PPViewHashesDontMatch on every script-spend.
+    if [ "${USE_HYDRA_PARAMS:-0}" = 1 ]; then
+      # Test: use Hydra's OWN reference protocol-parameters (the file hydra's test
+      # suite runs Plutus on L2 with), zeroing L2 fees, instead of the cardano-cli
+      # one. Isolates whether the head's empty L2 cost models are a params-file issue.
+      HCP="${HCP:-$(cd "$REPO/../hydra/hydra-cluster/config" 2>/dev/null && pwd)/protocol-parameters.json}"
+      if [ -f "$HCP" ]; then
+        jq '.txFeeFixed = 0 | .txFeePerByte = 0 | .executionUnitPrices.priceMemory = 0 | .executionUnitPrices.priceSteps = 0 | .utxoCostPerByte = 0' \
+          "$HCP" > "$DEMO/devnet/protocol-parameters.json" \
+          && c_grn "  using hydra-cluster reference params (fees zeroed)" || c_red "  failed to apply hydra-cluster params"
+      else
+        c_red "  hydra-cluster params not found at $HCP"
+      fi
+    elif [ "${SKIP_ALIGN:-0}" = 1 ]; then
+      c_blu "  SKIP_ALIGN=1 → leaving native devnet cost models (251-param V3)"
+    else
+      node "$REPO/hydra-l2-flow/align-cost-models.cjs" "$DEMO/devnet/protocol-parameters.json" "$REPO" \
+        && c_grn "  cost models aligned to mesh beta.102" || c_red "  cost-model alignment FAILED (script-spend txs may PPViewHashesDontMatch)"
+    fi
+    if [ "$HYDRA_NATIVE" = 1 ]; then
+      # Apple Silicon: publish scripts + run the 3 hydra-nodes natively (no Rosetta).
+      # hydra-native.sh waits for all 3 node APIs before returning.
+      "$NATIVE_SH" publish
+      FRESH="${FRESH:-1}" "$NATIVE_SH" up
+    else
+      local txid; txid="$(docker run --rm -v "$DEMO/devnet:/devnet" "$HYDRA_IMAGE" -- \
+        publish-scripts --testnet-magic 42 --node-socket /devnet/node.socket \
+        --cardano-signing-key /devnet/credentials/faucet.sk 2>/dev/null | tail -1)"
+      printf 'HYDRA_SCRIPTS_TX_ID=%s\n' "$txid" > "$DEMO/.env"
+      ( cd "$DEMO" && docker compose up -d hydra-node-1 hydra-node-2 hydra-node-3 )
+      sleep 8
+    fi
   fi
   curl -s "$NODE1/protocol-parameters" >/dev/null 2>&1 && c_grn "  head API up" || { c_red "  head API down"; exit 1; }
 
@@ -131,6 +265,22 @@ cmd_up(){
     npx prisma db seed --config prisma/prisma.config.ts
   fi
 
+  # Shrink the contract cooldown for the demo. submit-result / request-refund set
+  # the seller/buyer cooldown to (now + cooldownTime + 10min); the 10-min term is
+  # a hardcoded blocktime buffer (the hard floor), so the demo's collection /
+  # authorize-withdrawal waits can't go below ~11 min. Lowering cooldownTime from
+  # the seeded 7 min to 1 min keeps those waits near that floor instead of ~17 min.
+  # Throwaway test DB only — does not touch the dev DB on 5432.
+  docker exec "$DB_CONTAINER" psql -U postgres -d masumi_hydra_test \
+    -c 'UPDATE "PaymentSource" SET "cooldownTime"=60000;' >/dev/null 2>&1 \
+    && c_grn "  cooldownTime set to 60s (cooldown floor ≈ 11 min)"
+
+  # The V2 script address bakes in cooldownPeriod, so lowering cooldownTime above
+  # makes the seeded (vault A, 420000ms) address diverge from what the spend
+  # services re-derive (vault B, 60000ms). Re-point the PaymentSource at vault B
+  # so lock + spend + the on-chain script agree (else: "contract UTXO not found").
+  RUN_TIMEOUT=40 run_tsx hydra-l2-flow/point-vault.mts
+
   c_blu "[3/5] Open head + commit 100 ADA (deposit finalizes in ~2 min)…"
   RUN_TIMEOUT=150 run_tsx hydra-l2-flow/00-open-head.mts
   c_blu "      waiting for the in-head deposit to incorporate…"
@@ -140,20 +290,30 @@ cmd_up(){
     sleep 10
   done
 
-  c_blu "[4/5] Derive buyer address + fund buyer (80 ADA in head)…"
+  c_blu "[4/5] Derive buyer address + fund buyer (40 ADA in head)…"
   local wout; wout="$(mktemp)"
   RUN_TIMEOUT=40 pnpm exec tsx hydra-l2-flow/01-wallet.mts >"$wout" 2>&1 &
   local wp=$!; for i in $(seq 1 40); do kill -0 $wp 2>/dev/null || break; sleep 1; done; kill $wp 2>/dev/null
   BUYER="$(grep -oE 'addr_test1q[a-z0-9]+' "$wout" | head -1)"; rm -f "$wout"
   [ -n "$BUYER" ] || { c_red "  could not derive buyer address"; exit 1; }
   echo "  buyer = ${BUYER:0:24}…"
-  RUN_TIMEOUT=40 run_tsx "hydra-l2-flow/02-fund-in-head.mts" "$BUYER" 80000000
+  RUN_TIMEOUT=40 run_tsx "hydra-l2-flow/02-fund-in-head.mts" "$BUYER" 40000000
 
-  c_blu "[5/5] Give the seller a base address + fund seller (25 ADA in head)…"
+  c_blu "[5/5] Give the seller a base address + fund seller (20 ADA in head)…"
   RUN_TIMEOUT=40 run_tsx hydra-l2-flow/04-fix-seller.mts
   SELLER="$(node -e "console.log(require('$REPO/hydra-l2-flow/.seller.json').address)")"
   echo "  seller = ${SELLER:0:24}…"
-  RUN_TIMEOUT=40 run_tsx "hydra-l2-flow/02-fund-in-head.mts" "$SELLER" 25000000
+  RUN_TIMEOUT=40 run_tsx "hydra-l2-flow/02-fund-in-head.mts" "$SELLER" 20000000
+
+  # Guard: the seller MUST hold an in-head UTxO or flow1/flow3 (seller-side
+  # submit-result) will silently defer. Fail loudly here instead.
+  local sutxo; sutxo=$(curl -s "$NODE1/snapshot/utxo" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const u=JSON.parse(d);let n=0;for(const k of Object.keys(u))if(u[k].address==='$SELLER')n++;console.log(n);})" 2>/dev/null)
+  if [ "${sutxo:-0}" -lt 1 ]; then
+    c_red "  seller has NO in-head UTxO — funding failed (not enough left in the committed 100 ADA?)."
+    c_red "  flow1/flow3 will defer. Lower the buyer amount or raise the head commit, then re-run."
+    exit 1
+  fi
+  c_grn "  seller funded ($sutxo in-head UTxO)"
 
   c_grn "=== UP: head open + funded, test DB seeded. Run: $0 flow1|flow2|flow3 ==="
 }
@@ -165,15 +325,32 @@ cmd_fund(){
   local wp=$!; for i in $(seq 1 40); do kill -0 $wp 2>/dev/null || break; sleep 1; done; kill $wp 2>/dev/null
   BUYER="$(grep -oE 'addr_test1q[a-z0-9]+' "$wout" | head -1)"; rm -f "$wout"
   SELLER="$(node -e "console.log(require('$REPO/hydra-l2-flow/.seller.json').address)" 2>/dev/null)"
-  c_blu "topping up buyer…"; RUN_TIMEOUT=40 run_tsx "hydra-l2-flow/02-fund-in-head.mts" "$BUYER" "${1:-15000000}"
-  [ -n "$SELLER" ] && { c_blu "topping up seller…"; RUN_TIMEOUT=40 run_tsx "hydra-l2-flow/02-fund-in-head.mts" "$SELLER" "${2:-10000000}"; }
+  c_blu "topping up buyer…"; RUN_TIMEOUT=40 run_tsx "hydra-l2-flow/02-fund-in-head.mts" "$BUYER" "${1:-10000000}"
+  [ -n "$SELLER" ] && { c_blu "topping up seller…"; RUN_TIMEOUT=40 run_tsx "hydra-l2-flow/02-fund-in-head.mts" "$SELLER" "${2:-5000000}"; }
 }
 
 step(){ # step <label> <script> [extra env already exported]
   unlock; slotenv
   c_blu "── $1 (slot $HYDRA_L2_CURRENT_SLOT)"
+  local before; before="$(nlog_len)"   # mark the log so verdict sees ONLY this step
   run_tsx "$2"
-  c_grn "   head verdict: $(verdict)"
+  local hash; hash="$(head_tx_since "$before")"
+  local db; db="$(latest_l2_hash)"
+  local match=nomatch; [ -n "$hash" ] && [ "$hash" = "$db" ] && match=match
+  if [ -n "$hash" ]; then
+    if [ "$match" = match ]; then
+      c_grn "   head verdict: TxValid ${hash:0:16}…  (head id == Masumi DB hash ✓ — built by Masumi V2)"
+    else
+      c_grn "   head verdict: TxValid ${hash:0:16}…  (head accepted; Masumi DB hash=${db:0:16}…)"
+    fi
+  else
+    c_red "   head verdict: $(verdict_since "$before")"
+  fi
+  # Append the per-op evidence row (rendered later by the `evidence` subcommand).
+  mkdir -p "$(dirname "$EVIDENCE_TSV")"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$1" "${hash:-NONE}" "${db:-NONE}" "$match" "${HYDRA_L2_CURRENT_SLOT:-?}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    >> "$EVIDENCE_TSV"
 }
 
 # ── flow1 : happy path (seller paid) ─────────────────────────────────────────
@@ -184,7 +361,7 @@ cmd_flow1(){
   step "lock"           hydra-l2-flow/03-lock.mts
   step "submit-result"  hydra-l2-flow/06-submit-result.mts
   c_blu "── collection waits the contract seller-cooldown (~13 min)…"
-  sleep 800
+  countdown 780 "seller-cooldown"
   step "collection"     hydra-l2-flow/07-collection.mts
   c_grn "=== FLOW1 done (lock → submit-result → collection) ==="
 }
@@ -209,8 +386,8 @@ cmd_flow3(){
   export REQUEST_REFUND_FROM_STATE=ResultSubmitted
   step "request-refund→Disputed" hydra-l2-flow/08-request-refund.mts
   unset REQUEST_REFUND_FROM_STATE
-  c_blu "── authorize-withdrawal waits the contract buyer-cooldown (~16 min)…"
-  sleep 1000
+  c_blu "── authorize-withdrawal waits the contract buyer-cooldown (~13 min)…"
+  countdown 780 "buyer-cooldown"
   step "authorize-withdrawal" hydra-l2-flow/11-authorize-withdrawal.mts
   c_grn "=== FLOW3 done (lock → submit → request(→Disputed) → authorize-withdrawal) ==="
 }
@@ -218,12 +395,47 @@ cmd_flow3(){
 # ── all : full lifecycle (fast refund path first, then the two cooldown flows) ─
 cmd_all(){
   cmd_up
+  cmd_evidence_reset   # clean ledger so this run's EVIDENCE.md is coherent
   c_blu "═══ FLOW 2 (refund path, no waits) ═══"; cmd_flow2
   cmd_fund
   c_blu "═══ FLOW 1 (happy path, ~13 min cooldown) ═══"; cmd_flow1
   cmd_fund
   c_blu "═══ FLOW 3 (dispute path, ~16 min cooldown) ═══"; cmd_flow3
+  c_blu "═══ SETTLEMENT (Close → Fanout, back to L1) ═══"; cmd_settle
   c_grn "=== ALL FLOWS DONE — run '$0 verify' for the final head state ==="
+}
+
+# ── demo : full lifecycle with LIVE logs + banners (for showing the 7 ops) ────
+# Same coverage as `all` (lock, submit-result, collection, request-refund,
+# authorize-refund, collect-refund, authorize-withdrawal) but streams every
+# step's full output and verifies the live head after each flow. ~30 min incl.
+# the two contract cooldowns.
+cmd_demo(){
+  export VERBOSE=1
+  : > /tmp/hydra-e2e.log
+  banner "STEP 0 — Docker + hydra-node image + throwaway storage DB + open & fund a head"
+  cmd_up
+  cmd_evidence_reset   # clean ledger so this run's EVIDENCE.md is coherent
+
+  banner "FLOW 2 — refund path (no cooldown): lock → request-refund → authorize-refund → collect-refund"
+  cmd_flow2
+  cmd_verify
+  cmd_fund
+
+  banner "FLOW 1 — happy path (~13 min cooldown): lock → submit-result → collection (seller paid)"
+  cmd_flow1
+  cmd_verify
+  cmd_fund
+
+  banner "FLOW 3 — dispute path (~16 min cooldown): lock → submit-result → request-refund(→Disputed) → authorize-withdrawal"
+  cmd_flow3
+  cmd_verify
+
+  banner "SETTLEMENT — Close → Fanout: settle the in-head balances back to Cardano L1"
+  cmd_settle
+
+  banner "DEMO COMPLETE — all 7 escrow operations + L1 settlement exercised against the live head"
+  c_grn "Full transcript saved to /tmp/hydra-e2e.log"
 }
 
 # ── verify : ground-truth head state ─────────────────────────────────────────
@@ -233,11 +445,36 @@ cmd_verify(){
   curl -s "$NODE1/snapshot/utxo" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const u=JSON.parse(d);let any=false;
     for(const k of Object.keys(u)){const x=u[k]; if(x.address.startsWith('addr_test1wq')){any=true;console.log('  '+k.slice(0,18)+'… '+x.value.lovelace+' lovelace  datum:'+(x.inlineDatum?'yes':'no'));}}
     if(!any)console.log('  (none — funds collected/refunded out)');})"
-  c_blu "Recent head TxValid count:"; echo "  $(docker logs "$HYDRA_NODE_CONTAINER" 2>&1 | grep -c '"tag":"TxValid"')"
+  c_blu "Recent head TxValid count:"; echo "  $(node1_logs | grep -c '"tag":"TxValid"')"
 }
 
 # ── down ─────────────────────────────────────────────────────────────────────
+# ── evidence : render the per-op proof report for developers ─────────────────
+cmd_evidence(){
+  [ -s "$EVIDENCE_TSV" ] || { c_red "no evidence captured yet — run flow1/flow2/flow3 first"; exit 1; }
+  local out="${OUT_MD:-$REPO/hydra-l2-flow/evidence/EVIDENCE.md}"
+  EVIDENCE_TSV="$EVIDENCE_TSV" NATIVE_LOG="$NATIVE_LOG" DB_CONTAINER="$DB_CONTAINER" \
+    NODE1="$NODE1" OUT_MD="$out" SETTLEMENT_STATE="$SETTLEMENT_STATE" node "$REPO/hydra-l2-flow/build-evidence.cjs"
+  c_grn "  open: $out"
+}
+
+# Reset the evidence ledger + settlement state (call before a clean capture run).
+cmd_evidence_reset(){ rm -f "$EVIDENCE_TSV" "$SETTLEMENT_STATE"; c_grn "evidence ledger cleared"; }
+
+# ── settle : Close → Fanout the head, settling in-head UTxOs back to L1 ───────
+# Runs LAST (Close is terminal — the head cannot be reused afterwards). Writes
+# settlement state, then regenerates the combined EVIDENCE.md (escrow proof +
+# settlement in one file).
+cmd_settle(){
+  c_blu "── settle (Close → Fanout): settling in-head balances back to L1"
+  NATIVE_LOG="$NATIVE_LOG" NODE1="$NODE1" SETTLEMENT_STATE="$SETTLEMENT_STATE" \
+    RUN_TIMEOUT=90 run_tsx hydra-l2-flow/13-settle.mts
+  # Fold the settlement into the combined evidence report (best-effort).
+  [ -s "$EVIDENCE_TSV" ] && cmd_evidence || true
+}
+
 cmd_down(){
+  [ "$HYDRA_NATIVE" = 1 ] && "$NATIVE_SH" down 2>/dev/null
   ( cd "$DEMO" && docker compose down )
   docker rm -f "$DB_CONTAINER" >/dev/null 2>&1
   c_grn "=== devnet stopped, test DB removed (dev DB on 5432 untouched) ==="
@@ -245,12 +482,16 @@ cmd_down(){
 
 case "${1:-}" in
   up)     preflight "$@"; cmd_up ;;
+  demo)   preflight "$@"; cmd_demo ;;
   all)    preflight "$@"; cmd_all ;;
   flow1)  preflight "$@"; cmd_flow1 ;;
   flow2)  preflight "$@"; cmd_flow2 ;;
   flow3)  preflight "$@"; cmd_flow3 ;;
   fund)   preflight "$@"; cmd_fund "${2:-}" "${3:-}" ;;
   verify) cmd_verify ;;
+  settle) preflight "$@"; cmd_settle ;;
+  evidence)       cmd_evidence ;;
+  evidence-reset) cmd_evidence_reset ;;
   down)   cmd_down ;;
-  *) grep -E '^#( |$)' "$0" | sed -n '2,28p' | sed 's/^# \{0,1\}//'; exit 1 ;;
+  *) grep -E '^#( |$)' "$0" | sed -n '2,29p' | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

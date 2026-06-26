@@ -40,7 +40,7 @@ The devnet runs on two upstream images. Pull them ahead of time so the first run
 doesn't stall on a download:
 
 ```bash
-docker pull ghcr.io/cardano-scaling/hydra-node:2.1.0
+docker pull ghcr.io/cardano-scaling/hydra-node:2.2.0
 docker pull ghcr.io/intersectmbo/cardano-node:10.6.2
 ```
 
@@ -86,14 +86,22 @@ The exact values, rationale, and the three blockers this harness shook out
 
 ```bash
 # from the repo root
-./hydra-l2-flow/run-hydra-e2e.sh up      # devnet + test DB (port 5433) + open & fund a head
-./hydra-l2-flow/run-hydra-e2e.sh flow2   # fastest end-to-end (refund path, no cooldown)
-./hydra-l2-flow/run-hydra-e2e.sh verify  # last head verdict + in-head escrow UTxOs
-./hydra-l2-flow/run-hydra-e2e.sh down    # stop devnet + remove the test DB
+./hydra-l2-flow/run-hydra-e2e.sh up        # devnet + test DB (port 5433) + open & fund a head
+./hydra-l2-flow/run-hydra-e2e.sh flow2     # fastest end-to-end (refund path, no cooldown)
+./hydra-l2-flow/run-hydra-e2e.sh settle    # Close → Fanout: settle in-head balances back to L1 (run LAST)
+./hydra-l2-flow/run-hydra-e2e.sh evidence  # render evidence/EVIDENCE.md (escrow proof + settlement)
+./hydra-l2-flow/run-hydra-e2e.sh verify    # last head verdict + in-head escrow UTxOs
+./hydra-l2-flow/run-hydra-e2e.sh down      # stop devnet + remove the test DB
 
-# or the whole lifecycle in one go (~30 min incl. cooldowns):
+# or the whole lifecycle in one go (~30 min incl. cooldowns): up → flows → settle:
 ./hydra-l2-flow/run-hydra-e2e.sh all
 ```
+
+> `settle` is terminal (it closes the head) — run it only after the flows you want.
+> It writes settlement state which `evidence` folds into `evidence/EVIDENCE.md`, so the
+> escrow proof and the L1 settlement appear in **one** report. (`all`/`demo` run it last
+> and regenerate the combined report automatically.) Generated reports under `evidence/`
+> are gitignored — regenerate them with the `evidence` subcommand.
 
 `up` creates a throwaway Postgres in Docker on **port 5433** (`masumi-hydra-test-db`)
 and runs Prisma migrate + seed against it. Your dev DB on 5432 is untouched.
@@ -105,7 +113,7 @@ and runs Prisma migrate + seed against it. Your dev DB on 5432 is untouched.
 | ---------------- | ------------------------ | ---------------------------------------- |
 | `HYDRA_DEMO_DIR` | sibling hydra checkout   | location of the external hydra devnet    |
 | `DB_CONTAINER`   | `masumi-hydra-test-db`   | test Postgres container name             |
-| `NODE1`          | `http://localhost:4001`  | head node HTTP API                       |
+| `NODE1`          | `http://127.0.0.1:4001`  | head node HTTP API (127.0.0.1, not localhost: native node binds IPv4) |
 | `RUN_TIMEOUT`    | `120`                    | per-step tsx timeout (seconds)           |
 
 ## Notes

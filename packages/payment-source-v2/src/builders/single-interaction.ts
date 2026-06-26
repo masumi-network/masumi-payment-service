@@ -223,6 +223,16 @@ async function generateMasumiSmartContractInteractionTransactionCustomFee(
 		isHydra,
 	});
 	txBuilder.protocolParams(protocolParameters);
+	// Hydra L2 in-head txs are zero-fee: the head's ledger params set every fee
+	// to 0. The MeshTxBuilder constructor zeroes the fee params for `isHydra`,
+	// but `protocolParams(...)` above re-applies the (cached) chain params, which
+	// carry non-zero L1 fees. A non-zero fee skims value from the head on every
+	// op (fees are not redistributed in-head), accumulating into the head's
+	// `headAdaOverhead` until Close fails the strict-equality check (H65,
+	// ChangedHeadAdaOverhead) and the head can never settle to L1. Force fee 0.
+	if (isHydra) {
+		txBuilder.setFee('0');
+	}
 	const redeemerData = generateRedeemerData(type);
 	const smartContractAddress: unknown = resolvePlutusScriptAddress(
 		script,
@@ -486,6 +496,11 @@ async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 		isHydra,
 	});
 	txBuilder.protocolParams(protocolParameters);
+	// See the interaction builder: force zero fee on L2 so in-head txs don't skim
+	// value into the head's `headAdaOverhead` (which would make Close fail H65).
+	if (isHydra) {
+		txBuilder.setFee('0');
+	}
 	const redeemerData = generateRedeemerData(type);
 
 	const deserializedAddress = txBuilder.serializer.deserializer.key.deserializeAddress(walletAddress);

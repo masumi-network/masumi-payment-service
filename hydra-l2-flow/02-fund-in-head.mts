@@ -39,14 +39,22 @@ function signWithCardanoCli(cborHex: string, credKeyPath: string): string {
 		execSync(`docker cp demo-cardano-node-1:/tmp/s-${id}.tx "${tmpOut}"`, { stdio: 'pipe' });
 		return (JSON.parse(readFileSync(tmpOut, 'utf-8')) as { cborHex: string }).cborHex;
 	} finally {
-		try { unlinkSync(tmpIn); } catch { /* ignore */ }
-		try { unlinkSync(tmpOut); } catch { /* ignore */ }
+		try {
+			unlinkSync(tmpIn);
+		} catch {
+			/* ignore */
+		}
+		try {
+			unlinkSync(tmpOut);
+		} catch {
+			/* ignore */
+		}
 	}
 }
 
 async function main() {
 	if (!MASUMI_ADDR) throw new Error('usage: 02-fund-in-head.mts <masumi_addr> [amount]');
-	const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+	const node = new HydraNode({ httpUrl: 'http://127.0.0.1:4001' });
 	node.connect();
 	await new Promise((r) => setTimeout(r, 1500));
 
@@ -72,12 +80,19 @@ async function main() {
 		)
 		.sort((a, b) => Number(BigInt(b.output.amount[0].quantity) - BigInt(a.output.amount[0].quantity)))[0];
 	if (!source) throw new Error('no pure-ADA in-head UTxO to fund from');
-	log(`funding source: ${source.input.txHash.slice(0, 12)}…#${source.input.outputIndex} (${source.output.amount[0].quantity}) owner=${source.output.address.slice(0, 22)}…`);
+	log(
+		`funding source: ${source.input.txHash.slice(0, 12)}…#${source.input.outputIndex} (${source.output.amount[0].quantity}) owner=${source.output.address.slice(0, 22)}…`,
+	);
 
-	const tx = new MeshTxBuilder({ fetcher: provider, submitter: provider });
+	// isHydra zeroes the fee params; setFee('0') forces a zero fee so the in-head
+	// transfer conserves value exactly. A non-zero fee would shrink the L2 UTxO
+	// total while the head output stays constant, accumulating into the head's
+	// headAdaOverhead until Close fails (H65, ChangedHeadAdaOverhead).
+	const tx = new MeshTxBuilder({ fetcher: provider, submitter: provider, isHydra: true });
 	await tx
 		.txIn(source.input.txHash, source.input.outputIndex, source.output.amount, source.output.address)
 		.txOut(MASUMI_ADDR, [{ unit: 'lovelace', quantity: AMOUNT }])
+		.setFee('0')
 		.changeAddress(source.output.address)
 		.complete();
 
@@ -102,4 +117,7 @@ async function main() {
 	process.exit(0);
 }
 
-main().catch((e) => { console.error('[fund-in-head] FATAL', e); process.exit(1); });
+main().catch((e) => {
+	console.error('[fund-in-head] FATAL', e);
+	process.exit(1);
+});

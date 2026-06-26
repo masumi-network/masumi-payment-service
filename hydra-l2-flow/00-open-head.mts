@@ -26,7 +26,7 @@ async function httpPost(url: string, body: unknown): Promise<unknown> {
 }
 
 async function main() {
-	const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+	const node = new HydraNode({ httpUrl: 'http://127.0.0.1:4001' });
 	node.connect();
 	await new Promise((r) => setTimeout(r, 1500));
 
@@ -50,7 +50,7 @@ async function main() {
 			value: { lovelace },
 		},
 	};
-	const draft = (await httpPost('http://localhost:4001/commit', commitBody)) as { cborHex?: string };
+	const draft = (await httpPost('http://127.0.0.1:4001/commit', commitBody)) as { cborHex?: string };
 	if (!draft.cborHex) throw new Error(`commit draft failed: ${JSON.stringify(draft).slice(0, 300)}`);
 
 	// sign with alice-funds.sk + alice.sk (fuel) and submit via /cardano-transaction
@@ -62,7 +62,7 @@ async function main() {
 		{ input: envelope, encoding: 'utf-8' },
 	);
 	const signed = JSON.parse(signedJson) as { cborHex: string };
-	const submit = await httpPost('http://localhost:4001/cardano-transaction', { type: 'Tx ConwayEra', description: '', cborHex: signed.cborHex });
+	const submit = await httpPost('http://127.0.0.1:4001/cardano-transaction', { type: 'Tx ConwayEra', description: '', cborHex: signed.cborHex });
 	log(`commit submit: ${JSON.stringify(submit).slice(0, 80)}`);
 
 	log('waiting for HeadIsOpen…');
