@@ -24,8 +24,10 @@ import {
 	generateRegistryAssetNameV2,
 	generateRegistryMintTransaction,
 	type RegistryMetadata,
+	registryNonceForIndex,
 	resolveRegistryFundingLovelace,
 	resolveRegistryRecipientWalletAddress,
+	V2_REGISTRY_MAX_MINTS_PER_UTXO,
 } from '@/services/registry/shared';
 import {
 	assertTxSizeWithinLimit,
@@ -98,10 +100,17 @@ async function unlockHotWallet(hotWalletId: string): Promise<void> {
 	}
 }
 
-function validateAndBuildItem(request: InboxRequestRecord, utxo: UTxO, policyId: string): ValidatedInboxItem {
+function validateAndBuildItem(
+	request: InboxRequestRecord,
+	utxo: UTxO,
+	policyId: string,
+	nonce: string,
+): ValidatedInboxItem {
 	const recipientWalletAddress = resolveRegistryRecipientWalletAddress(request);
 	const fundingLovelace = resolveRegistryFundingLovelace(request);
-	const assetName = generateRegistryAssetNameV2(utxo);
+	// Oneshot: the whole batch shares one `utxo`; a distinct `nonce` per item
+	// keeps every asset name unique (see registry/shared.ts).
+	const assetName = generateRegistryAssetNameV2(utxo, nonce);
 	const metadata = buildInboxAgentMetadata({
 		name: request.name,
 		description: request.description,
@@ -332,28 +341,38 @@ export async function registerInboxAgentV2() {
 				// separate body fields. Allow `firstUtxo[0]` to be the same UTxO
 				// as the collateral so a 1-UTxO wallet can still drive a 1-item
 				// batch — matches the V1 single-tx register pattern.
+				// Oneshot rule: the V2 mint validator derives each asset's 28-byte
+				// root from blake2b_224(firstUtxo) and checks it against the spent
+				// inputs, ignoring the 1-byte nonce. So ONE consumed input authorizes
+				// the whole batch — every item shares a single firstUtxo and is
+				// disambiguated by a distinct nonce. A 1-UTxO wallet can drive a full
+				// batch (Conway phase-1 lets that UTxO double as collateral too).
 				const spendableUtxos = sortUtxosByLovelaceDesc(utxos);
+				const sharedFirstUtxo = spendableUtxos[0];
 
+				// Nonce range caps mints-per-input at 240; REGISTRY_BATCH_SIZE is far
+				// below that. Guard anyway: defer any overflow to the next tick.
+				const mintableRequests = registrationRequests.slice(0, V2_REGISTRY_MAX_MINTS_PER_UTXO);
+				if (registrationRequests.length > mintableRequests.length) {
+					logger.warn(
+						`V2 inbox register batch of ${registrationRequests.length} exceeds ${V2_REGISTRY_MAX_MINTS_PER_UTXO} mints/UTxO; deferring ${registrationRequests.length - mintableRequests.length} to next tick`,
+					);
+				}
+
+				// Async callback so any synchronous throw becomes a settled
+				// 'rejected' outcome instead of escaping Promise.allSettled.
 				const validations = await Promise.allSettled(
-					registrationRequests.map((request, idx) => {
-						const utxo = spendableUtxos[idx];
-						if (utxo == null) {
-							throw new Error('Insufficient wallet UTXOs to assign a distinct firstUtxo to this request');
-						}
-						return Promise.resolve(validateAndBuildItem(request, utxo, policyId));
-					}),
+					mintableRequests.map(async (request, idx) =>
+						validateAndBuildItem(request, sharedFirstUtxo, policyId, registryNonceForIndex(idx)),
+					),
 				);
 
 				const validated: ValidatedInboxItem[] = [];
 				for (let idx = 0; idx < validations.length; idx++) {
 					const outcome = validations[idx];
-					const request = registrationRequests[idx];
+					const request = mintableRequests[idx];
 					if (outcome.status === 'fulfilled') {
 						validated.push(outcome.value);
-					} else if (outcome.reason instanceof Error && outcome.reason.message.includes('Insufficient wallet UTXOs')) {
-						logger.warn(
-							`Skipping V2 inbox register request ${request.id} this tick: not enough distinct wallet UTxOs in this batch`,
-						);
 					} else {
 						await markRequestFailed(request, outcome.reason);
 					}

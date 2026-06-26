@@ -28,10 +28,10 @@ import { CurlResponseViewer } from './CurlResponseViewer';
 import { generatePurchaseCurl, decodeBlockchainIdentifier, extractErrorMessage } from './utils';
 import { Search, ClipboardPaste, Wallet } from 'lucide-react';
 import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/WalletDetailsDialog';
-import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
+import { useWallets } from '@/lib/queries/useWallets';
 import { shortenAddress } from '@/lib/utils';
 import { CopyButton } from '@/components/ui/copy-button';
-import { findPaymentSourceWalletByVkey } from '@/lib/wallet-lookup';
+import { lookupWalletByVkey } from '@/lib/wallet-lookup';
 
 interface MockPurchaseDialogProps {
   open: boolean;
@@ -102,7 +102,7 @@ function tryExtractPaymentFields(json: string): ExtractedPaymentFields | null {
 
 export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
   const { apiClient, network, apiKey, selectedPaymentSource } = useAppContext();
-  const { paymentSources } = usePaymentSourceExtendedAll();
+  const { wallets } = useWallets();
   const [isLoading, setIsLoading] = useState(false);
   const [isLookingUp, setIsLookingUp] = useState(false);
   const [pasteValue, setPasteValue] = useState('');
@@ -117,18 +117,9 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
     Array<{ amount: string; unit: string }> | undefined
   >(undefined);
 
-  const currentNetworkPaymentSources = useMemo(
-    () => paymentSources.filter((ps) => ps.network === network),
-    [paymentSources, network],
-  );
-
-  const selectedSource = useMemo(() => {
-    return currentNetworkPaymentSources.find((ps) => ps.id === selectedPaymentSource?.id) ?? null;
-  }, [currentNetworkPaymentSources, selectedPaymentSource]);
-
   const availableBuyerWallets = useMemo(
-    () => selectedSource?.PurchasingWallets ?? [],
-    [selectedSource],
+    () => wallets.filter((wallet) => wallet.type === 'Purchasing'),
+    [wallets],
   );
 
   const selectedBuyerWallet = useMemo(
@@ -154,15 +145,19 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
   }, [open, availableBuyerWallets, selectedBuyerWalletId]);
 
   const handleWalletClick = useCallback(
-    (walletVkey: string) => {
-      const found = findPaymentSourceWalletByVkey(currentNetworkPaymentSources, walletVkey);
+    async (walletVkey: string) => {
+      const found = await lookupWalletByVkey({
+        apiClient,
+        walletVkey,
+        paymentSourceId: selectedPaymentSource?.id,
+      });
       if (!found) {
         toast.error('Wallet not found in current payment sources');
         return;
       }
       setSelectedWalletForDetails(found);
     },
-    [currentNetworkPaymentSources],
+    [apiClient, selectedPaymentSource?.id],
   );
 
   const {

@@ -28,6 +28,8 @@ nonce ++ root_hash ++ version
 
 Updates keep the same `root_hash` and `nonce`, and increment the full 3-byte `version` by exactly one.
 
+> **Off-chain batching implication (oneshot rule).** Because the validator checks each asset's `root_hash` against the spent inputs but does **not** constrain the `nonce`, **one** consumed UTxO can authorize a whole batch of mints in a single transaction — share one `firstUtxo` across every item and give each a distinct `nonce` (`10`, `11`, … up to `ff` → 240 mints per UTxO). Off-chain registry batch code MUST NOT require one wallet UTxO per agent; doing so previously stranded wallets that had fewer UTxOs than queued agents on `Insufficient wallet UTXOs`. See [ADR-0009](../../docs/adr/0009-v2-registry-oneshot-batch-minting.md).
+
 ## Trust Model
 
 V2 is intentionally permissionless (INTENDED DESIGN). The minting policy has no payment-source parameter, admin signer, or registry owner check, so any wallet can mint a registry asset under this policy if it spends a UTxO that authorizes the asset-name prefix rule. This is a deliberate trade-off — the on-chain policy is a content-addressing layer; trust is enforced off-chain by indexers and the operator API.

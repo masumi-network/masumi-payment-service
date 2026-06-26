@@ -13,19 +13,45 @@ import {
 	extractAndValidatePaymentIdentifier,
 	PAYMENT_IDENTIFIER,
 } from '@x402/extensions/payment-identifier';
-import { Prisma, X402PaymentDirection, X402PaymentScheme, X402PaymentStatus, prisma } from '@masumi/payment-core/db';
+import {
+	Prisma,
+	X402EvmWalletType,
+	X402PaymentDirection,
+	X402PaymentScheme,
+	X402PaymentStatus,
+	prisma,
+} from '@masumi/payment-core/db';
 import { decrypt, encrypt } from '@masumi/payment-core/encryption';
 import { logger } from '@masumi/payment-core/logger';
 import { isAllowedCaip2Network } from '@masumi/payment-core/network';
-import { createPublicClient, createWalletClient, defineChain, http, publicActions } from 'viem';
-import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
+import { createPublicClient, createWalletClient, publicActions } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+import {
+	assertHexAddress,
+	assertRpcServesDeclaredChain,
+	assertSafeRpcUrl,
+	createChain,
+	getEip155ChainId,
+	getManagedWalletOrThrow,
+	getX402NetworkOrThrow,
+	normalizeAddress,
+	safeHttpTransport,
+	type PrivateKey,
+} from './internal';
+
+// Wallet CRUD lives in ./wallets; re-exported so existing import sites
+// (`@masumi/payment-source-x402`) and the service spec keep one entry point.
+export {
+	createX402ManagedWallet,
+	deleteX402ManagedWallet,
+	getX402ManagedWallet,
+	listX402ManagedWallets,
+	updateX402ManagedWallet,
+} from './wallets';
 
 const EXACT_SCHEME = 'exact';
 const DEFAULT_X402_TIMEOUT_SECONDS = 300;
 const PERMIT2_EXTRA = { assetTransferMethod: 'permit2' };
-
-type HexAddress = `0x${string}`;
-type PrivateKey = `0x${string}`;
 
 type X402SourceRecord = NonNullable<Awaited<ReturnType<typeof getX402SupportedPaymentSourceOrThrow>>>;
 
@@ -34,100 +60,20 @@ type X402RequirementExtra = {
 	decimals?: unknown;
 };
 
-function getEip155ChainId(caip2Network: string): number {
-	const match = /^eip155:(\d+)$/.exec(caip2Network);
-	if (match == null) {
-		throw createHttpError(400, 'x402 network must be a CAIP-2 eip155 chain id');
-	}
-	const chainId = Number(match[1]);
-	// Guard against silent precision loss feeding the wrong chain id to viem.
-	if (!Number.isSafeInteger(chainId) || chainId <= 0) {
-		throw createHttpError(400, 'x402 eip155 chain id is out of range');
-	}
-	return chainId;
-}
-
-function normalizeAddress(value: string): string {
-	return value.toLowerCase();
-}
-
-function assertHexAddress(value: string, label: string): asserts value is HexAddress {
-	if (!/^0x[a-fA-F0-9]{40}$/.test(value)) {
-		throw createHttpError(400, `${label} must be an EVM address`);
-	}
-}
-
-function assertValidPrivateKey(value: string): asserts value is PrivateKey {
-	if (!/^0x[a-fA-F0-9]{64}$/.test(value)) {
-		throw createHttpError(400, 'x402 wallet private key must be a 0x-prefixed 32-byte hex string');
-	}
-}
+// Largest value the Postgres BigInt (signed 64-bit) settlement-amount column can hold.
+const POSTGRES_BIGINT_MAX = 9223372036854775807n;
 
 // Parse an unsigned-integer string to BigInt, returning null for null/undefined or
 // any non-integer form. Used for amounts that arrive from external services where a
 // malformed value must not throw (e.g. after an irreversible on-chain settle).
+// Also returns null for values that overflow the int64 column: the settle already
+// happened on-chain, so recording a null amount is far better than throwing on the DB
+// write and losing the settlement record entirely (the tx hash is the source of truth).
 function parseUintStringOrNull(value: string | null | undefined): bigint | null {
 	if (value == null || !/^\d+$/.test(value)) return null;
-	return BigInt(value);
-}
-
-const RPC_REQUEST_TIMEOUT_MS = 30_000;
-
-function isPrivateIpv4(ip: string): boolean {
-	const parts = ip.split('.').map((part) => Number(part));
-	if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
-		return true; // malformed → treat as unsafe
-	}
-	const [a, b] = parts;
-	if (a === 0 || a === 127) return true; // this-host / loopback
-	if (a === 10) return true; // private
-	if (a === 172 && b >= 16 && b <= 31) return true; // private
-	if (a === 192 && b === 168) return true; // private
-	if (a === 169 && b === 254) return true; // link-local incl. cloud metadata (169.254.169.254)
-	if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
-	return false;
-}
-
-function isPrivateHost(hostname: string): boolean {
-	const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
-	if (host === 'localhost' || host.endsWith('.localhost')) return true;
-	if (host.includes(':')) {
-		// IPv6: loopback (::1, ::), unique-local (fc00::/7 → fc/fd), link-local (fe80::/10
-		// spans fe80–febf, i.e. the fe8/fe9/fea/feb hextet prefixes)
-		if (host === '::1' || host === '::') return true;
-		if (host.startsWith('fc') || host.startsWith('fd') || /^fe[89ab]/.test(host)) return true;
-		const mapped = /::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(host);
-		if (mapped != null) return isPrivateIpv4(mapped[1]);
-		return false;
-	}
-	if (/^\d+\.\d+\.\d+\.\d+$/.test(host)) return isPrivateIpv4(host);
-	return false;
-}
-
-// SSRF guard for admin-configured RPC endpoints: reject non-http(s) schemes and hosts
-// that are literal private/loopback/link-local addresses (e.g. the cloud metadata IP).
-// This checks the hostname/literal IP only and does not resolve DNS, so it is a
-// mitigation rather than a complete SSRF defense.
-function assertSafeRpcUrl(rpcUrl: string): void {
-	let url: URL;
-	try {
-		url = new URL(rpcUrl);
-	} catch {
-		throw createHttpError(400, 'x402 network rpcUrl must be a valid URL');
-	}
-	if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-		throw createHttpError(400, 'x402 network rpcUrl must use http or https');
-	}
-	if (isPrivateHost(url.hostname)) {
-		throw createHttpError(400, 'x402 network rpcUrl must not target a private, loopback or link-local address');
-	}
-}
-
-// Build a viem HTTP transport with an SSRF check and a request timeout, so a slow or
-// hostile admin-configured RPC cannot hang a request indefinitely.
-function safeHttpTransport(rpcUrl: string) {
-	assertSafeRpcUrl(rpcUrl);
-	return http(rpcUrl, { timeout: RPC_REQUEST_TIMEOUT_MS });
+	const parsed = BigInt(value);
+	if (parsed > POSTGRES_BIGINT_MAX) return null;
+	return parsed;
 }
 
 function toJsonValue(value: unknown): Prisma.InputJsonValue {
@@ -149,45 +95,6 @@ function toRequirementExtra(value: unknown): X402RequirementExtra {
 		return value as X402RequirementExtra;
 	}
 	return {};
-}
-
-function createChain(caip2Network: string, rpcUrl: string, displayName: string) {
-	const chainId = getEip155ChainId(caip2Network);
-
-	return defineChain({
-		id: chainId,
-		name: displayName,
-		nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-		rpcUrls: {
-			default: { http: [rpcUrl] },
-		},
-	});
-}
-
-// Defense-in-depth: an X402Network row pairs a declared CAIP-2 id with an RPC URL, but
-// nothing guarantees the RPC actually serves that chain. Signing/settling against a
-// mismatched RPC would build EIP-712 domains and broadcast on the wrong chain, so we
-// verify the live chain id before trusting the configured network for fund movement.
-async function assertRpcServesDeclaredChain(client: { getChainId: () => Promise<number> }, caip2Network: string) {
-	const expectedChainId = getEip155ChainId(caip2Network);
-	let actualChainId: number;
-	try {
-		actualChainId = await client.getChainId();
-	} catch (error) {
-		logger.error('x402 network RPC is unreachable while verifying its chain id', { caip2Network, error });
-		throw createHttpError(502, 'x402 network RPC is unreachable');
-	}
-	if (actualChainId !== expectedChainId) {
-		logger.error('x402 network RPC serves a different chain than its configured CAIP-2 id', {
-			caip2Network,
-			expectedChainId,
-			actualChainId,
-		});
-		throw createHttpError(
-			502,
-			`x402 network RPC serves chain id ${actualChainId} but ${caip2Network} expects ${expectedChainId}`,
-		);
-	}
 }
 
 export function hashX402PaymentPayload(paymentPayload: unknown): string {
@@ -248,19 +155,6 @@ function assertPaymentPayloadMatchesRegisteredResource(source: X402SourceRecord,
 	}
 }
 
-async function getX402NetworkOrThrow(caip2Network: string) {
-	const network = await prisma.x402Network.findUnique({
-		where: { caip2Id: caip2Network },
-		include: {
-			FacilitatorWallet: true,
-		},
-	});
-	if (network == null || !network.isEnabled) {
-		throw createHttpError(404, 'x402 network is not enabled');
-	}
-	return network;
-}
-
 async function getX402SupportedPaymentSourceOrThrow(supportedPaymentSourceId: string) {
 	const source = await prisma.supportedPaymentSource.findUnique({
 		where: { id: supportedPaymentSourceId },
@@ -280,18 +174,11 @@ async function getX402SupportedPaymentSourceOrThrow(supportedPaymentSourceId: st
 	return source;
 }
 
-async function getManagedWalletOrThrow(evmWalletId: string) {
-	const wallet = await prisma.x402EvmWallet.findUnique({
-		where: { id: evmWalletId, deletedAt: null },
-	});
-	if (wallet == null) {
-		throw createHttpError(404, 'Managed EVM wallet not found');
-	}
-	return wallet;
-}
-
 async function getClientForWallet(walletId: string, caip2Network: string) {
-	const [wallet, network] = await Promise.all([getManagedWalletOrThrow(walletId), getX402NetworkOrThrow(caip2Network)]);
+	const [wallet, network] = await Promise.all([
+		getManagedWalletOrThrow(walletId, X402EvmWalletType.Purchasing),
+		getX402NetworkOrThrow(caip2Network),
+	]);
 	const privateKey = decrypt(wallet.encryptedPrivateKey) as PrivateKey;
 	const account = privateKeyToAccount(privateKey);
 	const chain = createChain(network.caip2Id, network.rpcUrl, network.displayName);
@@ -326,6 +213,12 @@ async function getFacilitatorForNetwork(caip2Network: string) {
 	// still attached to the network (e.g. re-assigned after deletion).
 	if (network.FacilitatorWallet.deletedAt != null) {
 		throw createHttpError(400, 'x402 network facilitator wallet has been retired');
+	}
+	// Defense-in-depth: a facilitator settles inbound payments, so it must be a Selling
+	// wallet. Assignment is already gated in upsertX402Network, but enforce at use too in
+	// case a wallet's role changed after it was wired up.
+	if (network.FacilitatorWallet.type !== X402EvmWalletType.Selling) {
+		throw createHttpError(400, 'x402 network facilitator wallet is not a Selling wallet');
 	}
 
 	const privateKey = decrypt(network.FacilitatorWallet.encryptedPrivateKey) as PrivateKey;
@@ -502,60 +395,11 @@ function assertPayloadRequirementsMatchRegisteredSource(
 	}
 }
 
-export async function createX402ManagedWallet({
-	createdByApiKeyId,
-	privateKey,
-}: {
-	createdByApiKeyId: string;
-	privateKey?: string;
-}) {
-	const walletPrivateKey = privateKey ?? generatePrivateKey();
-	// Validate here (not only in the route schema) so any caller of this function is
-	// protected before the key reaches viem and is encrypted at rest.
-	assertValidPrivateKey(walletPrivateKey);
-	const account = privateKeyToAccount(walletPrivateKey);
-
-	try {
-		return await prisma.x402EvmWallet.create({
-			data: {
-				address: account.address,
-				encryptedPrivateKey: encrypt(walletPrivateKey),
-				createdById: createdByApiKeyId,
-			},
-			select: {
-				id: true,
-				address: true,
-				createdAt: true,
-				updatedAt: true,
-				createdById: true,
-			},
-		});
-	} catch (error) {
-		// address is @unique (including soft-deleted rows), so importing a key whose address
-		// already exists surfaces a clear 409 instead of an opaque Prisma 500.
-		if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-			throw createHttpError(409, 'A managed EVM wallet with this address already exists');
-		}
-		throw error;
-	}
-}
-
-export async function listX402ManagedWallets() {
-	return prisma.x402EvmWallet.findMany({
-		where: { deletedAt: null },
-		orderBy: { createdAt: 'desc' },
-		select: {
-			id: true,
-			address: true,
-			createdAt: true,
-			updatedAt: true,
-			createdById: true,
-		},
-	});
-}
-
-export async function listX402Networks() {
-	return prisma.x402Network.findMany({
+export async function listX402Networks(input?: { isTestnet?: boolean }) {
+	const networks = await prisma.x402Network.findMany({
+		// Split by environment at the query level: testnet chains belong to the Preprod
+		// environment, mainnet chains to Mainnet. Undefined returns every chain.
+		where: { isTestnet: input?.isTestnet },
 		orderBy: { caip2Id: 'asc' },
 		select: {
 			id: true,
@@ -566,11 +410,18 @@ export async function listX402Networks() {
 			isEnabled: true,
 			defaultAsset: true,
 			facilitatorWalletId: true,
+			// Denormalize the facilitator address so the UI can label chains
+			// without loading the full managed-wallet set to resolve the id.
+			FacilitatorWallet: { select: { address: true } },
 			createdById: true,
 			createdAt: true,
 			updatedAt: true,
 		},
 	});
+	return networks.map(({ FacilitatorWallet, ...network }) => ({
+		...network,
+		facilitatorWalletAddress: FacilitatorWallet?.address ?? null,
+	}));
 }
 
 export async function upsertX402Network(input: {
@@ -586,14 +437,14 @@ export async function upsertX402Network(input: {
 	getEip155ChainId(input.caip2Id);
 	assertSafeRpcUrl(input.rpcUrl);
 	if (input.defaultAsset != null) assertHexAddress(input.defaultAsset, 'defaultAsset');
-	// A facilitator must reference a live managed wallet. Validating here returns a clear
-	// 404 (instead of an opaque FK 500) and stops a retired wallet from being wired up as
-	// a signer — getManagedWalletOrThrow filters out soft-deleted wallets.
+	// A facilitator must reference a live Selling wallet. Validating here returns a clear
+	// 404/400 (instead of an opaque FK 500) and stops a retired wallet — or a Purchasing
+	// wallet — from being wired up as a settlement signer.
 	if (input.facilitatorWalletId != null) {
-		await getManagedWalletOrThrow(input.facilitatorWalletId);
+		await getManagedWalletOrThrow(input.facilitatorWalletId, X402EvmWalletType.Selling);
 	}
 
-	return prisma.x402Network.upsert({
+	const result = await prisma.x402Network.upsert({
 		where: { caip2Id: input.caip2Id },
 		create: {
 			caip2Id: input.caip2Id,
@@ -623,11 +474,14 @@ export async function upsertX402Network(input: {
 			isEnabled: true,
 			defaultAsset: true,
 			facilitatorWalletId: true,
+			FacilitatorWallet: { select: { address: true } },
 			createdById: true,
 			createdAt: true,
 			updatedAt: true,
 		},
 	});
+	const { FacilitatorWallet, ...network } = result;
+	return { ...network, facilitatorWalletAddress: FacilitatorWallet?.address ?? null };
 }
 
 export async function setX402WalletBudget(input: {
@@ -655,7 +509,8 @@ export async function setX402WalletBudget(input: {
 	if (apiKey == null) {
 		throw createHttpError(404, 'API key not found');
 	}
-	await getManagedWalletOrThrow(input.evmWalletId);
+	// Budgets fund outbound payments, so they may only be granted to a Purchasing wallet.
+	await getManagedWalletOrThrow(input.evmWalletId, X402EvmWalletType.Purchasing);
 
 	return prisma.x402WalletBudget.upsert({
 		where: {
@@ -676,13 +531,18 @@ export async function setX402WalletBudget(input: {
 			createdById: input.createdById,
 		},
 		// createdById is intentionally not updated — it records who first set the budget.
+		// Setting a budget replaces the remaining amount with a fresh grant, so reset
+		// spentAmount too; otherwise "remaining + spent" no longer equals what was granted
+		// and the Spent column keeps stale consumption from the previous grant.
 		update: {
 			remainingAmount,
+			spentAmount: 0n,
 		},
 		select: {
 			id: true,
 			apiKeyId: true,
 			evmWalletId: true,
+			EvmWallet: { select: { address: true } },
 			caip2Network: true,
 			asset: true,
 			remainingAmount: true,
@@ -702,6 +562,7 @@ export async function listX402WalletBudgets(apiKeyId?: string) {
 			id: true,
 			apiKeyId: true,
 			evmWalletId: true,
+			EvmWallet: { select: { address: true } },
 			caip2Network: true,
 			asset: true,
 			remainingAmount: true,
@@ -975,6 +836,23 @@ export async function settleX402Payment({
 		paymentIdentifier: identifier.id,
 		replay: false,
 		settleResponse,
+		// Webhook-ready summary for the route handler to emit (settled or failed). Not part
+		// of the HTTP response schema; the route strips it before responding.
+		webhook: {
+			attemptId: attempt.id,
+			paymentPayloadHash,
+			supportedPaymentSourceId,
+			registryRequestId: source.registryRequestId,
+			caip2Network: requirements.network,
+			asset: requirements.asset,
+			amount: requirements.amount,
+			payTo: requirements.payTo,
+			payer: settleResponse.payer ?? null,
+			txHash: settleResponse.transaction ?? null,
+			success: settleResponse.success,
+			errorReason: settleResponse.errorReason ?? null,
+			errorMessage: settleResponse.errorMessage ?? null,
+		},
 	};
 }
 
@@ -1141,29 +1019,14 @@ export async function createX402Payment({
 					error: updateError,
 				});
 			});
-		throw error;
+		// Intentional HttpErrors (e.g. a 400 validation reject thrown above) carry a
+		// safe, deliberate message and status — propagate them unchanged. Only unexpected
+		// errors (raw signing/RPC failures, which can embed the configured RPC URL) are
+		// sanitized so those internals can never reach the caller.
+		if (createHttpError.isHttpError(error)) {
+			throw error;
+		}
+		logger.error('x402 payment signing failed', { attemptId: reservation.attemptId, error });
+		throw createHttpError(500, 'x402 payment signing failed');
 	}
-}
-
-export async function deleteX402ManagedWallet(evmWalletId: string) {
-	const wallet = await prisma.x402EvmWallet.findUnique({
-		where: { id: evmWalletId, deletedAt: null },
-		select: { id: true },
-	});
-	if (wallet == null) {
-		throw createHttpError(404, 'Managed EVM wallet not found');
-	}
-
-	// Soft-delete the wallet, disable its budgets, and detach it from any network it
-	// facilitates, so a retired/compromised key can no longer sign or settle.
-	await prisma.$transaction([
-		prisma.x402EvmWallet.update({ where: { id: evmWalletId }, data: { deletedAt: new Date() } }),
-		prisma.x402WalletBudget.updateMany({ where: { evmWalletId }, data: { enabled: false } }),
-		prisma.x402Network.updateMany({
-			where: { facilitatorWalletId: evmWalletId },
-			data: { facilitatorWalletId: null },
-		}),
-	]);
-
-	return { id: evmWalletId };
 }

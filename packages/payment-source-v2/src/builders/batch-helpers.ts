@@ -551,3 +551,15 @@ export function assertTxSizeWithinLimit(unsignedTxHex: string, label: string): v
 		);
 	}
 }
+
+/**
+ * Non-throwing companion to `assertTxSizeWithinLimit`. Returns `true` when the
+ * unsigned tx (hex CBOR) is within `MAX_SAFE_TX_BYTES`. Use this to drive an
+ * async size-aware shrink loop where the builder is async and therefore cannot
+ * run inside the synchronous `shrinkBatchToFit` predicate.
+ *
+ * @param unsignedTxHex Hex-encoded CBOR — each pair of chars is one byte.
+ */
+export function isTxSizeWithinLimit(unsignedTxHex: string): boolean {
+	return Math.floor(unsignedTxHex.length / 2) <= MAX_SAFE_TX_BYTES;
+}

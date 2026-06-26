@@ -103,12 +103,18 @@ export async function startApp() {
 						directives: {
 							defaultSrc: ["'self'"],
 							baseUri: ["'self'"],
-							connectSrc: ["'self'"],
+							// The admin UI calls a few third-party services directly from the browser:
+							// Blockfrost (validating the API key during setup, across networks) and
+							// CoinGecko (the ADA/USD rate). EVM chain RPCs are NOT listed: the UI never
+							// calls them directly — reachability and balances are checked server-side.
+							connectSrc: ["'self'", 'https://*.blockfrost.io', 'https://api.coingecko.com'],
 							fontSrc: ["'self'", 'data:'],
 							frameAncestors: ["'none'"],
 							imgSrc: ["'self'", 'data:'],
 							objectSrc: ["'none'"],
-							scriptSrc: ["'self'", "'unsafe-inline'"],
+							// 'wasm-unsafe-eval' lets the bundled Mesh SDK (Cardano serialization) compile
+							// its WebAssembly. It permits WASM only, not arbitrary JS eval.
+							scriptSrc: ["'self'", "'unsafe-inline'", "'wasm-unsafe-eval'"],
 							styleSrc: ["'self'", "'unsafe-inline'"],
 						},
 					},

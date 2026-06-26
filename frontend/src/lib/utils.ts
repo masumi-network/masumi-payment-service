@@ -335,3 +335,14 @@ export function formatX402Amount(amount: string | null | undefined, decimals: nu
   const formatted = fraction.length > 0 ? `${whole}.${fraction}` : whole;
   return negative ? `-${formatted}` : formatted;
 }
+
+// Group an integer string with thousand separators for readability, e.g.
+// "1000000" -> "1,000,000". Used for base-unit amounts whose token decimals are
+// unknown (budgets, payment attempts), where a decimal point can't be placed safely.
+export function groupDigits(value: string | null | undefined): string {
+  if (value == null || value === '') return '—';
+  if (!/^-?\d+$/.test(value)) return value;
+  const negative = value.startsWith('-');
+  const digits = (negative ? value.slice(1) : value).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return negative ? `-${digits}` : digits;
+}

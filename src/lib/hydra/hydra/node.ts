@@ -28,6 +28,27 @@ export type HydraRawCostModels = {
 	PlutusV3?: number[];
 };
 
+/**
+ * The subset of hydra-node's `/protocol-parameters` JSON that
+ * `fetchProtocolParameters` reads (Cardano-API ProtocolParameters shape).
+ */
+type RawHydraProtocolParameters = {
+	utxoCostPerByte: number;
+	collateralPercentage: number;
+	maxBlockExecutionUnits: { memory: number; steps: number };
+	maxBlockHeaderSize: number;
+	maxBlockBodySize: number;
+	maxCollateralInputs: number;
+	maxTxExecutionUnits: { memory: number; steps: number };
+	maxTxSize: number;
+	maxValueSize: number;
+	txFeePerByte: number;
+	txFeeFixed: number;
+	minPoolCost: number;
+	stakePoolDeposit: number;
+	executionUnitPrices: { priceMemory: number; priceSteps: number };
+};
+
 export interface IHydraNode {
 	connect(): void | Promise<void>;
 	init(): Promise<unknown>;
@@ -42,8 +63,10 @@ export interface IHydraNode {
 	close(): Promise<unknown>;
 	fanout(): Promise<unknown>;
 
-	get(url: string): Promise<any>;
-	post(url: string, payload: unknown): Promise<any>;
+	// Raw hydra-node HTTP responses are untyped JSON; callers pass the expected
+	// shape via the type parameter (defaults to `unknown`, forcing narrowing).
+	get<T = unknown>(url: string): Promise<T>;
+	post<T = unknown>(url: string, payload: unknown): Promise<T>;
 
 	get status(): HydraHeadStatus;
 	get httpUrl(): string;
@@ -155,8 +178,8 @@ export class HydraNode extends EventEmitter {
 			bodyRequest = hydraUTxOs;
 		}
 
-		const response = await this.post('/commit', bodyRequest);
-		return response as HydraTransaction;
+		const response = await this.post<HydraTransaction>('/commit', bodyRequest);
+		return response;
 	}
 
 	async cardanoTransaction(transaction: HydraTransaction) {
@@ -165,13 +188,13 @@ export class HydraNode extends EventEmitter {
 	}
 
 	async snapshotUTxO(): Promise<UTxO[]> {
-		const response = await this.get('/snapshot/utxo');
-		const utxos = Object.keys(response).map((txId: string) => mapHydraUTxOToUTxO(txId, response[txId] as HydraUTxO));
+		const response = await this.get<Record<string, HydraUTxO>>('/snapshot/utxo');
+		const utxos = Object.keys(response).map((txId: string) => mapHydraUTxOToUTxO(txId, response[txId]));
 		return utxos;
 	}
 
 	async fetchProtocolParameters() {
-		const response = await this.get('/protocol-parameters');
+		const response = await this.get<RawHydraProtocolParameters>('/protocol-parameters');
 
 		const parameters: Protocol = castProtocol({
 			coinsPerUtxoSize: Number(response.utxoCostPerByte),
@@ -202,7 +225,7 @@ export class HydraNode extends EventEmitter {
 		// per-language arrays the head's ledger hashes into the script-data-hash.
 		// castProtocol() (used by fetchProtocolParameters above) drops these, so
 		// fetch the raw payload and extract them here.
-		const response = await this.get('/protocol-parameters');
+		const response = await this.get<{ costModels?: HydraRawCostModels }>('/protocol-parameters');
 		const costModels = response?.costModels;
 		const toNumberArray = (value: unknown): number[] | undefined => {
 			if (!Array.isArray(value)) return undefined;
@@ -306,15 +329,15 @@ export class HydraNode extends EventEmitter {
 		});
 	}
 
-	async get(url: string): Promise<any> {
+	async get<T = unknown>(url: string): Promise<T> {
 		const body = await fetch(this._httpUrl + url, {
 			method: 'GET',
 			headers: { 'Content-Type': 'application/json' },
 		});
-		return await handleHttpResponse(body);
+		return (await handleHttpResponse(body)) as T;
 	}
 
-	async post(url: string, payload: unknown): Promise<any> {
+	async post<T = unknown>(url: string, payload: unknown): Promise<T> {
 		const body = await fetch(this._httpUrl + url, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },

@@ -24,6 +24,7 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Checkbox } from '@/components/ui/checkbox';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
+import { useAllWallets } from '@/lib/queries/useWallets';
 import { shortenAddress } from '@/lib/utils';
 import {
   getActiveStablecoinConfig,
@@ -103,38 +104,26 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
   const tokenInputRef = useRef<HTMLInputElement | null>(null);
   const { apiClient, network } = useAppContext();
   const { paymentSources } = usePaymentSourceExtendedAll();
-  const { networks: evmChainOptions } = useX402Networks({ silentErrors: true });
+  const { wallets: managedWallets } = useAllWallets(open);
+  // A key's NetworkLimit can span both Cardano networks, so offer EVM chains from every
+  // environment, not just the active top-selector one, or chains for the other network
+  // can't be added to ChainIdLimit in one flow.
+  const { networks: evmChainOptions } = useX402Networks({
+    silentErrors: true,
+    allEnvironments: true,
+  });
 
   const allWallets = useMemo(() => {
-    const wallets: Array<{
-      id: string;
-      type: 'Purchasing' | 'Selling';
-      network: string;
-      walletAddress: string;
-      note: string | null;
-    }> = [];
-    for (const ps of paymentSources) {
-      for (const w of ps.PurchasingWallets ?? []) {
-        wallets.push({
-          id: w.id,
-          type: 'Purchasing',
-          network: ps.network,
-          walletAddress: w.walletAddress,
-          note: w.note,
-        });
-      }
-      for (const w of ps.SellingWallets ?? []) {
-        wallets.push({
-          id: w.id,
-          type: 'Selling',
-          network: ps.network,
-          walletAddress: w.walletAddress,
-          note: w.note,
-        });
-      }
-    }
-    return wallets;
-  }, [paymentSources]);
+    // Wallets come from /wallet/list now; join to the source for its network.
+    const networkBySourceId = new Map(paymentSources.map((ps) => [ps.id, ps.network]));
+    return managedWallets.map((wallet) => ({
+      id: wallet.id,
+      type: wallet.type,
+      network: networkBySourceId.get(wallet.paymentSourceId) ?? '',
+      walletAddress: wallet.walletAddress,
+      note: wallet.note,
+    }));
+  }, [managedWallets, paymentSources]);
 
   const {
     register,
@@ -322,6 +311,7 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
                     {evmChainOptions.map((chain) => (
                       <div key={chain.id} className="flex items-center gap-2">
                         <Checkbox
+                          aria-label={chain.displayName}
                           checked={field.value.includes(chain.caip2Id)}
                           onCheckedChange={() => {
                             if (field.value.includes(chain.caip2Id)) {
@@ -354,7 +344,7 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
               name="status"
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger>
+                  <SelectTrigger aria-label="Status">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -417,6 +407,7 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
                     name="walletScopeEnabled"
                     render={({ field }) => (
                       <Checkbox
+                        aria-label="Restrict to specific wallets"
                         checked={field.value}
                         onCheckedChange={(checked) => {
                           field.onChange(checked);

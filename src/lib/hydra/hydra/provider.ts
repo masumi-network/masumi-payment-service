@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import type {
 	AccountInfo,
 	Asset,
@@ -117,9 +116,8 @@ export class HydraProvider implements IFetcher, ISubmitter {
 		return txHash;
 	}
 
-	async get(url: string): Promise<any> {
-		const response = await this._node.get(url);
-		return response;
+	async get<T = unknown>(url: string): Promise<T> {
+		return this._node.get<T>(url);
 	}
 
 	async fetchAccountInfo(_address?: string): Promise<AccountInfo> {

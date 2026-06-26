@@ -20,10 +20,12 @@ import { Tabs } from '@/components/ui/tabs';
 import { AgentEarningsOverview } from './AgentEarningsOverview';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { extractApiErrorMessage } from '@/lib/api-error';
-import { findPaymentSourceWalletByVkey } from '@/lib/wallet-lookup';
+import { lookupWalletByVkey } from '@/lib/wallet-lookup';
 import { useMemo } from 'react';
 import { VerifyAndPublishAgentDialog } from './VerifyAndPublishAgentDialog';
 import { AgentX402Options } from './AgentX402Options';
+import { AgentCardanoSources } from './AgentCardanoSources';
+import { AgentVerifications } from './AgentVerifications';
 
 type AIAgent = RegistryEntry;
 
@@ -205,15 +207,15 @@ export function AIAgentDetailsDialog({
   ]);
 
   const handleWalletClick = useCallback(
-    (walletVkey: string) => {
-      const found = findPaymentSourceWalletByVkey(currentNetworkPaymentSources, walletVkey);
+    async (walletVkey: string) => {
+      const found = await lookupWalletByVkey({ apiClient, walletVkey });
       if (!found) {
         toast.error('Wallet not found');
         return;
       }
       setSelectedWalletForDetails(found);
     },
-    [currentNetworkPaymentSources],
+    [apiClient],
   );
 
   return (
@@ -370,7 +372,11 @@ export function AIAgentDetailsDialog({
                       </CardContent>
                     </Card>
 
+                    <AgentCardanoSources sources={agent.supportedPaymentSources} />
+
                     <AgentX402Options sources={agent.supportedPaymentSources} />
+
+                    <AgentVerifications verifications={agent.verifications} />
 
                     <div className="flex items-center gap-4 pt-2">
                       <Separator className="flex-1" />

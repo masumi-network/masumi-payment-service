@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { usePaymentSourceExtendedAll } from './usePaymentSourceExtendedAll';
+import { useAllWallets } from '../queries/useWallets';
 import { useAppContext } from '../contexts/AppContext';
 
 export interface SearchableItem {
@@ -114,10 +115,14 @@ const searchableItems: SearchableItem[] = [
   },
 ];
 
-export function useSearch() {
+export function useSearch(enabled = true) {
   const { network } = useAppContext();
 
   const { paymentSources } = usePaymentSourceExtendedAll();
+  // Only load the full wallet set while the search UI is actually open — this
+  // hook is mounted app-wide (MainLayout), so an unconditional fetch would
+  // reintroduce the global wallet load on every page.
+  const { wallets, isLoading: isWalletsLoading } = useAllWallets(enabled);
 
   const currentNetworkPaymentSources = useMemo(
     () => paymentSources.filter((ps) => ps.network === network),
@@ -127,29 +132,24 @@ export function useSearch() {
   const allResults = useMemo(() => {
     const dynamicResults: SearchableItem[] = [];
 
+    // Index wallets that belong to a payment source on the active network.
+    // Wallets are no longer embedded in the source, so join by paymentSourceId.
+    const currentNetworkSourceIds = new Set(
+      currentNetworkPaymentSources.map((source) => source.id),
+    );
+    wallets.forEach((wallet) => {
+      if (!currentNetworkSourceIds.has(wallet.paymentSourceId)) return;
+      dynamicResults.push({
+        id: wallet.walletAddress,
+        title: wallet.type === 'Selling' ? 'Selling Wallet' : 'Buying Wallet',
+        description: (wallet.note ?? '') + ` Address: ${wallet.walletAddress}`,
+        type: 'wallet',
+        href: `/wallets?searched=${wallet.walletAddress}`,
+        elementId: `wallet-${wallet.walletAddress}`,
+      });
+    });
+
     currentNetworkPaymentSources?.forEach((source) => {
-      source.PurchasingWallets?.forEach((wallet) => {
-        dynamicResults.push({
-          id: wallet.walletAddress,
-          title: 'Buying Wallet',
-          description: (wallet.note ?? '') + ` Address: ${wallet.walletAddress}`,
-          type: 'wallet',
-          href: `/wallets?searched=${wallet.walletAddress}`,
-          elementId: `wallet-${wallet.walletAddress}`,
-        });
-      });
-
-      source.SellingWallets?.forEach((wallet) => {
-        dynamicResults.push({
-          id: wallet.walletAddress,
-          title: 'Selling Wallet',
-          description: (wallet.note ?? '') + ` Address: ${wallet.walletAddress}`,
-          type: 'wallet',
-          href: `/wallets?searched=${wallet.walletAddress}`,
-          elementId: `wallet-${wallet.walletAddress}`,
-        });
-      });
-
       dynamicResults.push({
         id: source.id,
         title: 'Payment Source',
@@ -161,7 +161,7 @@ export function useSearch() {
     });
 
     return [...searchableItems, ...dynamicResults];
-  }, [currentNetworkPaymentSources]);
+  }, [currentNetworkPaymentSources, wallets]);
 
   const handleSearch = useCallback(
     async (query: string) => {
@@ -184,5 +184,8 @@ export function useSearch() {
 
   return {
     handleSearch,
+    // Wallets load lazily once the search UI opens; surface this so consumers can
+    // signal that wallet matches may still be incoming.
+    isWalletsLoading,
   };
 }

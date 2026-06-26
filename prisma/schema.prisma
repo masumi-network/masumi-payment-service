@@ -283,6 +283,7 @@ model RegistryRequest {
   requestedById                  String?
   ExampleOutputs                 ExampleOutput[]
   SupportedPaymentSources        SupportedPaymentSource[]
+  Verifications                  AgentVerification[]
   Pricing                        AgentPricing             @relation(fields: [agentPricingId], references: [id])
   CurrentTransaction             Transaction?             @relation(fields: [currentTransactionId], references: [id])
   PaymentSource                  PaymentSource            @relation(fields: [paymentSourceId], references: [id])
@@ -295,6 +296,40 @@ model RegistryRequest {
   @@index([recipientHotWalletId])
   @@index([deregistrationHotWalletId])
   @@index([requestedById])
+}
+
+/// One KERI/Veridian verification claim advertised by a registry entry. Flat,
+/// queryable columns (no JSON blob); the nested issuer/schema/credential/holder
+/// grouping is reconstructed at the API boundary (see @masumi/payment-core/
+/// verification). Emitted into CIP-25 mint/update metadata for trustless,
+/// issuer-agnostic third-party verification.
+model AgentVerification {
+  id                 String          @id @default(cuid())
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  registryRequestId  String
+  /// Verification method discriminator, e.g. "KERI-ACDC".
+  method             String
+  schemaVersion      String?
+  /// Issuer KERI AID (ACDC sad.i) + OOBI resolving its KEL.
+  issuerAid          String
+  issuerOobi         String
+  /// Credential schema SAID (ACDC sad.s) + OOBI resolving the JSON schema.
+  schemaSaid         String
+  schemaOobi         String
+  /// Credential SAID (ACDC sad.d) + OOBI serving the signed ACDC.
+  credentialSaid     String
+  credentialOobi     String
+  /// Credential status registry / TEL SAID (ACDC sad.ri) for revocation. Optional.
+  credentialRegistry String?
+  /// Issuee/holder KERI AID (ACDC sad.a.i) + OOBI resolving its KEL.
+  holderAid          String
+  holderOobi         String
+  /// Optional witness/KERIA resolver root for live key-state and TEL queries.
+  baseUrl            String?
+  RegistryRequest    RegistryRequest @relation(fields: [registryRequestId], references: [id], onDelete: Cascade)
+
+  @@index([registryRequestId])
 }
 
 model SupportedPaymentSource {
@@ -355,6 +390,7 @@ model X402EvmWallet {
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
   address             String                @unique
+  type                X402EvmWalletType
   encryptedPrivateKey String
   note                String?
   deletedAt           DateTime?
@@ -363,9 +399,34 @@ model X402EvmWallet {
   FacilitatesNetworks X402Network[]         @relation("X402NetworkFacilitatorWallet")
   Budgets             X402WalletBudget[]
   PaymentAttempts     X402PaymentAttempt[]
+  LowBalanceRules     X402EvmWalletLowBalanceRule[]
 
   @@index([deletedAt])
   @@index([createdById])
+  @@index([type])
+}
+
+model X402EvmWalletLowBalanceRule {
+  id              String           @id @default(cuid())
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  evmWalletId     String
+  caip2Network    String
+  // ERC-20 token contract address (lowercased), or the literal "native" for the
+  // chain's gas token (ETH). A Selling/facilitator wallet typically monitors "native"
+  // (gas to settle); a Purchasing wallet monitors its payment token plus gas.
+  asset           String
+  thresholdAmount BigInt
+  enabled         Boolean          @default(true)
+  status          LowBalanceStatus @default(Unknown)
+  lastKnownAmount BigInt?
+  lastCheckedAt   DateTime?
+  lastAlertedAt   DateTime?
+  EvmWallet       X402EvmWallet    @relation(fields: [evmWalletId], references: [id], onDelete: Cascade)
+
+  @@unique([evmWalletId, caip2Network, asset])
+  @@index([evmWalletId, enabled])
+  @@index([enabled, status])
 }
 
 model X402WalletBudget {
@@ -857,6 +918,11 @@ enum Chain {
   Cardano
 }
 
+enum X402EvmWalletType {
+  Purchasing
+  Selling
+}
+
 enum X402PaymentScheme {
   Exact
 }
@@ -1093,6 +1159,9 @@ enum WebhookEventType {
   PURCHASE_ON_ERROR
   PAYMENT_ON_ERROR
   WALLET_LOW_BALANCE
+  X402_PAYMENT_SETTLED
+  X402_PAYMENT_FAILED
+  X402_WALLET_LOW_BALANCE
 }
 
 enum WebhookFormat {
