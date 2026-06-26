@@ -68,7 +68,7 @@ export async function authorizeRefundV1() {
 				logger.info(
 					`Authorizing ${paymentContract.PaymentRequests.length} refunds for payment source ${paymentContract.id}`,
 				);
-				const blockchainProvider = createMeshProvider(paymentContract.PaymentSourceConfig.rpcProviderApiKey);
+				const blockchainProvider = await createMeshProvider(paymentContract.PaymentSourceConfig.rpcProviderApiKey);
 
 				const paymentRequests = paymentContract.PaymentRequests;
 				if (paymentRequests.length == 0) return;

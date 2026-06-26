@@ -118,7 +118,7 @@ export async function cancelRefundsV1() {
 				logger.info(
 					`Cancelling ${paymentContract.PurchaseRequests.length} refunds for payment source ${paymentContract.id}`,
 				);
-				const blockchainProvider = createMeshProvider(paymentContract.PaymentSourceConfig.rpcProviderApiKey);
+				const blockchainProvider = await createMeshProvider(paymentContract.PaymentSourceConfig.rpcProviderApiKey);
 
 				const purchaseRequests = paymentContract.PurchaseRequests;
 

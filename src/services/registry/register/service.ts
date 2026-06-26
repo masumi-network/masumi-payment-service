@@ -153,7 +153,7 @@ export async function registerAgentV1() {
 
 				if (registryRequests.length === 0) return;
 
-				const blockchainProvider = createMeshProvider(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
+				const blockchainProvider = await createMeshProvider(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
 
 				const results = await advancedRetryAll({
 					errorResolvers: [

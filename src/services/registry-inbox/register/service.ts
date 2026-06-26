@@ -72,7 +72,7 @@ export async function registerInboxAgentV1() {
 
 				if (registrationRequests.length === 0) return;
 
-				const blockchainProvider = createMeshProvider(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
+				const blockchainProvider = await createMeshProvider(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
 
 				const results = await advancedRetryAll({
 					errorResolvers: [
