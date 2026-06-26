@@ -8503,11 +8503,11 @@ export type GetRegistryDiffData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The smart contract address of the payment source
+         * The smart contract address of the payment source. When omitted with no explicit payment source type, registry diff defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.
          */
         filterSmartContractAddress?: string | null;
         /**
-         * Filter by payment source type
+         * Filter by payment source type. When omitted with no smart-contract-address filter, registry diff defaults to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
     };
@@ -9266,7 +9266,7 @@ export type PostPurchaseSpendingData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * Filter by payment source type
+         * Filter by payment source type. When omitted, spending totals default to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
     };
@@ -9457,7 +9457,7 @@ export type PostPaymentIncomeData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * Filter by payment source type
+         * Filter by payment source type. When omitted, income totals default to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
     };
@@ -10189,7 +10189,7 @@ export type GetInboxAgentsDiffData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The smart contract address of the payment source
+         * The smart contract address of the payment source. When omitted, inbox registry diff defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.
          */
         filterSmartContractAddress?: string | null;
     };
