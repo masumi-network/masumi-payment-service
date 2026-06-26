@@ -16,6 +16,7 @@ import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
 import { ez } from 'express-zod-api';
 import spacetime from 'spacetime';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
+import { resolvePurchasePaymentSourceTypeFilter } from '../queries';
 
 export const postPurchaseSpendingSchemaInput = z.object({
 	agentIdentifier: z
@@ -160,7 +161,7 @@ export const postPurchaseSpending = readAuthenticatedEndpointFactory.build({
 					onChainState: { not: null },
 					PaymentSource: {
 						network: input.network,
-						paymentSourceType: input.filterPaymentSourceType,
+						paymentSourceType: resolvePurchasePaymentSourceTypeFilter(input),
 						deletedAt: null,
 					},
 					...buildWalletScopeFilter(ctx.walletScopeIds),

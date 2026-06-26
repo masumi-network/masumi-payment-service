@@ -7,6 +7,7 @@ import createHttpError from 'http-errors';
 import { queryRegistryInboxRequestSchemaOutput } from '@/routes/api/registry-inbox';
 import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { resolveInboxRegistryPaymentSourceTypeFilter } from '../queries';
 import { serializeInboxRegistryEntriesResponse } from '../serializers';
 
 const registryDiffLastUpdateSchema = ez.dateIn();
@@ -48,6 +49,7 @@ function buildRegistryInboxDiffWhere({
 			network,
 			deletedAt: null,
 			smartContractAddress: filterSmartContractAddress ?? undefined,
+			paymentSourceType: resolveInboxRegistryPaymentSourceTypeFilter({ filterSmartContractAddress }),
 		},
 		SmartContractWallet: { deletedAt: null },
 		...buildManagedHolderWalletScopeFilter(walletScopeIds),

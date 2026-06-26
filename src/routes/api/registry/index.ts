@@ -27,7 +27,7 @@ import {
 	registerAgentSchemaOutput,
 	registryRequestOutputSchema,
 } from './schemas';
-import { getRegistryEntriesForQuery } from './queries';
+import { getRegistryEntriesForQuery, resolveRegistryPaymentSourceTypeFilter } from './queries';
 import {
 	serializeRegistryEntriesResponse,
 	serializeSupportedPaymentSources,
@@ -73,7 +73,7 @@ export const queryRegistryCountGet = readAuthenticatedEndpointFactory.build({
 					network: input.network,
 					deletedAt: null,
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
-					paymentSourceType: input.filterPaymentSourceType,
+					paymentSourceType: resolveRegistryPaymentSourceTypeFilter(input),
 				},
 				SmartContractWallet: { deletedAt: null },
 				...buildManagedHolderWalletScopeFilter(ctx.walletScopeIds),
