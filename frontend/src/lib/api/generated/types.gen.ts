@@ -3805,7 +3805,7 @@ export type GetPaymentData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The smart contract address of the payment source
+         * The smart contract address of the payment source. When omitted with no explicit payment source type, payment list/count endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.
          */
         filterSmartContractAddress?: string | null;
         /**
@@ -3813,7 +3813,7 @@ export type GetPaymentData = {
          */
         filterOnChainState?: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
         /**
-         * Filter by payment source type
+         * Filter by payment source type. When omitted with no smart-contract-address filter, payment list/count endpoints default to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
         /**
@@ -4233,11 +4233,11 @@ export type GetPaymentDiffData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The smart contract address of the payment source
+         * The smart contract address of the payment source. When omitted with no explicit payment source type, payment diff endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.
          */
         filterSmartContractAddress?: string | null;
         /**
-         * Filter by payment source type
+         * Filter by payment source type. When omitted with no smart-contract-address filter, payment diff endpoints default to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
         /**
@@ -4298,11 +4298,11 @@ export type GetPaymentDiffNextActionData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The smart contract address of the payment source
+         * The smart contract address of the payment source. When omitted with no explicit payment source type, payment diff endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.
          */
         filterSmartContractAddress?: string | null;
         /**
-         * Filter by payment source type
+         * Filter by payment source type. When omitted with no smart-contract-address filter, payment diff endpoints default to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
         /**
@@ -4351,11 +4351,11 @@ export type GetPaymentCountData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The smart contract address of the payment source
+         * The smart contract address of the payment source. When omitted with no explicit payment source type, payment count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.
          */
         filterSmartContractAddress?: string | null;
         /**
-         * Filter by payment source type
+         * Filter by payment source type. When omitted with no smart-contract-address filter, payment count defaults to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
     };
@@ -4388,11 +4388,11 @@ export type GetPurchaseCountData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The smart contract address of the payment source
+         * The smart contract address of the payment source. When omitted with no explicit payment source type, purchase count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.
          */
         filterSmartContractAddress?: string | null;
         /**
-         * Filter by payment source type
+         * Filter by payment source type. When omitted with no smart-contract-address filter, purchase count defaults to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
     };
@@ -4437,11 +4437,11 @@ export type GetPaymentDiffOnchainStateOrResultData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The smart contract address of the payment source
+         * The smart contract address of the payment source. When omitted with no explicit payment source type, payment diff endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.
          */
         filterSmartContractAddress?: string | null;
         /**
-         * Filter by payment source type
+         * Filter by payment source type. When omitted with no smart-contract-address filter, payment diff endpoints default to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
         /**
@@ -6176,11 +6176,11 @@ export type GetRegistryCountData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The smart contract address of the payment source
+         * The smart contract address of the payment source. When omitted with no explicit payment source type, count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.
          */
         filterSmartContractAddress?: string | null;
         /**
-         * Filter by payment source type
+         * Filter by payment source type. When omitted with no smart-contract-address filter, count defaults to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
     };
@@ -6476,7 +6476,7 @@ export type GetPurchaseData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The smart contract address of the payment source
+         * The smart contract address of the payment source. When omitted with no explicit payment source type, purchase list/count endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.
          */
         filterSmartContractAddress?: string | null;
         /**
@@ -6484,7 +6484,7 @@ export type GetPurchaseData = {
          */
         filterOnChainState?: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
         /**
-         * Filter by payment source type
+         * Filter by payment source type. When omitted with no smart-contract-address filter, purchase list/count endpoints default to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
         /**
@@ -8144,11 +8144,11 @@ export type GetRegistryData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The smart contract address of the payment source
+         * The smart contract address of the payment source. When omitted with no V2-aware filters, registry list/count endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.
          */
         filterSmartContractAddress?: string | null;
         /**
-         * Filter by payment source type
+         * Filter by payment source type. When omitted with no source/address/identifier support filters, the endpoint defaults to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
         /**
@@ -8160,15 +8160,15 @@ export type GetRegistryData = {
          */
         searchQuery?: string;
         /**
-         * When set, return only the registry entry whose on-chain agent identifier matches exactly (same scope as list: network, payment source, and wallet permissions)
+         * When set, return only the registry entry whose on-chain agent identifier matches exactly (same scope as list: network, payment source, and wallet permissions). This exact lookup does not apply the default Web3CardanoV1 compatibility filter.
          */
         filterAgentIdentifier?: string;
         /**
-         * Return only entries that advertise a supported payment source with this address (the Cardano smart-contract address, or an EVM x402 payTo/address). Matched server-side so callers do not have to fetch every entry and filter client-side. Combined with filterSupportedPaymentSourceNetworks as a logical OR.
+         * Return only entries that advertise a supported payment source with this address (the Cardano smart-contract address, or an EVM x402 payTo/address). Matched server-side so callers do not have to fetch every entry and filter client-side. Combined with filterSupportedPaymentSourceNetworks as a logical OR. This V2-aware filter opts out of the default Web3CardanoV1 compatibility filter.
          */
         filterSupportedPaymentSourceAddress?: string;
         /**
-         * Comma-separated list of supported-payment-source networks to match (Cardano network name, or CAIP-2 EVM chain ids such as eip155:8453). Returns entries advertising a supported payment source on any of these networks. Combined with filterSupportedPaymentSourceAddress as a logical OR.
+         * Comma-separated list of supported-payment-source networks to match (Cardano network name, or CAIP-2 EVM chain ids such as eip155:8453). Returns entries advertising a supported payment source on any of these networks. Combined with filterSupportedPaymentSourceAddress as a logical OR. This V2-aware filter opts out of the default Web3CardanoV1 compatibility filter.
          */
         filterSupportedPaymentSourceNetworks?: string;
     };
@@ -8503,11 +8503,11 @@ export type GetRegistryDiffData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The smart contract address of the payment source
+         * The smart contract address of the payment source. When omitted with no explicit payment source type, registry diff defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.
          */
         filterSmartContractAddress?: string | null;
         /**
-         * Filter by payment source type
+         * Filter by payment source type. When omitted with no smart-contract-address filter, registry diff defaults to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
     };
@@ -9266,7 +9266,7 @@ export type PostPurchaseSpendingData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * Filter by payment source type
+         * Filter by payment source type. When omitted, spending totals default to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
     };
@@ -9457,7 +9457,7 @@ export type PostPaymentIncomeData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * Filter by payment source type
+         * Filter by payment source type. When omitted, income totals default to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
     };
@@ -10091,7 +10091,7 @@ export type GetInboxAgentsData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The smart contract address of the payment source
+         * The smart contract address of the payment source. When omitted, inbox registry list/count endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.
          */
         filterSmartContractAddress?: string | null;
         /**
@@ -10189,7 +10189,7 @@ export type GetInboxAgentsDiffData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The smart contract address of the payment source
+         * The smart contract address of the payment source. When omitted, inbox registry diff defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.
          */
         filterSmartContractAddress?: string | null;
     };
@@ -10266,7 +10266,7 @@ export type GetInboxAgentsCountData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The smart contract address of the payment source
+         * The smart contract address of the payment source. When omitted, inbox registry count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.
          */
         filterSmartContractAddress?: string | null;
     };

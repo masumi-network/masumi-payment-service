@@ -24,8 +24,15 @@ export const queryRegistryRequestSchemaInput = z.object({
 		.string()
 		.optional()
 		.nullable()
-		.describe('The smart contract address of the payment source'),
-	filterPaymentSourceType: z.nativeEnum(PaymentSourceType).optional().describe('Filter by payment source type'),
+		.describe(
+			'The smart contract address of the payment source. When omitted with no V2-aware filters, registry list/count endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.',
+		),
+	filterPaymentSourceType: z
+		.nativeEnum(PaymentSourceType)
+		.optional()
+		.describe(
+			'Filter by payment source type. When omitted with no source/address/identifier support filters, the endpoint defaults to Web3CardanoV1 for backwards compatibility.',
+		),
 	filterStatus: z.nativeEnum(FilterStatus).optional().describe('Filter by registration status category'),
 	searchQuery: z
 		.string()
@@ -39,19 +46,19 @@ export const queryRegistryRequestSchemaInput = z.object({
 		.max(250)
 		.optional()
 		.describe(
-			'When set, return only the registry entry whose on-chain agent identifier matches exactly (same scope as list: network, payment source, and wallet permissions)',
+			'When set, return only the registry entry whose on-chain agent identifier matches exactly (same scope as list: network, payment source, and wallet permissions). This exact lookup does not apply the default Web3CardanoV1 compatibility filter.',
 		),
 	filterSupportedPaymentSourceAddress: z
 		.string()
 		.optional()
 		.describe(
-			'Return only entries that advertise a supported payment source with this address (the Cardano smart-contract address, or an EVM x402 payTo/address). Matched server-side so callers do not have to fetch every entry and filter client-side. Combined with filterSupportedPaymentSourceNetworks as a logical OR.',
+			'Return only entries that advertise a supported payment source with this address (the Cardano smart-contract address, or an EVM x402 payTo/address). Matched server-side so callers do not have to fetch every entry and filter client-side. Combined with filterSupportedPaymentSourceNetworks as a logical OR. This V2-aware filter opts out of the default Web3CardanoV1 compatibility filter.',
 		),
 	filterSupportedPaymentSourceNetworks: z
 		.string()
 		.optional()
 		.describe(
-			'Comma-separated list of supported-payment-source networks to match (Cardano network name, or CAIP-2 EVM chain ids such as eip155:8453). Returns entries advertising a supported payment source on any of these networks. Combined with filterSupportedPaymentSourceAddress as a logical OR.',
+			'Comma-separated list of supported-payment-source networks to match (Cardano network name, or CAIP-2 EVM chain ids such as eip155:8453). Returns entries advertising a supported payment source on any of these networks. Combined with filterSupportedPaymentSourceAddress as a logical OR. This V2-aware filter opts out of the default Web3CardanoV1 compatibility filter.',
 		),
 });
 
@@ -190,8 +197,15 @@ export const queryRegistryCountSchemaInput = z.object({
 		.string()
 		.optional()
 		.nullable()
-		.describe('The smart contract address of the payment source'),
-	filterPaymentSourceType: z.nativeEnum(PaymentSourceType).optional().describe('Filter by payment source type'),
+		.describe(
+			'The smart contract address of the payment source. When omitted with no explicit payment source type, count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.',
+		),
+	filterPaymentSourceType: z
+		.nativeEnum(PaymentSourceType)
+		.optional()
+		.describe(
+			'Filter by payment source type. When omitted with no smart-contract-address filter, count defaults to Web3CardanoV1 for backwards compatibility.',
+		),
 });
 
 export const queryRegistryCountSchemaOutput = z.object({

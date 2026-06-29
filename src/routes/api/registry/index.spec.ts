@@ -200,6 +200,12 @@ describe('registerAgentPost', () => {
 		expect(mockFindRegistryRequests).toHaveBeenCalledWith(
 			expect.objectContaining({
 				where: expect.objectContaining({
+					PaymentSource: {
+						network: Network.Preprod,
+						deletedAt: null,
+						smartContractAddress: undefined,
+						paymentSourceType: PaymentSourceType.Web3CardanoV1,
+					},
 					AND: [
 						{
 							OR: [
@@ -212,6 +218,55 @@ describe('registerAgentPost', () => {
 									deregistrationHotWalletId: null,
 									recipientHotWalletId: null,
 									smartContractWalletId: { in: ['holding-wallet-id'] },
+								},
+							],
+						},
+					],
+				}),
+			}),
+		);
+	});
+
+	it('matches supported payment source filters against implicit registered Cardano sources', async () => {
+		const { responseMock } = await testEndpoint({
+			endpoint: queryRegistryRequestGet,
+			requestProps: {
+				method: 'GET',
+				headers: { token: 'valid' },
+				query: {
+					network: Network.Preprod,
+					limit: '10',
+					filterSupportedPaymentSourceAddress: 'addr_test1smartcontract',
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(200);
+		expect(mockFindRegistryRequests).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					PaymentSource: {
+						network: Network.Preprod,
+						deletedAt: null,
+						smartContractAddress: undefined,
+						paymentSourceType: undefined,
+					},
+					AND: [
+						{
+							OR: [
+								{
+									SupportedPaymentSources: {
+										some: {
+											OR: [{ address: 'addr_test1smartcontract' }],
+										},
+									},
+								},
+								{
+									PaymentSource: {
+										network: Network.Preprod,
+										deletedAt: null,
+										smartContractAddress: 'addr_test1smartcontract',
+									},
 								},
 							],
 						},
@@ -242,6 +297,7 @@ describe('registerAgentPost', () => {
 					network: Network.Preprod,
 					deletedAt: null,
 					smartContractAddress: undefined,
+					paymentSourceType: PaymentSourceType.Web3CardanoV1,
 				},
 				SmartContractWallet: { deletedAt: null },
 				AND: [

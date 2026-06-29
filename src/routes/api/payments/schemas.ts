@@ -24,9 +24,16 @@ export const queryPaymentsSchemaInput = z.object({
 		.string()
 		.optional()
 		.nullable()
-		.describe('The smart contract address of the payment source'),
+		.describe(
+			'The smart contract address of the payment source. When omitted with no explicit payment source type, payment list/count endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.',
+		),
 	filterOnChainState: z.nativeEnum(OnChainState).optional().describe('Filter by on-chain state'),
-	filterPaymentSourceType: z.nativeEnum(PaymentSourceType).optional().describe('Filter by payment source type'),
+	filterPaymentSourceType: z
+		.nativeEnum(PaymentSourceType)
+		.optional()
+		.describe(
+			'Filter by payment source type. When omitted with no smart-contract-address filter, payment list/count endpoints default to Web3CardanoV1 for backwards compatibility.',
+		),
 	searchQuery: z
 		.string()
 		.optional()
@@ -45,8 +52,15 @@ export const queryPaymentCountSchemaInput = z.object({
 		.string()
 		.optional()
 		.nullable()
-		.describe('The smart contract address of the payment source'),
-	filterPaymentSourceType: z.nativeEnum(PaymentSourceType).optional().describe('Filter by payment source type'),
+		.describe(
+			'The smart contract address of the payment source. When omitted with no explicit payment source type, payment count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.',
+		),
+	filterPaymentSourceType: z
+		.nativeEnum(PaymentSourceType)
+		.optional()
+		.describe(
+			'Filter by payment source type. When omitted with no smart-contract-address filter, payment count defaults to Web3CardanoV1 for backwards compatibility.',
+		),
 });
 
 export const queryPaymentCountSchemaOutput = z.object({
