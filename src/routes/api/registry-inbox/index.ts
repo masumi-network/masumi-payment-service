@@ -22,7 +22,7 @@ import {
 	registerInboxAgentSchemaOutput,
 	registryInboxRequestOutputSchema,
 } from './schemas';
-import { getInboxRegistryEntriesForQuery } from './queries';
+import { getInboxRegistryEntriesForQuery, resolveInboxRegistryPaymentSourceTypeFilter } from './queries';
 import { serializeInboxRegistryEntriesResponse, serializeInboxRegistryEntry } from './serializers';
 import { isReservedInboxSlug, normalizeInboxSlug } from '@/utils/inbox-slug';
 import { resolveScopedRecipientWalletOrThrow, resolveScopedSellingWalletOrThrow } from '../registry/shared';
@@ -90,6 +90,7 @@ export const queryRegistryInboxCountGet = readAuthenticatedEndpointFactory.build
 					network: input.network,
 					deletedAt: null,
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
+					paymentSourceType: resolveInboxRegistryPaymentSourceTypeFilter(input),
 				},
 				SmartContractWallet: { deletedAt: null },
 				...buildManagedHolderWalletScopeFilter(ctx.walletScopeIds),

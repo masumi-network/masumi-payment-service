@@ -1,7 +1,7 @@
 import { jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import { testEndpoint } from 'express-zod-api';
-import { ApiKeyStatus, Network, RegistrationState } from '@/generated/prisma/enums';
+import { ApiKeyStatus, Network, PaymentSourceType, RegistrationState } from '@/generated/prisma/enums';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -148,6 +148,12 @@ describe('registerInboxAgentPost', () => {
 		expect(mockFindInboxAgentRegistrationRequests).toHaveBeenCalledWith(
 			expect.objectContaining({
 				where: expect.objectContaining({
+					PaymentSource: {
+						network: Network.Preprod,
+						deletedAt: null,
+						smartContractAddress: undefined,
+						paymentSourceType: PaymentSourceType.Web3CardanoV1,
+					},
 					AND: [
 						{
 							OR: [
@@ -190,6 +196,7 @@ describe('registerInboxAgentPost', () => {
 					network: Network.Preprod,
 					deletedAt: null,
 					smartContractAddress: undefined,
+					paymentSourceType: PaymentSourceType.Web3CardanoV1,
 				},
 				SmartContractWallet: { deletedAt: null },
 				AND: [

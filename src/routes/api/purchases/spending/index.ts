@@ -16,6 +16,7 @@ import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
 import { ez } from 'express-zod-api';
 import spacetime from 'spacetime';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
+import { resolvePurchasePaymentSourceTypeFilter } from '../queries';
 
 export const postPurchaseSpendingSchemaInput = z.object({
 	agentIdentifier: z
@@ -48,7 +49,12 @@ export const postPurchaseSpendingSchemaInput = z.object({
 			'The time zone to use for the spending calculation. If not provided, will use the UTC time zone. Must be a valid IANA time zone name, see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones',
 		),
 	network: z.nativeEnum(Network).describe('The Cardano network to query spending from'),
-	filterPaymentSourceType: z.nativeEnum(PaymentSourceType).optional().describe('Filter by payment source type'),
+	filterPaymentSourceType: z
+		.nativeEnum(PaymentSourceType)
+		.optional()
+		.describe(
+			'Filter by payment source type. When omitted, spending totals default to Web3CardanoV1 for backwards compatibility.',
+		),
 });
 
 const unitAmountSchema = z
@@ -160,7 +166,7 @@ export const postPurchaseSpending = readAuthenticatedEndpointFactory.build({
 					onChainState: { not: null },
 					PaymentSource: {
 						network: input.network,
-						paymentSourceType: input.filterPaymentSourceType,
+						paymentSourceType: resolvePurchasePaymentSourceTypeFilter(input),
 						deletedAt: null,
 					},
 					...buildWalletScopeFilter(ctx.walletScopeIds),

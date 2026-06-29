@@ -1,4 +1,4 @@
-import { PricingType, RegistrationState } from '@/generated/prisma/client';
+import { PaymentSourceType, PricingType, RegistrationState } from '@/generated/prisma/client';
 import type { Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { AuthContext } from '@masumi/payment-core/auth';
@@ -8,6 +8,21 @@ import { z } from '@masumi/payment-core/zod';
 import { FilterStatus, queryRegistryRequestSchemaInput } from './schemas';
 
 export type RegistryListQueryInput = z.infer<typeof queryRegistryRequestSchemaInput>;
+
+export function resolveRegistryPaymentSourceTypeFilter(input: {
+	filterPaymentSourceType?: PaymentSourceType;
+	filterSmartContractAddress?: string | null;
+	filterAgentIdentifier?: string;
+	filterSupportedPaymentSourceAddress?: string;
+	filterSupportedPaymentSourceNetworks?: string;
+}) {
+	if (input.filterPaymentSourceType != null) return input.filterPaymentSourceType;
+	if (input.filterSmartContractAddress != null) return undefined;
+	if (input.filterAgentIdentifier != null) return undefined;
+	if (input.filterSupportedPaymentSourceAddress != null) return undefined;
+	if (input.filterSupportedPaymentSourceNetworks != null) return undefined;
+	return PaymentSourceType.Web3CardanoV1;
+}
 
 function buildRegistryStateFilter(filterStatus?: FilterStatus): RegistrationState[] | undefined {
 	if (filterStatus === FilterStatus.Registered) {
@@ -77,6 +92,33 @@ export async function getRegistryEntriesForQuery(
 		...(input.filterSupportedPaymentSourceAddress ? [{ address: input.filterSupportedPaymentSourceAddress }] : []),
 		...(supportedNetworks && supportedNetworks.length > 0 ? [{ network: { in: supportedNetworks } }] : []),
 	];
+	const paymentSourceTypeFilter = resolveRegistryPaymentSourceTypeFilter(input);
+	const walletScopeFilter = buildManagedHolderWalletScopeFilter(walletScopeIds);
+	const andFilters: Prisma.RegistryRequestWhereInput[] = [
+		...('AND' in walletScopeFilter && Array.isArray(walletScopeFilter.AND)
+			? (walletScopeFilter.AND as Prisma.RegistryRequestWhereInput[])
+			: []),
+		...(supportedPaymentSourceOr.length > 0
+			? [
+					{
+						OR: [
+							{ SupportedPaymentSources: { some: { OR: supportedPaymentSourceOr } } },
+							...(input.filterSupportedPaymentSourceAddress
+								? [
+										{
+											PaymentSource: {
+												network: input.network,
+												deletedAt: null,
+												smartContractAddress: input.filterSupportedPaymentSourceAddress,
+											},
+										},
+									]
+								: []),
+						],
+					},
+				]
+			: []),
+	];
 
 	return prisma.registryRequest.findMany({
 		where: {
@@ -84,15 +126,12 @@ export async function getRegistryEntriesForQuery(
 				network: input.network,
 				deletedAt: null,
 				smartContractAddress: input.filterSmartContractAddress ?? undefined,
-				paymentSourceType: input.filterPaymentSourceType,
+				paymentSourceType: paymentSourceTypeFilter,
 			},
 			SmartContractWallet: { deletedAt: null },
-			...buildManagedHolderWalletScopeFilter(walletScopeIds),
+			...(andFilters.length > 0 ? { AND: andFilters } : {}),
 			...(stateFilter ? { state: { in: stateFilter } } : {}),
 			...(input.filterAgentIdentifier ? { agentIdentifier: input.filterAgentIdentifier } : {}),
-			...(supportedPaymentSourceOr.length > 0
-				? { SupportedPaymentSources: { some: { OR: supportedPaymentSourceOr } } }
-				: {}),
 			...(searchLower
 				? {
 						OR: [

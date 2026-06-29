@@ -23,7 +23,7 @@ import {
 	queryPurchaseRequestSchemaInput,
 	queryPurchaseRequestSchemaOutput,
 } from './schemas';
-import { getPurchasesForQuery } from './queries';
+import { getPurchasesForQuery, resolvePurchasePaymentSourceTypeFilter } from './queries';
 import { serializePurchasesResponse } from './serializers';
 import { isCardanoPubKeyBaseAddressForNetwork } from '@/types/payment-source';
 
@@ -65,7 +65,7 @@ export const queryPurchaseCountGet = readAuthenticatedEndpointFactory.build({
 					deletedAt: null,
 					network: input.network,
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
-					paymentSourceType: input.filterPaymentSourceType,
+					paymentSourceType: resolvePurchasePaymentSourceTypeFilter(input),
 				},
 				...buildWalletScopeFilter(ctx.walletScopeIds),
 			},
