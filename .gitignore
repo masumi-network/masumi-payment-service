@@ -41,3 +41,20 @@ scripts/example-invoice.html
 
 # Prisma Generated Files
 src/generated/
+
+# Local agent/tooling scratch databases (ruvector / agentdb, .remember)
+*.rvf
+*.rvf.lock
+ruvector.db
+**/ruvector.db
+.remember/
+
+# Hydra L2 E2E harness — generated seller mnemonic (never commit)
+hydra-l2-flow/.seller.json
+
+# Hydra native run (large binaries + runtime state)
+hydra-l2-flow/.bin/
+hydra-l2-flow/.native-state/
+
+# Hydra L2 E2E — generated evidence reports (regenerate via run-hydra-e2e.sh evidence)
+hydra-l2-flow/evidence/

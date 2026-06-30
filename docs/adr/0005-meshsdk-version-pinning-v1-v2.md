@@ -14,7 +14,7 @@ source types:
 | repo root (`package.json`)               | `1.9.0-beta.96`      | `1.9.0-beta.90`       | shared + V1 services |
 | `packages/payment-core`                  | — (no direct dep)    | `1.9.0-beta.90`       | shared, V1-aligned   |
 | `packages/payment-source-v1`             | `1.9.0-beta.96`      | `1.9.0-beta.90`       | V1 services          |
-| `packages/payment-source-v2`             | `1.9.0-beta.102`     | `1.9.0-beta.102`      | V2 services          |
+| `packages/payment-source-v2`             | `1.9.0-beta.103`     | `1.9.0-beta.103`      | V2 services          |
 
 This split is intentional and load-bearing. Mesh SDK upgrades change the
 following observable outputs over time:
@@ -46,7 +46,7 @@ following observable outputs over time:
    built with the original SDK.
 
 In short: V1 contracts were deployed against mesh `1.9.0-beta.96`/`.90` and V2
-against `1.9.0-beta.102`. The two SDK lines must continue to be used in
+against `1.9.0-beta.103`. The two SDK lines must continue to be used in
 isolation by their respective code paths.
 
 ## Decision
@@ -58,7 +58,7 @@ isolation by their respective code paths.
 
 - Files that do the same for **V2** payment sources import Mesh exclusively
   from `packages/payment-source-v2`'s dependency graph
-  (`@meshsdk/core@1.9.0-beta.102`, `@meshsdk/core-cst@1.9.0-beta.102`).
+  (`@meshsdk/core@1.9.0-beta.103`, `@meshsdk/core-cst@1.9.0-beta.103`).
 
 - `packages/payment-core` declares only `@meshsdk/core-cst@1.9.0-beta.90`
   because the helpers it owns (`resolvePaymentKeyHash` in

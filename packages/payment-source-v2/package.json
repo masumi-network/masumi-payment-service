@@ -14,7 +14,7 @@
 	"_meshsdk_pin_note": "V2 contract address + cost-model hash compat. V2 deliberately uses a newer mesh line than V1; do not unify. See docs/adr/0005-meshsdk-version-pinning-v1-v2.md.",
 	"dependencies": {
 		"@masumi/payment-core": "workspace:*",
-		"@meshsdk/core": "1.9.0-beta.102",
-		"@meshsdk/core-cst": "1.9.0-beta.102"
+		"@meshsdk/core": "1.9.0-beta.103",
+		"@meshsdk/core-cst": "1.9.0-beta.103"
 	}
 }

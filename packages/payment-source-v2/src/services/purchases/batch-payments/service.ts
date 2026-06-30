@@ -34,6 +34,7 @@ import { isDefinitiveNodeRejection } from '../../submit-error-classifier';
 import { WALLET_SPLITTER_LOVELACE } from '../../../builders/batch-helpers';
 import { syncMeshCostModelsFromChainV2 } from '../../../utils/mesh-cost-model-sync';
 import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
+import { processL2PurchaseLocks } from './l2-lock';
 
 /**
  * --- V2 batch-payments: defensive submit invariant ---
@@ -598,6 +599,17 @@ export async function batchLatestPaymentEntriesV2() {
 	}
 
 	try {
+		// L2 (Hydra head) funds-lock pass FIRST: route eligible requests into an
+		// open head and stamp them with an L2 CurrentTransaction, so the L1
+		// lock-and-query below (which filters `CurrentTransaction: { is: null }`)
+		// naturally skips them. Non-fatal: any failure leaves the request for the
+		// L1 path / next tick.
+		try {
+			await processL2PurchaseLocks();
+		} catch (l2Error) {
+			logger.error('L2 funds-lock pass failed (non-fatal; falling through to L1)', { error: l2Error });
+		}
+
 		// Gate Serializable $transaction through the shared semaphore so the pg
 		// connection pool isn't exhausted under scheduler fan-out.
 		const paymentContractsWithWalletLocked = await withSerializableSlot(() =>

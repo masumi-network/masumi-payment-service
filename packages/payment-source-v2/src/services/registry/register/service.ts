@@ -575,10 +575,17 @@ export async function registerAgentV2() {
 					// items stay in RegistrationRequested and re-batch on the next tick.
 					let fit = shrinkResult.fit;
 					let evaluationTx: string;
+					// The shared provider is built on the V1 mesh line; the V2 batch
+					// builder types its fetcher as the V2-line IFetcher. The two are
+					// structurally compatible (only the unused fetchCostModels differs;
+					// IFetcher is byte-identical across the lines — see ADR-0005).
+					const batchFetcher = blockchainProvider as unknown as Parameters<
+						typeof generateRegistryBatchMintTransaction
+					>[0];
 					try {
 						const sized = await shrinkRegistryBatchToTxSize(fit, (subsetItems) =>
 							generateRegistryBatchMintTransaction(
-								blockchainProvider,
+								batchFetcher,
 								network,
 								script,
 								address,
@@ -640,7 +647,7 @@ export async function registerAgentV2() {
 							throw new Error('evaluateTx returned no MINT budget for V2 register batch');
 						}
 						unsignedTx = await generateRegistryBatchMintTransaction(
-							blockchainProvider,
+							batchFetcher,
 							network,
 							script,
 							address,

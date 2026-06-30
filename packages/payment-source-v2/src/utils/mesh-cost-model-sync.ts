@@ -121,3 +121,57 @@ export async function syncMeshCostModelsFromChainV2(
 	});
 	return sharedProtocol;
 }
+
+/** The per-language cost-model arrays a Hydra head exposes via its
+ * `/protocol-parameters` `costModels` field (same shape Blockfrost returns
+ * under `cost_models_raw`). */
+export type HeadRawCostModels = {
+	PlutusV1?: number[];
+	PlutusV2?: number[];
+	PlutusV3?: number[];
+};
+
+/**
+ * Patch the V2 mesh line's bundled Plutus cost-model arrays with a Hydra
+ * head's cost models. The L2 (isHydra) build path has NO Blockfrost evaluator,
+ * so `syncMeshCostModelsFromChainV2` cannot run; without this the V2 mesh line
+ * keeps its stock `DEFAULT_V*_COST_MODEL_LIST` arrays and every in-head Plutus
+ * tx is rejected by the head's ledger with `PPViewHashesDontMatch` (the
+ * script-data-hash, computed from these arrays in core-cst, won't match the
+ * head's own cost models).
+ *
+ * For a real preprod head the head's cost models equal preprod's, so this
+ * patches to the same values `syncMeshCostModelsFromChainV2` would. For a local
+ * devnet head they are the devnet's. ⚠️ This mutates PROCESS-GLOBAL arrays
+ * shared with the L1 build path; callers MUST hold the per-payment-source mesh
+ * cost-model lock around BOTH this call and the subsequent
+ * `txBuilder.complete()` / `wallet.signTx(...)`, exactly as the L1 path does
+ * (see `withMeshCostModelLock`). Returns `true` only if at least one language
+ * array was patched (so callers can surface a no-cost-models head as a soft
+ * failure rather than silently building against stale defaults).
+ */
+export async function syncMeshCostModelsFromHeadV2(raw: HeadRawCostModels): Promise<boolean> {
+	return await replaceMutex.runExclusive(() => {
+		const v1Patched = replaceListInPlace(DEFAULT_V1_COST_MODEL_LIST, raw.PlutusV1);
+		const v2Patched = replaceListInPlace(DEFAULT_V2_COST_MODEL_LIST, raw.PlutusV2);
+		const v3Patched = replaceListInPlace(DEFAULT_V3_COST_MODEL_LIST, raw.PlutusV3);
+
+		const anyPatched = v1Patched || v2Patched || v3Patched;
+		if (anyPatched) {
+			logger.info('Synced mesh-sdk Plutus cost models from Hydra head (V2 mesh line)', {
+				v1: v1Patched,
+				v2: v2Patched,
+				v3: v3Patched,
+				v1Length: DEFAULT_V1_COST_MODEL_LIST.length,
+				v2Length: DEFAULT_V2_COST_MODEL_LIST.length,
+				v3Length: DEFAULT_V3_COST_MODEL_LIST.length,
+			});
+		} else {
+			logger.warn(
+				'Hydra head returned no usable Plutus cost models; V2 mesh line stays on bundled defaults. ' +
+					'In-head Plutus tx submissions may fail with PPViewHashesDontMatch.',
+			);
+		}
+		return anyPatched;
+	});
+}

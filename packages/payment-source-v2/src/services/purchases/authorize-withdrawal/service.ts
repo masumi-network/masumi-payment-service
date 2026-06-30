@@ -4,9 +4,11 @@ import {
 	Prisma,
 	PurchaseErrorType,
 	PurchasingAction,
+	TransactionLayer,
 	TransactionStatus,
 } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
+import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { resolveTxHash } from '@meshsdk/core';
 import { deserializeDatum, UTxO } from '@meshsdk/core';
 import type { LanguageVersion } from '@meshsdk/core';
@@ -20,6 +22,8 @@ import { DecodedV1ContractDatum, newCooldownTime } from '@/utils/converter/strin
 import { lockAndQueryPurchases } from '@/utils/db/lock-and-query-purchases';
 import { retryOnSerializationConflict } from '@/utils/db/retry';
 import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
+import { syncMeshCostModelsFromHeadV2 } from '../../../utils/mesh-cost-model-sync';
+import { getHydraL2SlotContext } from '@/utils/hydra/l2-slot-context';
 import { isDefinitiveNodeRejection } from '../../submit-error-classifier';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { advancedRetry, delayErrorResolver } from 'advanced-retry';
@@ -1022,6 +1026,157 @@ function groupRequestsByWallet(requests: PurchaseRequestWithRelations[]): Map<st
 	return byWallet;
 }
 
+/**
+ * Hydra L2 single-item authorize-withdrawal (in-head). Spends the contract UTxO
+ * in the head and writes the WithdrawAuthorized continuation, mirroring the L1
+ * single-item path on mesh 102 via `asV2Provider` with synchronous head submit.
+ * Validated on a Hydra devnet (see docs/hydra-l2-devnet-findings.md).
+ */
+async function processL2AuthorizeWithdrawal(
+	request: PurchaseRequestWithRelations,
+	paymentContract: PaymentSourceWithPurchaseRelations,
+	network: 'mainnet' | 'preprod',
+): Promise<boolean> {
+	const headId = request.CurrentTransaction?.hydraHeadId;
+	if (headId == null) {
+		throw new Error('L2 authorize-withdrawal: request has no hydraHeadId on CurrentTransaction');
+	}
+	const hydraProvider = getHydraConnectionManager().getProvider(headId);
+	if (!hydraProvider) {
+		throw new Error(`${LOOKUP_DEFERRED_PREFIX} no active Hydra provider for head ${headId}; retry next tick`);
+	}
+	validatePurchaseRequestFields(request);
+	const purchasingWallet = request.SmartContractWallet!;
+
+	const walletSession = await loadHotWalletSession({
+		network: paymentContract.network,
+		rpcProviderApiKey: paymentContract.PaymentSourceConfig.rpcProviderApiKey,
+		encryptedMnemonic: purchasingWallet.Secret.encryptedMnemonic,
+		hotWalletId: purchasingWallet.id,
+	});
+	const { wallet, address } = walletSession;
+
+	const headWalletUtxos = await hydraProvider.fetchAddressUTxOs(address);
+	if (headWalletUtxos.length === 0) {
+		throw new Error(`${LOOKUP_DEFERRED_PREFIX} L2 wallet has no UTxOs in head ${headId}; retry next tick`);
+	}
+
+	const { script, smartContractAddress } = await getPaymentScriptFromPaymentSourceV2(paymentContract);
+	const txHash = request.CurrentTransaction?.txHash;
+	if (txHash == null) {
+		throw new Error('L2 authorize-withdrawal: CurrentTransaction has no txHash');
+	}
+
+	const utxoByHash = await hydraProvider.fetchUTxOs(txHash);
+	const utxo = findMatchingUtxo(utxoByHash, txHash, request, network, smartContractAddress);
+	if (!utxo) {
+		throw new Error(`${LOOKUP_DEFERRED_PREFIX} L2 contract UTXO not found in head`);
+	}
+	const utxoDatum = utxo.output.plutusData;
+	if (!utxoDatum) {
+		throw new Error(`${LOOKUP_DEFERRED_PREFIX} L2 no datum found in UTXO`);
+	}
+	const decodedDatum: unknown = deserializeDatum(utxoDatum);
+	const decodedContract = decodeV2ContractDatum(decodedDatum, network, smartContractAddress);
+	if (decodedContract == null) {
+		throw new Error(`${LOOKUP_DEFERRED_PREFIX} L2 invalid datum`);
+	}
+
+	const datum = createAuthorizeWithdrawalDatum({
+		decodedContract,
+		buyerAddress: decodedContract.buyerAddress,
+		sellerAddress: decodedContract.sellerAddress,
+		blockchainIdentifier: request.blockchainIdentifier,
+		cooldownTime: BigInt(paymentContract.cooldownTime),
+	});
+	// L2: derive the validity window from the head's slot timeline when it
+	// differs from `network` (devnet); undefined on a preprod head → default.
+	const l2SlotCtx = getHydraL2SlotContext();
+	const { invalidBefore, invalidAfter } = createTxWindow(network, {
+		constrainBeforeMs: decodedContract.buyerCooldownTime,
+		...(l2SlotCtx
+			? {
+					slotConfig: l2SlotCtx.slotConfig,
+					nowMs: l2SlotCtx.nowMs,
+					beforeBufferMs: l2SlotCtx.beforeBufferMs,
+					afterBufferMs: l2SlotCtx.afterBufferMs,
+					validitySlotBuffer: l2SlotCtx.validitySlotBuffer,
+				}
+			: {}),
+	});
+
+	const limitedUtxos = sortAndLimitUtxos(headWalletUtxos, 8000000);
+	const collateralUtxo = limitedUtxos[0];
+	if (collateralUtxo == null) {
+		throw new Error(`${LOOKUP_DEFERRED_PREFIX} L2 wallet has no collateral UTxO in head`);
+	}
+
+	const hydraV2Provider = asV2Provider(hydraProvider);
+	// Patch the V2 mesh line's bundled Plutus cost-model arrays from the HEAD's
+	// protocol parameters before building (no Blockfrost evaluator on L2). Without
+	// the head's cost models the in-head script-data-hash won't match and the head
+	// rejects with PPViewHashesDontMatch. Arrays are process-global + shared with
+	// L1, so hold the per-payment-source mesh lock across sync + build + sign;
+	// submitTx stays outside. See docs/adr/0005.
+	const headCostModels = await hydraProvider.fetchRawCostModels();
+	const signedTx = await withMeshCostModelLock(paymentContract.PaymentSourceConfig.rpcProviderApiKey, async () => {
+		await syncMeshCostModelsFromHeadV2(headCostModels);
+		const unsignedTx = await generateMasumiSmartContractInteractionTransactionAutomaticFees(
+			'AuthorizeWithdrawal',
+			hydraV2Provider,
+			network,
+			script,
+			address,
+			utxo,
+			collateralUtxo,
+			limitedUtxos,
+			datum.value,
+			invalidBefore,
+			invalidAfter,
+			undefined, // rpcApiKey — no chain cost-model sync on L2
+			undefined, // walletSplitterLovelace — L1-only convention
+			hydraV2Provider,
+		);
+		return await wallet.signTx(unsignedTx);
+	});
+
+	let newTxHash: string;
+	try {
+		newTxHash = await hydraProvider.submitTx(signedTx);
+	} catch (error) {
+		logger.error('L2 authorize-withdrawal: error submitting to head', { error, headId });
+		await prisma.purchaseRequest.update({
+			where: { id: request.id },
+			data: {
+				...connectPreviousAction(request.nextActionId),
+				...createNextPurchaseAction(PurchasingAction.AuthorizeWithdrawalRequested),
+				SmartContractWallet: { update: { lockedAt: null } },
+			},
+		});
+		return false;
+	}
+
+	await retryOnSerializationConflict(
+		() =>
+			prisma.purchaseRequest.update({
+				where: { id: request.id },
+				data: {
+					...connectPreviousAction(request.nextActionId),
+					...createNextPurchaseAction(PurchasingAction.AuthorizeWithdrawalInitiated),
+					...createPendingTransaction(purchasingWallet.id, newTxHash, {
+						layer: TransactionLayer.L2,
+						hydraHeadId: headId,
+					}),
+					TransactionHistory: { connect: { id: request.CurrentTransaction!.id } },
+				},
+			}),
+		{ label: 'v2-authorize-withdrawal-l2-post-submit' },
+	);
+
+	logger.info('L2 authorize-withdrawal submitted to head', { txHash: newTxHash, headId, smartContractAddress });
+	return true;
+}
+
 export async function authorizeWithdrawalsV2() {
 	let release: MutexInterface.Releaser | null;
 	try {
@@ -1037,6 +1192,7 @@ export async function authorizeWithdrawalsV2() {
 			onChainState: { in: [OnChainState.Disputed] },
 			maxBatchSize: AUTHORIZE_WITHDRAWAL_BATCH_SIZE,
 			paymentSourceType: PaymentSourceType.Web3CardanoV2,
+			layer: TransactionLayer.L1,
 		});
 
 		await Promise.allSettled(
@@ -1062,6 +1218,36 @@ export async function authorizeWithdrawalsV2() {
 							script,
 							smartContractAddress,
 						);
+					}),
+				);
+			}),
+		);
+
+		// --- Hydra L2: dedicated single-item head authorize-withdrawal path ---
+		// In-head timing differs from L1; validated on a Hydra devnet
+		// (see docs/hydra-l2-devnet-findings.md).
+		const l2PaymentContracts = await lockAndQueryPurchases({
+			purchasingAction: PurchasingAction.AuthorizeWithdrawalRequested,
+			onChainState: { in: [OnChainState.Disputed] },
+			maxBatchSize: AUTHORIZE_WITHDRAWAL_BATCH_SIZE,
+			paymentSourceType: PaymentSourceType.Web3CardanoV2,
+			layer: TransactionLayer.L2,
+		});
+		await Promise.allSettled(
+			l2PaymentContracts.map(async (paymentContract) => {
+				if (paymentContract.PurchaseRequests.length === 0) return;
+				const network = convertNetwork(paymentContract.network);
+				await Promise.allSettled(
+					paymentContract.PurchaseRequests.map(async (request) => {
+						try {
+							await processL2AuthorizeWithdrawal(request, paymentContract, network);
+						} catch (error) {
+							if (isLookupDeferred(error)) {
+								logger.info('L2 authorize-withdrawal deferred to next tick', { requestId: request.id, error });
+							} else {
+								logger.error('L2 authorize-withdrawal failed', { requestId: request.id, error });
+							}
+						}
 					}),
 				);
 			}),
