@@ -70,17 +70,7 @@ export async function checkHydraTransactions() {
 
 				logger.info(`[HydraTxHandler] L2 transaction ${tx.txHash} confirmed in head ${tx.hydraHeadId}`);
 
-				// V2 batch made these relations one-to-many; an L2 (Hydra) tx maps to a
-				// single request, so resolve the first (and only) entry.
-				const paymentRequest = tx.PaymentRequestCurrent[0];
-				if (paymentRequest) {
-					await confirmPaymentTransaction(tx, paymentRequest);
-				}
-
-				const purchaseRequest = tx.PurchaseRequestCurrent[0];
-				if (purchaseRequest) {
-					await confirmPurchaseTransaction(tx, purchaseRequest);
-				}
+				await confirmHydraTransaction(tx);
 			} catch (error) {
 				logger.error(`[HydraTxHandler] Error processing L2 tx ${tx.id}`, { error });
 			}
@@ -92,94 +82,58 @@ export async function checkHydraTransactions() {
 	}
 }
 
-async function confirmPaymentTransaction(
-	tx: {
-		id: string;
-		BlocksWallet: { id: string } | null;
-	},
-	paymentRequest: {
+async function confirmHydraTransaction(tx: {
+	id: string;
+	BlocksWallet: { id: string } | null;
+	PaymentRequestCurrent: Array<{
 		id: string;
 		nextActionId: string;
 		onChainState: OnChainState | null;
 		NextAction: { requestedAction: PaymentAction };
-	},
-) {
-	const currentAction = paymentRequest.NextAction.requestedAction;
-	const newOnChainState = deriveExpectedOnChainState(currentAction, paymentRequest.onChainState);
-
-	if (!newOnChainState) {
-		logger.warn(`[HydraTxHandler] Cannot derive expected state for payment action ${currentAction}`);
-		return;
-	}
-
-	const newAction = convertNewPaymentActionAndError(currentAction, newOnChainState);
-
-	await prisma.$transaction(
-		async (prisma) => {
-			const freshTx = await prisma.transaction.findUnique({ where: { id: tx.id } });
-			if (freshTx?.status !== TransactionStatus.Pending) return;
-
-			await prisma.transaction.update({
-				where: { id: tx.id },
-				data: {
-					status: TransactionStatus.Confirmed,
-					previousOnChainState: paymentRequest.onChainState,
-					newOnChainState,
-					...(tx.BlocksWallet ? { BlocksWallet: { disconnect: true } } : {}),
-				},
-			});
-
-			await prisma.paymentRequest.update({
-				where: { id: paymentRequest.id },
-				data: {
-					onChainState: newOnChainState,
-					ActionHistory: { connect: { id: paymentRequest.nextActionId } },
-					NextAction: {
-						create: {
-							requestedAction: newAction.action,
-							errorNote: newAction.errorNote,
-							errorType: newAction.errorType,
-						},
-					},
-				},
-			});
-
-			if (tx.BlocksWallet) {
-				await prisma.hotWallet.update({
-					where: { id: tx.BlocksWallet.id, deletedAt: null },
-					data: { lockedAt: null },
-				});
-			}
-		},
-		{
-			isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-			timeout: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
-			maxWait: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
-		},
-	);
-}
-
-async function confirmPurchaseTransaction(
-	tx: {
-		id: string;
-		BlocksWallet: { id: string } | null;
-	},
-	purchaseRequest: {
+	}>;
+	PurchaseRequestCurrent: Array<{
 		id: string;
 		nextActionId: string;
 		onChainState: OnChainState | null;
 		NextAction: { requestedAction: PurchasingAction };
-	},
-) {
-	const currentAction = purchaseRequest.NextAction.requestedAction;
-	const newOnChainState = deriveExpectedOnChainState(currentAction, purchaseRequest.onChainState);
+	}>;
+}) {
+	const paymentUpdates = tx.PaymentRequestCurrent.flatMap((paymentRequest) => {
+		const currentAction = paymentRequest.NextAction.requestedAction;
+		const newOnChainState = deriveExpectedOnChainState(currentAction, paymentRequest.onChainState);
+		if (!newOnChainState) {
+			logger.warn(`[HydraTxHandler] Cannot derive expected state for payment action ${currentAction}`);
+			return [];
+		}
+		return [
+			{
+				request: paymentRequest,
+				newOnChainState,
+				newAction: convertNewPaymentActionAndError(currentAction, newOnChainState),
+			},
+		];
+	});
 
-	if (!newOnChainState) {
-		logger.warn(`[HydraTxHandler] Cannot derive expected state for purchase action ${currentAction}`);
+	const purchaseUpdates = tx.PurchaseRequestCurrent.flatMap((purchaseRequest) => {
+		const currentAction = purchaseRequest.NextAction.requestedAction;
+		const newOnChainState = deriveExpectedOnChainState(currentAction, purchaseRequest.onChainState);
+		if (!newOnChainState) {
+			logger.warn(`[HydraTxHandler] Cannot derive expected state for purchase action ${currentAction}`);
+			return [];
+		}
+		return [
+			{
+				request: purchaseRequest,
+				newOnChainState,
+				newAction: convertNewPurchasingActionAndError(currentAction, newOnChainState),
+			},
+		];
+	});
+
+	const representativeUpdate = purchaseUpdates[0] ?? paymentUpdates[0];
+	if (!representativeUpdate) {
 		return;
 	}
-
-	const newAction = convertNewPurchasingActionAndError(currentAction, newOnChainState);
 
 	await prisma.$transaction(
 		async (prisma) => {
@@ -190,26 +144,45 @@ async function confirmPurchaseTransaction(
 				where: { id: tx.id },
 				data: {
 					status: TransactionStatus.Confirmed,
-					previousOnChainState: purchaseRequest.onChainState,
-					newOnChainState,
+					previousOnChainState: representativeUpdate.request.onChainState,
+					newOnChainState: representativeUpdate.newOnChainState,
 					...(tx.BlocksWallet ? { BlocksWallet: { disconnect: true } } : {}),
 				},
 			});
 
-			await prisma.purchaseRequest.update({
-				where: { id: purchaseRequest.id },
-				data: {
-					onChainState: newOnChainState,
-					ActionHistory: { connect: { id: purchaseRequest.nextActionId } },
-					NextAction: {
-						create: {
-							requestedAction: newAction.action,
-							errorNote: newAction.errorNote,
-							errorType: newAction.errorType,
+			for (const update of paymentUpdates) {
+				await prisma.paymentRequest.update({
+					where: { id: update.request.id },
+					data: {
+						onChainState: update.newOnChainState,
+						ActionHistory: { connect: { id: update.request.nextActionId } },
+						NextAction: {
+							create: {
+								requestedAction: update.newAction.action,
+								errorNote: update.newAction.errorNote,
+								errorType: update.newAction.errorType,
+							},
 						},
 					},
-				},
-			});
+				});
+			}
+
+			for (const update of purchaseUpdates) {
+				await prisma.purchaseRequest.update({
+					where: { id: update.request.id },
+					data: {
+						onChainState: update.newOnChainState,
+						ActionHistory: { connect: { id: update.request.nextActionId } },
+						NextAction: {
+							create: {
+								requestedAction: update.newAction.action,
+								errorNote: update.newAction.errorNote,
+								errorType: update.newAction.errorType,
+							},
+						},
+					},
+				});
+			}
 
 			if (tx.BlocksWallet) {
 				await prisma.hotWallet.update({

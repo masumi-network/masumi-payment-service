@@ -86,7 +86,10 @@ export type HydraReferenceScript = {
 	script: HydraScript;
 };
 
-export type HydraValue = Record<string, number>;
+export type HydraValue = {
+	lovelace?: number;
+	[policyId: string]: number | Record<string, number> | undefined;
+};
 
 export type HydraUTxO = {
 	address: string;

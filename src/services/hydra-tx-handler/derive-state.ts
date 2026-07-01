@@ -13,6 +13,8 @@ export function deriveExpectedOnChainState(
 			return OnChainState.Withdrawn;
 		case PaymentAction.AuthorizeRefundInitiated:
 			return OnChainState.RefundRequested;
+		case PaymentAction.WaitingForExternalAction:
+			return currentOnChainState ?? OnChainState.FundsLocked;
 		case PurchasingAction.FundsLockingInitiated:
 			return OnChainState.FundsLocked;
 		case PurchasingAction.SetRefundRequestedInitiated:

@@ -21,6 +21,7 @@ import {
   Wand2,
   AlertTriangle,
   Coins,
+  GitBranch,
 } from 'lucide-react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import { useSidebar } from '@/lib/contexts/SidebarContext';
@@ -79,8 +80,15 @@ export function MainLayout({ children }: MainLayoutProps) {
   const sideBarWidth = 280;
   const sideBarWidthCollapsed = 96;
   const [isMac, setIsMac] = useState(false);
-  const { network, setNetwork, isChangingNetwork, isSetupMode, setupWizardStep, activeRail } =
-    useAppContext();
+  const {
+    network,
+    setNetwork,
+    isChangingNetwork,
+    isSetupMode,
+    setupWizardStep,
+    activeRail,
+    selectedPaymentSource,
+  } = useAppContext();
   const [showNetworkSwitchConfirm, setShowNetworkSwitchConfirm] = useState(false);
   const [pendingNetwork, setPendingNetwork] = useState<'Preprod' | 'Mainnet' | null>(null);
   const isFirstNavMount = !hasAnimatedNav;
@@ -150,6 +158,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   );
   const hasPaymentSources = currentNetworkPaymentSources.length > 0;
   const hasV2PaymentSource = currentNetworkPaymentSources.some(isV2PaymentSource);
+  const canShowHydraNav = isV2PaymentSource(selectedPaymentSource);
   const hasLegacyOnlyPaymentSources = hasPaymentSources && !hasV2PaymentSource;
   const { networks: x402Networks, isLoading: x402Loading } = useX402Networks({
     silentErrors: true,
@@ -295,6 +304,17 @@ export function MainLayout({ children }: MainLayoutProps) {
         badge: formatCount(newTransactionsCount),
         group: 0,
       },
+      ...(canShowHydraNav
+        ? [
+            {
+              href: '/hydra-heads',
+              name: 'Hydra Heads',
+              icon: <GitBranch className="h-4 w-4" />,
+              badge: null,
+              group: 0,
+            },
+          ]
+        : []),
       {
         href: '/invoices',
         name: 'Invoices',
@@ -310,6 +330,7 @@ export function MainLayout({ children }: MainLayoutProps) {
     hasPaymentSources,
     isX402Standalone,
     activeRail,
+    canShowHydraNav,
     newTransactionsCount,
     activeWalletAlertCount,
     walletAlertLabel,

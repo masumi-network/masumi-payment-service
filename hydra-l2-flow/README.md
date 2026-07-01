@@ -6,6 +6,8 @@ against a **live local Hydra devnet**. Every step runs Masumi's own service code
 `hydra-node`; the head's `TxValid` log and its `/snapshot/utxo` HTTP API are the
 ground-truth result.
 
+Architecture overview: [`docs/hydra-architecture.md`](../docs/hydra-architecture.md).
+
 This is a **manual integration harness**, not a CI unit test. It needs Docker, a
 disposable Postgres, and an external Hydra devnet, so it is run by hand when
 validating L2 changes — not on every push. The committed Jest suites

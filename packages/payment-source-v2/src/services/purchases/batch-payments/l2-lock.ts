@@ -27,6 +27,7 @@ import {
 	PaymentSourceType,
 	PurchasingAction,
 	TransactionLayer,
+	TransactionStatus,
 	type Prisma,
 } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
@@ -38,7 +39,7 @@ import { createDatumFromBlockchainIdentifierV2 } from '@masumi/payment-source-v2
 import { buildL2LockDatumParams, mapPaidFundsToAssets, resolveL2BuyerReturnAddress } from './l2-lock-helpers';
 import { convertNetwork, convertNetworkToId } from '@/utils/converter/network-convert';
 import { decrypt } from '@/utils/security/encryption';
-import { connectPreviousAction, createNextPurchaseAction, createPendingTransaction } from '@/services/shared';
+import { connectPreviousAction, createNextPurchaseAction } from '@/services/shared';
 
 type PaymentSourceWithL2Relations = Prisma.PaymentSourceGetPayload<{
 	include: {
@@ -154,20 +155,44 @@ async function executeL2Lock(
 	// FundsLockingRequested for the next tick.
 	const txHash = await hydraProvider.submitTx(signedTx);
 
-	await prisma.purchaseRequest.update({
-		where: { id: request.id },
-		data: {
-			layer: TransactionLayer.L2,
-			...connectPreviousAction(request.nextActionId),
-			...createNextPurchaseAction(PurchasingAction.FundsLockingInitiated),
-			collateralReturnLovelace: 0n,
-			SmartContractWallet: { connect: { id: hotWallet.id } },
-			buyerReturnAddress,
-			...createPendingTransaction(hotWallet.id, txHash, {
+	await prisma.$transaction(async (tx) => {
+		const l2Transaction = await tx.transaction.create({
+			data: {
+				txHash,
+				status: TransactionStatus.Pending,
 				layer: TransactionLayer.L2,
-				hydraHeadId,
-			}),
-		},
+				HydraHead: { connect: { id: hydraHeadId } },
+				lastCheckedAt: new Date(),
+				BlocksWallet: { connect: { id: hotWallet.id } },
+			},
+		});
+
+		await tx.purchaseRequest.update({
+			where: { id: request.id },
+			data: {
+				layer: TransactionLayer.L2,
+				...connectPreviousAction(request.nextActionId),
+				...createNextPurchaseAction(PurchasingAction.FundsLockingInitiated),
+				collateralReturnLovelace: 0n,
+				SmartContractWallet: { connect: { id: hotWallet.id } },
+				buyerReturnAddress,
+				CurrentTransaction: { connect: { id: l2Transaction.id } },
+			},
+		});
+
+		const paymentRequest = await tx.paymentRequest.findUnique({
+			where: { blockchainIdentifier: request.blockchainIdentifier },
+			select: { id: true },
+		});
+		if (paymentRequest) {
+			await tx.paymentRequest.update({
+				where: { id: paymentRequest.id },
+				data: {
+					layer: TransactionLayer.L2,
+					CurrentTransaction: { connect: { id: l2Transaction.id } },
+				},
+			});
+		}
 	});
 
 	logger.info('L2 funds-lock submitted to head', {

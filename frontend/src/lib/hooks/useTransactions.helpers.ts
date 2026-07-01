@@ -1,20 +1,37 @@
 import { Payment, Purchase } from '@/lib/api/generated';
 
-export type PaymentTx = Payment & {
+type HydraAwareTransactionRecord = {
+  layer?: 'L1' | 'L2';
+  hydraHeadId?: string | null;
+};
+
+export type PaymentTx = Omit<Payment, 'CurrentTransaction' | 'TransactionHistory'> & {
   type: 'payment';
   RequestedFunds?: { amount: string; unit: string }[];
   Amounts?: { amount: string; unit: string }[];
   unlockTime?: string | null;
+  CurrentTransaction:
+    | (NonNullable<Payment['CurrentTransaction']> & HydraAwareTransactionRecord)
+    | null;
+  TransactionHistory: Array<
+    NonNullable<NonNullable<Payment['TransactionHistory']>[number]> & HydraAwareTransactionRecord
+  > | null;
   PaymentSource: Payment['PaymentSource'] & {
     id?: string;
   };
 };
 
-export type PurchaseTx = Purchase & {
+export type PurchaseTx = Omit<Purchase, 'CurrentTransaction' | 'TransactionHistory'> & {
   type: 'purchase';
   PaidFunds?: { amount: string; unit: string }[];
   Amounts?: { amount: string; unit: string }[];
   unlockTime?: string | null;
+  CurrentTransaction:
+    | (NonNullable<Purchase['CurrentTransaction']> & HydraAwareTransactionRecord)
+    | null;
+  TransactionHistory: Array<
+    NonNullable<NonNullable<Purchase['TransactionHistory']>[number]> & HydraAwareTransactionRecord
+  > | null;
   PaymentSource: Purchase['PaymentSource'] & {
     id?: string;
   };

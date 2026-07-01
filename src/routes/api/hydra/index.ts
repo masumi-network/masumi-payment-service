@@ -1,6 +1,7 @@
 export { getOrListRelationsGet, createRelationPost, deleteRelationDelete } from './relation';
 
 export {
+	checkHeadNodePost,
 	getOrListHeadsGet,
 	createHeadPost,
 	updateHeadPatch,
@@ -19,3 +20,5 @@ export {
 	getRemoteParticipantGet,
 	deleteRemoteParticipantDelete,
 } from './participant';
+
+export { ensureHydraWalletBasePost, listHydraWalletBasesGet } from './wallet-base';

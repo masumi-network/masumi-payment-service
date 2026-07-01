@@ -65,6 +65,7 @@ mkdir -p "$STATE" "$BIN_DIR"
 # ── native binary ────────────────────────────────────────────────────────────
 ensure_bin(){
   if [ -x "$NATIVE_BIN" ]; then
+    repair_dylibs
     return 0
   fi
   command -v gh >/dev/null 2>&1 || { c_red "missing: gh (needed to download the native binary artifact)"; exit 1; }
@@ -76,7 +77,18 @@ ensure_bin(){
   install -m 0755 "$tmp/hydra-node" "$NATIVE_BIN"
   [ -f "$tmp/hydra-tui" ] && install -m 0755 "$tmp/hydra-tui" "$BIN_DIR/hydra-tui"
   rm -rf "$tmp"
+  repair_dylibs
   c_grn "  installed -> $NATIVE_BIN ($("$NATIVE_BIN" --version 2>/dev/null | head -1))"
+}
+
+repair_dylibs(){
+  command -v otool >/dev/null 2>&1 || return 0
+  command -v install_name_tool >/dev/null 2>&1 || return 0
+  local nix_iconv
+  nix_iconv="$(otool -L "$NATIVE_BIN" 2>/dev/null | awk '/\/nix\/store\/.*libiconv.*libiconv\.2\.dylib/ {print $1; exit}')"
+  [ -n "$nix_iconv" ] || return 0
+  install_name_tool -change "$nix_iconv" /usr/lib/libiconv.2.dylib "$NATIVE_BIN" || return 1
+  command -v codesign >/dev/null 2>&1 && codesign --force --sign - "$NATIVE_BIN" >/dev/null 2>&1
 }
 
 # ── socket bridge (cardano-node n2c -> host unix socket) ─────────────────────
@@ -92,7 +104,7 @@ bridge_up(){
   # host forwarder: $HOST_SOCKET -> tcp 127.0.0.1:$BRIDGE_PORT
   if [ ! -f "$STATE/forwarder.pid" ] || ! kill -0 "$(cat "$STATE/forwarder.pid" 2>/dev/null)" 2>/dev/null; then
     write_forwarder
-    python3 "$STATE/n2c-forward.py" "$HOST_SOCKET" "$BRIDGE_PORT" >"$STATE/forwarder.log" 2>&1 &
+    nohup python3 "$STATE/n2c-forward.py" "$HOST_SOCKET" "$BRIDGE_PORT" >"$STATE/forwarder.log" 2>&1 < /dev/null &
     echo $! > "$STATE/forwarder.pid"
     sleep 1
   fi
@@ -162,7 +174,9 @@ start_node(){
   local api=$((4000 + idx)) p2p=$((5000 + idx)) mon=$((6000 + idx))
   local peers=()
   for j in 1 2 3; do [ "$j" != "$idx" ] && peers+=( --peer "127.0.0.1:$((5000 + j))" ); done
-  ( cd "$DEMO" && "$NATIVE_BIN" \
+  (
+    cd "$DEMO" || exit 1
+    nohup "$NATIVE_BIN" \
       --node-id "$idx" \
       --api-host 127.0.0.1 --api-port "$api" \
       --listen "127.0.0.1:$p2p" --monitoring-port "$mon" \
@@ -178,8 +192,9 @@ start_node(){
       --persistence-dir "$persist" \
       --contestation-period "${CONTESTATION_PERIOD:-3s}" \
       --deposit-period "${DEPOSIT_PERIOD:-120s}" \
-      >"$STATE/node$idx.log" 2>&1 ) &
-  echo $! > "$STATE/node$idx.pid"
+      >"$STATE/node$idx.log" 2>&1 < /dev/null &
+    echo $! > "$STATE/node$idx.pid"
+  )
 }
 
 nodes_up(){
@@ -209,6 +224,15 @@ nodes_up(){
     sleep 1
   done
   [ "$ok" = 1 ] && c_grn "  all 3 node APIs up (4001/4002/4003)" || { c_red "  node APIs did not come up — see $STATE/node*.log"; exit 1; }
+
+  if [ "${HYDRA_KEEPALIVE:-0}" = 1 ]; then
+    c_grn "  keeping native hydra-nodes attached; press Ctrl-C to stop"
+    while kill -0 "$(cat "$STATE/node1.pid")" "$(cat "$STATE/node2.pid")" "$(cat "$STATE/node3.pid")" 2>/dev/null; do
+      sleep 5
+    done
+    c_red "  a native hydra-node exited — see $STATE/node*.log"
+    exit 1
+  fi
 }
 
 nodes_down(){

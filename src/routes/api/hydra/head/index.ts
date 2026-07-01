@@ -2,13 +2,15 @@ import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
-import { HydraHeadStatus, HydraErrorType } from '@/generated/prisma/client';
+import { HydraHeadStatus, HydraErrorType, Prisma } from '@/generated/prisma/client';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { logger } from '@masumi/payment-core/logger';
 import { resolveTxHash } from '@meshsdk/core';
 import { HydraTransactionType, interpretCardanoTxSubmitResult } from '@/lib/hydra';
 import { toPrismaJsonValue } from '@/utils/json-value';
 import { generateWalletExtended } from '@/utils/generator/wallet-generator';
+import { getOwnValue, isPlainObject } from '@masumi/payment-core/object-properties';
+import { getBlockfrostInstance } from '@/utils/blockfrost';
 
 // --- Shared schemas ---
 
@@ -83,6 +85,24 @@ const getHeadSchemaOutput = z.object({
 });
 
 const headInclude = {
+	HydraRelation: {
+		select: {
+			network: true,
+			LocalHotWallet: {
+				select: {
+					PaymentSource: {
+						select: {
+							PaymentSourceConfig: {
+								select: {
+									rpcProviderApiKey: true,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
 	LocalParticipant: {
 		select: {
 			id: true,
@@ -109,6 +129,77 @@ const headInclude = {
 	_count: { select: { Errors: true, Transactions: true } },
 } as const;
 
+type HydraHeadRecord = Prisma.HydraHeadGetPayload<{ include: typeof headInclude }>;
+
+const HYDRA_HEAD_V2_ASSET_NAME_HEX = '4879647261486561645632';
+
+function serializeHydraHead(head: HydraHeadRecord) {
+	const { HydraRelation: _HydraRelation, ...publicHead } = head;
+	return toPrismaJsonValue(publicHead);
+}
+
+async function enrichHydraHeadLifecycleTxs(head: HydraHeadRecord): Promise<HydraHeadRecord> {
+	if (head.initTxHash || !head.headIdentifier) {
+		return head;
+	}
+
+	const rpcProviderApiKey = head.HydraRelation.LocalHotWallet.PaymentSource.PaymentSourceConfig?.rpcProviderApiKey;
+	if (!rpcProviderApiKey) {
+		return head;
+	}
+
+	const initTxHash = await resolveHydraInitTxHash(
+		head.HydraRelation.network,
+		rpcProviderApiKey,
+		head.headIdentifier,
+	);
+	if (!initTxHash) {
+		return head;
+	}
+
+	return prisma.hydraHead.update({
+		where: { id: head.id },
+		data: { initTxHash },
+		include: headInclude,
+	});
+}
+
+async function resolveHydraInitTxHash(
+	network: HydraHeadRecord['HydraRelation']['network'],
+	rpcProviderApiKey: string,
+	headIdentifier: string,
+): Promise<string | null> {
+	if (!/^[0-9a-fA-F]{56}$/.test(headIdentifier)) {
+		return null;
+	}
+
+	const blockfrost = getBlockfrostInstance(network, rpcProviderApiKey);
+	const hydraHeadAsset = `${headIdentifier}${HYDRA_HEAD_V2_ASSET_NAME_HEX}`;
+
+	try {
+		const transactions = await blockfrost.assetsTransactions(hydraHeadAsset, {
+			page: 1,
+			order: 'asc',
+			count: 1,
+		});
+		return transactions[0]?.tx_hash ?? null;
+	} catch (error) {
+		if (
+			error instanceof Error &&
+			(error.message.includes('404') || error.message.toLowerCase().includes('not found'))
+		) {
+			return null;
+		}
+
+		logger.warn('[HydraAPI] Failed to resolve Hydra init tx hash from Blockfrost', {
+			network,
+			headIdentifier,
+			error,
+		});
+		return null;
+	}
+}
+
 export const getOrListHeadsGet = adminAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: getHeadSchemaInput,
@@ -124,7 +215,8 @@ export const getOrListHeadsGet = adminAuthenticatedEndpointFactory.build({
 				throw createHttpError(404, 'Hydra head not found');
 			}
 
-			return { heads: [toPrismaJsonValue(head)] };
+			const enrichedHead = await enrichHydraHeadLifecycleTxs(head);
+			return { heads: [serializeHydraHead(enrichedHead)] };
 		}
 
 		const heads = await prisma.hydraHead.findMany({
@@ -140,7 +232,8 @@ export const getOrListHeadsGet = adminAuthenticatedEndpointFactory.build({
 			...(input.cursorId ? { skip: 1 } : {}),
 		});
 
-		return { heads: heads.map(toPrismaJsonValue) };
+		const enrichedHeads = await Promise.all(heads.map(enrichHydraHeadLifecycleTxs));
+		return { heads: enrichedHeads.map(serializeHydraHead) };
 	},
 });
 
@@ -215,7 +308,7 @@ export const createHeadPost = adminAuthenticatedEndpointFactory.build({
 			include: headInclude,
 		});
 
-		return toPrismaJsonValue(head);
+		return serializeHydraHead(head);
 	},
 });
 
@@ -244,7 +337,55 @@ export const updateHeadPatch = adminAuthenticatedEndpointFactory.build({
 			include: headInclude,
 		});
 
-		return toPrismaJsonValue(head);
+		return serializeHydraHead(head);
+	},
+});
+
+// --- POST: check node reachability/status ---
+
+const checkHeadNodeSchemaInput = z.object({
+	nodeHttpUrl: z.string().min(1).describe('HTTP URL for the Hydra node'),
+	nodeUrl: z.string().min(1).optional().describe('Optional WebSocket URL for the Hydra node'),
+	timeoutMs: z.coerce
+		.number()
+		.int()
+		.min(500)
+		.max(15000)
+		.default(5000)
+		.describe('Maximum probe duration in milliseconds'),
+});
+
+const checkHeadNodeSchemaOutput = z.object({
+	reachable: z.boolean(),
+	protocolParametersOk: z.boolean(),
+	websocketReachable: z.boolean(),
+	httpStatus: z.number().nullable(),
+	status: z.nativeEnum(HydraHeadStatus).nullable(),
+	checkedAt: z.string(),
+	error: z.string().nullable(),
+});
+
+export const checkHeadNodePost = adminAuthenticatedEndpointFactory.build({
+	method: 'post',
+	input: checkHeadNodeSchemaInput,
+	output: checkHeadNodeSchemaOutput,
+	handler: async ({ input }) => {
+		const httpProbe = await probeHydraHttpNode(input.nodeHttpUrl, input.timeoutMs);
+		const websocketProbe = input.nodeUrl
+			? await probeHydraWebSocketNode(input.nodeUrl, input.timeoutMs)
+			: { websocketReachable: false, status: null, error: null };
+
+		const errors = [httpProbe.error, websocketProbe.error].filter((error): error is string => Boolean(error));
+
+		return {
+			reachable: httpProbe.protocolParametersOk || websocketProbe.websocketReachable,
+			protocolParametersOk: httpProbe.protocolParametersOk,
+			websocketReachable: websocketProbe.websocketReachable,
+			httpStatus: httpProbe.httpStatus,
+			status: websocketProbe.status,
+			checkedAt: new Date().toISOString(),
+			error: errors.length > 0 ? errors.join('; ') : null,
+		};
 	},
 });
 
@@ -380,8 +521,8 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 			throw createHttpError(404, 'Hydra head not found');
 		}
 
-		if (head.status !== HydraHeadStatus.Initializing) {
-			throw createHttpError(409, `Cannot commit: head status is ${head.status}, expected Initializing`);
+		if (head.status !== HydraHeadStatus.Initializing && head.status !== HydraHeadStatus.Open) {
+			throw createHttpError(409, `Cannot commit: head status is ${head.status}, expected Initializing or Open`);
 		}
 
 		const localParticipant = head.LocalParticipant;
@@ -599,4 +740,166 @@ async function recordHeadError(
 	} catch (logError) {
 		logger.error('[HydraAPI] Failed to record head error', { hydraHeadId, logError });
 	}
+}
+
+function buildProtocolParametersUrl(nodeHttpUrl: string): string {
+	const baseUrl = nodeHttpUrl.replace(/\/+$/, '');
+	return `${baseUrl}/protocol-parameters`;
+}
+
+function appendHistoryNo(nodeUrl: string): string {
+	const separator = nodeUrl.includes('?') ? '&' : '?';
+	return `${nodeUrl}${separator}history=no`;
+}
+
+function getErrorMessage(error: unknown): string {
+	if (error instanceof Error) {
+		return error.message;
+	}
+	return String(error);
+}
+
+async function probeHydraHttpNode(
+	nodeHttpUrl: string,
+	timeoutMs: number,
+): Promise<{ protocolParametersOk: boolean; httpStatus: number | null; error: string | null }> {
+	const controller = new AbortController();
+	const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+	try {
+		const response = await fetch(buildProtocolParametersUrl(nodeHttpUrl), {
+			method: 'GET',
+			signal: controller.signal,
+		});
+
+		return {
+			protocolParametersOk: response.ok,
+			httpStatus: response.status,
+			error: response.ok ? null : `Protocol parameters returned HTTP ${response.status}`,
+		};
+	} catch (error) {
+		return {
+			protocolParametersOk: false,
+			httpStatus: null,
+			error: `Protocol parameters probe failed: ${getErrorMessage(error)}`,
+		};
+	} finally {
+		clearTimeout(timeout);
+	}
+}
+
+function isHydraHeadStatus(value: unknown): value is HydraHeadStatus {
+	return typeof value === 'string' && Object.values(HydraHeadStatus).includes(value as HydraHeadStatus);
+}
+
+function parseHydraStatusMessage(value: unknown): HydraHeadStatus | null {
+	if (!isPlainObject(value)) {
+		return null;
+	}
+
+	const headStatus = getOwnValue(value, 'headStatus');
+	if (isHydraHeadStatus(headStatus)) {
+		return headStatus;
+	}
+
+	const tag = getOwnValue(value, 'tag');
+	if (tag === 'HeadIsInitializing') return HydraHeadStatus.Initializing;
+	if (tag === 'HeadIsOpen') return HydraHeadStatus.Open;
+	if (tag === 'HeadIsClosed') return HydraHeadStatus.Closed;
+	if (tag === 'ReadyToFanout') return HydraHeadStatus.FanoutPossible;
+	if (tag === 'HeadIsFinalized') return HydraHeadStatus.Final;
+
+	return null;
+}
+
+function normalizeWebSocketData(data: unknown): string | null {
+	if (typeof data === 'string') {
+		return data;
+	}
+	if (data instanceof ArrayBuffer) {
+		return Buffer.from(data).toString('utf8');
+	}
+	if (ArrayBuffer.isView(data)) {
+		return Buffer.from(data.buffer, data.byteOffset, data.byteLength).toString('utf8');
+	}
+	return null;
+}
+
+async function probeHydraWebSocketNode(
+	nodeUrl: string,
+	timeoutMs: number,
+): Promise<{ websocketReachable: boolean; status: HydraHeadStatus | null; error: string | null }> {
+	if (!globalThis.WebSocket) {
+		return {
+			websocketReachable: false,
+			status: null,
+			error: 'WebSocket is not available in this runtime',
+		};
+	}
+
+	return new Promise((resolve) => {
+		let websocket: WebSocket | null = null;
+		let didOpen = false;
+		let settled = false;
+
+		const timeout = setTimeout(() => {
+			finish({
+				websocketReachable: didOpen,
+				status: null,
+				error: didOpen ? 'Timed out waiting for Hydra status' : 'WebSocket probe timed out',
+			});
+		}, timeoutMs);
+
+		function finish(result: { websocketReachable: boolean; status: HydraHeadStatus | null; error: string | null }) {
+			if (settled) {
+				return;
+			}
+			settled = true;
+			clearTimeout(timeout);
+			try {
+				websocket?.close();
+			} catch {
+				// Closing a failed probe is best-effort only.
+			}
+			resolve(result);
+		}
+
+		try {
+			websocket = new WebSocket(appendHistoryNo(nodeUrl));
+			websocket.addEventListener('open', () => {
+				didOpen = true;
+			});
+			websocket.addEventListener('message', (event) => {
+				const rawMessage = normalizeWebSocketData(event.data);
+				if (!rawMessage) {
+					return;
+				}
+
+				try {
+					const parsed = JSON.parse(rawMessage) as unknown;
+					const status = parseHydraStatusMessage(parsed);
+					finish({ websocketReachable: true, status, error: null });
+				} catch (error) {
+					finish({
+						websocketReachable: true,
+						status: null,
+						error: `Hydra status message was not valid JSON: ${getErrorMessage(error)}`,
+					});
+				}
+			});
+			websocket.addEventListener('error', () => {
+				finish({
+					websocketReachable: didOpen,
+					status: null,
+					error: 'WebSocket probe failed',
+				});
+			});
+		} catch (error) {
+			finish({
+				websocketReachable: false,
+				status: null,
+				error: `WebSocket probe failed: ${getErrorMessage(error)}`,
+			});
+		}
+	});
 }

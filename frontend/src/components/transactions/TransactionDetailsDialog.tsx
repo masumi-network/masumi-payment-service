@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Skeleton } from '@/components/ui/skeleton';
 import { CopyButton } from '@/components/ui/copy-button';
 import { WalletLink } from '@/components/ui/wallet-link';
+import { Badge } from '@/components/ui/badge';
 import { toast } from 'react-toastify';
 import { getUsdmConfig, TESTUSDM_CONFIG, USDCX_CONFIG } from '@/lib/constants/defaultWallets';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -29,9 +30,23 @@ import { useRegistryEntryByAgentIdentifier } from '@/lib/queries/useRegistryEntr
 import { useAgentDetailsDialog } from '@/lib/contexts/AgentDetailsDialogContext';
 
 type Transaction =
-  | (Payment & { type: 'payment' })
-  | (Purchase & {
+  | (Omit<Payment, 'CurrentTransaction' | 'TransactionHistory'> & {
+      type: 'payment';
+      CurrentTransaction?:
+        | (NonNullable<Payment['CurrentTransaction']> & {
+            layer?: 'L1' | 'L2';
+            hydraHeadId?: string | null;
+          })
+        | null;
+    })
+  | (Omit<Purchase, 'CurrentTransaction' | 'TransactionHistory'> & {
       type: 'purchase';
+      CurrentTransaction?:
+        | (NonNullable<Purchase['CurrentTransaction']> & {
+            layer?: 'L1' | 'L2';
+            hydraHeadId?: string | null;
+          })
+        | null;
     });
 
 interface TransactionDetailsDialogProps {
@@ -84,6 +99,9 @@ const formatStatus = (status: string | null) => {
   if (!status) return '—';
   return status.replace(/([A-Z])/g, ' $1').trim();
 };
+
+const isHydraTransaction = (transaction: Transaction) =>
+  transaction.CurrentTransaction?.layer === 'L2';
 
 const canRequestRefund = (transaction: Transaction) => {
   return (
@@ -396,6 +414,7 @@ export default function TransactionDetailsDialog({
                     paymentSourceType={transaction.PaymentSource.paymentSourceType}
                     showDefault
                   />
+                  {isHydraTransaction(transaction) && <Badge variant="success">Hydra L2</Badge>}
                 </div>
               </div>
 
@@ -560,6 +579,24 @@ export default function TransactionDetailsDialog({
                   >
                     {formatStatus(transaction.onChainState)}
                   </p>
+                </div>
+
+                <div>
+                  <h5 className="text-sm font-medium mb-1">Layer</h5>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant={isHydraTransaction(transaction) ? 'success' : 'secondary'}>
+                      {isHydraTransaction(transaction) ? 'Hydra L2' : 'L1'}
+                    </Badge>
+                    {transaction.CurrentTransaction?.hydraHeadId && (
+                      <>
+                        <span className="text-xs text-muted-foreground">Head</span>
+                        <span className="font-mono text-xs">
+                          {shortenAddress(transaction.CurrentTransaction.hydraHeadId, 8)}
+                        </span>
+                        <CopyButton value={transaction.CurrentTransaction.hydraHeadId} />
+                      </>
+                    )}
+                  </div>
                 </div>
 
                 <div>

@@ -4,6 +4,8 @@ Status: **decision needed** (two architecture calls for the senior)
 Branch: `gd/impl-hydra`
 Date: 2026-06-07
 
+Architecture diagram: [`docs/hydra-architecture.md`](hydra-architecture.md).
+
 This documents what was verified by running the Hydra L2 V2 re-target against a
 live Hydra devnet, and the two blockers that stop a full in-head escrow E2E.
 Both blockers are product/architecture decisions, not coding bugs.

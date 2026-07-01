@@ -49,6 +49,7 @@ NODE1="${NODE1:-http://127.0.0.1:4001}"
 CARDANO_CONTAINER="${CARDANO_CONTAINER:-demo-cardano-node-1}"
 HYDRA_NODE_CONTAINER="${HYDRA_NODE_CONTAINER:-demo-hydra-node-1-1}"
 HYDRA_IMAGE="${HYDRA_IMAGE:-ghcr.io/cardano-scaling/hydra-node:2.2.0}"
+TSX="${TSX:-$REPO/node_modules/.bin/tsx}"
 
 # Hydra 2.2.0 added a Rust BLS accumulator (Partial Fanout). The published
 # linux/amd64 images run under Docker Desktop's Rosetta on Apple Silicon, where
@@ -61,6 +62,7 @@ fi
 NATIVE_SH="$REPO/hydra-l2-flow/hydra-native.sh"
 NATIVE_STATE="$REPO/hydra-l2-flow/.native-state"
 NATIVE_LOG="$NATIVE_STATE/node1.log"
+NATIVE_BIN="${NATIVE_BIN:-$REPO/hydra-l2-flow/.bin/hydra-node}"
 
 # Per-op evidence ledger. step() appends one TSV row per escrow operation as it
 # runs (op<TAB>headTxId<TAB>masumiDbHash<TAB>match<TAB>slot<TAB>iso8601). The
@@ -126,14 +128,14 @@ run_tsx(){
   local out; out="$(mktemp)"
   if [ "${VERBOSE:-0}" = 1 ]; then
     # Stream full output to the terminal AND capture it; watchdog enforces timeout.
-    pnpm exec tsx "$script" "$@" 2>&1 | tee "$out" &
+    "$TSX" "$script" "$@" 2>&1 | tee "$out" &
     local pid=$!
     ( sleep "$timeout_s"; kill "$pid" 2>/dev/null ) >/dev/null 2>&1 &
     local wd=$!
     wait "$pid" 2>/dev/null
     kill "$wd" 2>/dev/null
   else
-    pnpm exec tsx "$script" "$@" >"$out" 2>&1 &
+    "$TSX" "$script" "$@" >"$out" 2>&1 &
     local pid=$!
     local i=0
     while kill -0 "$pid" 2>/dev/null; do
@@ -211,11 +213,28 @@ cmd_up(){
      || { [ "$HYDRA_NATIVE" != 1 ] && docker compose -f "$DEMO/docker-compose.yaml" ps 2>/dev/null | grep -q "hydra-node-1"; }; then
     c_grn "  already running"
   else
-    ( cd "$DEMO" && ./prepare-devnet.sh && docker compose up -d cardano-node )
-    for i in $(seq 1 40); do [ -S "$DEMO/devnet/node.socket" ] && break; sleep 1; done
-    # In native mode we publish reference scripts ourselves (the emulated image
-    # hangs on 2.2.0's BLS path), so tell seed-devnet.sh to skip publishing.
-    ( cd "$DEMO" && SKIP_PUBLISH="$([ "$HYDRA_NATIVE" = 1 ] && echo 1 || echo 0)" ./seed-devnet.sh )
+    ( cd "$DEMO" && ./prepare-devnet.sh && docker compose up -d --force-recreate cardano-node )
+    local cardano_ready=0
+    for _ in $(seq 1 120); do
+      if docker exec "$CARDANO_CONTAINER" cardano-cli query tip \
+        --testnet-magic 42 --socket-path /devnet/node.socket >/dev/null 2>&1; then
+        cardano_ready=1
+        break
+      fi
+      sleep 1
+    done
+    [ "$cardano_ready" = 1 ] && c_grn "  cardano-node ready" || { c_red "  cardano-node did not become queryable"; exit 1; }
+    if [ "$HYDRA_NATIVE" = 1 ]; then
+      "$NATIVE_SH" bin
+      # seed-devnet.sh always runs a publish step. In native mode, publishing
+      # must go through hydra-native.sh's host<->Docker socket bridge instead,
+      # so no-op the upstream publish here and publish bridge-aware below.
+      ( cd "$DEMO" && ./seed-devnet.sh "" /usr/bin/true ) \
+        || { c_red "  devnet seed failed"; exit 1; }
+    else
+      ( cd "$DEMO" && ./seed-devnet.sh ) \
+        || { c_red "  devnet seed failed"; exit 1; }
+    fi
     # Align the head's Plutus cost models with the V2 mesh line (.102 / preprod)
     # BEFORE the hydra nodes read protocol-parameters.json at startup. The demo's
     # cardano-node emits an older 251-param PlutusV3 model; mesh produces a
@@ -236,13 +255,14 @@ cmd_up(){
       c_blu "  SKIP_ALIGN=1 → leaving native devnet cost models (251-param V3)"
     else
       node "$REPO/hydra-l2-flow/align-cost-models.cjs" "$DEMO/devnet/protocol-parameters.json" "$REPO" \
-        && c_grn "  cost models aligned to mesh beta.102" || c_red "  cost-model alignment FAILED (script-spend txs may PPViewHashesDontMatch)"
+        && c_grn "  cost models aligned to mesh beta.102" \
+        || { c_red "  cost-model alignment FAILED (script-spend txs may PPViewHashesDontMatch)"; exit 1; }
     fi
     if [ "$HYDRA_NATIVE" = 1 ]; then
       # Apple Silicon: publish scripts + run the 3 hydra-nodes natively (no Rosetta).
       # hydra-native.sh waits for all 3 node APIs before returning.
-      "$NATIVE_SH" publish
-      FRESH="${FRESH:-1}" "$NATIVE_SH" up
+      grep -qE '^HYDRA_SCRIPTS_TX_ID=[0-9a-f]+' "$DEMO/.env" 2>/dev/null || "$NATIVE_SH" publish
+      HYDRA_KEEPALIVE=0 FRESH="${FRESH:-1}" "$NATIVE_SH" up
     else
       local txid; txid="$(docker run --rm -v "$DEMO/devnet:/devnet" "$HYDRA_IMAGE" -- \
         publish-scripts --testnet-magic 42 --node-socket /devnet/node.socket \
@@ -289,12 +309,15 @@ cmd_up(){
     [ "${n:-0}" -ge 1 ] && { c_grn "  funds in head ($n UTxO)"; break; }
     sleep 10
   done
+  docker exec "$DB_CONTAINER" psql -U postgres -d masumi_hydra_test \
+    -c 'UPDATE "HydraHead" SET status='"'"'Open'"'"', "isEnabled"=true, "headIdentifier"='"'"'33f8e10a2a5e1f6e2276cf279eb4bc2f4a9e7442de5b7fb943a4ff67'"'"', "openedAt"=NOW();' >/dev/null 2>&1 \
+    && c_grn "  HydraHead marked Open in test DB"
 
   c_blu "[4/5] Derive buyer address + fund buyer (40 ADA in head)…"
   local wout; wout="$(mktemp)"
-  RUN_TIMEOUT=40 pnpm exec tsx hydra-l2-flow/01-wallet.mts >"$wout" 2>&1 &
+  RUN_TIMEOUT=40 "$TSX" hydra-l2-flow/01-wallet.mts >"$wout" 2>&1 &
   local wp=$!; for i in $(seq 1 40); do kill -0 $wp 2>/dev/null || break; sleep 1; done; kill $wp 2>/dev/null
-  BUYER="$(grep -oE 'addr_test1q[a-z0-9]+' "$wout" | head -1)"; rm -f "$wout"
+  BUYER="$(grep -oE 'addr_test1[qpvz][a-z0-9]+' "$wout" | head -1)"; rm -f "$wout"
   [ -n "$BUYER" ] || { c_red "  could not derive buyer address"; exit 1; }
   echo "  buyer = ${BUYER:0:24}…"
   RUN_TIMEOUT=40 run_tsx "hydra-l2-flow/02-fund-in-head.mts" "$BUYER" 40000000
@@ -316,12 +339,20 @@ cmd_up(){
   c_grn "  seller funded ($sutxo in-head UTxO)"
 
   c_grn "=== UP: head open + funded, test DB seeded. Run: $0 flow1|flow2|flow3 ==="
+  if [ "${RUN_KEEPALIVE:-0}" = 1 ]; then
+    c_grn "  keeping native Hydra APIs alive; press Ctrl-C to stop"
+    while kill -0 "$(cat "$NATIVE_STATE/node1.pid")" "$(cat "$NATIVE_STATE/node2.pid")" "$(cat "$NATIVE_STATE/node3.pid")" 2>/dev/null; do
+      sleep 5
+    done
+    c_red "  a native hydra-node exited — see $NATIVE_STATE/node*.log"
+    exit 1
+  fi
 }
 
 # Top buyer/seller back up from alice's remaining in-head balance.
 cmd_fund(){
   local wout; wout="$(mktemp)"
-  RUN_TIMEOUT=40 pnpm exec tsx hydra-l2-flow/01-wallet.mts >"$wout" 2>&1 &
+  RUN_TIMEOUT=40 "$TSX" hydra-l2-flow/01-wallet.mts >"$wout" 2>&1 &
   local wp=$!; for i in $(seq 1 40); do kill -0 $wp 2>/dev/null || break; sleep 1; done; kill $wp 2>/dev/null
   BUYER="$(grep -oE 'addr_test1q[a-z0-9]+' "$wout" | head -1)"; rm -f "$wout"
   SELLER="$(node -e "console.log(require('$REPO/hydra-l2-flow/.seller.json').address)" 2>/dev/null)"

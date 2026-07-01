@@ -3,14 +3,47 @@ import type { Asset, UTxO } from '@meshsdk/core';
 import type { HydraUTxO, HydraValue } from './types';
 
 export function mapAmountToHydraValue(amount: Asset[]): HydraValue {
-	return Object.fromEntries(amount.map((asset) => [asset.unit, Number(asset.quantity)]));
+	const value: HydraValue = {};
+
+	for (const asset of amount) {
+		if (asset.unit === 'lovelace') {
+			value.lovelace = Number(asset.quantity);
+			continue;
+		}
+
+		const policyId = asset.unit.slice(0, 56);
+		const assetName = asset.unit.slice(56);
+		const policyValue = value[policyId];
+		const nestedPolicyValue =
+			policyValue != null && typeof policyValue === 'object' && !Array.isArray(policyValue) ? policyValue : {};
+
+		nestedPolicyValue[assetName] = Number(asset.quantity);
+		value[policyId] = nestedPolicyValue;
+	}
+
+	return value;
 }
 
 export function mapHydraValueToAmount(hydraValue: HydraValue): Asset[] {
-	return Object.entries(hydraValue).map(([key, amount]) => ({
-		unit: key,
-		quantity: amount.toString(),
-	}));
+	return Object.entries(hydraValue).flatMap(([key, amount]) => {
+		if (amount == null) {
+			return [];
+		}
+
+		if (typeof amount === 'number') {
+			return [
+				{
+					unit: key,
+					quantity: amount.toString(),
+				},
+			];
+		}
+
+		return Object.entries(amount).map(([assetName, quantity]) => ({
+			unit: `${key}${assetName}`,
+			quantity: quantity.toString(),
+		}));
+	});
 }
 
 export function mapUTxOToHydraUTxO(utxo: UTxO): HydraUTxO {

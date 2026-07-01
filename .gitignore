@@ -1,5 +1,6 @@
 # node modules
 node_modules
+.pnpm-store/
 # build path
 dist/*
 # environmental variables
@@ -55,6 +56,17 @@ hydra-l2-flow/.seller.json
 # Hydra native run (large binaries + runtime state)
 hydra-l2-flow/.bin/
 hydra-l2-flow/.native-state/
+
+# Hydra preprod run (local binaries, secrets, logs + runtime state)
+hydra-l2-flow/preprod/bin/
+hydra-l2-flow/preprod/cardano-data/
+hydra-l2-flow/preprod/credentials/
+hydra-l2-flow/preprod/downloads/
+hydra-l2-flow/preprod/ipc/
+hydra-l2-flow/preprod/logs/
+hydra-l2-flow/preprod/persistence/
+hydra-l2-flow/preprod/*.pid
+hydra-l2-flow/preprod/protocol-parameters*.json
 
 # Hydra L2 E2E — generated evidence reports (regenerate via run-hydra-e2e.sh evidence)
 hydra-l2-flow/evidence/

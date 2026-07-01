@@ -105,6 +105,9 @@ import {
 	getOrListRelationsGet,
 	getRemoteParticipantGet,
 	initHeadPost,
+	checkHeadNodePost,
+	ensureHydraWalletBasePost,
+	listHydraWalletBasesGet,
 	listHeadErrorsGet,
 	updateHeadPatch,
 } from './hydra';
@@ -423,6 +426,10 @@ export const apiRouter: Routing = {
 			},
 		},
 		hydra: {
+			'wallet-base': {
+				get: listHydraWalletBasesGet,
+				post: ensureHydraWalletBasePost,
+			},
 			relation: {
 				get: getOrListRelationsGet,
 				post: createRelationPost,
@@ -432,6 +439,7 @@ export const apiRouter: Routing = {
 				get: getOrListHeadsGet,
 				post: createHeadPost,
 				patch: updateHeadPatch,
+				check: { post: checkHeadNodePost },
 				init: { post: initHeadPost },
 				commit: { post: commitHeadPost },
 				close: { post: closeHeadPost },
