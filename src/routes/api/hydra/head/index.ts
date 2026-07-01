@@ -148,11 +148,7 @@ async function enrichHydraHeadLifecycleTxs(head: HydraHeadRecord): Promise<Hydra
 		return head;
 	}
 
-	const initTxHash = await resolveHydraInitTxHash(
-		head.HydraRelation.network,
-		rpcProviderApiKey,
-		head.headIdentifier,
-	);
+	const initTxHash = await resolveHydraInitTxHash(head.HydraRelation.network, rpcProviderApiKey, head.headIdentifier);
 	if (!initTxHash) {
 		return head;
 	}

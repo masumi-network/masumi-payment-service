@@ -1054,9 +1054,7 @@ export default function HydraHeadsPage() {
         }
         onConfirm={handleConfirmLifecycleAction}
         isLoading={
-          pendingLifecycleAction
-            ? runningLifecycleHeadId === pendingLifecycleAction.head.id
-            : false
+          pendingLifecycleAction ? runningLifecycleHeadId === pendingLifecycleAction.head.id : false
         }
       />
       <AddHydraHeadDialog

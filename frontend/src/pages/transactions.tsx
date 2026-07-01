@@ -53,7 +53,8 @@ const getHydraHeadId = (transaction: Transaction) =>
 const toCsvValue = (value: unknown): string => {
   if (value == null) return '';
   if (typeof value === 'string') return value;
-  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return String(value);
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint')
+    return String(value);
   if (value instanceof Date) return value.toISOString();
   return JSON.stringify(value) ?? '';
 };
@@ -528,7 +529,10 @@ export default function Transactions() {
                             showDefault
                           />
                           <div className="flex items-center gap-1.5">
-                            <Badge variant={isHydraTransaction(transaction) ? 'success' : 'outline'} className="w-fit">
+                            <Badge
+                              variant={isHydraTransaction(transaction) ? 'success' : 'outline'}
+                              className="w-fit"
+                            >
                               {isHydraTransaction(transaction) ? 'Hydra L2' : 'L1'}
                             </Badge>
                             {isHydraTransaction(transaction) && getHydraHeadId(transaction) && (

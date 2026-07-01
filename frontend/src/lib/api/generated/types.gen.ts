@@ -436,6 +436,14 @@ export type Payment = {
          */
         txHash: string | null;
         /**
+         * Blockchain layer this transaction was submitted to
+         */
+        layer?: 'L1' | 'L2';
+        /**
+         * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+         */
+        hydraHeadId?: string | null;
+        /**
          * Current status of the transaction
          */
         status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
@@ -472,6 +480,14 @@ export type Payment = {
          * Cardano transaction hash
          */
         txHash: string | null;
+        /**
+         * Blockchain layer this transaction was submitted to
+         */
+        layer?: 'L1' | 'L2';
+        /**
+         * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+         */
+        hydraHeadId?: string | null;
         /**
          * Current status of the transaction
          */
@@ -766,6 +782,14 @@ export type Purchase = {
          */
         txHash: string | null;
         /**
+         * Blockchain layer this transaction was submitted to
+         */
+        layer?: 'L1' | 'L2';
+        /**
+         * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+         */
+        hydraHeadId?: string | null;
+        /**
          * Current status of the transaction
          */
         status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
@@ -814,6 +838,14 @@ export type Purchase = {
          * Cardano transaction hash
          */
         txHash: string | null;
+        /**
+         * Blockchain layer this transaction was submitted to
+         */
+        layer?: 'L1' | 'L2';
+        /**
+         * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+         */
+        hydraHeadId?: string | null;
         /**
          * Current status of the transaction
          */
@@ -3891,19 +3923,19 @@ export type PostPaymentData = {
         /**
          * The time after which the payment has to be submitted to the smart contract
          */
-        payByTime?: Date;
+        payByTime?: Date | Date;
         /**
          * The time after which the payment has to be submitted to the smart contract
          */
-        submitResultTime?: Date;
+        submitResultTime?: Date | Date;
         /**
          * The time after which the payment will be unlocked
          */
-        unlockTime?: Date;
+        unlockTime?: Date | Date;
         /**
          * The time after which the payment will be unlocked for external dispute
          */
-        externalDisputeUnlockTime?: Date;
+        externalDisputeUnlockTime?: Date | Date;
         /**
          * Metadata to be stored with the payment request
          */
@@ -4093,6 +4125,14 @@ export type PostPaymentResponses = {
                  * Cardano transaction hash
                  */
                 txHash: string | null;
+                /**
+                 * Blockchain layer this transaction was submitted to
+                 */
+                layer?: 'L1' | 'L2';
+                /**
+                 * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+                 */
+                hydraHeadId?: string | null;
                 /**
                  * Current status of the transaction
                  */
@@ -4681,6 +4721,14 @@ export type PostPaymentSubmitResultResponses = {
                  */
                 txHash: string | null;
                 /**
+                 * Blockchain layer this transaction was submitted to
+                 */
+                layer?: 'L1' | 'L2';
+                /**
+                 * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+                 */
+                hydraHeadId?: string | null;
+                /**
                  * Current status of the transaction
                  */
                 status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
@@ -4995,6 +5043,14 @@ export type PostPaymentAuthorizeRefundResponses = {
                  */
                 txHash: string | null;
                 /**
+                 * Blockchain layer this transaction was submitted to
+                 */
+                layer?: 'L1' | 'L2';
+                /**
+                 * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+                 */
+                hydraHeadId?: string | null;
+                /**
                  * Current status of the transaction
                  */
                 status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
@@ -5129,7 +5185,7 @@ export type PostPaymentErrorStateRecoveryData = {
         /**
          * The time of the last update, to ensure you clear the correct error state
          */
-        updatedAt: Date;
+        updatedAt: Date | Date;
     };
     path?: never;
     query?: never;
@@ -5325,6 +5381,14 @@ export type PostPaymentErrorStateRecoveryResponses = {
                  */
                 txHash: string | null;
                 /**
+                 * Blockchain layer this transaction was submitted to
+                 */
+                layer?: 'L1' | 'L2';
+                /**
+                 * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+                 */
+                hydraHeadId?: string | null;
+                /**
                  * Current status of the transaction
                  */
                 status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
@@ -5458,7 +5522,7 @@ export type PostPurchaseErrorStateRecoveryData = {
         /**
          * The time of the last update, to ensure you clear the correct error state
          */
-        updatedAt: Date;
+        updatedAt: Date | Date;
     };
     path?: never;
     query?: never;
@@ -5640,6 +5704,14 @@ export type PostPurchaseErrorStateRecoveryResponses = {
                  * Cardano transaction hash
                  */
                 txHash: string | null;
+                /**
+                 * Blockchain layer this transaction was submitted to
+                 */
+                layer?: 'L1' | 'L2';
+                /**
+                 * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+                 */
+                hydraHeadId?: string | null;
                 /**
                  * Current status of the transaction
                  */
@@ -6766,6 +6838,14 @@ export type PostPurchaseErrors = {
                  */
                 txHash: string | null;
                 /**
+                 * Blockchain layer this transaction was submitted to
+                 */
+                layer?: 'L1' | 'L2';
+                /**
+                 * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+                 */
+                hydraHeadId?: string | null;
+                /**
                  * Current status of the transaction
                  */
                 status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
@@ -7000,6 +7080,14 @@ export type PostPurchaseResponses = {
                  * Cardano transaction hash
                  */
                 txHash: string | null;
+                /**
+                 * Blockchain layer this transaction was submitted to
+                 */
+                layer?: 'L1' | 'L2';
+                /**
+                 * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+                 */
+                hydraHeadId?: string | null;
                 /**
                  * Current status of the transaction
                  */
@@ -7515,6 +7603,14 @@ export type PostPurchaseRequestRefundResponses = {
                  */
                 txHash: string | null;
                 /**
+                 * Blockchain layer this transaction was submitted to
+                 */
+                layer?: 'L1' | 'L2';
+                /**
+                 * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+                 */
+                hydraHeadId?: string | null;
+                /**
                  * Current status of the transaction
                  */
                 status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
@@ -7785,6 +7881,14 @@ export type PostPurchaseCancelRefundRequestResponses = {
                  * Cardano transaction hash
                  */
                 txHash: string | null;
+                /**
+                 * Blockchain layer this transaction was submitted to
+                 */
+                layer?: 'L1' | 'L2';
+                /**
+                 * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+                 */
+                hydraHeadId?: string | null;
                 /**
                  * Current status of the transaction
                  */
@@ -9252,11 +9356,11 @@ export type PostPurchaseSpendingData = {
         /**
          * Start date for spending calculation (date format: 2024-01-01). If null, uses earliest available data. If provided, will be converted to the local time zone of the user
          */
-        startDate?: Date | unknown;
+        startDate?: Date | Date | unknown;
         /**
          * End date for spending calculation (date format: 2024-01-31). If null, uses current date. If provided, will be converted to the local time zone of the user
          */
-        endDate?: Date | unknown;
+        endDate?: Date | Date | unknown;
         /**
          * The time zone to use for the spending calculation. If not provided, will use the UTC time zone. Must be a valid IANA time zone name, see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
          */
@@ -9443,11 +9547,11 @@ export type PostPaymentIncomeData = {
         /**
          * Start date for income calculation (date format: 2024-01-01). If null, uses earliest available data. If provided, will be converted to the local time zone of the user
          */
-        startDate?: Date | unknown;
+        startDate?: Date | Date | unknown;
         /**
          * End date for income calculation (date format: 2024-01-31). If null, uses current date. If provided, will be converted to the local time zone of the user
          */
-        endDate?: Date | unknown;
+        endDate?: Date | Date | unknown;
         /**
          * The time zone to use for the income calculation. If not provided, will use the UTC time zone. Must be a valid IANA time zone name, see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
          */
