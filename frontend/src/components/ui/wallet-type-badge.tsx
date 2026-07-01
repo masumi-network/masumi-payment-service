@@ -3,15 +3,19 @@ import { TOOLTIP_TEXTS } from '@/lib/constants/tooltips';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface WalletTypeBadgeProps {
-  type: 'Purchasing' | 'Selling';
+  type: 'Purchasing' | 'Selling' | 'Funding';
   className?: string;
   showTooltip?: boolean;
 }
 
 export function WalletTypeBadge({ type, className, showTooltip = true }: WalletTypeBadgeProps) {
-  const displayName = type === 'Purchasing' ? 'Buying' : 'Selling';
+  const displayName = type === 'Purchasing' ? 'Buying' : type === 'Funding' ? 'Funding' : 'Selling';
   const tooltipText =
-    type === 'Purchasing' ? TOOLTIP_TEXTS.BUYING_WALLET_TYPE : TOOLTIP_TEXTS.SELLING_WALLET_TYPE;
+    type === 'Purchasing'
+      ? TOOLTIP_TEXTS.BUYING_WALLET_TYPE
+      : type === 'Funding'
+        ? TOOLTIP_TEXTS.FUNDING_WALLET_TYPE
+        : TOOLTIP_TEXTS.SELLING_WALLET_TYPE;
 
   return (
     <div className={cn('inline-flex items-center gap-2', className)}>
@@ -20,7 +24,9 @@ export function WalletTypeBadge({ type, className, showTooltip = true }: WalletT
           'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
           type === 'Purchasing'
             ? 'bg-primary text-primary-foreground'
-            : 'bg-orange-50 dark:bg-[#f002] text-orange-600 dark:text-orange-400',
+            : type === 'Funding'
+              ? 'bg-emerald-50 dark:bg-[#0f02] text-emerald-600 dark:text-emerald-400'
+              : 'bg-orange-50 dark:bg-[#f002] text-orange-600 dark:text-orange-400',
         )}
       >
         {displayName}

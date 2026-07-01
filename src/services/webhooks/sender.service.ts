@@ -522,6 +522,16 @@ class WebhookSenderService {
 			return lines.join('\n');
 		}
 
+		if (payload.event_type === WebhookEventType.FUND_DISTRIBUTION_SENT) {
+			lines.push('');
+			this.appendDetailLine(lines, '🏦', 'Fund Wallet ID', payload.data.fundWalletId);
+			this.appendDetailLine(lines, '📬', 'Fund Wallet address', payload.data.fundWalletAddress);
+			this.appendDetailLine(lines, '🔗', 'Tx hash', payload.data.txHash);
+			this.appendDetailLine(lines, '🌐', 'Network', payload.data.network);
+			this.appendDetailLine(lines, '⏱️', 'Event time', payload.timestamp);
+			return lines.join('\n');
+		}
+
 		if (
 			payload.event_type === WebhookEventType.X402_PAYMENT_SETTLED ||
 			payload.event_type === WebhookEventType.X402_PAYMENT_FAILED
@@ -590,6 +600,8 @@ class WebhookSenderService {
 				return { emoji: '🚨', title: 'Purchase error' };
 			case WebhookEventType.WALLET_LOW_BALANCE:
 				return { emoji: '🪫', title: 'Wallet balance low' };
+			case WebhookEventType.FUND_DISTRIBUTION_SENT:
+				return { emoji: '💸', title: 'Fund distribution sent' };
 			case WebhookEventType.X402_PAYMENT_SETTLED:
 				return { emoji: '✅', title: 'x402 payment settled' };
 			case WebhookEventType.X402_PAYMENT_FAILED:

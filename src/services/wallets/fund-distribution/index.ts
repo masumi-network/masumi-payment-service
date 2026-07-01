@@ -1,0 +1,1 @@
+export { fundDistributionService } from './service';

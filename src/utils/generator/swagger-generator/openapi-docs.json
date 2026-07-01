@@ -335,7 +335,8 @@
                         "type": "string",
                         "enum": [
                             "Selling",
-                            "Purchasing"
+                            "Purchasing",
+                            "Funding"
                         ],
                         "description": "Whether this is a Selling (seller side) or Purchasing (buyer side) wallet"
                     },
@@ -5148,7 +5149,8 @@
                             "type": "string",
                             "enum": [
                                 "Selling",
-                                "Purchasing"
+                                "Purchasing",
+                                "Funding"
                             ],
                             "description": "Filter wallets by type (Selling or Purchasing)"
                         },
@@ -5378,7 +5380,8 @@
                                                                 "type": "string",
                                                                 "enum": [
                                                                     "Selling",
-                                                                    "Purchasing"
+                                                                    "Purchasing",
+                                                                    "Funding"
                                                                 ],
                                                                 "description": "Hot wallet type"
                                                             },
@@ -5583,7 +5586,8 @@
                                                     "type": "string",
                                                     "enum": [
                                                         "Selling",
-                                                        "Purchasing"
+                                                        "Purchasing",
+                                                        "Funding"
                                                     ],
                                                     "description": "Hot wallet type"
                                                 },
@@ -5774,7 +5778,8 @@
                                                     "type": "string",
                                                     "enum": [
                                                         "Selling",
-                                                        "Purchasing"
+                                                        "Purchasing",
+                                                        "Funding"
                                                     ],
                                                     "description": "Hot wallet type"
                                                 },
@@ -22002,6 +22007,7 @@
                                                                         "PURCHASE_ON_ERROR",
                                                                         "PAYMENT_ON_ERROR",
                                                                         "WALLET_LOW_BALANCE",
+                                                                        "FUND_DISTRIBUTION_SENT",
                                                                         "X402_PAYMENT_SETTLED",
                                                                         "X402_PAYMENT_FAILED",
                                                                         "X402_WALLET_LOW_BALANCE"
@@ -22176,6 +22182,7 @@
                                                 "PURCHASE_ON_ERROR",
                                                 "PAYMENT_ON_ERROR",
                                                 "WALLET_LOW_BALANCE",
+                                                "FUND_DISTRIBUTION_SENT",
                                                 "X402_PAYMENT_SETTLED",
                                                 "X402_PAYMENT_FAILED",
                                                 "X402_WALLET_LOW_BALANCE"
@@ -22253,6 +22260,7 @@
                                                             "PURCHASE_ON_ERROR",
                                                             "PAYMENT_ON_ERROR",
                                                             "WALLET_LOW_BALANCE",
+                                                            "FUND_DISTRIBUTION_SENT",
                                                             "X402_PAYMENT_SETTLED",
                                                             "X402_PAYMENT_FAILED",
                                                             "X402_WALLET_LOW_BALANCE"
@@ -22382,6 +22390,7 @@
                                                 "PURCHASE_ON_ERROR",
                                                 "PAYMENT_ON_ERROR",
                                                 "WALLET_LOW_BALANCE",
+                                                "FUND_DISTRIBUTION_SENT",
                                                 "X402_PAYMENT_SETTLED",
                                                 "X402_PAYMENT_FAILED",
                                                 "X402_WALLET_LOW_BALANCE"
@@ -22457,6 +22466,7 @@
                                                             "PURCHASE_ON_ERROR",
                                                             "PAYMENT_ON_ERROR",
                                                             "WALLET_LOW_BALANCE",
+                                                            "FUND_DISTRIBUTION_SENT",
                                                             "X402_PAYMENT_SETTLED",
                                                             "X402_PAYMENT_FAILED",
                                                             "X402_WALLET_LOW_BALANCE"

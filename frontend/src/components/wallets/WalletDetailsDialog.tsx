@@ -284,7 +284,7 @@ export interface WalletWithBalance {
   walletAddress: string;
   collectionAddress: string | null;
   note: string | null;
-  type: 'Purchasing' | 'Selling' | 'Collection';
+  type: 'Purchasing' | 'Selling' | 'Funding' | 'Collection';
   balance: string;
   usdcxBalance: string;
   LowBalanceSummary?: LowBalanceSummary;

@@ -196,7 +196,7 @@ export type WalletListItem = {
     /**
      * Whether this is a Selling (seller side) or Purchasing (buyer side) wallet
      */
-    type: 'Selling' | 'Purchasing';
+    type: 'Selling' | 'Purchasing' | 'Funding';
     /**
      * Payment key hash of the wallet
      */
@@ -2653,7 +2653,7 @@ export type GetWalletListData = {
         /**
          * Filter wallets by type (Selling or Purchasing)
          */
-        walletType?: 'Selling' | 'Purchasing';
+        walletType?: 'Selling' | 'Purchasing' | 'Funding';
         /**
          * Filter to the single wallet with this payment key hash
          */
@@ -2805,7 +2805,7 @@ export type GetWalletLowBalanceResponses = {
                 /**
                  * Hot wallet type
                  */
-                walletType: 'Selling' | 'Purchasing';
+                walletType: 'Selling' | 'Purchasing' | 'Funding';
                 /**
                  * Payment source id owning the wallet
                  */
@@ -2905,7 +2905,7 @@ export type PatchWalletLowBalanceResponses = {
             /**
              * Hot wallet type
              */
-            walletType: 'Selling' | 'Purchasing';
+            walletType: 'Selling' | 'Purchasing' | 'Funding';
             /**
              * Payment source id owning the wallet
              */
@@ -3012,7 +3012,7 @@ export type PostWalletLowBalanceResponses = {
             /**
              * Hot wallet type
              */
-            walletType: 'Selling' | 'Purchasing';
+            walletType: 'Selling' | 'Purchasing' | 'Funding';
             /**
              * Payment source id owning the wallet
              */
@@ -3891,19 +3891,19 @@ export type PostPaymentData = {
         /**
          * The time after which the payment has to be submitted to the smart contract
          */
-        payByTime?: Date | Date;
+        payByTime?: Date;
         /**
          * The time after which the payment has to be submitted to the smart contract
          */
-        submitResultTime?: Date | Date;
+        submitResultTime?: Date;
         /**
          * The time after which the payment will be unlocked
          */
-        unlockTime?: Date | Date;
+        unlockTime?: Date;
         /**
          * The time after which the payment will be unlocked for external dispute
          */
-        externalDisputeUnlockTime?: Date | Date;
+        externalDisputeUnlockTime?: Date;
         /**
          * Metadata to be stored with the payment request
          */
@@ -5129,7 +5129,7 @@ export type PostPaymentErrorStateRecoveryData = {
         /**
          * The time of the last update, to ensure you clear the correct error state
          */
-        updatedAt: Date | Date;
+        updatedAt: Date;
     };
     path?: never;
     query?: never;
@@ -5458,7 +5458,7 @@ export type PostPurchaseErrorStateRecoveryData = {
         /**
          * The time of the last update, to ensure you clear the correct error state
          */
-        updatedAt: Date | Date;
+        updatedAt: Date;
     };
     path?: never;
     query?: never;
@@ -9252,11 +9252,11 @@ export type PostPurchaseSpendingData = {
         /**
          * Start date for spending calculation (date format: 2024-01-01). If null, uses earliest available data. If provided, will be converted to the local time zone of the user
          */
-        startDate?: Date | Date | unknown;
+        startDate?: Date | unknown;
         /**
          * End date for spending calculation (date format: 2024-01-31). If null, uses current date. If provided, will be converted to the local time zone of the user
          */
-        endDate?: Date | Date | unknown;
+        endDate?: Date | unknown;
         /**
          * The time zone to use for the spending calculation. If not provided, will use the UTC time zone. Must be a valid IANA time zone name, see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
          */
@@ -9443,11 +9443,11 @@ export type PostPaymentIncomeData = {
         /**
          * Start date for income calculation (date format: 2024-01-01). If null, uses earliest available data. If provided, will be converted to the local time zone of the user
          */
-        startDate?: Date | Date | unknown;
+        startDate?: Date | unknown;
         /**
          * End date for income calculation (date format: 2024-01-31). If null, uses current date. If provided, will be converted to the local time zone of the user
          */
-        endDate?: Date | Date | unknown;
+        endDate?: Date | unknown;
         /**
          * The time zone to use for the income calculation. If not provided, will use the UTC time zone. Must be a valid IANA time zone name, see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
          */
@@ -9718,7 +9718,7 @@ export type GetWebhooksResponses = {
                 id: string;
                 url: string;
                 format: 'EXTENDED' | 'SLACK' | 'GOOGLE_CHAT' | 'DISCORD';
-                Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
+                Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
                 name: string | null;
                 isActive: boolean;
                 createdAt: Date;
@@ -9762,7 +9762,7 @@ export type PatchWebhooksData = {
         /**
          * Array of event types to subscribe to
          */
-        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
+        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
         /**
          * Human-readable name for the webhook
          */
@@ -9810,7 +9810,7 @@ export type PatchWebhooksResponses = {
             id: string;
             url: string;
             format: 'EXTENDED' | 'SLACK' | 'GOOGLE_CHAT' | 'DISCORD';
-            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
+            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
             name: string | null;
             isActive: boolean;
             createdAt: Date;
@@ -9842,7 +9842,7 @@ export type PostWebhooksData = {
         /**
          * Array of event types to subscribe to
          */
-        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
+        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
         /**
          * Human-readable name for the webhook
          */
@@ -9890,7 +9890,7 @@ export type PostWebhooksResponses = {
             id: string;
             url: string;
             format: 'EXTENDED' | 'SLACK' | 'GOOGLE_CHAT' | 'DISCORD';
-            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
+            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
             name: string | null;
             isActive: boolean;
             createdAt: Date;

@@ -15,7 +15,7 @@ type UTXO = Utxo;
 type UTXOAmount = UtxoAmount;
 
 type Wallet = WalletListItem & {
-  type: 'Purchasing' | 'Selling';
+  type: 'Purchasing' | 'Selling' | 'Funding';
   network: 'Preprod' | 'Mainnet';
 };
 

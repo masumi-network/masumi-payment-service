@@ -317,7 +317,8 @@ export const WalletListItemSchema = {
             type: 'string',
             enum: [
                 'Selling',
-                'Purchasing'
+                'Purchasing',
+                'Funding'
             ],
             description: 'Whether this is a Selling (seller side) or Purchasing (buyer side) wallet'
         },
