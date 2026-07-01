@@ -38,6 +38,7 @@ import {
 import { type BatchRegistryMintItem, generateRegistryBatchMintTransaction } from '../../../builders/batch-registry';
 import { ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
 import { unlockHotWalletIfNoPendingTransaction } from '../../wallet-lock-helpers';
+import { asV2Provider } from '../../provider-cast';
 import { INBOX_AGENT_REGISTRATION_METADATA_TYPE } from '../metadata';
 
 // Mirrors the V2 registry register cap. Inbox-agent items carry far less
@@ -409,7 +410,7 @@ export async function registerInboxAgentV2() {
 				let unsignedTx: string;
 				try {
 					const evaluationTx = await generateRegistryBatchMintTransaction(
-						blockchainProvider,
+						asV2Provider(blockchainProvider),
 						network,
 						script,
 						address,
@@ -429,7 +430,7 @@ export async function registerInboxAgentV2() {
 						throw new Error('evaluateTx returned no MINT budget for V2 inbox register batch');
 					}
 					unsignedTx = await generateRegistryBatchMintTransaction(
-						blockchainProvider,
+						asV2Provider(blockchainProvider),
 						network,
 						script,
 						address,

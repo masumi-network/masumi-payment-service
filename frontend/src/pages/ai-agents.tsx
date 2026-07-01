@@ -54,13 +54,13 @@ function RelationBadge({ relation }: { relation?: AgentRelation }) {
         variant="outline"
         className="mt-1 border-indigo-300 bg-indigo-50 text-[10px] text-indigo-700 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-300"
       >
-        Payment accepted
+        Registered elsewhere
       </Badge>
     );
   }
   return (
     <Badge variant="outline" className="mt-1 text-[10px]">
-      On this source
+      Registered here
     </Badge>
   );
 }
@@ -109,20 +109,20 @@ export default function AIAgentsPage() {
 
   // Rail-aware agent list: shows agents registered on the active context plus those
   // registered elsewhere that accept payment on it (Cardano source, or EVM chains over
-  // x402). The list is fetched in full and filtered client-side, so there is no server
-  // cursor to page — the load-more control is inert here.
+  // x402). Results load one cursor page at a time so navigation stays quick.
   const {
     agents,
     truncated,
+    hasMore: hasMoreAgents,
     isLoading,
     isFetching: isFetchingAgents,
+    isFetchingNextPage,
     isPlaceholderData,
+    loadMore,
   } = useContextAgents({
     filterStatus,
     searchQuery: debouncedSearchQuery || undefined,
   });
-  const hasMoreAgents = false;
-  const loadMore = () => {};
 
   const queryClient = useQueryClient();
   const { openAgentDetails, closeAgentDetails } = useAgentDetailsDialog();
@@ -209,8 +209,8 @@ export default function AIAgentsPage() {
   // "Migrate to V2" only applies while viewing a legacy (V1) source — it migrates
   // the listed agents onto the V2 contract. Hide it when the selected source is
   // already V2 (nothing to migrate from here) or when no V2 target exists to
-  // migrate into. The dashboard nudge (useMigrationStatus) remains the entry
-  // point for migrating regardless of which source is selected.
+  // migrate into. The dashboard also shows a lightweight V1 hint without scanning
+  // agents until the migration dialog opens.
   const isViewingLegacySource =
     !!selectedPaymentSource && !isV2PaymentSource(selectedPaymentSource);
   const canMigrate = hasV2Source && isViewingLegacySource;
@@ -616,7 +616,6 @@ export default function AIAgentsPage() {
                         >
                           <td className="p-4 max-w-50 truncate pl-6">
                             <div className="text-sm font-medium">{agent.name}</div>
-                            <RelationBadge relation={agent.relation} />
                             <div className="text-xs text-muted-foreground truncate">
                               {agent.description}
                             </div>
@@ -636,6 +635,7 @@ export default function AIAgentsPage() {
                           </td>
                           <td className="p-4">
                             <div className="space-y-2">
+                              <RelationBadge relation={agent.relation} />
                               {isCombinedWallet ? (
                                 <div>
                                   <div className="text-xs font-medium">
@@ -823,7 +823,7 @@ export default function AIAgentsPage() {
               {!(isLoading && !agents.length) && (
                 <Pagination
                   hasMore={hasMoreAgents}
-                  isLoading={isFetchingAgents}
+                  isLoading={isFetchingNextPage || (isFetchingAgents && !isPlaceholderData)}
                   onLoadMore={loadMore}
                 />
               )}

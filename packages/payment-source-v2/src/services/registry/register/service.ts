@@ -40,6 +40,7 @@ import {
 import { type BatchRegistryMintItem, generateRegistryBatchMintTransaction } from '../../../builders/batch-registry';
 import { ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
 import { unlockHotWalletIfNoPendingTransaction } from '../../wallet-lock-helpers';
+import { asV2Provider } from '../../provider-cast';
 import {
 	MAX_SUPPORTED_PAYMENT_SOURCES,
 	SupportedPaymentSourceChain,
@@ -578,7 +579,7 @@ export async function registerAgentV2() {
 					try {
 						const sized = await shrinkRegistryBatchToTxSize(fit, (subsetItems) =>
 							generateRegistryBatchMintTransaction(
-								blockchainProvider,
+								asV2Provider(blockchainProvider),
 								network,
 								script,
 								address,
@@ -640,7 +641,7 @@ export async function registerAgentV2() {
 							throw new Error('evaluateTx returned no MINT budget for V2 register batch');
 						}
 						unsignedTx = await generateRegistryBatchMintTransaction(
-							blockchainProvider,
+							asV2Provider(blockchainProvider),
 							network,
 							script,
 							address,
