@@ -15,6 +15,7 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'react-toastify';
 import { postInboxAgents } from '@/lib/api/generated';
+import { extractApiErrorMessage } from '@/lib/api-error';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { shortenAddress } from '@/lib/utils';
 import { useWallets } from '@/lib/queries/useWallets';
@@ -25,19 +26,12 @@ import {
   isReservedInboxSlug,
   normalizeInboxSlug,
 } from '@/lib/registry-validation';
+import { convertDecimalToBaseUnits } from '@/lib/convertDecimalToBaseUnits';
 
 interface RegisterInboxAgentDialogProps {
   open: boolean;
   onClose: () => void;
   onSuccess: () => void;
-}
-
-function convertDecimalToBaseUnits(value: string, decimals = 6): string {
-  const [wholePart, fractionalPart = ''] = value.split('.');
-  const normalizedFractionalPart = fractionalPart.padEnd(decimals, '0').slice(0, decimals);
-  const scale = BigInt(10 ** decimals);
-
-  return (BigInt(wholePart || '0') * scale + BigInt(normalizedFractionalPart || '0')).toString();
 }
 
 const inboxAgentSchema = z.object({
@@ -207,8 +201,15 @@ export function RegisterInboxAgentDialog({
           },
         });
 
-        if (!response.data?.data?.id) {
-          throw new Error('Failed to register inbox agent: Invalid response from server');
+        // The generated client returns {data, error} and never throws —
+        // surface the real backend error instead of the generic fallback.
+        if (response.error || !response.data?.data?.id) {
+          throw new Error(
+            extractApiErrorMessage(
+              response.error,
+              'Failed to register inbox agent: Invalid response from server',
+            ),
+          );
         }
 
         toast.success('Inbox agent registered successfully');

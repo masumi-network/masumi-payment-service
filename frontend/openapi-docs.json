@@ -3730,11 +3730,8 @@
                         "description": "Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                     },
                     "quantity": {
-                        "type": "integer",
-                        "nullable": true,
-                        "minimum": 0,
-                        "maximum": 100000000000000,
-                        "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                        "type": "string",
+                        "description": "The quantity of the asset in its smallest unit, as a decimal string (BigInt-safe; native-token and whale ADA quantities routinely exceed 2^53). For ADA, this is lovelace (1 ADA = 10000000 lovelace)"
                     }
                 },
                 "required": [
@@ -20746,18 +20743,18 @@
                                                                         "type": "string"
                                                                     },
                                                                     "amount": {
-                                                                        "type": "number"
+                                                                        "type": "string"
                                                                     }
                                                                 },
                                                                 "required": [
                                                                     "unit",
                                                                     "amount"
                                                                 ],
-                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                "description": "The amount of the unit in the smallest unit, as a decimal string (BigInt-safe). Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
                                                             }
                                                         },
                                                         "blockchainFees": {
-                                                            "type": "number"
+                                                            "type": "string"
                                                         }
                                                     },
                                                     "required": [
@@ -20777,18 +20774,18 @@
                                                                         "type": "string"
                                                                     },
                                                                     "amount": {
-                                                                        "type": "number"
+                                                                        "type": "string"
                                                                     }
                                                                 },
                                                                 "required": [
                                                                     "unit",
                                                                     "amount"
                                                                 ],
-                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                "description": "The amount of the unit in the smallest unit, as a decimal string (BigInt-safe). Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
                                                             }
                                                         },
                                                         "blockchainFees": {
-                                                            "type": "number"
+                                                            "type": "string"
                                                         }
                                                     },
                                                     "required": [
@@ -20808,18 +20805,18 @@
                                                                         "type": "string"
                                                                     },
                                                                     "amount": {
-                                                                        "type": "number"
+                                                                        "type": "string"
                                                                     }
                                                                 },
                                                                 "required": [
                                                                     "unit",
                                                                     "amount"
                                                                 ],
-                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                "description": "The amount of the unit in the smallest unit, as a decimal string (BigInt-safe). Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
                                                             }
                                                         },
                                                         "blockchainFees": {
-                                                            "type": "number"
+                                                            "type": "string"
                                                         }
                                                     },
                                                     "required": [
@@ -20853,18 +20850,18 @@
                                                                             "type": "string"
                                                                         },
                                                                         "amount": {
-                                                                            "type": "number"
+                                                                            "type": "string"
                                                                         }
                                                                     },
                                                                     "required": [
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit, as a decimal string (BigInt-safe). Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
-                                                                "type": "number"
+                                                                "type": "string"
                                                             }
                                                         },
                                                         "required": [
@@ -20902,18 +20899,18 @@
                                                                             "type": "string"
                                                                         },
                                                                         "amount": {
-                                                                            "type": "number"
+                                                                            "type": "string"
                                                                         }
                                                                     },
                                                                     "required": [
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit, as a decimal string (BigInt-safe). Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
-                                                                "type": "number"
+                                                                "type": "string"
                                                             }
                                                         },
                                                         "required": [
@@ -20951,18 +20948,18 @@
                                                                             "type": "string"
                                                                         },
                                                                         "amount": {
-                                                                            "type": "number"
+                                                                            "type": "string"
                                                                         }
                                                                     },
                                                                     "required": [
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit, as a decimal string (BigInt-safe). Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
-                                                                "type": "number"
+                                                                "type": "string"
                                                             }
                                                         },
                                                         "required": [
@@ -20996,18 +20993,18 @@
                                                                             "type": "string"
                                                                         },
                                                                         "amount": {
-                                                                            "type": "number"
+                                                                            "type": "string"
                                                                         }
                                                                     },
                                                                     "required": [
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit, as a decimal string (BigInt-safe). Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
-                                                                "type": "number"
+                                                                "type": "string"
                                                             }
                                                         },
                                                         "required": [
@@ -21040,18 +21037,18 @@
                                                                             "type": "string"
                                                                         },
                                                                         "amount": {
-                                                                            "type": "number"
+                                                                            "type": "string"
                                                                         }
                                                                     },
                                                                     "required": [
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit, as a decimal string (BigInt-safe). Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
-                                                                "type": "number"
+                                                                "type": "string"
                                                             }
                                                         },
                                                         "required": [
@@ -21084,18 +21081,18 @@
                                                                             "type": "string"
                                                                         },
                                                                         "amount": {
-                                                                            "type": "number"
+                                                                            "type": "string"
                                                                         }
                                                                     },
                                                                     "required": [
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit, as a decimal string (BigInt-safe). Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
-                                                                "type": "number"
+                                                                "type": "string"
                                                             }
                                                         },
                                                         "required": [
@@ -21392,18 +21389,18 @@
                                                                         "type": "string"
                                                                     },
                                                                     "amount": {
-                                                                        "type": "number"
+                                                                        "type": "string"
                                                                     }
                                                                 },
                                                                 "required": [
                                                                     "unit",
                                                                     "amount"
                                                                 ],
-                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                "description": "The amount of the unit in the smallest unit, as a decimal string (BigInt-safe). Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
                                                             }
                                                         },
                                                         "blockchainFees": {
-                                                            "type": "number"
+                                                            "type": "string"
                                                         }
                                                     },
                                                     "required": [
@@ -21423,18 +21420,18 @@
                                                                         "type": "string"
                                                                     },
                                                                     "amount": {
-                                                                        "type": "number"
+                                                                        "type": "string"
                                                                     }
                                                                 },
                                                                 "required": [
                                                                     "unit",
                                                                     "amount"
                                                                 ],
-                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                "description": "The amount of the unit in the smallest unit, as a decimal string (BigInt-safe). Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
                                                             }
                                                         },
                                                         "blockchainFees": {
-                                                            "type": "number"
+                                                            "type": "string"
                                                         }
                                                     },
                                                     "required": [
@@ -21454,18 +21451,18 @@
                                                                         "type": "string"
                                                                     },
                                                                     "amount": {
-                                                                        "type": "number"
+                                                                        "type": "string"
                                                                     }
                                                                 },
                                                                 "required": [
                                                                     "unit",
                                                                     "amount"
                                                                 ],
-                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                "description": "The amount of the unit in the smallest unit, as a decimal string (BigInt-safe). Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
                                                             }
                                                         },
                                                         "blockchainFees": {
-                                                            "type": "number"
+                                                            "type": "string"
                                                         }
                                                     },
                                                     "required": [
@@ -21499,18 +21496,18 @@
                                                                             "type": "string"
                                                                         },
                                                                         "amount": {
-                                                                            "type": "number"
+                                                                            "type": "string"
                                                                         }
                                                                     },
                                                                     "required": [
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit, as a decimal string (BigInt-safe). Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
-                                                                "type": "number"
+                                                                "type": "string"
                                                             }
                                                         },
                                                         "required": [
@@ -21548,18 +21545,18 @@
                                                                             "type": "string"
                                                                         },
                                                                         "amount": {
-                                                                            "type": "number"
+                                                                            "type": "string"
                                                                         }
                                                                     },
                                                                     "required": [
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit, as a decimal string (BigInt-safe). Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
-                                                                "type": "number"
+                                                                "type": "string"
                                                             }
                                                         },
                                                         "required": [
@@ -21597,18 +21594,18 @@
                                                                             "type": "string"
                                                                         },
                                                                         "amount": {
-                                                                            "type": "number"
+                                                                            "type": "string"
                                                                         }
                                                                     },
                                                                     "required": [
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit, as a decimal string (BigInt-safe). Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
-                                                                "type": "number"
+                                                                "type": "string"
                                                             }
                                                         },
                                                         "required": [
@@ -21642,18 +21639,18 @@
                                                                             "type": "string"
                                                                         },
                                                                         "amount": {
-                                                                            "type": "number"
+                                                                            "type": "string"
                                                                         }
                                                                     },
                                                                     "required": [
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit, as a decimal string (BigInt-safe). Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
-                                                                "type": "number"
+                                                                "type": "string"
                                                             }
                                                         },
                                                         "required": [
@@ -21686,18 +21683,18 @@
                                                                             "type": "string"
                                                                         },
                                                                         "amount": {
-                                                                            "type": "number"
+                                                                            "type": "string"
                                                                         }
                                                                     },
                                                                     "required": [
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit, as a decimal string (BigInt-safe). Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
-                                                                "type": "number"
+                                                                "type": "string"
                                                             }
                                                         },
                                                         "required": [
@@ -21730,18 +21727,18 @@
                                                                             "type": "string"
                                                                         },
                                                                         "amount": {
-                                                                            "type": "number"
+                                                                            "type": "string"
                                                                         }
                                                                     },
                                                                     "required": [
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit, as a decimal string (BigInt-safe). Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
-                                                                "type": "number"
+                                                                "type": "string"
                                                             }
                                                         },
                                                         "required": [

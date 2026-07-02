@@ -75,14 +75,25 @@ function buildInboxAgentMetadata(request: {
 	return cleanMetadata(metadata) as RegistryMetadata;
 }
 
-async function markRequestFailed(request: InboxRequestRecord, error: unknown): Promise<void> {
+async function markRequestFailed(
+	request: InboxRequestRecord,
+	error: unknown,
+	options: { unlockWallet?: boolean } = {},
+): Promise<void> {
+	// unlockWallet=true when this failure frees the wallet (terminal / all-failed
+	// path). In the per-item validation loop the shared wallet lock must survive
+	// so a concurrent service can't grab the wallet and submit a conflicting mint
+	// from the same UTxO set while the batch keeps building the remaining items;
+	// the terminal paths (all-failed unlock, submit success, markBatchFailed) free
+	// it.
+	const unlockWallet = options.unlockWallet ?? true;
 	logger.error(`Error registering V2 inbox agent ${request.id}`, { error });
 	await prisma.inboxAgentRegistrationRequest.update({
 		where: { id: request.id },
 		data: {
 			state: RegistrationState.RegistrationFailed,
 			error: interpretBlockchainError(error),
-			SmartContractWallet: { update: { lockedAt: null } },
+			...(unlockWallet ? { SmartContractWallet: { update: { lockedAt: null } } } : {}),
 		},
 	});
 }
@@ -375,7 +386,8 @@ export async function registerInboxAgentV2() {
 					if (outcome.status === 'fulfilled') {
 						validated.push(outcome.value);
 					} else {
-						await markRequestFailed(request, outcome.reason);
+						// Mid-batch: keep the shared wallet lock (see markRequestFailed).
+						await markRequestFailed(request, outcome.reason, { unlockWallet: false });
 					}
 				}
 

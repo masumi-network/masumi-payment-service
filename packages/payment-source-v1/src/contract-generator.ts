@@ -162,15 +162,12 @@ function getSmartContractStateDatum(state: SmartContractState) {
 				fields: [],
 			};
 		case SmartContractState.WithdrawAuthorized:
-			return {
-				alternative: 4,
-				fields: [],
-			};
 		case SmartContractState.RefundAuthorized:
-			return {
-				alternative: 5,
-				fields: [],
-			};
+			// The deployed V1 on-chain `State` enum only has constructors 0-3
+			// (vested_pay.ak). Encoding alternatives 4/5 would write a datum the
+			// validator can never decode, permanently locking the UTxO's funds.
+			// These states only exist in the V2 contract; reject them here.
+			throw new Error(`Smart contract state ${state} is not valid for the V1 payment contract`);
 		default:
 			throw new Error('Unsupported V1 smart contract state');
 	}

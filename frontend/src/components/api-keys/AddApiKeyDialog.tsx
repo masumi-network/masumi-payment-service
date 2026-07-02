@@ -249,7 +249,9 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
   };
 
   const handleClose = () => {
-    if (createdApiKey) return;
+    // Block closing while creation is in flight: the key may already be created
+    // server-side, and closing would skip the one-time token screen.
+    if (createdApiKey || isLoading) return;
     reset();
     onClose();
   };
@@ -571,7 +573,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
             </div>
 
             <div className="flex justify-end gap-3 mt-6">
-              <Button variant="outline" onClick={handleClose}>
+              <Button variant="outline" disabled={isLoading} onClick={handleClose}>
                 Cancel
               </Button>
               <Button type="submit" disabled={isLoading} onClick={handleSubmit(onSubmit)}>

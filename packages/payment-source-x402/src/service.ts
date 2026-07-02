@@ -311,13 +311,26 @@ async function reserveBudgetForAttempt({
 
 async function refundBudgetReservation(reservation: { budgetId: string; amount: bigint } | null) {
 	if (reservation == null) return;
-	await prisma.x402WalletBudget.update({
-		where: { id: reservation.budgetId },
+	// Guard the refund on the reservation still being reflected in spentAmount.
+	// Without the `spentAmount >= amount` predicate, an admin budget reset
+	// (setX402WalletBudget resets remainingAmount → fresh grant, spentAmount → 0)
+	// that races an in-flight payment would let this refund inflate the fresh
+	// grant beyond what the admin set AND drive spentAmount negative. If the guard
+	// matches no row the reservation was already wiped by a reset — nothing to
+	// refund.
+	const result = await prisma.x402WalletBudget.updateMany({
+		where: { id: reservation.budgetId, spentAmount: { gte: reservation.amount } },
 		data: {
 			remainingAmount: { increment: reservation.amount },
 			spentAmount: { decrement: reservation.amount },
 		},
 	});
+	if (result.count !== 1) {
+		logger.warn('x402 budget refund skipped: reservation no longer reflected in spentAmount (budget reset?)', {
+			budgetId: reservation.budgetId,
+			amount: reservation.amount.toString(),
+		});
+	}
 }
 
 async function writeSettlement({
@@ -792,7 +805,59 @@ export async function settleX402Payment({
 		};
 	}
 
+	// Validate the facilitator wallet (retired / non-Selling → 400) BEFORE any
+	// settle-prep work, so a bad wallet is rejected without querying for or
+	// creating a pre-settle attempt row.
 	const facilitator = await getFacilitatorForNetwork(requirements.network);
+
+	// Crash-window guard: refuse to settle if a prior attempt for this exact
+	// payload already reached the on-chain settle stage. A completed settlement
+	// row would have been replayed above; a Verified pre-settle marker (or a
+	// Settled attempt) with no settlement row means the previous settle either
+	// crashed mid-flight or is racing this one. Re-settling would revert on-chain
+	// (single-use Permit2/EIP-3009 nonce) and be recorded as a FALSE failure —
+	// buyer charged, seller told it failed. Surface as needs-reconciliation.
+	const priorSettleAttempt = await prisma.x402PaymentAttempt.findFirst({
+		where: {
+			paymentPayloadHash,
+			direction: X402PaymentDirection.InboundSettle,
+			status: { in: [X402PaymentStatus.Verified, X402PaymentStatus.Settled] },
+		},
+		select: { id: true },
+	});
+	if (priorSettleAttempt != null) {
+		throw createHttpError(
+			409,
+			'a settlement for this payment payload is already in progress or awaiting reconciliation',
+		);
+	}
+
+	// Durable pre-settle marker written BEFORE the irreversible on-chain settle.
+	// If the process dies between facilitator.settle and the settlement write
+	// below, this Verified row survives so the crash-window guard above blocks a
+	// re-settle on the buyer's retry (the previous defect wrote NO record until
+	// after settle, so a crash left funds moved with zero trace).
+	const attempt = await prisma.x402PaymentAttempt.create({
+		data: {
+			direction: X402PaymentDirection.InboundSettle,
+			status: X402PaymentStatus.Verified,
+			apiKeyId,
+			registryRequestId: source.registryRequestId,
+			supportedPaymentSourceId,
+			caip2Network: requirements.network,
+			scheme: X402PaymentScheme.Exact,
+			asset: requirements.asset,
+			amount: BigInt(requirements.amount),
+			payTo: requirements.payTo,
+			// Registered resource only; never persist the buyer-supplied payload resource.
+			resource: source.resource,
+			paymentPayloadHash,
+			paymentPayload: encryptPaymentPayloadForStorage(paymentPayload),
+			paymentIdentifier: identifier.id,
+		},
+		select: { id: true },
+	});
+
 	const settleResponse = await facilitator.settle(paymentPayload, requirements);
 	if (!settleResponse.success) {
 		logger.warn('x402 settle returned unsuccessful', {
@@ -802,28 +867,18 @@ export async function settleX402Payment({
 			errorMessage: settleResponse.errorMessage,
 		});
 	}
-	const attempt = await prisma.x402PaymentAttempt.create({
+
+	// Stamp the outcome onto the pre-created attempt. On a legitimate settle
+	// failure (nonce NOT consumed) this row becomes Failed, which the guard above
+	// does NOT block — so a genuine retry can still proceed.
+	await prisma.x402PaymentAttempt.update({
+		where: { id: attempt.id },
 		data: {
-			direction: X402PaymentDirection.InboundSettle,
 			status: settleResponse.success ? X402PaymentStatus.Settled : X402PaymentStatus.Failed,
-			apiKeyId,
-			registryRequestId: source.registryRequestId,
-			supportedPaymentSourceId,
-			caip2Network: requirements.network,
-			scheme: X402PaymentScheme.Exact,
-			asset: requirements.asset,
-			amount: BigInt(requirements.amount),
-			payTo: requirements.payTo,
 			payer: settleResponse.payer,
-			// Registered resource only; never persist the buyer-supplied payload resource.
-			resource: source.resource,
-			paymentPayloadHash,
-			paymentPayload: encryptPaymentPayloadForStorage(paymentPayload),
-			paymentIdentifier: identifier.id,
 			errorReason: settleResponse.errorReason,
 			errorMessage: settleResponse.errorMessage,
 		},
-		select: { id: true },
 	});
 
 	if (settleResponse.success) {

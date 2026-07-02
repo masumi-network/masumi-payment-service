@@ -1,4 +1,4 @@
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import {
   Command,
   CommandEmpty,
@@ -72,7 +72,8 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent>
+      <DialogContent aria-describedby={undefined}>
+        <DialogTitle className="sr-only">Search</DialogTitle>
         <Command className="py-2" shouldFilter={false}>
           <CommandInput
             placeholder="Type to search..."

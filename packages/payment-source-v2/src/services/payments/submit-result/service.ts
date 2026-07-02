@@ -197,7 +197,19 @@ function resolveSubmitResultConstrainAfterMs(decodedContract: DecodedV1ContractD
 	);
 }
 
-async function markRequestFailed(request: PaymentRequestWithRelations, error: unknown): Promise<void> {
+async function markRequestFailed(
+	request: PaymentRequestWithRelations,
+	error: unknown,
+	options: { unlockWallet?: boolean } = {},
+): Promise<void> {
+	// unlockWallet=true only when this failure OWNS the wallet lock (single-item
+	// path). In the batch validation loop the shared wallet lock must survive:
+	// releasing it mid-batch lets a concurrent service lock the same wallet and
+	// submit a conflicting tx from the same UTxO set while this batch keeps
+	// building the remaining validated items. The batch's terminal paths
+	// (all-failed unlock, submit success → PendingTransaction, or fallback)
+	// release it instead.
+	const unlockWallet = options.unlockWallet ?? true;
 	logger.error(`Error submitting V2 result ${request.id}`, { error });
 	await prisma.paymentRequest.update({
 		where: { id: request.id },
@@ -211,7 +223,7 @@ async function markRequestFailed(request: PaymentRequestWithRelations, error: un
 				errorType: PaymentErrorType.Unknown,
 				errorNote: 'Submitting result failed: ' + interpretBlockchainError(error),
 			}),
-			SmartContractWallet: { update: { lockedAt: null } },
+			...(unlockWallet ? { SmartContractWallet: { update: { lockedAt: null } } } : {}),
 		},
 	});
 }
@@ -533,7 +545,20 @@ async function processSinglePaymentRequest(
 			nodeTxHash: newTxHash,
 		});
 	}
-	await walletSession.evaluateProjectedBalance(unsignedTx, limitedUtxos);
+	// Non-fatal post-submit balance check. The tx is already on chain; a throw
+	// here (its low-balance fallback does uncaught DB work) must NOT propagate,
+	// otherwise advancedRetry re-runs the whole build/sign/submit against the
+	// now-consumed UTxO — conflicting re-submissions that end in manual action
+	// with the successful tx's hash never recorded. The batch path already wraps
+	// the identical call this way.
+	try {
+		await walletSession.evaluateProjectedBalance(unsignedTx, limitedUtxos);
+	} catch (balanceError) {
+		logger.warn('V2 submit-result single-item: projected-balance check failed post-submit (non-fatal)', {
+			requestId: request.id,
+			error: balanceError instanceof Error ? balanceError.message : balanceError,
+		});
+	}
 	// Create the Transaction row with txHash already populated — single
 	// update both transitions the action AND attaches the real on-chain
 	// txHash. Any throw beyond this point leaves the Tx row in place (it
@@ -728,7 +753,8 @@ async function processWalletBatch(
 					blockchainIdentifier: request.blockchainIdentifier,
 					error: error instanceof Error ? { message: error.message, name: error.name } : error,
 				});
-				await markRequestFailed(request, error);
+				// Mid-batch: keep the shared wallet lock (see markRequestFailed).
+				await markRequestFailed(request, error, { unlockWallet: false });
 			}
 		}
 	}

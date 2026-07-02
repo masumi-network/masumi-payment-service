@@ -88,8 +88,12 @@ function validateDeregistrationRequest(request: { agentIdentifier: string | null
  * If both writes succeed (the happy path), the wallet unlocks immediately and
  * the worker picks up the next request on the next scheduler tick.
  */
-async function markRequestFailed(request: RegistryRequestRecord, error: unknown): Promise<void> {
-	const walletToUnlock = request.DeregistrationHotWallet ?? request.SmartContractWallet;
+async function markRequestFailed(
+	request: RegistryRequestRecord,
+	error: unknown,
+	options: { unlockWallet?: boolean } = {},
+): Promise<void> {
+	const unlockWallet = options.unlockWallet ?? true;
 	logger.error(`Error deregistering V2 agent ${request.id}`, { error });
 	await prisma.registryRequest.update({
 		where: { id: request.id },
@@ -98,6 +102,15 @@ async function markRequestFailed(request: RegistryRequestRecord, error: unknown)
 			error: interpretBlockchainError(error),
 		},
 	});
+	// Skip the wallet unlock in the per-item validation loop: the shared wallet
+	// lock must survive while the batch keeps building the remaining validated
+	// items (the terminal paths — all-failed unlock, submit success, batch-bail —
+	// free it). Releasing it mid-batch lets a concurrent service grab the wallet
+	// and submit a conflicting tx from the same UTxO set.
+	if (!unlockWallet) {
+		return;
+	}
+	const walletToUnlock = request.DeregistrationHotWallet ?? request.SmartContractWallet;
 	try {
 		await prisma.hotWallet.update({
 			where: { id: walletToUnlock.id, deletedAt: null },
@@ -364,7 +377,8 @@ export async function deRegisterAgentV2() {
 					try {
 						validated.push(validateAndBuildItem(request, utxos));
 					} catch (error) {
-						await markRequestFailed(request, error);
+						// Mid-batch: keep the shared wallet lock (see markRequestFailed).
+						await markRequestFailed(request, error, { unlockWallet: false });
 					}
 				}
 

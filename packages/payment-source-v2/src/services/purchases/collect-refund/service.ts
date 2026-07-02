@@ -282,7 +282,15 @@ async function processSingleRefundCollection(
 	const validated = await validateAndBuildItem(request, blockchainProvider, network, smartContractAddress, address);
 
 	const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
-	const collateralUtxo = limitedFilteredUtxos[0];
+	// Collateral must cover the pinned 3 ADA total_collateral. limitedFilteredUtxos
+	// is sorted by ASCENDING asset bloat, so [0] can be a pure-ADA DUST UTxO (< 3
+	// ADA) → deterministic phase-1 InsufficientCollateral. Prefer the smallest
+	// qualifying >= 5 ADA UTxO (the same floor the batch path enforces via
+	// pickBatchCollateral); ensureCollateralReady above provisions a 5 ADA reserve,
+	// so this normally succeeds. Fall back to [0] only if the wallet has nothing
+	// larger (no worse than the previous behaviour).
+	const collateralUtxo =
+		pickBatchCollateral(limitedFilteredUtxos, [validated.smartContractUtxo.input]) ?? limitedFilteredUtxos[0];
 	if (collateralUtxo == null) {
 		throw new Error('Collateral UTXO not found');
 	}
@@ -340,7 +348,16 @@ async function processSingleRefundCollection(
 			nodeTxHash: newTxHash,
 		});
 	}
-	await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
+	// Non-fatal: the tx is already on-chain. A projection failure must NOT
+	// propagate to advancedRetry and rebuild+resubmit an already-broadcast tx.
+	try {
+		await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
+	} catch (projectionError) {
+		logger.warn('V2 collect-refund single-item: post-submit balance projection failed (non-fatal)', {
+			txHash: newTxHash,
+			error: projectionError instanceof Error ? projectionError.message : String(projectionError),
+		});
+	}
 	// Snapshot the wallet id before the closure — TS narrowing of
 	// request.SmartContractWallet doesn't survive into the arrow function.
 	const smartContractWalletId = request.SmartContractWallet.id;

@@ -70,6 +70,9 @@ export const postVerifyAndPublishAgentSignatureEndpoint = payAuthenticatedEndpoi
 			}
 
 			assertHotWalletInScope(ctx.walletScopeIds, registryRequest.SmartContractWallet.id);
+			if (registryRequest.requestedById !== ctx.id && !ctx.canAdmin) {
+				throw createHttpError(403, 'You are not authorized to sign a publish verification for this agent');
+			}
 
 			const { wallet: meshWallet } = await generateWalletExtended(
 				registryRequest.SmartContractWallet.PaymentSource.network,

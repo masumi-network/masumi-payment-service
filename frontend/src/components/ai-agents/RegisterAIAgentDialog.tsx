@@ -24,11 +24,17 @@ import { Separator } from '@/components/ui/separator';
 import { useWallets } from '@/lib/queries/useWallets';
 import type { WalletListItem } from '@/lib/api/generated';
 import { REGISTRY_DECIMAL_ADA_AMOUNT_PATTERN, REGISTRY_LIMITS } from '@/lib/registry-validation';
-import { convertDecimalToBaseUnits } from '@/lib/convertDecimalToBaseUnits';
+import {
+  convertBaseUnitsToDecimal,
+  convertDecimalToBaseUnits,
+  isValidDecimalAmount,
+} from '@/lib/convertDecimalToBaseUnits';
+import { extractApiErrorMessage } from '@/lib/api-error';
 import { isV2PaymentSource } from '@/lib/payment-source-type';
 import { useX402Networks } from '@/lib/hooks/useX402';
 import {
   X402OptionsSection,
+  normalizeX402Amount,
   validateX402Options,
   type X402OptionDraft,
 } from './X402OptionsSection';
@@ -72,8 +78,10 @@ const createPriceSchema = (network: 'Mainnet' | 'Preprod') => {
       .max(REGISTRY_LIMITS.lovelaceAmount, 'Amount must be less than 25 characters')
       .refine((val) => {
         if (val === '0' || val === '0.0' || val === '0.00') return true;
-        return !isNaN(parseFloat(val)) && parseFloat(val) >= 0;
-      }, 'Amount must be a valid number >= 0'),
+        // parseFloat would accept exponent notation ('1e5' crashes BigInt at
+        // submit) and >6-decimal amounts (silently truncated to a 0 price).
+        return isValidDecimalAmount(val);
+      }, 'Amount must be a valid number >= 0 with at most 6 decimals'),
   });
 };
 
@@ -230,7 +238,7 @@ export function RegisterAIAgentDialog({
     { wallet: WalletListItem; balance: number }[]
   >([]);
 
-  const { wallets, isLoading: isLoadingWallets } = useWallets();
+  const { wallets, isLoading: isLoadingWallets, isError: isWalletsError } = useWallets();
   const { apiClient, network, selectedPaymentSource } = useAppContext();
   const stablecoinUnit = network === 'Mainnet' ? 'USDCx' : 'tUSDM';
 
@@ -329,9 +337,16 @@ export function RegisterAIAgentDialog({
       };
       const mapAmount = (rawAmount: string) => {
         // Stored as lovelace integer string; UI uses ADA decimal display.
+        // BigInt string math — Number()/1e6 loses precision on large amounts,
+        // so resubmitting an update would write a subtly different price
+        // on-chain.
         if (!rawAmount || rawAmount === '0') return '0';
-        const value = Number(rawAmount) / 1_000_000;
-        return Number.isFinite(value) ? value.toString() : rawAmount;
+        try {
+          return convertBaseUnitsToDecimal(rawAmount);
+        } catch {
+          // Non-integer legacy value — keep raw so validation surfaces it.
+          return rawAmount;
+        }
       };
       reset({
         apiUrl: editingAgent.apiBaseUrl,
@@ -418,6 +433,11 @@ export function RegisterAIAgentDialog({
     : !!selectedPaymentSource && isV2PaymentSource(selectedPaymentSource);
 
   useEffect(() => {
+    // Wallets drive recipientWalletOptions; while the wallets query is still
+    // loading (or errored) the options are transiently empty, and reconciling
+    // against them would wipe the prefilled holding wallet + funding override
+    // in update mode. Only reconcile once wallets have actually loaded.
+    if (isLoadingWallets || isWalletsError) return;
     if (!selectedRecipientWalletAddress) {
       if (selectedSendFundingAda) {
         setValue('sendFundingAda', '');
@@ -431,7 +451,14 @@ export function RegisterAIAgentDialog({
     if (!isRecipientStillAvailable) {
       setValue('recipientWalletAddress', '');
     }
-  }, [recipientWalletOptions, selectedRecipientWalletAddress, selectedSendFundingAda, setValue]);
+  }, [
+    isLoadingWallets,
+    isWalletsError,
+    recipientWalletOptions,
+    selectedRecipientWalletAddress,
+    selectedSendFundingAda,
+    setValue,
+  ]);
 
   const onSubmit = useCallback(
     async (data: AgentFormValues) => {
@@ -483,13 +510,13 @@ export function RegisterAIAgentDialog({
         if (data.contactOther) author.contactOther = data.contactOther;
         if (data.organization) author.organization = data.organization;
 
-        const capability =
-          data.capabilityName && data.capabilityVersion
-            ? {
-                name: data.capabilityName,
-                version: data.capabilityVersion,
-              }
-            : { name: 'Custom Agent', version: '1.0.0' };
+        // Preserve each capability field independently — requiring both would
+        // silently discard a half-filled capability (destructive in update
+        // mode, where it would overwrite the on-chain name with the default).
+        const capability = {
+          name: data.capabilityName || 'Custom Agent',
+          version: data.capabilityVersion || '1.0.0',
+        };
 
         const agentPricing = (() => {
           if (data.pricingType === 'Free') {
@@ -530,7 +557,7 @@ export function RegisterAIAgentDialog({
           network: option.caip2Network,
           scheme: 'Exact' as const,
           asset: option.asset,
-          amount: option.amount,
+          amount: normalizeX402Amount(option.amount),
           decimals: Number(option.decimals),
           payTo: option.payTo,
           resource: option.resource ? option.resource : undefined,
@@ -601,8 +628,15 @@ export function RegisterAIAgentDialog({
             },
           });
 
-          if (!updateResponse.data?.data?.id) {
-            throw new Error('Failed to update AI agent: Invalid response from server');
+          // The generated client returns {data, error} and never throws —
+          // surface the real backend error instead of the generic fallback.
+          if (updateResponse.error || !updateResponse.data?.data?.id) {
+            throw new Error(
+              extractApiErrorMessage(
+                updateResponse.error,
+                'Failed to update AI agent: Invalid response from server',
+              ),
+            );
           }
 
           toast.success('AI agent update requested');
@@ -637,8 +671,15 @@ export function RegisterAIAgentDialog({
           },
         });
 
-        if (!response.data?.data?.id) {
-          throw new Error('Failed to register AI agent: Invalid response from server');
+        // The generated client returns {data, error} and never throws —
+        // surface the real backend error instead of the generic fallback.
+        if (response.error || !response.data?.data?.id) {
+          throw new Error(
+            extractApiErrorMessage(
+              response.error,
+              'Failed to register AI agent: Invalid response from server',
+            ),
+          );
         }
 
         toast.success('AI agent registered successfully');

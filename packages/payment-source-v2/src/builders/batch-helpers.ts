@@ -459,6 +459,14 @@ export const COLLATERAL_SAFETY_DEN = 100n;
 export const MIN_TOTAL_COLLATERAL_LOVELACE = 3_000_000n;
 
 /**
+ * Min-ADA headroom kept aside on the collateral input when clamping declared
+ * total collateral, so the resulting collateral-return output still satisfies
+ * the ledger's min-UTxO rule. 1 ADA comfortably exceeds the min-ADA of a
+ * pure-ADA output at current `coinsPerUtxoSize`.
+ */
+export const COLLATERAL_RETURN_MIN_LOVELACE = 1_000_000n;
+
+/**
  * Shape we accept from any of mesh's `Protocol`, the V1 helper's cached
  * `Protocol`-like object, or a raw blockfrost protocol-params response.
  * Fields are optional because the loose `unknown` input we receive may carry
@@ -509,6 +517,7 @@ export function extractCollateralProtocolParams(
 export function deriveTotalCollateral(
 	budgets: Array<{ mem: number; steps: number }>,
 	protocolParameters: unknown,
+	collateralCapLovelace?: bigint,
 ): string {
 	const params = extractCollateralProtocolParams(protocolParameters);
 	if (params == null) {
@@ -516,8 +525,32 @@ export function deriveTotalCollateral(
 	}
 	const raw = computeCollateralFromExUnits(budgets, params);
 	const withSafety = (raw * COLLATERAL_SAFETY_NUM) / COLLATERAL_SAFETY_DEN;
-	const floored = withSafety > MIN_TOTAL_COLLATERAL_LOVELACE ? withSafety : MIN_TOTAL_COLLATERAL_LOVELACE;
-	return floored.toString();
+	let total = withSafety > MIN_TOTAL_COLLATERAL_LOVELACE ? withSafety : MIN_TOTAL_COLLATERAL_LOVELACE;
+	// Never declare more collateral than the single collateral input can cover.
+	// The first build pass uses inflated DEFAULT_EX_UNITS budgets, so the derived
+	// requirement can exceed the (typically 5 ADA) collateral UTxO; mesh then
+	// computes collateralInput - totalCollateral < 0, emits a negative
+	// collateral-return output, and throws at build time — silently forcing
+	// single-item fallback for any batch of ~4+ legs. Cap to the input value
+	// (leaving a min-ADA collateral-return) so the evaluation build succeeds; the
+	// second pass uses real, far smaller budgets that stay well under the cap.
+	if (collateralCapLovelace != null && collateralCapLovelace > COLLATERAL_RETURN_MIN_LOVELACE) {
+		const cap = collateralCapLovelace - COLLATERAL_RETURN_MIN_LOVELACE;
+		if (cap >= MIN_TOTAL_COLLATERAL_LOVELACE && total > cap) {
+			total = cap;
+		}
+	}
+	return total.toString();
+}
+
+/**
+ * Lovelace quantity held by a UTxO (0 if it somehow carries no ADA entry).
+ * Used to cap declared collateral to what the collateral input can actually
+ * cover.
+ */
+export function lovelaceFromUtxo(utxo: UTxO): bigint {
+	const entry = utxo.output.amount.find((asset) => asset.unit === 'lovelace' || asset.unit === '');
+	return entry != null ? BigInt(entry.quantity) : 0n;
 }
 
 /**

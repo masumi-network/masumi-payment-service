@@ -95,13 +95,17 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }, 500);
   };
 
-  if (!mounted) {
-    return <div style={{ visibility: 'hidden' }}>{children}</div>;
-  }
-
+  // The element tree must have the same shape pre- and post-mount: swapping a
+  // <div> root for the Provider once `mounted` flips made React unmount and
+  // remount the ENTIRE app subtree (re-running every mount effect, including
+  // the health/auth startup calls). The wrapper uses display:contents so it
+  // generates no box and cannot affect layout; visibility still inherits, which
+  // is what hides the un-themed first paint.
   return (
     <ThemeContext.Provider value={{ theme, preference, setThemePreference, isChangingTheme }}>
-      {children}
+      <div style={{ display: 'contents', visibility: mounted ? 'visible' : 'hidden' }}>
+        {children}
+      </div>
     </ThemeContext.Provider>
   );
 }

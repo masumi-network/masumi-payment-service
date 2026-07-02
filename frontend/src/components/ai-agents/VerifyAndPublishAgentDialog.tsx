@@ -74,6 +74,14 @@ export function VerifyAndPublishAgentDialog({
         },
       });
 
+      // The generated client returns {data, error} and never throws — surface
+      // the real backend error instead of the generic fallback.
+      if (response.error) {
+        throw new Error(
+          extractApiErrorMessage(response.error, 'Failed to generate verify-and-publish signature'),
+        );
+      }
+
       const signatureResult = response.data?.data;
       if (!signatureResult) {
         throw new Error('Failed to generate verify-and-publish signature');

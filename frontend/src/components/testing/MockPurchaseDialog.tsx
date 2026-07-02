@@ -209,7 +209,13 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
         applyFields(result.formFields);
 
         setExtractedAmounts(result.amounts);
-        toast.success('Fields populated from pasted response');
+        if (result.formFields.identifierFromPurchaser) {
+          toast.success('Fields populated from pasted response');
+        } else {
+          toast.error(
+            'Could not decode the purchaser identifier from the blockchain identifier. Please enter it manually.',
+          );
+        }
       } else {
         setPasteError(
           'Could not extract payment data. Paste the JSON response from Create Payment.',

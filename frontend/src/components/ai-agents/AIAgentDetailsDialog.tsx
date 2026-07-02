@@ -1,18 +1,19 @@
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { cn, shortenAddress, handleApiCall, formatFundUnit } from '@/lib/utils';
+import { cn, shortenAddress, handleApiCall, formatFundUnit, formatAssetAmount } from '@/lib/utils';
 import { WalletLink } from '@/components/ui/wallet-link';
 import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/WalletDetailsDialog';
-import formatBalance from '@/lib/formatBalance';
 import { CopyButton } from '@/components/ui/copy-button';
 import { postRegistryDeregister } from '@/lib/api/generated';
 import { RegistryEntry, deleteRegistry } from '@/lib/api/generated';
+import { isDbDeletableAgentState, isDeregisterableAgentState } from '@/lib/registry-states';
+import type { AgentRelation } from '@/lib/queries/useContextAgents';
 
 import { Separator } from '@/components/ui/separator';
 import { Link2, ShieldCheck, Trash2 } from 'lucide-react';
 import { Button } from '../ui/button';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { toast } from 'react-toastify';
@@ -27,7 +28,11 @@ import { AgentX402Options } from './AgentX402Options';
 import { AgentCardanoSources } from './AgentCardanoSources';
 import { AgentVerifications } from './AgentVerifications';
 
-type AIAgent = RegistryEntry;
+// The list page decorates agents with their relation to the active payment
+// source ('payment' = registered elsewhere, merely accepts payment here).
+// Optional because lookups that don't compute it (deep links, transaction
+// dialogs) are already scoped to the active source and default to managed.
+type AIAgent = RegistryEntry & { relation?: AgentRelation };
 
 interface AIAgentDetailsDialogProps {
   agent: AIAgent | null;
@@ -47,6 +52,14 @@ const parseAgentStatus = (status: AIAgent['state']): string => {
       return 'Registered';
     case 'RegistrationFailed':
       return 'Registration Failed';
+    case 'UpdateRequested':
+      return 'Pending';
+    case 'UpdateInitiated':
+      return 'Updating';
+    case 'UpdateConfirmed':
+      return 'Registered';
+    case 'UpdateFailed':
+      return 'Update Failed';
     case 'DeregistrationRequested':
       return 'Pending';
     case 'DeregistrationInitiated':
@@ -61,17 +74,13 @@ const parseAgentStatus = (status: AIAgent['state']): string => {
 };
 
 const getStatusBadgeVariant = (status: AIAgent['state']) => {
-  if (status === 'RegistrationConfirmed') return 'default';
+  // UpdateConfirmed is a live on-chain registration (with newer metadata).
+  if (status === 'RegistrationConfirmed' || status === 'UpdateConfirmed') return 'default';
   if (status.includes('Failed')) return 'destructive';
   if (status.includes('Initiated')) return 'secondary';
   if (status.includes('Requested')) return 'secondary';
   if (status === 'DeregistrationConfirmed') return 'secondary';
   return 'secondary';
-};
-
-const formatPrice = (amount: string | undefined) => {
-  if (!amount) return '—';
-  return formatBalance((parseInt(amount) / 1000000).toFixed(2));
 };
 
 export function AIAgentDetailsDialog({
@@ -106,98 +115,115 @@ export function AIAgentDetailsDialog({
     [agent, holdingWallet],
   );
 
-  // Update activeTab when initialTab changes (when dialog opens with different tab)
-  useEffect(() => {
-    setActiveTab(initialTab);
-  }, [initialTab]);
+  // Manage actions (deregister/verify) only apply to agents registered on the
+  // active payment source; agents shown because they merely accept payment
+  // here ('payment' relation) are managed from their home source — mirrors the
+  // row-action gating on pages/ai-agents.tsx.
+  const isManagedOnActiveSource = agent?.relation !== 'payment';
 
-  // Ensure activeTab is set when dialog opens
+  // Reset the tab whenever the dialog opens (or opens for a different agent):
+  // without keying on the agent id, the previous agent's tab (e.g. Earnings,
+  // which fires its fetch on mount) would bleed into the next open.
+  const agentId = agent?.id;
   useEffect(() => {
-    if (agent && !activeTab) {
-      setActiveTab('Details');
+    if (agentId) {
+      setActiveTab(initialTab);
     }
-  }, [agent, activeTab]);
+  }, [agentId, initialTab]);
 
   const formatDate = (date: Date | string) => {
     const dateObj = typeof date === 'string' ? new Date(date) : date;
     return dateObj.toLocaleDateString();
   };
 
-  const handleDelete = useCallback(async () => {
-    if (agent?.state === 'RegistrationFailed' || agent?.state === 'DeregistrationConfirmed') {
-      await handleApiCall(
-        () =>
-          deleteRegistry({
-            client: apiClient,
-            body: {
-              id: agent.id,
-            },
-          }),
-        {
-          onSuccess: () => {
-            toast.success('AI agent deleted from the database successfully');
-            onClose();
-            onSuccess?.();
-          },
-          onError: (error: unknown) => {
-            toast.error(extractApiErrorMessage(error, 'Failed to delete AI agent'));
-          },
-          onFinally: () => {
-            setIsDeleting(false);
-            setIsDeleteDialogOpen(false);
-          },
-          errorMessage: 'Failed to delete AI agent',
-        },
-      );
-    } else if (agent?.state === 'RegistrationConfirmed') {
-      if (!agent?.agentIdentifier) {
-        toast.error('Cannot delete agent: Missing identifier');
-        return;
-      }
+  // Synchronous in-flight guard for delete/deregister: `setIsDeleting(true)`
+  // is async, so a fast double-click on Confirm fires `handleDelete` twice
+  // before the button disables — sending two requests for the same agent. The
+  // ref flips synchronously so the duplicate is rejected immediately.
+  const isDeletingRef = useRef(false);
 
-      setIsDeleting(true);
-      const selectedPaymentSource = currentNetworkPaymentSources.find(
-        (ps) => ps.id === selectedPaymentSourceId,
-      );
-      if (!selectedPaymentSource) {
-        toast.error('Cannot delete agent: Missing payment source');
-        return;
-      }
-      await handleApiCall(
-        () =>
-          postRegistryDeregister({
-            client: apiClient,
-            body: {
-              agentIdentifier: agent.agentIdentifier!,
-              network: network,
-              smartContractAddress: selectedPaymentSource.smartContractAddress,
+  const handleDelete = useCallback(async () => {
+    if (!agent) return;
+    if (isDeletingRef.current) return;
+    isDeletingRef.current = true;
+    try {
+      if (isDbDeletableAgentState(agent.state)) {
+        setIsDeleting(true);
+        await handleApiCall(
+          () =>
+            deleteRegistry({
+              client: apiClient,
+              body: {
+                id: agent.id,
+              },
+            }),
+          {
+            onSuccess: () => {
+              toast.success('AI agent deleted from the database successfully');
+              onClose();
+              onSuccess?.();
             },
-          }),
-        {
-          onSuccess: () => {
-            toast.success('AI agent deregistration initiated successfully');
-            onClose();
-            onSuccess?.();
+            onError: (error: unknown) => {
+              toast.error(extractApiErrorMessage(error, 'Failed to delete AI agent'));
+            },
+            onFinally: () => {
+              setIsDeleting(false);
+              setIsDeleteDialogOpen(false);
+            },
+            errorMessage: 'Failed to delete AI agent',
           },
-          onError: (error: unknown) => {
-            toast.error(extractApiErrorMessage(error, 'Failed to deregister AI agent'));
+        );
+      } else if (isDeregisterableAgentState(agent.state)) {
+        if (!agent.agentIdentifier) {
+          toast.error('Cannot delete agent: Missing identifier');
+          return;
+        }
+        const selectedPaymentSource = currentNetworkPaymentSources.find(
+          (ps) => ps.id === selectedPaymentSourceId,
+        );
+        if (!selectedPaymentSource) {
+          toast.error('Cannot delete agent: Missing payment source');
+          return;
+        }
+        // Only set after every early-return guard above — bailing out with
+        // isDeleting stuck true would disable both dialog buttons forever.
+        setIsDeleting(true);
+        await handleApiCall(
+          () =>
+            postRegistryDeregister({
+              client: apiClient,
+              body: {
+                agentIdentifier: agent.agentIdentifier!,
+                network: network,
+                smartContractAddress: selectedPaymentSource.smartContractAddress,
+              },
+            }),
+          {
+            onSuccess: () => {
+              toast.success('AI agent deregistration initiated successfully');
+              onClose();
+              onSuccess?.();
+            },
+            onError: (error: unknown) => {
+              toast.error(extractApiErrorMessage(error, 'Failed to deregister AI agent'));
+            },
+            onFinally: () => {
+              setIsDeleting(false);
+              setIsDeleteDialogOpen(false);
+            },
+            errorMessage: 'Failed to deregister AI agent',
           },
-          onFinally: () => {
-            setIsDeleting(false);
-            setIsDeleteDialogOpen(false);
-          },
-          errorMessage: 'Failed to deregister AI agent',
-        },
-      );
-    } else {
-      toast.error(
-        'Cannot delete agent: Agent is not in a deletable state, please wait until pending states have been resolved',
-      );
+        );
+      } else {
+        toast.error(
+          'Cannot delete agent: Agent is not in a deletable state, please wait until pending states have been resolved',
+        );
+      }
+    } finally {
+      isDeletingRef.current = false;
     }
   }, [
-    agent?.state,
-    agent?.id,
-    agent?.agentIdentifier,
+    agent,
     apiClient,
     onClose,
     onSuccess,
@@ -253,7 +279,8 @@ export function AIAgentDetailsDialog({
                       <Badge
                         variant={getStatusBadgeVariant(agent.state)}
                         className={cn(
-                          agent.state === 'RegistrationConfirmed' &&
+                          (agent.state === 'RegistrationConfirmed' ||
+                            agent.state === 'UpdateConfirmed') &&
                             'bg-green-50 text-green-700 hover:bg-green-50/80',
                           'w-fit min-w-fit truncate',
                         )}
@@ -357,7 +384,7 @@ export function AIAgentDetailsDialog({
                                   Price ({formatFundUnit(price.unit, network)})
                                 </span>
                                 <span className="font-medium">
-                                  {`${formatPrice(price.amount)} ${formatFundUnit(price.unit, network)}`}
+                                  {formatAssetAmount(price.amount, price.unit, network)}
                                 </span>
                               </div>
                             ))}
@@ -581,7 +608,7 @@ export function AIAgentDetailsDialog({
                               Holding Wallet Funding Override
                             </span>
                             <span className="font-mono text-sm">
-                              {formatPrice(agent.sendFundingLovelace)} ADA
+                              {formatAssetAmount(agent.sendFundingLovelace, 'lovelace', network)}
                             </span>
                           </div>
                         )}
@@ -614,15 +641,21 @@ export function AIAgentDetailsDialog({
               </div>
 
               <div className="py-4 px-4 border-t flex justify-end gap-2 bg-background shrink-0">
-                {agent?.state === 'RegistrationConfirmed' && agent.agentIdentifier && (
-                  <Button variant="outline" onClick={() => setIsVerifyDialogOpen(true)}>
-                    <ShieldCheck className="h-4 w-4" />
-                    Verify & Publish
+                {isManagedOnActiveSource &&
+                  (agent.state === 'RegistrationConfirmed' ||
+                    agent.state === 'UpdateConfirmed' ||
+                    agent.state === 'UpdateFailed') &&
+                  agent.agentIdentifier && (
+                    <Button variant="outline" onClick={() => setIsVerifyDialogOpen(true)}>
+                      <ShieldCheck className="h-4 w-4" />
+                      Verify & Publish
+                    </Button>
+                  )}
+                {isManagedOnActiveSource && (
+                  <Button variant="destructive" onClick={() => setIsDeleteDialogOpen(true)}>
+                    <Trash2 className="h-4 w-4" />
                   </Button>
                 )}
-                <Button variant="destructive" onClick={() => setIsDeleteDialogOpen(true)}>
-                  <Trash2 className="h-4 w-4" />
-                </Button>
               </div>
             </>
           )}
@@ -633,12 +666,12 @@ export function AIAgentDetailsDialog({
         onClose={() => setIsDeleteDialogOpen(false)}
         elevatedChildStack={elevatedStack}
         title={
-          agent?.state === 'RegistrationConfirmed'
+          isDeregisterableAgentState(agent?.state)
             ? `Deregister ${agent?.name}?`
             : `Delete ${agent?.name}?`
         }
         description={
-          agent?.state === 'RegistrationConfirmed'
+          isDeregisterableAgentState(agent?.state)
             ? `Are you sure you want to deregister "${agent?.name}"? This action cannot be undone.`
             : `Are you sure you want to delete "${agent?.name}"? This action cannot be undone.`
         }

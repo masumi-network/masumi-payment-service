@@ -16,11 +16,20 @@ V2 differs from the original payment contract in a few important ways:
 
 ## Building
 
-Install Aiken, then run:
+Install Aiken at the pinned compiler version (`aiken.toml` → `compiler`,
+currently v1.1.23), then run:
 
 ```sh
+aikup install v1.1.23
 aiken build
 ```
+
+The compiled script hash — and therefore the contract address — depends on
+the exact compiler version. Building with any other Aiken version produces a
+different `plutus.json` and silently derives a different contract address;
+CI (`scripts/check-v2-contracts.sh`) treats a compiler mismatch in
+`plutus.json` as an error and also rebuilds the contracts to verify the
+committed `plutus.json` matches the validator source byte-for-byte.
 
 Run contract tests with:
 
@@ -299,6 +308,33 @@ Admin signing runbook (mandatory off-chain process):
   `result_hash` at signing time and persist it alongside the signature for
   audit/forensic purposes. The pinned hash MUST equal the hash present on
   chain at the time of settlement broadcast.
+- **Signature format: any CIP-8 COSE_Sign1 protected headers are accepted,
+  up to 256 bytes.** The validator reconstructs the `Sig_structure` from the
+  submitted `protected_headers` and verifies the ed25519 signature over
+  headers + payload together, so standard CIP-30 `wallet.signData(...)`
+  output (protected headers `{alg: EdDSA, kid, "address"}` — the shape every
+  spec-compliant browser wallet emits) verifies as-is. Raw-signing tooling
+  that builds a bare `{1: -8}` (`a10127`) Sig_structure is equally accepted.
+  Header contents carry no authorization weight — the payload
+  (`own_ref` + payout minimums) and the `blake2b_224(verification_key)`
+  check against `admin_vks` are the only authorization inputs. Because any
+  CIP-30 signature from an admin key over the 28-byte intent hash settles
+  the dispute, admin keys MUST be dedicated to admin duty and MUST NOT be
+  used to blind-sign arbitrary dApp `signData` requests.
+- **Both CIP-8 payload modes are accepted: raw and hashed.** Software
+  wallets (Eternl, Lace, Mesh `signData`) sign the `Sig_structure` over the
+  raw 28-byte intent hash, per CIP-30. Hardware wallets signing with the
+  CIP-8 `hashed: true` flag (an unprotected header, so neither signed nor
+  submitted on-chain) sign a `Sig_structure` whose payload is
+  `blake2b_224(intent_hash)` instead. The validator verifies against the
+  raw payload first and falls back to the single-hashed payload, so both
+  shapes settle a dispute. Exactly one hash level is accepted —
+  double-hashed payloads are rejected. Prefer NON-hashed signing where the
+  device allows it (the 28-byte intent hash fits Ledger's on-device display
+  limit): non-hashed mode shows signers the actual intent hash for
+  cross-checking, while hashed mode is effectively blind-signing. Verify a
+  test signature off-chain before relying on a new signing device for
+  settlement.
 - **Use canonical CBOR encoding when serializing the signing payload.**
   `DisputeWithdrawal { own_ref, buyer_value, seller_value }` is hashed via
   `cbor.serialise |> blake2b_224` on-chain. Two equivalent payloads with
@@ -463,6 +499,9 @@ TX_HASH=<contract-utxo-tx-hash> pnpm run authorize-refund
 TX_HASH=<contract-utxo-tx-hash> pnpm run withdraw-refund
 TX_HASH=<contract-utxo-tx-hash> pnpm run withdraw
 TX_HASH=<contract-utxo-tx-hash> pnpm run withdraw-disputed
+pnpm run lock-fake-disputed   # seed a Disputed UTxO for admin settlement testing
+pnpm run verify-onchain       # evaluate + submit WithdrawDisputed with CIP-30 admin sigs
+pnpm run generate-cip8-vectors
 ```
 
 Common environment variables:

@@ -1,6 +1,6 @@
 import { OnChainState, PaymentSourceType } from '@/generated/prisma/client';
 import { SmartContractState } from '@/utils/generator/contract-generator';
-import { getCardanoFeesBuyer, getCardanoFeesSeller, redeemerToOnChainState } from './index';
+import { checkPaymentAmountsMatch, getCardanoFeesBuyer, getCardanoFeesSeller, redeemerToOnChainState } from './index';
 
 const V1 = PaymentSourceType.Web3CardanoV1;
 const V2 = PaymentSourceType.Web3CardanoV2;
@@ -96,6 +96,79 @@ describe('getCardanoFeesBuyer', () => {
 	it('attributes 0 to buyer for unknown redeemer versions', () => {
 		expect(getCardanoFeesBuyer(99, 1_000_000n, V1)).toBe(0n);
 		expect(getCardanoFeesBuyer(99, 1_000_000n, V2)).toBe(0n);
+	});
+});
+
+describe('checkPaymentAmountsMatch', () => {
+	const TOKEN = 'abc123.deadbeef';
+	// Above CONSTANTS.MIN_COLLATERAL_LOVELACE (1_435_230n) so the collateral
+	// clears the lower bound and only the locked-lovelace bound is exercised.
+	const COLLATERAL = 5_000_000n;
+
+	it('rejects a token-only request whose collateral exceeds the locked lovelace', () => {
+		// Regression: a buyer locks the min-utxo ADA + the requested tokens but
+		// sets collateral_return_lovelace above the locked ADA. Every seller
+		// spend path (`lovelace_of(input) >= collateral_return_lovelace`) would
+		// then abort forever, so tx-sync must reject the UTxO instead of adopting
+		// the poisoned datum and letting the seller work for free.
+		const expected = [{ unit: TOKEN, amount: 100n }];
+		const actual = [
+			{ unit: 'lovelace', quantity: '3000000' }, // 3 ADA locked < 5 ADA collateral
+			{ unit: TOKEN, quantity: '100' },
+		];
+		expect(checkPaymentAmountsMatch(expected, actual, COLLATERAL)).toBe(false);
+	});
+
+	it('accepts a token-only request whose collateral fits within the locked lovelace', () => {
+		const expected = [{ unit: TOKEN, amount: 100n }];
+		const actual = [
+			{ unit: 'lovelace', quantity: '6000000' }, // 6 ADA locked >= 5 ADA collateral
+			{ unit: TOKEN, quantity: '100' },
+		];
+		expect(checkPaymentAmountsMatch(expected, actual, COLLATERAL)).toBe(true);
+	});
+
+	it('accepts a token-only request when collateral exactly equals the locked lovelace', () => {
+		const expected = [{ unit: TOKEN, amount: 100n }];
+		const actual = [
+			{ unit: 'lovelace', quantity: '5000000' }, // 5 ADA locked == 5 ADA collateral
+			{ unit: TOKEN, quantity: '100' },
+		];
+		expect(checkPaymentAmountsMatch(expected, actual, COLLATERAL)).toBe(true);
+	});
+
+	it('still bounds collateral for ADA-inclusive requests (unchanged behaviour)', () => {
+		const expected = [
+			{ unit: '', amount: 1_000_000n },
+			{ unit: TOKEN, amount: 100n },
+		];
+		const actual = [
+			{ unit: 'lovelace', quantity: '3000000' }, // 3 ADA locked < 5 ADA collateral
+			{ unit: TOKEN, quantity: '100' },
+		];
+		expect(checkPaymentAmountsMatch(expected, actual, COLLATERAL)).toBe(false);
+	});
+
+	it('accepts a matching ADA-inclusive request with sufficient lovelace', () => {
+		const expected = [
+			{ unit: '', amount: 1_000_000n },
+			{ unit: TOKEN, amount: 100n },
+		];
+		const actual = [
+			{ unit: 'lovelace', quantity: '7000000' }, // covers 1 ADA payment + 5 ADA collateral
+			{ unit: TOKEN, quantity: '100' },
+		];
+		expect(checkPaymentAmountsMatch(expected, actual, COLLATERAL)).toBe(true);
+	});
+
+	it('rejects negative collateral and sub-minimum collateral', () => {
+		const expected = [{ unit: TOKEN, amount: 100n }];
+		const actual = [
+			{ unit: 'lovelace', quantity: '6000000' },
+			{ unit: TOKEN, quantity: '100' },
+		];
+		expect(checkPaymentAmountsMatch(expected, actual, -1n)).toBe(false);
+		expect(checkPaymentAmountsMatch(expected, actual, 1n)).toBe(false);
 	});
 });
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/router';
 import { getPayment, getPurchase, type Payment, type Purchase } from '@/lib/api/generated';
@@ -13,7 +13,6 @@ import {
 import type { PaymentSourceType } from '@/lib/payment-source-type';
 
 const LAST_VISIT_KEY = 'masumi_last_transactions_visit';
-const NEW_TRANSACTIONS_COUNT_KEY = 'masumi_new_transactions_count';
 const TRANSACTION_PAGE_SIZE = 10;
 
 export const ON_CHAIN_STATES = [
@@ -41,6 +40,22 @@ type TransactionQueryParams = {
 type PaymentApiResponse = Awaited<ReturnType<typeof getPayment>>;
 type PurchaseApiResponse = Awaited<ReturnType<typeof getPurchase>>;
 
+// The "new transactions" badge is DERIVED per render from (loaded transactions,
+// last-visit timestamp) instead of being incrementally accumulated. Several
+// hook instances are mounted at once (layout, dashboard, notifications dialog)
+// and an incremental shared counter got bumped once per instance for the same
+// transaction, inflating the badge 2-4x. The timestamp lives in localStorage
+// (so it survives reloads) behind a module-level store so all instances in the
+// tab update together.
+const lastVisitListeners = new Set<() => void>();
+
+const subscribeLastVisit = (listener: () => void) => {
+  lastVisitListeners.add(listener);
+  return () => {
+    lastVisitListeners.delete(listener);
+  };
+};
+
 const getLastVisitTimestamp = (): string | null => {
   if (typeof window === 'undefined') {
     return null;
@@ -49,29 +64,15 @@ const getLastVisitTimestamp = (): string | null => {
   return localStorage.getItem(LAST_VISIT_KEY);
 };
 
+const getLastVisitServerSnapshot = (): string | null => null;
+
 const setLastVisitTimestamp = (timestamp: string) => {
   if (typeof window === 'undefined') {
     return;
   }
 
   localStorage.setItem(LAST_VISIT_KEY, timestamp);
-};
-
-const getStoredNewTransactionsCount = (): number => {
-  if (typeof window === 'undefined') {
-    return 0;
-  }
-
-  const count = localStorage.getItem(NEW_TRANSACTIONS_COUNT_KEY);
-  return count ? Number.parseInt(count, 10) : 0;
-};
-
-const setStoredNewTransactionsCount = (count: number) => {
-  if (typeof window === 'undefined') {
-    return;
-  }
-
-  localStorage.setItem(NEW_TRANSACTIONS_COUNT_KEY, count.toString());
+  lastVisitListeners.forEach((listener) => listener());
 };
 
 const logFetchFailure = (kind: 'payments' | 'purchases', error: unknown) => {
@@ -91,10 +92,11 @@ export function useTransactions(
   const trackVisit = options?.trackVisit !== false;
   const { apiClient, network, selectedPaymentSource } = useAppContext();
   const router = useRouter();
-  const [newTransactionsCount, setNewTransactionsCount] = useState(0);
-  const seenTransactionIdsRef = useRef<Set<string>>(new Set());
-  const lastFetchWasNextPageRef = useRef(false);
-  const hasInitializedRef = useRef(false);
+  const lastVisitTimestamp = useSyncExternalStore(
+    subscribeLastVisit,
+    getLastVisitTimestamp,
+    getLastVisitServerSnapshot,
+  );
   const previousNetworkRef = useRef(network);
 
   const filterPaymentSourceType =
@@ -192,83 +194,32 @@ export function useTransactions(
   const isRefetching = query.isRefetching;
   const refetch = query.refetch;
 
+  // First-ever use: anchor "new since" to now so historical rows don't all
+  // count as new. Idempotent across concurrently mounted instances.
+  useEffect(() => {
+    if (trackVisit && getLastVisitTimestamp() === null) {
+      setLastVisitTimestamp(new Date().toISOString());
+    }
+  }, [trackVisit]);
+
   useEffect(() => {
     if (!trackVisit) {
       return;
     }
 
     if (previousNetworkRef.current !== network) {
-      hasInitializedRef.current = false;
-      seenTransactionIdsRef.current = new Set();
-      lastFetchWasNextPageRef.current = false;
-
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- Reset unread state immediately when the active network changes.
-      setNewTransactionsCount(0);
-      setStoredNewTransactionsCount(0);
       setLastVisitTimestamp(new Date().toISOString());
-
       previousNetworkRef.current = network;
     }
   }, [network, trackVisit]);
 
-  useEffect(() => {
-    if (!trackVisit) {
-      return;
+  const newTransactionsCount = useMemo(() => {
+    if (!trackVisit || !lastVisitTimestamp) {
+      return 0;
     }
-
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Hydrating the unread counter from localStorage keeps this hook as the single source of truth.
-    setNewTransactionsCount(getStoredNewTransactionsCount());
-  }, [trackVisit]);
-
-  useEffect(() => {
-    if (!trackVisit || !query.data) {
-      return;
-    }
-
-    if (!hasInitializedRef.current) {
-      seenTransactionIdsRef.current = new Set(
-        transactions.map((transaction) => transaction.id ?? ''),
-      );
-      hasInitializedRef.current = true;
-      return;
-    }
-
-    if (lastFetchWasNextPageRef.current) {
-      seenTransactionIdsRef.current = new Set([
-        ...seenTransactionIdsRef.current,
-        ...transactions.map((transaction) => transaction.id ?? ''),
-      ]);
-      lastFetchWasNextPageRef.current = false;
-      return;
-    }
-
-    const lastVisitTimestamp = getLastVisitTimestamp();
-    if (!lastVisitTimestamp) {
-      seenTransactionIdsRef.current = new Set(
-        transactions.map((transaction) => transaction.id ?? ''),
-      );
-      return;
-    }
-
-    const currentCount = getStoredNewTransactionsCount();
-    const existingIds = seenTransactionIdsRef.current;
-    const newTransactions = transactions.filter(
-      (transaction) =>
-        !existingIds.has(transaction.id ?? '') &&
-        new Date(transaction.createdAt) > new Date(lastVisitTimestamp),
-    );
-
-    if (newTransactions.length > 0) {
-      const updatedCount = currentCount + newTransactions.length;
-      setNewTransactionsCount(updatedCount);
-      setStoredNewTransactionsCount(updatedCount);
-    }
-
-    seenTransactionIdsRef.current = new Set([
-      ...existingIds,
-      ...transactions.map((transaction) => transaction.id ?? ''),
-    ]);
-  }, [query.data, query.dataUpdatedAt, trackVisit, transactions]);
+    const lastVisit = new Date(lastVisitTimestamp);
+    return transactions.filter((transaction) => new Date(transaction.createdAt) > lastVisit).length;
+  }, [trackVisit, lastVisitTimestamp, transactions]);
 
   useEffect(() => {
     if (!trackVisit) {
@@ -276,32 +227,20 @@ export function useTransactions(
     }
 
     if (router.pathname === '/transactions' && newTransactionsCount > 0) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- Opening the transactions page should clear the badge immediately.
-      setNewTransactionsCount(0);
-      setStoredNewTransactionsCount(0);
       setLastVisitTimestamp(new Date().toISOString());
-      seenTransactionIdsRef.current = new Set(
-        transactions.map((transaction) => transaction.id ?? ''),
-      );
     }
-  }, [newTransactionsCount, router.pathname, trackVisit, transactions]);
+  }, [newTransactionsCount, router.pathname, trackVisit]);
 
   const markAllAsRead = useCallback(() => {
     if (!trackVisit) {
       return;
     }
 
-    setNewTransactionsCount(0);
-    setStoredNewTransactionsCount(0);
     setLastVisitTimestamp(new Date().toISOString());
-    seenTransactionIdsRef.current = new Set(
-      transactions.map((transaction) => transaction.id ?? ''),
-    );
-  }, [trackVisit, transactions]);
+  }, [trackVisit]);
 
   const loadMore = useCallback(() => {
     if (query.hasNextPage && !query.isFetchingNextPage) {
-      lastFetchWasNextPageRef.current = true;
       void query.fetchNextPage();
     }
   }, [query]);
