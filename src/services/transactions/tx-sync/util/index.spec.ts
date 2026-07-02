@@ -1,11 +1,6 @@
 import { OnChainState, PaymentSourceType } from '@/generated/prisma/client';
 import { SmartContractState } from '@/utils/generator/contract-generator';
-import {
-	checkPaymentAmountsMatch,
-	getCardanoFeesBuyer,
-	getCardanoFeesSeller,
-	redeemerToOnChainState,
-} from './index';
+import { checkPaymentAmountsMatch, getCardanoFeesBuyer, getCardanoFeesSeller, redeemerToOnChainState } from './index';
 
 const V1 = PaymentSourceType.Web3CardanoV1;
 const V2 = PaymentSourceType.Web3CardanoV2;

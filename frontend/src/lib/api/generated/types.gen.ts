@@ -2018,9 +2018,9 @@ export type UtxoAmount = {
      */
     unit: string;
     /**
-     * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+     * The quantity of the asset in its smallest unit, as a decimal string (BigInt-safe; native-token and whale ADA quantities routinely exceed 2^53). For ADA, this is lovelace (1 ADA = 10000000 lovelace)
      */
-    quantity: number | null;
+    quantity: string;
 };
 
 export type RpcProviderKey = {
@@ -9308,23 +9308,23 @@ export type PostPurchaseSpendingResponses = {
             TotalSpend: {
                 Units: Array<{
                     unit: string;
-                    amount: number;
+                    amount: string;
                 }>;
-                blockchainFees: number;
+                blockchainFees: string;
             };
             TotalRefunded: {
                 Units: Array<{
                     unit: string;
-                    amount: number;
+                    amount: string;
                 }>;
-                blockchainFees: number;
+                blockchainFees: string;
             };
             TotalPending: {
                 Units: Array<{
                     unit: string;
-                    amount: number;
+                    amount: string;
                 }>;
-                blockchainFees: number;
+                blockchainFees: string;
             };
             DailySpend: Array<{
                 /**
@@ -9341,9 +9341,9 @@ export type PostPurchaseSpendingResponses = {
                 year: number;
                 Units: Array<{
                     unit: string;
-                    amount: number;
+                    amount: string;
                 }>;
-                blockchainFees: number;
+                blockchainFees: string;
             }>;
             DailyRefunded: Array<{
                 /**
@@ -9360,9 +9360,9 @@ export type PostPurchaseSpendingResponses = {
                 year: number;
                 Units: Array<{
                     unit: string;
-                    amount: number;
+                    amount: string;
                 }>;
-                blockchainFees: number;
+                blockchainFees: string;
             }>;
             DailyPending: Array<{
                 /**
@@ -9379,9 +9379,9 @@ export type PostPurchaseSpendingResponses = {
                 year: number;
                 Units: Array<{
                     unit: string;
-                    amount: number;
+                    amount: string;
                 }>;
-                blockchainFees: number;
+                blockchainFees: string;
             }>;
             MonthlySpend: Array<{
                 /**
@@ -9394,9 +9394,9 @@ export type PostPurchaseSpendingResponses = {
                 year: number;
                 Units: Array<{
                     unit: string;
-                    amount: number;
+                    amount: string;
                 }>;
-                blockchainFees: number;
+                blockchainFees: string;
             }>;
             MonthlyRefunded: Array<{
                 /**
@@ -9409,9 +9409,9 @@ export type PostPurchaseSpendingResponses = {
                 year: number;
                 Units: Array<{
                     unit: string;
-                    amount: number;
+                    amount: string;
                 }>;
-                blockchainFees: number;
+                blockchainFees: string;
             }>;
             MonthlyPending: Array<{
                 /**
@@ -9424,9 +9424,9 @@ export type PostPurchaseSpendingResponses = {
                 year: number;
                 Units: Array<{
                     unit: string;
-                    amount: number;
+                    amount: string;
                 }>;
-                blockchainFees: number;
+                blockchainFees: string;
             }>;
         };
     };
@@ -9499,23 +9499,23 @@ export type PostPaymentIncomeResponses = {
             TotalIncome: {
                 Units: Array<{
                     unit: string;
-                    amount: number;
+                    amount: string;
                 }>;
-                blockchainFees: number;
+                blockchainFees: string;
             };
             TotalRefunded: {
                 Units: Array<{
                     unit: string;
-                    amount: number;
+                    amount: string;
                 }>;
-                blockchainFees: number;
+                blockchainFees: string;
             };
             TotalPending: {
                 Units: Array<{
                     unit: string;
-                    amount: number;
+                    amount: string;
                 }>;
-                blockchainFees: number;
+                blockchainFees: string;
             };
             DailyIncome: Array<{
                 /**
@@ -9532,9 +9532,9 @@ export type PostPaymentIncomeResponses = {
                 year: number;
                 Units: Array<{
                     unit: string;
-                    amount: number;
+                    amount: string;
                 }>;
-                blockchainFees: number;
+                blockchainFees: string;
             }>;
             DailyRefunded: Array<{
                 /**
@@ -9551,9 +9551,9 @@ export type PostPaymentIncomeResponses = {
                 year: number;
                 Units: Array<{
                     unit: string;
-                    amount: number;
+                    amount: string;
                 }>;
-                blockchainFees: number;
+                blockchainFees: string;
             }>;
             DailyPending: Array<{
                 /**
@@ -9570,9 +9570,9 @@ export type PostPaymentIncomeResponses = {
                 year: number;
                 Units: Array<{
                     unit: string;
-                    amount: number;
+                    amount: string;
                 }>;
-                blockchainFees: number;
+                blockchainFees: string;
             }>;
             MonthlyIncome: Array<{
                 /**
@@ -9585,9 +9585,9 @@ export type PostPaymentIncomeResponses = {
                 year: number;
                 Units: Array<{
                     unit: string;
-                    amount: number;
+                    amount: string;
                 }>;
-                blockchainFees: number;
+                blockchainFees: string;
             }>;
             MonthlyRefunded: Array<{
                 /**
@@ -9600,9 +9600,9 @@ export type PostPaymentIncomeResponses = {
                 year: number;
                 Units: Array<{
                     unit: string;
-                    amount: number;
+                    amount: string;
                 }>;
-                blockchainFees: number;
+                blockchainFees: string;
             }>;
             MonthlyPending: Array<{
                 /**
@@ -9615,9 +9615,9 @@ export type PostPaymentIncomeResponses = {
                 year: number;
                 Units: Array<{
                     unit: string;
-                    amount: number;
+                    amount: string;
                 }>;
-                blockchainFees: number;
+                blockchainFees: string;
             }>;
         };
     };
