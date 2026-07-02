@@ -858,7 +858,46 @@ export async function settleX402Payment({
 		select: { id: true },
 	});
 
-	const settleResponse = await facilitator.settle(paymentPayload, requirements);
+	// The facilitator's ordinary failure paths RETURN {success:false} (handled
+	// below). But some paths THROW (a pre-broadcast verify-stage RPC failure, a
+	// scheme mismatch, or a throw after the on-chain submit). A raw throw here
+	// would leave the pre-settle Verified marker in place with NO error trace, so
+	// the crash-window guard 409s every retry forever with nothing for an operator
+	// to go on. Catch it, RECORD the error onto the marker so the stuck row is
+	// discoverable (by errorReason), then re-throw.
+	//
+	// We deliberately do NOT auto-stamp Failed on a throw: a throw after the tx was
+	// broadcast means funds already moved, and the on-chain authorization nonce is
+	// single-use, so flipping to Failed would tell a charged buyer "failed" and let
+	// a retry burn against a consumed nonce. Resolving that ambiguous case is an
+	// operator/reconciliation decision, not an automatic one.
+	let settleResponse: Awaited<ReturnType<typeof facilitator.settle>>;
+	try {
+		settleResponse = await facilitator.settle(paymentPayload, requirements);
+	} catch (settleError) {
+		const errorMessage = settleError instanceof Error ? settleError.message : String(settleError);
+		await prisma.x402PaymentAttempt
+			.update({
+				where: { id: attempt.id },
+				data: { errorReason: 'settle_threw', errorMessage },
+			})
+			.catch((recordError) => {
+				logger.error('x402 settle threw AND recording the error on the attempt failed', {
+					supportedPaymentSourceId,
+					paymentPayloadHash,
+					attemptId: attempt.id,
+					recordError: recordError instanceof Error ? recordError.message : String(recordError),
+				});
+			});
+		logger.error('x402 facilitator.settle threw; attempt left Verified for reconciliation', {
+			supportedPaymentSourceId,
+			paymentPayloadHash,
+			attemptId: attempt.id,
+			error: errorMessage,
+		});
+		throw settleError;
+	}
+
 	if (!settleResponse.success) {
 		logger.warn('x402 settle returned unsuccessful', {
 			supportedPaymentSourceId,
@@ -870,19 +909,35 @@ export async function settleX402Payment({
 
 	// Stamp the outcome onto the pre-created attempt. On a legitimate settle
 	// failure (nonce NOT consumed) this row becomes Failed, which the guard above
-	// does NOT block — so a genuine retry can still proceed.
-	await prisma.x402PaymentAttempt.update({
-		where: { id: attempt.id },
-		data: {
-			status: settleResponse.success ? X402PaymentStatus.Settled : X402PaymentStatus.Failed,
-			payer: settleResponse.payer,
-			errorReason: settleResponse.errorReason,
-			errorMessage: settleResponse.errorMessage,
-		},
-	});
+	// does NOT block — so a genuine retry can still proceed. If these post-settle
+	// writes THROW after a SUCCESSFUL settle, funds already moved: keep the row
+	// Verified (never auto-fail) and log loudly WITH the txHash so an operator can
+	// confirm on-chain and reconcile.
+	try {
+		await prisma.x402PaymentAttempt.update({
+			where: { id: attempt.id },
+			data: {
+				status: settleResponse.success ? X402PaymentStatus.Settled : X402PaymentStatus.Failed,
+				payer: settleResponse.payer,
+				errorReason: settleResponse.errorReason,
+				errorMessage: settleResponse.errorMessage,
+			},
+		});
 
-	if (settleResponse.success) {
-		await writeSettlement({ attemptId: attempt.id, paymentPayloadHash, settleResponse });
+		if (settleResponse.success) {
+			await writeSettlement({ attemptId: attempt.id, paymentPayloadHash, settleResponse });
+		}
+	} catch (writeError) {
+		if (settleResponse.success) {
+			logger.error('x402 settle SUCCEEDED but persisting the outcome failed; funds moved — needs reconciliation', {
+				supportedPaymentSourceId,
+				paymentPayloadHash,
+				attemptId: attempt.id,
+				txHash: settleResponse.transaction ?? null,
+				error: writeError instanceof Error ? writeError.message : writeError,
+			});
+		}
+		throw writeError;
 	}
 
 	return {

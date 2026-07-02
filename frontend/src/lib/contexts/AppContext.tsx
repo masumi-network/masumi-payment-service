@@ -126,11 +126,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const queryClient = useQueryClient();
 
-  const { paymentSources, isLoading: isLoadingPaymentSources } =
-    usePaymentSourceExtendedAllWithParams({
-      apiClient,
-      apiKey,
-    });
+  const {
+    paymentSources,
+    isLoading: isLoadingPaymentSources,
+    error: paymentSourcesError,
+  } = usePaymentSourceExtendedAllWithParams({
+    apiClient,
+    apiKey,
+  });
 
   const currentNetworkPaymentSources = useMemo(
     () => paymentSources.filter((ps) => ps.network === network),
@@ -181,8 +184,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     // Before sign-in / while sources are loading, an empty list means "not
     // loaded yet", NOT "none exist". Deciding then would wipe the persisted
     // selection on every reload and silently switch the user to the default
-    // source once loading finishes.
-    if (!apiKey || isLoadingPaymentSources) {
+    // source once loading finishes. A FAILED fetch also resolves to an empty
+    // list, so bail on error too — otherwise a transient network/API error
+    // would clear the persisted selection this guard exists to protect.
+    if (!apiKey || isLoadingPaymentSources || paymentSourcesError) {
       return;
     }
 
@@ -213,6 +218,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [
     apiKey,
     isLoadingPaymentSources,
+    paymentSourcesError,
     selectedPaymentSourceId,
     currentNetworkPaymentSources,
     network,

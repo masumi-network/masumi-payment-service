@@ -34,7 +34,7 @@ import {
   getActiveStablecoinConfig,
   getActiveStablecoinSymbol,
 } from '@/lib/constants/defaultWallets';
-import { convertDecimalToBaseUnits } from '@/lib/convertDecimalToBaseUnits';
+import { convertDecimalToBaseUnits, isValidDecimalAmount } from '@/lib/convertDecimalToBaseUnits';
 import type { ApiKey } from '@/lib/api/generated';
 
 interface AddApiKeyDialogProps {
@@ -76,6 +76,24 @@ const apiKeySchema = z
         code: z.ZodIssueCode.custom,
         message: 'Please specify usage credits for payment permission',
         path: ['credits', 'lovelace'],
+      });
+    }
+    // Reject amounts with more fractional digits than the unit supports (ADA /
+    // USDCx both have 6). Without this, convertDecimalToBaseUnits silently
+    // TRUNCATES the extra digits, granting fewer credits than the operator
+    // typed. Add-credits are positive, so negatives are not allowed here.
+    if (val.credits.lovelace && !isValidDecimalAmount(val.credits.lovelace)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Invalid ADA amount',
+        path: ['credits', 'lovelace'],
+      });
+    }
+    if (val.credits.usdcx && !isValidDecimalAmount(val.credits.usdcx)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Invalid USDCx amount',
+        path: ['credits', 'usdcx'],
       });
     }
   });

@@ -213,6 +213,22 @@ export function useTransactions(
     }
   }, [network, trackVisit]);
 
+  // "Mark read" watermark. createdAt is a SERVER timestamp; if the client clock
+  // runs behind the server, anchoring to the client's `now` leaves rows that are
+  // newer-on-the-server above the watermark, so the badge sticks even right after
+  // visiting. Take the max of the client clock and the newest loaded row so
+  // everything currently visible is definitively marked read.
+  const computeReadWatermark = useCallback(() => {
+    let watermarkMs = Date.now();
+    for (const transaction of transactions) {
+      const createdAtMs = new Date(transaction.createdAt).getTime();
+      if (createdAtMs > watermarkMs) {
+        watermarkMs = createdAtMs;
+      }
+    }
+    return new Date(watermarkMs).toISOString();
+  }, [transactions]);
+
   const newTransactionsCount = useMemo(() => {
     if (!trackVisit || !lastVisitTimestamp) {
       return 0;
@@ -227,17 +243,17 @@ export function useTransactions(
     }
 
     if (router.pathname === '/transactions' && newTransactionsCount > 0) {
-      setLastVisitTimestamp(new Date().toISOString());
+      setLastVisitTimestamp(computeReadWatermark());
     }
-  }, [newTransactionsCount, router.pathname, trackVisit]);
+  }, [newTransactionsCount, router.pathname, trackVisit, computeReadWatermark]);
 
   const markAllAsRead = useCallback(() => {
     if (!trackVisit) {
       return;
     }
 
-    setLastVisitTimestamp(new Date().toISOString());
-  }, [trackVisit]);
+    setLastVisitTimestamp(computeReadWatermark());
+  }, [trackVisit, computeReadWatermark]);
 
   const loadMore = useCallback(() => {
     if (query.hasNextPage && !query.isFetchingNextPage) {

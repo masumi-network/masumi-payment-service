@@ -35,13 +35,14 @@ import { AnimatedPage } from '@/components/ui/animated-page';
 import { EmptyState } from '@/components/ui/empty-state';
 import { SearchInput } from '@/components/ui/search-input';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
-import { parseAmountSearchRange } from '@/lib/parseAmountSearchRange';
+import { parseAmountSearchRange, parseAmountToBigInt } from '@/lib/parseAmountSearchRange';
 import { extractApiErrorMessage } from '@/lib/api-error';
 import { useRegistryEntryByAgentIdentifier } from '@/lib/queries/useRegistryEntryByAgentIdentifier';
 import { useAgentDetailsDialog } from '@/lib/contexts/AgentDetailsDialogContext';
 import { lookupWalletByVkey } from '@/lib/wallet-lookup';
 import { isV2PaymentSource } from '@/lib/payment-source-type';
 import { MigrateAgentsDialog } from '@/components/ai-agents/MigrateAgentsDialog';
+import { parseAgentStatus } from '@/lib/agent-status';
 type AIAgent = RegistryEntry & { relation?: AgentRelation };
 
 // Tells apart agents registered on the active source from those registered elsewhere that
@@ -68,29 +69,6 @@ const getHoldingWallet = (agent: AIAgent) => agent.RecipientWallet ?? agent.Smar
 
 const usesCombinedWallet = (agent: AIAgent) =>
   getHoldingWallet(agent).walletVkey === agent.SmartContractWallet.walletVkey;
-
-const parseAgentStatus = (status: AIAgent['state']): string => {
-  switch (status) {
-    case 'RegistrationRequested':
-      return 'Pending';
-    case 'RegistrationInitiated':
-      return 'Registering';
-    case 'RegistrationConfirmed':
-      return 'Registered';
-    case 'RegistrationFailed':
-      return 'Registration Failed';
-    case 'DeregistrationRequested':
-      return 'Pending';
-    case 'DeregistrationInitiated':
-      return 'Deregistering';
-    case 'DeregistrationConfirmed':
-      return 'Deregistered';
-    case 'DeregistrationFailed':
-      return 'Deregistration Failed';
-    default:
-      return status;
-  }
-};
 
 export default function AIAgentsPage() {
   const router = useRouter();
@@ -163,8 +141,8 @@ export default function AIAgentsPage() {
         amountRange &&
         agent.AgentPricing?.pricingType === 'Fixed' &&
         agent.AgentPricing.Pricing?.some((p) => {
-          const amt = parseInt(p.amount);
-          return amt >= amountRange.min && amt <= amountRange.max;
+          const amt = parseAmountToBigInt(p.amount);
+          return amt != null && amt >= amountRange.min && amt <= amountRange.max;
         })
       )
         return true;
@@ -280,9 +258,17 @@ export default function AIAgentsPage() {
   // on this page. Registration is Cardano-only, so the deep link must not pop
   // the dialog while the x402 rail is active (the button is hidden there too).
   useEffect(() => {
-    if (router.query.action === 'register_agent' && activeRail === 'cardano') {
+    if (router.query.action !== 'register_agent') return;
+    // Strip the action param regardless of the active rail. If we only stripped
+    // it on the cardano rail (as before), arriving on the x402 rail would leave
+    // ?action=register_agent lingering in the URL and then pop the dialog on a
+    // later switch to the cardano rail. Preserve any other params (e.g. the
+    // agentIdentifier deep link).
+    const { action: _action, ...rest } = router.query;
+    void router.replace({ pathname: '/ai-agents', query: rest }, undefined, { shallow: true });
+    // Registration is Cardano-only, so only actually open the dialog there.
+    if (activeRail === 'cardano') {
       queueMicrotask(() => setIsRegisterDialogOpen(true));
-      void router.replace('/ai-agents', undefined, { shallow: true });
     }
   }, [router.query.action, activeRail, router]);
 

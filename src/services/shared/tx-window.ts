@@ -76,11 +76,26 @@ export function createTxWindow(
 		unixTimeToEnclosingSlot(constrainAfterMsNum, SLOT_CONFIG_NETWORK[network]) -
 		(options.constrainSlotBuffer ?? SERVICE_CONSTANTS.TRANSACTION.resultTimeSlotBuffer);
 
+	const invalidAfter =
+		(options.constrainStrategy ?? 'min') === 'max'
+			? Math.max(defaultInvalidAfter, constrainedInvalidAfter)
+			: Math.min(defaultInvalidAfter, constrainedInvalidAfter);
+
+	// A deadline nearer than (nowBuffer + slot safety margin) collapses the
+	// window so invalidAfter <= invalidBefore. Submitting that inverted/empty
+	// validity range is a guaranteed on-chain rejection (PPViewHashes aside, the
+	// ledger requires lower < upper). Bail out with a clear error so the caller's
+	// catch arm defers / routes to manual action instead of building a tx that
+	// can never be valid.
+	if (invalidAfter <= invalidBefore) {
+		throw new Error(
+			`createTxWindow: validity range collapsed (invalidBefore=${invalidBefore} >= invalidAfter=${invalidAfter}); ` +
+				'deadline is too close to now to build a valid transaction',
+		);
+	}
+
 	return {
 		invalidBefore,
-		invalidAfter:
-			(options.constrainStrategy ?? 'min') === 'max'
-				? Math.max(defaultInvalidAfter, constrainedInvalidAfter)
-				: Math.min(defaultInvalidAfter, constrainedInvalidAfter),
+		invalidAfter,
 	};
 }

@@ -20,7 +20,7 @@ import { AnimatedPage } from '@/components/ui/animated-page';
 import { SearchInput } from '@/components/ui/search-input';
 import { EmptyState } from '@/components/ui/empty-state';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
-import { parseAmountSearchRange } from '@/lib/parseAmountSearchRange';
+import { parseAmountSearchRange, parseAmountToBigInt } from '@/lib/parseAmountSearchRange';
 import Link from 'next/link';
 import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
 import { getPaymentSourceTypeLabel } from '@/lib/payment-source-type';
@@ -163,8 +163,8 @@ export default function Transactions() {
           tx.type === 'payment' ? tx.RequestedFunds : tx.type === 'purchase' ? tx.PaidFunds : [];
         if (
           funds?.some((f) => {
-            const amt = parseInt(f.amount);
-            return amt >= amountRange.min && amt <= amountRange.max;
+            const amt = parseAmountToBigInt(f.amount);
+            return amt != null && amt >= amountRange.min && amt <= amountRange.max;
           })
         )
           return true;

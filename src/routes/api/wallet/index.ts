@@ -353,8 +353,9 @@ export const patchWalletEndpointPatch = adminAuthenticatedEndpointFactory.build(
 		// Validate the collection address against the wallet's network. Without
 		// this an admin typo / wrong-network address is stored silently and every
 		// later automated collection/batching tx for this wallet fails at build
-		// time (or funds get directed to an unspendable-for-them address). An
-		// empty string clears the override; null leaves it untouched.
+		// time (or funds get directed to an unspendable-for-them address). null
+		// clears the override (the column is set to NULL); only a non-empty
+		// value is network-validated before being stored.
 		if (input.newCollectionAddress != null && input.newCollectionAddress !== '') {
 			if (!isCardanoAddressForNetwork(input.newCollectionAddress, wallet.PaymentSource.network)) {
 				throw createHttpError(400, 'newCollectionAddress is not a valid Cardano address for this wallet network');

@@ -7,7 +7,7 @@
  * rounds down (e.g. '1.005' gave min 1004999 > max 1004998, so an exact
  * 1.005 ADA transaction never matched its own search).
  */
-export function parseAmountSearchRange(query: string): { min: number; max: number } | undefined {
+export function parseAmountSearchRange(query: string): { min: bigint; max: bigint } | undefined {
   const numericMatch = query.match(/^(\d+)(?:\.(\d*))?$/);
   if (!numericMatch) return undefined;
 
@@ -18,7 +18,7 @@ export function parseAmountSearchRange(query: string): { min: number; max: numbe
   // never match an integer lovelace amount. Keep the "matches nothing"
   // semantics (an explicitly empty range) rather than dropping the filter.
   if (fraction.length > 6 && /[1-9]/.test(fraction.slice(6))) {
-    return { min: 0, max: -1 };
+    return { min: BigInt(0), max: BigInt(-1) };
   }
 
   const paddedFraction = fraction.slice(0, 6).padEnd(6, '0');
@@ -29,5 +29,18 @@ export function parseAmountSearchRange(query: string): { min: number; max: numbe
   const span = BigInt(10) ** BigInt(spanDigits);
   const max = min + span - BigInt(1);
 
-  return { min: Number(min), max: Number(max) };
+  // Return BigInt: lovelace amounts routinely exceed 2^53 (whale ADA / native
+  // tokens), so downcasting to Number here would silently misfilter large
+  // values. Callers compare against parseAmountToBigInt(amount).
+  return { min, max };
+}
+
+/**
+ * Parse an integer lovelace amount string into a BigInt, or null if it is not a
+ * plain non-negative integer. Used by amount-range filters so a malformed or
+ * empty amount string can't throw from a bare `BigInt(...)` call.
+ */
+export function parseAmountToBigInt(amount: string | null | undefined): bigint | null {
+  if (amount == null || !/^\d+$/.test(amount)) return null;
+  return BigInt(amount);
 }

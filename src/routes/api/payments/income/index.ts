@@ -60,10 +60,10 @@ export const postPaymentIncomeSchemaInput = z.object({
 const unitAmountSchema = z
 	.object({
 		unit: z.string(),
-		amount: z.string(),
+		amount: z.number(),
 	})
 	.describe(
-		'The amount of the unit in the smallest unit, as a decimal string (BigInt-safe). Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is ""',
+		'The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is ""',
 	);
 
 export const postPaymentIncomeSchemaOutput = z.object({
@@ -73,15 +73,15 @@ export const postPaymentIncomeSchemaOutput = z.object({
 	totalTransactions: z.number(),
 	TotalIncome: z.object({
 		Units: z.array(unitAmountSchema),
-		blockchainFees: z.string(),
+		blockchainFees: z.number(),
 	}),
 	TotalRefunded: z.object({
 		Units: z.array(unitAmountSchema),
-		blockchainFees: z.string(),
+		blockchainFees: z.number(),
 	}),
 	TotalPending: z.object({
 		Units: z.array(unitAmountSchema),
-		blockchainFees: z.string(),
+		blockchainFees: z.number(),
 	}),
 	DailyIncome: z.array(
 		z.object({
@@ -89,7 +89,7 @@ export const postPaymentIncomeSchemaOutput = z.object({
 			month: z.number().describe('The month'),
 			year: z.number().describe('The year'),
 			Units: z.array(unitAmountSchema),
-			blockchainFees: z.string(),
+			blockchainFees: z.number(),
 		}),
 	),
 	DailyRefunded: z.array(
@@ -98,7 +98,7 @@ export const postPaymentIncomeSchemaOutput = z.object({
 			month: z.number().describe('The month'),
 			year: z.number().describe('The year'),
 			Units: z.array(unitAmountSchema),
-			blockchainFees: z.string(),
+			blockchainFees: z.number(),
 		}),
 	),
 	DailyPending: z.array(
@@ -107,7 +107,7 @@ export const postPaymentIncomeSchemaOutput = z.object({
 			month: z.number().describe('The month'),
 			year: z.number().describe('The year'),
 			Units: z.array(unitAmountSchema),
-			blockchainFees: z.string(),
+			blockchainFees: z.number(),
 		}),
 	),
 	MonthlyIncome: z.array(
@@ -115,7 +115,7 @@ export const postPaymentIncomeSchemaOutput = z.object({
 			month: z.number().describe('The month'),
 			year: z.number().describe('The year'),
 			Units: z.array(unitAmountSchema),
-			blockchainFees: z.string(),
+			blockchainFees: z.number(),
 		}),
 	),
 	MonthlyRefunded: z.array(
@@ -123,7 +123,7 @@ export const postPaymentIncomeSchemaOutput = z.object({
 			month: z.number().describe('The month'),
 			year: z.number().describe('The year'),
 			Units: z.array(unitAmountSchema),
-			blockchainFees: z.string(),
+			blockchainFees: z.number(),
 		}),
 	),
 	MonthlyPending: z.array(
@@ -131,7 +131,7 @@ export const postPaymentIncomeSchemaOutput = z.object({
 			month: z.number().describe('The month'),
 			year: z.number().describe('The year'),
 			Units: z.array(unitAmountSchema),
-			blockchainFees: z.string(),
+			blockchainFees: z.number(),
 		}),
 	),
 });

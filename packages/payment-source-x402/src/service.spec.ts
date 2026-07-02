@@ -663,6 +663,32 @@ describe('x402 service helpers', () => {
 		expect(mockFacilitatorSettle).not.toHaveBeenCalled();
 	});
 
+	it('records the error and re-throws (no auto-fail) when facilitator.settle throws', async () => {
+		mockX402PaymentAttemptFindFirst.mockResolvedValue(null);
+		mockFacilitatorSettle.mockRejectedValueOnce(new Error('rpc getCode failed'));
+
+		await expect(
+			service.settleX402Payment({
+				apiKeyId: 'api-key-1',
+				caip2NetworkLimit: [source.network],
+				supportedPaymentSourceId: source.id,
+				paymentPayload: typedPaymentPayload,
+			}),
+		).rejects.toThrow('rpc getCode failed');
+
+		// The pre-settle Verified marker is stamped with the error for diagnosis,
+		// NOT auto-failed (auto-failing could tell a possibly-charged buyer "failed"
+		// after a post-broadcast throw). The row stays Verified for reconciliation.
+		expect(mockX402PaymentAttemptUpdate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { id: 'attempt-1' },
+				data: { errorReason: 'settle_threw', errorMessage: 'rpc getCode failed' },
+			}),
+		);
+		// No settlement row is written when settle throws.
+		expect(mockX402SettlementUpsert).not.toHaveBeenCalled();
+	});
+
 	it('rejects granting a budget to a Selling wallet', async () => {
 		mockX402EvmWalletFindUnique.mockResolvedValueOnce({
 			id: 'wallet-selling',

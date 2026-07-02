@@ -67,7 +67,7 @@ export const APIKeySchema = {
                     },
                     amount: {
                         type: 'string',
-                        description: 'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)'
+                        description: 'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)'
                     }
                 },
                 required: [
@@ -882,7 +882,7 @@ export const PaymentSchema = {
                 properties: {
                     amount: {
                         type: 'string',
-                        description: 'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)'
+                        description: 'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)'
                     },
                     unit: {
                         type: 'string',
@@ -1880,7 +1880,7 @@ export const AgentMetadataSchema = {
                                         properties: {
                                             amount: {
                                                 type: 'string',
-                                                description: 'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)'
+                                                description: 'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)'
                                             },
                                             unit: {
                                                 type: 'string',
@@ -2398,7 +2398,7 @@ export const AgentIdentifierMetadataSchema = {
                                         properties: {
                                             amount: {
                                                 type: 'string',
-                                                description: 'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)'
+                                                description: 'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)'
                                             },
                                             unit: {
                                                 type: 'string',
@@ -2948,7 +2948,7 @@ export const RegistryEntrySchema = {
                                 properties: {
                                     amount: {
                                         type: 'string',
-                                        description: 'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)'
+                                        description: 'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)'
                                     },
                                     unit: {
                                         type: 'string',
@@ -3723,8 +3723,11 @@ export const UtxoAmountSchema = {
             description: 'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)'
         },
         quantity: {
-            type: 'string',
-            description: 'The quantity of the asset in its smallest unit, as a decimal string (BigInt-safe; native-token and whale ADA quantities routinely exceed 2^53). For ADA, this is lovelace (1 ADA = 10000000 lovelace)'
+            type: 'integer',
+            nullable: true,
+            minimum: 0,
+            maximum: 100000000000000,
+            description: 'The quantity of the asset in its smallest unit. For ADA, this is lovelace (1 ADA = 1000000 lovelace)'
         }
     },
     required: [

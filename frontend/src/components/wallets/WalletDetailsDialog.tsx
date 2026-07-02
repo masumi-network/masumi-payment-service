@@ -45,6 +45,7 @@ import { extractApiErrorMessage } from '@/lib/api-error';
 import { WalletLink } from '@/components/ui/wallet-link';
 import { Spinner } from '@/components/ui/spinner';
 import formatBalance from '@/lib/formatBalance';
+import { convertBaseUnitsToDecimal } from '@/lib/convertDecimalToBaseUnits';
 import { useRate } from '@/lib/hooks/useRate';
 import { SwapDialog } from '@/components/wallets/SwapDialog';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
@@ -72,7 +73,9 @@ export interface TokenBalance {
   unit: string;
   policyId: string;
   assetName: string;
-  quantity: number;
+  // BigInt: on-chain token quantities (whale ADA, high-supply native tokens)
+  // routinely exceed 2^53, so a Number here would silently lose precision.
+  quantity: bigint;
 }
 
 type LowBalanceSummary = {
@@ -609,7 +612,7 @@ export function WalletDetailsDialog({
             unit: 'lovelace',
             policyId: '',
             assetName: 'ADA',
-            quantity: Number(quantity),
+            quantity,
           });
         } else {
           // For other tokens, split into policy ID and asset name
@@ -621,7 +624,7 @@ export function WalletDetailsDialog({
             unit,
             policyId,
             assetName,
-            quantity: Number(quantity),
+            quantity,
           });
         }
       });
@@ -758,34 +761,35 @@ export function WalletDetailsDialog({
     token.policyId === usdmConfig.policyId && token.assetName === hexToAscii(usdmConfig.assetName);
 
   const formatTokenBalance = (token: TokenBalance) => {
+    // Decimal string is derived BigInt-safely (no 2^53 precision loss). USD
+    // values are only an approximate `≈` figure, so Number() there is fine.
+    const toDecimal = () => convertBaseUnitsToDecimal(token.quantity.toString(), 6);
+    const approxUnits = Number(token.quantity) / 1_000_000;
+
     if (token.unit === 'lovelace') {
-      const ada = token.quantity / 1_000_000;
       return {
-        amount: ada === 0 ? 'zero' : formatBalance(ada.toFixed(6)),
-        usdValue: rate ? `≈ $${(ada * rate).toFixed(2)}` : undefined,
+        amount: token.quantity === BigInt(0) ? 'zero' : formatBalance(toDecimal()),
+        usdValue: rate ? `≈ $${(approxUnits * rate).toFixed(2)}` : undefined,
       };
     }
 
     if (isUSDCx(token)) {
-      const usdcx = token.quantity / 1_000_000;
       return {
-        amount: usdcx === 0 ? 'zero' : formatBalance(usdcx.toFixed(6)),
-        usdValue: `≈ $${usdcx.toFixed(2)}`,
+        amount: token.quantity === BigInt(0) ? 'zero' : formatBalance(toDecimal()),
+        usdValue: `≈ $${approxUnits.toFixed(2)}`,
       };
     }
 
     if (isUSDM(token)) {
-      const usdm = token.quantity / 1_000_000;
       return {
-        amount: usdm === 0 ? 'zero' : formatBalance(usdm.toFixed(6)),
-        usdValue: `≈ $${usdm.toFixed(2)}`,
+        amount: token.quantity === BigInt(0) ? 'zero' : formatBalance(toDecimal()),
+        usdValue: `≈ $${approxUnits.toFixed(2)}`,
       };
     }
 
     // Unknown tokens: display raw quantity (no decimal conversion)
-    const qty = token.quantity;
     return {
-      amount: qty === 0 ? 'zero' : formatBalance(qty.toString()),
+      amount: token.quantity === BigInt(0) ? 'zero' : formatBalance(token.quantity.toString()),
       usdValue: undefined,
     };
   };

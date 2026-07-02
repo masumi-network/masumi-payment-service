@@ -96,16 +96,19 @@ export function addToAllFundsMaps(
 	addToFundsMapArrayMap(monthMap, monthKey, units, blockchainFees);
 }
 
+// The internal Fund accumulators stay BigInt (exact), but the public income /
+// spending API surface exposes these as `number` for v1 backwards
+// compatibility. Convert to Number only here, at the response boundary.
 export function mapTotalFundsOutput(funds: Fund): {
-	Units: Array<{ unit: string; amount: string }>;
-	blockchainFees: string;
+	Units: Array<{ unit: string; amount: number }>;
+	blockchainFees: number;
 } {
 	return {
 		Units: Array.from(funds.units.entries()).map(([unit, amount]) => ({
 			unit,
-			amount: amount.toString(),
+			amount: Number(amount),
 		})),
-		blockchainFees: funds.blockchainFees.toString(),
+		blockchainFees: Number(funds.blockchainFees),
 	};
 }
 function getDayMonthAndYearFromDate(date: string): {
@@ -120,16 +123,16 @@ export function mapDailyFundsOutput(fundsByDay: Map<string, Fund>): Array<{
 	day: number;
 	month: number;
 	year: number;
-	Units: Array<{ unit: string; amount: string }>;
-	blockchainFees: string;
+	Units: Array<{ unit: string; amount: number }>;
+	blockchainFees: number;
 }> {
 	return Array.from(fundsByDay.entries()).map(([date, fund]) => ({
 		...getDayMonthAndYearFromDate(date),
 		Units: Array.from(fund.units.entries()).map(([unit, amount]) => ({
 			unit,
-			amount: amount.toString(),
+			amount: Number(amount),
 		})),
-		blockchainFees: fund.blockchainFees.toString(),
+		blockchainFees: Number(fund.blockchainFees),
 	}));
 }
 
@@ -144,15 +147,15 @@ function getMonthAndYearFromDate(date: string): {
 export function mapMonthlyFundsOutput(fundsByMonth: Map<string, Fund>): Array<{
 	month: number;
 	year: number;
-	Units: Array<{ unit: string; amount: string }>;
-	blockchainFees: string;
+	Units: Array<{ unit: string; amount: number }>;
+	blockchainFees: number;
 }> {
 	return Array.from(fundsByMonth.entries()).map(([date, fund]) => ({
 		...getMonthAndYearFromDate(date),
 		Units: Array.from(fund.units.entries()).map(([unit, amount]) => ({
 			unit,
-			amount: amount.toString(),
+			amount: Number(amount),
 		})),
-		blockchainFees: fund.blockchainFees.toString(),
+		blockchainFees: Number(fund.blockchainFees),
 	}));
 }

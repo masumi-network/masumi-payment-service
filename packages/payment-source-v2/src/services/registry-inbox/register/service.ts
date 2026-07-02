@@ -170,13 +170,24 @@ async function processSingleRegistration(
 		network,
 		serviceLabel: 'inbox-register-single',
 	});
+	if (collateralCheck.status === 'failed') {
+		// Wallet cannot fund the collateral prep tx for this attempt. Fail with a
+		// clear reason (instead of silently deferring forever, which looks like
+		// "stuck, nothing happens") so the request lands in RegistrationFailed, is
+		// visible, and can be retried once the wallet is funded (recreate the
+		// inbox registration). markRequestFailed unlocks the wallet on this
+		// single-item terminal path.
+		const failureMessage =
+			collateralCheck.reason === 'insufficient_funds'
+				? `Wallet balance too low to fund the collateral preparation transaction: ${collateralCheck.details}. Top up the wallet with ADA and retry.`
+				: `Could not prepare collateral for the transaction: ${collateralCheck.details}.`;
+		await markRequestFailed(request, new Error(failureMessage));
+		return;
+	}
 	if (collateralCheck.status !== 'ready') {
-		// IMPORTANT: do NOT throw on a non-ready collateral check from this
-		// single-item path. The caller wraps `processSingleRegistration` in
-		// `advancedRetry` then `markRequestFailed` on the final throw, which
-		// would mark a transient "wallet not collateral-ready yet" condition
-		// as a PERMANENT failure. Returning lets the request stay queued; the
-		// next scheduler tick re-picks it up after the prep tx confirms.
+		// status === 'deferred': a collateral prep tx is in flight; keep the
+		// request queued so the next scheduler tick re-picks it up once the prep
+		// tx confirms.
 		return;
 	}
 	const limitedFilteredUtxos = sortUtxosByLovelaceDesc(utxos);
@@ -334,6 +345,21 @@ export async function registerInboxAgentV2() {
 					network,
 					serviceLabel: 'inbox-register-batch',
 				});
+				if (collateralCheck.status === 'failed') {
+					// Wallet cannot fund collateral for the whole batch (all items share
+					// this wallet). Fail every item with a clear reason instead of
+					// silently deferring forever, so they land in RegistrationFailed,
+					// are visible, and can be retried once the wallet is funded
+					// (recreate the inbox registration).
+					const failureMessage =
+						collateralCheck.reason === 'insufficient_funds'
+							? `Wallet balance too low to fund the collateral preparation transaction: ${collateralCheck.details}. Top up the wallet with ADA and retry.`
+							: `Could not prepare collateral for the inbox registration transaction: ${collateralCheck.details}.`;
+					await Promise.allSettled(
+						registrationRequests.map((request) => markRequestFailed(request, new Error(failureMessage))),
+					);
+					return;
+				}
 				if (collateralCheck.status !== 'ready') {
 					return;
 				}

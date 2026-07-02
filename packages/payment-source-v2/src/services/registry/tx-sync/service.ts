@@ -55,6 +55,7 @@ async function syncRegistryRequests(
 		CurrentTransaction: {
 			BlocksWallet: { id: string } | null;
 			txHash: string | null;
+			status: TransactionStatus;
 		} | null;
 		agentIdentifier: string | null;
 	}>,
@@ -108,6 +109,20 @@ async function syncRegistryRequests(
 							},
 						});
 					}
+				} else if (registryRequest.CurrentTransaction?.status === TransactionStatus.FailedViaTimeout) {
+					// Force-failed by the wallet-lock timeout sweep (broadcast but never
+					// seen on chain past the lock timeout) AND the asset is still absent —
+					// the tx was dropped, not merely indexer-lagged (a landed tx matches
+					// the confirm branch above). Surface as RegistrationFailed so the row
+					// is not left invisible-stuck in RegistrationInitiated forever.
+					await prisma.registryRequest.update({
+						where: { id: registryRequest.id },
+						data: {
+							state: RegistrationState.RegistrationFailed,
+							error:
+								'Registration transaction was broadcast but never landed on chain (dropped); force-failed by the wallet-lock timeout sweep',
+						},
+					});
 				} else {
 					await prisma.registryRequest.update({
 						where: { id: registryRequest.id },
@@ -158,6 +173,19 @@ async function syncRegistryRequests(
 							},
 						});
 					}
+				} else if (registryRequest.CurrentTransaction?.status === TransactionStatus.FailedViaTimeout) {
+					// Force-failed by the wallet-lock timeout sweep and the asset is still
+					// on chain (deregistration never took effect) — the burn tx was
+					// dropped. Surface as DeregistrationFailed so the row is not left
+					// invisible-stuck in DeregistrationInitiated forever.
+					await prisma.registryRequest.update({
+						where: { id: registryRequest.id },
+						data: {
+							state: RegistrationState.DeregistrationFailed,
+							error:
+								'Deregistration transaction was broadcast but never landed on chain (dropped); force-failed by the wallet-lock timeout sweep',
+						},
+					});
 				} else {
 					await prisma.registryRequest.update({
 						where: { id: registryRequest.id },
@@ -214,6 +242,21 @@ async function syncRegistryRequests(
 							},
 						});
 					}
+				} else if (registryRequest.CurrentTransaction?.status === TransactionStatus.FailedViaTimeout) {
+					// Force-failed by the wallet-lock timeout sweep and the new
+					// (version-bumped) asset is still absent — the burn+remint tx was
+					// dropped, so nothing changed on chain. Surface as UpdateFailed so the
+					// row is not left invisible-stuck in UpdateInitiated forever. (The
+					// stored agentIdentifier is the bumped value; re-running the update via
+					// the route may need the pre-bump identifier — tracked separately.)
+					await prisma.registryRequest.update({
+						where: { id: registryRequest.id },
+						data: {
+							state: RegistrationState.UpdateFailed,
+							error:
+								'Update transaction was broadcast but never landed on chain (dropped); force-failed by the wallet-lock timeout sweep',
+						},
+					});
 				} else {
 					await prisma.registryRequest.update({
 						where: { id: registryRequest.id },

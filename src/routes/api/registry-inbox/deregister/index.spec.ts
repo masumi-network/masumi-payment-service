@@ -226,6 +226,31 @@ describe('unregisterInboxAgentPost', () => {
 		expect(mockUpdateInboxRequest).not.toHaveBeenCalled();
 	});
 
+	it('returns 409 when the registration is in a non-deregisterable state', async () => {
+		// The in-transaction re-read reports a mid-flight lifecycle state. Only
+		// RegistrationConfirmed / DeregistrationFailed may be deregistered; anything
+		// else must 409 so a deregister can't race the register/deregister schedulers.
+		mockFindInboxRequest.mockResolvedValue({
+			id: 'inbox-request-1',
+			state: RegistrationState.DeregistrationInitiated,
+		});
+
+		const { responseMock } = await testEndpoint({
+			endpoint: unregisterInboxAgentPost,
+			requestProps: {
+				method: 'POST',
+				headers: { token: 'valid' },
+				body: {
+					agentIdentifier: 'p'.repeat(56) + 'asset',
+					network: Network.Preprod,
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(409);
+		expect(mockUpdateInboxRequest).not.toHaveBeenCalled();
+	});
+
 	it('returns 409 when the asset is no longer held by a managed wallet', async () => {
 		mockFindPaymentSource.mockResolvedValue({
 			id: 'payment-source-1',

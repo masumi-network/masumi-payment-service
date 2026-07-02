@@ -866,6 +866,13 @@ fn has_valid_admin_signature(
       // header contents. Raw-signing tools that emit bare `{1: -8}` headers
       // remain accepted. The length cap bounds per-signature hashing work.
       //
+      // NOTE ON STRUCTURE: the `expect …` below and the `and { … }` block are
+      // TWO separate statements, not one expression. `expect <len <= cap>` is a
+      // guard that hard-fails the validator when the protected-header blob is
+      // oversized; the trailing `and { … }` (Aiken's standalone block-AND) is
+      // this closure's Bool return value. It visually reads as
+      // `expect (len <= cap and { … })` but does not parse that way.
+      //
       // Two payload modes are accepted, mirroring CIP-8:
       //   * raw:    Sig_structure payload = intent_hash (software wallets;
       //             CIP-30 mandates non-hashed payloads)

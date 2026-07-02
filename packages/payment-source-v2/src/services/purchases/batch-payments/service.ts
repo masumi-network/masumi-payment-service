@@ -31,6 +31,7 @@ import {
 } from '@/services/shared';
 import { createDatumFromBlockchainIdentifierV2 } from '@masumi/payment-source-v2';
 import { isDefinitiveNodeRejection } from '../../submit-error-classifier';
+import { isTransientPreSubmitError } from './pre-submit-error';
 import { WALLET_SPLITTER_LOVELACE } from '../../../builders/batch-helpers';
 import { syncMeshCostModelsFromChainV2 } from '../../../utils/mesh-cost-model-sync';
 import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
@@ -1340,15 +1341,30 @@ export async function batchLatestPaymentEntriesV2() {
 							case 'pre-submit-failed': {
 								// Definitive failure with no on-chain effect (or no broadcast attempted).
 								// SAFE to revert request state and unlock the wallet.
+								//
+								// A pre-submit failure caused by a TRANSIENT error (cost-model sync /
+								// Blockfrost 5xx / transport drop during build+sign) is not a real
+								// failure — the tx was never broadcast and a later tick can succeed.
+								// Revert those to FundsLockingRequested so the scheduler re-batches
+								// them instead of parking a whole batch in WaitingForManualAction for
+								// an operator. Node rejections and non-transient build errors still go
+								// to manual action.
+								const isRetryableTransient =
+									outcome.status === 'pre-submit-failed' && isTransientPreSubmitError(outcome.error);
 								const errNote =
 									outcome.status === 'submit-rejected'
 										? 'Batching payments rejected by node: ' + interpretBlockchainError(outcome.error)
-										: 'Batching payments pre-submit DB error: ' +
+										: 'Batching payments pre-submit failure: ' +
 											(outcome.error instanceof Error ? outcome.error.message : String(outcome.error));
-								logger.warn(`batch-payments pairing ${outcome.status}; reverting + unlocking`, {
-									walletId: outcome.walletId,
-									sharedTxId: outcome.sharedTxId,
-								});
+								logger.warn(
+									`batch-payments pairing ${outcome.status}; ${
+										isRetryableTransient ? 'transient — requeuing for retry' : 'reverting + unlocking'
+									}`,
+									{
+										walletId: outcome.walletId,
+										sharedTxId: outcome.sharedTxId,
+									},
+								);
 								const originalPairing = pairingByWalletId.get(outcome.walletId);
 								const batchedRequestsForRevert = originalPairing?.batchedRequests ?? [];
 								for (const batchedRequest of batchedRequestsForRevert) {
@@ -1359,11 +1375,17 @@ export async function batchLatestPaymentEntriesV2() {
 												connect: { id: batchedRequest.paymentRequest.nextActionId },
 											},
 											NextAction: {
-												create: {
-													requestedAction: PurchasingAction.WaitingForManualAction,
-													errorType: PurchaseErrorType.Unknown,
-													errorNote: errNote,
-												},
+												create: isRetryableTransient
+													? {
+															requestedAction: PurchasingAction.FundsLockingRequested,
+															errorType: null,
+															errorNote: null,
+														}
+													: {
+															requestedAction: PurchasingAction.WaitingForManualAction,
+															errorType: PurchaseErrorType.Unknown,
+															errorNote: errNote,
+														},
 											},
 										},
 									});

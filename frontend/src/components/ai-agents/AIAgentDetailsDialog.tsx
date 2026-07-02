@@ -7,6 +7,7 @@ import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/Wal
 import { CopyButton } from '@/components/ui/copy-button';
 import { postRegistryDeregister } from '@/lib/api/generated';
 import { RegistryEntry, deleteRegistry } from '@/lib/api/generated';
+import { parseAgentStatus } from '@/lib/agent-status';
 import { isDbDeletableAgentState, isDeregisterableAgentState } from '@/lib/registry-states';
 import type { AgentRelation } from '@/lib/queries/useContextAgents';
 
@@ -41,37 +42,6 @@ interface AIAgentDetailsDialogProps {
   onSuccess?: () => void;
   initialTab?: 'Details' | 'Earnings';
 }
-
-const parseAgentStatus = (status: AIAgent['state']): string => {
-  switch (status) {
-    case 'RegistrationRequested':
-      return 'Pending';
-    case 'RegistrationInitiated':
-      return 'Registering';
-    case 'RegistrationConfirmed':
-      return 'Registered';
-    case 'RegistrationFailed':
-      return 'Registration Failed';
-    case 'UpdateRequested':
-      return 'Pending';
-    case 'UpdateInitiated':
-      return 'Updating';
-    case 'UpdateConfirmed':
-      return 'Registered';
-    case 'UpdateFailed':
-      return 'Update Failed';
-    case 'DeregistrationRequested':
-      return 'Pending';
-    case 'DeregistrationInitiated':
-      return 'Deregistering';
-    case 'DeregistrationConfirmed':
-      return 'Deregistered';
-    case 'DeregistrationFailed':
-      return 'Deregistration Failed';
-    default:
-      return status;
-  }
-};
 
 const getStatusBadgeVariant = (status: AIAgent['state']) => {
   // UpdateConfirmed is a live on-chain registration (with newer metadata).
@@ -291,7 +261,8 @@ export function AIAgentDetailsDialog({
 
                     {/* Error Message */}
                     {(agent.state === 'RegistrationFailed' ||
-                      agent.state === 'DeregistrationFailed') &&
+                      agent.state === 'DeregistrationFailed' ||
+                      agent.state === 'UpdateFailed') &&
                       agent.error && (
                         <Card className="border-destructive bg-destructive/10">
                           <CardHeader>

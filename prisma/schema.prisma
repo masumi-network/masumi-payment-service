@@ -475,6 +475,9 @@ model X402PaymentAttempt {
   @@index([paymentIdentifier])
   @@index([caip2Network, asset])
   @@index([status, createdAt])
+  // Settle dedup/crash-window guards look up attempts by paymentPayloadHash
+  // (+ direction/status) on every settle; without this they scan the table.
+  @@index([paymentPayloadHash])
 }
 
 model X402Settlement {

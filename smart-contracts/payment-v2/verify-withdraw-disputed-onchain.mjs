@@ -114,17 +114,33 @@ const funderWallet = loadWallet(3);
 await ensureBuyerFunded(buyerWallet, funderWallet);
 
 console.log('\nLocking fake Disputed UTxO via lock-fake-disputed.mjs ...');
-execSync('node lock-fake-disputed.mjs', {
-	stdio: 'inherit',
+// Capture (don't inherit) stdout so we can pin the EXACT lock we just created.
+// The script address accumulates stale datum-bearing UTxOs from earlier runs,
+// so selecting the first plutusData UTxO would non-deterministically settle a
+// stale lock — flaky verification. lock-fake-disputed.mjs always locks at
+// output index 0 and prints `Tx ID: <hash>`; parse it and match that ref.
+const lockOutput = execSync('node lock-fake-disputed.mjs', {
+	encoding: 'utf8',
 	env: { ...process.env, LOCK_LOVELACE: '10000000' },
 });
+process.stdout.write(lockOutput);
+const lockTxHashMatch = lockOutput.match(/Tx ID:\s*([0-9a-fA-F]{64})/);
+if (lockTxHashMatch == null) {
+	throw new Error('Could not parse the lock tx hash from lock-fake-disputed.mjs output');
+}
+const lockTxHash = lockTxHashMatch[1];
+console.log(`Pinned lock tx: ${lockTxHash}#0`);
 
 const { script, scriptAddress } = loadPaymentScript();
 const buyerAddress = readAddress(1);
 const sellerAddress = readAddress(2);
 const feePayerAddress = await firstWalletAddress(adminWallet1);
 
-const disputed = await waitForUtxos(scriptAddress, (u) => u.output.plutusData, 'fake Disputed lock');
+const disputed = await waitForUtxos(
+	scriptAddress,
+	(u) => u.output.plutusData && u.input.txHash === lockTxHash && u.input.outputIndex === 0,
+	'fake Disputed lock',
+);
 const utxo = disputed[0];
 console.log(`Using contract UTxO ${utxo.input.txHash}#${utxo.input.outputIndex}`);
 

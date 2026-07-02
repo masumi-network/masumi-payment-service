@@ -476,6 +476,17 @@ async function processSinglePaymentRequest(
 	});
 
 	const limitedUtxos = sortAndLimitUtxos(utxos, 8000000);
+	// Collateral must cover the pinned 3 ADA total_collateral. limitedUtxos is
+	// sorted by ASCENDING asset bloat, so [0] can be a pure-ADA DUST UTxO (< 3
+	// ADA) → deterministic phase-1 InsufficientCollateral. Prefer the smallest
+	// qualifying >= 5 ADA UTxO (the same floor the batch path enforces via
+	// pickBatchCollateral); ensureCollateralReady above provisions a 5 ADA
+	// reserve, so this normally succeeds. Fall back to [0] only if the wallet has
+	// nothing larger (no worse than the previous behaviour).
+	const collateralUtxo = pickBatchCollateral(limitedUtxos, [utxo.input]) ?? limitedUtxos[0];
+	if (collateralUtxo == null) {
+		throw new Error('Collateral UTXO not found');
+	}
 
 	const unsignedTx = await withMeshCostModelLock(
 		paymentContract.PaymentSourceConfig.rpcProviderApiKey,
@@ -489,7 +500,7 @@ async function processSinglePaymentRequest(
 				script,
 				address,
 				utxo,
-				limitedUtxos[0],
+				collateralUtxo,
 				limitedUtxos,
 				datum.value,
 				invalidBefore,

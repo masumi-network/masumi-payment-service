@@ -14,6 +14,37 @@ import type { BlockfrostProvider } from '@/services/shared';
 import { LOOKUP_DEFERRED_PREFIX } from './lookup-defer';
 
 /**
+ * Distinguish a PERMANENT Blockfrost failure (revoked/invalid project key,
+ * exhausted quota, missing auth) from the transient 404/5xx we retry on. These
+ * never resolve by retrying, so a defer loop would re-park the same item every
+ * scheduler tick forever. We check both the numeric status (axios-style
+ * `response.status`, or Blockfrost's `status_code`) and the auth/quota phrases
+ * Blockfrost puts in the error body, keeping the message match narrow to avoid
+ * false positives against a transient error that merely mentions a number.
+ */
+function isPermanentBlockfrostError(error: unknown): boolean {
+	if (typeof error === 'object' && error != null) {
+		const e = error as {
+			status?: number;
+			status_code?: number;
+			response?: { status?: number };
+		};
+		const status = e.response?.status ?? e.status ?? e.status_code;
+		if (status === 401 || status === 402 || status === 403) return true;
+	}
+	const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
+	// No bare 'exceeded' match: transient burst rate-limiting (429, "rate limit
+	// exceeded") also says "exceeded" and MUST keep retrying/deferring — only
+	// the specific auth/daily-quota phrases below are permanent.
+	return (
+		message.includes('project token') ||
+		message.includes('invalid project') ||
+		message.includes('usage limit') ||
+		message.includes('daily request limit')
+	);
+}
+
+/**
  * Wrap `fetchUTxOs(txHash)` with progressive retries when the tx is not yet
  * visible to blockfrost. The most common cause is blockfrost not having
  * indexed a freshly-landed tx yet (5-30s+ lag after block confirmation on
@@ -46,6 +77,15 @@ export async function fetchUTxOsWithDeferOnEmpty(
 			if (utxos.length > 0) return utxos;
 			lastError = undefined;
 		} catch (error) {
+			// A permanent auth/quota failure (revoked key, exhausted quota) will
+			// never clear by retrying; surface it WITHOUT the defer sentinel so the
+			// caller parks the request in WaitingForManualAction for an operator
+			// instead of looping every tick.
+			if (isPermanentBlockfrostError(error)) {
+				throw error instanceof Error
+					? error
+					: new Error(`fetchUTxOs(${txHash}) failed with a permanent Blockfrost error`);
+			}
 			// 404 (tx not indexed yet) or a transient 5xx — retry, don't surface
 			// the raw error to the caller (which would fail the request).
 			lastError = error;

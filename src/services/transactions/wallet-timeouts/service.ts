@@ -32,6 +32,7 @@ import {
 	createNextPurchaseAction,
 	updateCurrentTransactionStatus,
 } from '@/services/shared';
+import { classifyUnseenPendingTx } from './dead-tx';
 
 const mutex = new Mutex();
 
@@ -864,10 +865,91 @@ export async function updateWalletTransactionHash() {
 						}
 						markUnlockedByType(wallet.PaymentSource.paymentSourceType);
 					} else {
-						await prisma.transaction.update({
-							where: { id: wallet.PendingTransaction.id },
-							data: { lastCheckedAt: new Date() },
+						// A no-TTL tx (registry burn+mint / single-item register+deregister —
+						// createPendingTransaction leaves invalidHereafterSlot null) that was
+						// dropped from the mempool never becomes provably expired: fetchTxInfo
+						// stays null forever and the wallet keeps its PendingTransaction +
+						// lockedAt indefinitely, wedging every request that needs it (e.g. a
+						// queued registry UpdateRequested, which lockAndQueryRegistryRequests
+						// only picks up when the holder wallet is lockedAt:null AND
+						// PendingTransaction:null). Force-unlock once such an unseen no-TTL tx
+						// is older than the wallet-lock timeout, mirroring the other time-based
+						// sweeps here. TTL-bearing txs keep polling — failing one before its
+						// validity window provably elapses could double-spend if it still lands.
+						const pendingTx = wallet.PendingTransaction;
+						// Positively confirm this is a REGISTRY tx (agent register/deregister/
+						// update mint-burn) before force-unlocking. Registry txs carry no
+						// on-chain TTL, so a dropped one is safe to give up on. A payment/
+						// purchase tx, by contrast, DOES carry an on-chain invalidHereafter TTL
+						// even though createPendingTransaction leaves the DB slot null — force-
+						// failing one inside its validity window could double-spend a locked
+						// script UTxO, so those are left to the request-level timeout sweeps.
+						const registryRefCount =
+							(await prisma.registryRequest.count({ where: { currentTransactionId: pendingTx.id } })) +
+							(await prisma.inboxAgentRegistrationRequest.count({ where: { currentTransactionId: pendingTx.id } }));
+						const decision = classifyUnseenPendingTx({
+							createdAtMs: pendingTx.createdAt.getTime(),
+							nowMs: Date.now(),
+							invalidHereafterSlot: pendingTx.invalidHereafterSlot,
+							isRegistryTx: registryRefCount > 0,
+							forceUnlockAfterMs: CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL,
 						});
+						if (decision.forceUnlock) {
+							logger.warn(
+								`wallet-timeouts: force-unlocking wallet ${wallet.id} — broadcast no-TTL tx ${pendingTx.txHash} unseen on chain for ${decision.ageMs}ms (likely dropped from the mempool); marking FailedViaTimeout and releasing the lock so dependent requests can proceed`,
+								{ walletId: wallet.id, txId: pendingTx.id, txHash: pendingTx.txHash, ageMs: decision.ageMs },
+							);
+							// Atomic: release the wallet and mark the tx failed together, so a
+							// crash between the two writes can't leave the wallet pointing at a
+							// FailedViaTimeout tx. Deliberately do NOT re-arm the dependent
+							// registry request: registry tx-sync still confirms it by asset
+							// presence if the tx actually landed, and re-arming would risk a
+							// double mint/burn (or stranding an update on its bumped identifier).
+							const didForceUnlock = await retryOnSerializationConflict(
+								() =>
+									prisma.$transaction(
+										async (dbTx) => {
+											// Optimistic guard (read-then-act TOCTOU): only free the wallet if
+											// it STILL points at this pending tx. Between the fetchTxInfo(null)
+											// read above and here, registry tx-sync may have confirmed this tx
+											// and a new request re-locked the wallet; without the
+											// pendingTransactionId guard we would blind-disconnect that fresh
+											// lock and free a wallet with an in-flight tx. updateMany (not
+											// update) so a non-match is a no-op instead of throwing. Every
+											// other sweep in this file uses the same guard.
+											const freed = await dbTx.hotWallet.updateMany({
+												where: { id: wallet.id, deletedAt: null, pendingTransactionId: pendingTx.id },
+												data: { pendingTransactionId: null, lockedAt: null },
+											});
+											if (freed.count === 0) {
+												return false;
+											}
+											// Only fail the tx if it is still Pending — a concurrent
+											// confirmation must win.
+											await dbTx.transaction.updateMany({
+												where: { id: pendingTx.id, status: TransactionStatus.Pending },
+												data: { status: TransactionStatus.FailedViaTimeout, lastCheckedAt: new Date() },
+											});
+											return true;
+										},
+										{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
+									),
+								{ label: 'wallet-timeouts-force-unlock-registry' },
+							);
+							if (didForceUnlock) {
+								if (wallet.type == HotWalletType.Selling) {
+									unlockedSellingWalletIds.push(wallet.id);
+								} else if (wallet.type == HotWalletType.Purchasing) {
+									unlockedPurchasingWalletIds.push(wallet.id);
+								}
+								markUnlockedByType(wallet.PaymentSource.paymentSourceType);
+							}
+						} else {
+							await prisma.transaction.update({
+								where: { id: pendingTx.id },
+								data: { lastCheckedAt: new Date() },
+							});
+						}
 					}
 				} catch (error) {
 					logger.error(`Error updating wallet transaction hash: ${errorToString(error)}`);
