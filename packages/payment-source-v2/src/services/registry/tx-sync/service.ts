@@ -5,8 +5,35 @@ import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex } from 'async-mutex';
 import { createApiClient, withJobLock } from '@/services/shared';
+import { extractAssetName, extractPolicyId } from '@/utils/converter/agent-identifier';
+import { unbumpRegistryAssetNameVersionV2 } from '@/services/registry/shared';
 
 const mutex = new Mutex();
+
+// The update service flips a row's `agentIdentifier` to the version-bumped value
+// at submit time (before the tx confirms). When tx-sync force-fails a DROPPED
+// update, the bumped asset was never minted — only the previous-version asset is
+// on chain. Revert the identifier to that pre-bump value so the UpdateFailed row
+// stays reachable by the identifier-keyed update/deregister routes (which look
+// up by `agentIdentifier`). Returns null — keep the bumped value in place — if
+// the identifier is missing or malformed, rather than throwing and re-sticking
+// the row in UpdateInitiated.
+function revertBumpedAgentIdentifier(agentIdentifier: string | null): string | null {
+	if (!agentIdentifier) {
+		return null;
+	}
+	try {
+		const policyId = extractPolicyId(agentIdentifier);
+		const assetName = extractAssetName(agentIdentifier);
+		return policyId + unbumpRegistryAssetNameVersionV2(assetName);
+	} catch (error) {
+		logger.warn('V2 update tx-sync: could not revert bumped agentIdentifier on dropped update; keeping bumped value', {
+			agentIdentifier,
+			error: error instanceof Error ? { message: error.message, name: error.name } : error,
+		});
+		return null;
+	}
+}
 
 export async function checkRegistryTransactionsV2() {
 	await withJobLock(mutex, 'registry_tx_sync_v2', async () => {
@@ -245,14 +272,18 @@ async function syncRegistryRequests(
 				} else if (registryRequest.CurrentTransaction?.status === TransactionStatus.FailedViaTimeout) {
 					// Force-failed by the wallet-lock timeout sweep and the new
 					// (version-bumped) asset is still absent — the burn+remint tx was
-					// dropped, so nothing changed on chain. Surface as UpdateFailed so the
-					// row is not left invisible-stuck in UpdateInitiated forever. (The
-					// stored agentIdentifier is the bumped value; re-running the update via
-					// the route may need the pre-bump identifier — tracked separately.)
+					// dropped, so nothing changed on chain: only the PREVIOUS-version asset
+					// is on chain. The row's agentIdentifier was optimistically flipped to
+					// the bumped value at submit time; revert it to the pre-bump identifier
+					// so the UpdateFailed row stays reachable by the identifier-keyed
+					// update/deregister routes (UpdateFailed is a retriable state). Surface
+					// as UpdateFailed so it is not left invisible-stuck in UpdateInitiated.
+					const revertedAgentIdentifier = revertBumpedAgentIdentifier(registryRequest.agentIdentifier);
 					await prisma.registryRequest.update({
 						where: { id: registryRequest.id },
 						data: {
 							state: RegistrationState.UpdateFailed,
+							...(revertedAgentIdentifier != null ? { agentIdentifier: revertedAgentIdentifier } : {}),
 							error:
 								'Update transaction was broadcast but never landed on chain (dropped); force-failed by the wallet-lock timeout sweep',
 						},

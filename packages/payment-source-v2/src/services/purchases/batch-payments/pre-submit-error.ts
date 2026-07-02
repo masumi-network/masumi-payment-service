@@ -18,11 +18,14 @@ export function isTransientPreSubmitError(error: unknown): boolean {
 		// "request timeout"), but must NOT match Prisma interactive-transaction
 		// timeouts, async-mutex "Mutex timeout", or wallet-lock timeouts — those are
 		// not network-transient and, per this file's conservative policy, should
-		// park for an operator rather than requeue every tick forever.
+		// park for an operator rather than requeue every tick forever. The 'lock'
+		// exclusion is WORD-BOUNDED: a bare substring match would hit 'blockfrost'
+		// (which contains "lock"), misclassifying EVERY Blockfrost timeout — the
+		// single most common transient error here — as non-transient.
 		(message.includes('timeout') &&
 			!message.includes('transaction') &&
 			!message.includes('mutex') &&
-			!message.includes('lock')) ||
+			!/\block\b/.test(message)) ||
 		message.includes('etimedout') ||
 		message.includes('econnreset') ||
 		message.includes('enotfound') ||

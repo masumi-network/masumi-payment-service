@@ -486,15 +486,12 @@ export async function registerAgentV2() {
 						network,
 						serviceLabel: 'registry-register-batch',
 					});
-					if (collateralCheck.status === 'failed') {
+					if (collateralCheck.status === 'failed' && collateralCheck.reason === 'insufficient_funds') {
 						// Wallet cannot fund collateral for the whole batch (all items share
 						// this wallet). Fail every item with a clear reason instead of
 						// silently deferring forever, so they land in RegistrationFailed, are
 						// visible, and can be recreated once the wallet is funded.
-						const failureMessage =
-							collateralCheck.reason === 'insufficient_funds'
-								? `Wallet balance too low to fund the collateral preparation transaction: ${collateralCheck.details}. Top up the wallet with ADA and retry.`
-								: `Could not prepare collateral for the registration transaction: ${collateralCheck.details}.`;
+						const failureMessage = `Wallet balance too low to fund the collateral preparation transaction: ${collateralCheck.details}. Top up the wallet with ADA and retry.`;
 						await Promise.allSettled(
 							registryRequests.map((request) => markRequestFailed(request, new Error(failureMessage))),
 						);

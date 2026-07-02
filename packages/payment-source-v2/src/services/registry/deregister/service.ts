@@ -205,17 +205,14 @@ async function processSingleDeregistration(
 		network,
 		serviceLabel: 'registry-deregister-single',
 	});
-	if (collateralCheck.status === 'failed') {
+	if (collateralCheck.status === 'failed' && collateralCheck.reason === 'insufficient_funds') {
 		// Wallet cannot fund the collateral prep tx for this attempt. Fail with a
 		// clear reason (instead of silently deferring forever, which looks like
 		// "stuck, nothing happens") so the request lands in *Failed, is visible,
 		// and can be retried once the wallet is funded (deregister resets in
 		// place via the deregister route; register recreates). markRequestFailed
 		// unlocks the wallet on this single-item terminal path.
-		const failureMessage =
-			collateralCheck.reason === 'insufficient_funds'
-				? `Wallet balance too low to fund the collateral preparation transaction: ${collateralCheck.details}. Top up the wallet with ADA and retry.`
-				: `Could not prepare collateral for the transaction: ${collateralCheck.details}.`;
+		const failureMessage = `Wallet balance too low to fund the collateral preparation transaction: ${collateralCheck.details}. Top up the wallet with ADA and retry.`;
 		await markRequestFailed(request, new Error(failureMessage));
 		return;
 	}
@@ -376,16 +373,13 @@ export async function deRegisterAgentV2() {
 					network,
 					serviceLabel: 'registry-deregister-batch',
 				});
-				if (collateralCheck.status === 'failed') {
+				if (collateralCheck.status === 'failed' && collateralCheck.reason === 'insufficient_funds') {
 					// Wallet cannot fund collateral for the whole batch (all items share
 					// this wallet). Fail every item with a clear reason instead of
 					// silently deferring forever, so they land in DeregistrationFailed,
 					// are visible, and can be retried once the wallet is funded (the
 					// deregister route resets each in place).
-					const failureMessage =
-						collateralCheck.reason === 'insufficient_funds'
-							? `Wallet balance too low to fund the collateral preparation transaction: ${collateralCheck.details}. Top up the wallet with ADA and retry.`
-							: `Could not prepare collateral for the deregistration transaction: ${collateralCheck.details}.`;
+					const failureMessage = `Wallet balance too low to fund the collateral preparation transaction: ${collateralCheck.details}. Top up the wallet with ADA and retry.`;
 					await Promise.allSettled(
 						registryRequests.map((request) => markRequestFailed(request, new Error(failureMessage))),
 					);

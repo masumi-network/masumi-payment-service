@@ -193,16 +193,13 @@ async function processUpdate(
 		network,
 		serviceLabel: 'registry-update',
 	});
-	if (collateralCheck.status === 'failed') {
+	if (collateralCheck.status === 'failed' && collateralCheck.reason === 'insufficient_funds') {
 		// Collateral could not be prepared for this attempt. Fail the request
 		// (instead of silently re-deferring in UpdateRequested forever, which
 		// looks like "stuck, nothing happens") so the operator sees a clear
 		// reason and can fix it and retry — the update endpoint accepts
 		// UpdateFailed and re-queues it as UpdateRequested.
-		const failureMessage =
-			collateralCheck.reason === 'insufficient_funds'
-				? `Wallet balance too low to fund the collateral preparation transaction: ${collateralCheck.details}. Top up the holder wallet with ADA and retry the update.`
-				: `Could not prepare collateral for the update transaction: ${collateralCheck.details}.`;
+		const failureMessage = `Wallet balance too low to fund the collateral preparation transaction: ${collateralCheck.details}. Top up the holder wallet with ADA and retry the update.`;
 		await markRequestFailed(request, new Error(failureMessage));
 		return;
 	}
@@ -346,13 +343,10 @@ async function processBatchUpdate(
 		network,
 		serviceLabel: 'registry-update-batch',
 	});
-	if (collateralCheck.status === 'failed') {
+	if (collateralCheck.status === 'failed' && collateralCheck.reason === 'insufficient_funds') {
 		// Shared-wallet funding problem — fail every item with a clear reason so
 		// they surface as UpdateFailed (retriable) instead of silently deferring.
-		const failureMessage =
-			collateralCheck.reason === 'insufficient_funds'
-				? `Wallet balance too low to fund the collateral preparation transaction: ${collateralCheck.details}. Top up the holder wallet with ADA and retry the update.`
-				: `Could not prepare collateral for the update transaction: ${collateralCheck.details}.`;
+		const failureMessage = `Wallet balance too low to fund the collateral preparation transaction: ${collateralCheck.details}. Top up the holder wallet with ADA and retry the update.`;
 		await Promise.allSettled(requests.map((request) => markRequestFailed(request, new Error(failureMessage))));
 		return;
 	}
@@ -519,30 +513,51 @@ export async function updateAgentV2() {
 			paymentSourcesWithWalletLocked.map(async (paymentSource) => {
 				const requests = paymentSource.RegistryRequest;
 				if (requests.length === 0) return;
-				logger.info(`Updating ${requests.length} V2 agent registrations for payment source ${paymentSource.id}`);
-				const network = convertNetwork(paymentSource.network);
-				const { script, policyId } = await getRegistryScriptFromNetworkHandlerV2(paymentSource);
+				// Holder wallet shared by this tick's requests (lockAndQueryRegistryRequests
+				// locks one wallet per source). lockedAt is already set; the catch below
+				// releases it on any unexpected pre-submit throw (script derivation,
+				// wallet-session load, provider/cost-model sync) so the wallet is not
+				// wedged until the stale-lock reaper sweeps it ~WALLET_LOCK_TIMEOUT_INTERVAL
+				// later — matching the register/deregister batch guard.
+				const lockedWalletId = resolveRegistryDeregistrationWallet(requests[0]).id;
+				try {
+					logger.info(`Updating ${requests.length} V2 agent registrations for payment source ${paymentSource.id}`);
+					const network = convertNetwork(paymentSource.network);
+					const { script, policyId } = await getRegistryScriptFromNetworkHandlerV2(paymentSource);
 
-				// A lone request uses the proven single-item path (also cheaper — no
-				// shared-Tx bookkeeping). Multiple same-wallet requests batch into one
-				// atomic UpdateAction tx.
-				if (requests.length === 1) {
-					const request = requests[0];
-					try {
-						await advancedRetry({
-							errorResolvers: [delayErrorResolver({ configuration: SERVICE_CONSTANTS.RETRY })],
-							operation: async () => {
-								await processUpdate(request, paymentSource, network, script, policyId);
-								return true;
-							},
-						});
-					} catch (error) {
-						await markRequestFailed(request, error);
+					// A lone request uses the proven single-item path (also cheaper — no
+					// shared-Tx bookkeeping). Multiple same-wallet requests batch into one
+					// atomic UpdateAction tx.
+					if (requests.length === 1) {
+						const request = requests[0];
+						try {
+							await advancedRetry({
+								errorResolvers: [delayErrorResolver({ configuration: SERVICE_CONSTANTS.RETRY })],
+								operation: async () => {
+									await processUpdate(request, paymentSource, network, script, policyId);
+									return true;
+								},
+							});
+						} catch (error) {
+							await markRequestFailed(request, error);
+						}
+						return;
 					}
-					return;
-				}
 
-				await processBatchUpdate(requests, paymentSource, network, script, policyId);
+					await processBatchUpdate(requests, paymentSource, network, script, policyId);
+				} catch (unexpectedError) {
+					logger.error('V2 update tick threw unexpectedly; releasing wallet lock [batch-fallback]', {
+						paymentSourceId: paymentSource.id,
+						hotWalletId: lockedWalletId,
+						error:
+							unexpectedError instanceof Error
+								? { message: unexpectedError.message, stack: unexpectedError.stack, name: unexpectedError.name }
+								: unexpectedError,
+					});
+					// Guarded: clears lockedAt only when no pending tx is attached, so a
+					// wallet that already broadcast a tx is left for tx-sync.
+					await unlockHotWalletIfNoPendingTransaction(lockedWalletId, 'registry-update');
+				}
 			}),
 		);
 	} catch (error) {
