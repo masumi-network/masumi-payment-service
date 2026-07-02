@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { useState, useEffect, useCallback } from 'react';
 import { Download } from 'lucide-react';
-import { dateRangeUtils } from '@/lib/utils';
+import { dateRangeUtils, endOfDayLocal, parseDateOnlyLocal } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { getPayment, getPurchase, Payment, Purchase } from '@/lib/api/generated';
 import { handleApiCall } from '@/lib/utils';
@@ -146,8 +146,16 @@ export function DownloadDetailsDialog({ open, onClose, onDownload }: DownloadDet
       if (!customStartDate || !customEndDate) {
         return [];
       }
-      startDate = new Date(customStartDate);
-      endDate = new Date(customEndDate);
+      // Parse the date-only inputs as a local-time range (start of the start
+      // day to end of the end day); UTC parsing would drop the whole end day
+      // for users west of UTC.
+      const start = parseDateOnlyLocal(customStartDate);
+      const end = parseDateOnlyLocal(customEndDate);
+      if (!start || !end) {
+        return [];
+      }
+      startDate = start;
+      endDate = endOfDayLocal(end);
     } else {
       const range = dateRangeUtils.getPresetRange(selectedPreset);
       startDate = range.start;
@@ -187,8 +195,14 @@ export function DownloadDetailsDialog({ open, onClose, onDownload }: DownloadDet
       if (!customStartDate || !customEndDate) {
         return; // Don't download if custom dates are not set
       }
-      startDate = new Date(customStartDate);
-      endDate = new Date(customEndDate);
+      // Same local-time range as the preview count in getFilteredTransactions.
+      const start = parseDateOnlyLocal(customStartDate);
+      const end = parseDateOnlyLocal(customEndDate);
+      if (!start || !end) {
+        return;
+      }
+      startDate = start;
+      endDate = endOfDayLocal(end);
     } else {
       // Calculate start date based on preset
       const range = dateRangeUtils.getPresetRange(selectedPreset);

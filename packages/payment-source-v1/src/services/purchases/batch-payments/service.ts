@@ -159,9 +159,19 @@ async function executeSpecificBatchPayment(
 
 	logger.info('Batching payments, purchase request initialized');
 
-	// SERVICE_CONSTANTS.TRANSACTION defaults (timeBufferMs=150000, validitySlotBuffer=5)
-	// produce the same on-chain window as the previous direct invalidBefore/invalidHereafter calls.
-	const { invalidBefore, invalidAfter } = createTxWindow(convertNetwork(paymentContract.network));
+	// Clamp the lock tx's upper bound to the EARLIEST payByTime in the batch, so
+	// the funding tx cannot be included in a block after payByTime. Otherwise a
+	// slow build / congested mempool lets it land late and tx-sync marks the
+	// request FundsOrDatumInvalid on both sides with funds already locked
+	// on-chain (unrecoverable); with the clamp the tx expires and is retried.
+	// payByTime is guaranteed non-null by the loop above.
+	const minPayByTime = batchedRequests.reduce<bigint>(
+		(min, b) => (b.paymentRequest.payByTime! < min ? b.paymentRequest.payByTime! : min),
+		batchedRequests[0].paymentRequest.payByTime!,
+	);
+	const { invalidBefore, invalidAfter } = createTxWindow(convertNetwork(paymentContract.network), {
+		constrainAfterMs: minPayByTime,
+	});
 	unsignedTx.setNetwork(convertNetwork(paymentContract.network));
 	unsignedTx.txBuilder.invalidBefore(invalidBefore);
 	unsignedTx.txBuilder.invalidHereafter(invalidAfter);
@@ -272,7 +282,9 @@ export async function batchLatestPaymentEntriesV1() {
 								const purchaseRequests = [];
 								for (const purchaseRequest of paymentContract.PurchaseRequests) {
 									//if the purchase request times out in less than 5 minutes, we ignore it
-									const maxSubmitResultTime = Date.now() - 1000 * 60 * 5;
+									//(deadline is within the next 5 minutes or already past — the seller
+									//can never submit in time, so locking funds only forces a refund)
+									const maxSubmitResultTime = Date.now() + 1000 * 60 * 5;
 									if (purchaseRequest.inputHash == null) {
 										logger.info('Purchase request has no input hash, ignoring', {
 											purchaseRequest: purchaseRequest,

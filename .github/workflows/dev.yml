@@ -31,6 +31,26 @@ jobs:
       - name: Install Backend Dependencies
         run: pnpm install
 
+      - name: Install Aiken
+        run: |
+          # Pinned direct download from the aiken GitHub release — no
+          # curl|bash installer script. The version follows the aiken.toml
+          # compiler pin; the checksum is pinned here and MUST be updated
+          # together with the pin (source: the .sha256 asset next to
+          # aiken-x86_64-unknown-linux-musl.tar.gz on the release page).
+          # A version bump without a checksum update fails loudly below.
+          AIKEN_VERSION="$(sed -nE 's/^compiler = "(v[^"]+)".*/\1/p' smart-contracts/payment-v2/aiken.toml)"
+          AIKEN_SHA256="b98c4ccbada5e35f15ba417a52872aeaf0c65998aed77351769ce5fd2506b570" # v1.1.23
+          curl -sSfL -o aiken.tar.gz "https://github.com/aiken-lang/aiken/releases/download/${AIKEN_VERSION}/aiken-x86_64-unknown-linux-musl.tar.gz"
+          echo "${AIKEN_SHA256}  aiken.tar.gz" | sha256sum -c -
+          mkdir -p "$HOME/.aiken/bin"
+          tar -xzf aiken.tar.gz --strip-components=1 -C "$HOME/.aiken/bin" aiken-x86_64-unknown-linux-musl/aiken
+          rm aiken.tar.gz
+          echo "$HOME/.aiken/bin" >> "$GITHUB_PATH"
+
+      - name: Check V2 smart contracts
+        run: bash scripts/check-v2-contracts.sh
+
       - name: Generate Prisma Client
         run: pnpm run prisma:generate
 

@@ -209,6 +209,7 @@ export default function PaymentSourcesPage() {
   const handleDeleteSource = async () => {
     if (!sourceToDelete) return;
 
+    setIsDeleting(true);
     await handleApiCall(
       () =>
         deletePaymentSourceExtended({
@@ -230,7 +231,6 @@ export default function PaymentSourcesPage() {
           queryClient.invalidateQueries({ queryKey: ['wallets'] });
           queryClient.invalidateQueries({ queryKey: ['transactions'] });
           invalidateAgentQueries(queryClient);
-          queryClient.invalidateQueries({ queryKey: ['payment-source-extended'] });
         },
         onError: (error: any) => {
           console.error('Error deleting payment source:', error);
@@ -549,7 +549,11 @@ export default function PaymentSourcesPage() {
 
           <AddSourceDialog open={isAddDialogOpen} onClose={() => setIsAddDialogOpen(false)} />
 
+          {/* Remount per source: the dialog seeds its apiKey state once from
+              currentApiKey, so without a key the field would keep stale text
+              typed for a previously edited source. */}
           <UpdatePaymentSourceDialog
+            key={sourceToUpdate?.id ?? 'closed'}
             open={!!sourceToUpdate}
             onClose={() => setSourceToUpdate(null)}
             onSuccess={() => {

@@ -199,7 +199,11 @@ export function InvoiceDetailsDialog({
             </div>
             <div>
               <span className="text-muted-foreground">Invoice Date</span>
-              <div className="mt-1">{new Date(invoice.invoiceDate).toLocaleDateString()}</div>
+              {/* invoiceDate is a user-chosen calendar day stored as UTC midnight;
+                  render the UTC day so it doesn't shift in UTC-negative timezones. */}
+              <div className="mt-1">
+                {new Date(invoice.invoiceDate).toLocaleDateString(undefined, { timeZone: 'UTC' })}
+              </div>
             </div>
             <div>
               <span className="text-muted-foreground">Currency</span>

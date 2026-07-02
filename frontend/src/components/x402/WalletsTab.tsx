@@ -37,7 +37,7 @@ import { RefreshButton } from '@/components/RefreshButton';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useX402WalletsPaginated } from '@/lib/hooks/useX402';
-import { cn, handleApiCall, shortenAddress } from '@/lib/utils';
+import { cn, copyToClipboard, handleApiCall, shortenAddress } from '@/lib/utils';
 import { extractApiPayload } from '@/lib/api-response';
 import { postX402Wallets, postX402WalletsDelete, X402Wallet } from '@/lib/api/generated';
 import { EditWalletNoteDialog, WalletBalanceDialog } from '@/components/x402/WalletExtras';
@@ -607,9 +607,14 @@ function BackupKeyStep({
             variant="outline"
             size="sm"
             className="flex-1 gap-1.5"
-            onClick={() => {
-              navigator.clipboard.writeText(privateKey);
-              toast.success('Private key copied');
+            onClick={async () => {
+              // Awaited so a blocked clipboard (e.g. plain-HTTP host) surfaces as an
+              // error instead of a false success on an unrecoverable secret.
+              if (await copyToClipboard(privateKey)) {
+                toast.success('Private key copied');
+              } else {
+                toast.error('Failed to copy private key. Reveal and copy it manually.');
+              }
             }}
           >
             <Copy className="h-3.5 w-3.5" /> Copy

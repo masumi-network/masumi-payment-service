@@ -239,6 +239,13 @@ export async function updateWalletTransactionHash() {
 									},
 									{
 										CurrentTransaction: {
+											// Must match the payment-side filter: only time out requests whose
+											// CurrentTransaction is still Pending. Without this guard a shared
+											// V2 batch Transaction already advanced to Confirmed by a sibling
+											// entry gets matched here and overwritten to FailedViaTimeout,
+											// corrupting the sibling's audit record and resetting a request
+											// whose funds are confirmed-locked on-chain.
+											status: TransactionStatus.Pending,
 											updatedAt: {
 												lt: new Date(
 													Date.now() -

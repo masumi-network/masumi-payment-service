@@ -340,7 +340,16 @@ async function processSingleRefundCollection(
 			nodeTxHash: newTxHash,
 		});
 	}
-	await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
+	// Non-fatal: the tx is already on-chain. A projection failure must NOT
+	// propagate to advancedRetry and rebuild+resubmit an already-broadcast tx.
+	try {
+		await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
+	} catch (projectionError) {
+		logger.warn('V2 collect-refund single-item: post-submit balance projection failed (non-fatal)', {
+			txHash: newTxHash,
+			error: projectionError instanceof Error ? projectionError.message : String(projectionError),
+		});
+	}
 	// Snapshot the wallet id before the closure — TS narrowing of
 	// request.SmartContractWallet doesn't survive into the arrow function.
 	const smartContractWalletId = request.SmartContractWallet.id;

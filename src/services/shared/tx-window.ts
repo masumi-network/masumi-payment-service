@@ -64,8 +64,16 @@ export function createTxWindow(
 		};
 	}
 
+	// `constrainAfterMs` is a HARD deadline the tx must end strictly before
+	// (Aiken `must_end_before(deadline)`). Anchor the upper bound just BELOW the
+	// deadline (minus a slot safety margin), then take the tighter of this and
+	// the default window via the `min` strategy. The previous formula ADDED
+	// `afterBufferMs` (+5min) and the slot buffer, pushing the anchor well past
+	// the deadline so `min` always kept the default (~now+5.5min) window — which
+	// then overshot any deadline nearer than that and was rejected on-chain,
+	// stranding near-deadline refunds / result submissions in manual action.
 	const constrainedInvalidAfter =
-		unixTimeToEnclosingSlot(constrainAfterMsNum + afterBufferMs, SLOT_CONFIG_NETWORK[network]) +
+		unixTimeToEnclosingSlot(constrainAfterMsNum, SLOT_CONFIG_NETWORK[network]) -
 		(options.constrainSlotBuffer ?? SERVICE_CONSTANTS.TRANSACTION.resultTimeSlotBuffer);
 
 	return {

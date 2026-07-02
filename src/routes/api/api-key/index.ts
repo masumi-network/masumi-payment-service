@@ -118,6 +118,9 @@ export const queryAPIKeyEndpointGet = adminAuthenticatedEndpointFactory.build({
 	output: getAPIKeySchemaOutput,
 	handler: async ({ input }: { input: z.infer<typeof getAPIKeySchemaInput> }) => {
 		const result = await prisma.apiKey.findMany({
+			// Exclude soft-deleted keys (delete sets deletedAt + status Revoked);
+			// otherwise revoked keys stay listed forever and occupy cursor pages.
+			where: { deletedAt: null },
 			cursor: input.cursorId ? { id: input.cursorId } : undefined,
 			take: input.take,
 			include: {

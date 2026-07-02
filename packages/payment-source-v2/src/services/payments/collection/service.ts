@@ -225,12 +225,37 @@ async function validateAndBuildItem(
 		throw new Error('Buyer wallet does not match buyer in contract');
 	}
 
-	// V2 has zero protocol fees: every input asset moves to the collection address as-is.
+	// V2 has zero protocol fees: every input asset moves to the collection address.
 	const remainingAssets: { [key: string]: Asset } = {};
 	for (const assetValue of utxo.output.amount) {
 		remainingAssets[assetValue.unit] = {
 			unit: assetValue.unit,
 			quantity: assetValue.quantity,
+		};
+	}
+
+	// The escrow UTxO holds RequestedFunds + collateralReturnLovelace. The
+	// collateral is returned to the buyer in its own output (collateralReturn
+	// below), so it MUST be subtracted from the seller's payout here. The Aiken
+	// validator requires the seller output to be at least
+	// `value_minus_lovelace(input.value, collateral_return_lovelace)` and the
+	// buyer output at least `collateral_return_lovelace` — both `>=`, so paying
+	// the seller the FULL input and ALSO returning collateral passes on-chain
+	// while silently funding the extra collateral (and fees) from the seller hot
+	// wallet, draining it on every collection.
+	const collateralReturnLovelace = request.collateralReturnLovelace;
+	if (collateralReturnLovelace > 0n) {
+		const lovelaceKey = Object.keys(remainingAssets).find((unit) => unit === '' || unit.toLowerCase() === 'lovelace');
+		if (lovelaceKey == null) {
+			throw new Error('Collateral return requested but escrow UTxO has no lovelace to deduct it from');
+		}
+		const sellerLovelace = BigInt(remainingAssets[lovelaceKey].quantity) - collateralReturnLovelace;
+		if (sellerLovelace < 0n) {
+			throw new Error('Collateral return exceeds locked lovelace');
+		}
+		remainingAssets[lovelaceKey] = {
+			unit: remainingAssets[lovelaceKey].unit,
+			quantity: sellerLovelace.toString(),
 		};
 	}
 
@@ -409,7 +434,18 @@ async function processSinglePaymentCollection(
 			nodeTxHash: newTxHash,
 		});
 	}
-	await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
+	// Non-fatal: the tx is already on-chain. A balance-projection failure (e.g. a
+	// transient DB error in the low-balance evaluation) must NOT propagate to the
+	// outer advancedRetry and trigger a rebuild+resubmit of an already-broadcast
+	// tx. Parity with the batch path, which wraps the identical call "(non-fatal)".
+	try {
+		await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
+	} catch (projectionError) {
+		logger.warn('V2 collection single-item: post-submit balance projection failed (non-fatal)', {
+			paymentRequestId: request.id,
+			error: projectionError instanceof Error ? projectionError.message : String(projectionError),
+		});
+	}
 	// Post-submit DB update: wrap in retryOnSerializationConflict so a transient
 	// serialization conflict (concurrent tx-sync writer that just saw this tx
 	// land, recovery cron, manual API touch) doesn't bubble up to the outer

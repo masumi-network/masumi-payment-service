@@ -3,7 +3,6 @@ import { Payment, Purchase } from '@/lib/api/generated';
 export type PaymentTx = Payment & {
   type: 'payment';
   RequestedFunds?: { amount: string; unit: string }[];
-  Amounts?: { amount: string; unit: string }[];
   unlockTime?: string | null;
   PaymentSource: Payment['PaymentSource'] & {
     id?: string;
@@ -13,7 +12,6 @@ export type PaymentTx = Payment & {
 export type PurchaseTx = Purchase & {
   type: 'purchase';
   PaidFunds?: { amount: string; unit: string }[];
-  Amounts?: { amount: string; unit: string }[];
   unlockTime?: string | null;
   PaymentSource: Purchase['PaymentSource'] & {
     id?: string;

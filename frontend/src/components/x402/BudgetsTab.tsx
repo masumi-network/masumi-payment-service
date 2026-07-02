@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm, Controller, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -182,7 +182,7 @@ export function BudgetsTab() {
       </div>
 
       <BudgetDialog
-        key={editing?.id ?? 'new'}
+        key={dialogOpen ? (editing?.id ?? 'new') : 'closed'}
         open={dialogOpen}
         editing={editing}
         onClose={() => setDialogOpen(false)}
@@ -207,12 +207,21 @@ export function BudgetDialog({
   onSaved: () => void;
 }) {
   const { apiClient } = useAppContext();
-  const { allApiKeys } = useApiKey();
+  const { allApiKeys, hasMore, loadMore, isFetchingNextPage } = useApiKey();
   const { networks } = useX402Networks();
   // Only load the wallet set while the form is open (it feeds the picker). Budgets fund
   // outbound payments, so only Purchasing wallets are selectable.
   const { wallets } = useX402Wallets(open, 'Purchasing');
   const [isSaving, setIsSaving] = useState(false);
+
+  // The shared API-key query is page-based (20 per page); the picker must offer every
+  // key, so page eagerly to exhaustion while the dialog is open (same idea as
+  // useX402Wallets eagerly paging for pickers).
+  useEffect(() => {
+    if (open && hasMore && !isFetchingNextPage) {
+      loadMore();
+    }
+  }, [open, hasMore, isFetchingNextPage, loadMore]);
 
   const {
     register,

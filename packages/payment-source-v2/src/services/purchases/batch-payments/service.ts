@@ -403,7 +403,21 @@ async function executeSpecificBatchPayment(
 
 	logger.info('Batching payments, purchase request initialized');
 
-	const { invalidBefore, invalidAfter } = createTxWindow(convertNetwork(paymentContract.network));
+	// Clamp the lock tx's upper bound to the EARLIEST payByTime in the batch. The
+	// default window reaches ~now+5.5min, but the scheduler admits requests with
+	// payByTime as close as now+57s; without this clamp a slow build or congested
+	// mempool lets the lock land after payByTime, and tx-sync then marks the
+	// purchase FundsOrDatumInvalid on both sides with funds already locked
+	// on-chain (unrecoverable). With the clamp the tx simply expires and is
+	// retried next tick instead. Every payByTime is guaranteed non-null by the
+	// loop above.
+	const minPayByTime = batchedRequests.reduce<bigint>(
+		(min, b) => (b.paymentRequest.payByTime! < min ? b.paymentRequest.payByTime! : min),
+		batchedRequests[0].paymentRequest.payByTime!,
+	);
+	const { invalidBefore, invalidAfter } = createTxWindow(convertNetwork(paymentContract.network), {
+		constrainAfterMs: minPayByTime,
+	});
 	unsignedTx.setNetwork(convertNetwork(paymentContract.network));
 	unsignedTx.txBuilder.invalidBefore(invalidBefore);
 	unsignedTx.txBuilder.invalidHereafter(invalidAfter);
@@ -681,7 +695,9 @@ export async function batchLatestPaymentEntriesV2() {
 								const purchaseRequests = [];
 								for (const purchaseRequest of paymentContract.PurchaseRequests) {
 									//if the purchase request times out in less than 5 minutes, we ignore it
-									const maxSubmitResultTime = Date.now() - 1000 * 60 * 5;
+									//(deadline is within the next 5 minutes or already past — the seller
+									//can never submit in time, so locking funds only forces a refund)
+									const maxSubmitResultTime = Date.now() + 1000 * 60 * 5;
 									if (purchaseRequest.inputHash == null) {
 										logger.info('Purchase request has no input hash, ignoring', {
 											purchaseRequest: purchaseRequest,

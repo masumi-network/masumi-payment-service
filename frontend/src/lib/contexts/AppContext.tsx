@@ -126,10 +126,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const queryClient = useQueryClient();
 
-  const { paymentSources } = usePaymentSourceExtendedAllWithParams({
-    apiClient,
-    apiKey,
-  });
+  const { paymentSources, isLoading: isLoadingPaymentSources } =
+    usePaymentSourceExtendedAllWithParams({
+      apiClient,
+      apiKey,
+    });
 
   const currentNetworkPaymentSources = useMemo(
     () => paymentSources.filter((ps) => ps.network === network),
@@ -177,6 +178,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   useEffect(() => {
+    // Before sign-in / while sources are loading, an empty list means "not
+    // loaded yet", NOT "none exist". Deciding then would wipe the persisted
+    // selection on every reload and silently switch the user to the default
+    // source once loading finishes.
+    if (!apiKey || isLoadingPaymentSources) {
+      return;
+    }
+
     if (currentNetworkPaymentSources.length === 0) {
       if (selectedPaymentSourceId) {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronizing localStorage-backed selection with available payment sources requires state updates
@@ -202,6 +211,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
     setSelectedPaymentSource(nextPaymentSource);
   }, [
+    apiKey,
+    isLoadingPaymentSources,
     selectedPaymentSourceId,
     currentNetworkPaymentSources,
     network,
@@ -220,8 +231,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [network]);
 
   // Invalidate payment-source-scoped queries whenever the active source changes.
-  // Query keys for transactions/wallets/etc. include the source id; without invalidation
-  // the UI can briefly render stale rows from the previous source.
+  // The wallets/agents keys include the source id (so they refetch on key change),
+  // but the transactions key does not — it must be invalidated explicitly.
   // Skip the initial render (and the null->null transition before sources hydrate)
   // so we don't mass-invalidate on every login / page-load when nothing has actually
   // changed. Only fire when transitioning from a previous non-null source to a
@@ -234,7 +245,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     ) {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['wallets'] });
-      queryClient.invalidateQueries({ queryKey: ['payment-source-extended'] });
     }
     previousSelectedPaymentSourceIdRef.current = selectedPaymentSourceId;
   }, [selectedPaymentSourceId, queryClient]);
@@ -242,6 +252,44 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const showError = useCallback((error: { code?: number; message: string; details?: unknown }) => {
     setError(error);
   }, []);
+
+  // Stable identity: _app.tsx's init effect depends on this function, and an
+  // inline definition re-triggered the full health/auth startup sequence on
+  // every provider re-render. The ref (kept in sync below) lets the callback
+  // read the current key without depending on it.
+  const apiKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    apiKeyRef.current = apiKey;
+  }, [apiKey]);
+  const updateApiKey = useCallback(
+    (newApiKey: string | null) => {
+      if (newApiKey === apiKeyRef.current) {
+        return;
+      }
+      apiKeyRef.current = newApiKey;
+      setApiKey(newApiKey);
+      if (newApiKey) {
+        setApiClient(
+          createClient({
+            headers: { token: newApiKey },
+            baseURL: process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL,
+          }),
+        );
+        setAuthorized(true);
+      } else {
+        setAuthorized(false);
+        setApiClient(
+          createClient({
+            headers: { token: 'invalid-api' },
+            baseURL: process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL,
+          }),
+        );
+      }
+      // Drop all cached query results so subsequent fetches use the new client/credentials.
+      queryClient.removeQueries();
+    },
+    [queryClient],
+  );
 
   const signOut = useCallback(() => {
     setApiKey(null);
@@ -270,57 +318,58 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem('masumi_acknowledged_wallet_alerts');
   }, [setIsSetupMode, setNetwork, setActiveRail, setSelectedX402ChainId]);
 
+  // Memoized so consumers only re-render when a value they read actually
+  // changes; all setters above have stable identities.
+  const contextValue = useMemo(
+    () => ({
+      selectedPaymentSource,
+      activeRail,
+      setActiveRail,
+      selectedX402ChainId,
+      setSelectedX402ChainId,
+      apiKey,
+      updateApiKey,
+      setAuthorized,
+      authorized,
+      network,
+      setNetwork: setNetworkWithReset,
+      showError,
+      apiClient,
+      setApiClient,
+      selectedPaymentSourceId,
+      setSelectedPaymentSourceId: setSelectedPaymentSourceIdAndPersist,
+      signOut,
+      isChangingNetwork,
+      isSetupMode,
+      setIsSetupMode,
+      setupWizardStep,
+      setSetupWizardStep,
+    }),
+    [
+      selectedPaymentSource,
+      activeRail,
+      setActiveRail,
+      selectedX402ChainId,
+      setSelectedX402ChainId,
+      apiKey,
+      updateApiKey,
+      authorized,
+      network,
+      setNetworkWithReset,
+      showError,
+      apiClient,
+      selectedPaymentSourceId,
+      setSelectedPaymentSourceIdAndPersist,
+      signOut,
+      isChangingNetwork,
+      isSetupMode,
+      setIsSetupMode,
+      setupWizardStep,
+    ],
+  );
+
   return (
-    <AppContext.Provider
-      value={{
-        selectedPaymentSource,
-        activeRail,
-        setActiveRail,
-        selectedX402ChainId,
-        setSelectedX402ChainId,
-        apiKey,
-        updateApiKey: (newApiKey: string | null) => {
-          if (newApiKey === apiKey) {
-            return;
-          }
-          setApiKey(newApiKey);
-          if (newApiKey) {
-            setApiClient(
-              createClient({
-                headers: { token: newApiKey },
-                baseURL: process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL,
-              }),
-            );
-            setAuthorized(true);
-          } else {
-            setAuthorized(false);
-            setApiClient(
-              createClient({
-                headers: { token: 'invalid-api' },
-                baseURL: process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL,
-              }),
-            );
-          }
-          // Drop all cached query results so subsequent fetches use the new client/credentials.
-          queryClient.removeQueries();
-        },
-        setAuthorized,
-        authorized,
-        network,
-        setNetwork: setNetworkWithReset,
-        showError,
-        apiClient,
-        setApiClient,
-        selectedPaymentSourceId,
-        setSelectedPaymentSourceId: setSelectedPaymentSourceIdAndPersist,
-        signOut,
-        isChangingNetwork,
-        isSetupMode,
-        setIsSetupMode,
-        setupWizardStep,
-        setSetupWizardStep,
-      }}
-    >
+    <AppContext.Provider value={contextValue}>
       {children}
       <ErrorDialog open={!!error} onClose={() => setError(null)} error={error || { message: '' }} />
     </AppContext.Provider>

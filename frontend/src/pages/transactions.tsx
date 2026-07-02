@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 
-import { cn, formatFundUnit } from '@/lib/utils';
+import { cn, formatAssetAmount } from '@/lib/utils';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
 import Head from 'next/head';
@@ -80,17 +80,6 @@ export default function Transactions() {
 
   // Unfiltered call for tab badge counts (reuses dashboard cache when no args); only this instance updates localStorage
   const { transactions: allTransactionsForCounts, markAllAsRead } = useTransactions();
-
-  // Format price helper function
-  const formatPrice = (amount: string | undefined) => {
-    if (!amount) return '—';
-    const numericAmount = parseInt(amount) / 1000000;
-    return new Intl.NumberFormat(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-      useGrouping: true,
-    }).format(numericAmount);
-  };
 
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [showDownloadDialog, setShowDownloadDialog] = useState(false);
@@ -240,26 +229,30 @@ export default function Transactions() {
         'Fee rate (%)',
       ];
       const rows = transactions.map((transaction) => {
-        const feeRatePermille = selectedPaymentSource?.feeRatePermille;
+        // The list is filtered by network + source type only, so rows can
+        // belong to OTHER sources than the selected one. Only stamp the
+        // selected source's fee rate onto rows that actually belong to it.
+        const feeRatePermille =
+          transaction.PaymentSource?.id === selectedPaymentSource?.id
+            ? selectedPaymentSource?.feeRatePermille
+            : undefined;
         const feeRateDisplay =
           typeof feeRatePermille === 'number' ? (feeRatePermille / 10).toFixed(1) + '%' : 'Unknown';
-        const paymentAmounts = [];
+        const paymentAmounts: string[] = [];
         if (transaction.type === 'payment' && transaction.RequestedFunds) {
           paymentAmounts.push(
-            ...transaction.RequestedFunds.map((fund) => ({
-              amount: formatPrice(fund.amount),
-              unit: formatFundUnit(fund.unit, network),
-            })),
+            ...transaction.RequestedFunds.map((fund) =>
+              formatAssetAmount(fund.amount, fund.unit, network),
+            ),
           );
         } else if (transaction.type === 'purchase' && transaction.PaidFunds) {
           paymentAmounts.push(
-            ...transaction.PaidFunds.map((fund) => ({
-              amount: formatPrice(fund.amount),
-              unit: formatFundUnit(fund.unit, network),
-            })),
+            ...transaction.PaidFunds.map((fund) =>
+              formatAssetAmount(fund.amount, fund.unit, network),
+            ),
           );
         }
-        const amount = paymentAmounts.map((amount) => `${amount.amount} ${amount.unit}`).join(', ');
+        const amount = paymentAmounts.join(', ');
 
         const hash = transaction.CurrentTransaction?.txHash || '—';
         const agentIdentifier = transaction.agentIdentifier?.trim() || '—';
@@ -289,7 +282,7 @@ export default function Transactions() {
         `"${String(value ?? '').replace(/"/g, '""')}"`;
       return [headers, ...rows].map((row) => row.map(escapeCsvField).join(',')).join('\n');
     },
-    [selectedPaymentSource?.feeRatePermille, network],
+    [selectedPaymentSource?.id, selectedPaymentSource?.feeRatePermille, network],
   );
 
   // Download CSV file
@@ -304,6 +297,7 @@ export default function Transactions() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -476,25 +470,17 @@ export default function Transactions() {
                       </td>
                       <td className="p-4">
                         {transaction.type === 'payment' && transaction.RequestedFunds?.length
-                          ? transaction.RequestedFunds.map((fund, index) => {
-                              const amount = formatPrice(fund.amount);
-                              const unit = formatFundUnit(fund.unit, network);
-                              return (
-                                <div key={index} className="text-sm">
-                                  {amount} {unit}
-                                </div>
-                              );
-                            })
+                          ? transaction.RequestedFunds.map((fund, index) => (
+                              <div key={index} className="text-sm">
+                                {formatAssetAmount(fund.amount, fund.unit, network)}
+                              </div>
+                            ))
                           : transaction.type === 'purchase' && transaction.PaidFunds?.length
-                            ? transaction.PaidFunds.map((fund, index) => {
-                                const amount = formatPrice(fund.amount);
-                                const unit = formatFundUnit(fund.unit, network);
-                                return (
-                                  <div key={index} className="text-sm">
-                                    {amount} {unit}
-                                  </div>
-                                );
-                              })
+                            ? transaction.PaidFunds.map((fund, index) => (
+                                <div key={index} className="text-sm">
+                                  {formatAssetAmount(fund.amount, fund.unit, network)}
+                                </div>
+                              ))
                             : '—'}
                       </td>
                       <td className="p-4">

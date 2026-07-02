@@ -23,13 +23,10 @@ export const utxoAmountSchema = z
 			.describe(
 				'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
 			),
-		quantity: z.coerce
-			.number()
-			.int()
-			.min(0)
-			.max(100000000000000)
+		quantity: z
+			.string()
 			.describe(
-				'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
+				'The quantity of the asset in its smallest unit, as a decimal string (BigInt-safe; native-token and whale ADA quantities routinely exceed 2^53). For ADA, this is lovelace (1 ADA = 10000000 lovelace)',
 			),
 	})
 	.openapi('UtxoAmount');
@@ -84,7 +81,7 @@ export const queryUTXOEndpointGet = readAuthenticatedEndpointFactory.build({
 					address: utxo.address,
 					Amounts: utxo.amount.map((amount) => ({
 						unit: amount.unit,
-						quantity: parseInt(amount.quantity),
+						quantity: amount.quantity,
 					})),
 					outputIndex: utxo.output_index,
 					block: utxo.block,

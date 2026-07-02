@@ -158,14 +158,20 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
   ]);
 
   useEffect(() => {
+    // Cancellation guards a run that outlives this effect (deps changed,
+    // unmount): a stale run finishing after signOut must not re-authorize
+    // the user with the key they just signed out of.
+    let cancelled = false;
+
     const init = async () => {
       const response = await handleApiCall(() => getHealth({ client: apiClient }), {
         onError: (error: any) => {
           console.error('Health check failed:', error);
-          setIsHealthy(false);
+          if (!cancelled) setIsHealthy(false);
         },
         errorMessage: 'Health check failed',
       });
+      if (cancelled) return;
 
       if (!response) {
         setIsHealthy(false);
@@ -188,11 +194,17 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
       const apiKeyStatus = await handleApiCall(() => getApiKeyStatus({ client: apiClient }), {
         onError: (error: any) => {
           console.error('API key status check failed:', error);
-          setIsHealthy(true);
-          setAuthorized(false);
+          if (!cancelled) {
+            setIsHealthy(true);
+            setAuthorized(false);
+          }
         },
         errorMessage: 'API key validation failed',
       });
+      // Re-read the stored key: signOut() clears it without changing this
+      // effect's deps, and authorizing from the stale value would sign the
+      // user straight back in.
+      if (cancelled || localStorage.getItem('payment_api_key') !== hexedKey) return;
 
       if (!apiKeyStatus) {
         setIsHealthy(true);
@@ -214,6 +226,10 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     };
 
     init();
+
+    return () => {
+      cancelled = true;
+    };
   }, [apiClient, signOut, setAuthorized, updateApiKey]);
 
   // Sync network from URL when query.network changes (e.g. after shallow replace on setup page).

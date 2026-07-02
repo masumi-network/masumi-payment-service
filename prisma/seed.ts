@@ -377,8 +377,24 @@ export const seed = async (prisma: PrismaClient) => {
 					cooldownTimePreprod,
 					Network.Preprod,
 				);
+				if (smartContractAddress != DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_V2_PREPROD) {
+					throw new Error(
+						'V2 smart contract address is changed expected: ' +
+							DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_V2_PREPROD +
+							' got: ' +
+							smartContractAddress,
+					);
+				}
 				const latestTxHash = await queryLatestTxHash(blockfrostApiKeyPreprod, smartContractAddress, 'preprod V2');
 				const { policyId } = await getRegistryScriptV2(Network.Preprod);
+				if (policyId != DEFAULTS.REGISTRY_POLICY_ID_V2_PREPROD) {
+					throw new Error(
+						'V2 registry policyId is changed expected: ' +
+							DEFAULTS.REGISTRY_POLICY_ID_V2_PREPROD +
+							' got: ' +
+							policyId,
+					);
+				}
 				const purchasingUnusedAddress = (await purchasingWallet.getUnusedAddresses())[0];
 				const sellingUnusedAddress = (await sellingWallet.getUnusedAddresses())[0];
 
@@ -594,6 +610,7 @@ export const seed = async (prisma: PrismaClient) => {
 					'Error when seeding mainnet, ensure you succeed with seeding, the following error occurred: ',
 					error,
 				);
+				throw error;
 			}
 
 		// V2 mainnet seeding is opt-in via dedicated mnemonic env vars. Mirror
@@ -636,8 +653,24 @@ export const seed = async (prisma: PrismaClient) => {
 					cooldownTimeMainnet,
 					Network.Mainnet,
 				);
+				if (smartContractAddress != DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_V2_MAINNET) {
+					throw new Error(
+						'V2 smart contract address is changed expected: ' +
+							DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_V2_MAINNET +
+							' got: ' +
+							smartContractAddress,
+					);
+				}
 				const latestTxHash = await queryLatestTxHash(blockfrostApiKeyMainnet, smartContractAddress, 'mainnet V2');
 				const { policyId } = await getRegistryScriptV2(Network.Mainnet);
+				if (policyId != DEFAULTS.REGISTRY_POLICY_ID_V2_MAINNET) {
+					throw new Error(
+						'V2 registry policyId is changed expected: ' +
+							DEFAULTS.REGISTRY_POLICY_ID_V2_MAINNET +
+							' got: ' +
+							policyId,
+					);
+				}
 				const purchasingUnusedAddress = (await purchasingWallet.getUnusedAddresses())[0];
 				const sellingUnusedAddress = (await sellingWallet.getUnusedAddresses())[0];
 
