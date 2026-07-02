@@ -6,6 +6,7 @@ const mockX402SettlementFindUnique = jest.fn() as jest.Mock<any>;
 const mockX402SettlementUpsert = jest.fn() as jest.Mock<any>;
 const mockX402PaymentAttemptCreate = jest.fn() as jest.Mock<any>;
 const mockX402PaymentAttemptUpdate = jest.fn() as jest.Mock<any>;
+const mockX402PaymentAttemptFindFirst = jest.fn() as jest.Mock<any>;
 const mockX402EvmWalletFindUnique = jest.fn() as jest.Mock<any>;
 const mockApiKeyFindUnique = jest.fn() as jest.Mock<any>;
 const mockX402EvmWalletCreate = jest.fn() as jest.Mock<any>;
@@ -21,6 +22,7 @@ class MockPrismaClientKnownRequestError extends Error {
 	}
 }
 const mockBudgetUpdateMany = jest.fn() as jest.Mock<any>;
+const mockBudgetRefundUpdateMany = jest.fn() as jest.Mock<any>;
 const mockBudgetUpdate = jest.fn() as jest.Mock<any>;
 const mockBudgetUpsert = jest.fn() as jest.Mock<any>;
 const mockTxPaymentAttemptCreate = jest.fn() as jest.Mock<any>;
@@ -102,6 +104,7 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 		x402PaymentAttempt: {
 			create: mockX402PaymentAttemptCreate,
 			update: mockX402PaymentAttemptUpdate,
+			findFirst: mockX402PaymentAttemptFindFirst,
 		},
 		x402EvmWallet: {
 			findUnique: mockX402EvmWalletFindUnique,
@@ -111,6 +114,7 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 		x402WalletBudget: {
 			findFirst: mockBudgetFindFirst,
 			update: mockBudgetUpdate,
+			updateMany: mockBudgetRefundUpdateMany,
 			upsert: mockBudgetUpsert,
 			findMany: jest.fn(),
 		},
@@ -290,6 +294,8 @@ describe('x402 service helpers', () => {
 		mockCreatePaymentPayload.mockResolvedValue(paymentPayload);
 		mockBudgetFindFirst.mockResolvedValue({ id: 'budget-1' });
 		mockBudgetUpdateMany.mockResolvedValue({ count: 1 });
+		mockBudgetRefundUpdateMany.mockResolvedValue({ count: 1 });
+		mockX402PaymentAttemptFindFirst.mockResolvedValue(null);
 		mockBudgetUpdate.mockResolvedValue({ id: 'budget-1' });
 		mockBudgetUpsert.mockResolvedValue({
 			id: 'budget-1',
@@ -837,8 +843,8 @@ describe('x402 service helpers', () => {
 					data: expect.objectContaining({ status: 'Failed', errorReason: 'x402_sign_failed' }),
 				}),
 			);
-			expect(mockBudgetUpdate).toHaveBeenCalledWith({
-				where: { id: 'budget-1' },
+			expect(mockBudgetRefundUpdateMany).toHaveBeenCalledWith({
+				where: { id: 'budget-1', spentAmount: { gte: source.amount } },
 				data: {
 					remainingAmount: { increment: source.amount },
 					spentAmount: { decrement: source.amount },
@@ -860,8 +866,8 @@ describe('x402 service helpers', () => {
 			).rejects.toMatchObject({ status: 400 });
 
 			// Budget was reserved then refunded (refund runs before the best-effort status update).
-			expect(mockBudgetUpdate).toHaveBeenCalledWith({
-				where: { id: 'budget-1' },
+			expect(mockBudgetRefundUpdateMany).toHaveBeenCalledWith({
+				where: { id: 'budget-1', spentAmount: { gte: source.amount } },
 				data: {
 					remainingAmount: { increment: source.amount },
 					spentAmount: { decrement: source.amount },

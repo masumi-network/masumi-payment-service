@@ -70,8 +70,12 @@ function validateDeregistrationRequest(request: { agentIdentifier: string | null
  * transaction would roll the failure stamp back too and invite the worker to
  * retry an error it already classified as terminal.
  */
-async function markRequestFailed(request: InboxRequestRecord, error: unknown): Promise<void> {
-	const walletToUnlock = request.DeregistrationHotWallet ?? request.SmartContractWallet;
+async function markRequestFailed(
+	request: InboxRequestRecord,
+	error: unknown,
+	options: { unlockWallet?: boolean } = {},
+): Promise<void> {
+	const unlockWallet = options.unlockWallet ?? true;
 	logger.error(`Error deregistering V2 inbox agent ${request.id}`, { error });
 	await prisma.inboxAgentRegistrationRequest.update({
 		where: { id: request.id },
@@ -80,6 +84,14 @@ async function markRequestFailed(request: InboxRequestRecord, error: unknown): P
 			error: interpretBlockchainError(error),
 		},
 	});
+	// Skip the wallet unlock in the per-item validation loop: the shared wallet
+	// lock must survive while the batch keeps building the remaining validated
+	// items (terminal paths free it). Releasing it mid-batch lets a concurrent
+	// service grab the wallet and submit a conflicting tx from the same UTxO set.
+	if (!unlockWallet) {
+		return;
+	}
+	const walletToUnlock = request.DeregistrationHotWallet ?? request.SmartContractWallet;
 	await prisma.hotWallet.update({
 		where: { id: walletToUnlock.id, deletedAt: null },
 		data: { lockedAt: null },
@@ -295,7 +307,8 @@ export async function deRegisterInboxAgentV2() {
 					try {
 						validated.push(validateAndBuildItem(request, utxos));
 					} catch (error) {
-						await markRequestFailed(request, error);
+						// Mid-batch: keep the shared wallet lock (see markRequestFailed).
+						await markRequestFailed(request, error, { unlockWallet: false });
 					}
 				}
 

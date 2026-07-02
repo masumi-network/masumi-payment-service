@@ -632,6 +632,31 @@ export async function batchLatestPaymentEntriesV1() {
 						}
 					}
 
+					// Release any candidate wallet that ended up WITHOUT a pairing (no
+					// batchable request fit it — insufficient funds, hot-wallet-limit
+					// mismatch, or an empty remainder). Every candidate wallet was locked
+					// in the Serializable claim above; the per-pairing and outer-catch
+					// unlocks only free PAIRED wallets, so without this an unfundable
+					// wallet leaks its lock every tick until the stale-lock reaper. Paired
+					// wallets are excluded by id (their PendingTransaction is created later
+					// inside executeSpecificBatchPayment), and the pendingTransactionId
+					// guard avoids touching any wallet already carrying an in-flight tx.
+					const pairedWalletIds = new Set(walletPairings.map((pairing) => pairing.walletId));
+					const unpairedWalletIds = potentialWallets
+						.map((candidateWallet) => candidateWallet.id)
+						.filter((walletId) => !pairedWalletIds.has(walletId));
+					if (unpairedWalletIds.length > 0) {
+						await prisma.hotWallet.updateMany({
+							where: {
+								id: { in: unpairedWalletIds },
+								deletedAt: null,
+								type: HotWalletType.Purchasing,
+								pendingTransactionId: null,
+							},
+							data: { lockedAt: null },
+						});
+					}
+
 					if (walletPairings.length == 0) {
 						logger.info('No purchase requests with funds found, skipping');
 						return;

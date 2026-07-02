@@ -113,7 +113,17 @@ type ValidatedCollectionItem = {
 
 const mutex = new Mutex();
 
-async function markRequestFailed(request: PaymentRequestWithRelations, error: unknown): Promise<void> {
+async function markRequestFailed(
+	request: PaymentRequestWithRelations,
+	error: unknown,
+	options: { unlockWallet?: boolean } = {},
+): Promise<void> {
+	// unlockWallet=true only when this failure OWNS the wallet lock (single-item
+	// path). In the batch validation loop the shared wallet lock must survive so
+	// a concurrent service can't lock the same wallet and submit a conflicting tx
+	// from the same UTxO set while this batch keeps building the remaining items;
+	// the batch's terminal paths release it instead.
+	const unlockWallet = options.unlockWallet ?? true;
 	logger.error(`Error collecting V2 payments ${request.id}`, { error });
 	await prisma.paymentRequest.update({
 		where: { id: request.id },
@@ -123,7 +133,7 @@ async function markRequestFailed(request: PaymentRequestWithRelations, error: un
 				errorType: PaymentErrorType.Unknown,
 				errorNote: 'Collecting payments failed: ' + interpretBlockchainError(error),
 			}),
-			SmartContractWallet: { update: { lockedAt: null } },
+			...(unlockWallet ? { SmartContractWallet: { update: { lockedAt: null } } } : {}),
 		},
 	});
 }
@@ -632,7 +642,8 @@ async function processWalletBatch(
 					blockchainIdentifier: request.blockchainIdentifier,
 					error: error instanceof Error ? { message: error.message, name: error.name } : error,
 				});
-				await markRequestFailed(request, error);
+				// Mid-batch: keep the shared wallet lock (see markRequestFailed).
+				await markRequestFailed(request, error, { unlockWallet: false });
 			}
 		}
 	}

@@ -435,16 +435,41 @@ async function executeSpecificBatchPayment(
 	// returns — at that point the hash is baked into the signed body and
 	// later global mutations cannot affect it. `submitTx` is outside the
 	// critical section.
-	const { completeTx, signedTx } = await withMeshCostModelLock(rpcApiKey, async () => {
-		await syncMeshCostModelsFromChainV2(rpcApiKey);
-		const completeTx = await unsignedTx.build();
-		logger.info('Batching payments, complete tx built');
-		const signedTx = await wallet.signTx(completeTx);
-		logger.info('Batching payments, tx signed');
-		return { completeTx, signedTx };
-	});
-
 	const requestIds = batchedRequests.map((b) => b.paymentRequest.id);
+	let completeTx: string;
+	let signedTx: string;
+	try {
+		const built = await withMeshCostModelLock(rpcApiKey, async () => {
+			await syncMeshCostModelsFromChainV2(rpcApiKey);
+			const completeTx = await unsignedTx.build();
+			logger.info('Batching payments, complete tx built');
+			const signedTx = await wallet.signTx(completeTx);
+			logger.info('Batching payments, tx signed');
+			return { completeTx, signedTx };
+		});
+		completeTx = built.completeTx;
+		signedTx = built.signedTx;
+	} catch (buildError) {
+		// build()/signTx run BEFORE submitTx and BEFORE intendedTxHash is
+		// recorded — a throw here (insufficient balance, cost-model sync 5xx,
+		// serialization error) means the tx was NEVER broadcast. Classify as
+		// pre-submit-failed for an immediate revert+unlock. Without this the
+		// throw escapes to the outer aggregator's `catch (uncaught)`, which
+		// treats it as submit-ambiguous and strands the wallet a full ~15min
+		// timeout waiting on reconciliation of a tx that does not exist.
+		logger.warn('batch-payments build/sign failed pre-broadcast; reverting (never submitted)', {
+			sharedTxId,
+			requestIds,
+			error: buildError instanceof Error ? buildError.message : buildError,
+		});
+		return {
+			status: 'pre-submit-failed',
+			walletId,
+			sharedTxId,
+			requestIds,
+			error: buildError,
+		};
+	}
 
 	// Funding double-lock guarantee (see #2 + #7 design): compute the
 	// deterministic txHash + invalid_hereafter slot from the SIGNED txBody and
@@ -553,13 +578,25 @@ async function executeSpecificBatchPayment(
 		};
 	}
 
-	await walletLowBalanceMonitorService.evaluateProjectedHotWalletById({
-		hotWalletId: walletId,
-		walletAddress: walletPairing.changeAddress,
-		walletUtxos: walletPairing.utxos,
-		unsignedTx: completeTx,
-		checkSource: 'submission',
-	});
+	// Non-fatal: the tx is already on chain (submitTx returned a matching hash).
+	// A balance-monitor throw here must NOT propagate to the outer aggregator's
+	// `catch (uncaught)` and get misclassified as submit-ambiguous — the submit
+	// already succeeded and the txHash is about to be recorded below.
+	try {
+		await walletLowBalanceMonitorService.evaluateProjectedHotWalletById({
+			hotWalletId: walletId,
+			walletAddress: walletPairing.changeAddress,
+			walletUtxos: walletPairing.utxos,
+			unsignedTx: completeTx,
+			checkSource: 'submission',
+		});
+	} catch (balanceError) {
+		logger.warn('batch-payments post-submit balance monitor failed (non-fatal; tx already on chain)', {
+			walletId,
+			txHash,
+			error: balanceError instanceof Error ? balanceError.message : balanceError,
+		});
+	}
 
 	logger.info('Batching payments, tx submitted', {
 		txHash: txHash,
