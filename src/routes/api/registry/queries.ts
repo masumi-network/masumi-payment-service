@@ -40,7 +40,9 @@ function buildRegistryStateFilter(filterStatus?: FilterStatus): RegistrationStat
 	if (filterStatus === FilterStatus.Pending) {
 		return [
 			RegistrationState.RegistrationRequested,
+			RegistrationState.RegistrationInitiated,
 			RegistrationState.DeregistrationRequested,
+			RegistrationState.DeregistrationInitiated,
 			RegistrationState.UpdateRequested,
 			RegistrationState.UpdateInitiated,
 		];

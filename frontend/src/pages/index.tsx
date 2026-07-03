@@ -15,7 +15,7 @@ import {
   PlusCircle,
 } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
-import { cn, shortenAddress } from '@/lib/utils';
+import { cn, formatAssetAmount, formatSixDecimalAmount, shortenAddress } from '@/lib/utils';
 import { useState, useMemo } from 'react';
 import { RegistryEntry } from '@/lib/api/generated';
 import { useAgents } from '@/lib/queries/useAgents';
@@ -39,14 +39,14 @@ import { WalletTypeBadge } from '@/components/ui/wallet-type-badge';
 import { AIAgentDetailsDialog } from '@/components/ai-agents/AIAgentDetailsDialog';
 import { WalletDetailsDialog } from '@/components/wallets/WalletDetailsDialog';
 import { CopyButton } from '@/components/ui/copy-button';
-import { TESTUSDM_CONFIG, getUsdmConfig, getUsdcxConfig } from '@/lib/constants/defaultWallets';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { StatCard } from '@/components/ui/stat-card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { WelcomeBanner } from '@/components/ui/welcome-banner';
 import { SetupV2Banner } from '@/components/setup/SetupV2Banner';
-import { useMigrationStatus } from '@/lib/hooks/useMigrationStatus';
 import { MigrateAgentsDialog } from '@/components/ai-agents/MigrateAgentsDialog';
+import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
+import { isV2PaymentSource } from '@/lib/payment-source-type';
 
 type AIAgent = RegistryEntry;
 
@@ -58,7 +58,8 @@ export const getStaticProps: GetStaticProps = async () => {
 
 export default function Overview() {
   const { network, selectedPaymentSource } = useAppContext();
-  const { unmigratedCount, canMigrate } = useMigrationStatus();
+  const { paymentSources } = usePaymentSourceExtendedAll();
+  const [isMigrationHintDismissed, setIsMigrationHintDismissed] = useState(false);
 
   const queryClient = useQueryClient();
   const {
@@ -84,6 +85,16 @@ export default function Overview() {
   const totalBalance = useMemo(() => totalBalanceValue || '0', [totalBalanceValue]);
   const totalUsdcxBalance = useMemo(() => totalUsdcxBalanceValue || '0', [totalUsdcxBalanceValue]);
   const isLoadingBalances = isLoadingWallets;
+  const currentNetworkPaymentSources = useMemo(
+    () => paymentSources.filter((source) => source.network === network),
+    [paymentSources, network],
+  );
+  const selectedSourceIsV1 = selectedPaymentSource
+    ? !isV2PaymentSource(selectedPaymentSource)
+    : false;
+  const canMigrateFromSelectedSource =
+    selectedSourceIsV1 && currentNetworkPaymentSources.some(isV2PaymentSource);
+  const showMigrationHint = canMigrateFromSelectedSource && !isMigrationHintDismissed;
 
   // Refetch functions for after mutations
   const refetchAgents = () => {
@@ -110,11 +121,16 @@ export default function Overview() {
     useState<WalletWithBalance | null>(null);
   const [isMigrateDialogOpen, setMigrateDialogOpen] = useState(false);
 
+  // Returns the grouped USD amount, or null when the CoinGecko rate is
+  // unavailable so the caller can render a sensible fallback. Number math is
+  // fine here — this is an approximate fiat estimate, not a ledger value.
   const formatUsdValue = (adaAmount: string) => {
-    if (!rate || !adaAmount) return '—';
-    const ada = parseInt(adaAmount) / 1000000;
-    return `≈ $${(ada * rate).toFixed(2)}`;
+    if (!rate || !adaAmount) return null;
+    const ada = Number(adaAmount) / 1000000;
+    return formatBalance((ada * rate).toFixed(2));
   };
+
+  const totalBalanceUsd = formatUsdValue(totalBalance);
 
   return (
     <>
@@ -144,19 +160,29 @@ export default function Overview() {
 
             <SetupV2Banner onMigrateClick={() => setMigrateDialogOpen(true)} />
 
-            {canMigrate && unmigratedCount > 0 && (
+            {showMigrationHint && (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm dark:border-amber-900/50 dark:bg-amber-950/20">
                 <div className="flex items-center gap-2 text-amber-950 dark:text-amber-100">
                   <ArrowUpRight className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" />
                   <span>
-                    <span className="font-medium">{unmigratedCount}</span>{' '}
-                    {unmigratedCount === 1 ? 'agent is' : 'agents are'} still on V1 and not yet
-                    migrated to V2.
+                    This V1 payment source may have agents to migrate. Open migration to scan for V1
+                    agents and compare them with V2.
                   </span>
                 </div>
-                <Button size="sm" onClick={() => setMigrateDialogOpen(true)} className="shrink-0">
-                  Migrate now
-                </Button>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button size="sm" onClick={() => setMigrateDialogOpen(true)}>
+                    Scan and migrate
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setIsMigrationHintDismissed(true)}
+                    className="text-amber-950/70 hover:bg-amber-100 hover:text-amber-950 dark:text-amber-100/70 dark:hover:bg-amber-900/30 dark:hover:text-amber-100"
+                  >
+                    Dismiss
+                  </Button>
+                </div>
               </div>
             )}
 
@@ -195,7 +221,7 @@ export default function Overview() {
                   >
                     <div className="text-2xl font-semibold flex items-center gap-1">
                       <span className="text-xs font-normal text-muted-foreground">$</span>
-                      {formatBalance((parseInt(totalUsdcxBalance) / 1000000).toFixed(2)) ?? ''}
+                      {formatSixDecimalAmount(totalUsdcxBalance)}
                     </div>
                   </StatCard>
                 )}
@@ -210,14 +236,11 @@ export default function Overview() {
                   >
                     <div className="flex flex-col gap-2">
                       <div className="text-2xl font-semibold flex items-center gap-1">
-                        {formatBalance((parseInt(totalBalance) / 1000000).toFixed(2)?.toString()) ??
-                          ''}
+                        {formatSixDecimalAmount(totalBalance)}
                         <span className="text-xs font-normal text-muted-foreground">ADA</span>
                       </div>
                       <div className="text-sm text-muted-foreground">
-                        {isLoadingRate && !totalUsdcxBalance
-                          ? '...'
-                          : `~ $${formatBalance(formatUsdValue(totalBalance))}`}
+                        {isLoadingRate ? '...' : totalBalanceUsd ? `~ $${totalBalanceUsd}` : '—'}
                       </div>
                     </div>
                   </StatCard>
@@ -295,18 +318,8 @@ export default function Overview() {
                                 <span className="text-xs font-normal text-muted-foreground">
                                   {(() => {
                                     const price = agent.AgentPricing.Pricing[0];
-                                    const unit = price.unit;
-                                    if (unit === 'free') return 'Free';
-                                    const formatted = (parseInt(price.amount) / 1_000_000).toFixed(
-                                      2,
-                                    );
-                                    if (unit === 'lovelace' || !unit) return `${formatted} ADA`;
-                                    if (unit === getUsdcxConfig(network).fullAssetId)
-                                      return `${formatted} USDCx`;
-                                    if (unit === getUsdmConfig(network).fullAssetId)
-                                      return `${formatted} USDM`;
-                                    if (unit === TESTUSDM_CONFIG.unit) return `${formatted} tUSDM`;
-                                    return `${formatted} ${unit}`;
+                                    if (price.unit === 'free') return 'Free';
+                                    return formatAssetAmount(price.amount, price.unit, network);
                                   })()}
                                 </span>
                               </>
@@ -447,11 +460,9 @@ export default function Overview() {
                                       <Spinner className="h-3 w-3" />
                                     ) : (
                                       <>
-                                        {formatBalance(
-                                          (parseInt(wallet.balance || '0') / 1000000)
-                                            .toFixed(2)
-                                            ?.toString(),
-                                        )}{' '}
+                                        {wallet.isBalanceUnavailable
+                                          ? '—'
+                                          : formatSixDecimalAmount(wallet.balance || '0')}{' '}
                                         <span className="text-xs text-muted-foreground">ADA</span>
                                       </>
                                     )}
@@ -459,11 +470,9 @@ export default function Overview() {
                                   <div className="text-xs flex items-center gap-1">
                                     {!wallet.isLoadingBalance && (
                                       <>
-                                        {formatBalance(
-                                          (parseInt(wallet.usdcxBalance || '0') / 1000000)
-                                            .toFixed(2)
-                                            ?.toString(),
-                                        )}{' '}
+                                        {wallet.isBalanceUnavailable
+                                          ? '—'
+                                          : formatSixDecimalAmount(wallet.usdcxBalance || '0')}{' '}
                                         <span className="text-xs text-muted-foreground">
                                           {network === 'Mainnet' ? 'USDCx' : 'tUSDM'}
                                         </span>

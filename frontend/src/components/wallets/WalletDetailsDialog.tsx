@@ -24,7 +24,6 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
   deleteWalletLowBalance,
-  getUtxos,
   getWallet,
   patchWallet,
   patchWalletLowBalance,
@@ -46,6 +45,7 @@ import { extractApiErrorMessage } from '@/lib/api-error';
 import { WalletLink } from '@/components/ui/wallet-link';
 import { Spinner } from '@/components/ui/spinner';
 import formatBalance from '@/lib/formatBalance';
+import { convertBaseUnitsToDecimal } from '@/lib/convertDecimalToBaseUnits';
 import { useRate } from '@/lib/hooks/useRate';
 import { SwapDialog } from '@/components/wallets/SwapDialog';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
@@ -59,6 +59,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { getUsdmConfig, USDCX_CONFIG } from '@/lib/constants/defaultWallets';
+import { fetchAllUtxos } from '@/lib/wallet-balance';
 import { appendInclusiveCursorPage } from '@/lib/pagination/cursor-pagination';
 import {
   extractSwapAcknowledgePayload,
@@ -72,7 +73,9 @@ export interface TokenBalance {
   unit: string;
   policyId: string;
   assetName: string;
-  quantity: number;
+  // BigInt: on-chain token quantities (whale ADA, high-supply native tokens)
+  // routinely exceed 2^53, so a Number here would silently lose precision.
+  quantity: bigint;
 }
 
 type LowBalanceSummary = {
@@ -287,6 +290,8 @@ export interface WalletWithBalance {
   type: 'Purchasing' | 'Selling' | 'Collection';
   balance: string;
   usdcxBalance: string;
+  /** True when the balance fetch failed — render "unknown", not 0. */
+  isBalanceUnavailable?: boolean;
   LowBalanceSummary?: LowBalanceSummary;
 }
 
@@ -332,6 +337,11 @@ export function WalletDetailsDialog({
   const [isExporting, setIsExporting] = useState(false);
   const [isEditingCollectionAddress, setIsEditingCollectionAddress] = useState(false);
   const [newCollectionAddress, setNewCollectionAddress] = useState('');
+  // Local echo of a just-saved collection address for immediate UI feedback.
+  // `undefined` means "no local save yet" — fall through to the wallet prop.
+  const [savedCollectionAddress, setSavedCollectionAddress] = useState<string | null | undefined>(
+    undefined,
+  );
 
   interface SwapTx {
     id: string;
@@ -370,6 +380,10 @@ export function WalletDetailsDialog({
   const invalidateWalletQueries = useCallback(async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['wallets'] }),
+      queryClient.invalidateQueries({ queryKey: ['wallets-paginated'] }),
+      queryClient.invalidateQueries({ queryKey: ['all-wallets'] }),
+      queryClient.invalidateQueries({ queryKey: ['payment-source-wallets-all'] }),
+      queryClient.invalidateQueries({ queryKey: ['payment-source-wallet-list'] }),
       queryClient.invalidateQueries({ queryKey: ['payment-sources-all'] }),
     ]);
   }, [queryClient]);
@@ -580,71 +594,49 @@ export function WalletDetailsDialog({
     setError(null);
     setTokenBalances([]); // Reset balances when refreshing
 
-    await handleApiCall(
-      () =>
-        getUtxos({
-          client: apiClient,
-          headers: {
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            Pragma: 'no-cache',
-            Expires: '0',
-          },
-          query: {
-            address: wallet.walletAddress,
-            network: network,
-          },
-        }),
-      {
-        onSuccess: (response) => {
-          const utxos = response.data?.data?.Utxos;
-          if (utxos) {
-            const balanceMap = new Map<string, number>();
+    try {
+      const utxos = await fetchAllUtxos(apiClient, network, wallet.walletAddress);
+      const balanceMap = new Map<string, bigint>();
 
-            utxos.forEach((utxo) => {
-              utxo.Amounts.forEach((amount) => {
-                const currentAmount = balanceMap.get(amount.unit) || 0;
-                balanceMap.set(amount.unit, currentAmount + (amount.quantity || 0));
-              });
-            });
+      utxos.forEach((utxo) => {
+        utxo.Amounts.forEach((amount) => {
+          const currentAmount = balanceMap.get(amount.unit) || BigInt(0);
+          balanceMap.set(amount.unit, currentAmount + BigInt(amount.quantity || 0));
+        });
+      });
 
-            const tokens: TokenBalance[] = [];
-            balanceMap.forEach((quantity, unit) => {
-              if (unit === 'lovelace' || unit === '') {
-                tokens.push({
-                  unit: 'lovelace',
-                  policyId: '',
-                  assetName: 'ADA',
-                  quantity,
-                });
-              } else {
-                // For other tokens, split into policy ID and asset name
-                const policyId = unit.slice(0, CARDANO_POLICY_ID_HEX_LENGTH);
-                const assetNameHex = unit.slice(CARDANO_POLICY_ID_HEX_LENGTH);
-                const assetName = hexToAscii(assetNameHex);
+      const tokens: TokenBalance[] = [];
+      balanceMap.forEach((quantity, unit) => {
+        if (unit === 'lovelace' || unit === '') {
+          tokens.push({
+            unit: 'lovelace',
+            policyId: '',
+            assetName: 'ADA',
+            quantity,
+          });
+        } else {
+          // For other tokens, split into policy ID and asset name
+          const policyId = unit.slice(0, CARDANO_POLICY_ID_HEX_LENGTH);
+          const assetNameHex = unit.slice(CARDANO_POLICY_ID_HEX_LENGTH);
+          const assetName = hexToAscii(assetNameHex);
 
-                tokens.push({
-                  unit,
-                  policyId,
-                  assetName,
-                  quantity,
-                });
-              }
-            });
+          tokens.push({
+            unit,
+            policyId,
+            assetName,
+            quantity,
+          });
+        }
+      });
 
-            setTokenBalances(tokens);
-          }
-        },
-        onError: () => {
-          // Don't set error for no token balances - treat as normal state
-          setTokenBalances([]);
-          setError(null);
-        },
-        onFinally: () => {
-          setIsLoading(false);
-        },
-        errorMessage: 'Failed to fetch token balances',
-      },
-    );
+      setTokenBalances(tokens);
+    } catch {
+      // Don't set error for no token balances - treat as normal state
+      setTokenBalances([]);
+      setError(null);
+    } finally {
+      setIsLoading(false);
+    }
   };
   fetchTokenBalancesRef.current = fetchTokenBalances;
   fetchWalletDetailsRef.current = () => {
@@ -743,6 +735,7 @@ export function WalletDetailsDialog({
       setIsLoading(true);
       setWalletDetails(null);
       setExportedMnemonic(null);
+      setSavedCollectionAddress(undefined);
       setSwapTransactions([]);
       setSwapTxCursor(undefined);
       setHasMoreSwapTx(true);
@@ -768,34 +761,35 @@ export function WalletDetailsDialog({
     token.policyId === usdmConfig.policyId && token.assetName === hexToAscii(usdmConfig.assetName);
 
   const formatTokenBalance = (token: TokenBalance) => {
+    // Decimal string is derived BigInt-safely (no 2^53 precision loss). USD
+    // values are only an approximate `≈` figure, so Number() there is fine.
+    const toDecimal = () => convertBaseUnitsToDecimal(token.quantity.toString(), 6);
+    const approxUnits = Number(token.quantity) / 1_000_000;
+
     if (token.unit === 'lovelace') {
-      const ada = token.quantity / 1_000_000;
       return {
-        amount: ada === 0 ? 'zero' : formatBalance(ada.toFixed(6)),
-        usdValue: rate ? `≈ $${(ada * rate).toFixed(2)}` : undefined,
+        amount: token.quantity === BigInt(0) ? 'zero' : formatBalance(toDecimal()),
+        usdValue: rate ? `≈ $${(approxUnits * rate).toFixed(2)}` : undefined,
       };
     }
 
     if (isUSDCx(token)) {
-      const usdcx = token.quantity / 1_000_000;
       return {
-        amount: usdcx === 0 ? 'zero' : formatBalance(usdcx.toFixed(6)),
-        usdValue: `≈ $${usdcx.toFixed(2)}`,
+        amount: token.quantity === BigInt(0) ? 'zero' : formatBalance(toDecimal()),
+        usdValue: `≈ $${approxUnits.toFixed(2)}`,
       };
     }
 
     if (isUSDM(token)) {
-      const usdm = token.quantity / 1_000_000;
       return {
-        amount: usdm === 0 ? 'zero' : formatBalance(usdm.toFixed(6)),
-        usdValue: `≈ $${usdm.toFixed(2)}`,
+        amount: token.quantity === BigInt(0) ? 'zero' : formatBalance(toDecimal()),
+        usdValue: `≈ $${approxUnits.toFixed(2)}`,
       };
     }
 
     // Unknown tokens: display raw quantity (no decimal conversion)
-    const qty = token.quantity;
     return {
-      amount: qty === 0 ? 'zero' : formatBalance(qty.toString()),
+      amount: token.quantity === BigInt(0) ? 'zero' : formatBalance(token.quantity.toString()),
       usdValue: undefined,
     };
   };
@@ -854,9 +848,14 @@ export function WalletDetailsDialog({
     URL.revokeObjectURL(url);
   };
 
+  const collectionAddress =
+    savedCollectionAddress !== undefined
+      ? savedCollectionAddress
+      : (wallet?.collectionAddress ?? null);
+
   const handleEditCollectionAddress = () => {
     setIsEditingCollectionAddress(true);
-    setNewCollectionAddress(wallet?.collectionAddress || '');
+    setNewCollectionAddress(collectionAddress || '');
   };
 
   const handleSaveCollection = async () => {
@@ -869,14 +868,14 @@ export function WalletDetailsDialog({
         toast.error('Invalid collection address: ' + validation.error);
         return;
       }
-      const balance = await getUtxos({
-        client: apiClient,
-        query: {
-          address: newCollectionAddress.trim(),
-          network: network,
-        },
-      });
-      if (balance.error || balance.data?.data?.Utxos?.length === 0) {
+      let isAddressUnused = false;
+      try {
+        const utxos = await fetchAllUtxos(apiClient, network, newCollectionAddress.trim());
+        isAddressUnused = utxos.length === 0;
+      } catch {
+        isAddressUnused = true;
+      }
+      if (isAddressUnused) {
         toast.warning(
           'Collection address has not been used yet, please check if this is the correct address',
         );
@@ -895,9 +894,8 @@ export function WalletDetailsDialog({
         onSuccess: () => {
           toast.success('Collection address updated successfully');
           setIsEditingCollectionAddress(false);
-
-          // Update the wallet object with the new collection address
-          wallet.collectionAddress = newCollectionAddress.trim() || null;
+          setSavedCollectionAddress(newCollectionAddress.trim() || null);
+          void invalidateWalletQueries();
         },
         onError: (error: unknown) => {
           toast.error(extractApiErrorMessage(error, 'Failed to update collection address'));
@@ -911,6 +909,16 @@ export function WalletDetailsDialog({
     setIsEditingCollectionAddress(false);
     setNewCollectionAddress('');
   };
+
+  const handleDialogClose = useCallback(() => {
+    // Drop the plaintext seed phrase immediately on close so it never
+    // lingers in state or paints for the next wallet's dialog.
+    setExportedMnemonic(null);
+    setSelectedWalletForSwap(null);
+    setSelectedWalletForTopup(null);
+    setPendingDeleteRule(null);
+    onClose();
+  }, [onClose]);
 
   const handleSaveLowBalanceRule = async (rule: LowBalanceRule) => {
     const draft = ruleDrafts[rule.id] ?? {
@@ -1091,10 +1099,7 @@ export function WalletDetailsDialog({
         open={isOpen}
         onOpenChange={(open) => {
           if (!open) {
-            setSelectedWalletForSwap(null);
-            setSelectedWalletForTopup(null);
-            setPendingDeleteRule(null);
-            onClose();
+            handleDialogClose();
           }
         }}
       >
@@ -1103,7 +1108,7 @@ export function WalletDetailsDialog({
           variant={isChild ? 'slide-from-right' : 'default'}
           isPushedBack={!!selectedWalletForTopup || !!selectedWalletForSwap || !!pendingDeleteRule}
           hideOverlay={isChild}
-          onBack={isChild ? onClose : undefined}
+          onBack={isChild ? handleDialogClose : undefined}
           elevatedChildStack={elevatedChildStack}
         >
           <DialogHeader>
@@ -1998,13 +2003,9 @@ export function WalletDetailsDialog({
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
-                    {wallet.collectionAddress ? (
+                    {collectionAddress ? (
                       <>
-                        <WalletLink
-                          address={wallet.collectionAddress}
-                          network={network}
-                          shorten={15}
-                        />
+                        <WalletLink address={collectionAddress} network={network} shorten={15} />
                         <Button
                           variant="outline"
                           size="sm"

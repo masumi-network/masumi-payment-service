@@ -186,8 +186,7 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
   // with the same name + description, so we match on those (agentMigrationKey) to
   // hide already-migrated agents from the list. Union every V2 source — not just
   // the migration target — so an agent already minted on a different V2 contract
-  // isn't re-offered for a duplicate re-mint. Mirrors useMigrationStatus, which
-  // backs the dashboard count.
+  // isn't re-offered for a duplicate re-mint.
   const v2Addresses = useMemo(() => v2Sources.map((s) => s.smartContractAddress), [v2Sources]);
   const v2AgentsQuery = useQuery<RegistryEntry[]>({
     queryKey: ['migrate-v2-agents', network, [...v2Addresses].sort()],
@@ -676,10 +675,6 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
       // `handleClose` so the just-migrated rows stay visible on the success
       // screen — otherwise they vanish while the user is still reading results.
       invalidateAgentQueries(queryClient);
-      // Refresh the dashboard's "N agents still on V1" nudge so the count drops as agents
-      // migrate. (The dialog's own V1/V2 lists are deferred to handleClose so just-migrated
-      // rows stay visible on the success screen.)
-      queryClient.invalidateQueries({ queryKey: ['migration-status'] });
       queryClient.invalidateQueries({ queryKey: ['payment-sources-all'] });
       // Each successful re-mint debits ~5 ADA from the V2 selling wallet.
       // The wallet-balance / transactions caches would otherwise show

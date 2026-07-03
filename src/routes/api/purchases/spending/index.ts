@@ -63,7 +63,7 @@ const unitAmountSchema = z
 		amount: z.number(),
 	})
 	.describe(
-		'The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is ""',
+		'The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is ""',
 	);
 
 export const postPurchaseSpendingSchemaOutput = z.object({
@@ -189,17 +189,17 @@ export const postPurchaseSpending = readAuthenticatedEndpointFactory.build({
 
 			const allPurchasesFiltered = filterByAgentIdentifier(allPurchases, input.agentIdentifier);
 
-			const totalRefundedMap = {
-				units: new Map<string, number>(),
-				blockchainFees: 0,
+			const totalRefundedMap: Fund = {
+				units: new Map<string, bigint>(),
+				blockchainFees: 0n,
 			};
 			const totalSpendMap: Fund = {
-				units: new Map<string, number>(),
-				blockchainFees: 0,
+				units: new Map<string, bigint>(),
+				blockchainFees: 0n,
 			};
-			const totalPendingMap = {
-				units: new Map<string, number>(),
-				blockchainFees: 0,
+			const totalPendingMap: Fund = {
+				units: new Map<string, bigint>(),
+				blockchainFees: 0n,
 			};
 
 			const dayRefundedMap = new Map<string, Fund>();
@@ -258,7 +258,11 @@ export const postPurchaseSpending = readAuthenticatedEndpointFactory.build({
 							purchase.WithdrawnForBuyer.length === 0 ? purchase.totalBuyerCardanoFees : 0n,
 						);
 					}
-				} else {
+				} else if (purchase.onChainState !== OnChainState.FundsOrDatumInvalid) {
+					// Mirror the income endpoint: purchases whose funds-lock timed out
+					// (tx-sync marks them FundsOrDatumInvalid; the money never left the
+					// buyer wallet) must NOT be counted as pending spend, or they inflate
+					// TotalPending/DailyPending/MonthlyPending forever.
 					addToAllFundsMaps(
 						totalPendingMap,
 						dayPendingMap,

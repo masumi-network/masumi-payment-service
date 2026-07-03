@@ -116,11 +116,17 @@ Requirements:
 
 ## Building
 
-Install Aiken, then run:
+Install Aiken at the pinned compiler version (`aiken.toml` → `compiler`,
+currently v1.1.23), then run:
 
 ```sh
+aikup install v1.1.23
 aiken build
 ```
+
+The compiled policy hash depends on the exact compiler version. Building with
+any other Aiken version produces a different `plutus.json` and a different
+on-chain policy id; CI runs `scripts/check-v2-contracts.sh` to catch drift.
 
 Run contract tests with:
 

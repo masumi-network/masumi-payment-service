@@ -63,6 +63,8 @@ export const postMonthlySignatureEndpoint = payAuthenticatedEndpointFactory.buil
 				where: {
 					walletVkey: input.buyerWalletVkey,
 					type: HotWalletType.Purchasing,
+					deletedAt: null,
+					PaymentSource: { deletedAt: null },
 				},
 				include: {
 					Secret: true,

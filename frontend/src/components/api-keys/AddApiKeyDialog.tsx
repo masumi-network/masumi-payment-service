@@ -34,7 +34,7 @@ import {
   getActiveStablecoinConfig,
   getActiveStablecoinSymbol,
 } from '@/lib/constants/defaultWallets';
-import { convertDecimalToBaseUnits } from '@/lib/convertDecimalToBaseUnits';
+import { convertDecimalToBaseUnits, isValidDecimalAmount } from '@/lib/convertDecimalToBaseUnits';
 import type { ApiKey } from '@/lib/api/generated';
 
 interface AddApiKeyDialogProps {
@@ -76,6 +76,24 @@ const apiKeySchema = z
         code: z.ZodIssueCode.custom,
         message: 'Please specify usage credits for payment permission',
         path: ['credits', 'lovelace'],
+      });
+    }
+    // Reject amounts with more fractional digits than the unit supports (ADA /
+    // USDCx both have 6). Without this, convertDecimalToBaseUnits silently
+    // TRUNCATES the extra digits, granting fewer credits than the operator
+    // typed. Add-credits are positive, so negatives are not allowed here.
+    if (val.credits.lovelace && !isValidDecimalAmount(val.credits.lovelace)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Invalid ADA amount',
+        path: ['credits', 'lovelace'],
+      });
+    }
+    if (val.credits.usdcx && !isValidDecimalAmount(val.credits.usdcx)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Invalid USDCx amount',
+        path: ['credits', 'usdcx'],
       });
     }
   });
@@ -249,7 +267,9 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
   };
 
   const handleClose = () => {
-    if (createdApiKey) return;
+    // Block closing while creation is in flight: the key may already be created
+    // server-side, and closing would skip the one-time token screen.
+    if (createdApiKey || isLoading) return;
     reset();
     onClose();
   };
@@ -571,7 +591,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
             </div>
 
             <div className="flex justify-end gap-3 mt-6">
-              <Button variant="outline" onClick={handleClose}>
+              <Button variant="outline" disabled={isLoading} onClick={handleClose}>
                 Cancel
               </Button>
               <Button type="submit" disabled={isLoading} onClick={handleSubmit(onSubmit)}>

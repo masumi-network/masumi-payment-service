@@ -1,6 +1,6 @@
 import Head from 'next/head';
 import { useRouter } from 'next/router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { ExternalLink, Plus, Trash2 } from 'lucide-react';
 import { FaRegClock } from 'react-icons/fa';
@@ -32,7 +32,7 @@ import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { useInboxAgents } from '@/lib/queries/useInboxAgents';
 import { lookupWalletByVkey } from '@/lib/wallet-lookup';
-import { cn, handleApiCall, shortenAddress } from '@/lib/utils';
+import { cn, formatSixDecimalAmount, handleApiCall, shortenAddress } from '@/lib/utils';
 
 type InboxAgent = RegistryInboxEntry;
 
@@ -83,7 +83,7 @@ function formatLovelaceToAda(amount: string | null) {
     return 'Default minimum';
   }
 
-  return `${(parseInt(amount, 10) / 1000000).toFixed(2)} ADA`;
+  return `${formatSixDecimalAmount(amount)} ADA`;
 }
 
 export default function InboxAgentsPage() {
@@ -93,7 +93,6 @@ export default function InboxAgentsPage() {
   const { paymentSources } = usePaymentSourceExtendedAll();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState('All');
-  const [dismissedQueryAction, setDismissedQueryAction] = useState(false);
   const [isRegisterDialogOpen, setIsRegisterDialogOpen] = useState(false);
   const [selectedInboxAgent, setSelectedInboxAgent] = useState<InboxAgent | null>(null);
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
@@ -153,9 +152,15 @@ export default function InboxAgentsPage() {
     { name: 'Failed', count: null },
   ];
 
-  const shouldOpenRegisterDialog =
-    isRegisterDialogOpen ||
-    (router.query.action === 'register_inbox_agent' && !dismissedQueryAction);
+  // Open the register dialog when the ?action=register_inbox_agent deep link
+  // arrives, then strip the param so the same quick action can fire again
+  // while already on this page.
+  useEffect(() => {
+    if (router.query.action === 'register_inbox_agent') {
+      queueMicrotask(() => setIsRegisterDialogOpen(true));
+      void router.replace('/inbox-agents', undefined, { shallow: true });
+    }
+  }, [router.query.action, router]);
 
   const handleWalletClick = useCallback(
     async (walletVkey: string) => {
@@ -536,13 +541,9 @@ export default function InboxAgentsPage() {
           </div>
 
           <RegisterInboxAgentDialog
-            open={shouldOpenRegisterDialog}
+            open={isRegisterDialogOpen}
             onClose={() => {
               setIsRegisterDialogOpen(false);
-              if (router.query.action === 'register_inbox_agent') {
-                setDismissedQueryAction(true);
-                void router.replace('/inbox-agents', undefined, { shallow: true });
-              }
             }}
             onSuccess={() => {
               setTimeout(() => {

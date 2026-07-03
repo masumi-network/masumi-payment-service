@@ -18,7 +18,8 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { Eye, EyeOff } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
-import { patchPaymentSourceExtended, postWallet, getUtxos } from '@/lib/api/generated';
+import { patchPaymentSourceExtended, postWallet } from '@/lib/api/generated';
+import { fetchAllUtxos } from '@/lib/wallet-balance';
 import { toast } from 'react-toastify';
 import { useAppContext } from '@/lib/contexts/AppContext';
 
@@ -169,14 +170,14 @@ export function AddWalletDialog({ open, onClose, onSuccess }: AddWalletDialogPro
         return;
       }
 
-      const balance = await getUtxos({
-        client: apiClient,
-        query: {
-          address: collectionAddress,
-          network: network,
-        },
-      });
-      if (balance.error || balance.data?.data?.Utxos?.length === 0) {
+      let isAddressUnused = false;
+      try {
+        const utxos = await fetchAllUtxos(apiClient, network, collectionAddress);
+        isAddressUnused = utxos.length === 0;
+      } catch {
+        isAddressUnused = true;
+      }
+      if (isAddressUnused) {
         toast.warning(
           'Collection address has not been used yet, please check if this is the correct address',
         );

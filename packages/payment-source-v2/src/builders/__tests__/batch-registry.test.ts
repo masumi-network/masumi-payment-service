@@ -158,8 +158,11 @@ jest.unstable_mockModule('../../utils/mesh-cost-model-sync', () => ({
 	syncMeshCostModelsFromChainV2: async () => undefined,
 }));
 
-const { generateRegistryBatchMintTransaction, generateRegistryBatchDeregisterTransactionAutomaticFees } =
-	await import('../batch-registry');
+const {
+	generateRegistryBatchMintTransaction,
+	generateRegistryBatchDeregisterTransactionAutomaticFees,
+	generateRegistryBatchUpdateTransactionAutomaticFees,
+} = await import('../batch-registry');
 
 const POLICY_ID = 'a'.repeat(56);
 const SCRIPT = { version: 'V3' as const, code: 'aabbccdd' };
@@ -308,5 +311,111 @@ describe('generateRegistryBatchDeregisterTransactionAutomaticFees', () => {
 			expect(leg.scriptSource).toEqual({ type: 'Provided', scriptCode: SCRIPT.code });
 			expect(leg.redeemer).toEqual({ data: { alternative: 2, fields: [] }, exUnits: expect.anything() });
 		}
+	});
+});
+
+describe('generateRegistryBatchUpdateTransactionAutomaticFees', () => {
+	const oldA = '10' + 'aa'.repeat(28) + '000000';
+	const newA = '10' + 'aa'.repeat(28) + '000001';
+	const oldB = '11' + 'bb'.repeat(28) + '000000';
+	const newB = '11' + 'bb'.repeat(28) + '000001';
+
+	function updateItems() {
+		return [
+			{
+				oldAssetName: oldA,
+				newAssetName: newA,
+				assetUtxo: utxo('1111', 0, '2000000', [{ unit: POLICY_ID + oldA, quantity: '1' }]),
+				recipientWalletAddress: 'addr_test1recipient_a',
+				fundingLovelace: '2000000',
+				metadata: { name: 'Agent A v2' },
+			},
+			{
+				oldAssetName: oldB,
+				newAssetName: newB,
+				assetUtxo: utxo('2222', 0, '2000000', [{ unit: POLICY_ID + oldB, quantity: '1' }]),
+				recipientWalletAddress: 'addr_test1recipient_b',
+				fundingLovelace: '2000000',
+				metadata: { name: 'Agent B v2' },
+			},
+		];
+	}
+
+	const updateFetcher = {
+		fetchProtocolParameters: async () => PROTOCOL_PARAMS,
+		evaluateTx: async () => [{ tag: 'MINT', index: 0, budget: { mem: 1_000_000, steps: 500_000_000 } }],
+	} as never;
+
+	it('builds a multi-asset (>=2) update: each item burns old (-1) and mints new (+1) under ONE UpdateAction redeemer', async () => {
+		const collateral = utxo('cccc', 0);
+		const wallet = [utxo('cccc', 0), utxo('dddd', 0)];
+
+		await expect(
+			generateRegistryBatchUpdateTransactionAutomaticFees(
+				updateFetcher,
+				'preprod',
+				SCRIPT,
+				'addr_test1holder',
+				POLICY_ID,
+				updateItems(),
+				collateral,
+				wallet,
+			),
+		).resolves.toBe('beadface');
+
+		// 2 items × (burn old + mint new) = 4 legs. All must be scripted Plutus and
+		// carry the SAME UpdateAction redeemer (alt=1) so queueMint merges them into
+		// one atomic policy bucket (this is what makes it a batch UpdateAction).
+		const finalBuilder = builtBuilders[builtBuilders.length - 1];
+		expect(finalBuilder.mints).toHaveLength(4);
+		for (const leg of finalBuilder.mints) {
+			expect(leg.type).toBe('Plutus');
+			expect(leg.scriptSource).toEqual({ type: 'Provided', scriptCode: SCRIPT.code });
+			expect(leg.redeemer).toEqual({ data: { alternative: 1, fields: [] }, exUnits: expect.anything() });
+		}
+		const burned = finalBuilder.mints
+			.filter((m) => m.amount === '-1')
+			.map((m) => m.assetName)
+			.sort();
+		const minted = finalBuilder.mints
+			.filter((m) => m.amount !== '-1')
+			.map((m) => m.assetName)
+			.sort();
+		expect(burned).toEqual([oldA, oldB].sort());
+		expect(minted).toEqual([newA, newB].sort());
+	});
+
+	it('rejects an item whose assetUtxo does not hold the old asset', async () => {
+		const items = updateItems();
+		// Strip the asset from the first item's UTxO — nothing to burn.
+		items[0].assetUtxo = utxo('1111', 0, '2000000');
+		await expect(
+			generateRegistryBatchUpdateTransactionAutomaticFees(
+				updateFetcher,
+				'preprod',
+				SCRIPT,
+				'addr_test1holder',
+				POLICY_ID,
+				items,
+				utxo('cccc', 0),
+				[utxo('cccc', 0)],
+			),
+		).rejects.toThrow(/does not contain asset/);
+	});
+
+	it('rejects when the collateral UTxO overlaps an asset input', async () => {
+		const items = updateItems();
+		await expect(
+			generateRegistryBatchUpdateTransactionAutomaticFees(
+				updateFetcher,
+				'preprod',
+				SCRIPT,
+				'addr_test1holder',
+				POLICY_ID,
+				items,
+				items[0].assetUtxo, // collateral == an asset input -> phase-1 violation
+				[utxo('cccc', 0)],
+			),
+		).rejects.toThrow(/overlaps with a spending input/);
 	});
 });

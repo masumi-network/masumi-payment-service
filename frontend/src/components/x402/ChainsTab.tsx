@@ -30,6 +30,7 @@ import {
 import { RefreshButton } from '@/components/RefreshButton';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { useX402Networks, useX402Wallets } from '@/lib/hooks/useX402';
+import { isTestnetEnv } from '@/lib/x402-rail';
 import { handleApiCall, shortenAddress } from '@/lib/utils';
 import { postX402Networks, X402Network } from '@/lib/api/generated';
 
@@ -202,12 +203,16 @@ export function ChainsTab() {
       </div>
 
       <ChainDialog
-        key={editing?.id ?? 'new'}
+        key={dialogOpen ? (editing?.id ?? 'new') : 'closed'}
         open={dialogOpen}
         editing={editing}
-        onClose={() => setDialogOpen(false)}
+        onClose={() => {
+          setDialogOpen(false);
+          setEditing(null);
+        }}
         onSaved={() => {
           setDialogOpen(false);
+          setEditing(null);
           refetch();
         }}
       />
@@ -232,7 +237,7 @@ export function ChainDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const { apiClient } = useAppContext();
+  const { apiClient, network } = useAppContext();
   // Only load the wallet set while the form is open (it feeds the picker). A facilitator
   // settles inbound payments, so only Selling wallets are selectable.
   const { wallets } = useX402Wallets(open, 'Selling');
@@ -249,7 +254,9 @@ export function ChainDialog({
       caip2Id: editing?.caip2Id ?? '',
       displayName: editing?.displayName ?? '',
       rpcUrl: editing?.rpcUrl ?? '',
-      isTestnet: editing?.isTestnet ?? false,
+      // A new chain should land in the environment it is created from (testnet chains
+      // pair with Preprod), otherwise it is invisible in the active env after saving.
+      isTestnet: editing?.isTestnet ?? isTestnetEnv(network),
       isEnabled: editing?.isEnabled ?? true,
       defaultAsset: editing?.defaultAsset ?? '',
       facilitatorWalletId: editing?.facilitatorWalletId ?? NO_FACILITATOR,

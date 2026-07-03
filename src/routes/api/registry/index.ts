@@ -179,7 +179,10 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 					sendFundingLovelace,
 					state: RegistrationState.RegistrationRequested,
 					agentIdentifier: null,
-					metadataVersion: DEFAULTS.DEFAULT_REGISTRY_METADATA_VERSION,
+					metadataVersion:
+						sellingWallet.PaymentSource.paymentSourceType === PaymentSourceType.Web3CardanoV1
+							? DEFAULTS.DEFAULT_METADATA_VERSION
+							: DEFAULTS.DEFAULT_REGISTRY_METADATA_VERSION,
 					// Tenant ownership — enforced on subsequent mutate routes
 					// (deregister, future update flows) so a key cannot mutate
 					// registrations another key created on the same payment
