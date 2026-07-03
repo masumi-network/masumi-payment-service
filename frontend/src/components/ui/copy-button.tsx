@@ -1,5 +1,5 @@
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { cn, copyToClipboard } from '@/lib/utils';
 import { Check, Copy } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'react-toastify';
@@ -12,10 +12,14 @@ interface CopyButtonProps {
 export function CopyButton({ value, className }: CopyButtonProps) {
   const [hasCopied, setHasCopied] = useState(false);
 
-  const copyToClipboard = async (e: React.MouseEvent<HTMLButtonElement>) => {
+  const handleCopy = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
     e.preventDefault();
-    await navigator.clipboard.writeText(value);
+    const didCopy = await copyToClipboard(value);
+    if (!didCopy) {
+      toast.error('Failed to copy to clipboard');
+      return;
+    }
     setHasCopied(true);
     toast.success('Copied to clipboard');
     setTimeout(() => setHasCopied(false), 2000);
@@ -26,7 +30,7 @@ export function CopyButton({ value, className }: CopyButtonProps) {
       variant="ghost"
       size="icon"
       className={cn(className || 'h-8 w-8', 'relative')}
-      onClick={copyToClipboard}
+      onClick={handleCopy}
       type="button"
     >
       <span

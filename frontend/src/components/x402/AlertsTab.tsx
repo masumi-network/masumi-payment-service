@@ -266,7 +266,7 @@ export function AlertsTab() {
       </div>
 
       <AlertDialog
-        key={editing?.id ?? 'new'}
+        key={dialogOpen ? (editing?.id ?? 'new') : 'closed'}
         open={dialogOpen}
         editing={editing}
         onClose={() => setDialogOpen(false)}

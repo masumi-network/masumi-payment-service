@@ -1,5 +1,12 @@
 # Deploy runbook — Web3CardanoV2 rollout
 
+> **Contract upgrade (CIP-30 admin signatures, Aiken v1.1.23):** if you already
+> deployed V2 payment sources and are bumping `smart-contracts/payment-v2` or
+> `registry-v2` blueprints, read
+> [v2-contract-cip30-upgrade.md](./v2-contract-cip30-upgrade.md) first — script
+> hashes and default addresses change; locked funds at the old address need the
+> old validator to spend.
+
 This branch introduces the `Web3CardanoV2` payment source type alongside the existing `Web3CardanoV1`. Two database migrations need to be applied in order, with the application code deployed in between. The intermediate state is intentionally backwards-compatible so a code rollback after the first migration still works.
 
 ## Migrations

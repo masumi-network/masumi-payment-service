@@ -1,13 +1,12 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
-import { cn, shortenAddress, getExplorerUrl } from '@/lib/utils';
+import { cn, shortenAddress, getExplorerUrl, formatAssetAmount } from '@/lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CopyButton } from '@/components/ui/copy-button';
 import { WalletLink } from '@/components/ui/wallet-link';
 import { toast } from 'react-toastify';
-import { getUsdmConfig, TESTUSDM_CONFIG, USDCX_CONFIG } from '@/lib/constants/defaultWallets';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   Payment,
@@ -114,6 +113,9 @@ export default function TransactionDetailsDialog({
 }: TransactionDetailsDialogProps) {
   const { network, apiClient } = useAppContext();
   const { openAgentDetails } = useAgentDetailsDialog();
+  // Pin actions and explorer links to the network the transaction row lives
+  // on, not the ambient app network (they can diverge mid-navigation).
+  const transactionNetwork = transaction?.PaymentSource?.network ?? network;
   const [showConfirmDialog, setShowConfirmDialog] = React.useState(false);
   const [confirmAction, setConfirmAction] = React.useState<'refund' | 'cancel' | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
@@ -242,7 +244,7 @@ export default function TransactionDetailsDialog({
           body: {
             blockchainIdentifier: transaction.blockchainIdentifier,
             updatedAt: new Date(transaction.updatedAt),
-            network: network,
+            network: transactionNetwork,
           },
         });
         if (response.error) {
@@ -260,7 +262,7 @@ export default function TransactionDetailsDialog({
           body: {
             blockchainIdentifier: transaction.blockchainIdentifier,
             updatedAt: new Date(transaction.updatedAt),
-            network: network,
+            network: transactionNetwork,
           },
         });
         if (response.error) {
@@ -283,10 +285,11 @@ export default function TransactionDetailsDialog({
   };
 
   const handleRefundRequest = async (transaction: Transaction) => {
+    setIsLoading(true);
     try {
       const body = {
         blockchainIdentifier: transaction.blockchainIdentifier,
-        network: network,
+        network: transactionNetwork,
       };
       const response = await postPurchaseRequestRefund({
         client: apiClient,
@@ -308,6 +311,8 @@ export default function TransactionDetailsDialog({
     } catch (error) {
       console.error('Refund error:', error);
       handleError(error, 'Refund request failed');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -315,7 +320,7 @@ export default function TransactionDetailsDialog({
     try {
       const body = {
         blockchainIdentifier: transaction.blockchainIdentifier,
-        network: network,
+        network: transactionNetwork,
       };
       const response = await postPaymentAuthorizeRefund({
         client: apiClient,
@@ -344,7 +349,7 @@ export default function TransactionDetailsDialog({
     try {
       const body = {
         blockchainIdentifier: transaction.blockchainIdentifier,
-        network: network,
+        network: transactionNetwork,
       };
       const response = await postPurchaseCancelRefundRequest({
         client: apiClient,
@@ -568,63 +573,19 @@ export default function TransactionDetailsDialog({
                     {transaction.type === 'payment' &&
                     transaction.RequestedFunds &&
                     transaction.RequestedFunds.length > 0 ? (
-                      transaction.RequestedFunds.map((fund, index) => {
-                        const usdmConfig = getUsdmConfig(network);
-                        const isUsdcx =
-                          fund.unit === USDCX_CONFIG.fullAssetId ||
-                          fund.unit === USDCX_CONFIG.policyId ||
-                          fund.unit === 'USDCx';
-                        const isUsdm =
-                          fund.unit === usdmConfig.fullAssetId ||
-                          fund.unit === usdmConfig.policyId ||
-                          fund.unit === 'USDM' ||
-                          fund.unit === 'tUSDM';
-                        const isTestUsdm = fund.unit === TESTUSDM_CONFIG.unit;
-
-                        return (
-                          <p key={index}>
-                            {fund.unit === 'lovelace' || !fund.unit
-                              ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ADA`
-                              : isUsdcx
-                                ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} USDCx`
-                                : isUsdm
-                                  ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${network === 'Preprod' ? 'tUSDM' : 'USDM'}`
-                                  : isTestUsdm
-                                    ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} tUSDM`
-                                    : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`}
-                          </p>
-                        );
-                      })
+                      transaction.RequestedFunds.map((fund, index) => (
+                        <p key={index}>
+                          {formatAssetAmount(fund.amount, fund.unit, transactionNetwork)}
+                        </p>
+                      ))
                     ) : transaction.type === 'purchase' &&
                       transaction.PaidFunds &&
                       transaction.PaidFunds.length > 0 ? (
-                      transaction.PaidFunds.map((fund, index) => {
-                        const usdmConfig = getUsdmConfig(network);
-                        const isUsdcx =
-                          fund.unit === USDCX_CONFIG.fullAssetId ||
-                          fund.unit === USDCX_CONFIG.policyId ||
-                          fund.unit === 'USDCx';
-                        const isUsdm =
-                          fund.unit === usdmConfig.fullAssetId ||
-                          fund.unit === usdmConfig.policyId ||
-                          fund.unit === 'USDM' ||
-                          fund.unit === 'tUSDM';
-                        const isTestUsdm = fund.unit === TESTUSDM_CONFIG.unit;
-
-                        return (
-                          <p key={index}>
-                            {fund.unit === 'lovelace' || !fund.unit
-                              ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ADA`
-                              : isUsdcx
-                                ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} USDCx`
-                                : isUsdm
-                                  ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${network === 'Preprod' ? 'tUSDM' : 'USDM'}`
-                                  : isTestUsdm
-                                    ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} tUSDM`
-                                    : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`}
-                          </p>
-                        );
-                      })
+                      transaction.PaidFunds.map((fund, index) => (
+                        <p key={index}>
+                          {formatAssetAmount(fund.amount, fund.unit, transactionNetwork)}
+                        </p>
+                      ))
                     ) : (
                       <p>—</p>
                     )}
@@ -638,7 +599,7 @@ export default function TransactionDetailsDialog({
                       <a
                         href={getExplorerUrl(
                           transaction.CurrentTransaction.txHash,
-                          network,
+                          transactionNetwork,
                           'transaction',
                         )}
                         target="_blank"
@@ -695,7 +656,10 @@ export default function TransactionDetailsDialog({
                   {walletInfo.smartContractAddress && (
                     <div>
                       <h5 className="text-sm font-medium mb-1">Smart Contract Address</h5>
-                      <WalletLink address={walletInfo.smartContractAddress} network={network} />
+                      <WalletLink
+                        address={walletInfo.smartContractAddress}
+                        network={transactionNetwork}
+                      />
                     </div>
                   )}
                   {(walletInfo.sellerVkey || walletInfo.sellerAddress) && (
@@ -704,7 +668,7 @@ export default function TransactionDetailsDialog({
                       <WalletLink
                         address={walletInfo.sellerAddress}
                         vkey={walletInfo.sellerVkey}
-                        network={network}
+                        network={transactionNetwork}
                         onInternalClick={
                           walletInfo.sellerVkey && isInternalWallet(walletInfo.sellerVkey)
                             ? () => handleWalletClick(walletInfo.sellerVkey!)
@@ -719,7 +683,7 @@ export default function TransactionDetailsDialog({
                       <WalletLink
                         address={walletInfo.buyerAddress}
                         vkey={walletInfo.buyerVkey}
-                        network={network}
+                        network={transactionNetwork}
                         onInternalClick={
                           walletInfo.buyerVkey && isInternalWallet(walletInfo.buyerVkey)
                             ? () => handleWalletClick(walletInfo.buyerVkey!)
@@ -769,11 +733,15 @@ export default function TransactionDetailsDialog({
 
             <div className="flex gap-2 justify-end">
               {canRequestRefund(transaction) && transaction.type === 'purchase' && (
-                <Button variant="secondary" onClick={() => handleRefundRequest(transaction)}>
-                  Request Refund
+                <Button
+                  variant="secondary"
+                  onClick={() => handleRefundRequest(transaction)}
+                  disabled={isLoading}
+                >
+                  {isLoading ? 'Requesting refund...' : 'Request Refund'}
                 </Button>
               )}
-              {canAllowRefund(transaction) && (
+              {canAllowRefund(transaction) && transaction.type === 'payment' && (
                 <Button
                   variant="default"
                   onClick={() => {

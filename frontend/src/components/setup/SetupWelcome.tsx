@@ -29,7 +29,7 @@ import {
 import { useRouter } from 'next/router';
 import { Spinner } from '@/components/ui/spinner';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { cn } from '@/lib/utils';
+import { cn, copyToClipboard as copyTextToClipboard } from '@/lib/utils';
 import {
   postWallet,
   postPaymentSourceExtended,
@@ -64,7 +64,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { extractApiErrorMessage } from '@/lib/api-error';
 import { REGISTRY_LIMITS } from '@/lib/registry-validation';
-import { convertDecimalToBaseUnits } from '@/lib/convertDecimalToBaseUnits';
+import { convertDecimalToBaseUnits, isValidDecimalAmount } from '@/lib/convertDecimalToBaseUnits';
 import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
 import { DEFAULT_PAYMENT_SOURCE_TYPE, isV2PaymentSource } from '@/lib/payment-source-type';
 
@@ -72,9 +72,15 @@ function formatNetworkDisplay(networkType: string): string {
   return networkType?.toUpperCase() === 'MAINNET' ? 'Mainnet' : 'Preprod';
 }
 
-function copyToClipboard(text: string) {
-  navigator.clipboard.writeText(text);
-  toast.success('Copied to clipboard');
+async function copyToClipboard(text: string) {
+  // Awaited so a blocked clipboard (e.g. plain-HTTP host) surfaces as an error
+  // instead of a false success — critical for seed phrases, which cannot be
+  // recovered after the wizard.
+  if (await copyTextToClipboard(text)) {
+    toast.success('Copied to clipboard');
+  } else {
+    toast.error('Failed to copy to clipboard. Please copy manually.');
+  }
 }
 
 const STEP_LABELS = [
@@ -201,14 +207,17 @@ function SeedPhrasesScreen({
             setError(extractApiErrorMessage(error, 'Failed to generate buying wallet'));
             toast.error('Failed to generate buying wallet');
           },
-          onFinally: () => {
-            setIsGenerating(false);
-          },
           errorMessage: 'Failed to generate buying wallet',
         },
       );
 
-      if (!buyingResponse) return;
+      // isGenerating stays true until BOTH wallets have finished — clearing it after
+      // only the buying wallet would render a blank selling card and enable the
+      // "I have saved both seed phrases" checkbox with one phrase on screen.
+      if (!buyingResponse) {
+        setIsGenerating(false);
+        return;
+      }
 
       if (
         !buyingResponse?.data?.data?.walletMnemonic ||
@@ -216,6 +225,7 @@ function SeedPhrasesScreen({
       ) {
         setError('Failed to generate buying wallet');
         toast.error('Failed to generate buying wallet');
+        setIsGenerating(false);
         return;
       }
 
@@ -1070,10 +1080,12 @@ function AddAiAgentScreen({
     amount: z
       .string()
       .max(REGISTRY_LIMITS.lovelaceAmount, 'Amount must be less than 25 characters')
-      .refine((val) => {
-        if (val === '0' || val === '0.0' || val === '0.00') return true;
-        return !isNaN(parseFloat(val)) && parseFloat(val) >= 0;
-      }, 'Amount must be a valid number >= 0'),
+      // parseFloat would accept '1e3', which crashes convertDecimalToBaseUnits
+      // (BigInt) at submit with an opaque error.
+      .refine(
+        (val) => isValidDecimalAmount(val),
+        'Amount must be a valid decimal number >= 0 with at most 6 decimal places',
+      ),
   });
 
   const agentSchema = z
@@ -1984,7 +1996,6 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
     // (especially a step-3 AI agent that would otherwise be invisible
     // until the next refetch tick).
     queryClient.invalidateQueries({ queryKey: ['payment-sources-all'] });
-    queryClient.invalidateQueries({ queryKey: ['payment-source-extended'] });
     queryClient.invalidateQueries({ queryKey: ['wallets'] });
     invalidateAgentQueries(queryClient);
     queryClient.invalidateQueries({ queryKey: ['transactions'] });

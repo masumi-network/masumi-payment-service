@@ -15,7 +15,7 @@ import {
   PlusCircle,
 } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
-import { cn, shortenAddress } from '@/lib/utils';
+import { cn, formatAssetAmount, formatSixDecimalAmount, shortenAddress } from '@/lib/utils';
 import { useState, useMemo } from 'react';
 import { RegistryEntry } from '@/lib/api/generated';
 import { useAgents } from '@/lib/queries/useAgents';
@@ -39,7 +39,6 @@ import { WalletTypeBadge } from '@/components/ui/wallet-type-badge';
 import { AIAgentDetailsDialog } from '@/components/ai-agents/AIAgentDetailsDialog';
 import { WalletDetailsDialog } from '@/components/wallets/WalletDetailsDialog';
 import { CopyButton } from '@/components/ui/copy-button';
-import { TESTUSDM_CONFIG, getUsdmConfig, getUsdcxConfig } from '@/lib/constants/defaultWallets';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { StatCard } from '@/components/ui/stat-card';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -122,11 +121,16 @@ export default function Overview() {
     useState<WalletWithBalance | null>(null);
   const [isMigrateDialogOpen, setMigrateDialogOpen] = useState(false);
 
+  // Returns the grouped USD amount, or null when the CoinGecko rate is
+  // unavailable so the caller can render a sensible fallback. Number math is
+  // fine here — this is an approximate fiat estimate, not a ledger value.
   const formatUsdValue = (adaAmount: string) => {
-    if (!rate || !adaAmount) return '—';
-    const ada = parseInt(adaAmount) / 1000000;
-    return `≈ $${(ada * rate).toFixed(2)}`;
+    if (!rate || !adaAmount) return null;
+    const ada = Number(adaAmount) / 1000000;
+    return formatBalance((ada * rate).toFixed(2));
   };
+
+  const totalBalanceUsd = formatUsdValue(totalBalance);
 
   return (
     <>
@@ -217,7 +221,7 @@ export default function Overview() {
                   >
                     <div className="text-2xl font-semibold flex items-center gap-1">
                       <span className="text-xs font-normal text-muted-foreground">$</span>
-                      {formatBalance((parseInt(totalUsdcxBalance) / 1000000).toFixed(2)) ?? ''}
+                      {formatSixDecimalAmount(totalUsdcxBalance)}
                     </div>
                   </StatCard>
                 )}
@@ -232,14 +236,11 @@ export default function Overview() {
                   >
                     <div className="flex flex-col gap-2">
                       <div className="text-2xl font-semibold flex items-center gap-1">
-                        {formatBalance((parseInt(totalBalance) / 1000000).toFixed(2)?.toString()) ??
-                          ''}
+                        {formatSixDecimalAmount(totalBalance)}
                         <span className="text-xs font-normal text-muted-foreground">ADA</span>
                       </div>
                       <div className="text-sm text-muted-foreground">
-                        {isLoadingRate && !totalUsdcxBalance
-                          ? '...'
-                          : `~ $${formatBalance(formatUsdValue(totalBalance))}`}
+                        {isLoadingRate ? '...' : totalBalanceUsd ? `~ $${totalBalanceUsd}` : '—'}
                       </div>
                     </div>
                   </StatCard>
@@ -317,18 +318,8 @@ export default function Overview() {
                                 <span className="text-xs font-normal text-muted-foreground">
                                   {(() => {
                                     const price = agent.AgentPricing.Pricing[0];
-                                    const unit = price.unit;
-                                    if (unit === 'free') return 'Free';
-                                    const formatted = (parseInt(price.amount) / 1_000_000).toFixed(
-                                      2,
-                                    );
-                                    if (unit === 'lovelace' || !unit) return `${formatted} ADA`;
-                                    if (unit === getUsdcxConfig(network).fullAssetId)
-                                      return `${formatted} USDCx`;
-                                    if (unit === getUsdmConfig(network).fullAssetId)
-                                      return `${formatted} USDM`;
-                                    if (unit === TESTUSDM_CONFIG.unit) return `${formatted} tUSDM`;
-                                    return `${formatted} ${unit}`;
+                                    if (price.unit === 'free') return 'Free';
+                                    return formatAssetAmount(price.amount, price.unit, network);
                                   })()}
                                 </span>
                               </>
@@ -469,11 +460,9 @@ export default function Overview() {
                                       <Spinner className="h-3 w-3" />
                                     ) : (
                                       <>
-                                        {formatBalance(
-                                          (parseInt(wallet.balance || '0') / 1000000)
-                                            .toFixed(2)
-                                            ?.toString(),
-                                        )}{' '}
+                                        {wallet.isBalanceUnavailable
+                                          ? '—'
+                                          : formatSixDecimalAmount(wallet.balance || '0')}{' '}
                                         <span className="text-xs text-muted-foreground">ADA</span>
                                       </>
                                     )}
@@ -481,11 +470,9 @@ export default function Overview() {
                                   <div className="text-xs flex items-center gap-1">
                                     {!wallet.isLoadingBalance && (
                                       <>
-                                        {formatBalance(
-                                          (parseInt(wallet.usdcxBalance || '0') / 1000000)
-                                            .toFixed(2)
-                                            ?.toString(),
-                                        )}{' '}
+                                        {wallet.isBalanceUnavailable
+                                          ? '—'
+                                          : formatSixDecimalAmount(wallet.usdcxBalance || '0')}{' '}
                                         <span className="text-xs text-muted-foreground">
                                           {network === 'Mainnet' ? 'USDCx' : 'tUSDM'}
                                         </span>

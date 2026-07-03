@@ -47,15 +47,15 @@ export function filterByAgentIdentifier<T extends { blockchainIdentifier: string
 }
 
 export type Fund = {
-	units: Map<string, number>;
-	blockchainFees: number;
+	units: Map<string, bigint>;
+	blockchainFees: bigint;
 };
 
 function addToFundsMap(paymentFunds: Fund, unit: string, amount: bigint): void {
 	if (paymentFunds.units.has(unit)) {
-		paymentFunds.units.set(unit, paymentFunds.units.get(unit)! + Number(amount));
+		paymentFunds.units.set(unit, paymentFunds.units.get(unit)! + amount);
 	} else {
-		paymentFunds.units.set(unit, Number(amount));
+		paymentFunds.units.set(unit, amount);
 	}
 }
 
@@ -67,7 +67,7 @@ function addToFundsMapArray(
 	for (const unit of units) {
 		addToFundsMap(paymentFunds, unit.unit, unit.amount);
 	}
-	paymentFunds.blockchainFees += Number(blockchainFees);
+	paymentFunds.blockchainFees += blockchainFees;
 }
 
 function addToFundsMapArrayMap(
@@ -77,7 +77,7 @@ function addToFundsMapArrayMap(
 	blockchainFees: bigint,
 ): void {
 	if (!map.has(key)) {
-		map.set(key, { units: new Map<string, number>(), blockchainFees: 0 });
+		map.set(key, { units: new Map<string, bigint>(), blockchainFees: 0n });
 	}
 	addToFundsMapArray(map.get(key)!, units, blockchainFees);
 }
@@ -96,6 +96,9 @@ export function addToAllFundsMaps(
 	addToFundsMapArrayMap(monthMap, monthKey, units, blockchainFees);
 }
 
+// The internal Fund accumulators stay BigInt (exact), but the public income /
+// spending API surface exposes these as `number` for v1 backwards
+// compatibility. Convert to Number only here, at the response boundary.
 export function mapTotalFundsOutput(funds: Fund): {
 	Units: Array<{ unit: string; amount: number }>;
 	blockchainFees: number;
@@ -103,9 +106,9 @@ export function mapTotalFundsOutput(funds: Fund): {
 	return {
 		Units: Array.from(funds.units.entries()).map(([unit, amount]) => ({
 			unit,
-			amount,
+			amount: Number(amount),
 		})),
-		blockchainFees: funds.blockchainFees,
+		blockchainFees: Number(funds.blockchainFees),
 	};
 }
 function getDayMonthAndYearFromDate(date: string): {
@@ -127,9 +130,9 @@ export function mapDailyFundsOutput(fundsByDay: Map<string, Fund>): Array<{
 		...getDayMonthAndYearFromDate(date),
 		Units: Array.from(fund.units.entries()).map(([unit, amount]) => ({
 			unit,
-			amount,
+			amount: Number(amount),
 		})),
-		blockchainFees: fund.blockchainFees,
+		blockchainFees: Number(fund.blockchainFees),
 	}));
 }
 
@@ -151,8 +154,8 @@ export function mapMonthlyFundsOutput(fundsByMonth: Map<string, Fund>): Array<{
 		...getMonthAndYearFromDate(date),
 		Units: Array.from(fund.units.entries()).map(([unit, amount]) => ({
 			unit,
-			amount,
+			amount: Number(amount),
 		})),
-		blockchainFees: fund.blockchainFees,
+		blockchainFees: Number(fund.blockchainFees),
 	}));
 }

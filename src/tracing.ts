@@ -159,8 +159,11 @@ export async function setupTracing() {
 		operation: 'initialization',
 	});
 
-	// Graceful shutdown handlers
-	const shutdown = async (signal: string) => {
+	// Graceful shutdown handlers. `exitCode` defaults to 0 for clean signal-based
+	// shutdowns; crash paths (uncaughtException/unhandledRejection) pass 1 so
+	// process managers with `restart: on-failure` actually restart the service
+	// instead of treating a crash as a clean exit and leaving escrow cron halted.
+	const shutdown = async (signal: string, exitCode = 0) => {
 		logInfo(`📴 Received ${signal}, shutting down OpenTelemetry SDK...`, {
 			component: 'tracing',
 			operation: 'shutdown',
@@ -175,7 +178,7 @@ export async function setupTracing() {
 			const err = error instanceof Error ? error : new Error(String(error));
 			logError('❌ Error shutting down OpenTelemetry SDK', { component: 'tracing', operation: 'shutdown' }, {}, err);
 		} finally {
-			process.exit(0);
+			process.exit(exitCode);
 		}
 	};
 
@@ -187,12 +190,12 @@ export async function setupTracing() {
 	// Handle uncaught exceptions and unhandled rejections
 	process.on('uncaughtException', (error) => {
 		logError('❌ Uncaught Exception', { component: 'tracing', operation: 'error_handling' }, {}, error);
-		void shutdown('uncaughtException');
+		void shutdown('uncaughtException', 1);
 	});
 
 	process.on('unhandledRejection', (reason) => {
 		const error = reason instanceof Error ? reason : new Error(String(reason));
 		logError('❌ Unhandled Rejection', { component: 'tracing', operation: 'error_handling' }, {}, error);
-		void shutdown('unhandledRejection');
+		void shutdown('unhandledRejection', 1);
 	});
 }

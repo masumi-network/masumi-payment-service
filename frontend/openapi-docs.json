@@ -87,7 +87,7 @@
                                 },
                                 "amount": {
                                     "type": "string",
-                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                 }
                             },
                             "required": [
@@ -898,7 +898,7 @@
                             "properties": {
                                 "amount": {
                                     "type": "string",
-                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                 },
                                 "unit": {
                                     "type": "string",
@@ -1894,7 +1894,7 @@
                                                     "properties": {
                                                         "amount": {
                                                             "type": "string",
-                                                            "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                                            "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                                         },
                                                         "unit": {
                                                             "type": "string",
@@ -2411,7 +2411,7 @@
                                                     "properties": {
                                                         "amount": {
                                                             "type": "string",
-                                                            "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                                            "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                                         },
                                                         "unit": {
                                                             "type": "string",
@@ -2960,7 +2960,7 @@
                                             "properties": {
                                                 "amount": {
                                                     "type": "string",
-                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                                 },
                                                 "unit": {
                                                     "type": "string",
@@ -3560,6 +3560,15 @@
                         "type": "string",
                         "description": "Address of the smart contract for this payment source"
                     },
+                    "contractSyncStatus": {
+                        "type": "string",
+                        "enum": [
+                            "in_sync",
+                            "outdated_contract",
+                            "custom_address"
+                        ],
+                        "description": "Whether a Web3CardanoV2 source is on the current on-chain contract. \"outdated_contract\": registry policyId differs from the current default (retired contract — agents orphaned, payment address stale); \"custom_address\": current version but a non-default admin-wallet address; \"in_sync\": matches the current default (also for V1 and any non-V2 source)."
+                    },
                     "PaymentSourceConfig": {
                         "type": "object",
                         "properties": {
@@ -3655,6 +3664,7 @@
                     "requiredAdminSignatures",
                     "policyId",
                     "smartContractAddress",
+                    "contractSyncStatus",
                     "PaymentSourceConfig",
                     "lastIdentifierChecked",
                     "syncInProgress",
@@ -3734,7 +3744,7 @@
                         "nullable": true,
                         "minimum": 0,
                         "maximum": 100000000000000,
-                        "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                        "description": "The quantity of the asset in its smallest unit. For ADA, this is lovelace (1 ADA = 1000000 lovelace)"
                     }
                 },
                 "required": [
@@ -6213,7 +6223,7 @@
                                                 },
                                                 "amount": {
                                                     "type": "string",
-                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                                 }
                                             },
                                             "required": [
@@ -6408,7 +6418,7 @@
                                                 },
                                                 "amount": {
                                                     "type": "string",
-                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                                 }
                                             },
                                             "required": [
@@ -8102,7 +8112,7 @@
                                                         "properties": {
                                                             "amount": {
                                                                 "type": "string",
-                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                                             },
                                                             "unit": {
                                                                 "type": "string",
@@ -9562,7 +9572,7 @@
                                                         "properties": {
                                                             "amount": {
                                                                 "type": "string",
-                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                                             },
                                                             "unit": {
                                                                 "type": "string",
@@ -10179,7 +10189,7 @@
                                                         "properties": {
                                                             "amount": {
                                                                 "type": "string",
-                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                                             },
                                                             "unit": {
                                                                 "type": "string",
@@ -10819,7 +10829,7 @@
                                                         "properties": {
                                                             "amount": {
                                                                 "type": "string",
-                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                                             },
                                                             "unit": {
                                                                 "type": "string",
@@ -18006,7 +18016,7 @@
                                                                 "amount": {
                                                                     "type": "string",
                                                                     "maxLength": 25,
-                                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                                                 }
                                                             },
                                                             "required": [
@@ -19223,7 +19233,7 @@
                                                                 "amount": {
                                                                     "type": "string",
                                                                     "maxLength": 25,
-                                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                                                 }
                                                             },
                                                             "required": [
@@ -19692,6 +19702,7 @@
                                                     "syncInProgress": true,
                                                     "policyId": "policy_id",
                                                     "smartContractAddress": "address_of_the_smart_contract",
+                                                    "contractSyncStatus": "in_sync",
                                                     "AdminWallets": [
                                                         {
                                                             "walletAddress": "wallet_address",
@@ -19975,6 +19986,7 @@
                                             "requiredAdminSignatures": null,
                                             "policyId": "policy_id",
                                             "smartContractAddress": "address_of_the_smart_contract",
+                                            "contractSyncStatus": "in_sync",
                                             "PaymentSourceConfig": {
                                                 "rpcProviderApiKey": "rpc_provider_api_key_blockfrost",
                                                 "rpcProvider": "Blockfrost"
@@ -20228,6 +20240,7 @@
                                             "requiredAdminSignatures": null,
                                             "policyId": "policy_id",
                                             "smartContractAddress": "address_of_the_smart_contract",
+                                            "contractSyncStatus": "in_sync",
                                             "PaymentSourceConfig": {
                                                 "rpcProviderApiKey": "rpc_provider_api_key_blockfrost",
                                                 "rpcProvider": "Blockfrost"
@@ -20326,6 +20339,7 @@
                                             "requiredAdminSignatures": null,
                                             "policyId": "policy_id",
                                             "smartContractAddress": "address_of_the_smart_contract",
+                                            "contractSyncStatus": "in_sync",
                                             "PaymentSourceConfig": {
                                                 "rpcProviderApiKey": "rpc_provider_api_key_blockfrost",
                                                 "rpcProvider": "Blockfrost"
@@ -20753,7 +20767,7 @@
                                                                     "unit",
                                                                     "amount"
                                                                 ],
-                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                             }
                                                         },
                                                         "blockchainFees": {
@@ -20784,7 +20798,7 @@
                                                                     "unit",
                                                                     "amount"
                                                                 ],
-                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                             }
                                                         },
                                                         "blockchainFees": {
@@ -20815,7 +20829,7 @@
                                                                     "unit",
                                                                     "amount"
                                                                 ],
-                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                             }
                                                         },
                                                         "blockchainFees": {
@@ -20860,7 +20874,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
@@ -20909,7 +20923,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
@@ -20958,7 +20972,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
@@ -21003,7 +21017,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
@@ -21047,7 +21061,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
@@ -21091,7 +21105,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
@@ -21399,7 +21413,7 @@
                                                                     "unit",
                                                                     "amount"
                                                                 ],
-                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                             }
                                                         },
                                                         "blockchainFees": {
@@ -21430,7 +21444,7 @@
                                                                     "unit",
                                                                     "amount"
                                                                 ],
-                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                             }
                                                         },
                                                         "blockchainFees": {
@@ -21461,7 +21475,7 @@
                                                                     "unit",
                                                                     "amount"
                                                                 ],
-                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                             }
                                                         },
                                                         "blockchainFees": {
@@ -21506,7 +21520,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
@@ -21555,7 +21569,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
@@ -21604,7 +21618,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
@@ -21649,7 +21663,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
@@ -21693,7 +21707,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
@@ -21737,7 +21751,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {

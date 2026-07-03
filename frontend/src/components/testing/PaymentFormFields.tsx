@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   UseFormRegister,
   UseFormSetValue,
@@ -114,11 +114,15 @@ export function useInputDataHash(
 ) {
   const [inputData, setInputData] = useState('');
   const [inputDataError, setInputDataError] = useState<string | null>(null);
+  // Monotonic counter so overlapping async hash computations resolving out of
+  // order cannot store the hash of stale input; only the latest call may write.
+  const hashCallIdRef = useRef(0);
 
   const identifierFromPurchaser = watch('identifierFromPurchaser');
 
   const recalculateHash = useCallback(
     async (data: string, identifier: string) => {
+      const callId = ++hashCallIdRef.current;
       if (!data.trim()) {
         setValue('inputHash', '');
         setInputDataError(null);
@@ -133,8 +137,10 @@ export function useInputDataHash(
         }
         setInputDataError(null);
         const hash = await generateMIP004InputHash(parsed, identifier);
+        if (callId !== hashCallIdRef.current) return;
         setValue('inputHash', hash);
       } catch {
+        if (callId !== hashCallIdRef.current) return;
         setInputDataError('Invalid JSON');
         setValue('inputHash', '');
       }

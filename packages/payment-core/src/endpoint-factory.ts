@@ -3,6 +3,7 @@ import { EndpointsFactory, ensureHttpError, FlatObject, ResultHandler } from 'ex
 import createHttpError, { HttpError } from 'http-errors';
 
 import { z } from './zod';
+import { getOwnEntries, isPlainObject, type RuntimeObject, type RuntimePropertyValue } from './object-properties';
 
 type ErrorLogger = {
 	error: (message: string, meta: { error: HttpError; url: string; payload: FlatObject | null }) => unknown;
@@ -12,8 +13,31 @@ const getPublicErrorMessage = (error: HttpError): string =>
 	process.env.NODE_ENV === 'production' && !error.expose
 		? createHttpError(error.statusCode).message // default message for that code
 		: error.message;
+
+// Request payloads reach this logger verbatim on any 5xx, and several endpoints
+// (e.g. payment-source-extended create/patch) carry plaintext wallet mnemonics
+// and other secrets. Redact sensitive-looking keys before logging so seed
+// phrases never land in log storage / the OpenTelemetry log bridge.
+const SENSITIVE_KEY_PATTERN =
+	/mnemonic|passphrase|password|secret|private[_-]?key|signing[_-]?key|seed|encryption[_-]?key|api[_-]?key|token/i;
+
+const redactSensitive = (value: RuntimePropertyValue): RuntimePropertyValue => {
+	if (Array.isArray(value)) {
+		return value.map((entry) => redactSensitive(entry as RuntimePropertyValue));
+	}
+	if (isPlainObject(value)) {
+		const redacted: RuntimeObject = {};
+		for (const [key, entry] of getOwnEntries(value)) {
+			redacted[key] = SENSITIVE_KEY_PATTERN.test(key) ? '[REDACTED]' : redactSensitive(entry);
+		}
+		return redacted;
+	}
+	return value;
+};
+
 const logServerError = (error: HttpError, logger: ErrorLogger, url: string, payload: FlatObject | null) =>
-	!error.expose && logger.error('Server side error', { error, url, payload });
+	!error.expose &&
+	logger.error('Server side error', { error, url, payload: redactSensitive(payload) as FlatObject | null });
 const customResultHandler = new ResultHandler({
 	positive: (output) => {
 		const responseSchema = z.object({

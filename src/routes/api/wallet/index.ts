@@ -4,6 +4,7 @@ import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { decrypt } from '@/utils/security/encryption';
 import { HotWalletType } from '@/generated/prisma/client';
+import { isCardanoAddressForNetwork } from '@masumi/payment-core/payment-source';
 import { MeshWallet, resolvePaymentKeyHash } from '@meshsdk/core';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
@@ -342,10 +343,23 @@ export const patchWalletEndpointPatch = adminAuthenticatedEndpointFactory.build(
 				id: input.id,
 				deletedAt: null,
 			},
+			include: { PaymentSource: { select: { network: true } } },
 		});
 
 		if (wallet == null) {
 			throw createHttpError(404, `${input.id} wallet not found`);
+		}
+
+		// Validate the collection address against the wallet's network. Without
+		// this an admin typo / wrong-network address is stored silently and every
+		// later automated collection/batching tx for this wallet fails at build
+		// time (or funds get directed to an unspendable-for-them address). null
+		// clears the override (the column is set to NULL); only a non-empty
+		// value is network-validated before being stored.
+		if (input.newCollectionAddress != null && input.newCollectionAddress !== '') {
+			if (!isCardanoAddressForNetwork(input.newCollectionAddress, wallet.PaymentSource.network)) {
+				throw createHttpError(400, 'newCollectionAddress is not a valid Cardano address for this wallet network');
+			}
 		}
 
 		const result = await prisma.hotWallet.update({

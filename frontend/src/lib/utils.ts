@@ -346,3 +346,74 @@ export function groupDigits(value: string | null | undefined): string {
   const digits = (negative ? value.slice(1) : value).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   return negative ? `-${digits}` : digits;
 }
+
+const SIX_DECIMAL_DISPLAY_UNITS = new Set(['ADA', 'USDM', 'tUSDM', 'USDCx']);
+const SIX_DECIMAL_BASE = BigInt(10) ** BigInt(6);
+
+/**
+ * Format a 6-decimal base-unit amount (lovelace, USDM/USDCx units) as a
+ * human-readable decimal string, e.g. '1234560000' -> '1,234.56'.
+ *
+ * BigInt math throughout: amounts arrive as strings precisely because they can
+ * exceed Number.MAX_SAFE_INTEGER, where parseInt/Number silently lose
+ * precision. Truncates (never rounds up) to `fractionDigits` so a balance is
+ * not displayed as more than it is.
+ */
+export function formatSixDecimalAmount(
+  amount: string | number | bigint | null | undefined,
+  fractionDigits: number = 2,
+): string {
+  if (amount == null || amount === '') return '—';
+  let value: bigint;
+  try {
+    value = BigInt(amount);
+  } catch {
+    return String(amount);
+  }
+  const negative = value < BigInt(0);
+  const abs = negative ? -value : value;
+  const whole = groupDigits((abs / SIX_DECIMAL_BASE).toString());
+  const fraction = (abs % SIX_DECIMAL_BASE).toString().padStart(6, '0').slice(0, fractionDigits);
+  const formatted = fraction.length > 0 ? `${whole}.${fraction}` : whole;
+  return negative ? `-${formatted}` : formatted;
+}
+
+/**
+ * Format a fund amount together with its display unit.
+ *
+ * Only units known to have 6 decimals (ADA/lovelace and the Cardano
+ * stablecoins) are decimal-shifted; unknown native tokens have unknown
+ * decimals, so their amounts are shown in grouped base units instead of being
+ * wrongly divided by 1e6.
+ */
+export function formatAssetAmount(
+  amount: string | number | bigint | null | undefined,
+  unit: string | undefined,
+  network: string | undefined,
+): string {
+  if (amount == null || amount === '') return '—';
+  const displayUnit = formatFundUnit(unit, network);
+  if (!SIX_DECIMAL_DISPLAY_UNITS.has(displayUnit)) {
+    return `${groupDigits(String(amount))} ${displayUnit}`;
+  }
+  return `${formatSixDecimalAmount(amount)} ${displayUnit}`;
+}
+
+/**
+ * Parse a date-only string ('YYYY-MM-DD', as produced by <input type="date">)
+ * as LOCAL midnight. `new Date('YYYY-MM-DD')` parses as UTC midnight, which
+ * shifts the day for users west of UTC.
+ */
+export function parseDateOnlyLocal(value: string): Date | null {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/** Last millisecond of the given date's local day — for inclusive range ends. */
+export function endOfDayLocal(date: Date): Date {
+  const end = new Date(date);
+  end.setHours(23, 59, 59, 999);
+  return end;
+}

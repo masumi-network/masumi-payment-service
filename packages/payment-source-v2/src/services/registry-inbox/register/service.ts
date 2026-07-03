@@ -37,6 +37,11 @@ import {
 } from '../../../builders/batch-helpers';
 import { type BatchRegistryMintItem, generateRegistryBatchMintTransaction } from '../../../builders/batch-registry';
 import { ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
+import {
+	MAX_COLLATERAL_PREP_FAILURES,
+	recordInboxPrepFailure,
+	resetInboxPrepFailureCount,
+} from '../../wallet-collateral/prep-failure-guard';
 import { unlockHotWalletIfNoPendingTransaction } from '../../wallet-lock-helpers';
 import { asV2Provider } from '../../provider-cast';
 import { INBOX_AGENT_REGISTRATION_METADATA_TYPE } from '../metadata';
@@ -75,14 +80,25 @@ function buildInboxAgentMetadata(request: {
 	return cleanMetadata(metadata) as RegistryMetadata;
 }
 
-async function markRequestFailed(request: InboxRequestRecord, error: unknown): Promise<void> {
+async function markRequestFailed(
+	request: InboxRequestRecord,
+	error: unknown,
+	options: { unlockWallet?: boolean } = {},
+): Promise<void> {
+	// unlockWallet=true when this failure frees the wallet (terminal / all-failed
+	// path). In the per-item validation loop the shared wallet lock must survive
+	// so a concurrent service can't grab the wallet and submit a conflicting mint
+	// from the same UTxO set while the batch keeps building the remaining items;
+	// the terminal paths (all-failed unlock, submit success, markBatchFailed) free
+	// it.
+	const unlockWallet = options.unlockWallet ?? true;
 	logger.error(`Error registering V2 inbox agent ${request.id}`, { error });
 	await prisma.inboxAgentRegistrationRequest.update({
 		where: { id: request.id },
 		data: {
 			state: RegistrationState.RegistrationFailed,
 			error: interpretBlockchainError(error),
-			SmartContractWallet: { update: { lockedAt: null } },
+			...(unlockWallet ? { SmartContractWallet: { update: { lockedAt: null } } } : {}),
 		},
 	});
 }
@@ -159,15 +175,40 @@ async function processSingleRegistration(
 		network,
 		serviceLabel: 'inbox-register-single',
 	});
-	if (collateralCheck.status !== 'ready') {
-		// IMPORTANT: do NOT throw on a non-ready collateral check from this
-		// single-item path. The caller wraps `processSingleRegistration` in
-		// `advancedRetry` then `markRequestFailed` on the final throw, which
-		// would mark a transient "wallet not collateral-ready yet" condition
-		// as a PERMANENT failure. Returning lets the request stay queued; the
-		// next scheduler tick re-picks it up after the prep tx confirms.
+	if (collateralCheck.status === 'failed' && collateralCheck.reason === 'insufficient_funds') {
+		// Wallet cannot fund the collateral prep tx for this attempt. Fail with a
+		// clear reason (instead of silently deferring forever, which looks like
+		// "stuck, nothing happens") so the request lands in RegistrationFailed, is
+		// visible, and can be retried once the wallet is funded (recreate the
+		// inbox registration). markRequestFailed unlocks the wallet on this
+		// single-item terminal path.
+		const failureMessage = `Wallet balance too low to fund the collateral preparation transaction: ${collateralCheck.details}. Top up the wallet with ADA and retry.`;
+		await markRequestFailed(request, new Error(failureMessage));
 		return;
 	}
+	if (collateralCheck.status === 'failed') {
+		// reason === 'prep_tx_failed' (transient; wallet already unlocked). Bound
+		// the retries so a deterministically-failing prep surfaces as
+		// RegistrationFailed instead of looping forever.
+		const reachedLimit = await recordInboxPrepFailure(request.id);
+		if (reachedLimit) {
+			await markRequestFailed(
+				request,
+				new Error(
+					`Collateral preparation failed repeatedly (>= ${MAX_COLLATERAL_PREP_FAILURES} attempts): ${collateralCheck.details}. Check the wallet's UTxO set and retry.`,
+				),
+			);
+		}
+		return;
+	}
+	if (collateralCheck.status !== 'ready') {
+		// status === 'deferred': a collateral prep tx is in flight; keep the
+		// request queued so the next scheduler tick re-picks it up once the prep
+		// tx confirms.
+		return;
+	}
+	// Collateral ready — clear any transient prep-failure count.
+	await resetInboxPrepFailureCount(request.id);
 	const limitedFilteredUtxos = sortUtxosByLovelaceDesc(utxos);
 	const firstUtxo = limitedFilteredUtxos[0];
 	const collateralUtxo = limitedFilteredUtxos[0];
@@ -323,9 +364,42 @@ export async function registerInboxAgentV2() {
 					network,
 					serviceLabel: 'inbox-register-batch',
 				});
+				if (collateralCheck.status === 'failed' && collateralCheck.reason === 'insufficient_funds') {
+					// Wallet cannot fund collateral for the whole batch (all items share
+					// this wallet). Fail every item with a clear reason instead of
+					// silently deferring forever, so they land in RegistrationFailed,
+					// are visible, and can be retried once the wallet is funded
+					// (recreate the inbox registration).
+					const failureMessage = `Wallet balance too low to fund the collateral preparation transaction: ${collateralCheck.details}. Top up the wallet with ADA and retry.`;
+					await Promise.allSettled(
+						registrationRequests.map((request) => markRequestFailed(request, new Error(failureMessage))),
+					);
+					return;
+				}
+				if (collateralCheck.status === 'failed') {
+					// reason === 'prep_tx_failed' (transient; wallet already unlocked).
+					// Bound per-request retries so a deterministically-failing prep
+					// surfaces as RegistrationFailed instead of looping forever.
+					await Promise.allSettled(
+						registrationRequests.map(async (request) => {
+							const reachedLimit = await recordInboxPrepFailure(request.id);
+							if (reachedLimit) {
+								await markRequestFailed(
+									request,
+									new Error(
+										`Collateral preparation failed repeatedly (>= ${MAX_COLLATERAL_PREP_FAILURES} attempts): ${collateralCheck.details}. Check the wallet's UTxO set and retry.`,
+									),
+								);
+							}
+						}),
+					);
+					return;
+				}
 				if (collateralCheck.status !== 'ready') {
 					return;
 				}
+				// Collateral ready — clear any transient prep-failure count on every item.
+				await Promise.allSettled(registrationRequests.map((request) => resetInboxPrepFailureCount(request.id)));
 
 				const collateralUtxo = pickBatchCollateral(utxos, []);
 				if (collateralUtxo == null) {
@@ -375,7 +449,8 @@ export async function registerInboxAgentV2() {
 					if (outcome.status === 'fulfilled') {
 						validated.push(outcome.value);
 					} else {
-						await markRequestFailed(request, outcome.reason);
+						// Mid-batch: keep the shared wallet lock (see markRequestFailed).
+						await markRequestFailed(request, outcome.reason, { unlockWallet: false });
 					}
 				}
 

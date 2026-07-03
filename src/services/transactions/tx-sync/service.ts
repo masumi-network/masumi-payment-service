@@ -84,18 +84,23 @@ async function processPaymentSource(
 		latestIdentifier,
 	);
 
-	if (latestTx.length == 0) {
-		logger.info('No new transactions found for payment contract', {
-			paymentContractAddress: paymentContract.smartContractAddress,
-		});
-		return;
-	}
-
+	// Process rollbacks BEFORE the empty-latestTx early return. The most common
+	// reorg shape is the tip tx being rolled back with no replacement landed yet
+	// (latestTx == []); returning first would leave DB rows Confirmed/Withdrawn
+	// for a tx that no longer exists on chain and re-detect the same rollback
+	// every tick without ever applying it.
 	if (rolledBackTx.length > 0) {
 		logger.info('Rolled back transactions found for payment contract', {
 			paymentContractAddress: paymentContract.smartContractAddress,
 		});
 		await updateRolledBackTransaction(rolledBackTx);
+	}
+
+	if (latestTx.length == 0) {
+		logger.info('No new transactions found for payment contract', {
+			paymentContractAddress: paymentContract.smartContractAddress,
+		});
+		return;
 	}
 
 	const txData = await getExtendedTxInformation(latestTx, blockfrost, maxParallelTransactionsExtendedLookup);

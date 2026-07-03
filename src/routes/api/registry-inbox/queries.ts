@@ -21,7 +21,12 @@ function buildRegistryStateFilter(filterStatus?: FilterStatus): RegistrationStat
 	}
 
 	if (filterStatus === FilterStatus.Pending) {
-		return [RegistrationState.RegistrationRequested, RegistrationState.DeregistrationRequested];
+		return [
+			RegistrationState.RegistrationRequested,
+			RegistrationState.RegistrationInitiated,
+			RegistrationState.DeregistrationRequested,
+			RegistrationState.DeregistrationInitiated,
+		];
 	}
 
 	if (filterStatus === FilterStatus.Failed) {

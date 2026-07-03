@@ -32,13 +32,24 @@ const EVM_ADDRESS = /^0x[a-fA-F0-9]{40}$/;
 const CAIP2_EIP155 = /^eip155:\d+$/;
 const UINT = /^\d+$/;
 
+/**
+ * Canonicalize a base-unit amount for submission: strips leading zeros
+ * ('007' -> '7') via a BigInt round-trip. Invalid input is returned verbatim
+ * so `validateX402Options` rejects it with a proper message instead of this
+ * helper throwing mid-submit.
+ */
+export function normalizeX402Amount(amount: string): string {
+  return UINT.test(amount) ? BigInt(amount).toString() : amount;
+}
+
 export function validateX402Options(options: X402OptionDraft[]): string | null {
   for (let i = 0; i < options.length; i++) {
     const option = options[i];
     const n = i + 1;
     if (!CAIP2_EIP155.test(option.caip2Network)) return `x402 option ${n}: select a chain`;
     if (!EVM_ADDRESS.test(option.asset)) return `x402 option ${n}: asset must be an EVM address`;
-    if (!UINT.test(option.amount) || option.amount === '0') {
+    // /^0+$/ rather than === '0': '00'/'000' are still zero amounts.
+    if (!UINT.test(option.amount) || /^0+$/.test(option.amount)) {
       return `x402 option ${n}: amount must be a positive integer in base units`;
     }
     const decimals = Number(option.decimals);

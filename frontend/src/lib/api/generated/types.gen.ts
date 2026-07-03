@@ -50,7 +50,7 @@ export type ApiKey = {
          */
         unit: string;
         /**
-         * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+         * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)
          */
         amount: string;
     }>;
@@ -503,7 +503,7 @@ export type Payment = {
     }> | null;
     RequestedFunds: Array<{
         /**
-         * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+         * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)
          */
         amount: string;
         /**
@@ -1012,7 +1012,7 @@ export type AgentMetadata = {
              */
             Pricing: Array<{
                 /**
-                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)
                  */
                 amount: string;
                 /**
@@ -1297,7 +1297,7 @@ export type AgentIdentifierMetadata = {
              */
             Pricing: Array<{
                 /**
-                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)
                  */
                 amount: string;
                 /**
@@ -1594,7 +1594,7 @@ export type RegistryEntry = {
          */
         Pricing: Array<{
             /**
-             * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+             * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)
              */
             amount: string;
             /**
@@ -1917,6 +1917,10 @@ export type PaymentSourceExtended = {
      */
     smartContractAddress: string;
     /**
+     * Whether a Web3CardanoV2 source is on the current on-chain contract. "outdated_contract": registry policyId differs from the current default (retired contract — agents orphaned, payment address stale); "custom_address": current version but a non-default admin-wallet address; "in_sync": matches the current default (also for V1 and any non-V2 source).
+     */
+    contractSyncStatus: 'in_sync' | 'outdated_contract' | 'custom_address';
+    /**
      * RPC provider configuration for blockchain interactions
      */
     PaymentSourceConfig: {
@@ -2018,7 +2022,7 @@ export type UtxoAmount = {
      */
     unit: string;
     /**
-     * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+     * The quantity of the asset in its smallest unit. For ADA, this is lovelace (1 ADA = 1000000 lovelace)
      */
     quantity: number | null;
 };
@@ -3205,7 +3209,7 @@ export type PatchApiKeyData = {
              */
             unit: string;
             /**
-             * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+             * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)
              */
             amount: string;
         }>;
@@ -3293,7 +3297,7 @@ export type PostApiKeyData = {
              */
             unit: string;
             /**
-             * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+             * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)
              */
             amount: string;
         }>;
@@ -4112,7 +4116,7 @@ export type PostPaymentResponses = {
             } | null;
             RequestedFunds: Array<{
                 /**
-                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)
                  */
                 amount: string;
                 /**
@@ -4699,7 +4703,7 @@ export type PostPaymentSubmitResultResponses = {
             } | null;
             RequestedFunds: Array<{
                 /**
-                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)
                  */
                 amount: string;
                 /**
@@ -5013,7 +5017,7 @@ export type PostPaymentAuthorizeRefundResponses = {
             } | null;
             RequestedFunds: Array<{
                 /**
-                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)
                  */
                 amount: string;
                 /**
@@ -5343,7 +5347,7 @@ export type PostPaymentErrorStateRecoveryResponses = {
             } | null;
             RequestedFunds: Array<{
                 /**
-                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)
                  */
                 amount: string;
                 /**
@@ -8411,7 +8415,7 @@ export type PostRegistryData = {
                  */
                 unit: string;
                 /**
-                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)
                  */
                 amount: string;
             }>;
@@ -8793,7 +8797,7 @@ export type PostRegistryUpdateData = {
                  */
                 unit: string;
                 /**
-                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)
                  */
                 amount: string;
             }>;

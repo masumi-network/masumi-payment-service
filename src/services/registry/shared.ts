@@ -64,6 +64,7 @@ const V2_UPDATE_REDEEMER_ALTERNATIVE = 1;
 // the existing `@/services/registry/shared` import surface stable.
 export {
 	bumpRegistryAssetNameVersionV2,
+	unbumpRegistryAssetNameVersionV2,
 	generateRegistryAssetNameV2,
 	registryNonceForIndex,
 	V2_REGISTRY_MAX_MINTS_PER_UTXO,

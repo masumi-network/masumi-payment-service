@@ -94,6 +94,12 @@ function getBaseUrl(baseUrl: string): string {
   return 'http://localhost:3001';
 }
 
+// Escape a value for embedding inside single quotes in a POSIX shell command:
+// close the quote, emit an escaped quote, reopen the quote.
+function escapeShellSingleQuotes(value: string): string {
+  return value.replace(/'/g, "'\\''");
+}
+
 // Generate curl command for payment
 // Note: Payment API accepts dates as ISO strings
 export function generatePaymentCurl(baseUrl: string, apiKey: string, body: object): string {
@@ -101,7 +107,7 @@ export function generatePaymentCurl(baseUrl: string, apiKey: string, body: objec
   return `curl -X POST "${url}/api/v1/payment/" \\
   -H "Content-Type: application/json" \\
   -H "token: ${apiKey}" \\
-  -d '${JSON.stringify(body, null, 2)}'`;
+  -d '${escapeShellSingleQuotes(JSON.stringify(body, null, 2))}'`;
 }
 
 export function generatePurchaseCurl(baseUrl: string, apiKey: string, body: object): string {
@@ -109,7 +115,7 @@ export function generatePurchaseCurl(baseUrl: string, apiKey: string, body: obje
   return `curl -X POST "${url}/api/v1/purchase/" \\
   -H "Content-Type: application/json" \\
   -H "token: ${apiKey}" \\
-  -d '${JSON.stringify(body, null, 2)}'`;
+  -d '${escapeShellSingleQuotes(JSON.stringify(body, null, 2))}'`;
 }
 
 function hexToUint8Array(hex: string): Uint8Array {
@@ -130,6 +136,7 @@ export function decodeBlockchainIdentifier(blockchainIdentifier: string): {
   signature: string;
   key: string;
   agentIdentifier: string | null;
+  smartContractAddress: string | null;
 } | null {
   try {
     if (!isValidHex(blockchainIdentifier)) return null;
@@ -139,19 +146,30 @@ export function decodeBlockchainIdentifier(blockchainIdentifier: string): {
 
     if (typeof decompressed !== 'string') return null;
 
+    // Mirrors packages/payment-core/src/blockchain-identifier.ts: Web3CardanoV2
+    // sources append the smart contract address as an optional 5th segment.
     const parts = decompressed.split('.');
-    if (parts.length !== 4) return null;
+    if (parts.length !== 4 && parts.length !== 5) return null;
 
     const sellerId = parts[0];
     const purchaserId = parts[1];
     const signature = parts[2];
     const key = parts[3];
+    const smartContractAddress = parts.length === 5 ? parts[4] : null;
 
     if (!isValidHex(sellerId) || !isValidHex(purchaserId)) return null;
 
+    if (smartContractAddress != null) {
+      // Cardano bech32 addresses are ~108 chars; allow generous buffer and
+      // require the 'addr' prefix (covers 'addr1...' and 'addr_test1...').
+      if (smartContractAddress.length > 250 || !smartContractAddress.startsWith('addr')) {
+        return null;
+      }
+    }
+
     const agentIdentifier = sellerId.length > 64 ? sellerId.slice(64) : null;
 
-    return { sellerId, purchaserId, signature, key, agentIdentifier };
+    return { sellerId, purchaserId, signature, key, agentIdentifier, smartContractAddress };
   } catch {
     return null;
   }
