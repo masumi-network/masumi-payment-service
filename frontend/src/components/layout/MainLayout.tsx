@@ -401,6 +401,7 @@ export function MainLayout({ children }: MainLayoutProps) {
               <Button
                 variant="ghost"
                 size="icon"
+                aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                 className={cn(
                   'h-8 w-8',
                   collapsed ? 'text-muted-foreground opacity-50' : 'text-foreground opacity-100',
@@ -585,6 +586,7 @@ export function MainLayout({ children }: MainLayoutProps) {
             <Button
               variant="ghost"
               size="icon"
+              aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
               className={cn('h-8 w-8', collapsed && !isHovered && 'mx-auto')}
               onClick={() => setThemePreference(theme === 'dark' ? 'light' : 'dark')}
             >

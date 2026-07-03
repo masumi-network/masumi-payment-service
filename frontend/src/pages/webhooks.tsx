@@ -54,7 +54,7 @@ export default function WebhooksPage() {
   // events on the Cardano rail. The event filter, the visible list, and the create/edit
   // dialog all use this so each rail shows only its own events.
   const railEvents = useMemo(() => webhookEventsForRail(activeRail), [activeRail]);
-  const { webhooks, isLoading, isFetching, refetch } = useWebhooks();
+  const { webhooks, isLoading, isFetching, refetch, reset } = useWebhooks();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFormatTab, setActiveFormatTab] =
     useState<(typeof formatTabs)[number]['name']>('All');
@@ -167,7 +167,7 @@ export default function WebhooksPage() {
       {
         onSuccess: () => {
           toast.success('Webhook deleted successfully');
-          void refetch();
+          void reset();
         },
         onError: (error: unknown) => {
           console.error('Failed to delete webhook:', error);

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 
 import { cn, formatAssetAmount } from '@/lib/utils';
+import { formatDateTime } from '@/lib/format-date';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
 import Head from 'next/head';
@@ -27,16 +28,6 @@ import { getPaymentSourceTypeLabel } from '@/lib/payment-source-type';
 import { TransactionAgentIdentifierCell } from '@/components/transactions/TransactionAgentIdentifierCell';
 
 type Transaction = ReturnType<typeof useTransactions>['transactions'][number];
-
-const formatTimestamp = (timestamp: string | null | undefined): string => {
-  if (!timestamp) return '—';
-
-  if (/^\d+$/.test(timestamp)) {
-    return new Date(parseInt(timestamp)).toLocaleString();
-  }
-
-  return new Date(timestamp).toLocaleString();
-};
 
 const formatStatus = (status: string | null) => {
   if (!status) return '—';
@@ -257,7 +248,7 @@ export default function Transactions() {
         const hash = transaction.CurrentTransaction?.txHash || '—';
         const agentIdentifier = transaction.agentIdentifier?.trim() || '—';
         const status = formatStatus(transaction.onChainState);
-        const date = new Date(transaction.createdAt).toLocaleString();
+        const date = formatDateTime(transaction.createdAt);
 
         return [
           transaction.type,
@@ -512,12 +503,17 @@ export default function Transactions() {
                       </td>
                       <td className="p-4">
                         {transaction.onChainState === 'ResultSubmitted'
-                          ? formatTimestamp(transaction.unlockTime)
+                          ? formatDateTime(transaction.unlockTime)
                           : '—'}
                       </td>
-                      <td className="p-4">{new Date(transaction.createdAt).toLocaleString()}</td>
+                      <td className="p-4">{formatDateTime(transaction.createdAt)}</td>
                       <td className="p-4 pr-8">
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label="More actions"
+                          className="h-8 w-8"
+                        >
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </td>

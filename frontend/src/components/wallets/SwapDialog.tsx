@@ -727,6 +727,7 @@ export function SwapDialog({
               }}
               disabled={isFetchingDetails || isSwapping}
               title="Refresh balance"
+              aria-label="Refresh balance"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${isFetchingDetails ? 'animate-spin' : ''}`} />
             </Button>

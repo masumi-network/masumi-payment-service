@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useCallback, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getWebhooks } from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { handleApiCall } from '@/lib/utils';
@@ -7,6 +7,7 @@ import type { WebhookRecord } from '@/lib/webhooks';
 
 export function useWebhooks() {
   const { apiClient, selectedPaymentSourceId } = useAppContext();
+  const queryClient = useQueryClient();
 
   const query = useQuery<WebhookRecord[]>({
     queryKey: ['webhooks', selectedPaymentSourceId],
@@ -40,9 +41,17 @@ export function useWebhooks() {
 
   const webhooks = useMemo(() => query.data ?? [], [query.data]);
 
+  // Clear the list to its skeleton state, then refetch. Use after a mutation
+  // that changes membership (delete a webhook) so the removed row isn't shown.
+  const reset = useCallback(
+    () => queryClient.resetQueries({ queryKey: ['webhooks'] }),
+    [queryClient],
+  );
+
   return {
     ...query,
     webhooks,
+    reset,
     isLoading: query.isLoading,
   };
 }

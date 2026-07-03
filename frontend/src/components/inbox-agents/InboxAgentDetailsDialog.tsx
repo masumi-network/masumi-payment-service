@@ -12,6 +12,7 @@ import {
 } from '@/lib/api/generated';
 import { extractApiErrorMessage } from '@/lib/api-error';
 import { getAgentStatusBadgeVariant } from '@/lib/agent-status';
+import { formatDateTime } from '@/lib/format-date';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import formatBalance from '@/lib/formatBalance';
@@ -51,15 +52,6 @@ const parseInboxAgentStatus = (status: RegistryInboxEntry['state']): string => {
 
 function formatLovelaceToAda(amount: string) {
   return `${formatBalance((parseInt(amount, 10) / 1000000).toFixed(2))} ADA`;
-}
-
-function formatDate(date: Date | string | null | undefined) {
-  if (!date) {
-    return '—';
-  }
-
-  const value = typeof date === 'string' ? new Date(date) : date;
-  return value.toLocaleString();
 }
 
 export function InboxAgentDetailsDialog({
@@ -272,11 +264,15 @@ export function InboxAgentDetailsDialog({
                       </div>
                       <div>
                         <div className="font-medium mb-1">Created</div>
-                        <div className="text-muted-foreground">{formatDate(agent.createdAt)}</div>
+                        <div className="text-muted-foreground">
+                          {formatDateTime(agent.createdAt)}
+                        </div>
                       </div>
                       <div>
                         <div className="font-medium mb-1">Updated</div>
-                        <div className="text-muted-foreground">{formatDate(agent.updatedAt)}</div>
+                        <div className="text-muted-foreground">
+                          {formatDateTime(agent.updatedAt)}
+                        </div>
                       </div>
                     </div>
                   </CardContent>
@@ -306,10 +302,10 @@ export function InboxAgentDetailsDialog({
                     {holdingWallet && usesCombinedWallet ? (
                       <div>
                         <div className="font-medium mb-1">Minting &amp; holding wallet</div>
-                        <div className="flex items-center gap-2 text-muted-foreground font-mono text-xs">
+                        <div className="flex items-center gap-2 text-muted-foreground font-mono text-xs break-all">
                           <button
                             type="button"
-                            className="hover:text-primary text-left"
+                            className="hover:text-primary text-left min-w-0 break-all"
                             onClick={() => handleWalletClick(holdingWallet.walletVkey)}
                           >
                             {holdingWallet.walletAddress}
@@ -321,10 +317,10 @@ export function InboxAgentDetailsDialog({
                       <>
                         <div>
                           <div className="font-medium mb-1">Minting wallet</div>
-                          <div className="flex items-center gap-2 text-muted-foreground font-mono text-xs">
+                          <div className="flex items-center gap-2 text-muted-foreground font-mono text-xs break-all">
                             <button
                               type="button"
-                              className="hover:text-primary text-left"
+                              className="hover:text-primary text-left min-w-0 break-all"
                               onClick={() =>
                                 handleWalletClick(agent.SmartContractWallet.walletVkey)
                               }
@@ -337,10 +333,10 @@ export function InboxAgentDetailsDialog({
                         {holdingWallet && (
                           <div>
                             <div className="font-medium mb-1">Holding wallet</div>
-                            <div className="flex items-center gap-2 text-muted-foreground font-mono text-xs">
+                            <div className="flex items-center gap-2 text-muted-foreground font-mono text-xs break-all">
                               <button
                                 type="button"
-                                className="hover:text-primary text-left"
+                                className="hover:text-primary text-left min-w-0 break-all"
                                 onClick={() => handleWalletClick(holdingWallet.walletVkey)}
                               >
                                 {holdingWallet.walletAddress}
@@ -385,7 +381,7 @@ export function InboxAgentDetailsDialog({
                           <div className="font-medium mb-1">Block time</div>
                           <div className="text-muted-foreground">
                             {agent.CurrentTransaction.blockTime
-                              ? formatDate(new Date(agent.CurrentTransaction.blockTime * 1000))
+                              ? formatDateTime(new Date(agent.CurrentTransaction.blockTime * 1000))
                               : '—'}
                           </div>
                         </div>

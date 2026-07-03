@@ -3,6 +3,7 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { Plus, ArrowLeftRight, PlusCircle, AlertTriangle } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/router';
 import { AddWalletDialog } from '@/components/wallets/AddWalletDialog';
 import { SwapDialog } from '@/components/wallets/SwapDialog';
@@ -88,10 +89,21 @@ export default function WalletsPage() {
   // can start (mirrors the dashboard fix).
   const isLoading = (isLoadingWallets || !selectedPaymentSource) && allWallets.length === 0;
 
-  // Helper to refetch wallets (uses React Query refetch)
+  const queryClient = useQueryClient();
+
+  // Passive refresh (refresh button, top-up balance change): keep the current
+  // rows and refetch in the background.
   const refetchWallets = useCallback(async () => {
     await refetchWalletsQuery();
   }, [refetchWalletsQuery]);
+
+  // Adding a wallet changes list membership, so clear the paginated list to its
+  // skeleton while the fresh page loads; the dashboard aggregate refetches in
+  // place (invalidate, not reset).
+  const refetchAfterWalletAdded = useCallback(() => {
+    void queryClient.resetQueries({ queryKey: ['wallets-paginated'] });
+    void queryClient.invalidateQueries({ queryKey: ['wallets'] });
+  }, [queryClient]);
 
   // Adjust state during render when router query changes
   if (routerSearched !== prevRouterSearched) {
@@ -325,6 +337,7 @@ export default function WalletsPage() {
                               <Button
                                 variant="ghost"
                                 size="icon"
+                                aria-label="Swap tokens"
                                 className="h-8 w-8"
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -368,7 +381,7 @@ export default function WalletsPage() {
         <AddWalletDialog
           open={isAddDialogOpen}
           onClose={() => setIsAddDialogOpen(false)}
-          onSuccess={refetchWallets}
+          onSuccess={refetchAfterWalletAdded}
         />
 
         <SwapDialog

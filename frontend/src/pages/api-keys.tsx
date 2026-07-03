@@ -76,7 +76,7 @@ export default function ApiKeys() {
   // `isDeleting` on the button is post-render defence-in-depth.
   const isDeletingRef = useRef(false);
   const [activeTab, setActiveTab] = useState('All');
-  const { allApiKeys, isLoading, isRefetching, hasMore, loadMore, refetch } = useApiKey();
+  const { allApiKeys, isLoading, isRefetching, hasMore, loadMore, refetch, reset } = useApiKey();
 
   const tabs = [
     { name: 'All', count: null },
@@ -161,7 +161,7 @@ export default function ApiKeys() {
         {
           onSuccess: () => {
             toast.success('API key deleted successfully');
-            refetch();
+            void reset();
           },
           onError: (error: any) => {
             console.error('Error deleting API key:', error);

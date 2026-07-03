@@ -1,5 +1,6 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { Button } from '@/components/ui/button';
+import { formatDateTime } from '@/lib/format-date';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import {
@@ -1120,6 +1121,7 @@ export function WalletDetailsDialog({
               <Button
                 variant="ghost"
                 size="icon"
+                aria-label="Refresh wallet"
                 className="h-8 w-8"
                 onClick={() => {
                   fetchTokenBalances();
@@ -1221,7 +1223,7 @@ export function WalletDetailsDialog({
 
                 {monitoringSummary.lastCheckedAt && (
                   <div className="text-xs text-muted-foreground">
-                    Last full check {monitoringSummary.lastCheckedAt.toLocaleString()}
+                    Last full check {formatDateTime(monitoringSummary.lastCheckedAt)}
                   </div>
                 )}
 
@@ -1267,7 +1269,7 @@ export function WalletDetailsDialog({
                                 Last warning:{' '}
                                 <span className="text-foreground">
                                   {rule.lastAlertedAt
-                                    ? rule.lastAlertedAt.toLocaleString()
+                                    ? formatDateTime(rule.lastAlertedAt)
                                     : 'Not sent'}
                                 </span>
                               </div>
@@ -1342,6 +1344,7 @@ export function WalletDetailsDialog({
                                   <Button
                                     variant="ghost"
                                     size="icon"
+                                    aria-label="Delete low-balance alert"
                                     className="h-8 w-8 shrink-0"
                                     onClick={() => handleDeleteLowBalanceRule(rule)}
                                     disabled={isMutating}
@@ -1385,7 +1388,7 @@ export function WalletDetailsDialog({
                                     </div>
                                     <div className="mt-1 text-sm font-medium">
                                       {rule.lastAlertedAt
-                                        ? rule.lastAlertedAt.toLocaleString()
+                                        ? formatDateTime(rule.lastAlertedAt)
                                         : 'None'}
                                     </div>
                                   </div>
@@ -1717,6 +1720,7 @@ export function WalletDetailsDialog({
                   <Button
                     variant="ghost"
                     size="icon"
+                    aria-label="Refresh swap transactions"
                     className="h-7 w-7"
                     onClick={() => {
                       setSwapTxCursor(undefined);
@@ -1811,7 +1815,7 @@ export function WalletDetailsDialog({
 
                         {/* Tx links */}
                         <div className="flex items-center justify-between text-xs text-muted-foreground">
-                          <span>{new Date(tx.createdAt).toLocaleString()}</span>
+                          <span>{formatDateTime(tx.createdAt)}</span>
                           <div className="flex items-center gap-2">
                             {tx.cancelTxHash && (
                               <a
