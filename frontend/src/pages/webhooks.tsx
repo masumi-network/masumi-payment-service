@@ -417,6 +417,7 @@ export default function WebhooksPage() {
                 <Link
                   href="https://docs.masumi.network/api-reference/payment-service/post-webhooks"
                   target="_blank"
+                  rel="noopener noreferrer"
                   className="text-primary hover:underline"
                 >
                   Learn more

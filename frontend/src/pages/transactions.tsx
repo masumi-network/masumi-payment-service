@@ -208,7 +208,7 @@ export default function Transactions() {
         return 'text-blue-500';
       case 'disputed':
       case 'disputedwithdrawn':
-        return 'text-red-500';
+        return 'text-destructive';
       default:
         return 'text-muted-foreground';
     }
@@ -315,6 +315,7 @@ export default function Transactions() {
                 <a
                   href="https://docs.masumi.network/core-concepts/agent-to-agent-payments"
                   target="_blank"
+                  rel="noopener noreferrer"
                   className="text-primary hover:underline"
                 >
                   Learn more

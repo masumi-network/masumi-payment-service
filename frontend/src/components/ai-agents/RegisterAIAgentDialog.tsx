@@ -15,7 +15,7 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { postRegistry, postRegistryUpdate, RegistryEntry } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { shortenAddress, formatFundUnit } from '@/lib/utils';
-import { Trash2 } from 'lucide-react';
+import { Trash2, ChevronDown } from 'lucide-react';
 import { useForm, Controller, useFieldArray } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -36,6 +36,7 @@ import {
   X402OptionsSection,
   normalizeX402Amount,
   validateX402Options,
+  newX402OptionId,
   type X402OptionDraft,
 } from './X402OptionsSection';
 import {
@@ -251,6 +252,10 @@ export function RegisterAIAgentDialog({
   const isReRegisterMode = !isUpdateMode && !!prefillAgent;
   const sourceAgent = editingAgent ?? prefillAgent ?? null;
   const [isLoading, setIsLoading] = useState(false);
+  // Author/legal/capability/example-output fields are all optional, so collapse
+  // them by default to shorten the form; auto-expand when editing/re-registering
+  // an existing agent (below) so its saved values are visible.
+  const [showAdditional, setShowAdditional] = useState(false);
   const [sellingWallets, setSellingWallets] = useState<
     { wallet: WalletListItem; balance: number }[]
   >([]);
@@ -337,6 +342,9 @@ export function RegisterAIAgentDialog({
 
   useEffect(() => {
     if (!open) return;
+    // Expanded when there's an agent to review (update/re-register), collapsed
+    // for a fresh registration.
+    setShowAdditional(Boolean(sourceAgent));
     if (sourceAgent) {
       const editingAgent = sourceAgent;
       // Pre-fill the form from the existing registration. The on-chain
@@ -405,6 +413,7 @@ export function RegisterAIAgentDialog({
         (editingAgent.supportedPaymentSources ?? [])
           .filter((source): source is EvmSupportedSource => source.chain === 'EVM')
           .map((source) => ({
+            id: newX402OptionId(),
             caip2Network: source.network,
             asset: source.asset,
             amount: source.amount,
@@ -708,9 +717,9 @@ export function RegisterAIAgentDialog({
         onSuccess();
         onClose();
         reset();
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error('Error registering AI agent:', error);
-        toast.error(error?.message ?? 'Failed to register AI agent');
+        toast.error(error instanceof Error ? error.message : 'Failed to register AI agent');
       } finally {
         setIsLoading(false);
       }
@@ -756,10 +765,7 @@ export function RegisterAIAgentDialog({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent
-        className="sm:max-w-[700px] overflow-y-auto"
-        elevatedChildStack={elevatedChildStack}
-      >
+      <DialogContent size="lg" className="overflow-y-auto" elevatedChildStack={elevatedChildStack}>
         <DialogHeader>
           <DialogTitle>
             {isUpdateMode
@@ -779,38 +785,38 @@ export function RegisterAIAgentDialog({
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              API URL <span className="text-red-500">*</span>
+              API URL <span className="text-destructive">*</span>
             </label>
             <Input
               {...register('apiUrl')}
               placeholder="Enter the API URL for your agent"
-              className={errors.apiUrl ? 'border-red-500' : ''}
+              className={errors.apiUrl ? 'border-destructive' : ''}
             />
-            {errors.apiUrl && <p className="text-sm text-red-500">{errors.apiUrl.message}</p>}
+            {errors.apiUrl && <p className="text-sm text-destructive">{errors.apiUrl.message}</p>}
           </div>
 
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              Name <span className="text-red-500">*</span>
+              Name <span className="text-destructive">*</span>
             </label>
             <Input
               {...register('name')}
               placeholder="Enter a name for your agent"
-              className={errors.name ? 'border-red-500' : ''}
+              className={errors.name ? 'border-destructive' : ''}
             />
-            {errors.name && <p className="text-sm text-red-500">{errors.name.message}</p>}
+            {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
           </div>
 
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              Description <span className="text-red-500">*</span>
+              Description <span className="text-destructive">*</span>
             </label>
             <div className="relative">
               <Textarea
                 {...register('description')}
                 placeholder="Describe what your agent does"
                 rows={3}
-                className={`resize-none overflow-y-auto h-[84px] ${errors.description ? 'border-red-500' : ''}`}
+                className={`resize-none overflow-y-auto h-[84px] ${errors.description ? 'border-destructive' : ''}`}
                 maxLength={250}
               />
               <div className="absolute bottom-2 right-2 text-xs text-muted-foreground">
@@ -818,7 +824,7 @@ export function RegisterAIAgentDialog({
               </div>
             </div>
             {errors.description && (
-              <p className="text-sm text-red-500">{errors.description.message}</p>
+              <p className="text-sm text-destructive">{errors.description.message}</p>
             )}
           </div>
 
@@ -841,7 +847,7 @@ export function RegisterAIAgentDialog({
           ) : (
             <div className="space-y-2">
               <label className="text-sm font-medium">
-                Minting wallet <span className="text-red-500">*</span>
+                Minting wallet <span className="text-destructive">*</span>
               </label>
               <Controller
                 control={control}
@@ -850,7 +856,7 @@ export function RegisterAIAgentDialog({
                   <Select value={field.value} onValueChange={field.onChange}>
                     <SelectTrigger
                       disabled={isLoadingWallets}
-                      className={`${errors.selectedWallet ? 'border-red-500' : ''} ${isLoadingWallets ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      className={`${errors.selectedWallet ? 'border-destructive' : ''} ${isLoadingWallets ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
                       <SelectValue
                         placeholder={
@@ -876,7 +882,7 @@ export function RegisterAIAgentDialog({
                 )}
               />
               {errors.selectedWallet && (
-                <p className="text-sm text-red-500">{errors.selectedWallet.message}</p>
+                <p className="text-sm text-destructive">{errors.selectedWallet.message}</p>
               )}
             </div>
           )}
@@ -937,7 +943,7 @@ export function RegisterAIAgentDialog({
               step="0.000001"
               placeholder="Optional ADA amount"
               disabled={!selectedRecipientWalletAddress}
-              className={errors.sendFundingAda ? 'border-red-500' : ''}
+              className={errors.sendFundingAda ? 'border-destructive' : ''}
             />
             <p className="text-xs text-muted-foreground">
               Optional. Sends extra ADA with the minted NFT to the selected holding wallet. The
@@ -949,14 +955,14 @@ export function RegisterAIAgentDialog({
               </p>
             )}
             {errors.sendFundingAda && (
-              <p className="text-sm text-red-500">{errors.sendFundingAda.message}</p>
+              <p className="text-sm text-destructive">{errors.sendFundingAda.message}</p>
             )}
           </div>
 
           {/* Pricing Type */}
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              Pricing Type <span className="text-red-500">*</span>
+              Pricing Type <span className="text-destructive">*</span>
             </label>
             <Controller
               control={control}
@@ -991,7 +997,7 @@ export function RegisterAIAgentDialog({
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <label className="text-sm font-medium">
-                Prices <span className="text-red-500">*</span>
+                Prices <span className="text-destructive">*</span>
               </label>
               <Button
                 type="button"
@@ -1045,7 +1051,7 @@ export function RegisterAIAgentDialog({
                   {errors.prices &&
                     Array.isArray(errors.prices) &&
                     errors.prices[index]?.amount && (
-                      <p className="text-xs text-red-500">
+                      <p className="text-xs text-destructive">
                         {errors.prices[index]?.amount?.message}
                       </p>
                     )}
@@ -1063,13 +1069,13 @@ export function RegisterAIAgentDialog({
               </div>
             ))}
             {errors.prices && typeof errors.prices.message === 'string' && (
-              <p className="text-sm text-red-500">{errors.prices.message}</p>
+              <p className="text-sm text-destructive">{errors.prices.message}</p>
             )}
           </div>
 
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              Tags <span className="text-red-500">*</span>
+              Tags <span className="text-destructive">*</span>
             </label>
             <div>
               <div className="flex gap-2">
@@ -1084,7 +1090,7 @@ export function RegisterAIAgentDialog({
                       handleAddTag();
                     }
                   }}
-                  className={errors.tags ? 'border-red-500' : ''}
+                  className={errors.tags ? 'border-destructive' : ''}
                 />
                 <Button
                   type="button"
@@ -1095,7 +1101,7 @@ export function RegisterAIAgentDialog({
                   Add
                 </Button>
               </div>
-              {errors.tags && <p className="text-sm text-red-500">{errors.tags.message}</p>}
+              {errors.tags && <p className="text-sm text-destructive">{errors.tags.message}</p>}
               {tags.length > 0 && (
                 <div className="flex flex-wrap gap-2 mt-2">
                   {tags.map((tag: string) => (
@@ -1139,162 +1145,179 @@ export function RegisterAIAgentDialog({
             />
           )}
 
-          <div className="flex items-center gap-4 pt-2">
+          <button
+            type="button"
+            onClick={() => setShowAdditional((v) => !v)}
+            aria-expanded={showAdditional}
+            className="flex items-center gap-4 pt-2 w-full group"
+          >
             <Separator className="flex-1" />
-            <h3 className="text-sm font-medium text-muted-foreground whitespace-nowrap">
+            <span className="flex items-center gap-1 text-sm font-medium text-muted-foreground whitespace-nowrap group-hover:text-foreground transition-colors">
               Additional Fields
-            </h3>
+              <ChevronDown
+                className={`h-4 w-4 transition-transform ${showAdditional ? 'rotate-180' : ''}`}
+              />
+            </span>
             <Separator className="flex-1" />
-          </div>
+          </button>
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Author Name</label>
-            <Input
-              {...register('authorName')}
-              placeholder="Enter the author's name"
-              className={errors.authorName ? 'border-red-500' : ''}
-            />
-            {errors.authorName && (
-              <p className="text-sm text-red-500">{errors.authorName.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Author Email</label>
-            <Input
-              {...register('authorEmail')}
-              type="email"
-              placeholder="Enter the author's email address"
-              className={errors.authorEmail ? 'border-red-500' : ''}
-            />
-            {errors.authorEmail && (
-              <p className="text-sm text-red-500">{errors.authorEmail.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Organization</label>
-            <Input
-              {...register('organization')}
-              placeholder="Enter the organization name"
-              className={errors.organization ? 'border-red-500' : ''}
-            />
-            {errors.organization && (
-              <p className="text-sm text-red-500">{errors.organization.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Contact Other (Website, Phone...)</label>
-            <Input
-              {...register('contactOther')}
-              placeholder="Enter other contact"
-              className={errors.contactOther ? 'border-red-500' : ''}
-            />
-            {errors.contactOther && (
-              <p className="text-sm text-red-500">{errors.contactOther.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Terms of Use URL</label>
-            <Input
-              {...register('termsOfUseUrl')}
-              placeholder="Enter the terms of use URL"
-              className={errors.termsOfUseUrl ? 'border-red-500' : ''}
-            />
-            {errors.termsOfUseUrl && (
-              <p className="text-sm text-red-500">{errors.termsOfUseUrl.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Privacy Policy URL</label>
-            <Input
-              {...register('privacyPolicyUrl')}
-              placeholder="Enter the privacy policy URL"
-              className={errors.privacyPolicyUrl ? 'border-red-500' : ''}
-            />
-            {errors.privacyPolicyUrl && (
-              <p className="text-sm text-red-500">{errors.privacyPolicyUrl.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Other URL (Support...)</label>
-            <Input
-              {...register('otherUrl')}
-              placeholder="Enter the other URL"
-              className={errors.otherUrl ? 'border-red-500' : ''}
-            />
-            {errors.otherUrl && <p className="text-sm text-red-500">{errors.otherUrl.message}</p>}
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Capability Name</label>
-              <Input
-                {...register('capabilityName')}
-                placeholder="e.g., Text Generation"
-                className={errors.capabilityName ? 'border-red-500' : ''}
-              />
-              {errors.capabilityName && (
-                <p className="text-sm text-red-500">{errors.capabilityName.message}</p>
-              )}
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Capability Version</label>
-              <Input
-                {...register('capabilityVersion')}
-                placeholder="e.g., 1.0.0"
-                className={errors.capabilityVersion ? 'border-red-500' : ''}
-              />
-              {errors.capabilityVersion && (
-                <p className="text-sm text-red-500">{errors.capabilityVersion.message}</p>
-              )}
-            </div>
-          </div>
-
-          <div className="space-y-4 border rounded-md p-4 bg-muted/40">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium">Example Outputs</label>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={exampleOutputFields.length >= REGISTRY_LIMITS.exampleOutputCount}
-                onClick={() => appendExampleOutput({ name: '', url: '', mimeType: '' })}
-              >
-                Add Example
-              </Button>
-            </div>
-            {exampleOutputFields.map((field, index) => (
-              <div key={field.id} className="p-4 border rounded-md space-y-2 relative">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <Input
-                    placeholder="Name"
-                    {...register(`exampleOutputs.${index}.name` as const)}
-                  />
-                  <Input placeholder="URL" {...register(`exampleOutputs.${index}.url` as const)} />
-                  <Input
-                    placeholder="MIME Type"
-                    {...register(`exampleOutputs.${index}.mimeType` as const)}
-                  />
-                </div>
-                {index >= 0 && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => removeExampleOutput(index)}
-                    className="absolute top-2 right-2"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+          {showAdditional && (
+            <>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Author Name</label>
+                <Input
+                  {...register('authorName')}
+                  placeholder="Enter the author's name"
+                  className={errors.authorName ? 'border-destructive' : ''}
+                />
+                {errors.authorName && (
+                  <p className="text-sm text-destructive">{errors.authorName.message}</p>
                 )}
               </div>
-            ))}
-          </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Author Email</label>
+                <Input
+                  {...register('authorEmail')}
+                  type="email"
+                  placeholder="Enter the author's email address"
+                  className={errors.authorEmail ? 'border-destructive' : ''}
+                />
+                {errors.authorEmail && (
+                  <p className="text-sm text-destructive">{errors.authorEmail.message}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Organization</label>
+                <Input
+                  {...register('organization')}
+                  placeholder="Enter the organization name"
+                  className={errors.organization ? 'border-destructive' : ''}
+                />
+                {errors.organization && (
+                  <p className="text-sm text-destructive">{errors.organization.message}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Contact Other (Website, Phone...)</label>
+                <Input
+                  {...register('contactOther')}
+                  placeholder="Enter other contact"
+                  className={errors.contactOther ? 'border-destructive' : ''}
+                />
+                {errors.contactOther && (
+                  <p className="text-sm text-destructive">{errors.contactOther.message}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Terms of Use URL</label>
+                <Input
+                  {...register('termsOfUseUrl')}
+                  placeholder="Enter the terms of use URL"
+                  className={errors.termsOfUseUrl ? 'border-destructive' : ''}
+                />
+                {errors.termsOfUseUrl && (
+                  <p className="text-sm text-destructive">{errors.termsOfUseUrl.message}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Privacy Policy URL</label>
+                <Input
+                  {...register('privacyPolicyUrl')}
+                  placeholder="Enter the privacy policy URL"
+                  className={errors.privacyPolicyUrl ? 'border-destructive' : ''}
+                />
+                {errors.privacyPolicyUrl && (
+                  <p className="text-sm text-destructive">{errors.privacyPolicyUrl.message}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Other URL (Support...)</label>
+                <Input
+                  {...register('otherUrl')}
+                  placeholder="Enter the other URL"
+                  className={errors.otherUrl ? 'border-destructive' : ''}
+                />
+                {errors.otherUrl && (
+                  <p className="text-sm text-destructive">{errors.otherUrl.message}</p>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Capability Name</label>
+                  <Input
+                    {...register('capabilityName')}
+                    placeholder="e.g., Text Generation"
+                    className={errors.capabilityName ? 'border-destructive' : ''}
+                  />
+                  {errors.capabilityName && (
+                    <p className="text-sm text-destructive">{errors.capabilityName.message}</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Capability Version</label>
+                  <Input
+                    {...register('capabilityVersion')}
+                    placeholder="e.g., 1.0.0"
+                    className={errors.capabilityVersion ? 'border-destructive' : ''}
+                  />
+                  {errors.capabilityVersion && (
+                    <p className="text-sm text-destructive">{errors.capabilityVersion.message}</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-4 border rounded-md p-4 bg-muted/40">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium">Example Outputs</label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={exampleOutputFields.length >= REGISTRY_LIMITS.exampleOutputCount}
+                    onClick={() => appendExampleOutput({ name: '', url: '', mimeType: '' })}
+                  >
+                    Add Example
+                  </Button>
+                </div>
+                {exampleOutputFields.map((field, index) => (
+                  <div key={field.id} className="p-4 border rounded-md space-y-2 relative">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <Input
+                        placeholder="Name"
+                        {...register(`exampleOutputs.${index}.name` as const)}
+                      />
+                      <Input
+                        placeholder="URL"
+                        {...register(`exampleOutputs.${index}.url` as const)}
+                      />
+                      <Input
+                        placeholder="MIME Type"
+                        {...register(`exampleOutputs.${index}.mimeType` as const)}
+                      />
+                    </div>
+                    {index >= 0 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeExampleOutput(index)}
+                        className="absolute top-2 right-2"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
 
           <div className="flex justify-end items-center gap-2">
             <Button variant="outline" onClick={onClose} type="button">

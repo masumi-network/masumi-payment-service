@@ -26,6 +26,9 @@ const eslintConfig = defineConfig([
     rules: {
       'prettier/prettier': 'error',
       'local/no-unknown-valued-maps': 'error',
+      // External links opened with target="_blank" must carry rel="noreferrer"
+      // (or noopener) — prevents reverse-tabnabbing and referrer leakage.
+      'react/jsx-no-target-blank': 'error',
       'no-restricted-syntax': [
         'error',
         {

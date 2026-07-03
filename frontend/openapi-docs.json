@@ -19654,6 +19654,20 @@
                         "description": "Used to paginate through the payment sources",
                         "name": "cursorId",
                         "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Preprod",
+                                "Mainnet"
+                            ],
+                            "description": "Restrict results to a single Cardano network (still bounded by the key network limit)"
+                        },
+                        "required": false,
+                        "description": "Restrict results to a single Cardano network (still bounded by the key network limit)",
+                        "name": "network",
+                        "in": "query"
                     }
                 ],
                 "responses": {
