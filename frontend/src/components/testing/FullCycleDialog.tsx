@@ -279,7 +279,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[800px] h-[85vh] flex flex-col overflow-hidden">
+      <DialogContent size="xl" className="h-[85vh] flex flex-col overflow-hidden">
         <DialogHeader className="shrink-0">
           <DialogTitle>Full Payment Cycle</DialogTitle>
           <p className="text-sm text-muted-foreground mt-2">

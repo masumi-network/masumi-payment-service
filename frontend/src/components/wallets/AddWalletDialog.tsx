@@ -226,7 +226,7 @@ export function AddWalletDialog({ open, onClose, onSuccess }: AddWalletDialogPro
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[600px]">
+      <DialogContent size="md">
         <DialogHeader>
           <DialogTitle>Add {type} Wallet</DialogTitle>
           <DialogDescription>

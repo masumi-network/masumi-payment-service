@@ -73,7 +73,7 @@ const getStatusColor = (status: string | null, hasError?: boolean) => {
       return 'text-blue-500';
     case 'disputed':
     case 'disputedwithdrawn':
-      return 'text-red-500';
+      return 'text-destructive';
     default:
       return 'text-muted-foreground';
   }
@@ -379,7 +379,7 @@ export default function TransactionDetailsDialog({
   return (
     <>
       <Dialog open={!!transaction && !showConfirmDialog} onOpenChange={onClose}>
-        <DialogContent className="sm:max-w-[600px]" isPushedBack={!!selectedWalletForDetails}>
+        <DialogContent size="md" isPushedBack={!!selectedWalletForDetails}>
           <DialogHeader>
             <DialogTitle>Transaction Details</DialogTitle>
           </DialogHeader>

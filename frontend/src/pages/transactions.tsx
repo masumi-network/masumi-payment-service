@@ -208,7 +208,7 @@ export default function Transactions() {
         return 'text-blue-500';
       case 'disputed':
       case 'disputedwithdrawn':
-        return 'text-red-500';
+        return 'text-destructive';
       default:
         return 'text-muted-foreground';
     }

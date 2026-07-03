@@ -111,14 +111,14 @@ export function ApiKeyDialog() {
               required
               className={cn(
                 'flex-1 bg-transparent',
-                error && 'border-red-500 focus-visible:ring-red-500',
+                error && 'border-destructive focus-visible:ring-destructive',
               )}
             />
             <Button type="submit" disabled={isLoading} size="lg">
               {isLoading ? 'Validating...' : 'Enter'}
             </Button>
           </div>
-          {error && <p className="text-red-500 text-sm self-start">{error}</p>}
+          {error && <p className="text-destructive text-sm self-start">{error}</p>}
         </form>
       </main>
 

@@ -879,10 +879,10 @@ export function SwapDialog({
 
               {/* Timeout — acknowledge & recover */}
               {swapStatus === 'timeout' && !isSwapping && (
-                <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/5 p-4 space-y-3">
+                <div className="mt-4 rounded-xl border border-destructive/30 bg-red-500/5 p-4 space-y-3">
                   <div className="flex items-start gap-3">
                     <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-red-500/15">
-                      <XCircle className="h-3 w-3 text-red-500" />
+                      <XCircle className="h-3 w-3 text-destructive" />
                     </div>
                     <div className="space-y-0.5">
                       <p className="text-sm font-medium text-red-400">Transaction timed out</p>
@@ -893,7 +893,7 @@ export function SwapDialog({
                   </div>
                   <Button
                     variant="outline"
-                    className="w-full h-9 text-sm rounded-xl border-red-500/40 text-red-400 hover:bg-red-500/10"
+                    className="w-full h-9 text-sm rounded-xl border-destructive/40 text-red-400 hover:bg-red-500/10"
                     onClick={handleAcknowledgeTimeout}
                     disabled={!swapTransactionId}
                   >

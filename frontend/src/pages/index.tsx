@@ -157,15 +157,14 @@ export default function Overview() {
                 Overview of your AI agents, wallets, and transactions.
               </p>
               <p className="text-xs text-muted-foreground mt-1">
-                Showing data for{' '}
+                Showing{' '}
                 {selectedPaymentSource?.smartContractAddress
                   ? shortenAddress(selectedPaymentSource?.smartContractAddress)
-                  : 'all payment sources'}
-                . This can be changed in the{' '}
+                  : 'all payment sources'}{' '}
+                ·{' '}
                 <Link href="/payment-sources" className="text-primary hover:underline">
-                  payment sources
-                </Link>{' '}
-                page.
+                  Change source
+                </Link>
               </p>
             </div>
 

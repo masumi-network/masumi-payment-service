@@ -217,7 +217,8 @@ export function InboxAgentDetailsDialog({
     <>
       <Dialog open={!!agent && !isDeleteDialogOpen} onOpenChange={onClose}>
         <DialogContent
-          className="max-w-[640px] max-h-[90vh] overflow-y-auto"
+          size="md"
+          className="max-h-[90vh] overflow-y-auto"
           isPushedBack={!!selectedWalletForDetails}
         >
           {agent && (

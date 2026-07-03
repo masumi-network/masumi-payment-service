@@ -251,7 +251,8 @@ export function AIAgentDetailsDialog({
         onOpenChange={onClose}
       >
         <DialogContent
-          className="max-w-[600px] max-h-[90vh] px-0 pb-0 flex flex-col"
+          size="md"
+          className="max-h-[90vh] px-0 pb-0 flex flex-col"
           elevatedStack={elevatedStack}
           isPushedBack={!!selectedWalletForDetails || isVerifyDialogOpen}
         >
