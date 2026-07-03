@@ -64,7 +64,7 @@ export default function WalletsPage() {
   const routerSearched = typeof router.query.searched === 'string' ? router.query.searched : '';
   const [prevRouterSearched, setPrevRouterSearched] = useState(routerSearched);
 
-  const { network } = useAppContext();
+  const { network, selectedPaymentSource } = useAppContext();
   const { rate } = useRate();
   const [selectedWalletForTopup, setSelectedWalletForTopup] = useState<WalletWithBalance | null>(
     null,
@@ -83,7 +83,10 @@ export default function WalletsPage() {
 
   const allWallets = walletsList as WalletWithBalance[];
 
-  const isLoading = isLoadingWallets && allWallets.length === 0;
+  // Also treat "payment source still resolving" as loading so the table shows a
+  // skeleton instead of flashing an empty state before the source-gated query
+  // can start (mirrors the dashboard fix).
+  const isLoading = (isLoadingWallets || !selectedPaymentSource) && allWallets.length === 0;
 
   // Helper to refetch wallets (uses React Query refetch)
   const refetchWallets = useCallback(async () => {

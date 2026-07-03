@@ -58,7 +58,7 @@ export const getStaticProps: GetStaticProps = async () => {
 
 export default function Overview() {
   const { network, selectedPaymentSource } = useAppContext();
-  const { paymentSources } = usePaymentSourceExtendedAll();
+  const { paymentSources, isLoading: isLoadingPaymentSources } = usePaymentSourceExtendedAll();
   const [isMigrationHintDismissed, setIsMigrationHintDismissed] = useState(false);
 
   const queryClient = useQueryClient();
@@ -100,6 +100,15 @@ export default function Overview() {
     () => paymentSources.filter((source) => source.network === network),
     [paymentSources, network],
   );
+  // The agents/wallets queries are gated on a selected payment source, so while
+  // the source list is still resolving (or a source is being auto-selected) those
+  // queries are DISABLED and report `isLoading === false`. Treat that window as
+  // loading too, so sections render a skeleton instead of flashing an empty state
+  // before the query can even start.
+  const isContextResolving =
+    isLoadingPaymentSources || (currentNetworkPaymentSources.length > 0 && !selectedPaymentSource);
+  const agentsSectionLoading = isContextResolving || isLoadingAgents;
+  const walletsSectionLoading = isContextResolving || isLoadingWallets;
   const selectedSourceIsV1 = selectedPaymentSource
     ? !isV2PaymentSource(selectedPaymentSource)
     : false;
@@ -205,7 +214,7 @@ export default function Overview() {
 
             <div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {isLoadingAgents ? (
+                {agentsSectionLoading ? (
                   <StatCardSkeleton />
                 ) : (
                   <StatCard
@@ -220,7 +229,7 @@ export default function Overview() {
                     </div>
                   </StatCard>
                 )}
-                {isLoadingWallets || isLoadingBalances ? (
+                {walletsSectionLoading ? (
                   <StatCardSkeleton />
                 ) : (
                   <StatCard
@@ -235,7 +244,7 @@ export default function Overview() {
                     </div>
                   </StatCard>
                 )}
-                {isLoadingWallets || isLoadingBalances ? (
+                {walletsSectionLoading ? (
                   <StatCardSkeleton />
                 ) : (
                   <StatCard
@@ -293,7 +302,7 @@ export default function Overview() {
                     Manage your AI agents and their configurations.
                   </p>
 
-                  {isLoadingAgents ? (
+                  {agentsSectionLoading ? (
                     <AgentListSkeleton items={3} />
                   ) : agents.length > 0 ? (
                     <div className="animate-content-reveal mb-4 max-h-125 overflow-y-auto">
@@ -390,7 +399,7 @@ export default function Overview() {
                     Manage your buying and selling wallets.
                   </p>
 
-                  {isLoadingWallets ? (
+                  {walletsSectionLoading ? (
                     <WalletListSkeleton rows={2} />
                   ) : (
                     <div className="animate-content-reveal mb-4 max-h-125 overflow-y-auto overflow-x-auto w-full">

@@ -81,7 +81,12 @@ function formatLovelaceToAda(amount: string | null) {
 export default function InboxAgentsPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { apiClient, network, selectedPaymentSourceId } = useAppContext();
+  const { apiClient, network, selectedPaymentSourceId, selectedPaymentSource } = useAppContext();
+  // The inbox query is gated on a resolved source; while an id is restored from
+  // storage but the source object hasn't loaded yet, the query is disabled and
+  // reports isLoading=false. Treat that as loading so the table shows a skeleton
+  // instead of a premature empty state.
+  const isSourceResolving = !!selectedPaymentSourceId && !selectedPaymentSource;
   const { paymentSources } = usePaymentSourceExtendedAll();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState('All');
@@ -340,7 +345,7 @@ export default function InboxAgentsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(isLoading && !inboxAgents.length) ||
+                  {((isLoading || isSourceResolving) && !inboxAgents.length) ||
                   (displayInboxAgents.length === 0 && isSearchPending) ? (
                     <AIAgentTableSkeleton rows={5} />
                   ) : displayInboxAgents.length === 0 ? (
@@ -520,7 +525,7 @@ export default function InboxAgentsPage() {
             </div>
 
             <div className="flex flex-col gap-4 items-center">
-              {!(isLoading && !inboxAgents.length) && (
+              {!((isLoading || isSourceResolving) && !inboxAgents.length) && (
                 <Pagination hasMore={hasMore} isLoading={isFetching} onLoadMore={loadMore} />
               )}
             </div>
