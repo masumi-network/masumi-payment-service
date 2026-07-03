@@ -265,6 +265,11 @@ model RegistryRequest {
   registrationStateLastChangedAt DateTime                 @default(now())
   currentTransactionId           String?
   error                          String?
+  // Consecutive collateral-prep (`prep_tx_failed`) failures for this request.
+  // Bounded by MAX_COLLATERAL_PREP_FAILURES: a deterministically-failing prep
+  // surfaces as *Failed instead of retrying silently forever. Reset to 0 once
+  // collateral prep succeeds (the `ready` gate).
+  collateralPrepFailureCount     Int                      @default(0)
   // Nullable: legacy rows created before this column existed have NULL.
   // Deregister/mutate routes treat NULL-owner rows as admin-only.
   requestedById                  String?
@@ -320,9 +325,9 @@ model AgentVerification {
 }
 
 model SupportedPaymentSource {
-  id                String              @id @default(cuid())
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
+  id                String               @id @default(cuid())
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
   registryRequestId String
   /// Payment rail / chain family advertised by the registry metadata.
   /// Existing Cardano rows use `Cardano`; standard x402 rows use `EVM`.
@@ -341,7 +346,7 @@ model SupportedPaymentSource {
   payTo             String?
   resource          String?
   extra             Json?
-  RegistryRequest   RegistryRequest     @relation(fields: [registryRequestId], references: [id], onDelete: Cascade)
+  RegistryRequest   RegistryRequest      @relation(fields: [registryRequestId], references: [id], onDelete: Cascade)
   X402Attempts      X402PaymentAttempt[]
 
   // Partial database unique indexes preserve the legacy Cardano key and the
@@ -373,17 +378,17 @@ model X402Network {
 }
 
 model X402EvmWallet {
-  id                  String                @id @default(cuid())
-  createdAt           DateTime              @default(now())
-  updatedAt           DateTime              @updatedAt
-  address             String                @unique
+  id                  String                        @id @default(cuid())
+  createdAt           DateTime                      @default(now())
+  updatedAt           DateTime                      @updatedAt
+  address             String                        @unique
   type                X402EvmWalletType
   encryptedPrivateKey String
   note                String?
   deletedAt           DateTime?
   createdById         String?
-  CreatedBy           ApiKey?               @relation(fields: [createdById], references: [id], onDelete: SetNull)
-  FacilitatesNetworks X402Network[]         @relation("X402NetworkFacilitatorWallet")
+  CreatedBy           ApiKey?                       @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  FacilitatesNetworks X402Network[]                 @relation("X402NetworkFacilitatorWallet")
   Budgets             X402WalletBudget[]
   PaymentAttempts     X402PaymentAttempt[]
   LowBalanceRules     X402EvmWalletLowBalanceRule[]
@@ -517,6 +522,11 @@ model InboxAgentRegistrationRequest {
   registrationStateLastChangedAt DateTime          @default(now())
   currentTransactionId           String?
   error                          String?
+  // Consecutive collateral-prep (`prep_tx_failed`) failures for this request.
+  // Bounded by MAX_COLLATERAL_PREP_FAILURES: a deterministically-failing prep
+  // surfaces as *Failed instead of retrying silently forever. Reset to 0 once
+  // collateral prep succeeds (the `ready` gate).
+  collateralPrepFailureCount     Int               @default(0)
   // Nullable: legacy rows created before this column existed have NULL.
   // Deregister/mutate routes treat NULL-owner rows as admin-only.
   requestedById                  String?

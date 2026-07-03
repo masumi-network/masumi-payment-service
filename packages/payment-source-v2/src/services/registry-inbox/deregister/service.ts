@@ -39,6 +39,11 @@ import {
 	generateRegistryBatchDeregisterTransactionAutomaticFees,
 } from '../../../builders/batch-registry';
 import { ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
+import {
+	MAX_COLLATERAL_PREP_FAILURES,
+	recordInboxPrepFailure,
+	resetInboxPrepFailureCount,
+} from '../../wallet-collateral/prep-failure-guard';
 import { unlockHotWalletIfNoPendingTransaction } from '../../wallet-lock-helpers';
 
 const REGISTRY_BATCH_SIZE = 7;
@@ -173,12 +178,29 @@ async function processSingleDeregistration(
 		await markRequestFailed(request, new Error(failureMessage));
 		return;
 	}
+	if (collateralCheck.status === 'failed') {
+		// reason === 'prep_tx_failed' (transient; wallet already unlocked). Bound
+		// the retries so a deterministically-failing prep surfaces as
+		// DeregistrationFailed instead of looping forever.
+		const reachedLimit = await recordInboxPrepFailure(request.id);
+		if (reachedLimit) {
+			await markRequestFailed(
+				request,
+				new Error(
+					`Collateral preparation failed repeatedly (>= ${MAX_COLLATERAL_PREP_FAILURES} attempts): ${collateralCheck.details}. Check the wallet's UTxO set and retry.`,
+				),
+			);
+		}
+		return;
+	}
 	if (collateralCheck.status !== 'ready') {
 		// status === 'deferred': a collateral prep tx is in flight; keep the
 		// request queued so the next scheduler tick re-picks it up once the prep
 		// tx confirms.
 		return;
 	}
+	// Collateral ready — clear any transient prep-failure count.
+	await resetInboxPrepFailureCount(request.id);
 	if (!request.agentIdentifier) {
 		throw new Error('Agent identifier is required for deregistration');
 	}
@@ -318,9 +340,30 @@ export async function deRegisterInboxAgentV2() {
 					);
 					return;
 				}
+				if (collateralCheck.status === 'failed') {
+					// reason === 'prep_tx_failed' (transient; wallet already unlocked).
+					// Bound per-request retries so a deterministically-failing prep
+					// surfaces as DeregistrationFailed instead of looping forever.
+					await Promise.allSettled(
+						registrationRequests.map(async (request) => {
+							const reachedLimit = await recordInboxPrepFailure(request.id);
+							if (reachedLimit) {
+								await markRequestFailed(
+									request,
+									new Error(
+										`Collateral preparation failed repeatedly (>= ${MAX_COLLATERAL_PREP_FAILURES} attempts): ${collateralCheck.details}. Check the wallet's UTxO set and retry.`,
+									),
+								);
+							}
+						}),
+					);
+					return;
+				}
 				if (collateralCheck.status !== 'ready') {
 					return;
 				}
+				// Collateral ready — clear any transient prep-failure count on every item.
+				await Promise.allSettled(registrationRequests.map((request) => resetInboxPrepFailureCount(request.id)));
 
 				const validated: ValidatedInboxDeregistrationItem[] = [];
 				for (const request of registrationRequests) {

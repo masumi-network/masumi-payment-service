@@ -35,6 +35,11 @@ import {
 	generateRegistryBatchUpdateTransactionAutomaticFees,
 } from '../../../builders/batch-registry';
 import { ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
+import {
+	MAX_COLLATERAL_PREP_FAILURES,
+	recordRegistryPrepFailure,
+	resetRegistryPrepFailureCount,
+} from '../../wallet-collateral/prep-failure-guard';
 import { unlockHotWalletIfNoPendingTransaction } from '../../wallet-lock-helpers';
 import { asV2Provider } from '../../provider-cast';
 import { buildAgentMetadata, validateRegistrationPricing } from '../register/service';
@@ -203,12 +208,32 @@ async function processUpdate(
 		await markRequestFailed(request, new Error(failureMessage));
 		return;
 	}
+	if (collateralCheck.status === 'failed') {
+		// reason === 'prep_tx_failed' (insufficient_funds handled above): a
+		// TRANSIENT prep error the wallet was already unlocked for. Normally leave
+		// the request queued for the next tick, but bound the retries so a
+		// DETERMINISTICALLY-failing prep eventually surfaces as UpdateFailed
+		// instead of looping forever.
+		const reachedLimit = await recordRegistryPrepFailure(request.id);
+		if (reachedLimit) {
+			await markRequestFailed(
+				request,
+				new Error(
+					`Collateral preparation failed repeatedly (>= ${MAX_COLLATERAL_PREP_FAILURES} attempts): ${collateralCheck.details}. Check the holder wallet's UTxO set and retry.`,
+				),
+			);
+		}
+		return;
+	}
 	if (collateralCheck.status !== 'ready') {
 		// status === 'deferred': a collateral prep tx is in flight; keep the row
 		// queued so the next scheduler tick re-picks it up once the prep tx
 		// confirms (mirrors register/deregister single-item).
 		return;
 	}
+	// Collateral ready — clear any transient prep-failure count so it never
+	// slow-accumulates into a false UpdateFailed across many update cycles.
+	await resetRegistryPrepFailureCount(request.id);
 
 	// Holder-holds-asset guard: findRegistryTokenUtxo throws if the resolved
 	// holder wallet's UTxOs no longer contain this asset. The UpdateAction tx
@@ -350,10 +375,32 @@ async function processBatchUpdate(
 		await Promise.allSettled(requests.map((request) => markRequestFailed(request, new Error(failureMessage))));
 		return;
 	}
+	if (collateralCheck.status === 'failed') {
+		// reason === 'prep_tx_failed' (transient; wallet already unlocked). Bound
+		// per-request retries so a deterministically-failing prep surfaces as
+		// UpdateFailed instead of looping forever; the whole batch shares this
+		// wallet, so every item saw the same failure this tick.
+		await Promise.allSettled(
+			requests.map(async (request) => {
+				const reachedLimit = await recordRegistryPrepFailure(request.id);
+				if (reachedLimit) {
+					await markRequestFailed(
+						request,
+						new Error(
+							`Collateral preparation failed repeatedly (>= ${MAX_COLLATERAL_PREP_FAILURES} attempts): ${collateralCheck.details}. Check the holder wallet's UTxO set and retry.`,
+						),
+					);
+				}
+			}),
+		);
+		return;
+	}
 	if (collateralCheck.status !== 'ready') {
 		// deferred: a prep tx is in flight; the whole batch stays queued.
 		return;
 	}
+	// Collateral ready — clear any transient prep-failure count on every item.
+	await Promise.allSettled(requests.map((request) => resetRegistryPrepFailureCount(request.id)));
 
 	const paymentSourceMetadata: RegistryMetadataPaymentSource = {
 		network: paymentSource.network,

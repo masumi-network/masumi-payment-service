@@ -39,6 +39,11 @@ import {
 } from '../../../builders/batch-helpers';
 import { type BatchRegistryMintItem, generateRegistryBatchMintTransaction } from '../../../builders/batch-registry';
 import { ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
+import {
+	MAX_COLLATERAL_PREP_FAILURES,
+	recordRegistryPrepFailure,
+	resetRegistryPrepFailureCount,
+} from '../../wallet-collateral/prep-failure-guard';
 import { unlockHotWalletIfNoPendingTransaction } from '../../wallet-lock-helpers';
 import { asV2Provider } from '../../provider-cast';
 import {
@@ -497,9 +502,30 @@ export async function registerAgentV2() {
 						);
 						return;
 					}
+					if (collateralCheck.status === 'failed') {
+						// reason === 'prep_tx_failed' (transient; wallet already unlocked).
+						// Bound per-request retries so a deterministically-failing prep
+						// surfaces as RegistrationFailed instead of looping forever.
+						await Promise.allSettled(
+							registryRequests.map(async (request) => {
+								const reachedLimit = await recordRegistryPrepFailure(request.id);
+								if (reachedLimit) {
+									await markRequestFailed(
+										request,
+										new Error(
+											`Collateral preparation failed repeatedly (>= ${MAX_COLLATERAL_PREP_FAILURES} attempts): ${collateralCheck.details}. Check the wallet's UTxO set and retry.`,
+										),
+									);
+								}
+							}),
+						);
+						return;
+					}
 					if (collateralCheck.status !== 'ready') {
 						return;
 					}
+					// Collateral ready — clear any transient prep-failure count on every item.
+					await Promise.allSettled(registryRequests.map((request) => resetRegistryPrepFailureCount(request.id)));
 
 					// Pick collateral FIRST (smallest pure-ADA UTxO >= 5 ADA) so the
 					// remaining sorted-by-lovelace pool can drive distinct
