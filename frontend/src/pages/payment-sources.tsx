@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/button';
+import { formatDateTime } from '@/lib/format-date';
 import { Input } from '@/components/ui/input';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Plus, Trash2, Edit2, Wand2, AlertTriangle, ShieldCheck, Eye, EyeOff } from 'lucide-react';
@@ -481,7 +482,7 @@ export default function PaymentSourcesPage() {
                         </td>
                         <td className="p-4">
                           <div className="text-xs text-muted-foreground">
-                            {new Date(source.createdAt).toLocaleString()}
+                            {formatDateTime(source.createdAt)}
                           </div>
                         </td>
                         <td className="p-4">

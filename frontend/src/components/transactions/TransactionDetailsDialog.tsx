@@ -2,6 +2,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { cn, shortenAddress, getExplorerUrl, formatAssetAmount } from '@/lib/utils';
+import { formatDateTime } from '@/lib/format-date';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CopyButton } from '@/components/ui/copy-button';
@@ -41,20 +42,6 @@ interface TransactionDetailsDialogProps {
 
 const handleError = (error: unknown, fallback: string = 'An error occurred') => {
   toast.error(extractApiErrorMessage(error, fallback));
-};
-
-const formatTimestamp = (timestamp: string | Date | null | undefined): string => {
-  if (!timestamp) return '—';
-
-  if (timestamp instanceof Date) {
-    return timestamp.toLocaleString();
-  }
-
-  if (/^\d+$/.test(timestamp)) {
-    return new Date(parseInt(timestamp)).toLocaleString();
-  }
-
-  return new Date(timestamp).toLocaleString();
 };
 
 const getStatusColor = (status: string | null, hasError?: boolean) => {
@@ -458,7 +445,7 @@ export default function TransactionDetailsDialog({
               </div>
               <div>
                 <h4 className="font-semibold mb-1">Created</h4>
-                <p className="text-sm">{new Date(transaction.createdAt).toLocaleString()}</p>
+                <p className="text-sm">{formatDateTime(transaction.createdAt)}</p>
               </div>
             </div>
 
@@ -622,29 +609,27 @@ export default function TransactionDetailsDialog({
               <div className="grid grid-cols-2 gap-4 rounded-md border p-4 bg-muted/10">
                 <div>
                   <h5 className="text-sm font-medium mb-1">Created</h5>
-                  <p className="text-sm">{formatTimestamp(transaction.createdAt)}</p>
+                  <p className="text-sm">{formatDateTime(transaction.createdAt)}</p>
                 </div>
                 <div>
                   <h5 className="text-sm font-medium mb-1">Last Updated</h5>
-                  <p className="text-sm">{formatTimestamp(transaction.updatedAt)}</p>
+                  <p className="text-sm">{formatDateTime(transaction.updatedAt)}</p>
                 </div>
                 <div>
                   <h5 className="text-sm font-medium mb-1">Submit Result By</h5>
-                  <p className="text-sm">{formatTimestamp(transaction.submitResultTime)}</p>
+                  <p className="text-sm">{formatDateTime(transaction.submitResultTime)}</p>
                 </div>
                 <div>
                   <h5 className="text-sm font-medium mb-1">Unlock Time</h5>
-                  <p className="text-sm">{formatTimestamp(transaction.unlockTime)}</p>
+                  <p className="text-sm">{formatDateTime(transaction.unlockTime)}</p>
                 </div>
                 <div>
                   <h5 className="text-sm font-medium mb-1">External Dispute Unlock Time</h5>
-                  <p className="text-sm">
-                    {formatTimestamp(transaction.externalDisputeUnlockTime)}
-                  </p>
+                  <p className="text-sm">{formatDateTime(transaction.externalDisputeUnlockTime)}</p>
                 </div>
                 <div>
                   <h5 className="text-sm font-medium mb-1">Last Checked</h5>
-                  <p className="text-sm">{formatTimestamp(transaction.lastCheckedAt)}</p>
+                  <p className="text-sm">{formatDateTime(transaction.lastCheckedAt)}</p>
                 </div>
               </div>
             </div>

@@ -352,6 +352,7 @@ function SeedPhrasesScreen({
                       variant="ghost"
                       size="icon"
                       className="h-7 w-7 shrink-0"
+                      aria-label="Copy address"
                       onClick={() => copyToClipboard(buyingWallet.address)}
                     >
                       <Copy className="h-3.5 w-3.5" />
@@ -482,6 +483,7 @@ function SeedPhrasesScreen({
                       variant="ghost"
                       size="icon"
                       className="h-7 w-7 shrink-0"
+                      aria-label="Copy address"
                       onClick={() => copyToClipboard(sellingWallet.address)}
                     >
                       <Copy className="h-3.5 w-3.5" />
@@ -980,6 +982,7 @@ function PaymentSourceSetupScreen({
                               variant="ghost"
                               size="icon"
                               className="h-7 w-7"
+                              aria-label="Copy address"
                               onClick={() => copyToClipboard(wallet.walletAddress)}
                             >
                               <Copy className="h-3 w-3" />

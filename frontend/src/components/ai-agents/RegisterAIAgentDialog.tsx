@@ -1061,6 +1061,7 @@ export function RegisterAIAgentDialog({
                     type="button"
                     variant="ghost"
                     size="icon"
+                    aria-label="Remove price"
                     onClick={() => removePrice(index)}
                   >
                     <Trash2 className="h-4 w-4" />
@@ -1307,6 +1308,7 @@ export function RegisterAIAgentDialog({
                         type="button"
                         variant="ghost"
                         size="icon"
+                        aria-label="Remove example output"
                         onClick={() => removeExampleOutput(index)}
                         className="absolute top-2 right-2"
                       >

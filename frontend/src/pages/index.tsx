@@ -21,7 +21,7 @@ import { RegistryEntry } from '@/lib/api/generated';
 import { useAgents } from '@/lib/queries/useAgents';
 import { useWallets, WalletWithBalance } from '@/lib/queries/useWallets';
 import { useQueryClient } from '@tanstack/react-query';
-import { invalidateAgentQueries } from '@/lib/queries/agent-cache';
+import { resetAgentQueries } from '@/lib/queries/agent-cache';
 import { useTransactions } from '@/lib/hooks/useTransactions';
 import { toast } from 'react-toastify';
 import Link from 'next/link';
@@ -117,8 +117,10 @@ export default function Overview() {
   const showMigrationHint = canMigrateFromSelectedSource && !isMigrationHintDismissed;
 
   // Refetch functions for after mutations
+  // Only called after a mutation (register / delete / deregister) from the
+  // dashboard, so clear the agent lists to their skeleton while fresh data loads.
   const refetchAgents = () => {
-    invalidateAgentQueries(queryClient);
+    resetAgentQueries(queryClient);
   };
 
   const refetchWallets = () => {
@@ -505,6 +507,7 @@ export default function Overview() {
                                       <Button
                                         variant="ghost"
                                         size="icon"
+                                        aria-label="Swap tokens"
                                         className="h-8 w-8"
                                         onClick={(e) => {
                                           e.stopPropagation();

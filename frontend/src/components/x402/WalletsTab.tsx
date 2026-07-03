@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { formatDateTime } from '@/lib/format-date';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import {
@@ -178,7 +179,7 @@ export function WalletsTab() {
                     {wallet.note || <span className="italic opacity-60">—</span>}
                   </td>
                   <td className="p-4 text-sm text-muted-foreground">
-                    {new Date(wallet.createdAt).toLocaleString()}
+                    {formatDateTime(wallet.createdAt)}
                   </td>
                   <td className="p-4 text-right">
                     <div className="flex items-center justify-end gap-1">
