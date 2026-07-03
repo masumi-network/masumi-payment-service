@@ -8,7 +8,7 @@ import { useRouter } from 'next/router';
 import { RegisterAIAgentDialog } from '@/components/ai-agents/RegisterAIAgentDialog';
 import { Badge } from '@/components/ui/badge';
 
-import { cn, formatAssetAmount, shortenAddress } from '@/lib/utils';
+import { cn, formatAssetAmount, shortenAddress, getExplorerUrl } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { deleteRegistry, RegistryEntry, postRegistryDeregister } from '@/lib/api/generated';
 import { agentHasX402Options } from '@/components/ai-agents/AgentX402Options';
@@ -609,9 +609,16 @@ export default function AIAgentsPage() {
                           <td className="p-4">
                             {agent.agentIdentifier ? (
                               <div className="text-xs font-mono truncate max-w-50 flex items-center gap-2">
-                                <span className="cursor-pointer hover:text-primary">
+                                <a
+                                  href={getExplorerUrl(agent.agentIdentifier, network, 'token')}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="text-primary hover:underline flex items-center gap-1 truncate"
+                                >
                                   {shortenAddress(agent.agentIdentifier)}
-                                </span>
+                                  <ExternalLink className="h-3 w-3 shrink-0" />
+                                </a>
                                 <CopyButton value={agent.agentIdentifier} />
                               </div>
                             ) : (

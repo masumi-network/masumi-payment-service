@@ -1,5 +1,6 @@
 import { ExternalLink, Wallet } from 'lucide-react';
 import { CopyButton } from '@/components/ui/copy-button';
+import { Spinner } from '@/components/ui/spinner';
 import { shortenAddress, getExplorerUrl } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 
@@ -9,6 +10,8 @@ interface WalletLinkProps {
   network: string;
   shorten?: number;
   onInternalClick?: () => void;
+  /** Show a spinner and disable the trigger while the internal lookup resolves. */
+  isLoading?: boolean;
   className?: string;
 }
 
@@ -18,6 +21,7 @@ export function WalletLink({
   network,
   shorten,
   onInternalClick,
+  isLoading,
   className,
 }: WalletLinkProps) {
   const displayValue = address || vkey || '';
@@ -32,11 +36,16 @@ export function WalletLink({
       {onInternalClick ? (
         <button
           type="button"
-          className="font-mono text-sm break-all hover:underline text-primary cursor-pointer text-left"
+          disabled={isLoading}
+          className="font-mono text-sm break-all hover:underline text-primary cursor-pointer text-left disabled:opacity-70 disabled:cursor-wait"
           onClick={onInternalClick}
         >
           {displayText}
-          <Wallet className="h-3 w-3 ml-0.5 inline align-baseline" />
+          {isLoading ? (
+            <Spinner size={12} className="ml-0.5 inline align-baseline" />
+          ) : (
+            <Wallet className="h-3 w-3 ml-0.5 inline align-baseline" />
+          )}
         </button>
       ) : explorerUrl ? (
         <a

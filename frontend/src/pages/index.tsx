@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
 import { cn, formatAssetAmount, formatSixDecimalAmount, shortenAddress } from '@/lib/utils';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { RegistryEntry } from '@/lib/api/generated';
 import { useAgents } from '@/lib/queries/useAgents';
 import { useWallets, WalletWithBalance } from '@/lib/queries/useWallets';
@@ -75,12 +75,23 @@ export default function Overview() {
     hasMore: hasMoreAgents,
     loadMore: loadMoreAgents,
   } = useAgents();
+  // Defer the eager all-wallet balance load until after the dashboard shell has
+  // painted, so its N+1 per-wallet UTxO fan-out doesn't compete with first
+  // render. A single frame is enough to let the layout + skeletons show first.
+  const [walletsReady, setWalletsReady] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setWalletsReady(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
   const {
     wallets: walletsList,
     totalBalance: totalBalanceValue,
     totalUsdcxBalance: totalUsdcxBalanceValue,
-    isLoading: isLoadingWallets,
-  } = useWallets();
+    isLoading: isLoadingWalletsQuery,
+  } = useWallets({ enabled: walletsReady });
+  // Keep the balance cards in their loading state during the pre-paint defer
+  // window so they never flash an empty "0" before the fetch starts.
+  const isLoadingWallets = !walletsReady || isLoadingWalletsQuery;
 
   const totalBalance = useMemo(() => totalBalanceValue || '0', [totalBalanceValue]);
   const totalUsdcxBalance = useMemo(() => totalUsdcxBalanceValue || '0', [totalUsdcxBalanceValue]);

@@ -176,7 +176,9 @@ export function useTransactions(
     },
     initialPageParam: undefined as TransactionsPageParam | undefined,
     getNextPageParam: (lastPage: TransactionsPage) => lastPage.nextPageParam,
-    refetchInterval: 25000,
+    // No background polling — transactions refresh on mount/refetch and via the
+    // manual refresh button. A 25s interval fired requests continuously for
+    // every open dashboard/transactions tab.
     enabled: !!apiClient,
     staleTime: 15000,
     placeholderData: keepPreviousData,

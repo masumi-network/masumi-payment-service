@@ -1,7 +1,14 @@
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { cn, shortenAddress, handleApiCall, formatFundUnit, formatAssetAmount } from '@/lib/utils';
+import {
+  cn,
+  shortenAddress,
+  handleApiCall,
+  formatFundUnit,
+  formatAssetAmount,
+  getExplorerUrl,
+} from '@/lib/utils';
 import { WalletLink } from '@/components/ui/wallet-link';
 import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/WalletDetailsDialog';
 import { CopyButton } from '@/components/ui/copy-button';
@@ -73,6 +80,9 @@ export function AIAgentDetailsDialog({
   const { paymentSources } = usePaymentSourceExtendedAll();
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
     useState<WalletWithBalance | null>(null);
+  // vkey of the wallet whose details lookup is currently in flight (drives the
+  // per-row spinner so a slow lookup gives immediate click feedback).
+  const [loadingWalletVkey, setLoadingWalletVkey] = useState<string | null>(null);
   const currentNetworkPaymentSources = useMemo(
     () => paymentSources.filter((paymentSource) => paymentSource.network === network),
     [paymentSources, network],
@@ -109,9 +119,13 @@ export function AIAgentDetailsDialog({
   }, [agentId, initialTab]);
 
   // Re-registration mints a fresh asset, so it only makes sense for an agent
-  // whose on-chain registration is gone (deregistered) and that is managed on
-  // the active payment source (the mint targets the active source).
-  const canReRegister = agent?.state === 'DeregistrationConfirmed' && isManagedOnActiveSource;
+  // with no live on-chain registration — either deregistered (the old asset was
+  // burned) or a registration that never completed (RegistrationFailed) — and
+  // that is managed on the active payment source (the mint targets the active
+  // source).
+  const canReRegister =
+    (agent?.state === 'DeregistrationConfirmed' || agent?.state === 'RegistrationFailed') &&
+    isManagedOnActiveSource;
 
   const formatDate = (date: Date | string) => {
     const dateObj = typeof date === 'string' ? new Date(date) : date;
@@ -216,14 +230,21 @@ export function AIAgentDetailsDialog({
 
   const handleWalletClick = useCallback(
     async (walletVkey: string) => {
-      const found = await lookupWalletByVkey({ apiClient, walletVkey });
-      if (!found) {
-        toast.error('Wallet not found');
-        return;
+      // Guard against a second click while a lookup is already resolving.
+      if (loadingWalletVkey) return;
+      setLoadingWalletVkey(walletVkey);
+      try {
+        const found = await lookupWalletByVkey({ apiClient, walletVkey });
+        if (!found) {
+          toast.error('Wallet not found');
+          return;
+        }
+        setSelectedWalletForDetails(found);
+      } finally {
+        setLoadingWalletVkey(null);
       }
-      setSelectedWalletForDetails(found);
     },
-    [apiClient],
+    [apiClient, loadingWalletVkey],
   );
 
   return (
@@ -574,8 +595,22 @@ export function AIAgentDetailsDialog({
                           <div className="flex items-center justify-between py-2.5 border-b">
                             <span className="text-sm text-muted-foreground">Agent Identifier</span>
                             <div className="font-mono text-sm flex items-center gap-2">
-                              {shortenAddress(agent.agentIdentifier || '')}
-                              <CopyButton value={agent.agentIdentifier || ''} />
+                              {agent.agentIdentifier ? (
+                                <>
+                                  <a
+                                    href={getExplorerUrl(agent.agentIdentifier, network, 'token')}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-primary hover:underline flex items-center gap-1"
+                                  >
+                                    {shortenAddress(agent.agentIdentifier)}
+                                    <Link2 className="h-3 w-3" />
+                                  </a>
+                                  <CopyButton value={agent.agentIdentifier} />
+                                </>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
                             </div>
                           </div>
                           {usesCombinedWallet && holdingWallet ? (
@@ -588,6 +623,7 @@ export function AIAgentDetailsDialog({
                                 vkey={holdingWallet.walletVkey}
                                 network={network}
                                 shorten={4}
+                                isLoading={loadingWalletVkey === holdingWallet.walletVkey}
                                 onInternalClick={() => handleWalletClick(holdingWallet.walletVkey)}
                               />
                             </div>
@@ -602,6 +638,9 @@ export function AIAgentDetailsDialog({
                                   vkey={agent.SmartContractWallet.walletVkey}
                                   network={network}
                                   shorten={4}
+                                  isLoading={
+                                    loadingWalletVkey === agent.SmartContractWallet.walletVkey
+                                  }
                                   onInternalClick={() =>
                                     handleWalletClick(agent.SmartContractWallet.walletVkey)
                                   }
@@ -617,6 +656,7 @@ export function AIAgentDetailsDialog({
                                     vkey={holdingWallet.walletVkey}
                                     network={network}
                                     shorten={4}
+                                    isLoading={loadingWalletVkey === holdingWallet.walletVkey}
                                     onInternalClick={() =>
                                       handleWalletClick(holdingWallet.walletVkey)
                                     }
@@ -731,10 +771,13 @@ export function AIAgentDetailsDialog({
         elevatedChildStack={elevatedStack}
         title={`Re-register ${agent?.name}?`}
         description={
-          'This mints a brand-new registration and issues a NEW agent identifier. ' +
-          'The previous, deregistered identifier is permanent and cannot be reused, so ' +
-          'anything referencing the old identifier will need to be updated. You can review ' +
-          'and edit all details before minting.'
+          agent?.state === 'RegistrationFailed'
+            ? 'This retries registration as a brand-new mint and issues a NEW agent identifier ' +
+              '(the failed attempt never minted one). Review and edit all details below, then mint.'
+            : 'This mints a brand-new registration and issues a NEW agent identifier. ' +
+              'The previous, deregistered identifier is permanent and cannot be reused, so ' +
+              'anything referencing the old identifier will need to be updated. You can review ' +
+              'and edit all details before minting.'
         }
         onConfirm={() => {
           setIsReRegisterConfirmOpen(false);
