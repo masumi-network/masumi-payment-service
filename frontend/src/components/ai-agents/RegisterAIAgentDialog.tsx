@@ -36,6 +36,7 @@ import {
   X402OptionsSection,
   normalizeX402Amount,
   validateX402Options,
+  newX402OptionId,
   type X402OptionDraft,
 } from './X402OptionsSection';
 import {
@@ -405,6 +406,7 @@ export function RegisterAIAgentDialog({
         (editingAgent.supportedPaymentSources ?? [])
           .filter((source): source is EvmSupportedSource => source.chain === 'EVM')
           .map((source) => ({
+            id: newX402OptionId(),
             caip2Network: source.network,
             asset: source.asset,
             amount: source.amount,
@@ -708,9 +710,9 @@ export function RegisterAIAgentDialog({
         onSuccess();
         onClose();
         reset();
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error('Error registering AI agent:', error);
-        toast.error(error?.message ?? 'Failed to register AI agent');
+        toast.error(error instanceof Error ? error.message : 'Failed to register AI agent');
       } finally {
         setIsLoading(false);
       }

@@ -14,7 +14,7 @@ import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/Wal
 import { CopyButton } from '@/components/ui/copy-button';
 import { postRegistryDeregister } from '@/lib/api/generated';
 import { RegistryEntry, deleteRegistry } from '@/lib/api/generated';
-import { parseAgentStatus } from '@/lib/agent-status';
+import { parseAgentStatus, getAgentStatusBadgeVariant } from '@/lib/agent-status';
 import { isDbDeletableAgentState, isDeregisterableAgentState } from '@/lib/registry-states';
 import type { AgentRelation } from '@/lib/queries/useContextAgents';
 
@@ -50,15 +50,6 @@ interface AIAgentDetailsDialogProps {
   onSuccess?: () => void;
   initialTab?: 'Details' | 'Earnings';
 }
-
-const getStatusBadgeVariant = (status: AIAgent['state']) => {
-  // UpdateConfirmed is a live on-chain registration (with newer metadata).
-  if (status === 'RegistrationConfirmed' || status === 'UpdateConfirmed') return 'success';
-  if (status.includes('Failed')) return 'destructive';
-  if (status.includes('Initiated')) return 'processing';
-  if (status.includes('Requested')) return 'pending';
-  return 'secondary';
-};
 
 export function AIAgentDetailsDialog({
   agent,
@@ -272,7 +263,7 @@ export function AIAgentDetailsDialog({
                     {agent.name}
                   </DialogTitle>
                   <Badge
-                    variant={getStatusBadgeVariant(agent.state)}
+                    variant={getAgentStatusBadgeVariant(agent.state)}
                     className="mt-0.5 shrink-0 whitespace-nowrap"
                   >
                     {parseAgentStatus(agent.state)}

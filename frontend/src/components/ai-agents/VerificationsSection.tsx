@@ -6,9 +6,17 @@ import { Input } from '@/components/ui/input';
 // over-limit lists before they reach the API.
 const MAX_VERIFICATIONS = 10;
 
+/** Stable per-draft id so editable rows key on identity, not array index (index
+ * keys misbind input state when a middle row is removed). UI-only — never sent
+ * to the API. */
+function newDraftId(): string {
+  return crypto.randomUUID();
+}
+
 // Flat form draft for one KERI/Veridian verification claim. Mapped to/from the
 // nested API shape (issuer/schema/credential/holder) by the helpers below.
 export type VerificationDraft = {
+  id: string;
   method: string;
   schemaVersion: string;
   issuerAid: string;
@@ -23,7 +31,7 @@ export type VerificationDraft = {
   baseUrl: string;
 };
 
-export const emptyVerification: VerificationDraft = {
+export const emptyVerification: Omit<VerificationDraft, 'id'> = {
   method: 'KERI-ACDC',
   schemaVersion: '1',
   issuerAid: '',
@@ -123,6 +131,7 @@ export function verificationsFromApi(
 ): VerificationDraft[] {
   if (!entries) return [];
   return entries.map((v) => ({
+    id: newDraftId(),
     method: v.method ?? 'KERI-ACDC',
     schemaVersion: v.schemaVersion ?? '',
     issuerAid: v.issuer?.aid ?? '',
@@ -177,7 +186,7 @@ export function VerificationsSection({
   const atLimit = verifications.length >= MAX_VERIFICATIONS;
   const add = () => {
     if (atLimit) return;
-    onChange([...verifications, { ...emptyVerification }]);
+    onChange([...verifications, { ...emptyVerification, id: newDraftId() }]);
   };
 
   return (
@@ -208,7 +217,7 @@ export function VerificationsSection({
       {error && <p className="text-xs text-destructive">{error}</p>}
 
       {verifications.map((entry, index) => (
-        <div key={index} className="rounded-lg border p-3 space-y-3">
+        <div key={entry.id} className="rounded-lg border p-3 space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-muted-foreground">
               Verification {index + 1}

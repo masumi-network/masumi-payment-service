@@ -315,6 +315,7 @@ export default function Transactions() {
                 <a
                   href="https://docs.masumi.network/core-concepts/agent-to-agent-payments"
                   target="_blank"
+                  rel="noopener noreferrer"
                   className="text-primary hover:underline"
                 >
                   Learn more

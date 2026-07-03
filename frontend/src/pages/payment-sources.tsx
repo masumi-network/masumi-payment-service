@@ -269,6 +269,7 @@ export default function PaymentSourcesPage() {
                 <Link
                   href="https://docs.masumi.network/api-reference/payment-service/get-payment-source"
                   target="_blank"
+                  rel="noopener noreferrer"
                   className="text-primary hover:underline"
                 >
                   Learn more

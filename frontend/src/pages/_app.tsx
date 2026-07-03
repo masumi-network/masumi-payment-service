@@ -301,7 +301,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
               Please use a desktop device to <br /> access the Masumi Admin Interface
             </div>
             <Button variant="muted">
-              <Link href="https://docs.masumi.io" target="_blank">
+              <Link href="https://docs.masumi.io" target="_blank" rel="noopener noreferrer">
                 Learn more
               </Link>
             </Button>

@@ -216,9 +216,9 @@ export function RegisterInboxAgentDialog({
         onSuccess();
         onClose();
         reset();
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error('Error registering inbox agent:', error);
-        toast.error(error?.message ?? 'Failed to register inbox agent');
+        toast.error(error instanceof Error ? error.message : 'Failed to register inbox agent');
       } finally {
         setIsLoading(false);
       }

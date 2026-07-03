@@ -552,6 +552,7 @@ export function MainLayout({ children }: MainLayoutProps) {
               <Link
                 href="https://www.masumi.network/about"
                 target="_blank"
+                rel="noopener noreferrer"
                 className="truncate hover:text-foreground transition-colors"
               >
                 About
@@ -560,6 +561,7 @@ export function MainLayout({ children }: MainLayoutProps) {
               <Link
                 href="https://www.house-of-communication.com/de/en/footer/privacy-policy.html"
                 target="_blank"
+                rel="noopener noreferrer"
                 className="truncate hover:text-foreground transition-colors"
               >
                 Privacy
@@ -568,6 +570,7 @@ export function MainLayout({ children }: MainLayoutProps) {
               <Link
                 href="https://www.masumi.network/product-releases"
                 target="_blank"
+                rel="noopener noreferrer"
                 className="truncate hover:text-foreground transition-colors"
               >
                 Changelog
@@ -612,6 +615,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                   <Link
                     href="https://docs.masumi.network"
                     target="_blank"
+                    rel="noopener noreferrer"
                     className="flex items-center gap-2"
                   >
                     <BookOpen className="h-4 w-4" />
@@ -622,6 +626,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                   <Link
                     href="https://www.masumi.network/contact"
                     target="_blank"
+                    rel="noopener noreferrer"
                     className="flex items-center gap-2"
                   >
                     <MessageSquare className="h-4 w-4" />
