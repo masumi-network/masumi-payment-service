@@ -45,12 +45,24 @@ BEGIN
         )
     );
 
-  IF match_count = 1 AND NOT EXISTS (
-    SELECT 1 FROM "PaymentSource" p2
-    WHERE p2."paymentSourceType" = 'Web3CardanoV2' AND p2."network" = 'Preprod'
-      AND p2."smartContractAddress" = 'addr_test1wzs4e6wc95hkwezlccjw9mdvq0r0rsgx6zk34avptga3ftgn37w4g'
-      AND p2."deletedAt" IS NULL
-  ) THEN
+  -- Skip (no abort) if the target identity is already occupied. The address
+  -- unique index (@@unique([network, smartContractAddress])) covers ALL rows —
+  -- including soft-deleted — so this NOT EXISTS must NOT filter on deletedAt. The
+  -- policyId index (PaymentSource_network_policyId_active_key) is partial (active
+  -- rows only), so that check is active-only. Either collision => skip.
+  IF match_count = 1
+    AND NOT EXISTS (
+      SELECT 1 FROM "PaymentSource" p2
+      WHERE p2."network" = 'Preprod'
+        AND p2."smartContractAddress" = 'addr_test1wzs4e6wc95hkwezlccjw9mdvq0r0rsgx6zk34avptga3ftgn37w4g'
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM "PaymentSource" p3
+      WHERE p3."network" = 'Preprod'
+        AND p3."policyId" = '67ab0c92c4ac1610895a1c965ee50aba41a8f1513b15240723b3bd0b'
+        AND p3."deletedAt" IS NULL
+    )
+  THEN
     SELECT ps.id INTO target_id
     FROM "PaymentSource" ps
     WHERE ps."paymentSourceType" = 'Web3CardanoV2'
@@ -96,12 +108,21 @@ BEGIN
         )
     );
 
-  IF match_count = 1 AND NOT EXISTS (
-    SELECT 1 FROM "PaymentSource" p2
-    WHERE p2."paymentSourceType" = 'Web3CardanoV2' AND p2."network" = 'Mainnet'
-      AND p2."smartContractAddress" = 'addr1wxs4e6wc95hkwezlccjw9mdvq0r0rsgx6zk34avptga3ftgge2j6d'
-      AND p2."deletedAt" IS NULL
-  ) THEN
+  -- Same collision guard as Preprod (see note above): address across ALL rows,
+  -- policyId across active rows.
+  IF match_count = 1
+    AND NOT EXISTS (
+      SELECT 1 FROM "PaymentSource" p2
+      WHERE p2."network" = 'Mainnet'
+        AND p2."smartContractAddress" = 'addr1wxs4e6wc95hkwezlccjw9mdvq0r0rsgx6zk34avptga3ftgge2j6d'
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM "PaymentSource" p3
+      WHERE p3."network" = 'Mainnet'
+        AND p3."policyId" = '67ab0c92c4ac1610895a1c965ee50aba41a8f1513b15240723b3bd0b'
+        AND p3."deletedAt" IS NULL
+    )
+  THEN
     SELECT ps.id INTO target_id
     FROM "PaymentSource" ps
     WHERE ps."paymentSourceType" = 'Web3CardanoV2'
