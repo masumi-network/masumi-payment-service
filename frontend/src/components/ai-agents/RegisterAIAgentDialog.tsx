@@ -65,6 +65,17 @@ interface RegisterAIAgentDialogProps {
    * `editingAgent` is provided.
    */
   editingAgentSmartContractAddress?: string;
+  /**
+   * When set (and `editingAgent` is not), the dialog operates in re-register
+   * mode: it pre-fills from the given agent exactly like update mode, but
+   * stays a fresh registration — the minting-wallet picker is shown and
+   * submission calls the register endpoint, minting a BRAND-NEW asset with a
+   * NEW agent identifier on the active payment source. Used to re-register a
+   * previously deregistered agent.
+   */
+  prefillAgent?: RegistryEntry | null;
+  /** Stack above an elevated parent (e.g. opened from the agent details dialog). */
+  elevatedChildStack?: boolean;
 }
 
 const createPriceSchema = (network: 'Mainnet' | 'Preprod') => {
@@ -231,8 +242,14 @@ export function RegisterAIAgentDialog({
   onSuccess,
   editingAgent,
   editingAgentSmartContractAddress,
+  prefillAgent,
+  elevatedChildStack,
 }: RegisterAIAgentDialogProps) {
   const isUpdateMode = !!editingAgent;
+  // Re-register: prefill from an existing (deregistered) agent but mint a
+  // fresh registration. Never both — editingAgent takes precedence.
+  const isReRegisterMode = !isUpdateMode && !!prefillAgent;
+  const sourceAgent = editingAgent ?? prefillAgent ?? null;
   const [isLoading, setIsLoading] = useState(false);
   const [sellingWallets, setSellingWallets] = useState<
     { wallet: WalletListItem; balance: number }[]
@@ -320,7 +337,8 @@ export function RegisterAIAgentDialog({
 
   useEffect(() => {
     if (!open) return;
-    if (isUpdateMode && editingAgent) {
+    if (sourceAgent) {
+      const editingAgent = sourceAgent;
       // Pre-fill the form from the existing registration. The on-chain
       // pricing unit `''` (empty string) represents lovelace — the
       // RegisterAIAgentDialog UI uses the literal 'lovelace' so the
@@ -405,7 +423,7 @@ export function RegisterAIAgentDialog({
     setX402Error(null);
     setVerifications([]);
     setVerificationsError(null);
-  }, [open, reset, isUpdateMode, editingAgent, network, stablecoinUnit]);
+  }, [open, reset, sourceAgent, network, stablecoinUnit]);
 
   const selectedWallet = useMemo(
     () => sellingWallets.find((wallet) => wallet.wallet.walletVkey === selectedWalletVkey),
@@ -682,7 +700,11 @@ export function RegisterAIAgentDialog({
           );
         }
 
-        toast.success('AI agent registered successfully');
+        toast.success(
+          isReRegisterMode
+            ? 'AI agent re-registration requested (a new identifier will be minted)'
+            : 'AI agent registered successfully',
+        );
         onSuccess();
         onClose();
         reset();
@@ -703,6 +725,7 @@ export function RegisterAIAgentDialog({
       onClose,
       reset,
       isUpdateMode,
+      isReRegisterMode,
       editingAgent,
       editingAgentSmartContractAddress,
       x402Options,
@@ -733,13 +756,24 @@ export function RegisterAIAgentDialog({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[700px] overflow-y-auto">
+      <DialogContent
+        className="sm:max-w-[700px] overflow-y-auto"
+        elevatedChildStack={elevatedChildStack}
+      >
         <DialogHeader>
-          <DialogTitle>{isUpdateMode ? 'Update AI Agent' : 'Register AI Agent'}</DialogTitle>
+          <DialogTitle>
+            {isUpdateMode
+              ? 'Update AI Agent'
+              : isReRegisterMode
+                ? 'Re-register AI Agent'
+                : 'Register AI Agent'}
+          </DialogTitle>
           <p className="text-sm text-muted-foreground mt-2">
             {isUpdateMode
               ? 'Updating the on-chain metadata issues an UpdateAction on the V2 registry contract: the existing asset is burned and a new asset with the incremented version is minted in a single transaction.'
-              : 'This registers your agent on the Masumi Network, making it visible to everyone.'}
+              : isReRegisterMode
+                ? 'This mints a brand-new registration from the previous agent’s details. It will be issued a new agent identifier — the old, deregistered one is not reused. Review the fields and wallet below, then mint.'
+                : 'This registers your agent on the Masumi Network, making it visible to everyone.'}
           </p>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
@@ -1271,10 +1305,14 @@ export function RegisterAIAgentDialog({
                 {isLoading
                   ? isUpdateMode
                     ? 'Updating...'
-                    : 'Registering...'
+                    : isReRegisterMode
+                      ? 'Re-registering...'
+                      : 'Registering...'
                   : isUpdateMode
                     ? 'Update'
-                    : 'Register'}
+                    : isReRegisterMode
+                      ? 'Re-register'
+                      : 'Register'}
               </Button>
             </div>
           </div>
