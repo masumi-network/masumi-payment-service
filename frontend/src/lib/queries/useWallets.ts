@@ -32,10 +32,13 @@ type WalletsResponse = {
   nextCursor?: string;
 };
 
-export function useWallets() {
+export function useWallets(options?: { enabled?: boolean }) {
   const { apiClient, selectedPaymentSourceId, selectedPaymentSource } = useAppContext();
 
   const network = selectedPaymentSource?.network;
+  // Callers can defer this (e.g. the dashboard, until after first paint) so the
+  // eager all-wallet balance fan-out doesn't fire during the initial render.
+  const callerEnabled = options?.enabled ?? true;
 
   const query = useQuery<WalletsResponse>({
     queryKey: ['wallets', selectedPaymentSourceId, network],
@@ -120,7 +123,7 @@ export function useWallets() {
         nextCursor: undefined,
       };
     },
-    enabled: !!selectedPaymentSourceId && !!network,
+    enabled: callerEnabled && !!selectedPaymentSourceId && !!network,
     staleTime: 25000,
   });
 
@@ -134,7 +137,10 @@ export function useWallets() {
   };
 }
 
-const WALLET_PAGE_SIZE = 20;
+// Small page size so the wallets view + source dialogs load only a handful of
+// wallets (and their per-wallet balance lookups) up front; the rest come in on
+// demand via the "load more" affordance rather than all at once.
+const WALLET_PAGE_SIZE = 5;
 
 /**
  * Resolves a set of wallets by their payment key hashes via `GET /wallet/list`,

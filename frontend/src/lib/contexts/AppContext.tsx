@@ -133,6 +133,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   } = usePaymentSourceExtendedAllWithParams({
     apiClient,
     apiKey,
+    // Only enumerate the active network's sources on startup — every consumer
+    // already scopes to `network`, so fetching the other network eagerly was
+    // wasted initial-load work.
+    network,
   });
 
   const currentNetworkPaymentSources = useMemo(

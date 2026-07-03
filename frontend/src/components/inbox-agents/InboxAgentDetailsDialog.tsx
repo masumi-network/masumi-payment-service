@@ -11,11 +11,12 @@ import {
   RegistryInboxEntry,
 } from '@/lib/api/generated';
 import { extractApiErrorMessage } from '@/lib/api-error';
+import { getAgentStatusBadgeVariant } from '@/lib/agent-status';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import formatBalance from '@/lib/formatBalance';
 import { lookupWalletByVkey } from '@/lib/wallet-lookup';
-import { cn, handleApiCall, shortenAddress } from '@/lib/utils';
+import { handleApiCall, shortenAddress } from '@/lib/utils';
 import { useCallback, useMemo, useState } from 'react';
 import { toast } from 'react-toastify';
 
@@ -46,15 +47,6 @@ const parseInboxAgentStatus = (status: RegistryInboxEntry['state']): string => {
     default:
       return status;
   }
-};
-
-const getStatusBadgeVariant = (status: RegistryInboxEntry['state']) => {
-  if (status === 'RegistrationConfirmed') return 'default';
-  if (status.includes('Failed')) return 'destructive';
-  if (status.includes('Initiated')) return 'secondary';
-  if (status.includes('Requested')) return 'secondary';
-  if (status === 'DeregistrationConfirmed') return 'secondary';
-  return 'secondary';
 };
 
 function formatLovelaceToAda(amount: string) {
@@ -225,7 +217,8 @@ export function InboxAgentDetailsDialog({
     <>
       <Dialog open={!!agent && !isDeleteDialogOpen} onOpenChange={onClose}>
         <DialogContent
-          className="max-w-[640px] max-h-[90vh] overflow-y-auto"
+          size="md"
+          className="max-h-[90vh] overflow-y-auto"
           isPushedBack={!!selectedWalletForDetails}
         >
           {agent && (
@@ -238,13 +231,7 @@ export function InboxAgentDetailsDialog({
                       Inbox slug: <span className="font-mono">{agent.agentSlug}</span>
                     </p>
                   </div>
-                  <Badge
-                    variant={getStatusBadgeVariant(agent.state)}
-                    className={cn(
-                      agent.state === 'RegistrationConfirmed' &&
-                        'bg-green-50 text-green-700 hover:bg-green-50/80',
-                    )}
-                  >
+                  <Badge variant={getAgentStatusBadgeVariant(agent.state)}>
                     {parseInboxAgentStatus(agent.state)}
                   </Badge>
                 </div>

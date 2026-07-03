@@ -11,14 +11,24 @@ import { toast } from 'react-toastify';
 type UsePaymentSourceExtendedAllParams = {
   apiClient: Client;
   apiKey: string | null;
+  /**
+   * When set, only that network's sources are fetched (the endpoint filters
+   * server-side). All consumers already scope to the active network, so this
+   * halves the startup enumeration for keys that span both networks. Omit to
+   * fetch every allowed network.
+   */
+  network?: 'Preprod' | 'Mainnet';
 };
 
 function usePaymentSourceExtendedAllInternal({
   apiClient,
   apiKey,
+  network,
 }: UsePaymentSourceExtendedAllParams) {
   const query = useQuery<PaymentSourceExtended[]>({
-    queryKey: ['payment-sources-all', apiKey],
+    // network is part of the key so switching networks refetches instead of
+    // showing the previous network's (now filtered-out) sources.
+    queryKey: ['payment-sources-all', apiKey, network ?? 'all'],
     queryFn: async () => {
       if (!apiKey) {
         return [];
@@ -44,6 +54,7 @@ function usePaymentSourceExtendedAllInternal({
               query: {
                 take,
                 cursorId: cursor,
+                ...(network ? { network } : {}),
               },
             }),
           {
@@ -123,8 +134,8 @@ function usePaymentSourceExtendedAllInternal({
  * This eagerly paginates through the payment-source-extended endpoint on first load.
  */
 export function usePaymentSourceExtendedAll() {
-  const { apiClient, apiKey } = useAppContext();
-  return usePaymentSourceExtendedAllInternal({ apiClient, apiKey });
+  const { apiClient, apiKey, network } = useAppContext();
+  return usePaymentSourceExtendedAllInternal({ apiClient, apiKey, network });
 }
 
 export function usePaymentSourceExtendedAllWithParams(params: UsePaymentSourceExtendedAllParams) {

@@ -31,6 +31,7 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { useInboxAgents } from '@/lib/queries/useInboxAgents';
+import { getAgentStatusBadgeVariant } from '@/lib/agent-status';
 import { lookupWalletByVkey } from '@/lib/wallet-lookup';
 import { cn, formatSixDecimalAmount, handleApiCall, shortenAddress } from '@/lib/utils';
 
@@ -62,15 +63,6 @@ const parseInboxAgentStatus = (status: InboxAgent['state']): string => {
     default:
       return status;
   }
-};
-
-const getStatusBadgeVariant = (status: InboxAgent['state']) => {
-  if (status === 'RegistrationConfirmed') return 'default';
-  if (status.includes('Failed')) return 'destructive';
-  if (status.includes('Initiated')) return 'processing';
-  if (status.includes('Requested')) return 'pending';
-  if (status === 'DeregistrationConfirmed') return 'secondary';
-  return 'secondary';
 };
 
 function formatDate(date: Date | string) {
@@ -471,13 +463,7 @@ export default function InboxAgentsPage() {
                             {formatLovelaceToAda(agent.sendFundingLovelace)}
                           </td>
                           <td className="p-4">
-                            <Badge
-                              variant={getStatusBadgeVariant(agent.state)}
-                              className={cn(
-                                agent.state === 'RegistrationConfirmed' &&
-                                  'bg-green-50 text-green-700 hover:bg-green-50/80',
-                              )}
-                            >
+                            <Badge variant={getAgentStatusBadgeVariant(agent.state)}>
                               {parseInboxAgentStatus(agent.state)}
                             </Badge>
                           </td>

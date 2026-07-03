@@ -10,7 +10,15 @@ import {
 } from '@/components/ui/select';
 import { X402Network } from '@/lib/api/generated';
 
+/** Stable per-draft id so editable rows key on identity, not array index (index
+ * keys misbind input state when a middle row is removed). UI-only — never sent
+ * to the API. */
+export function newX402OptionId(): string {
+  return crypto.randomUUID();
+}
+
 export type X402OptionDraft = {
+  id: string;
   caip2Network: string;
   asset: string;
   amount: string;
@@ -19,7 +27,7 @@ export type X402OptionDraft = {
   resource: string;
 };
 
-export const emptyX402Option: X402OptionDraft = {
+export const emptyX402Option: Omit<X402OptionDraft, 'id'> = {
   caip2Network: '',
   asset: '',
   amount: '',
@@ -78,7 +86,7 @@ export function X402OptionsSection({
   const update = (index: number, patch: Partial<X402OptionDraft>) =>
     onChange(options.map((option, i) => (i === index ? { ...option, ...patch } : option)));
   const remove = (index: number) => onChange(options.filter((_, i) => i !== index));
-  const add = () => onChange([...options, { ...emptyX402Option }]);
+  const add = () => onChange([...options, { ...emptyX402Option, id: newX402OptionId() }]);
 
   return (
     <div className="space-y-3">
@@ -104,7 +112,7 @@ export function X402OptionsSection({
       {error && <p className="text-xs text-destructive">{error}</p>}
 
       {options.map((option, index) => (
-        <div key={index} className="rounded-lg border p-3 space-y-2">
+        <div key={option.id} className="rounded-lg border p-3 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-muted-foreground">Option {index + 1}</span>
             <Button type="button" variant="ghost" size="sm" onClick={() => remove(index)}>

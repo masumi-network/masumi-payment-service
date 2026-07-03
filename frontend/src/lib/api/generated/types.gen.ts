@@ -8945,6 +8945,10 @@ export type GetPaymentSourceExtendedData = {
          * Used to paginate through the payment sources
          */
         cursorId?: string;
+        /**
+         * Restrict results to a single Cardano network (still bounded by the key network limit)
+         */
+        network?: 'Preprod' | 'Mainnet';
     };
     url: '/payment-source-extended';
 };

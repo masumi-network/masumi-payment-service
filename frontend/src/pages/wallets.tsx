@@ -116,9 +116,9 @@ export default function WalletsPage() {
       filtered = filtered.filter((wallet) => {
         const matchAddress =
           wallet.walletAddress?.toLowerCase().includes(query) ||
-          (wallet as any).collectionAddress?.toLowerCase().includes(query) ||
+          wallet.collectionAddress?.toLowerCase().includes(query) ||
           false;
-        const matchNote = (wallet as any).note?.toLowerCase().includes(query) || false;
+        const matchNote = wallet.note?.toLowerCase().includes(query) || false;
         const matchType = wallet.type?.toLowerCase().includes(query) || false;
         const matchBalance = wallet.balance
           ? (parseInt(wallet.balance) / 1000000 || 0).toFixed(2).includes(query)
@@ -151,6 +151,7 @@ export default function WalletsPage() {
                 <Link
                   href="https://docs.masumi.network/core-concepts/wallets"
                   target="_blank"
+                  rel="noopener noreferrer"
                   className="text-primary hover:underline"
                 >
                   Learn more

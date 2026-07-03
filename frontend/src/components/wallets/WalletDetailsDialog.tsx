@@ -1104,7 +1104,7 @@ export function WalletDetailsDialog({
         }}
       >
         <DialogContent
-          className="sm:max-w-[600px]"
+          size="md"
           variant={isChild ? 'slide-from-right' : 'default'}
           isPushedBack={!!selectedWalletForTopup || !!selectedWalletForSwap || !!pendingDeleteRule}
           hideOverlay={isChild}
@@ -1752,10 +1752,10 @@ export function WalletDetailsDialog({
                       Completed: 'text-green-500',
                       Confirmed: 'text-green-500',
                       Pending: 'text-yellow-500',
-                      OrderSubmitTimeout: 'text-red-500',
-                      CancelSubmitTimeout: 'text-red-500',
+                      OrderSubmitTimeout: 'text-destructive',
+                      CancelSubmitTimeout: 'text-destructive',
                     };
-                    const statusColor = statusColorMap[displayStatus] || 'text-red-500';
+                    const statusColor = statusColorMap[displayStatus] || 'text-destructive';
                     const dotColor = statusDotMap[displayStatus] || 'bg-red-500';
                     const statusLabelMap: Record<string, string> = {
                       OrderPending: 'Order Pending',
@@ -1785,7 +1785,7 @@ export function WalletDetailsDialog({
                         key={tx.id}
                         className={`rounded-lg border p-3 space-y-2 transition-colors ${
                           isTimeout
-                            ? 'border-red-500/30 bg-red-500/5'
+                            ? 'border-destructive/30 bg-red-500/5'
                             : displayStatus === 'OrderConfirmed'
                               ? 'border-blue-500/20 bg-blue-500/5'
                               : 'dark:border-muted-foreground/20 border-border'
@@ -1880,7 +1880,7 @@ export function WalletDetailsDialog({
                               <Button
                                 variant="outline"
                                 size="sm"
-                                className="w-full h-7 text-xs rounded-md border-red-500/40 text-red-400 hover:bg-red-500/10"
+                                className="w-full h-7 text-xs rounded-md border-destructive/40 text-red-400 hover:bg-red-500/10"
                                 onClick={() => handleAcknowledgeTimeout(tx)}
                                 disabled={actionLoadingId === tx.id}
                               >

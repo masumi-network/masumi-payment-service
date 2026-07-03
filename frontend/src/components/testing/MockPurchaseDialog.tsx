@@ -359,7 +359,8 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
     <>
       <Dialog open={open} onOpenChange={handleClose}>
         <DialogContent
-          className="sm:max-w-[700px] h-[85vh] flex flex-col overflow-hidden"
+          size="lg"
+          className="h-[85vh] flex flex-col overflow-hidden"
           isPushedBack={!!selectedWalletForDetails}
         >
           <DialogHeader className="shrink-0">
@@ -439,9 +440,11 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
                   onChange={(e) => handlePasteResponse(e.target.value)}
                   placeholder="Paste the JSON response from Create Payment to auto-fill all fields..."
                   rows={4}
-                  className={`font-mono text-xs transition-colors duration-200 ${pasteError ? 'border-red-500' : ''}`}
+                  className={`font-mono text-xs transition-colors duration-200 ${pasteError ? 'border-destructive' : ''}`}
                 />
-                {pasteError && <p className="text-sm text-red-500 animate-fade-in">{pasteError}</p>}
+                {pasteError && (
+                  <p className="text-sm text-destructive animate-fade-in">{pasteError}</p>
+                )}
                 <p className="text-xs text-muted-foreground">
                   Or fill in the fields manually below.
                 </p>
@@ -450,13 +453,13 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
               {/* Blockchain Identifier + Lookup */}
               <div className="space-y-2 animate-fade-in-up opacity-0 animate-stagger-3">
                 <Label>
-                  Blockchain Identifier <span className="text-red-500">*</span>
+                  Blockchain Identifier <span className="text-destructive">*</span>
                 </Label>
                 <div className="flex gap-2">
                   <Input
                     {...register('blockchainIdentifier')}
                     placeholder="Blockchain identifier"
-                    className={`font-mono text-xs flex-1 transition-colors duration-200 ${errors.blockchainIdentifier ? 'border-red-500' : ''}`}
+                    className={`font-mono text-xs flex-1 transition-colors duration-200 ${errors.blockchainIdentifier ? 'border-destructive' : ''}`}
                   />
                   <Button
                     type="button"
@@ -470,7 +473,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
                   </Button>
                 </div>
                 {errors.blockchainIdentifier && (
-                  <p className="text-sm text-red-500 animate-fade-in">
+                  <p className="text-sm text-destructive animate-fade-in">
                     {errors.blockchainIdentifier.message}
                   </p>
                 )}
@@ -488,15 +491,15 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
                   <div className="grid grid-cols-2 gap-x-4 gap-y-3">
                     <div className="space-y-1.5 col-span-2">
                       <Label className="text-xs text-muted-foreground font-normal">
-                        Agent Identifier <span className="text-red-500">*</span>
+                        Agent Identifier <span className="text-destructive">*</span>
                       </Label>
                       <Input
                         {...register('agentIdentifier')}
-                        className={`font-mono text-xs transition-colors duration-200 ${errors.agentIdentifier ? 'border-red-500' : ''}`}
+                        className={`font-mono text-xs transition-colors duration-200 ${errors.agentIdentifier ? 'border-destructive' : ''}`}
                         placeholder="Agent identifier"
                       />
                       {errors.agentIdentifier && (
-                        <p className="text-xs text-red-500 animate-fade-in">
+                        <p className="text-xs text-destructive animate-fade-in">
                           {errors.agentIdentifier.message}
                         </p>
                       )}
@@ -504,15 +507,15 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
 
                     <div className="space-y-1.5 col-span-2">
                       <Label className="text-xs text-muted-foreground font-normal">
-                        Purchaser Identifier <span className="text-red-500">*</span>
+                        Purchaser Identifier <span className="text-destructive">*</span>
                       </Label>
                       <Input
                         {...register('identifierFromPurchaser')}
-                        className={`font-mono text-xs transition-colors duration-200 ${errors.identifierFromPurchaser ? 'border-red-500' : ''}`}
+                        className={`font-mono text-xs transition-colors duration-200 ${errors.identifierFromPurchaser ? 'border-destructive' : ''}`}
                         placeholder="Purchaser identifier"
                       />
                       {errors.identifierFromPurchaser && (
-                        <p className="text-xs text-red-500 animate-fade-in">
+                        <p className="text-xs text-destructive animate-fade-in">
                           {errors.identifierFromPurchaser.message}
                         </p>
                       )}
@@ -520,15 +523,15 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
 
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground font-normal">
-                        Seller VKey <span className="text-red-500">*</span>
+                        Seller VKey <span className="text-destructive">*</span>
                       </Label>
                       <Input
                         {...register('sellerVkey')}
-                        className={`font-mono text-xs transition-colors duration-200 ${errors.sellerVkey ? 'border-red-500' : ''}`}
+                        className={`font-mono text-xs transition-colors duration-200 ${errors.sellerVkey ? 'border-destructive' : ''}`}
                         placeholder="Seller verification key"
                       />
                       {errors.sellerVkey && (
-                        <p className="text-xs text-red-500 animate-fade-in">
+                        <p className="text-xs text-destructive animate-fade-in">
                           {errors.sellerVkey.message}
                         </p>
                       )}
@@ -536,15 +539,15 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
 
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground font-normal">
-                        Input Hash <span className="text-red-500">*</span>
+                        Input Hash <span className="text-destructive">*</span>
                       </Label>
                       <Input
                         {...register('inputHash')}
-                        className={`font-mono text-xs transition-colors duration-200 ${errors.inputHash ? 'border-red-500' : ''}`}
+                        className={`font-mono text-xs transition-colors duration-200 ${errors.inputHash ? 'border-destructive' : ''}`}
                         placeholder="Input hash"
                       />
                       {errors.inputHash && (
-                        <p className="text-xs text-red-500 animate-fade-in">
+                        <p className="text-xs text-destructive animate-fade-in">
                           {errors.inputHash.message}
                         </p>
                       )}
@@ -556,44 +559,44 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
                   <div className="grid grid-cols-2 gap-x-4 gap-y-3">
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground font-normal">
-                        Pay By <span className="text-red-500">*</span>
+                        Pay By <span className="text-destructive">*</span>
                       </Label>
                       <Input
                         {...register('payByTime')}
-                        className={`font-mono text-xs transition-colors duration-200 ${errors.payByTime ? 'border-red-500' : ''}`}
+                        className={`font-mono text-xs transition-colors duration-200 ${errors.payByTime ? 'border-destructive' : ''}`}
                         placeholder="ISO date"
                       />
                     </div>
 
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground font-normal">
-                        Submit Result <span className="text-red-500">*</span>
+                        Submit Result <span className="text-destructive">*</span>
                       </Label>
                       <Input
                         {...register('submitResultTime')}
-                        className={`font-mono text-xs transition-colors duration-200 ${errors.submitResultTime ? 'border-red-500' : ''}`}
+                        className={`font-mono text-xs transition-colors duration-200 ${errors.submitResultTime ? 'border-destructive' : ''}`}
                         placeholder="ISO date"
                       />
                     </div>
 
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground font-normal">
-                        Unlock <span className="text-red-500">*</span>
+                        Unlock <span className="text-destructive">*</span>
                       </Label>
                       <Input
                         {...register('unlockTime')}
-                        className={`font-mono text-xs transition-colors duration-200 ${errors.unlockTime ? 'border-red-500' : ''}`}
+                        className={`font-mono text-xs transition-colors duration-200 ${errors.unlockTime ? 'border-destructive' : ''}`}
                         placeholder="ISO date"
                       />
                     </div>
 
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground font-normal">
-                        External Dispute Unlock <span className="text-red-500">*</span>
+                        External Dispute Unlock <span className="text-destructive">*</span>
                       </Label>
                       <Input
                         {...register('externalDisputeUnlockTime')}
-                        className={`font-mono text-xs transition-colors duration-200 ${errors.externalDisputeUnlockTime ? 'border-red-500' : ''}`}
+                        className={`font-mono text-xs transition-colors duration-200 ${errors.externalDisputeUnlockTime ? 'border-destructive' : ''}`}
                         placeholder="ISO date"
                       />
                     </div>

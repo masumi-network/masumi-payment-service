@@ -8,7 +8,7 @@ import { useRouter } from 'next/router';
 import { RegisterAIAgentDialog } from '@/components/ai-agents/RegisterAIAgentDialog';
 import { Badge } from '@/components/ui/badge';
 
-import { cn, formatAssetAmount, shortenAddress } from '@/lib/utils';
+import { cn, formatAssetAmount, shortenAddress, getExplorerUrl } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { deleteRegistry, RegistryEntry, postRegistryDeregister } from '@/lib/api/generated';
 import { agentHasX402Options } from '@/components/ai-agents/AgentX402Options';
@@ -42,7 +42,7 @@ import { useAgentDetailsDialog } from '@/lib/contexts/AgentDetailsDialogContext'
 import { lookupWalletByVkey } from '@/lib/wallet-lookup';
 import { isV2PaymentSource } from '@/lib/payment-source-type';
 import { MigrateAgentsDialog } from '@/components/ai-agents/MigrateAgentsDialog';
-import { parseAgentStatus } from '@/lib/agent-status';
+import { parseAgentStatus, getAgentStatusBadgeVariant } from '@/lib/agent-status';
 type AIAgent = RegistryEntry & { relation?: AgentRelation };
 
 // Tells apart agents registered on the active source from those registered elsewhere that
@@ -279,15 +279,6 @@ export default function AIAgentsPage() {
     return dateObj.toLocaleDateString();
   };
 
-  const getStatusBadgeVariant = (status: AIAgent['state']) => {
-    if (status === 'RegistrationConfirmed') return 'default';
-    if (status.includes('Failed')) return 'destructive';
-    if (status.includes('Initiated')) return 'processing';
-    if (status.includes('Requested')) return 'pending';
-    if (status === 'DeregistrationConfirmed') return 'secondary';
-    return 'secondary';
-  };
-
   const handleDeleteClick = (agent: AIAgent) => {
     setSelectedAgentToDelete(agent);
     setIsDeleteDialogOpen(true);
@@ -434,6 +425,7 @@ export default function AIAgentsPage() {
                 <a
                   href="https://docs.masumi.network/core-concepts/agentic-service"
                   target="_blank"
+                  rel="noopener noreferrer"
                   className="text-primary hover:underline"
                 >
                   Learn more
@@ -609,9 +601,16 @@ export default function AIAgentsPage() {
                           <td className="p-4">
                             {agent.agentIdentifier ? (
                               <div className="text-xs font-mono truncate max-w-50 flex items-center gap-2">
-                                <span className="cursor-pointer hover:text-primary">
+                                <a
+                                  href={getExplorerUrl(agent.agentIdentifier, network, 'token')}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="text-primary hover:underline flex items-center gap-1 truncate"
+                                >
                                   {shortenAddress(agent.agentIdentifier)}
-                                </span>
+                                  <ExternalLink className="h-3 w-3 shrink-0" />
+                                </a>
                                 <CopyButton value={agent.agentIdentifier} />
                               </div>
                             ) : (
@@ -708,13 +707,7 @@ export default function AIAgentsPage() {
                             )}
                           </td>
                           <td className="p-4">
-                            <Badge
-                              variant={getStatusBadgeVariant(agent.state)}
-                              className={cn(
-                                agent.state === 'RegistrationConfirmed' &&
-                                  'bg-green-50 text-green-700 hover:bg-green-50/80',
-                              )}
-                            >
+                            <Badge variant={getAgentStatusBadgeVariant(agent.state)}>
                               {parseAgentStatus(agent.state)}
                             </Badge>
                           </td>

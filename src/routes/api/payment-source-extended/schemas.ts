@@ -4,6 +4,10 @@ import { z } from '@masumi/payment-core/zod';
 export const paymentSourceExtendedSchemaInput = z.object({
 	take: z.coerce.number().min(1).max(100).default(10).describe('The number of payment sources to return'),
 	cursorId: z.string().max(250).optional().describe('Used to paginate through the payment sources'),
+	network: z
+		.nativeEnum(Network)
+		.optional()
+		.describe('Restrict results to a single Cardano network (still bounded by the key network limit)'),
 });
 
 export const paymentSourceExtendedOutputSchema = z
