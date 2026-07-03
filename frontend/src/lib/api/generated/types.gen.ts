@@ -1917,6 +1917,10 @@ export type PaymentSourceExtended = {
      */
     smartContractAddress: string;
     /**
+     * Whether a Web3CardanoV2 source is on the current on-chain contract. "outdated_contract": registry policyId differs from the current default (retired contract — agents orphaned, payment address stale); "custom_address": current version but a non-default admin-wallet address; "in_sync": matches the current default (also for V1 and any non-V2 source).
+     */
+    contractSyncStatus: 'in_sync' | 'outdated_contract' | 'custom_address';
+    /**
      * RPC provider configuration for blockchain interactions
      */
     PaymentSourceConfig: {

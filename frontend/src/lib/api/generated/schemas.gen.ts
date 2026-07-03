@@ -3551,6 +3551,15 @@ export const PaymentSourceExtendedSchema = {
             type: 'string',
             description: 'Address of the smart contract for this payment source'
         },
+        contractSyncStatus: {
+            type: 'string',
+            enum: [
+                'in_sync',
+                'outdated_contract',
+                'custom_address'
+            ],
+            description: 'Whether a Web3CardanoV2 source is on the current on-chain contract. "outdated_contract": registry policyId differs from the current default (retired contract — agents orphaned, payment address stale); "custom_address": current version but a non-default admin-wallet address; "in_sync": matches the current default (also for V1 and any non-V2 source).'
+        },
         PaymentSourceConfig: {
             type: 'object',
             properties: {
@@ -3646,6 +3655,7 @@ export const PaymentSourceExtendedSchema = {
         'requiredAdminSignatures',
         'policyId',
         'smartContractAddress',
+        'contractSyncStatus',
         'PaymentSourceConfig',
         'lastIdentifierChecked',
         'syncInProgress',

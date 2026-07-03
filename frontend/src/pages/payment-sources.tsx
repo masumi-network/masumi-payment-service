@@ -43,6 +43,7 @@ import { useRouter } from 'next/router';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { extractApiErrorMessage } from '@/lib/api-error';
 import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
+import { PaymentSourceSyncBadge } from '@/components/payment-sources/PaymentSourceSyncBadge';
 import {
   DEFAULT_PAYMENT_SOURCE_TYPE,
   getPaymentSourceTypeLabel,
@@ -452,10 +453,13 @@ export default function PaymentSourcesPage() {
                           </div>
                         </td>
                         <td className="p-4">
-                          <PaymentSourceTypeBadge
-                            paymentSourceType={source.paymentSourceType}
-                            showDefault
-                          />
+                          <div className="flex flex-wrap items-center gap-2">
+                            <PaymentSourceTypeBadge
+                              paymentSourceType={source.paymentSourceType}
+                              showDefault
+                            />
+                            <PaymentSourceSyncBadge status={source.contractSyncStatus} />
+                          </div>
                         </td>
                         <td className="p-4">
                           <div className="text-sm flex items-center gap-2">
