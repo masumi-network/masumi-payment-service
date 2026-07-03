@@ -453,6 +453,12 @@ export function MainLayout({ children }: MainLayoutProps) {
                 )}
                 <Link
                   href={item.href}
+                  onMouseEnter={() => {
+                    // Warm the target route's bundle on hover so the click lands
+                    // on an already-prefetched page (belt-and-suspenders over
+                    // Link's default viewport prefetch).
+                    if (item.href.startsWith('/')) void router.prefetch(item.href);
+                  }}
                   className={cn(
                     'flex items-center rounded-lg text-sm transition-colors duration-150 relative sidebar-active-indicator',
                     isDev

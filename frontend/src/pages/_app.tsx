@@ -16,6 +16,7 @@ import { AgentDetailsDialogProvider } from '@/lib/contexts/AgentDetailsDialogCon
 import { Spinner } from '@/components/ui/spinner';
 import { Header } from '@/components/Header';
 import { Footer } from '@/components/Footer';
+import { RouteProgressBar } from '@/components/layout/RouteProgressBar';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { handleApiCall } from '@/lib/utils';
@@ -314,6 +315,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
 
   return (
     <>
+      <RouteProgressBar />
       {apiKey ? (
         <AgentDetailsDialogProvider>
           <Component {...pageProps} />
