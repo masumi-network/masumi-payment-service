@@ -20,7 +20,7 @@ import { AIAgentTableSkeleton } from '@/components/skeletons/AIAgentTableSkeleto
 import { Spinner } from '@/components/ui/spinner';
 import { useQueryClient } from '@tanstack/react-query';
 import { useContextAgents, type AgentRelation } from '@/lib/queries/useContextAgents';
-import { invalidateAgentQueries } from '@/lib/queries/agent-cache';
+import { invalidateAgentQueries, resetAgentQueries } from '@/lib/queries/agent-cache';
 import { rowActivation } from '@/lib/a11y';
 import { isDeregisterableAgentState } from '@/lib/registry-states';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -43,6 +43,7 @@ import { lookupWalletByVkey } from '@/lib/wallet-lookup';
 import { isV2PaymentSource } from '@/lib/payment-source-type';
 import { MigrateAgentsDialog } from '@/components/ai-agents/MigrateAgentsDialog';
 import { parseAgentStatus, getAgentStatusBadgeVariant } from '@/lib/agent-status';
+import { formatDate } from '@/lib/format-date';
 type AIAgent = RegistryEntry & { relation?: AgentRelation };
 
 // Tells apart agents registered on the active source from those registered elsewhere that
@@ -104,11 +105,21 @@ export default function AIAgentsPage() {
   const queryClient = useQueryClient();
   const { openAgentDetails, closeAgentDetails } = useAgentDetailsDialog();
 
+  // Passive refresh (the refresh button): keep the current rows on screen and
+  // refetch in the background.
   const refetchAll = useCallback(() => {
     // Invalidate the full ['context-agents'] and ['agents'] prefixes so EVERY status-tab /
     // search variant refetches (not just the active query), and the dashboard / testing
     // dialogs reflect the mutation too. Also refresh wallet balances (fees/settlement).
     invalidateAgentQueries(queryClient);
+    void queryClient.invalidateQueries({ queryKey: ['wallets'] });
+  }, [queryClient]);
+
+  // Post-mutation refresh (register / update / deregister / delete): the current
+  // rows are now stale, so clear the agent lists to their skeleton while the
+  // fresh data loads. Wallet balances stay put (invalidate, not reset).
+  const refetchAfterMutation = useCallback(() => {
+    resetAgentQueries(queryClient);
     void queryClient.invalidateQueries({ queryKey: ['wallets'] });
   }, [queryClient]);
 
@@ -274,11 +285,6 @@ export default function AIAgentsPage() {
 
   const shouldOpenRegisterDialog = activeRail === 'cardano' && isRegisterDialogOpen;
 
-  const formatDate = (date: Date | string) => {
-    const dateObj = typeof date === 'string' ? new Date(date) : date;
-    return dateObj.toLocaleDateString();
-  };
-
   const handleDeleteClick = (agent: AIAgent) => {
     setSelectedAgentToDelete(agent);
     setIsDeleteDialogOpen(true);
@@ -332,7 +338,7 @@ export default function AIAgentsPage() {
             toast.success('AI agent deleted successfully');
             setIsDeleteDialogOpen(false);
             setSelectedAgentToDelete(null);
-            refetchAll();
+            refetchAfterMutation();
           },
           onError: (error: unknown) => {
             console.error('Error deleting agent:', error);
@@ -369,7 +375,7 @@ export default function AIAgentsPage() {
             toast.success('AI agent deregistered successfully');
             setIsDeleteDialogOpen(false);
             setSelectedAgentToDelete(null);
-            refetchAll();
+            refetchAfterMutation();
           },
           onError: (error: unknown) => {
             console.error('Error deregistering agent:', error);
@@ -592,8 +598,13 @@ export default function AIAgentsPage() {
                           {...rowActivation(() => handleAgentClick(agent))}
                         >
                           <td className="p-4 max-w-50 truncate pl-6">
-                            <div className="text-sm font-medium">{agent.name}</div>
-                            <div className="text-xs text-muted-foreground truncate">
+                            <div className="text-sm font-medium truncate" title={agent.name}>
+                              {agent.name}
+                            </div>
+                            <div
+                              className="text-xs text-muted-foreground truncate"
+                              title={agent.description ?? undefined}
+                            >
                               {agent.description}
                             </div>
                           </td>
@@ -813,7 +824,7 @@ export default function AIAgentsPage() {
             }}
             onSuccess={() => {
               setTimeout(() => {
-                refetchAll();
+                refetchAfterMutation();
               }, 250);
             }}
           />
@@ -830,7 +841,7 @@ export default function AIAgentsPage() {
               setSelectedAgentToUpdate(null);
               setUpdateAgentSmartContractAddress(null);
               setTimeout(() => {
-                refetchAll();
+                refetchAfterMutation();
               }, 250);
             }}
           />
@@ -876,7 +887,7 @@ export default function AIAgentsPage() {
             open={isMigrateDialogOpen}
             onClose={() => setIsMigrateDialogOpen(false)}
             onSuccess={() => {
-              setTimeout(() => refetchAll(), 250);
+              setTimeout(() => refetchAfterMutation(), 250);
             }}
           />
         </div>

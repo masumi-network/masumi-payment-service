@@ -32,6 +32,7 @@ import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { useInboxAgents } from '@/lib/queries/useInboxAgents';
 import { getAgentStatusBadgeVariant } from '@/lib/agent-status';
+import { formatDate } from '@/lib/format-date';
 import { lookupWalletByVkey } from '@/lib/wallet-lookup';
 import { cn, formatSixDecimalAmount, handleApiCall, shortenAddress } from '@/lib/utils';
 
@@ -64,11 +65,6 @@ const parseInboxAgentStatus = (status: InboxAgent['state']): string => {
       return status;
   }
 };
-
-function formatDate(date: Date | string) {
-  const value = typeof date === 'string' ? new Date(date) : date;
-  return value.toLocaleDateString();
-}
 
 function formatLovelaceToAda(amount: string | null) {
   if (!amount) {
@@ -112,10 +108,18 @@ export default function InboxAgentsPage() {
       searchQuery: debouncedSearchQuery || undefined,
     });
 
+  // Passive refresh (refresh button): keep current rows, refetch in background.
   const refetchAll = useCallback(() => {
     void refetch();
     void queryClient.invalidateQueries({ queryKey: ['wallets'] });
   }, [queryClient, refetch]);
+
+  // Post-mutation (register / deregister / delete): rows are now stale, so clear
+  // the inbox list to its skeleton while fresh data loads.
+  const refetchAfterMutation = useCallback(() => {
+    void queryClient.resetQueries({ queryKey: ['inbox-agents'] });
+    void queryClient.invalidateQueries({ queryKey: ['wallets'] });
+  }, [queryClient]);
 
   const currentNetworkPaymentSources = useMemo(
     () => paymentSources.filter((paymentSource) => paymentSource.network === network),
@@ -206,7 +210,7 @@ export default function InboxAgentsPage() {
             setIsDeleteDialogOpen(false);
             setSelectedInboxAgentToDelete(null);
             setSelectedInboxAgent(null);
-            refetchAll();
+            refetchAfterMutation();
           },
           onError: (error: unknown) => {
             toast.error(extractApiErrorMessage(error, 'Failed to delete inbox agent'));
@@ -251,7 +255,7 @@ export default function InboxAgentsPage() {
             setIsDeleteDialogOpen(false);
             setSelectedInboxAgentToDelete(null);
             setSelectedInboxAgent(null);
-            refetchAll();
+            refetchAfterMutation();
           },
           onError: (error: unknown) => {
             toast.error(extractApiErrorMessage(error, 'Failed to deregister inbox agent'));
@@ -388,8 +392,13 @@ export default function InboxAgentsPage() {
                           onClick={() => setSelectedInboxAgent(agent)}
                         >
                           <td className="p-4 max-w-64 truncate pl-6">
-                            <div className="text-sm font-medium">{agent.name}</div>
-                            <div className="text-xs text-muted-foreground truncate">
+                            <div className="text-sm font-medium truncate" title={agent.name}>
+                              {agent.name}
+                            </div>
+                            <div
+                              className="text-xs text-muted-foreground truncate"
+                              title={agent.description ?? undefined}
+                            >
                               {agent.description || 'No description'}
                             </div>
                           </td>
@@ -538,7 +547,7 @@ export default function InboxAgentsPage() {
             }}
             onSuccess={() => {
               setTimeout(() => {
-                refetchAll();
+                refetchAfterMutation();
               }, 250);
             }}
           />
@@ -549,7 +558,7 @@ export default function InboxAgentsPage() {
             onSuccess={() => {
               setSelectedInboxAgent(null);
               setTimeout(() => {
-                refetchAll();
+                refetchAfterMutation();
               }, 250);
             }}
           />

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { formatDateTime } from '@/lib/format-date';
 import { rowActivation } from '@/lib/a11y';
 import { Button } from '@/components/ui/button';
 import { Badge, type BadgeProps } from '@/components/ui/badge';
@@ -235,7 +236,7 @@ export function PaymentsTab() {
                   </td>
                   <td className="p-4 font-mono text-sm">{shortenAddress(attempt.asset, 6)}</td>
                   <td className="p-4 text-sm text-muted-foreground">
-                    {new Date(attempt.createdAt).toLocaleString()}
+                    {formatDateTime(attempt.createdAt)}
                   </td>
                 </tr>
               ))
@@ -314,7 +315,7 @@ function PaymentDetailsDialog({
               {attempt.paymentIdentifier && (
                 <DetailRow label="Payment identifier" value={attempt.paymentIdentifier} mono />
               )}
-              <DetailRow label="Created" value={new Date(attempt.createdAt).toLocaleString()} />
+              <DetailRow label="Created" value={formatDateTime(attempt.createdAt)} />
             </div>
 
             {attempt.errorReason && (

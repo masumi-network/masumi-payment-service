@@ -409,7 +409,13 @@ export function usePaginatedWallets(walletType?: 'Selling' | 'Purchasing') {
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) =>
       lastPage.hasMore && lastPage.nextCursor ? lastPage.nextCursor : undefined,
-    enabled: !!apiClient && !!selectedPaymentSourceId,
+    // Gate on `network` too: it derives from `selectedPaymentSource`, which
+    // resolves a beat after `selectedPaymentSourceId` is restored from storage.
+    // Running before it resolves would cache an empty result under a key that
+    // never changes when the source loads — so the page would show no wallets
+    // until a manual refetch (the reload-then-empty bug). Not enabling until
+    // `network` is known means the query runs once, correctly.
+    enabled: !!apiClient && !!selectedPaymentSourceId && !!network,
     staleTime: 25000,
   });
 

@@ -15,6 +15,7 @@ import { CopyButton } from '@/components/ui/copy-button';
 import { postRegistryDeregister } from '@/lib/api/generated';
 import { RegistryEntry, deleteRegistry } from '@/lib/api/generated';
 import { parseAgentStatus, getAgentStatusBadgeVariant } from '@/lib/agent-status';
+import { formatDateTime } from '@/lib/format-date';
 import { isDbDeletableAgentState, isDeregisterableAgentState } from '@/lib/registry-states';
 import type { AgentRelation } from '@/lib/queries/useContextAgents';
 
@@ -117,11 +118,6 @@ export function AIAgentDetailsDialog({
   const canReRegister =
     (agent?.state === 'DeregistrationConfirmed' || agent?.state === 'RegistrationFailed') &&
     isManagedOnActiveSource;
-
-  const formatDate = (date: Date | string) => {
-    const dateObj = typeof date === 'string' ? new Date(date) : date;
-    return dateObj.toLocaleDateString();
-  };
 
   // Synchronous in-flight guard for delete/deregister: `setIsDeleting(true)`
   // is async, so a fast double-click on Confirm fires `handleDelete` twice
@@ -680,11 +676,15 @@ export function AIAgentDetailsDialog({
                         <div className="px-3 bg-muted/40 border rounded-md">
                           <div className="flex items-center justify-between py-2.5 border-b">
                             <span className="text-sm text-muted-foreground">Registered On</span>
-                            <span className="font-mono text-sm">{formatDate(agent.createdAt)}</span>
+                            <span className="font-mono text-sm">
+                              {formatDateTime(agent.createdAt)}
+                            </span>
                           </div>
                           <div className="flex items-center justify-between py-2.5">
                             <span className="text-sm text-muted-foreground">Last Updated</span>
-                            <span className="font-mono text-sm">{formatDate(agent.updatedAt)}</span>
+                            <span className="font-mono text-sm">
+                              {formatDateTime(agent.updatedAt)}
+                            </span>
                           </div>
                         </div>
                       </CardContent>
