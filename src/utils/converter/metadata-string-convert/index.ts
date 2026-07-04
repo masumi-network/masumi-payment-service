@@ -7,6 +7,15 @@ export function metadataToString(value: string | string[] | undefined) {
 	if (typeof value === 'string') return value;
 	return value.join('');
 }
+// Cardano's ledger limits a metadata text string to 64 UTF-8 BYTES, not 64
+// characters. Splitting on character count lets a multi-byte string (e.g. CJK
+// or emoji) produce a chunk that exceeds the ledger limit and makes the whole
+// tx unbuildable/rejected. Chunk on byte boundaries without cutting a
+// multi-byte character. We keep the historical 60-unit boundary (was 60 chars),
+// now interpreted as 60 BYTES — identical to the old behaviour for ASCII and
+// safely under the 64-byte ledger max for multi-byte input.
+const MAX_METADATA_STRING_BYTES = 60;
+
 export function stringToMetadata(
 	s: string | undefined | null,
 	forceArray: boolean = true,
@@ -14,13 +23,25 @@ export function stringToMetadata(
 	if (s == undefined) {
 		return undefined;
 	}
-	if (s.length <= 60 && forceArray == false) {
+	const encoder = new TextEncoder();
+	if (encoder.encode(s).length <= MAX_METADATA_STRING_BYTES && forceArray == false) {
 		return s;
 	}
-	//split every 60 characters
-	const arr = [];
-	for (let i = 0; i < s.length; i += 60) {
-		arr.push(s.slice(i, i + 60));
+	const arr: string[] = [];
+	let current = '';
+	let currentBytes = 0;
+	for (const char of s) {
+		const charBytes = encoder.encode(char).length;
+		if (currentBytes + charBytes > MAX_METADATA_STRING_BYTES && current.length > 0) {
+			arr.push(current);
+			current = '';
+			currentBytes = 0;
+		}
+		current += char;
+		currentBytes += charBytes;
+	}
+	if (current.length > 0) {
+		arr.push(current);
 	}
 	return arr;
 }

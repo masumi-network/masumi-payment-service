@@ -1,17 +1,17 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { getPayment, Payment } from '@/lib/api/generated';
 import { Spinner } from '@/components/ui/spinner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Calendar } from 'lucide-react';
-import formatBalance from '@/lib/formatBalance';
+import { formatSixDecimalAmount, groupDigits } from '@/lib/utils';
 import { getUsdmConfig, USDCX_CONFIG } from '@/lib/constants/defaultWallets';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 
 interface AgentEarningsData {
   totalPayments: number;
-  totalEarnings: Map<string, number>;
+  totalEarnings: Map<string, bigint>;
 }
 
 interface AgentEarningsOverviewProps {
@@ -34,7 +34,13 @@ export function AgentEarningsOverview({ agentIdentifier, agentName }: AgentEarni
     () => paymentSources.filter((ps) => ps.network === network),
     [paymentSources, network],
   );
+  // Epoch counter prevents stale writes when the period (or payment source)
+  // changes while a previous multi-page fetch is still in flight — only the
+  // latest request may set state, and only it clears the loading spinner.
+  const earningsFetchEpochRef = useRef(0);
+
   const fetchAgentEarnings = useCallback(async () => {
+    const epoch = ++earningsFetchEpochRef.current;
     try {
       setIsLoading(true);
       setError(null);
@@ -75,6 +81,8 @@ export function AgentEarningsOverview({ agentIdentifier, agentName }: AgentEarni
             cursorId: cursorId,
           },
         });
+        // A newer fetch superseded this one — stop paging and drop the result.
+        if (earningsFetchEpochRef.current !== epoch) return;
 
         const payments: Payment[] = paymentsResponse.data?.data?.Payments ?? [];
         const paymentsToProcess = cursorId ? payments.slice(1) : payments;
@@ -103,21 +111,26 @@ export function AgentEarningsOverview({ agentIdentifier, agentName }: AgentEarni
         }
       }
 
-      // Calculate earnings and fees
-      const totalEarnings = new Map<string, number>();
+      // Calculate earnings and fees. BigInt accumulation: fund amounts arrive
+      // as strings precisely because they can exceed Number.MAX_SAFE_INTEGER,
+      // where parseInt silently loses precision.
+      const totalEarnings = new Map<string, bigint>();
 
       allPayments.forEach((payment) => {
         if (payment.onChainState === 'DisputedWithdrawn') {
           payment.WithdrawnForSeller.forEach((fund) => {
             totalEarnings.set(
               fund.unit,
-              (totalEarnings.get(fund.unit) ?? 0) + parseInt(fund.amount),
+              (totalEarnings.get(fund.unit) ?? BigInt(0)) + BigInt(fund.amount),
             );
           });
           return;
         }
         payment.RequestedFunds.forEach((fund) => {
-          totalEarnings.set(fund.unit, (totalEarnings.get(fund.unit) ?? 0) + parseInt(fund.amount));
+          totalEarnings.set(
+            fund.unit,
+            (totalEarnings.get(fund.unit) ?? BigInt(0)) + BigInt(fund.amount),
+          );
         });
       });
 
@@ -126,10 +139,13 @@ export function AgentEarningsOverview({ agentIdentifier, agentName }: AgentEarni
         totalEarnings,
       });
     } catch (err) {
+      if (earningsFetchEpochRef.current !== epoch) return;
       console.error('Error fetching agent earnings:', err);
       setError('Failed to load earnings data');
     } finally {
-      setIsLoading(false);
+      if (earningsFetchEpochRef.current === epoch) {
+        setIsLoading(false);
+      }
     }
   }, [
     currentNetworkPaymentSources,
@@ -193,17 +209,18 @@ export function AgentEarningsOverview({ agentIdentifier, agentName }: AgentEarni
     }
   };
 
-  const formatTokenBalance = (token: { unit: string; quantity: number }) => {
+  // BigInt-safe formatting (formatSixDecimalAmount truncates to 2 fraction
+  // digits, matching the previous toFixed(2) display), zero shown as '0'.
+  const formatTokenBalance = (token: { unit: string; quantity: bigint }) => {
+    const isZero = token.quantity === BigInt(0);
     if (token.unit === 'lovelace' || token.unit === '') {
-      const ada = token.quantity / 1000000;
-      const formattedAmount = ada === 0 ? '0' : formatBalance(ada.toFixed(2));
+      const formattedAmount = isZero ? '0' : formatSixDecimalAmount(token.quantity);
       return formattedAmount + ' ADA';
     }
 
     const isUSDCx = token.unit === USDCX_CONFIG.fullAssetId;
     if (isUSDCx) {
-      const usdcx = token.quantity / 1000000;
-      const formattedAmount = usdcx === 0 ? '0' : formatBalance(usdcx.toFixed(2));
+      const formattedAmount = isZero ? '0' : formatSixDecimalAmount(token.quantity);
       return formattedAmount + ' USDCx';
     }
 
@@ -211,13 +228,12 @@ export function AgentEarningsOverview({ agentIdentifier, agentName }: AgentEarni
     const usdmConfig = getUsdmConfig(network);
     const isUSDM = token.unit === usdmConfig.fullAssetId;
     if (isUSDM) {
-      const usdm = token.quantity / 1000000;
-      const formattedAmount = usdm === 0 ? '0' : formatBalance(usdm.toFixed(2));
+      const formattedAmount = isZero ? '0' : formatSixDecimalAmount(token.quantity);
       return formattedAmount + ' USDM';
     }
 
-    const amount = token.quantity;
-    const formattedAmount = amount === 0 ? '0' : formatBalance(amount.toFixed(0));
+    // Unknown native token — decimals unknown, show grouped base units.
+    const formattedAmount = isZero ? '0' : groupDigits(token.quantity.toString());
     return formattedAmount + ' ' + token.unit;
   };
 

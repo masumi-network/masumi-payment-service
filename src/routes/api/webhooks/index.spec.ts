@@ -163,7 +163,10 @@ describe('webhook endpoints', () => {
 		expect(mockFindExistingWebhook).toHaveBeenCalledWith({
 			where: {
 				urlHash: 'hash:https://example.com/webhooks/masumi',
-				paymentSourceId: undefined,
+				// A global webhook (no paymentSourceId) must scope the duplicate check
+				// to null, not undefined — undefined is dropped by Prisma and would
+				// match a webhook on ANY source, raising a false 409.
+				paymentSourceId: null,
 				format: WebhookFormat.EXTENDED,
 			},
 		});
@@ -280,7 +283,7 @@ describe('webhook endpoints', () => {
 				disabledAt: null,
 				CreatedByApiKey: {
 					id: 'creator-1',
-					encryptedToken: 'encrypted',
+					token: '*****wxyz',
 				},
 			},
 		]);
@@ -313,8 +316,9 @@ describe('webhook endpoints', () => {
 						lastSuccessAt: '2026-04-08T12:06:00.000Z',
 						disabledAt: null,
 						CreatedBy: {
+							// Masked stored token form, never the decrypted plaintext.
+							apiKeyToken: '*****wxyz',
 							apiKeyId: 'creator-1',
-							apiKeyToken: 'decrypted-token',
 						},
 					},
 				],

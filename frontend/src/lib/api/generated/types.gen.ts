@@ -50,7 +50,7 @@ export type ApiKey = {
          */
         unit: string;
         /**
-         * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+         * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)
          */
         amount: string;
     }>;
@@ -507,7 +507,7 @@ export type Payment = {
     }> | null;
     RequestedFunds: Array<{
         /**
-         * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+         * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)
          */
         amount: string;
         /**
@@ -1020,7 +1020,7 @@ export type AgentMetadata = {
              */
             Pricing: Array<{
                 /**
-                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)
                  */
                 amount: string;
                 /**
@@ -1305,7 +1305,7 @@ export type AgentIdentifierMetadata = {
              */
             Pricing: Array<{
                 /**
-                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)
                  */
                 amount: string;
                 /**
@@ -1602,7 +1602,7 @@ export type RegistryEntry = {
          */
         Pricing: Array<{
             /**
-             * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+             * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)
              */
             amount: string;
             /**
@@ -1925,6 +1925,10 @@ export type PaymentSourceExtended = {
      */
     smartContractAddress: string;
     /**
+     * Whether a Web3CardanoV2 source is on the current on-chain contract. "outdated_contract": registry policyId differs from the current default (retired contract — agents orphaned, payment address stale); "custom_address": current version but a non-default admin-wallet address; "in_sync": matches the current default (also for V1 and any non-V2 source).
+     */
+    contractSyncStatus: 'in_sync' | 'outdated_contract' | 'custom_address';
+    /**
      * RPC provider configuration for blockchain interactions
      */
     PaymentSourceConfig: {
@@ -2026,7 +2030,7 @@ export type UtxoAmount = {
      */
     unit: string;
     /**
-     * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+     * The quantity of the asset in its smallest unit. For ADA, this is lovelace (1 ADA = 1000000 lovelace)
      */
     quantity: number | null;
 };
@@ -3213,7 +3217,7 @@ export type PatchApiKeyData = {
              */
             unit: string;
             /**
-             * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+             * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)
              */
             amount: string;
         }>;
@@ -3301,7 +3305,7 @@ export type PostApiKeyData = {
              */
             unit: string;
             /**
-             * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+             * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)
              */
             amount: string;
         }>;
@@ -3813,7 +3817,7 @@ export type GetPaymentData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The smart contract address of the payment source
+         * The smart contract address of the payment source. When omitted with no explicit payment source type, payment list/count endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.
          */
         filterSmartContractAddress?: string | null;
         /**
@@ -3821,7 +3825,7 @@ export type GetPaymentData = {
          */
         filterOnChainState?: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
         /**
-         * Filter by payment source type
+         * Filter by payment source type. When omitted with no smart-contract-address filter, payment list/count endpoints default to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
         /**
@@ -4124,7 +4128,7 @@ export type PostPaymentResponses = {
             } | null;
             RequestedFunds: Array<{
                 /**
-                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)
                  */
                 amount: string;
                 /**
@@ -4245,11 +4249,11 @@ export type GetPaymentDiffData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The smart contract address of the payment source
+         * The smart contract address of the payment source. When omitted with no explicit payment source type, payment diff endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.
          */
         filterSmartContractAddress?: string | null;
         /**
-         * Filter by payment source type
+         * Filter by payment source type. When omitted with no smart-contract-address filter, payment diff endpoints default to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
         /**
@@ -4310,11 +4314,11 @@ export type GetPaymentDiffNextActionData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The smart contract address of the payment source
+         * The smart contract address of the payment source. When omitted with no explicit payment source type, payment diff endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.
          */
         filterSmartContractAddress?: string | null;
         /**
-         * Filter by payment source type
+         * Filter by payment source type. When omitted with no smart-contract-address filter, payment diff endpoints default to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
         /**
@@ -4363,11 +4367,11 @@ export type GetPaymentCountData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The smart contract address of the payment source
+         * The smart contract address of the payment source. When omitted with no explicit payment source type, payment count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.
          */
         filterSmartContractAddress?: string | null;
         /**
-         * Filter by payment source type
+         * Filter by payment source type. When omitted with no smart-contract-address filter, payment count defaults to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
     };
@@ -4400,11 +4404,11 @@ export type GetPurchaseCountData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The smart contract address of the payment source
+         * The smart contract address of the payment source. When omitted with no explicit payment source type, purchase count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.
          */
         filterSmartContractAddress?: string | null;
         /**
-         * Filter by payment source type
+         * Filter by payment source type. When omitted with no smart-contract-address filter, purchase count defaults to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
     };
@@ -4449,11 +4453,11 @@ export type GetPaymentDiffOnchainStateOrResultData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The smart contract address of the payment source
+         * The smart contract address of the payment source. When omitted with no explicit payment source type, payment diff endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.
          */
         filterSmartContractAddress?: string | null;
         /**
-         * Filter by payment source type
+         * Filter by payment source type. When omitted with no smart-contract-address filter, payment diff endpoints default to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
         /**
@@ -4715,7 +4719,7 @@ export type PostPaymentSubmitResultResponses = {
             } | null;
             RequestedFunds: Array<{
                 /**
-                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)
                  */
                 amount: string;
                 /**
@@ -5033,7 +5037,7 @@ export type PostPaymentAuthorizeRefundResponses = {
             } | null;
             RequestedFunds: Array<{
                 /**
-                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)
                  */
                 amount: string;
                 /**
@@ -5367,7 +5371,7 @@ export type PostPaymentErrorStateRecoveryResponses = {
             } | null;
             RequestedFunds: Array<{
                 /**
-                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)
                  */
                 amount: string;
                 /**
@@ -6204,11 +6208,11 @@ export type GetRegistryCountData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The smart contract address of the payment source
+         * The smart contract address of the payment source. When omitted with no explicit payment source type, count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.
          */
         filterSmartContractAddress?: string | null;
         /**
-         * Filter by payment source type
+         * Filter by payment source type. When omitted with no smart-contract-address filter, count defaults to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
     };
@@ -6504,7 +6508,7 @@ export type GetPurchaseData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The smart contract address of the payment source
+         * The smart contract address of the payment source. When omitted with no explicit payment source type, purchase list/count endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.
          */
         filterSmartContractAddress?: string | null;
         /**
@@ -6512,7 +6516,7 @@ export type GetPurchaseData = {
          */
         filterOnChainState?: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
         /**
-         * Filter by payment source type
+         * Filter by payment source type. When omitted with no smart-contract-address filter, purchase list/count endpoints default to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
         /**
@@ -8188,11 +8192,11 @@ export type GetRegistryData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The smart contract address of the payment source
+         * The smart contract address of the payment source. When omitted with no V2-aware filters, registry list/count endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.
          */
         filterSmartContractAddress?: string | null;
         /**
-         * Filter by payment source type
+         * Filter by payment source type. When omitted with no source/address/identifier support filters, the endpoint defaults to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
         /**
@@ -8204,9 +8208,17 @@ export type GetRegistryData = {
          */
         searchQuery?: string;
         /**
-         * When set, return only the registry entry whose on-chain agent identifier matches exactly (same scope as list: network, payment source, and wallet permissions)
+         * When set, return only the registry entry whose on-chain agent identifier matches exactly (same scope as list: network, payment source, and wallet permissions). This exact lookup does not apply the default Web3CardanoV1 compatibility filter.
          */
         filterAgentIdentifier?: string;
+        /**
+         * Return only entries that advertise a supported payment source with this address (the Cardano smart-contract address, or an EVM x402 payTo/address). Matched server-side so callers do not have to fetch every entry and filter client-side. Combined with filterSupportedPaymentSourceNetworks as a logical OR. This V2-aware filter opts out of the default Web3CardanoV1 compatibility filter.
+         */
+        filterSupportedPaymentSourceAddress?: string;
+        /**
+         * Comma-separated list of supported-payment-source networks to match (Cardano network name, or CAIP-2 EVM chain ids such as eip155:8453). Returns entries advertising a supported payment source on any of these networks. Combined with filterSupportedPaymentSourceAddress as a logical OR. This V2-aware filter opts out of the default Web3CardanoV1 compatibility filter.
+         */
+        filterSupportedPaymentSourceNetworks?: string;
     };
     url: '/registry';
 };
@@ -8447,7 +8459,7 @@ export type PostRegistryData = {
                  */
                 unit: string;
                 /**
-                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)
                  */
                 amount: string;
             }>;
@@ -8539,11 +8551,11 @@ export type GetRegistryDiffData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The smart contract address of the payment source
+         * The smart contract address of the payment source. When omitted with no explicit payment source type, registry diff defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.
          */
         filterSmartContractAddress?: string | null;
         /**
-         * Filter by payment source type
+         * Filter by payment source type. When omitted with no smart-contract-address filter, registry diff defaults to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
     };
@@ -8829,7 +8841,7 @@ export type PostRegistryUpdateData = {
                  */
                 unit: string;
                 /**
-                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)
                  */
                 amount: string;
             }>;
@@ -8977,6 +8989,10 @@ export type GetPaymentSourceExtendedData = {
          * Used to paginate through the payment sources
          */
         cursorId?: string;
+        /**
+         * Restrict results to a single Cardano network (still bounded by the key network limit)
+         */
+        network?: 'Preprod' | 'Mainnet';
     };
     url: '/payment-source-extended';
 };
@@ -9302,7 +9318,7 @@ export type PostPurchaseSpendingData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * Filter by payment source type
+         * Filter by payment source type. When omitted, spending totals default to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
     };
@@ -9493,7 +9509,7 @@ export type PostPaymentIncomeData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * Filter by payment source type
+         * Filter by payment source type. When omitted, income totals default to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
     };
@@ -10127,7 +10143,7 @@ export type GetInboxAgentsData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The smart contract address of the payment source
+         * The smart contract address of the payment source. When omitted, inbox registry list/count endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.
          */
         filterSmartContractAddress?: string | null;
         /**
@@ -10225,7 +10241,7 @@ export type GetInboxAgentsDiffData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The smart contract address of the payment source
+         * The smart contract address of the payment source. When omitted, inbox registry diff defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.
          */
         filterSmartContractAddress?: string | null;
     };
@@ -10302,7 +10318,7 @@ export type GetInboxAgentsCountData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The smart contract address of the payment source
+         * The smart contract address of the payment source. When omitted, inbox registry count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.
          */
         filterSmartContractAddress?: string | null;
     };

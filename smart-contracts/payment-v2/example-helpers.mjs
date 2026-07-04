@@ -150,8 +150,7 @@ export async function fetchContractUtxo(provider, scriptAddress) {
 	if (!txHash) {
 		throw new Error('Set TX_HASH=<contract-utxo-tx-hash> or pass it as the first argument.');
 	}
-	const outputIndex =
-		process.env.OUTPUT_INDEX == null ? null : Number(process.env.OUTPUT_INDEX);
+	const outputIndex = process.env.OUTPUT_INDEX == null ? null : Number(process.env.OUTPUT_INDEX);
 	const utxos = await provider.fetchAddressUTxOs(scriptAddress);
 	const utxo = utxos.find((candidate) => {
 		if (candidate.input.txHash !== txHash) {
@@ -404,12 +403,7 @@ export function fromDeserializerData(value) {
 			return value.list.map((item) => fromDeserializerData(item));
 		}
 		if ('map' in value) {
-			return new Map(
-				value.map.map((entry) => [
-					fromDeserializerData(entry.k),
-					fromDeserializerData(entry.v),
-				]),
-			);
+			return new Map(value.map.map((entry) => [fromDeserializerData(entry.k), fromDeserializerData(entry.v)]));
 		}
 	}
 	throw new Error(`Unsupported datum value: ${JSON.stringify(value)}`);
@@ -458,6 +452,17 @@ export function subtractAssets(assets, subtract) {
 		.map(([unit, quantity]) => ({ unit, quantity: quantity.toString() }));
 }
 
+// Ordinal (codepoint) comparison. The on-chain `assets.from_asset_list`
+// requires keys in strictly ascending BYTE order; for lowercase hex strings
+// codepoint order equals byte order. `localeCompare` must NOT be used here —
+// its ordering is locale/ICU-dependent and can diverge from byte order,
+// which would make admins sign a payload the validator can never normalize.
+function compareHexBytewise(a, b) {
+	if (a < b) return -1;
+	if (a > b) return 1;
+	return 0;
+}
+
 export function assetsToAssetValueData(assets) {
 	const policies = new Map();
 	for (const asset of assets) {
@@ -466,17 +471,30 @@ export function assetsToAssetValueData(assets) {
 		assetsByName.set(assetName, (assetsByName.get(assetName) ?? 0n) + BigInt(asset.quantity));
 		policies.set(policyId, assetsByName);
 	}
+	for (const [policyId, assetsByName] of policies) {
+		for (const [assetName, quantity] of assetsByName) {
+			// A negative signed minimum is trivially satisfied on-chain
+			// (`value_bigger_or_equal` only flags shortfalls), silently waiving
+			// that asset from the payout floor. Never let admins sign one.
+			if (quantity < 0n) {
+				throw new Error(`Negative payout quantity for ${policyId}.${assetName}: ${quantity}`);
+			}
+		}
+	}
 	return new Map(
 		[...policies.entries()]
-			.sort(([a], [b]) => a.localeCompare(b))
 			.map(([policyId, assetsByName]) => [
 				policyId,
 				new Map(
 					[...assetsByName.entries()]
 						.filter(([, quantity]) => quantity !== 0n)
-						.sort(([a], [b]) => a.localeCompare(b)),
+						.sort(([a], [b]) => compareHexBytewise(a, b)),
 				),
-			]),
+			])
+			// `from_asset_list` rejects a policy with an empty asset list; drop
+			// policies whose entries were all zero-quantity.
+			.filter(([, assetsByName]) => assetsByName.size > 0)
+			.sort(([a], [b]) => compareHexBytewise(a, b)),
 	);
 }
 

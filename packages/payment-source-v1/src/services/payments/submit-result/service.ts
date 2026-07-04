@@ -75,7 +75,18 @@ async function handlePaymentRequestResults(
 		const result = results[index];
 		const request = paymentRequests[index];
 
-		if (result.success === false || result.result !== true) {
+		// Only force manual action on an UNCAUGHT throw (success === false) — i.e.
+		// the build/lookup phase before the submit try/catch failed and never
+		// re-queued anything. When success === true but result !== true,
+		// processSinglePaymentRequest's own catch already re-queued the request as
+		// SubmitResultRequested (and unlocked the wallet) for an automatic retry on
+		// the next tick. Overwriting that with WaitingForManualAction made the
+		// self-retry unreachable and parked every transient submit error in manual
+		// action. Leaving it to retry is safe: re-submitting a SubmitResult is
+		// benign — the second spend hits the already-consumed contract UTxO and
+		// just fails, and the submit_result_time query gate drops the request once
+		// its deadline passes.
+		if (result.success === false) {
 			logger.error(`Error submitting result ${request.id}`, {
 				error: result.error,
 			});

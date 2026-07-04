@@ -254,7 +254,7 @@ export const queryAgentFromWalletSchemaOutput = z.object({
 												amount: z
 													.string()
 													.describe(
-														'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
+														'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)',
 													),
 												unit: z
 													.string()

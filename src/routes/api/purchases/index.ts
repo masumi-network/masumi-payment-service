@@ -24,7 +24,7 @@ import {
 	queryPurchaseRequestSchemaInput,
 	queryPurchaseRequestSchemaOutput,
 } from './schemas';
-import { getPurchasesForQuery } from './queries';
+import { getPurchasesForQuery, resolvePurchasePaymentSourceTypeFilter } from './queries';
 import { serializePurchasesResponse } from './serializers';
 import { isCardanoPubKeyBaseAddressForNetwork } from '@/types/payment-source';
 
@@ -66,7 +66,7 @@ export const queryPurchaseCountGet = readAuthenticatedEndpointFactory.build({
 					deletedAt: null,
 					network: input.network,
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
-					paymentSourceType: input.filterPaymentSourceType,
+					paymentSourceType: resolvePurchasePaymentSourceTypeFilter(input),
 				},
 				...buildWalletScopeFilter(ctx.walletScopeIds),
 			},
@@ -292,7 +292,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 			const wallets = await prisma.hotWallet.aggregate({
 				where: {
 					paymentSourceId: paymentSource.id,
-					type: HotWalletType.Selling,
+					type: HotWalletType.Purchasing,
 					deletedAt: null,
 				},
 				_count: true,
@@ -301,7 +301,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 				recordBusinessEndpointError('/api/v1/purchase', 'POST', 404, 'No valid purchasing wallets found', {
 					network: input.network,
 					payment_source_id: paymentSource.id,
-					wallet_type: 'selling',
+					wallet_type: 'purchasing',
 					step: 'wallet_lookup',
 				});
 				throw createHttpError(404, 'No valid purchasing wallets found');

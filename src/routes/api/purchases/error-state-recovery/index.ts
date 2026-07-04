@@ -64,6 +64,9 @@ export const purchaseErrorStateRecoveryPost = payAuthenticatedEndpointFactory.bu
 			);
 		}
 		assertWalletInScope(ctx.walletScopeIds, purchaseRequest.smartContractWalletId);
+		if (purchaseRequest.requestedById !== ctx.id && !ctx.canAdmin) {
+			throw createHttpError(403, 'You are not authorized to recover this purchase request');
+		}
 		if (!purchaseRequest.onChainState) {
 			throw createHttpError(
 				400,

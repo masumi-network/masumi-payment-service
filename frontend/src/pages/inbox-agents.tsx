@@ -1,6 +1,6 @@
 import Head from 'next/head';
 import { useRouter } from 'next/router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { ExternalLink, Plus, Trash2 } from 'lucide-react';
 import { FaRegClock } from 'react-icons/fa';
@@ -31,8 +31,10 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { useInboxAgents } from '@/lib/queries/useInboxAgents';
+import { getAgentStatusBadgeVariant } from '@/lib/agent-status';
+import { formatDate } from '@/lib/format-date';
 import { lookupWalletByVkey } from '@/lib/wallet-lookup';
-import { cn, handleApiCall, shortenAddress } from '@/lib/utils';
+import { cn, formatSixDecimalAmount, handleApiCall, shortenAddress } from '@/lib/utils';
 
 type InboxAgent = RegistryInboxEntry;
 
@@ -64,36 +66,26 @@ const parseInboxAgentStatus = (status: InboxAgent['state']): string => {
   }
 };
 
-const getStatusBadgeVariant = (status: InboxAgent['state']) => {
-  if (status === 'RegistrationConfirmed') return 'default';
-  if (status.includes('Failed')) return 'destructive';
-  if (status.includes('Initiated')) return 'processing';
-  if (status.includes('Requested')) return 'pending';
-  if (status === 'DeregistrationConfirmed') return 'secondary';
-  return 'secondary';
-};
-
-function formatDate(date: Date | string) {
-  const value = typeof date === 'string' ? new Date(date) : date;
-  return value.toLocaleDateString();
-}
-
 function formatLovelaceToAda(amount: string | null) {
   if (!amount) {
     return 'Default minimum';
   }
 
-  return `${(parseInt(amount, 10) / 1000000).toFixed(2)} ADA`;
+  return `${formatSixDecimalAmount(amount)} ADA`;
 }
 
 export default function InboxAgentsPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { apiClient, network, selectedPaymentSourceId } = useAppContext();
+  const { apiClient, network, selectedPaymentSourceId, selectedPaymentSource } = useAppContext();
+  // The inbox query is gated on a resolved source; while an id is restored from
+  // storage but the source object hasn't loaded yet, the query is disabled and
+  // reports isLoading=false. Treat that as loading so the table shows a skeleton
+  // instead of a premature empty state.
+  const isSourceResolving = !!selectedPaymentSourceId && !selectedPaymentSource;
   const { paymentSources } = usePaymentSourceExtendedAll();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState('All');
-  const [dismissedQueryAction, setDismissedQueryAction] = useState(false);
   const [isRegisterDialogOpen, setIsRegisterDialogOpen] = useState(false);
   const [selectedInboxAgent, setSelectedInboxAgent] = useState<InboxAgent | null>(null);
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
@@ -116,10 +108,18 @@ export default function InboxAgentsPage() {
       searchQuery: debouncedSearchQuery || undefined,
     });
 
+  // Passive refresh (refresh button): keep current rows, refetch in background.
   const refetchAll = useCallback(() => {
     void refetch();
     void queryClient.invalidateQueries({ queryKey: ['wallets'] });
   }, [queryClient, refetch]);
+
+  // Post-mutation (register / deregister / delete): rows are now stale, so clear
+  // the inbox list to its skeleton while fresh data loads.
+  const refetchAfterMutation = useCallback(() => {
+    void queryClient.resetQueries({ queryKey: ['inbox-agents'] });
+    void queryClient.invalidateQueries({ queryKey: ['wallets'] });
+  }, [queryClient]);
 
   const currentNetworkPaymentSources = useMemo(
     () => paymentSources.filter((paymentSource) => paymentSource.network === network),
@@ -153,9 +153,15 @@ export default function InboxAgentsPage() {
     { name: 'Failed', count: null },
   ];
 
-  const shouldOpenRegisterDialog =
-    isRegisterDialogOpen ||
-    (router.query.action === 'register_inbox_agent' && !dismissedQueryAction);
+  // Open the register dialog when the ?action=register_inbox_agent deep link
+  // arrives, then strip the param so the same quick action can fire again
+  // while already on this page.
+  useEffect(() => {
+    if (router.query.action === 'register_inbox_agent') {
+      queueMicrotask(() => setIsRegisterDialogOpen(true));
+      void router.replace('/inbox-agents', undefined, { shallow: true });
+    }
+  }, [router.query.action, router]);
 
   const handleWalletClick = useCallback(
     async (walletVkey: string) => {
@@ -204,7 +210,7 @@ export default function InboxAgentsPage() {
             setIsDeleteDialogOpen(false);
             setSelectedInboxAgentToDelete(null);
             setSelectedInboxAgent(null);
-            refetchAll();
+            refetchAfterMutation();
           },
           onError: (error: unknown) => {
             toast.error(extractApiErrorMessage(error, 'Failed to delete inbox agent'));
@@ -249,7 +255,7 @@ export default function InboxAgentsPage() {
             setIsDeleteDialogOpen(false);
             setSelectedInboxAgentToDelete(null);
             setSelectedInboxAgent(null);
-            refetchAll();
+            refetchAfterMutation();
           },
           onError: (error: unknown) => {
             toast.error(extractApiErrorMessage(error, 'Failed to deregister inbox agent'));
@@ -343,7 +349,7 @@ export default function InboxAgentsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(isLoading && !inboxAgents.length) ||
+                  {((isLoading || isSourceResolving) && !inboxAgents.length) ||
                   (displayInboxAgents.length === 0 && isSearchPending) ? (
                     <AIAgentTableSkeleton rows={5} />
                   ) : displayInboxAgents.length === 0 ? (
@@ -386,8 +392,13 @@ export default function InboxAgentsPage() {
                           onClick={() => setSelectedInboxAgent(agent)}
                         >
                           <td className="p-4 max-w-64 truncate pl-6">
-                            <div className="text-sm font-medium">{agent.name}</div>
-                            <div className="text-xs text-muted-foreground truncate">
+                            <div className="text-sm font-medium truncate" title={agent.name}>
+                              {agent.name}
+                            </div>
+                            <div
+                              className="text-xs text-muted-foreground truncate"
+                              title={agent.description ?? undefined}
+                            >
                               {agent.description || 'No description'}
                             </div>
                           </td>
@@ -466,13 +477,7 @@ export default function InboxAgentsPage() {
                             {formatLovelaceToAda(agent.sendFundingLovelace)}
                           </td>
                           <td className="p-4">
-                            <Badge
-                              variant={getStatusBadgeVariant(agent.state)}
-                              className={cn(
-                                agent.state === 'RegistrationConfirmed' &&
-                                  'bg-green-50 text-green-700 hover:bg-green-50/80',
-                              )}
-                            >
+                            <Badge variant={getAgentStatusBadgeVariant(agent.state)}>
                               {parseInboxAgentStatus(agent.state)}
                             </Badge>
                           </td>
@@ -529,24 +534,20 @@ export default function InboxAgentsPage() {
             </div>
 
             <div className="flex flex-col gap-4 items-center">
-              {!(isLoading && !inboxAgents.length) && (
+              {!((isLoading || isSourceResolving) && !inboxAgents.length) && (
                 <Pagination hasMore={hasMore} isLoading={isFetching} onLoadMore={loadMore} />
               )}
             </div>
           </div>
 
           <RegisterInboxAgentDialog
-            open={shouldOpenRegisterDialog}
+            open={isRegisterDialogOpen}
             onClose={() => {
               setIsRegisterDialogOpen(false);
-              if (router.query.action === 'register_inbox_agent') {
-                setDismissedQueryAction(true);
-                void router.replace('/inbox-agents', undefined, { shallow: true });
-              }
             }}
             onSuccess={() => {
               setTimeout(() => {
-                refetchAll();
+                refetchAfterMutation();
               }, 250);
             }}
           />
@@ -557,7 +558,7 @@ export default function InboxAgentsPage() {
             onSuccess={() => {
               setSelectedInboxAgent(null);
               setTimeout(() => {
-                refetchAll();
+                refetchAfterMutation();
               }, 250);
             }}
           />

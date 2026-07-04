@@ -10,6 +10,7 @@ export function Footer() {
           <a
             href="https://www.masumi.network/about"
             target="_blank"
+            rel="noopener noreferrer"
             className="text-sm text-muted-foreground hover:text-foreground"
           >
             About
@@ -17,6 +18,7 @@ export function Footer() {
           <a
             href="https://www.house-of-communication.com/de/en/footer/privacy-policy.html"
             target="_blank"
+            rel="noopener noreferrer"
             className="text-sm text-muted-foreground hover:text-foreground"
           >
             Privacy Policy

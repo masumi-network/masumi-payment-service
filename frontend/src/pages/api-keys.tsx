@@ -9,7 +9,7 @@ import Head from 'next/head';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { deleteApiKey } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
-import { handleApiCall } from '@/lib/utils';
+import { formatAssetAmount, handleApiCall } from '@/lib/utils';
 import { AddApiKeyDialog } from '@/components/api-keys/AddApiKeyDialog';
 import { UpdateApiKeyDialog } from '@/components/api-keys/UpdateApiKeyDialog';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -56,6 +56,10 @@ function matchesPermissionTab(apiKey: ApiKey, tab: string): boolean {
   }
 }
 
+function isRedactedApiKeyToken(token: string): boolean {
+  return token.startsWith('*****');
+}
+
 export default function ApiKeys() {
   const router = useRouter();
   const { apiClient, network, apiKey } = useAppContext();
@@ -65,9 +69,14 @@ export default function ApiKeys() {
   const [keyToUpdate, setKeyToUpdate] = useState<ApiKey | null>(null);
   const [keyToDelete, setKeyToDelete] = useState<ApiKey | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  // Synchronous in-flight guard for delete. `setIsDeleting(true)` is async, so
+  // a fast double-click on Confirm fires `handleDeleteApiKey` twice before the
+  // button disables — sending two DELETEs for the same id. A ref flips
+  // synchronously on the first call so the duplicate is rejected immediately;
+  // `isDeleting` on the button is post-render defence-in-depth.
+  const isDeletingRef = useRef(false);
   const [activeTab, setActiveTab] = useState('All');
-  const { allApiKeys, isLoading, isRefetching, hasMore, loadMore, refetch } = useApiKey();
-  const handledActionRef = useRef(false);
+  const { allApiKeys, isLoading, isRefetching, hasMore, loadMore, refetch, reset } = useApiKey();
 
   const tabs = [
     { name: 'All', count: null },
@@ -104,10 +113,11 @@ export default function ApiKeys() {
     return filtered;
   }, [allApiKeys, searchQuery, activeTab, network]);
 
-  // Handle action query parameter from search
+  // Handle action query parameter from search. Stripping the param (rather
+  // than latching a once-per-mount flag) lets the same quick action fire
+  // again while already on this page.
   useEffect(() => {
-    if (router.query.action === 'add_api_key' && !handledActionRef.current) {
-      handledActionRef.current = true;
+    if (router.query.action === 'add_api_key') {
       // Use queueMicrotask to avoid synchronous setState within the effect
       queueMicrotask(() => {
         setIsAddDialogOpen(true);
@@ -135,31 +145,38 @@ export default function ApiKeys() {
 
   const handleDeleteApiKey = async () => {
     if (!keyToDelete || !keyToDelete.id) return;
+    if (isDeletingRef.current) return;
+    isDeletingRef.current = true;
+    setIsDeleting(true);
 
-    await handleApiCall(
-      () =>
-        deleteApiKey({
-          client: apiClient,
-          body: {
-            id: keyToDelete.id,
+    try {
+      await handleApiCall(
+        () =>
+          deleteApiKey({
+            client: apiClient,
+            body: {
+              id: keyToDelete.id,
+            },
+          }),
+        {
+          onSuccess: () => {
+            toast.success('API key deleted successfully');
+            void reset();
           },
-        }),
-      {
-        onSuccess: () => {
-          toast.success('API key deleted successfully');
-          refetch();
+          onError: (error: any) => {
+            console.error('Error deleting API key:', error);
+            toast.error(extractApiErrorMessage(error, 'Failed to delete API key'));
+          },
+          onFinally: () => {
+            setIsDeleting(false);
+            setKeyToDelete(null);
+          },
+          errorMessage: 'Failed to delete API key',
         },
-        onError: (error: any) => {
-          console.error('Error deleting API key:', error);
-          toast.error(extractApiErrorMessage(error, 'Failed to delete API key'));
-        },
-        onFinally: () => {
-          setIsDeleting(false);
-          setKeyToDelete(null);
-        },
-        errorMessage: 'Failed to delete API key',
-      },
-    );
+      );
+    } finally {
+      isDeletingRef.current = false;
+    }
   };
 
   return (
@@ -177,6 +194,7 @@ export default function ApiKeys() {
                 <a
                   href="https://docs.masumi.network/api-reference"
                   target="_blank"
+                  rel="noopener noreferrer"
                   className="text-primary hover:underline"
                 >
                   Learn more
@@ -268,7 +286,7 @@ export default function ApiKeys() {
                           <span className="font-mono text-sm text-muted-foreground">
                             {shortenAddress(key.token)}
                           </span>
-                          <CopyButton value={key.token} />
+                          {!isRedactedApiKeyToken(key.token) && <CopyButton value={key.token} />}
                         </div>
                       </td>
                       <td className="p-4 text-sm">{getPermissionLabel(key)}</td>
@@ -289,9 +307,7 @@ export default function ApiKeys() {
                           <div className="space-y-1">
                             {key.RemainingUsageCredits.map((credit, index) => (
                               <div key={index}>
-                                {credit.unit === 'lovelace'
-                                  ? `${(Number(credit.amount) / 1000000).toLocaleString()} ADA`
-                                  : `${credit.amount} ${credit.unit}`}
+                                {formatAssetAmount(credit.amount, credit.unit, network)}
                               </div>
                             ))}
                           </div>
@@ -303,8 +319,8 @@ export default function ApiKeys() {
                         <span
                           className={`inline-flex items-center rounded-full px-2 py-1 text-xs ${
                             key.status === 'Active'
-                              ? 'bg-green-100 text-green-700'
-                              : 'bg-red-100 text-red-700'
+                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                              : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
                           }`}
                         >
                           {key.status}

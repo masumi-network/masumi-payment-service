@@ -11,6 +11,7 @@ import { lovelaceToAdaNumberSafe } from '@/utils/lovelace';
 import { ez } from 'express-zod-api';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { exhaustiveFallback } from '@/utils/assert-never';
+import { resolvePaymentPaymentSourceTypeFilter } from '../queries';
 
 const paymentDiffLastUpdateSchema = ez.dateIn();
 
@@ -33,8 +34,15 @@ export const queryPaymentDiffSchemaInput = z.object({
 		.string()
 		.optional()
 		.nullable()
-		.describe('The smart contract address of the payment source'),
-	filterPaymentSourceType: z.nativeEnum(PaymentSourceType).optional().describe('Filter by payment source type'),
+		.describe(
+			'The smart contract address of the payment source. When omitted with no explicit payment source type, payment diff endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.',
+		),
+	filterPaymentSourceType: z
+		.nativeEnum(PaymentSourceType)
+		.optional()
+		.describe(
+			'Filter by payment source type. When omitted with no smart-contract-address filter, payment diff endpoints default to Web3CardanoV1 for backwards compatibility.',
+		),
 	includeHistory: z
 		.string()
 		.default('false')
@@ -64,7 +72,10 @@ function buildPaymentDiffWhere({
 		PaymentSource: {
 			network,
 			smartContractAddress: filterSmartContractAddress ?? undefined,
-			paymentSourceType: filterPaymentSourceType,
+			paymentSourceType: resolvePaymentPaymentSourceTypeFilter({
+				filterPaymentSourceType,
+				filterSmartContractAddress,
+			}),
 			deletedAt: null,
 		},
 		...buildWalletScopeFilter(walletScopeIds),

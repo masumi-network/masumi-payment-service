@@ -10,7 +10,7 @@ import { extractAssetName, extractPolicyId } from '@/utils/converter/agent-ident
 import { registryRequestOutputSchema, registerAgentSchemaInput } from '@/routes/api/registry';
 import { getBlockfrostInstance, validateAssetsOnChain } from '@/utils/blockfrost';
 import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
-import { bumpRegistryAssetNameVersionV2 } from '@/services/registry/shared';
+import { bumpRegistryAssetNameVersionV2, normalizeRequestedRegistryFundingLovelace } from '@/services/registry/shared';
 import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
 import { supportedPaymentSourceSchema, validateSupportedPaymentSourcesOrThrow } from '@/types/payment-source';
 import { serializeSupportedPaymentSources, serializeVerifications } from '../serializers';
@@ -301,7 +301,14 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 						authorContactEmail: input.Author.contactEmail,
 						authorContactOther: input.Author.contactOther,
 						authorOrganization: input.Author.organization,
-						sendFundingLovelace: input.sendFundingLovelace != null ? BigInt(input.sendFundingLovelace) : null,
+						// Clamp to the minimum NFT funding like the register path; a raw value
+						// below the min (e.g. "1") would build an update mint output under
+						// min-UTXO and fail, stranding the row in UpdateRequested/UpdateFailed.
+						// null still means "leave funding unchanged".
+						sendFundingLovelace:
+							input.sendFundingLovelace != null
+								? normalizeRequestedRegistryFundingLovelace(input.sendFundingLovelace)
+								: null,
 						state: RegistrationState.UpdateRequested,
 						error: null,
 						tags: input.Tags,

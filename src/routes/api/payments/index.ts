@@ -33,7 +33,7 @@ import {
 	queryPaymentsSchemaInput,
 	queryPaymentsSchemaOutput,
 } from './schemas';
-import { getPaymentsForQuery } from './queries';
+import { getPaymentsForQuery, resolvePaymentPaymentSourceTypeFilter } from './queries';
 import { serializePaymentsResponse } from './serializers';
 import { isCardanoPubKeyBaseAddressForNetwork } from '@/types/payment-source';
 
@@ -74,7 +74,7 @@ export const queryPaymentCountGet = readAuthenticatedEndpointFactory.build({
 				PaymentSource: {
 					network: input.network,
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
-					paymentSourceType: input.filterPaymentSourceType,
+					paymentSourceType: resolvePaymentPaymentSourceTypeFilter(input),
 					deletedAt: null,
 				},
 				...buildWalletScopeFilter(ctx.walletScopeIds),

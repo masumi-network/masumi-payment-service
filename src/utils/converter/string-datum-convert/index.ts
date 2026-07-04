@@ -252,6 +252,20 @@ export function decodeV2ContractDatum(
 		const sellerReturnAddress = serializeOptionalAddressObj(fields[3], networkId);
 		const sellerVkey = resolvePaymentKeyHash(sellerAddress);
 
+		// A datum whose participant or return address equals the escrow contract
+		// address bricks the on-chain payout paths: tagged payout outputs would
+		// land at the script address itself, where the validator's strict
+		// continuation parsing (`expect new_datum: Datum` over every
+		// script-address output in vested_pay.ak) aborts the whole transaction.
+		// Anyone can lock such a datum directly on-chain, so reject it here —
+		// before a seller treats the lock as a valid payment and does work.
+		if (
+			smartContractAddress != null &&
+			[buyerAddress, buyerReturnAddress, sellerAddress, sellerReturnAddress].includes(smartContractAddress)
+		) {
+			return null;
+		}
+
 		const referenceKey = fields[4]?.bytes;
 		const referenceSignature = fields[5]?.bytes;
 		const sellerNonce = fields[6]?.bytes;

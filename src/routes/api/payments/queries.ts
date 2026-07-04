@@ -4,20 +4,31 @@ import { AuthContext } from '@masumi/payment-core/auth';
 import { parseAmountSearchRange, buildMatchingStates, buildTransactionSearchFilter } from '@/utils/shared/queries';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { queryPaymentsSchemaInput } from './schemas';
+import { PaymentSourceType } from '@/generated/prisma/client';
 
 export type PaymentListQueryInput = z.infer<typeof queryPaymentsSchemaInput>;
+
+export function resolvePaymentPaymentSourceTypeFilter(input: {
+	filterPaymentSourceType?: PaymentSourceType;
+	filterSmartContractAddress?: string | null;
+}) {
+	if (input.filterPaymentSourceType != null) return input.filterPaymentSourceType;
+	if (input.filterSmartContractAddress != null) return undefined;
+	return PaymentSourceType.Web3CardanoV1;
+}
 
 export async function getPaymentsForQuery(input: PaymentListQueryInput, walletScopeIds: AuthContext['walletScopeIds']) {
 	const searchLower = input.searchQuery?.toLowerCase();
 	const matchingStates = buildMatchingStates(searchLower);
 	const amountFilter = searchLower ? parseAmountSearchRange(searchLower) : undefined;
+	const paymentSourceTypeFilter = resolvePaymentPaymentSourceTypeFilter(input);
 
 	return prisma.paymentRequest.findMany({
 		where: {
 			PaymentSource: {
 				network: input.network,
 				smartContractAddress: input.filterSmartContractAddress ?? undefined,
-				paymentSourceType: input.filterPaymentSourceType,
+				paymentSourceType: paymentSourceTypeFilter,
 				deletedAt: null,
 			},
 			...buildWalletScopeFilter(walletScopeIds),
