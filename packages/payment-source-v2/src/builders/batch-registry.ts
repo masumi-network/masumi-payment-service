@@ -15,7 +15,12 @@ import { SERVICE_CONSTANTS } from '@masumi/payment-core/config';
 import { logger } from '@masumi/payment-core/logger';
 import { getCachedChainProtocolParameters } from '@/utils/mesh-cost-model-sync';
 import { syncMeshCostModelsFromChainV2 } from '../utils/mesh-cost-model-sync';
-import { deriveTotalCollateral, lovelaceFromUtxo, WALLET_SPLITTER_LOVELACE } from './batch-helpers';
+import {
+	deriveTotalCollateral,
+	lovelaceFromUtxo,
+	shouldEmitWalletSplitter,
+	WALLET_SPLITTER_LOVELACE,
+} from './batch-helpers';
 
 // V2 mint contract `Action` enum: MintAction=0, UpdateAction=1, BurnAction=2.
 // See smart-contracts/registry-v2/validators/mint.ak.
@@ -297,7 +302,7 @@ export async function generateRegistryBatchMintTransaction(
 	// post-tx (collateral untouched + change), so a splitter there is
 	// over-emission. See `batch-helpers.ts WALLET_SPLITTER_LOVELACE` for
 	// full rationale and the precise per-length analysis.
-	if (walletUtxosForSelection.length === 1) {
+	if (shouldEmitWalletSplitter(walletUtxos, walletUtxosForSelection)) {
 		txBuilder.txOut(mintingWalletAddress, [{ unit: 'lovelace', quantity: WALLET_SPLITTER_LOVELACE.toString() }]);
 	}
 
@@ -456,7 +461,7 @@ async function buildBatchDeregisterTx(
 	// rationale; the burn caller already filters collateral + assetUtxos
 	// upstream so `walletUtxosForSelection.length` is the fee-eligible
 	// count directly.
-	if (walletUtxosForSelection.length === 1) {
+	if (shouldEmitWalletSplitter(walletUtxos, walletUtxosForSelection)) {
 		txBuilder.txOut(walletAddress, [{ unit: 'lovelace', quantity: WALLET_SPLITTER_LOVELACE.toString() }]);
 	}
 
@@ -643,7 +648,7 @@ async function buildBatchUpdateTx(
 		]);
 	}
 
-	if (walletUtxosForSelection.length === 1) {
+	if (shouldEmitWalletSplitter(walletUtxos, walletUtxosForSelection)) {
 		txBuilder.txOut(walletAddress, [{ unit: 'lovelace', quantity: WALLET_SPLITTER_LOVELACE.toString() }]);
 	}
 

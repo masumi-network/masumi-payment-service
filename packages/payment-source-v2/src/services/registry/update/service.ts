@@ -11,7 +11,7 @@ import { advancedRetry, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { extractAssetName, extractPolicyId } from '@/utils/converter/agent-identifier';
-import { sortAndLimitUtxos, sortUtxosByLovelaceDesc } from '@/utils/utxo';
+import { sortUtxosByLovelaceDesc } from '@/utils/utxo';
 import {
 	connectExistingTransaction,
 	createMeshProvider,
@@ -21,14 +21,14 @@ import {
 import {
 	bumpRegistryAssetNameVersionV2,
 	findRegistryTokenUtxo,
-	generateRegistryUpdateTransactionAutomaticFees,
 	resolveRegistryDeregistrationWallet,
 	resolveRegistryFundingLovelace,
 } from '@/services/registry/shared';
 import {
 	assertTxSizeWithinLimit,
+	capRegistryMintFundingLovelace,
+	isRegistryTxInputSelectionError,
 	pickBatchCollateral,
-	WALLET_SPLITTER_LOVELACE,
 } from '../../../builders/batch-helpers';
 import {
 	type BatchRegistryUpdateItem,
@@ -169,163 +169,219 @@ async function processUpdate(
 	}
 	validateRegistrationPricing(request);
 
-	const oldAssetName = extractAssetName(request.agentIdentifier);
 	const oldPolicyId = extractPolicyId(request.agentIdentifier);
 	if (oldPolicyId !== policyId) {
 		throw new Error('agentIdentifier policy does not match payment source script');
 	}
-	const newAssetName = bumpRegistryAssetNameVersionV2(oldAssetName);
-	const newAgentIdentifier = policyId + newAssetName;
 
 	const holderWallet = resolveRegistryDeregistrationWallet(request);
-	const walletSession = await loadHotWalletSession({
-		network: paymentSource.network,
-		rpcProviderApiKey: paymentSource.PaymentSourceConfig.rpcProviderApiKey,
-		encryptedMnemonic: holderWallet.Secret.encryptedMnemonic,
-		hotWalletId: holderWallet.id,
-	});
-	const { wallet, utxos, address } = walletSession;
-	if (utxos.length === 0) {
-		throw new Error('No UTXOs found for the wallet');
-	}
-	const blockchainProvider = await createMeshProvider(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
-	const collateralCheck = await ensureCollateralReady({
-		walletDbId: holderWallet.id,
-		walletAddress: address,
-		meshWallet: wallet,
-		utxos,
-		blockchainProvider,
-		network,
-		serviceLabel: 'registry-update',
-	});
-	if (collateralCheck.status === 'failed' && collateralCheck.reason === 'insufficient_funds') {
-		// Collateral could not be prepared for this attempt. Fail the request
-		// (instead of silently re-deferring in UpdateRequested forever, which
-		// looks like "stuck, nothing happens") so the operator sees a clear
-		// reason and can fix it and retry — the update endpoint accepts
-		// UpdateFailed and re-queues it as UpdateRequested.
-		const failureMessage = `Wallet balance too low to fund the collateral preparation transaction: ${collateralCheck.details}. Top up the holder wallet with ADA and retry the update.`;
-		await markRequestFailed(request, new Error(failureMessage));
-		return;
-	}
-	if (collateralCheck.status === 'failed') {
-		// reason === 'prep_tx_failed' (insufficient_funds handled above): a
-		// TRANSIENT prep error the wallet was already unlocked for. Normally leave
-		// the request queued for the next tick, but bound the retries so a
-		// DETERMINISTICALLY-failing prep eventually surfaces as UpdateFailed
-		// instead of looping forever.
-		const reachedLimit = await recordRegistryPrepFailure(request.id);
-		if (reachedLimit) {
+	try {
+		const walletSession = await loadHotWalletSession({
+			network: paymentSource.network,
+			rpcProviderApiKey: paymentSource.PaymentSourceConfig.rpcProviderApiKey,
+			encryptedMnemonic: holderWallet.Secret.encryptedMnemonic,
+			hotWalletId: holderWallet.id,
+		});
+		const { wallet, utxos, address } = walletSession;
+		if (utxos.length === 0) {
+			throw new Error('No UTXOs found for the wallet');
+		}
+		const blockchainProvider = await createMeshProvider(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
+		const paymentSourceMetadata: RegistryMetadataPaymentSource = {
+			network: paymentSource.network,
+			paymentSourceType: paymentSource.paymentSourceType,
+			smartContractAddress: paymentSource.smartContractAddress,
+		};
+		const validated = buildUpdateItem(request, utxos, address, policyId, paymentSourceMetadata);
+		const { newAgentIdentifier } = validated;
+		const assetInput = validated.item.assetUtxo.input;
+		// Holder wallets often consolidate to a single [NFT + ADA] UTxO after
+		// registration. Run UTxO prep BEFORE picking collateral — otherwise
+		// pickBatchCollateral returns null and we never reach ensureCollateralReady.
+		const initialCollateralCheck = await ensureCollateralReady({
+			walletDbId: holderWallet.id,
+			walletAddress: address,
+			meshWallet: wallet,
+			utxos,
+			blockchainProvider,
+			network,
+			serviceLabel: 'registry-update',
+			excludeSpendingInputsForFeeCheck: [assetInput],
+		});
+		if (initialCollateralCheck.status === 'failed' && initialCollateralCheck.reason === 'insufficient_funds') {
+			const failureMessage = `Wallet balance too low to fund the collateral preparation transaction: ${initialCollateralCheck.details}. Top up the holder wallet with ADA and retry the update.`;
+			await markRequestFailed(request, new Error(failureMessage));
+			return;
+		}
+		if (initialCollateralCheck.status === 'failed') {
+			const reachedLimit = await recordRegistryPrepFailure(request.id);
+			if (reachedLimit) {
+				await markRequestFailed(
+					request,
+					new Error(
+						`Collateral preparation failed repeatedly (>= ${MAX_COLLATERAL_PREP_FAILURES} attempts): ${initialCollateralCheck.details}. Check the holder wallet's UTxO set and retry.`,
+					),
+				);
+			}
+			return;
+		}
+		if (initialCollateralCheck.status !== 'ready') {
+			logger.info('V2 update deferred while holder wallet UTxO prep is in flight', {
+				requestId: request.id,
+				holderWalletId: holderWallet.id,
+				prepTxHash: initialCollateralCheck.status === 'deferred' ? initialCollateralCheck.prepTxHash : undefined,
+			});
+			return;
+		}
+		// Collateral must not overlap the asset UTxO being burned (Conway forbids
+		// collateral ∩ inputs).
+		const collateralUtxo = pickBatchCollateral(utxos, [assetInput]);
+		if (collateralUtxo == null) {
 			await markRequestFailed(
 				request,
 				new Error(
-					`Collateral preparation failed repeatedly (>= ${MAX_COLLATERAL_PREP_FAILURES} attempts): ${collateralCheck.details}. Check the holder wallet's UTxO set and retry.`,
+					'Holder wallet has no separate UTxO with ≥5 ADA for collateral after UTxO preparation. Top up the holder wallet with ADA (recommend ≥15 ADA) and retry the update.',
 				),
 			);
+			return;
 		}
-		return;
-	}
-	if (collateralCheck.status !== 'ready') {
-		// status === 'deferred': a collateral prep tx is in flight; keep the row
-		// queued so the next scheduler tick re-picks it up once the prep tx
-		// confirms (mirrors register/deregister single-item).
-		return;
-	}
-	// Collateral ready — clear any transient prep-failure count so it never
-	// slow-accumulates into a false UpdateFailed across many update cycles.
-	await resetRegistryPrepFailureCount(request.id);
-
-	// Holder-holds-asset guard: findRegistryTokenUtxo throws if the resolved
-	// holder wallet's UTxOs no longer contain this asset. The UpdateAction tx
-	// is signed by `holderWallet` (the on-chain holder recorded at request
-	// time), so if the asset has since moved out of that managed wallet there is
-	// nothing to burn+remint and the tx would fail on chain anyway — fail fast
-	// here with a clear message instead.
-	const tokenUtxo = findRegistryTokenUtxo(utxos, request.agentIdentifier);
-	const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8_000_000);
-	const collateralUtxo = limitedFilteredUtxos[0];
-	if (collateralUtxo == null) {
-		throw new Error('Collateral UTXO not found');
-	}
-
-	const paymentSourceMetadata: RegistryMetadataPaymentSource = {
-		network: paymentSource.network,
-		paymentSourceType: paymentSource.paymentSourceType,
-		smartContractAddress: paymentSource.smartContractAddress,
-	};
-	const metadata = buildAgentMetadata(request, paymentSourceMetadata);
-
-	// Default the version-bumped NFT recipient to the CURRENT HOLDER (`address`,
-	// the wallet that signs this tx), NOT request.SmartContractWallet. When the
-	// holder differs from SmartContractWallet (the common case — the route
-	// records the on-chain holder as DeregistrationHotWallet), sending the new
-	// asset to SmartContractWallet would silently migrate the registry NFT to a
-	// different wallet on every default update. An explicit caller-supplied
-	// RecipientWallet still overrides.
-	const recipientWalletAddress = request.RecipientWallet?.walletAddress ?? address;
-	const fundingLovelace = resolveRegistryFundingLovelace(request);
-
-	const unsignedTx = await generateRegistryUpdateTransactionAutomaticFees(
-		blockchainProvider,
-		network,
-		script,
-		address,
-		recipientWalletAddress,
-		fundingLovelace,
-		policyId,
-		oldAssetName,
-		newAssetName,
-		tokenUtxo,
-		collateralUtxo,
-		limitedFilteredUtxos,
-		metadata,
-		paymentSource.PaymentSourceConfig.rpcProviderApiKey,
-		WALLET_SPLITTER_LOVELACE,
-	);
-	const signedTx = await wallet.signTx(unsignedTx, true);
-
-	// Submit FIRST, then write DB. Same rationale as
-	// register/deregister single-item: on submit failure there is no
-	// orphan Transaction row to clean up, and we revert state back to
-	// UpdateRequested so the next tick can retry.
-	let newTxHash: string;
-	try {
-		newTxHash = await wallet.submitTx(signedTx);
-	} catch (error) {
-		logger.error('Error submitting V2 update tx', { error, requestId: request.id });
-		await prisma.registryRequest.update({
-			where: { id: request.id },
-			data: {
-				state: RegistrationState.UpdateRequested,
-				DeregistrationHotWallet: {
-					update: { lockedAt: null },
-				},
-			},
+		const collateralCheck = await ensureCollateralReady({
+			walletDbId: holderWallet.id,
+			walletAddress: address,
+			meshWallet: wallet,
+			utxos,
+			blockchainProvider,
+			network,
+			serviceLabel: 'registry-update',
+			excludeSpendingInputsForFeeCheck: [assetInput, collateralUtxo.input],
 		});
-		return;
-	}
+		if (collateralCheck.status === 'failed' && collateralCheck.reason === 'insufficient_funds') {
+			// Collateral could not be prepared for this attempt. Fail the request
+			// (instead of silently re-deferring in UpdateRequested forever, which
+			// looks like "stuck, nothing happens") so the operator sees a clear
+			// reason and can fix it and retry — the update endpoint accepts
+			// UpdateFailed and re-queues it as UpdateRequested.
+			const failureMessage = `Wallet balance too low to fund the collateral preparation transaction: ${collateralCheck.details}. Top up the holder wallet with ADA and retry the update.`;
+			await markRequestFailed(request, new Error(failureMessage));
+			return;
+		}
+		if (collateralCheck.status === 'failed') {
+			// reason === 'prep_tx_failed' (insufficient_funds handled above): transient
+			// prep error. Bound retries so a deterministically-failing prep eventually
+			// surfaces as UpdateFailed; otherwise leave the row queued for the next tick.
+			const reachedLimit = await recordRegistryPrepFailure(request.id);
+			if (reachedLimit) {
+				await markRequestFailed(
+					request,
+					new Error(
+						`Collateral preparation failed repeatedly (>= ${MAX_COLLATERAL_PREP_FAILURES} attempts): ${collateralCheck.details}. Check the holder wallet's UTxO set and retry.`,
+					),
+				);
+			}
+			return;
+		}
+		if (collateralCheck.status !== 'ready') {
+			// status === 'deferred': a collateral or fee-UTxO prep tx is in flight;
+			// keep the row queued so the next scheduler tick re-picks it once the
+			// prep tx confirms (mirrors register/deregister single-item).
+			logger.info('V2 update deferred while holder wallet UTxO prep is in flight', {
+				requestId: request.id,
+				holderWalletId: holderWallet.id,
+				prepTxHash: collateralCheck.status === 'deferred' ? collateralCheck.prepTxHash : undefined,
+			});
+			return;
+		}
+		// Collateral ready — clear any transient prep-failure count so it never
+		// slow-accumulates into a false UpdateFailed across many update cycles.
+		await resetRegistryPrepFailureCount(request.id);
 
-	await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
+		validated.item.fundingLovelace = capRegistryMintFundingLovelace(
+			utxos,
+			collateralUtxo,
+			[validated.item.assetUtxo],
+			validated.item.fundingLovelace,
+		);
 
-	// Atomic flip: new asset identifier replaces the old, state advances to
-	// UpdateInitiated, shared Tx row is attached. tx-sync then verifies the
-	// new asset on chain.
-	await retryOnSerializationConflict(
-		() =>
-			prisma.registryRequest.update({
+		const spendableUtxos = sortUtxosByLovelaceDesc(utxos);
+
+		let unsignedTx: string;
+		try {
+			unsignedTx = await generateRegistryBatchUpdateTransactionAutomaticFees(
+				asV2Provider(blockchainProvider),
+				network,
+				script,
+				address,
+				policyId,
+				[validated.item],
+				collateralUtxo,
+				spendableUtxos,
+				paymentSource.PaymentSourceConfig.rpcProviderApiKey,
+			);
+		} catch (buildError) {
+			if (isRegistryTxInputSelectionError(buildError)) {
+				const message = buildError instanceof Error ? buildError.message : String(buildError);
+				await markRequestFailed(
+					request,
+					new Error(
+						`Holder wallet has no UTxO available to pay registry update fees after reserving the NFT input and collateral. ` +
+							`Top up the holder wallet with ADA (recommend ≥15 ADA) and retry the update. Original error: ${message}`,
+					),
+				);
+				return;
+			}
+			throw buildError;
+		}
+		const signedTx = await wallet.signTx(unsignedTx, true);
+
+		// Submit FIRST, then write DB. Same rationale as
+		// register/deregister single-item: on submit failure there is no
+		// orphan Transaction row to clean up, and we revert state back to
+		// UpdateRequested so the next tick can retry.
+		let newTxHash: string;
+		try {
+			newTxHash = await wallet.submitTx(signedTx);
+		} catch (error) {
+			logger.error('Error submitting V2 update tx', { error, requestId: request.id });
+			await prisma.registryRequest.update({
 				where: { id: request.id },
 				data: {
-					state: RegistrationState.UpdateInitiated,
-					agentIdentifier: newAgentIdentifier,
-					...createPendingTransaction(holderWallet.id, newTxHash),
+					state: RegistrationState.UpdateRequested,
+					DeregistrationHotWallet: {
+						update: { lockedAt: null },
+					},
 				},
-			}),
-		{ label: 'v2-update-post-submit' },
-	);
-	logger.debug(`Created V2 update transaction:
+			});
+			return;
+		}
+
+		await walletSession.evaluateProjectedBalance(unsignedTx, spendableUtxos);
+
+		// Atomic flip: new asset identifier replaces the old, state advances to
+		// UpdateInitiated, shared Tx row is attached. tx-sync then verifies the
+		// new asset on chain.
+		await retryOnSerializationConflict(
+			() =>
+				prisma.registryRequest.update({
+					where: { id: request.id },
+					data: {
+						state: RegistrationState.UpdateInitiated,
+						agentIdentifier: newAgentIdentifier,
+						...createPendingTransaction(holderWallet.id, newTxHash),
+					},
+				}),
+			{ label: 'v2-update-post-submit' },
+		);
+		logger.debug(`Created V2 update transaction:
               Tx ID: ${newTxHash}
               View on https://${network === 'preprod' ? 'preprod.' : ''}cardanoscan.io/transaction/${newTxHash}
           `);
+	} finally {
+		// lockAndQueryRegistryRequests sets lockedAt before we run. Release it
+		// whenever this tick did not attach a PendingTransaction (deferred prep,
+		// transient prep failure, or throw before post-submit). No-ops when a
+		// pending tx is in flight — tx-sync owns that unlock path.
+		await unlockHotWalletIfNoPendingTransaction(holderWallet.id, 'registry-update-finally');
+	}
 }
 
 // Batch several same-wallet UpdateRequested rows into ONE UpdateAction tx that
@@ -359,6 +415,75 @@ async function processBatchUpdate(
 	}
 	const blockchainProvider = await createMeshProvider(rpcApiKey);
 
+	const paymentSourceMetadata: RegistryMetadataPaymentSource = {
+		network: paymentSource.network,
+		paymentSourceType: paymentSource.paymentSourceType,
+		smartContractAddress: paymentSource.smartContractAddress,
+	};
+
+	const validated: ValidatedUpdateItem[] = [];
+	for (const request of requests) {
+		try {
+			validated.push(buildUpdateItem(request, utxos, address, policyId, paymentSourceMetadata));
+		} catch (validationError) {
+			// Mid-batch: keep the shared wallet lock so the remaining items can build.
+			await markRequestFailed(request, validationError, { unlockWallet: false });
+		}
+	}
+	if (validated.length === 0) {
+		await unlockHotWalletIfNoPendingTransaction(holderWallet.id, 'registry-update-batch');
+		return;
+	}
+
+	const assetInputs = validated.map((v) => v.item.assetUtxo.input);
+	const initialCollateralCheck = await ensureCollateralReady({
+		walletDbId: holderWallet.id,
+		walletAddress: address,
+		meshWallet: wallet,
+		utxos,
+		blockchainProvider,
+		network,
+		serviceLabel: 'registry-update-batch',
+		excludeSpendingInputsForFeeCheck: assetInputs,
+	});
+	if (initialCollateralCheck.status === 'failed' && initialCollateralCheck.reason === 'insufficient_funds') {
+		const failureMessage = `Wallet balance too low to fund the collateral preparation transaction: ${initialCollateralCheck.details}. Top up the holder wallet with ADA and retry the update.`;
+		await Promise.allSettled(requests.map((request) => markRequestFailed(request, new Error(failureMessage))));
+		return;
+	}
+	if (initialCollateralCheck.status === 'failed') {
+		await Promise.allSettled(
+			requests.map(async (request) => {
+				const reachedLimit = await recordRegistryPrepFailure(request.id);
+				if (reachedLimit) {
+					await markRequestFailed(
+						request,
+						new Error(
+							`Collateral preparation failed repeatedly (>= ${MAX_COLLATERAL_PREP_FAILURES} attempts): ${initialCollateralCheck.details}. Check the holder wallet's UTxO set and retry.`,
+						),
+					);
+				}
+			}),
+		);
+		return;
+	}
+	if (initialCollateralCheck.status !== 'ready') {
+		logger.info('V2 update batch deferred while holder wallet UTxO prep is in flight', {
+			requestIds: validated.map((v) => v.request.id),
+			holderWalletId: holderWallet.id,
+			prepTxHash: initialCollateralCheck.status === 'deferred' ? initialCollateralCheck.prepTxHash : undefined,
+		});
+		return;
+	}
+
+	const collateralUtxo = pickBatchCollateral(utxos, assetInputs);
+	if (collateralUtxo == null) {
+		const failureMessage =
+			'Holder wallet has no separate UTxO with ≥5 ADA for collateral after UTxO preparation. Top up the holder wallet with ADA (recommend ≥15 ADA) and retry the update.';
+		await Promise.allSettled(validated.map((v) => markRequestFailed(v.request, new Error(failureMessage))));
+		return;
+	}
+
 	const collateralCheck = await ensureCollateralReady({
 		walletDbId: holderWallet.id,
 		walletAddress: address,
@@ -367,6 +492,7 @@ async function processBatchUpdate(
 		blockchainProvider,
 		network,
 		serviceLabel: 'registry-update-batch',
+		excludeSpendingInputsForFeeCheck: [...assetInputs, collateralUtxo.input],
 	});
 	if (collateralCheck.status === 'failed' && collateralCheck.reason === 'insufficient_funds') {
 		// Shared-wallet funding problem — fail every item with a clear reason so
@@ -396,43 +522,24 @@ async function processBatchUpdate(
 		return;
 	}
 	if (collateralCheck.status !== 'ready') {
-		// deferred: a prep tx is in flight; the whole batch stays queued.
+		// deferred: a collateral or fee-UTxO prep tx is in flight; the whole batch stays queued.
+		logger.info('V2 update batch deferred while holder wallet UTxO prep is in flight', {
+			requestIds: validated.map((v) => v.request.id),
+			holderWalletId: holderWallet.id,
+			prepTxHash: collateralCheck.status === 'deferred' ? collateralCheck.prepTxHash : undefined,
+		});
 		return;
 	}
 	// Collateral ready — clear any transient prep-failure count on every item.
 	await Promise.allSettled(requests.map((request) => resetRegistryPrepFailureCount(request.id)));
 
-	const paymentSourceMetadata: RegistryMetadataPaymentSource = {
-		network: paymentSource.network,
-		paymentSourceType: paymentSource.paymentSourceType,
-		smartContractAddress: paymentSource.smartContractAddress,
-	};
-
-	const validated: ValidatedUpdateItem[] = [];
-	for (const request of requests) {
-		try {
-			validated.push(buildUpdateItem(request, utxos, address, policyId, paymentSourceMetadata));
-		} catch (validationError) {
-			// Mid-batch: keep the shared wallet lock so the remaining items can build.
-			await markRequestFailed(request, validationError, { unlockWallet: false });
-		}
-	}
-	if (validated.length === 0) {
-		await unlockHotWalletIfNoPendingTransaction(holderWallet.id, 'registry-update-batch');
-		return;
-	}
-
-	// Prefer a pure-ADA collateral UTxO, but mixed-asset collateral is valid
-	// under CIP-40. This builder still keeps collateral separate from the asset
-	// UTxOs being burned/continued.
-	const collateralUtxo = pickBatchCollateral(
-		utxos,
-		validated.map((v) => v.item.assetUtxo.input),
-	);
-	if (collateralUtxo == null) {
-		logger.warn('V2 update batch: no suitable collateral UTxO (>=5 ADA); deferring to next tick');
-		await unlockHotWalletIfNoPendingTransaction(holderWallet.id, 'registry-update-batch');
-		return;
+	for (const entry of validated) {
+		entry.item.fundingLovelace = capRegistryMintFundingLovelace(
+			utxos,
+			collateralUtxo,
+			validated.map((v) => v.item.assetUtxo),
+			entry.item.fundingLovelace,
+		);
 	}
 
 	const items = validated.map((v) => v.item);
@@ -453,6 +560,15 @@ async function processBatchUpdate(
 		);
 		assertTxSizeWithinLimit(unsignedTx, 'v2-registry-batch-update');
 	} catch (buildError) {
+		if (isRegistryTxInputSelectionError(buildError)) {
+			const message = buildError instanceof Error ? buildError.message : String(buildError);
+			const failure = new Error(
+				`Holder wallet has no UTxO available to pay registry update fees after reserving NFT inputs and collateral. ` +
+					`Top up the holder wallet with ADA (recommend ≥15 ADA) and retry the update. Original error: ${message}`,
+			);
+			await Promise.allSettled(validated.map((v) => markRequestFailed(v.request, failure)));
+			return;
+		}
 		logger.error('V2 update batch build failed; marking batch failed [batch-fallback]', {
 			error: buildError instanceof Error ? { message: buildError.message, name: buildError.name } : buildError,
 			batchSize: validated.length,
@@ -579,13 +695,17 @@ export async function updateAgentV2() {
 					if (requests.length === 1) {
 						const request = requests[0];
 						try {
-							await advancedRetry({
+							const retryResult = await advancedRetry({
 								errorResolvers: [delayErrorResolver({ configuration: SERVICE_CONSTANTS.RETRY })],
+								throwOnUnrecoveredError: true,
 								operation: async () => {
 									await processUpdate(request, paymentSource, network, script, policyId);
 									return true;
 								},
 							});
+							if (retryResult.success === false) {
+								await markRequestFailed(request, retryResult.error);
+							}
 						} catch (error) {
 							await markRequestFailed(request, error);
 						}

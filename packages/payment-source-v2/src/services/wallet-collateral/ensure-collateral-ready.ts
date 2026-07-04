@@ -7,6 +7,7 @@ import { recordV2CollateralPrepHashDivergence } from '@masumi/payment-core/metri
 import { retryOnSerializationConflict } from '@/utils/db/retry';
 import { resolveTxHash, SLOT_CONFIG_NETWORK, unixTimeToEnclosingSlot } from '@meshsdk/core';
 import type { Network, UTxO } from '@meshsdk/core';
+import { countFeeEligibleUtxos } from '../../builders/batch-helpers';
 import { isDefinitiveNodeRejection } from '../submit-error-classifier';
 
 /**
@@ -34,6 +35,12 @@ export const COLLATERAL_RESERVE_LOVELACE = 5_000_000n;
  * of fee. 7 ADA covers all three with a comfortable safety margin.
  */
 export const PREP_TX_MIN_LOVELACE = 7_000_000n;
+/** Extra pure-ADA output emitted by fee-UTxO split prep so script txs have a fee input. */
+export const FEE_UTXO_PREP_LOVELACE = 3_000_000n;
+/**
+ * Minimum total lovelace for fee-UTxO split prep (5 ADA + 3 ADA outputs + tx fee buffer).
+ */
+export const FEE_UTXO_PREP_MIN_LOVELACE = COLLATERAL_RESERVE_LOVELACE + FEE_UTXO_PREP_LOVELACE + 1_500_000n;
 
 export type EnsureCollateralReadyResult =
 	| { status: 'ready' }
@@ -57,6 +64,13 @@ export type EnsureCollateralReadyParams = {
 	/** Short label for log lines so a single grep can attribute prep calls to
 	 *  the service that triggered them (e.g. 'request-refund'). */
 	serviceLabel: string;
+	/**
+	 * Registry update/deregister script txs consume one UTxO as the asset input
+	 * and another as collateral. When every remaining UTxO is excluded here, mesh
+	 * has no fee input (`UTxO Balance Insufficient`). Submit a split prep tx
+	 * (same as the collateral-prep path) before building the script tx.
+	 */
+	excludeSpendingInputsForFeeCheck?: Array<{ txHash: string; outputIndex: number }>;
 };
 
 export type WalletStateClassification = {
@@ -220,9 +234,25 @@ export function classifyWalletState(utxos: UTxO[]): WalletStateClassification {
 export async function ensureCollateralReady(params: EnsureCollateralReadyParams): Promise<EnsureCollateralReadyResult> {
 	const { walletDbId, walletAddress, meshWallet, utxos, serviceLabel, network } = params;
 	const classification = classifyWalletState(utxos);
+	const feeExclude = params.excludeSpendingInputsForFeeCheck;
+	const needsFeeUtxoSplit =
+		classification.ready && feeExclude != null && countFeeEligibleUtxos(utxos, feeExclude) === 0;
 
-	if (classification.ready) {
+	if (classification.ready && !needsFeeUtxoSplit) {
 		return { status: 'ready' };
+	}
+
+	if (needsFeeUtxoSplit) {
+		logger.info(
+			'V2 wallet is collateral-ready but has no fee-eligible UTxO after excluding script/collateral inputs; submitting fee-UTxO split prep [collateral-prep]',
+			{
+				walletDbId,
+				walletAddress,
+				serviceLabel,
+				excludedInputCount: feeExclude.length,
+				utxoCount: classification.utxoCount,
+			},
+		);
 	}
 
 	// Previously this branch existed to surface "money trapped in token-bearing
@@ -235,7 +265,8 @@ export async function ensureCollateralReady(params: EnsureCollateralReadyParams)
 	// `fundedForPrep` gate below now uses `totalLovelace` and treats mixed
 	// and pure UTxOs equivalently.
 
-	if (!classification.fundedForPrep) {
+	const minLovelaceForPrep = needsFeeUtxoSplit ? FEE_UTXO_PREP_MIN_LOVELACE : PREP_TX_MIN_LOVELACE;
+	if (classification.totalLovelace < minLovelaceForPrep) {
 		// WARN, not ERROR: every scheduler tick that picks this wallet up
 		// re-runs the helper, so an underfunded wallet would otherwise spam
 		// an identical ERROR row every ~30-60 s until operator funds it. No
@@ -252,7 +283,8 @@ export async function ensureCollateralReady(params: EnsureCollateralReadyParams)
 			totalLovelace: classification.totalLovelace.toString(),
 			pureLovelaceTotal: classification.pureLovelaceTotal.toString(),
 			hasPureAdaUtxo: classification.hasPureAdaUtxo,
-			minRequiredLovelace: PREP_TX_MIN_LOVELACE.toString(),
+			minRequiredLovelace: minLovelaceForPrep.toString(),
+			prepKind: needsFeeUtxoSplit ? 'fee-utxo-split' : 'collateral',
 			note: 'wallet does not hold enough TOTAL lovelace to fund a collateral-prep tx. Mixed-asset UTxOs are acceptable inputs; this log repeats every scheduler tick until operator funds the wallet.',
 		});
 		// The outer caller's `lockAndQueryX` set `lockedAt = now` on this wallet.
@@ -266,24 +298,30 @@ export async function ensureCollateralReady(params: EnsureCollateralReadyParams)
 		return {
 			status: 'failed',
 			reason: 'insufficient_funds',
-			details: `wallet has ${classification.totalLovelace.toString()} lovelace across ${classification.utxoCount} UTxO(s); need at least ${PREP_TX_MIN_LOVELACE.toString()} total lovelace to build collateral prep tx (mixed-asset UTxOs accepted)`,
+			details: `wallet has ${classification.totalLovelace.toString()} lovelace across ${classification.utxoCount} UTxO(s); need at least ${minLovelaceForPrep.toString()} total lovelace to build ${needsFeeUtxoSplit ? 'fee-UTxO split' : 'collateral'} prep tx (mixed-asset UTxOs accepted)`,
 		};
 	}
 
-	// Build the prep tx. Send the collateral reserve explicitly back to
-	// the wallet's own address; mesh will then add a change output for
-	// the remainder, naturally restoring the separate reserve/change shape
-	// the current V2 builders expect on the next script tx.
+	// Build the prep tx. Standard collateral prep sends one 5 ADA output back to
+	// self; fee-UTxO split prep sends two explicit outputs so holder wallets
+	// with [NFT+ADA, 5 ADA collateral] gain a third pure-ADA UTxO for mesh fees.
 	const meshTx = new MeshTransaction({
 		initiator: meshWallet,
 		fetcher: params.blockchainProvider,
 	}).setMetadata(674, {
-		msg: ['Masumi', 'CollateralPrep'],
+		msg: ['Masumi', needsFeeUtxoSplit ? 'FeeUtxoPrep' : 'CollateralPrep'],
 	});
 
-	meshTx.sendAssets({ address: walletAddress }, [
-		{ unit: 'lovelace', quantity: COLLATERAL_RESERVE_LOVELACE.toString() },
-	]);
+	if (needsFeeUtxoSplit) {
+		meshTx.sendAssets({ address: walletAddress }, [
+			{ unit: 'lovelace', quantity: COLLATERAL_RESERVE_LOVELACE.toString() },
+		]);
+		meshTx.sendAssets({ address: walletAddress }, [{ unit: 'lovelace', quantity: FEE_UTXO_PREP_LOVELACE.toString() }]);
+	} else {
+		meshTx.sendAssets({ address: walletAddress }, [
+			{ unit: 'lovelace', quantity: COLLATERAL_RESERVE_LOVELACE.toString() },
+		]);
+	}
 
 	// Explicit invalid_hereafter ~5 minutes ahead so we can persist it as the
 	// TTL boundary for `funding-reconciliation`. Without an explicit TTL the

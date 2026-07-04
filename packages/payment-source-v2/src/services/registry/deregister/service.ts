@@ -201,6 +201,47 @@ async function processSingleDeregistration(
 		throw new Error('No UTXOs found for the wallet');
 	}
 	const blockchainProvider = await createMeshProvider(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
+	const { assetUtxo, assetName } = validated.item;
+	const initialCollateralCheck = await ensureCollateralReady({
+		walletDbId: deregistrationWallet.id,
+		walletAddress: address,
+		meshWallet: wallet,
+		utxos,
+		blockchainProvider,
+		network,
+		serviceLabel: 'registry-deregister-single',
+		excludeSpendingInputsForFeeCheck: [assetUtxo.input],
+	});
+	if (initialCollateralCheck.status === 'failed' && initialCollateralCheck.reason === 'insufficient_funds') {
+		const failureMessage = `Wallet balance too low to fund the collateral preparation transaction: ${initialCollateralCheck.details}. Top up the wallet with ADA and retry.`;
+		await markRequestFailed(request, new Error(failureMessage));
+		return;
+	}
+	if (initialCollateralCheck.status === 'failed') {
+		const reachedLimit = await recordRegistryPrepFailure(request.id);
+		if (reachedLimit) {
+			await markRequestFailed(
+				request,
+				new Error(
+					`Collateral preparation failed repeatedly (>= ${MAX_COLLATERAL_PREP_FAILURES} attempts): ${initialCollateralCheck.details}. Check the wallet's UTxO set and retry.`,
+				),
+			);
+		}
+		return;
+	}
+	if (initialCollateralCheck.status !== 'ready') {
+		return;
+	}
+	const collateralUtxo = pickBatchCollateral(utxos, [assetUtxo.input]);
+	if (collateralUtxo == null) {
+		await markRequestFailed(
+			request,
+			new Error(
+				'Wallet has no separate UTxO with ≥5 ADA for collateral after UTxO preparation. Top up the wallet with ADA and retry.',
+			),
+		);
+		return;
+	}
 	const collateralCheck = await ensureCollateralReady({
 		walletDbId: deregistrationWallet.id,
 		walletAddress: address,
@@ -209,6 +250,7 @@ async function processSingleDeregistration(
 		blockchainProvider,
 		network,
 		serviceLabel: 'registry-deregister-single',
+		excludeSpendingInputsForFeeCheck: [assetUtxo.input, collateralUtxo.input],
 	});
 	if (collateralCheck.status === 'failed' && collateralCheck.reason === 'insufficient_funds') {
 		// Wallet cannot fund the collateral prep tx for this attempt. Fail with a
@@ -244,16 +286,7 @@ async function processSingleDeregistration(
 	}
 	// Collateral ready — clear any transient prep-failure count.
 	await resetRegistryPrepFailureCount(request.id);
-	if (!request.agentIdentifier) {
-		throw new Error('Agent identifier is required for deregistration');
-	}
-	const tokenUtxo = findRegistryTokenUtxo(utxos, request.agentIdentifier);
 	const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
-	const collateralUtxo = limitedFilteredUtxos[0];
-	if (collateralUtxo == null) {
-		throw new Error('Collateral UTXO not found');
-	}
-	const assetName = extractAssetName(request.agentIdentifier);
 	const unsignedTx = await generateRegistryDeregisterTransactionAutomaticFees(
 		blockchainProvider,
 		network,
@@ -261,7 +294,7 @@ async function processSingleDeregistration(
 		address,
 		policyId,
 		assetName,
-		tokenUtxo,
+		assetUtxo,
 		collateralUtxo,
 		limitedFilteredUtxos,
 		getBurnRedeemerAlternative(PaymentSourceType.Web3CardanoV2),
@@ -386,52 +419,6 @@ export async function deRegisterAgentV2() {
 					return;
 				}
 
-				const collateralCheck = await ensureCollateralReady({
-					walletDbId: deregistrationWallet.id,
-					walletAddress: address,
-					meshWallet: wallet,
-					utxos,
-					blockchainProvider,
-					network,
-					serviceLabel: 'registry-deregister-batch',
-				});
-				if (collateralCheck.status === 'failed' && collateralCheck.reason === 'insufficient_funds') {
-					// Wallet cannot fund collateral for the whole batch (all items share
-					// this wallet). Fail every item with a clear reason instead of
-					// silently deferring forever, so they land in DeregistrationFailed,
-					// are visible, and can be retried once the wallet is funded (the
-					// deregister route resets each in place).
-					const failureMessage = `Wallet balance too low to fund the collateral preparation transaction: ${collateralCheck.details}. Top up the wallet with ADA and retry.`;
-					await Promise.allSettled(
-						registryRequests.map((request) => markRequestFailed(request, new Error(failureMessage))),
-					);
-					return;
-				}
-				if (collateralCheck.status === 'failed') {
-					// reason === 'prep_tx_failed' (transient; wallet already unlocked).
-					// Bound per-request retries so a deterministically-failing prep
-					// surfaces as DeregistrationFailed instead of looping forever.
-					await Promise.allSettled(
-						registryRequests.map(async (request) => {
-							const reachedLimit = await recordRegistryPrepFailure(request.id);
-							if (reachedLimit) {
-								await markRequestFailed(
-									request,
-									new Error(
-										`Collateral preparation failed repeatedly (>= ${MAX_COLLATERAL_PREP_FAILURES} attempts): ${collateralCheck.details}. Check the wallet's UTxO set and retry.`,
-									),
-								);
-							}
-						}),
-					);
-					return;
-				}
-				if (collateralCheck.status !== 'ready') {
-					return;
-				}
-				// Collateral ready — clear any transient prep-failure count on every item.
-				await Promise.allSettled(registryRequests.map((request) => resetRegistryPrepFailureCount(request.id)));
-
 				// Per-request validation: each item needs its asset UTxO in
 				// the wallet. Missing-asset failures become per-item DB
 				// failures.
@@ -460,21 +447,51 @@ export async function deRegisterAgentV2() {
 				const excludeRefs = validated.map((v) => v.item.assetUtxo.input);
 				const collateralUtxo = pickBatchCollateral(utxos, excludeRefs);
 				if (collateralUtxo == null) {
-					// Wallet has no separate collateral candidate — typical for a
-					// just-registered seller wallet where the agent NFT UTxO is
-					// the only UTxO. The V1 single-tx builder handles this by
-					// passing the asset UTxO as BOTH `assetUtxo` and
-					// `collateralUtxo` (mesh-sdk routes `.txIn(...)` and
-					// `.txInCollateral(...)` into separate body fields and
-					// dedupes at assembly). Fall back to the per-item single-tx
-					// path which already uses that pattern via
-					// `generateRegistryDeregisterTransactionAutomaticFees`.
 					logger.warn(
 						'V2 deregister batch could not find separate collateral UTxO; falling back to single-item [batch-fallback] per-request processing [batch-fallback]',
 					);
 					await fallbackToSingleItems(validated, paymentSource, network, script, policyId);
 					return;
 				}
+
+				const collateralCheck = await ensureCollateralReady({
+					walletDbId: deregistrationWallet.id,
+					walletAddress: address,
+					meshWallet: wallet,
+					utxos,
+					blockchainProvider,
+					network,
+					serviceLabel: 'registry-deregister-batch',
+					excludeSpendingInputsForFeeCheck: [...excludeRefs, collateralUtxo.input],
+				});
+				if (collateralCheck.status === 'failed' && collateralCheck.reason === 'insufficient_funds') {
+					const failureMessage = `Wallet balance too low to fund the collateral preparation transaction: ${collateralCheck.details}. Top up the wallet with ADA and retry.`;
+					await Promise.allSettled(
+						registryRequests.map((request) => markRequestFailed(request, new Error(failureMessage))),
+					);
+					return;
+				}
+				if (collateralCheck.status === 'failed') {
+					await Promise.allSettled(
+						registryRequests.map(async (request) => {
+							const reachedLimit = await recordRegistryPrepFailure(request.id);
+							if (reachedLimit) {
+								await markRequestFailed(
+									request,
+									new Error(
+										`Collateral preparation failed repeatedly (>= ${MAX_COLLATERAL_PREP_FAILURES} attempts): ${collateralCheck.details}. Check the wallet's UTxO set and retry.`,
+									),
+								);
+							}
+						}),
+					);
+					return;
+				}
+				if (collateralCheck.status !== 'ready') {
+					return;
+				}
+				// Collateral ready — clear any transient prep-failure count on every item.
+				await Promise.allSettled(registryRequests.map((request) => resetRegistryPrepFailureCount(request.id)));
 
 				// Filter the wallet UTxOs that flow into the tx (used for fee /
 				// change) so the asset-holding UTxOs and the collateral don't
@@ -775,13 +792,17 @@ async function fallbackToSingleItems(
 	if (validated.length === 0) return;
 	const v = validated[0];
 	try {
-		await advancedRetry({
+		const retryResult = await advancedRetry({
 			errorResolvers: [delayErrorResolver({ configuration: SERVICE_CONSTANTS.RETRY })],
+			throwOnUnrecoveredError: true,
 			operation: async () => {
 				await processSingleDeregistration(v, paymentSource, network, script, policyId);
 				return true;
 			},
 		});
+		if (retryResult.success === false) {
+			await markRequestFailed(v.request, retryResult.error);
+		}
 	} catch (error) {
 		await markRequestFailed(v.request, error);
 	}

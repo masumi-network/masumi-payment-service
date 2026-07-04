@@ -3,6 +3,10 @@ import {
 	assertNoCollateralOverlap,
 	assertTxSizeWithinLimit,
 	computeCollateralFromExUnits,
+	countFeeEligibleUtxos,
+	capRegistryMintFundingLovelace,
+	shouldEmitWalletSplitter,
+	isRegistryTxInputSelectionError,
 	intersectTxWindows,
 	isTxSizeWithinLimit,
 	MAX_SAFE_TX_BYTES,
@@ -72,6 +76,84 @@ describe('intersectTxWindows', () => {
 			{ invalidBefore: 200, invalidAfter: 300 },
 		]);
 		expect(result).toEqual({ invalidBefore: 200, invalidAfter: 200 });
+	});
+});
+
+describe('countFeeEligibleUtxos', () => {
+	it('returns 0 when asset input and collateral consume every UTxO', () => {
+		const utxos = [
+			makeUtxo({ txHash: 'tx', outputIndex: 0, lovelace: '5000000' }),
+			makeUtxo({
+				txHash: 'tx',
+				outputIndex: 1,
+				lovelace: '4825523',
+				extraAssets: [{ unit: 'policy.name', quantity: '1' }],
+			}),
+		];
+		expect(
+			countFeeEligibleUtxos(utxos, [
+				{ txHash: 'tx', outputIndex: 0 },
+				{ txHash: 'tx', outputIndex: 1 },
+			]),
+		).toBe(0);
+	});
+
+	it('counts UTxOs not in the exclude set', () => {
+		const utxos = [
+			makeUtxo({ txHash: 'a', lovelace: '5000000' }),
+			makeUtxo({ txHash: 'b', lovelace: '8000000' }),
+		];
+		expect(countFeeEligibleUtxos(utxos, [{ txHash: 'a', outputIndex: 0 }])).toBe(1);
+	});
+});
+
+describe('shouldEmitWalletSplitter', () => {
+	it('skips splitter when wallet already has 3 UTxOs (fee-UTxO split prep)', () => {
+		const utxos = [
+			makeUtxo({ txHash: 'a', lovelace: '5000000' }),
+			makeUtxo({ txHash: 'b', lovelace: '3000000' }),
+			makeUtxo({ txHash: 'c', lovelace: '1470673' }),
+		];
+		expect(shouldEmitWalletSplitter(utxos, [utxos[1]])).toBe(false);
+	});
+
+	it('skips splitter when sole fee UTxO cannot fund 5 ADA splitter plus fees', () => {
+		const utxos = [makeUtxo({ txHash: 'a', lovelace: '3000000' }), makeUtxo({ txHash: 'b', lovelace: '5000000' })];
+		expect(shouldEmitWalletSplitter(utxos, [utxos[0]])).toBe(false);
+	});
+
+	it('emits splitter for 2-UTxO wallet with a large sole fee input', () => {
+		const utxos = [makeUtxo({ txHash: 'a', lovelace: '8000000' }), makeUtxo({ txHash: 'b', lovelace: '6000000' })];
+		expect(shouldEmitWalletSplitter(utxos, [utxos[0]])).toBe(true);
+	});
+});
+
+describe('isRegistryTxInputSelectionError', () => {
+	it('matches insufficient and depleted mesh input-selection failures', () => {
+		expect(isRegistryTxInputSelectionError(new Error('UTxO Balance Insufficient'))).toBe(true);
+		expect(isRegistryTxInputSelectionError(new Error('UTxO Fully Depleted'))).toBe(true);
+		expect(isRegistryTxInputSelectionError(new Error('something else'))).toBe(false);
+	});
+});
+
+describe('capRegistryMintFundingLovelace', () => {
+	it('caps default 5 ADA funding to available non-collateral lovelace', () => {
+		const collateral = makeUtxo({ txHash: 'c', lovelace: '5000000' });
+		const asset = makeUtxo({
+			txHash: 'a',
+			outputIndex: 2,
+			lovelace: '1470673',
+			extraAssets: [{ unit: 'policy.name', quantity: '1' }],
+		});
+		const fee = makeUtxo({ txHash: 'f', lovelace: '3000000' });
+		const capped = capRegistryMintFundingLovelace(
+			[collateral, fee, asset],
+			collateral,
+			[asset],
+			'5000000',
+		);
+		// 3M fee + 1.47M asset - 3M plutus reserve ≈ 1.47M → clamped to min mint output
+		expect(BigInt(capped)).toBe(1_500_000n);
 	});
 });
 

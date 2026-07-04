@@ -143,8 +143,95 @@ function isPureLovelace(utxo: UTxO): boolean {
 }
 
 /** Canonical reference string for a UTxO — must match the format the builders use. */
-function refKey(input: { txHash: string; outputIndex: number }): string {
+export function refKey(input: { txHash: string; outputIndex: number }): string {
 	return `${input.txHash}#${input.outputIndex}`;
+}
+
+/**
+ * Count wallet UTxOs that mesh can use for fees/change after mandatory script
+ * inputs and the collateral UTxO are reserved. Registry update/deregister txs
+ * need at least one fee-eligible UTxO in addition to the asset input and
+ * collateral — a wallet with exactly [NFT+ADA, 5 ADA collateral] passes
+ * `classifyWalletState().ready` but still cannot build the script tx.
+ */
+export function countFeeEligibleUtxos(
+	utxos: UTxO[],
+	excludeSpendingInputs: Array<{ txHash: string; outputIndex: number }>,
+): number {
+	const excludeKeys = new Set<string>();
+	for (const ref of excludeSpendingInputs) {
+		excludeKeys.add(refKey(ref));
+	}
+	return utxos.filter((utxo) => !excludeKeys.has(refKey(utxo.input))).length;
+}
+
+/**
+ * Whether to emit the conditional 5 ADA wallet-splitter output. Skipped when the
+ * wallet already has a UTxO-count buffer (≥3) from fee-UTxO split prep, or when
+ * the sole fee input cannot fund the splitter plus tx fees.
+ */
+export function shouldEmitWalletSplitter(allWalletUtxos: UTxO[], feeEligibleUtxos: UTxO[]): boolean {
+	if (feeEligibleUtxos.length !== 1) return false;
+	if (allWalletUtxos.length >= 3) return false;
+	const feeLovelace = lovelaceFromUtxo(feeEligibleUtxos[0]);
+	return feeLovelace >= WALLET_SPLITTER_LOVELACE + 2_000_000n;
+}
+
+/** Minimum lovelace on a minted registry NFT output (~1.5 ADA). */
+export const REGISTRY_MIN_MINT_OUTPUT_LOVELACE = 1_500_000n;
+
+/**
+ * ADA headroom reserved for Plutus script fees + min-change when capping mint
+ * output funding. Holder wallets after registration often hold ~10 ADA total;
+ * a 0.5 ADA reserve leaves the cap too high and mesh fails with
+ * `UTxO Fully Depleted` when building update/deregister txs.
+ */
+export const REGISTRY_PLUTUS_TX_FEE_RESERVE = 3_000_000n;
+
+/**
+ * Cap mint funding to what non-collateral wallet inputs can cover. Holder wallets
+ * after registration often hold only ~10 ADA total; default 5 ADA funding plus a
+ * 5 ADA splitter cannot be covered by a 3 ADA fee-UTxO from split prep.
+ */
+export function capRegistryMintFundingLovelace(
+	utxos: UTxO[],
+	collateralUtxo: UTxO,
+	spendingAssetUtxos: UTxO[],
+	requestedFunding: string,
+	minFunding: bigint = REGISTRY_MIN_MINT_OUTPUT_LOVELACE,
+	feeReserve: bigint = REGISTRY_PLUTUS_TX_FEE_RESERVE,
+): string {
+	const exclude = new Set<string>([refKey(collateralUtxo.input)]);
+	for (const assetUtxo of spendingAssetUtxos) {
+		exclude.add(refKey(assetUtxo.input));
+	}
+	let available = 0n;
+	for (const utxo of utxos) {
+		if (!exclude.has(refKey(utxo.input))) {
+			available += lovelaceFromUtxo(utxo);
+		}
+	}
+	for (const assetUtxo of spendingAssetUtxos) {
+		available += lovelaceFromUtxo(assetUtxo);
+	}
+	const cap = available > feeReserve ? available - feeReserve : minFunding;
+	const requested = BigInt(requestedFunding);
+	let effective = requested < cap ? requested : cap;
+	if (effective < minFunding) {
+		effective = minFunding;
+	}
+	return effective.toString();
+}
+
+/** Mesh / cardano-sdk input-selection failures when wallet ADA cannot cover outputs + fees. */
+export function isRegistryTxInputSelectionError(error: unknown): boolean {
+	const message = error instanceof Error ? error.message : String(error);
+	const failure =
+		error != null && typeof error === 'object' && 'failure' in error
+			? String((error as { failure: unknown }).failure)
+			: '';
+	const combined = `${message} ${failure}`.toLowerCase();
+	return combined.includes('insufficient') || combined.includes('depleted') || combined.includes('balance');
 }
 
 /**

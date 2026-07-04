@@ -204,3 +204,23 @@ between `tx.transaction.create` and the post-submit `txHash` update.
 
 This applies BOTH to the helper's prep tx AND to every shared-Tx
 creation in the V2 batch services (see ADR-0006).
+
+## Amendments (2026-07-04) — V2 registry update/deregister
+
+Holder wallets after SaaS registration often hold ~10 ADA in three UTxOs
+(5 ADA collateral, ~3 ADA fee, NFT+ADA). Beyond the base invariant above,
+registry update/deregister needed:
+
+1. **`ensureCollateralReady` before `pickBatchCollateral`** on single-item
+   update/deregister paths. Wallets that consolidated to one `[NFT+ADA]`
+   UTxO never reached prep when collateral was picked first.
+2. **`capRegistryMintFundingLovelace`** must reserve ~3 ADA
+   (`REGISTRY_PLUTUS_TX_FEE_RESERVE`) for Plutus fees when capping mint
+   output funding; a 0.5 ADA reserve caused mesh `UTxO Fully Depleted`.
+3. **Registry update worker** must use
+   `advancedRetry({ throwOnUnrecoveredError: true })` (or handle
+   `success === false`); default `advancedRetry` returned without
+   throwing, leaving `UpdateRequested` rows with no persisted `error`.
+
+See `packages/payment-source-v2/src/services/registry/update/service.ts`
+and `batch-helpers.ts` (local diff, pending commit).

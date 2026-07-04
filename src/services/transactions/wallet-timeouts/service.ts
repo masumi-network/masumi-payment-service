@@ -565,26 +565,35 @@ export async function updateWalletTransactionHash() {
 		});
 	}
 	try {
-		// Two recovery branches:
-		//   1) wallet has a PendingTransaction whose `lastCheckedAt` is older than 1 min
-		//      AND the wallet's outer `lockedAt` is either stale (past WALLET_LOCK_TIMEOUT_INTERVAL)
-		//      or null. The `lockedAt` AND-guard is crucial: without it, a worker that
-		//      JUST created a PendingTransaction (whose `lastCheckedAt` is seeded to now
-		//      by `createPendingTransaction`) but is still inside its build/sign/submit
-		//      window — possibly >1 min on slow Blockfrost / large batches — would be
-		//      raced by this cron, which would disconnect the PendingTransaction and
-		//      unlock the wallet while the worker is about to write the txHash. A
-		//      second worker picking the wallet up would then collide on the same
-		//      UTxOs.
+		// Recovery branches:
+		//   1a) PendingTransaction has `txHash` set (submit completed — collateral
+		//       prep, fee-split prep, or any path that recorded the hash). Poll for
+		//       on-chain confirmation once `lastCheckedAt` is older than 1 min.
+		//       No `lockedAt` stale guard here: the hash proves broadcast finished,
+		//       so disconnecting early cannot race an in-flight submit.
+		//   1b) PendingTransaction with no `txHash` yet — keep the `lockedAt`
+		//       stale-or-null guard so this cron cannot disconnect while a worker
+		//       is still inside its build/sign/submit window.
 		//   2) wallet has NO PendingTransaction but `lockedAt` is older than
-		//      WALLET_LOCK_TIMEOUT_INTERVAL — an orphan lock from a `lockAndQueryX`
-		//      caller that crashed/exited between committing the lock and creating
-		//      its PendingTransaction. Without this branch the wallet stays locked
-		//      forever (the relation filter requires `PendingTransaction != null`).
+		//      WALLET_LOCK_TIMEOUT_INTERVAL — orphan lock from a crashed
+		//      `lockAndQueryX` caller.
 		const lockedHotWallets = await prisma.hotWallet.findMany({
 			where: {
 				deletedAt: null,
 				OR: [
+					{
+						PendingTransaction: {
+							txHash: { not: null },
+							OR: [
+								{
+									lastCheckedAt: {
+										lte: new Date(Date.now() - 1000 * 60 * 1),
+									},
+								},
+								{ lastCheckedAt: null },
+							],
+						},
+					},
 					{
 						PendingTransaction: {
 							// Prisma `lte` does NOT match NULL — without the explicit null branch
