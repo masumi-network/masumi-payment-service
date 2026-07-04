@@ -597,9 +597,10 @@ export async function registerAgentV2() {
 					// no-collateral-overlap here: the mint path tolerates the
 					// `firstUtxo == collateral` case (mesh routes the ref into both
 					// body fields and dedupes the collateral side at assembly
-					// time), and enforcing disjointness would block 1-UTxO wallets
-					// from minting at all. Tx-size is checked inline after the
-					// build pass via assertTxSizeWithinLimit further down.
+					// time). Forcing the current separate-collateral policy onto
+					// mint-only batches would block 1-UTxO wallets from minting at
+					// all. Tx-size is checked inline after the build pass via
+					// assertTxSizeWithinLimit further down.
 					const shrinkResult = shrinkBatchToFit(validated, () => ({ ok: true }));
 
 					if (shrinkResult.fit.length === 0) {

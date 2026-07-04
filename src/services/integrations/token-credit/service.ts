@@ -23,6 +23,7 @@ export async function handlePurchaseCreditInit({
 	collateralReturnLovelace,
 	buyerReturnAddress,
 	sellerReturnAddress,
+	agentName,
 }: {
 	id: string;
 	walletScopeIds: string[] | null;
@@ -42,6 +43,7 @@ export async function handlePurchaseCreditInit({
 	collateralReturnLovelace?: bigint;
 	buyerReturnAddress?: string | null;
 	sellerReturnAddress?: string | null;
+	agentName?: string | null;
 }) {
 	let remainingAttempts = 5;
 	while (remainingAttempts > 0) {
@@ -65,6 +67,7 @@ export async function handlePurchaseCreditInit({
 				collateralReturnLovelace,
 				buyerReturnAddress,
 				sellerReturnAddress,
+				agentName,
 			});
 		} catch (error) {
 			if (error instanceof InsufficientFundsError) {

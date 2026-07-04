@@ -168,14 +168,15 @@ function refKey(input: { txHash: string; outputIndex: number }): string {
  * `computeCollateralFromExUnits` and is wired in by the caller AFTER the
  * first `evaluateTx` pass returns budgets.
  *
- * Conway phase-1 rejects a tx whose collateral UTxO reference is ALSO in
- * the *script* spending input set. The caller MUST pass every script input
- * ref (e.g. the per-item `smartContractUtxo.input` refs of an interaction
- * batch, or the asset UTxOs of a burn batch) via `excludeSpendingInputs`.
- * Regular wallet-input overlap is allowed — Mesh-SDK 1.9 routes
- * `.txIn(...)` and `.txInCollateral(...)` into separate body fields, so the
- * same UTxO ref can appear in both (the V1 single-tx register builder
- * already exploits this).
+ * Collateral must be payment-key-locked, so script-locked spending inputs can
+ * never serve as collateral. The caller MUST pass every script input ref
+ * (e.g. the per-item `smartContractUtxo.input` refs of an interaction batch)
+ * via `excludeSpendingInputs`. Some registry burn/update callers also pass
+ * forced asset inputs to preserve the current separate-collateral builder
+ * policy. Regular VKey wallet-input overlap is allowed by the ledger —
+ * Mesh-SDK 1.9 routes `.txIn(...)` and `.txInCollateral(...)` into separate
+ * body fields, so the same UTxO ref can appear in both (the V1 single-tx
+ * register builder already exploits this).
  *
  * Returns `null` (NOT throws) — the caller decides how to handle a missing
  * collateral (e.g. shrink the batch, fall back to single-item, surface to
@@ -404,10 +405,11 @@ export function shrinkBatchToFit<T>(
  * Throw with a clear error if any spending input matches the collateral
  * UTxO reference.
  *
- * Conway phase-1 rejects this scenario with an opaque
- * `EvaluationFailure: ScriptFailures: {}` from ogmios which is very hard to
- * diagnose post-hoc. Failing fast off-chain with a real message is much
- * friendlier — call this just before invoking the batch builder.
+ * For script inputs, the ledger reason is that collateral must be
+ * payment-key-locked. For other forced inputs, this is the current builder's
+ * separate-collateral policy. Failing fast off-chain with a real message is
+ * much friendlier than letting a later builder/submission error obscure the
+ * offending ref.
  *
  * @throws Error with the offending ref if overlap is found.
  */
@@ -419,7 +421,7 @@ export function assertNoCollateralOverlap(
 	for (const utxo of spendingUtxos) {
 		if (refKey(utxo.input) === collateralKey) {
 			throw new Error(
-				`Collateral UTxO overlaps with a spending input (${collateralKey}); phase-1 Conway rules forbid this`,
+				`Collateral UTxO overlaps with a spending input (${collateralKey}); current builder requires a separate collateral ref`,
 			);
 		}
 	}

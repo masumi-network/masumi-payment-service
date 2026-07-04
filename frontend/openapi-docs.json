@@ -443,6 +443,11 @@
                         "nullable": true,
                         "description": "Identifier of the agent that is being paid"
                     },
+                    "agentName": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Display name of the agent when known"
+                    },
                     "pricingType": {
                         "type": "string",
                         "enum": [
@@ -1050,6 +1055,7 @@
                     "updatedAt",
                     "blockchainIdentifier",
                     "agentIdentifier",
+                    "agentName",
                     "pricingType",
                     "lastCheckedAt",
                     "payByTime",
@@ -1108,6 +1114,11 @@
                         "type": "string",
                         "nullable": true,
                         "description": "Identifier of the agent that is being purchased"
+                    },
+                    "agentName": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Display name of the agent when known"
                     },
                     "pricingType": {
                         "type": "string",
@@ -1694,6 +1705,7 @@
                     "updatedAt",
                     "blockchainIdentifier",
                     "agentIdentifier",
+                    "agentName",
                     "pricingType",
                     "lastCheckedAt",
                     "payByTime",
@@ -7510,10 +7522,10 @@
                     {
                         "schema": {
                             "type": "string",
-                            "description": "Search query to filter by ID, hash, state, network, wallet address, or amount"
+                            "description": "Search query to filter by ID, hash, agent name, state, network, wallet address, or amount"
                         },
                         "required": false,
-                        "description": "Search query to filter by ID, hash, state, network, wallet address, or amount",
+                        "description": "Search query to filter by ID, hash, agent name, state, network, wallet address, or amount",
                         "name": "searchQuery",
                         "in": "query"
                     },
@@ -7567,6 +7579,7 @@
                                                     "id": "cuid_v2_auto_generated",
                                                     "blockchainIdentifier": "blockchain_identifier",
                                                     "agentIdentifier": "agent_identifier",
+                                                    "agentName": "Example Agent",
                                                     "pricingType": "Fixed",
                                                     "createdAt": "1970-01-20T20:00:36.260Z",
                                                     "updatedAt": "1970-01-20T20:00:36.260Z",
@@ -7841,6 +7854,11 @@
                                                     "type": "string",
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being paid"
+                                                },
+                                                "agentName": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Display name of the agent when known"
                                                 },
                                                 "pricingType": {
                                                     "type": "string",
@@ -8264,6 +8282,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "agentName",
                                                 "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
@@ -8309,6 +8328,7 @@
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
                                             "agentIdentifier": "agent_identifier",
+                                            "agentName": "Example Agent",
                                             "pricingType": "Fixed",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
@@ -8523,6 +8543,7 @@
                                                     "id": "cuid_v2_auto_generated",
                                                     "blockchainIdentifier": "blockchain_identifier",
                                                     "agentIdentifier": "agent_identifier",
+                                                    "agentName": "Example Agent",
                                                     "pricingType": "Fixed",
                                                     "createdAt": "1970-01-20T20:00:36.260Z",
                                                     "updatedAt": "1970-01-20T20:00:36.260Z",
@@ -8740,6 +8761,7 @@
                                                     "id": "cuid_v2_auto_generated",
                                                     "blockchainIdentifier": "blockchain_identifier",
                                                     "agentIdentifier": "agent_identifier",
+                                                    "agentName": "Example Agent",
                                                     "pricingType": "Fixed",
                                                     "createdAt": "1970-01-20T20:00:36.260Z",
                                                     "updatedAt": "1970-01-20T20:00:36.260Z",
@@ -9145,6 +9167,7 @@
                                                     "id": "cuid_v2_auto_generated",
                                                     "blockchainIdentifier": "blockchain_identifier",
                                                     "agentIdentifier": "agent_identifier",
+                                                    "agentName": "Example Agent",
                                                     "pricingType": "Fixed",
                                                     "createdAt": "1970-01-20T20:00:36.260Z",
                                                     "updatedAt": "1970-01-20T20:00:36.260Z",
@@ -9302,6 +9325,11 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being paid"
                                                 },
+                                                "agentName": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Display name of the agent when known"
+                                                },
                                                 "pricingType": {
                                                     "type": "string",
                                                     "enum": [
@@ -9724,6 +9752,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "agentName",
                                                 "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
@@ -9769,6 +9798,7 @@
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
                                             "agentIdentifier": "agent_identifier",
+                                            "agentName": "Example Agent",
                                             "pricingType": "Fixed",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
@@ -9919,6 +9949,11 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being paid"
                                                 },
+                                                "agentName": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Display name of the agent when known"
+                                                },
                                                 "pricingType": {
                                                     "type": "string",
                                                     "enum": [
@@ -10341,6 +10376,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "agentName",
                                                 "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
@@ -10386,6 +10422,7 @@
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
                                             "agentIdentifier": "agent_identifier",
+                                            "agentName": "Example Agent",
                                             "pricingType": "Fixed",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
@@ -10559,6 +10596,11 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being paid"
                                                 },
+                                                "agentName": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Display name of the agent when known"
+                                                },
                                                 "pricingType": {
                                                     "type": "string",
                                                     "enum": [
@@ -10981,6 +11023,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "agentName",
                                                 "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
@@ -11209,6 +11252,11 @@
                                                     "type": "string",
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being purchased"
+                                                },
+                                                "agentName": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Display name of the agent when known"
                                                 },
                                                 "pricingType": {
                                                     "type": "string",
@@ -11617,6 +11665,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "agentName",
                                                 "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
@@ -13703,10 +13752,10 @@
                     {
                         "schema": {
                             "type": "string",
-                            "description": "Search query to filter by ID, hash, state, network, wallet address, or amount"
+                            "description": "Search query to filter by ID, hash, agent name, state, network, wallet address, or amount"
                         },
                         "required": false,
-                        "description": "Search query to filter by ID, hash, state, network, wallet address, or amount",
+                        "description": "Search query to filter by ID, hash, agent name, state, network, wallet address, or amount",
                         "name": "searchQuery",
                         "in": "query"
                     },
@@ -14000,6 +14049,11 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being purchased"
                                                 },
+                                                "agentName": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Display name of the agent when known"
+                                                },
                                                 "pricingType": {
                                                     "type": "string",
                                                     "enum": [
@@ -14407,6 +14461,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "agentName",
                                                 "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
@@ -14452,6 +14507,7 @@
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
                                             "agentIdentifier": "agent_identifier",
+                                            "agentName": "Example Agent",
                                             "pricingType": "Fixed",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
@@ -14560,6 +14616,11 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being purchased"
                                                 },
+                                                "agentName": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Display name of the agent when known"
+                                                },
                                                 "pricingType": {
                                                     "type": "string",
                                                     "enum": [
@@ -14967,6 +15028,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "agentName",
                                                 "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
@@ -15016,6 +15078,7 @@
                                         "id": "cuid_v2_auto_generated",
                                         "blockchainIdentifier": "blockchain_identifier",
                                         "agentIdentifier": "agent_identifier",
+                                        "agentName": "Example Agent",
                                         "pricingType": "Fixed",
                                         "createdAt": "1970-01-20T20:00:36.260Z",
                                         "updatedAt": "1970-01-20T20:00:36.260Z",
@@ -15706,6 +15769,11 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being purchased"
                                                 },
+                                                "agentName": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Display name of the agent when known"
+                                                },
                                                 "pricingType": {
                                                     "type": "string",
                                                     "enum": [
@@ -16113,6 +16181,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "agentName",
                                                 "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
@@ -16158,6 +16227,7 @@
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
                                             "agentIdentifier": "agent_identifier",
+                                            "agentName": "Example Agent",
                                             "pricingType": "Fixed",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
@@ -16307,6 +16377,11 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being purchased"
                                                 },
+                                                "agentName": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Display name of the agent when known"
+                                                },
                                                 "pricingType": {
                                                     "type": "string",
                                                     "enum": [
@@ -16714,6 +16789,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "agentName",
                                                 "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
@@ -16759,6 +16835,7 @@
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
                                             "agentIdentifier": "agent_identifier",
+                                            "agentName": "Example Agent",
                                             "pricingType": "Fixed",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",

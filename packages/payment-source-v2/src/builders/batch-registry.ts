@@ -103,9 +103,9 @@ function refKey(utxo: UTxO): string {
  * hard to diagnose post-hoc, so failing fast off-chain is much friendlier.
  *
  * Used by the BURN builder where asset UTxOs MUST be in `inputs` for the
- * wallet to have authority to consume them — collateral overlapping with an
- * asset UTxO would either fail phase-1 or, if mesh routed it as collateral
- * only, would leave the asset un-spent on success and break the mint balance.
+ * wallet to have authority to consume them. Collateral/input overlap is legal
+ * for VKey UTxOs, but these burn/update builders keep collateral separate from
+ * forced asset inputs so success and phase-2-failure paths stay unambiguous.
  *
  * NOT used by the MINT builder: mint-only txs tolerate collateral/input
  * overlap (Mesh-SDK 1.9 routes `.txIn(...)` and `.txInCollateral(...)` into
@@ -120,7 +120,7 @@ function assertCollateralNotInInputs(collateralUtxo: UTxO, spendingInputs: UTxO[
 	for (const utxo of spendingInputs) {
 		if (refKey(utxo) === collateralKey) {
 			throw new Error(
-				`Collateral UTxO overlaps with a spending input (${collateralKey}); phase-1 Conway rules forbid this`,
+				`Collateral UTxO overlaps with a spending input (${collateralKey}); current builder requires a separate collateral ref`,
 			);
 		}
 	}
@@ -252,12 +252,10 @@ export async function generateRegistryBatchMintTransaction(
 	//      pass `spendableUtxos` UNFILTERED, so the splitter check below
 	//      would otherwise count the collateral input and over-emit a
 	//      splitter on healthy wallets.
-	//   2. Coin-selection correctness — mesh's `selectUtxosFrom` does NOT
-	//      automatically exclude UTxOs declared via `.txInCollateral(...)`;
-	//      if the wallet is fragmented enough that mesh picks the collateral
-	//      UTxO as a regular fee input, the resulting tx has the same UTxO
-	//      in both `inputs` and `collateral_inputs` and Conway phase-1
-	//      rejects it.
+	//   2. Coin-selection predictability — mesh's `selectUtxosFrom` does NOT
+	//      automatically exclude UTxOs declared via `.txInCollateral(...)`.
+	//      VKey collateral/input overlap is ledger-valid, but this builder keeps
+	//      the collateral reserve separate from incidental fee selection.
 	// The pre-existing tolerance for `firstUtxo == collateralUtxo` overlap
 	// (see jsdoc on this function) is unaffected: when they coincide, the
 	// ref is already in inputRefs via the firstUtxo add above.
@@ -508,8 +506,8 @@ export async function generateRegistryBatchUpdateTransactionAutomaticFees(
 	// distinct: Mesh queues mint legs by name and the validator pairs each burn
 	// to exactly one version-continuing mint.
 	assertDistinctAssetNames(items.flatMap((item) => [item.oldAssetName, item.newAssetName]));
-	// Old asset UTxOs MUST be inputs (to burn); collateral must not overlap them
-	// (Conway phase-1 forbids collateral ∩ inputs).
+	// Old asset UTxOs MUST be inputs (to burn); this builder keeps collateral
+	// separate from those forced asset inputs.
 	assertCollateralNotInInputs(
 		collateralUtxo,
 		items.map((item) => item.assetUtxo),
@@ -619,7 +617,7 @@ async function buildBatchUpdateTx(
 
 	// Hand the remaining wallet UTxOs to Mesh's coin selector for fees/change;
 	// exclude the asset inputs (already added) and the collateral (mesh does not
-	// auto-exclude collateral from selection — overlap fails Conway phase-1).
+	// auto-exclude collateral from selection; this builder keeps it reserved).
 	inputRefs.add(refKey(collateralUtxo));
 	const walletUtxosForSelection = walletUtxos.filter((u) => !inputRefs.has(refKey(u)));
 	if (walletUtxosForSelection.length > 0) {

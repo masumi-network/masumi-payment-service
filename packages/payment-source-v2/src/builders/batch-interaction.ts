@@ -100,7 +100,7 @@ function assertCollateralNotInBatch<T extends { smartContractUtxo: UTxO }>(items
 	for (const item of items) {
 		if (refKey(item.smartContractUtxo) === collateralKey) {
 			throw new Error(
-				`Collateral UTxO overlaps with a script input (${collateralKey}); phase-1 Conway rules forbid this`,
+				`Collateral UTxO overlaps with a script input (${collateralKey}); collateral must be payment-key-locked`,
 			);
 		}
 	}

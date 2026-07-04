@@ -62,6 +62,12 @@ export function buildTransactionSearchFilter(
 					mode: 'insensitive' as const,
 				},
 			},
+			{
+				agentName: {
+					contains: searchLower,
+					mode: 'insensitive' as const,
+				},
+			},
 			{ id: { contains: searchLower, mode: 'insensitive' as const } },
 			{
 				CurrentTransaction: {

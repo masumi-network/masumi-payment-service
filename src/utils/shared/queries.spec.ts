@@ -1,4 +1,21 @@
-import { parseAmountSearchRange } from './queries';
+import { buildTransactionSearchFilter, parseAmountSearchRange } from './queries';
+
+describe('buildTransactionSearchFilter', () => {
+	it('includes agentName in search OR clauses', () => {
+		const filter = buildTransactionSearchFilter('phone', undefined, undefined, 'RequestedFunds');
+
+		expect(filter).toEqual({
+			OR: expect.arrayContaining([
+				{
+					agentName: {
+						contains: 'phone',
+						mode: 'insensitive',
+					},
+				},
+			]),
+		});
+	});
+});
 
 describe('parseAmountSearchRange', () => {
 	it('returns a full-ADA span for integer input', () => {

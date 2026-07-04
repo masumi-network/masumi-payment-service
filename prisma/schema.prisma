@@ -588,6 +588,10 @@ model PaymentRequest {
   agentIdentifier                               String?
   /// Populated when agentIdentifier was aligned from blockchainIdentifier (create path or startup backfill). Null only on legacy rows pending sync.
   agentIdentifierSyncedAt                       DateTime?
+  /// Denormalized agent display name for search; snapshot at create/backfill from registry or on-chain metadata.
+  agentName                                     String?
+  /// Populated when agentName was aligned (create path or startup backfill). Null only on legacy rows pending sync.
+  agentNameSyncedAt                             DateTime?
   submitResultTime                              BigInt
   unlockTime                                    BigInt
   externalDisputeUnlockTime                     BigInt
@@ -665,6 +669,10 @@ model PurchaseRequest {
   agentIdentifier                               String?
   /// Populated when agentIdentifier was aligned from blockchainIdentifier (create path or startup backfill). Null only on legacy rows pending sync.
   agentIdentifierSyncedAt                       DateTime?
+  /// Denormalized agent display name for search; snapshot at create/backfill from registry or on-chain metadata.
+  agentName                                     String?
+  /// Populated when agentName was aligned (create path or startup backfill). Null only on legacy rows pending sync.
+  agentNameSyncedAt                             DateTime?
   submitResultTime                              BigInt
   unlockTime                                    BigInt
   externalDisputeUnlockTime                     BigInt
