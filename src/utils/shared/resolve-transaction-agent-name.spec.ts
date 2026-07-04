@@ -1,10 +1,13 @@
+import { jest } from '@jest/globals';
 import { resolveTransactionAgentName } from './resolve-transaction-agent-name';
 
 // Minimal fake matching the `registryRequest.findFirst` surface the resolver uses.
 function fakeDb(registryName: string | null) {
 	return {
 		registryRequest: {
-			findFirst: jest.fn().mockResolvedValue(registryName === null ? null : { name: registryName }),
+			findFirst: jest
+				.fn<() => Promise<{ name: string } | null>>()
+				.mockResolvedValue(registryName === null ? null : { name: registryName }),
 		},
 	} as never;
 }
