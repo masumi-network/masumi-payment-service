@@ -79,42 +79,56 @@ export async function backfillTransactionAgentNames(): Promise<void> {
 	let purchasesDone = 0;
 	const syncedAt = new Date();
 
-	for (;;) {
-		const chunk = await prisma.paymentRequest.findMany({
-			where: { agentNameSyncedAt: null },
-			select: { id: true, agentIdentifier: true, paymentSourceId: true },
-			take: BATCH,
-			orderBy: { createdAt: 'asc' },
-		});
-		if (chunk.length === 0) break;
-
-		for (const row of chunk) {
-			const agentName = await resolveName(row.paymentSourceId, row.agentIdentifier);
-			await prisma.paymentRequest.update({
-				where: { id: row.id },
-				data: { agentName, agentNameSyncedAt: syncedAt },
+	// A transient resolver failure (e.g. Blockfrost 429/5xx) rethrows out of resolveName.
+	// We stamp agentNameSyncedAt only after a row resolves, so leaving the failing row
+	// unstamped keeps it in the pending set for the next startup. Aborting here (rather
+	// than crashing initialize()) lets the server start while the remaining rows retry.
+	try {
+		for (;;) {
+			const chunk = await prisma.paymentRequest.findMany({
+				where: { agentNameSyncedAt: null },
+				select: { id: true, agentIdentifier: true, paymentSourceId: true },
+				take: BATCH,
+				orderBy: { createdAt: 'asc' },
 			});
+			if (chunk.length === 0) break;
+
+			for (const row of chunk) {
+				const agentName = await resolveName(row.paymentSourceId, row.agentIdentifier);
+				await prisma.paymentRequest.update({
+					where: { id: row.id },
+					data: { agentName, agentNameSyncedAt: syncedAt },
+				});
+				paymentsDone += 1;
+			}
 		}
-		paymentsDone += chunk.length;
-	}
 
-	for (;;) {
-		const chunk = await prisma.purchaseRequest.findMany({
-			where: { agentNameSyncedAt: null },
-			select: { id: true, agentIdentifier: true, paymentSourceId: true },
-			take: BATCH,
-			orderBy: { createdAt: 'asc' },
-		});
-		if (chunk.length === 0) break;
-
-		for (const row of chunk) {
-			const agentName = await resolveName(row.paymentSourceId, row.agentIdentifier);
-			await prisma.purchaseRequest.update({
-				where: { id: row.id },
-				data: { agentName, agentNameSyncedAt: syncedAt },
+		for (;;) {
+			const chunk = await prisma.purchaseRequest.findMany({
+				where: { agentNameSyncedAt: null },
+				select: { id: true, agentIdentifier: true, paymentSourceId: true },
+				take: BATCH,
+				orderBy: { createdAt: 'asc' },
 			});
+			if (chunk.length === 0) break;
+
+			for (const row of chunk) {
+				const agentName = await resolveName(row.paymentSourceId, row.agentIdentifier);
+				await prisma.purchaseRequest.update({
+					where: { id: row.id },
+					data: { agentName, agentNameSyncedAt: syncedAt },
+				});
+				purchasesDone += 1;
+			}
 		}
-		purchasesDone += chunk.length;
+	} catch (error) {
+		logger.warn('Transaction agentName backfill interrupted; will resume on next startup', {
+			component: 'migration',
+			paymentsDone,
+			purchasesDone,
+			error: error instanceof Error ? error.message : String(error),
+		});
+		return;
 	}
 
 	logger.info('Transaction agentName backfill complete', {

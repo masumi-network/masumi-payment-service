@@ -1,34 +1,36 @@
-import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
+import { BlockFrostAPI, BlockfrostServerError } from '@blockfrost/blockfrost-js';
 import { metadataSchema } from '@/routes/api/registry/wallet';
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
+import { normalizeAgentName } from '@/utils/shared/agent-name';
 import { z } from '@masumi/payment-core/zod';
 
-const MAX_AGENT_NAME_LENGTH = 250;
-
-function normalizeAgentName(name: string | null | undefined): string | null {
-	const trimmed = name?.trim();
-	if (!trimmed) return null;
-	return trimmed.length > MAX_AGENT_NAME_LENGTH ? trimmed.slice(0, MAX_AGENT_NAME_LENGTH) : trimmed;
-}
-
-/** Reads the agent display name from on-chain registry metadata (no wallet-holding check). */
+/**
+ * Reads the agent display name from on-chain registry metadata (no wallet-holding check).
+ * Returns null when the asset genuinely has no usable name (404 / missing / unparseable
+ * metadata). Rethrows transient failures (429, 5xx, network) so callers can retry rather
+ * than persist a spurious null.
+ */
 export async function lookupAgentNameFromOnChainMetadata(
 	provider: BlockFrostAPI,
 	agentIdentifier: string,
 ): Promise<string | null> {
+	let assetMetadata;
 	try {
-		const assetMetadata = await provider.assetsById(agentIdentifier);
-		if (!assetMetadata?.onchain_metadata) {
+		assetMetadata = await provider.assetsById(agentIdentifier);
+	} catch (error) {
+		if (error instanceof BlockfrostServerError && error.status_code === 404) {
 			return null;
 		}
-		const parsed = metadataSchema.safeParse(assetMetadata.onchain_metadata);
-		if (!parsed.success) {
-			return null;
-		}
-		return normalizeAgentName(metadataToString(parsed.data.name));
-	} catch {
+		throw error;
+	}
+	if (!assetMetadata?.onchain_metadata) {
 		return null;
 	}
+	const parsed = metadataSchema.safeParse(assetMetadata.onchain_metadata);
+	if (!parsed.success) {
+		return null;
+	}
+	return normalizeAgentName(metadataToString(parsed.data.name));
 }
 
 type FetchAssetInWalletAndMetadataSuccess = {
