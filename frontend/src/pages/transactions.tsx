@@ -149,6 +149,7 @@ export default function Transactions() {
       if (matchingStates.length > 0 && tx.onChainState && matchingStates.includes(tx.onChainState))
         return true;
       if (tx.agentIdentifier?.toLowerCase().includes(query)) return true;
+      if (tx.agentName?.toLowerCase().includes(query)) return true;
       if (amountRange) {
         const funds =
           tx.type === 'payment' ? tx.RequestedFunds : tx.type === 'purchase' ? tx.PaidFunds : [];
@@ -174,7 +175,7 @@ export default function Transactions() {
   }, [network, apiClient, selectedPaymentSourceId]);
 
   const refreshTransactions = useCallback(() => {
-    refetchTransactions?.();
+    void refetchTransactions?.();
   }, [refetchTransactions]);
 
   const handleLoadMore = useCallback(() => {
@@ -211,6 +212,7 @@ export default function Transactions() {
       const headers = [
         'Transaction Type',
         'Transaction Hash',
+        'Agent Name',
         'Agent Identifier',
         'Payment Amounts',
         'Network',
@@ -246,6 +248,7 @@ export default function Transactions() {
         const amount = paymentAmounts.join(', ');
 
         const hash = transaction.CurrentTransaction?.txHash || '—';
+        const agentName = transaction.agentName?.trim() || '—';
         const agentIdentifier = transaction.agentIdentifier?.trim() || '—';
         const status = formatStatus(transaction.onChainState);
         const date = formatDateTime(transaction.createdAt);
@@ -253,6 +256,7 @@ export default function Transactions() {
         return [
           transaction.type,
           hash,
+          agentName,
           agentIdentifier,
           amount,
           transaction.PaymentSource.network,
@@ -349,7 +353,7 @@ export default function Transactions() {
               <SearchInput
                 value={searchQuery}
                 onChange={setSearchQuery}
-                placeholder="Search by ID, hash, status, amount, or source..."
+                placeholder="Search by agent name, ID, hash, status, amount..."
                 className="max-w-xs"
                 isLoading={isSearchPending && !!searchQuery}
               />
@@ -371,9 +375,7 @@ export default function Transactions() {
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">
                     Transaction Hash
                   </th>
-                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">
-                    Agent identifier
-                  </th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">Agent</th>
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">
                     Amount
                   </th>
@@ -454,6 +456,7 @@ export default function Transactions() {
                       <td className="p-4">
                         <TransactionAgentIdentifierCell
                           agentIdentifier={transaction.agentIdentifier}
+                          agentName={transaction.agentName}
                           smartContractAddress={
                             transaction.PaymentSource?.smartContractAddress ?? null
                           }

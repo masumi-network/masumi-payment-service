@@ -10,28 +10,31 @@ Every V2 script-spending action — `request-refund`, `collect-refund`,
 `submit-result`, `authorize-refund`, `collection`, `authorize-withdrawal`,
 and the four registry variants — produces a Cardano transaction whose
 body contains both regular `inputs` (the script UTxOs being spent + at
-least one fee-paying wallet UTxO) and `collateral_inputs` (a pure-ADA
-wallet UTxO of ≥ ~5 ADA that gets consumed only on phase-2 failure).
+least one fee-paying wallet UTxO) and `collateral_inputs` (a payment-key
+wallet UTxO that gets consumed only on phase-2 failure).
 
-The Conway ledger spec requires:
+Relevant ledger facts:
 
-- `tx.body.inputs ∩ tx.body.collateral_inputs = ∅` — these sets must be
-  disjoint. A wallet UTxO can be a regular input OR a collateral input,
-  never both in the same tx.
-- `tx.body.collateral_inputs` must contain only pure-ADA, no-native-token
-  UTxOs (`pickBatchCollateral` enforces this in our builders).
+- A payment-key wallet UTxO may appear in both `tx.body.inputs` and
+  `tx.body.collateral_inputs` in the same tx. Cardano does not have a
+  general disjointness rule for those sets.
+- Collateral must be payment-key-locked. Script-locked UTxOs can never be
+  collateral.
+- Since Babbage/CIP-40, collateral inputs may carry native tokens when the
+  tx body supplies the required `collateral_return_output` and
+  `total_collateral`. The V2 builders still prefer pure-ADA collateral where
+  available because it keeps collateral-return handling smaller.
 
 After V2 `batch-payments` lands its first tx for a freshly-funded buyer
-wallet, the wallet typically holds a single change UTxO. That single
-UTxO would be claimed as the collateral input for the next script-spending
-action, leaving no UTxO available for the fee input → tx body fails to
-balance, `sortAndLimitUtxos` throws `"No suitable UTXOs found"`, and the
-batch service silently exits without progressing any of its queued items
-(observed in CI as a request stuck at `*Requested` for 600 s).
+wallet, the wallet may hold a single change UTxO. Although the ledger could
+allow that VKey UTxO to double as collateral and fee input, the current V2
+builders maintain a separate confirmed collateral reserve. When the wallet
+falls below that service-level shape, the helper defers and restores the
+reserve instead of relying on one-UTxO sharing through Mesh coin selection.
 
-V1 never hit this because V1 actions don't share a wallet across multiple
-items in one tx — its single-item flow always leaves at least one change
-UTxO per action.
+V1 does not call this helper and has no splitter/prep convention. Several
+V1 single-item builders already pass the same VKey UTxO as both a regular
+input and collateral while capping exposure with `setTotalCollateral`.
 
 ## Decision
 
@@ -42,13 +45,14 @@ its single-item fallback (`processSingle*`). The helper lives at
 
 ### Invariant
 
-Before any V2 script-spending tx may be built, the wallet MUST hold:
+Before any current V2 script-spending tx may be built, the wallet MUST hold:
 
-- **At least one pure-ADA UTxO of ≥ 5 ADA** (the collateral candidate;
-  threshold matches `pickBatchCollateral`'s default and gives headroom
-  over the protocol-required collateral which is currently ~3 ADA).
-- **At least 2 UTxOs total** (so collateral selection still leaves a
-  candidate for the fee input).
+- **At least one payment-key wallet UTxO of ≥ 5 ADA** (the collateral
+  candidate; threshold matches `pickBatchCollateral`'s default and gives
+  headroom over the protocol-required collateral which is currently ~3 ADA).
+- **At least 2 UTxOs total** (the current service/builder invariant that
+  preserves a separate confirmed collateral reserve and a regular wallet
+  input/change path).
 
 `classifyWalletState(utxos)` is the pure-function gate that decides
 `ready` (both conditions hold) vs. not.
@@ -141,9 +145,9 @@ We considered emitting an explicit 5-ADA reserve output on every V2
 action transaction. Rejected because:
 
 - The collateral input is **not consumed on phase-2 success** — the same
-  pure-ADA UTxO survives every successful action tx and naturally
-  persists as the wallet's perpetual collateral candidate. Once the
-  invariant is bootstrapped, no further reserve output is needed.
+  reserve UTxO survives every successful action tx and naturally persists as
+  the wallet's collateral candidate. Once the invariant is bootstrapped, no
+  further reserve output is needed.
 - Emitting a reserve on every action would grow the wallet by one UTxO
   per action over the lifetime of the wallet — accumulating dust.
 
@@ -180,8 +184,8 @@ prep confirms and `wallet-timeouts` clears the lock.
   Subsequent action ticks on the same wallet are no-ops on the readiness
   check.
 - V1 services do NOT call the helper. V1's single-item flow naturally
-  preserves a change UTxO per action; the invariant holds without
-  intervention.
+  relies on its own builders and may reuse a VKey UTxO as both regular input
+  and collateral; the V2 reserve invariant does not apply there.
 - A wallet that runs below the prep-tx funding threshold
   (`PREP_TX_MIN_LOVELACE = 7 ADA`) will surface as
   `status: 'failed', reason: 'insufficient_funds'` and produce a clear

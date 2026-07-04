@@ -422,14 +422,15 @@ async function processBatchUpdate(
 		return;
 	}
 
-	// Collateral must be a pure-ADA UTxO that is NOT one of the asset UTxOs being
-	// burned (Conway forbids collateral ∩ inputs).
+	// Prefer a pure-ADA collateral UTxO, but mixed-asset collateral is valid
+	// under CIP-40. This builder still keeps collateral separate from the asset
+	// UTxOs being burned/continued.
 	const collateralUtxo = pickBatchCollateral(
 		utxos,
 		validated.map((v) => v.item.assetUtxo.input),
 	);
 	if (collateralUtxo == null) {
-		logger.warn('V2 update batch: no pure-ADA collateral UTxO (>=5 ADA); deferring to next tick');
+		logger.warn('V2 update batch: no suitable collateral UTxO (>=5 ADA); deferring to next tick');
 		await unlockHotWalletIfNoPendingTransaction(holderWallet.id, 'registry-update-batch');
 		return;
 	}

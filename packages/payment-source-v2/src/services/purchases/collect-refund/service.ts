@@ -490,11 +490,11 @@ async function processWalletBatch(
 		return;
 	}
 
-	// See ensureCollateralReady module note: Cardano disallows the same
-	// UTxO appearing in both `inputs` and `collateral_inputs`. If the
-	// wallet has collapsed to a single UTxO (or has no pure-ADA
-	// collateral candidate), submit a self-send prep tx and defer the
-	// batch to the next tick. The helper leaves the wallet locked via
+	// See ensureCollateralReady module note: Cardano allows VKey wallet
+	// collateral/input overlap, but the current V2 builders maintain a
+	// separate collateral reserve for predictable next-tick readiness. If the
+	// wallet has collapsed to a single UTxO, submit a self-send prep tx and
+	// defer the batch to the next tick. The helper leaves the wallet locked via
 	// its shared Tx row when status != 'ready'; wallet-timeouts /
 	// tx-sync will release it once the prep tx confirms or times out.
 	const collateralCheck = await ensureCollateralReady({

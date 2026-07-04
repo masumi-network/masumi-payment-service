@@ -269,6 +269,10 @@ export type Payment = {
      */
     agentIdentifier: string | null;
     /**
+     * Display name of the agent when known
+     */
+    agentName: string | null;
+    /**
      * Pricing type of the agent (Fixed, Free, or Dynamic)
      */
     pricingType: 'Fixed' | 'Free' | 'Dynamic';
@@ -619,6 +623,10 @@ export type Purchase = {
      * Identifier of the agent that is being purchased
      */
     agentIdentifier: string | null;
+    /**
+     * Display name of the agent when known
+     */
+    agentName: string | null;
     /**
      * Pricing type of the agent (Fixed, Free, or Dynamic)
      */
@@ -3821,7 +3829,7 @@ export type GetPaymentData = {
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
         /**
-         * Search query to filter by ID, hash, state, network, wallet address, or amount
+         * Search query to filter by ID, hash, agent name, state, network, wallet address, or amount
          */
         searchQuery?: string;
         /**
@@ -3967,6 +3975,10 @@ export type PostPaymentResponses = {
              * Identifier of the agent that is being paid
              */
             agentIdentifier: string | null;
+            /**
+             * Display name of the agent when known
+             */
+            agentName: string | null;
             /**
              * Pricing type of the agent (Fixed, Free, or Dynamic)
              */
@@ -4555,6 +4567,10 @@ export type PostPaymentSubmitResultResponses = {
              */
             agentIdentifier: string | null;
             /**
+             * Display name of the agent when known
+             */
+            agentName: string | null;
+            /**
              * Pricing type of the agent (Fixed, Free, or Dynamic)
              */
             pricingType: 'Fixed' | 'Free' | 'Dynamic';
@@ -4868,6 +4884,10 @@ export type PostPaymentAuthorizeRefundResponses = {
              * Identifier of the agent that is being paid
              */
             agentIdentifier: string | null;
+            /**
+             * Display name of the agent when known
+             */
+            agentName: string | null;
             /**
              * Pricing type of the agent (Fixed, Free, or Dynamic)
              */
@@ -5199,6 +5219,10 @@ export type PostPaymentErrorStateRecoveryResponses = {
              */
             agentIdentifier: string | null;
             /**
+             * Display name of the agent when known
+             */
+            agentName: string | null;
+            /**
              * Pricing type of the agent (Fixed, Free, or Dynamic)
              */
             pricingType: 'Fixed' | 'Free' | 'Dynamic';
@@ -5527,6 +5551,10 @@ export type PostPurchaseErrorStateRecoveryResponses = {
              * Identifier of the agent that is being purchased
              */
             agentIdentifier: string | null;
+            /**
+             * Display name of the agent when known
+             */
+            agentName: string | null;
             /**
              * Pricing type of the agent (Fixed, Free, or Dynamic)
              */
@@ -6492,7 +6520,7 @@ export type GetPurchaseData = {
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
         /**
-         * Search query to filter by ID, hash, state, network, wallet address, or amount
+         * Search query to filter by ID, hash, agent name, state, network, wallet address, or amount
          */
         searchQuery?: string;
         /**
@@ -6652,6 +6680,10 @@ export type PostPurchaseErrors = {
              * Identifier of the agent that is being purchased
              */
             agentIdentifier: string | null;
+            /**
+             * Display name of the agent when known
+             */
+            agentName: string | null;
             /**
              * Pricing type of the agent (Fixed, Free, or Dynamic)
              */
@@ -6887,6 +6919,10 @@ export type PostPurchaseResponses = {
              * Identifier of the agent that is being purchased
              */
             agentIdentifier: string | null;
+            /**
+             * Display name of the agent when known
+             */
+            agentName: string | null;
             /**
              * Pricing type of the agent (Fixed, Free, or Dynamic)
              */
@@ -7402,6 +7438,10 @@ export type PostPurchaseRequestRefundResponses = {
              */
             agentIdentifier: string | null;
             /**
+             * Display name of the agent when known
+             */
+            agentName: string | null;
+            /**
              * Pricing type of the agent (Fixed, Free, or Dynamic)
              */
             pricingType: 'Fixed' | 'Free' | 'Dynamic';
@@ -7672,6 +7712,10 @@ export type PostPurchaseCancelRefundRequestResponses = {
              * Identifier of the agent that is being purchased
              */
             agentIdentifier: string | null;
+            /**
+             * Display name of the agent when known
+             */
+            agentName: string | null;
             /**
              * Pricing type of the agent (Fixed, Free, or Dynamic)
              */

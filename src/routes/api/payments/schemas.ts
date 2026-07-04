@@ -37,7 +37,7 @@ export const queryPaymentsSchemaInput = z.object({
 	searchQuery: z
 		.string()
 		.optional()
-		.describe('Search query to filter by ID, hash, state, network, wallet address, or amount'),
+		.describe('Search query to filter by ID, hash, agent name, state, network, wallet address, or amount'),
 	includeHistory: z
 		.string()
 		.default('false')
@@ -74,6 +74,7 @@ export const paymentResponseSchema = z
 		updatedAt: z.date().describe('Timestamp when the payment was last updated'),
 		blockchainIdentifier: z.string().describe('Unique blockchain identifier for the payment'),
 		agentIdentifier: z.string().nullable().describe('Identifier of the agent that is being paid'),
+		agentName: z.string().nullable().describe('Display name of the agent when known'),
 		pricingType: z.nativeEnum(PricingType).describe('Pricing type of the agent (Fixed, Free, or Dynamic)'),
 		lastCheckedAt: z
 			.date()

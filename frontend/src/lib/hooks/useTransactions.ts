@@ -87,9 +87,10 @@ const getPurchasesFromResponse = (response: PurchaseApiResponse | null): Purchas
 
 export function useTransactions(
   params?: TransactionQueryParams,
-  options?: { trackVisit?: boolean },
+  options?: { trackVisit?: boolean; enabled?: boolean },
 ) {
   const trackVisit = options?.trackVisit !== false;
+  const queryEnabled = options?.enabled !== false;
   const { apiClient, network, selectedPaymentSource } = useAppContext();
   const router = useRouter();
   const lastVisitTimestamp = useSyncExternalStore(
@@ -179,7 +180,7 @@ export function useTransactions(
     // No background polling — transactions refresh on mount/refetch and via the
     // manual refresh button. A 25s interval fired requests continuously for
     // every open dashboard/transactions tab.
-    enabled: !!apiClient,
+    enabled: !!apiClient && queryEnabled,
     staleTime: 15000,
     placeholderData: keepPreviousData,
   });
