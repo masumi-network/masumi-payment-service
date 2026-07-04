@@ -99,10 +99,7 @@ describe('countFeeEligibleUtxos', () => {
 	});
 
 	it('counts UTxOs not in the exclude set', () => {
-		const utxos = [
-			makeUtxo({ txHash: 'a', lovelace: '5000000' }),
-			makeUtxo({ txHash: 'b', lovelace: '8000000' }),
-		];
+		const utxos = [makeUtxo({ txHash: 'a', lovelace: '5000000' }), makeUtxo({ txHash: 'b', lovelace: '8000000' })];
 		expect(countFeeEligibleUtxos(utxos, [{ txHash: 'a', outputIndex: 0 }])).toBe(1);
 	});
 });
@@ -146,12 +143,7 @@ describe('capRegistryMintFundingLovelace', () => {
 			extraAssets: [{ unit: 'policy.name', quantity: '1' }],
 		});
 		const fee = makeUtxo({ txHash: 'f', lovelace: '3000000' });
-		const capped = capRegistryMintFundingLovelace(
-			[collateral, fee, asset],
-			collateral,
-			[asset],
-			'5000000',
-		);
+		const capped = capRegistryMintFundingLovelace([collateral, fee, asset], collateral, [asset], '5000000');
 		// 3M fee + 1.47M asset - 3M plutus reserve ≈ 1.47M → clamped to min mint output
 		expect(BigInt(capped)).toBe(1_500_000n);
 	});
