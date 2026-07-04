@@ -20,7 +20,9 @@ describe('resolveTransactionAgentName', () => {
 		});
 		expect(result).toBe('On-Chain Name');
 		// Short-circuits without touching the registry.
-		expect((db as never as { registryRequest: { findFirst: jest.Mock } }).registryRequest.findFirst).not.toHaveBeenCalled();
+		expect(
+			(db as never as { registryRequest: { findFirst: jest.Mock } }).registryRequest.findFirst,
+		).not.toHaveBeenCalled();
 	});
 
 	it('falls back to the registry when preferOnChain has no on-chain name', async () => {
