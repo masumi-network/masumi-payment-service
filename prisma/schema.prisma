@@ -634,6 +634,9 @@ model PaymentRequest {
   @@index([onChainStateOrResultLastChangedAt, id])
   @@index([nextActionOrOnChainStateOrResultLastChangedAt], map: "PaymentRequest_combinedLastChangedAt_idx")
   @@index([nextActionOrOnChainStateOrResultLastChangedAt, id], map: "PaymentRequest_combinedLastChangedAt_id_idx")
+  // List endpoints sort by createdAt DESC with cursor pagination; without this
+  // every filtered page sorts the full table.
+  @@index([createdAt, id])
   @@index([paymentSourceId, createdAt])
   @@index([paymentSourceId, onChainState])
   @@index([paymentSourceId, payByTime])
@@ -716,6 +719,9 @@ model PurchaseRequest {
   @@index([onChainStateOrResultLastChangedAt, id])
   @@index([nextActionOrOnChainStateOrResultLastChangedAt], map: "PurchaseRequest_combinedLastChangedAt_idx")
   @@index([nextActionOrOnChainStateOrResultLastChangedAt, id], map: "PurchaseRequest_combinedLastChangedAt_id_idx")
+  // List endpoints sort by createdAt DESC with cursor pagination; without this
+  // every filtered page sorts the full table.
+  @@index([createdAt, id])
   @@index([paymentSourceId, createdAt])
   @@index([paymentSourceId, onChainState])
   @@index([paymentSourceId, payByTime])

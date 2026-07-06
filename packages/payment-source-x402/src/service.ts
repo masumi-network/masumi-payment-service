@@ -21,6 +21,7 @@ import {
 	X402PaymentStatus,
 	prisma,
 } from '@masumi/payment-core/db';
+import { buildX402AttemptWhere } from './attempt-filters';
 import { decrypt, encrypt } from '@masumi/payment-core/encryption';
 import { logger } from '@masumi/payment-core/logger';
 import { isAllowedCaip2Network } from '@masumi/payment-core/network';
@@ -593,15 +594,12 @@ export async function listX402PaymentAttempts(input: {
 	status?: X402PaymentStatus;
 	direction?: X402PaymentDirection;
 	caip2Network?: string;
+	filterNeedsManualAction?: boolean;
 }) {
 	// Explicit projection: never expose paymentPayload or encrypted material to the
 	// dashboard.
 	return prisma.x402PaymentAttempt.findMany({
-		where: {
-			status: input.status,
-			direction: input.direction,
-			caip2Network: input.caip2Network,
-		},
+		where: buildX402AttemptWhere(input),
 		orderBy: { createdAt: 'desc' },
 		take: input.take,
 		cursor: input.cursorId ? { id: input.cursorId } : undefined,
