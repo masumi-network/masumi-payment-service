@@ -1,4 +1,7 @@
-import { OnChainState } from '@prisma/client';
+// Import from the generated enums module (not '@prisma/client'): the bare
+// specifier only resolves through the tsconfig paths alias, which Jest does
+// not replicate — enums.ts loads fine in every environment.
+import { OnChainState } from '@/generated/prisma/enums';
 
 export function parseAmountSearchRange(searchQuery: string): { gte: bigint; lte: bigint } | undefined {
 	const numericMatch = searchQuery.match(/^(\d+\.?\d*)$/);
@@ -36,6 +39,25 @@ export function buildMatchingStates(searchLower: string | undefined): OnChainSta
 				.toLowerCase()
 				.includes(searchLower),
 	);
+}
+
+/**
+ * Prisma where-fragment selecting payment/purchase requests that need an
+ * operator to step in: the automated state machine parked them in
+ * WaitingForManualAction (the only state error-state-recovery accepts), or a
+ * NextAction error was recorded without changing the requested action.
+ *
+ * Shared between PaymentRequest and PurchaseRequest: both relate to their
+ * action-data row via `NextAction`, and PaymentAction and PurchasingAction
+ * both contain the literal 'WaitingForManualAction'.
+ */
+export function buildNeedsManualActionFilter(filterNeedsManualAction: boolean | undefined) {
+	if (filterNeedsManualAction !== true) return {};
+	return {
+		NextAction: {
+			OR: [{ requestedAction: 'WaitingForManualAction' as const }, { errorType: { not: null } }],
+		},
+	};
 }
 
 export function buildTransactionSearchFilter(

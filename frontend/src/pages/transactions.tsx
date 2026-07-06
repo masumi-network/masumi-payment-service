@@ -50,6 +50,7 @@ export default function Transactions() {
   const filterParams = useMemo(() => {
     const params: {
       filterOnChainState?: OnChainStateFilter;
+      filterNeedsManualAction?: boolean;
       searchQuery?: string;
       transactionType?: 'payment' | 'purchase';
     } = {};
@@ -58,6 +59,7 @@ export default function Transactions() {
     else if (activeTab === 'Purchases') params.transactionType = 'purchase';
     else if (activeTab === 'Refund Requests') params.filterOnChainState = 'RefundRequested';
     else if (activeTab === 'Disputes') params.filterOnChainState = 'Disputed';
+    else if (activeTab === 'Needs Action') params.filterNeedsManualAction = true;
 
     if (debouncedSearchQuery) params.searchQuery = debouncedSearchQuery;
 
@@ -107,6 +109,12 @@ export default function Transactions() {
       (t) => t.onChainState === 'RefundRequested',
     ).length;
     const disputeCount = dedupedTransactions.filter((t) => t.onChainState === 'Disputed').length;
+    // Mirrors the backend filterNeedsManualAction predicate (buildNeedsManualActionFilter):
+    // parked in WaitingForManualAction or a recorded NextAction error.
+    const needsActionCount = dedupedTransactions.filter(
+      (t) =>
+        t.NextAction?.requestedAction === 'WaitingForManualAction' || !!t.NextAction?.errorType,
+    ).length;
 
     return [
       { name: 'All', count: null },
@@ -120,6 +128,11 @@ export default function Transactions() {
       {
         name: 'Disputes',
         count: disputeCount || null,
+        variant: 'alert' as const,
+      },
+      {
+        name: 'Needs Action',
+        count: needsActionCount || null,
         variant: 'alert' as const,
       },
     ];

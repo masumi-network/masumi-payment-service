@@ -1,7 +1,12 @@
 import { prisma } from '@/utils/db';
 import { z } from '@/utils/zod-openapi';
 import { AuthContext } from '@/utils/middleware/auth-middleware';
-import { parseAmountSearchRange, buildMatchingStates, buildTransactionSearchFilter } from '@/utils/shared/queries';
+import {
+	parseAmountSearchRange,
+	buildMatchingStates,
+	buildNeedsManualActionFilter,
+	buildTransactionSearchFilter,
+} from '@/utils/shared/queries';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { queryPaymentsSchemaInput } from './schemas';
 
@@ -21,6 +26,7 @@ export async function getPaymentsForQuery(input: PaymentListQueryInput, walletSc
 			},
 			...buildWalletScopeFilter(walletScopeIds),
 			...(input.filterOnChainState ? { onChainState: input.filterOnChainState } : {}),
+			...buildNeedsManualActionFilter(input.filterNeedsManualAction),
 			...buildTransactionSearchFilter(searchLower, matchingStates, amountFilter, 'RequestedFunds'),
 		},
 		orderBy: { createdAt: 'desc' },

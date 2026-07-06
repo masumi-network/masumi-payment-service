@@ -22,6 +22,7 @@ import { extractPolicyId } from '@/utils/converter/agent-identifier';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { buildWalletScopeFilter, assertHotWalletInScope } from '@/utils/shared/wallet-scope';
+import { buildNeedsManualActionFilter } from '@/utils/shared/queries';
 import {
 	createPaymentSchemaOutput,
 	createPaymentsSchemaInput,
@@ -74,6 +75,7 @@ export const queryPaymentCountGet = readAuthenticatedEndpointFactory.build({
 					deletedAt: null,
 				},
 				...buildWalletScopeFilter(ctx.walletScopeIds),
+				...buildNeedsManualActionFilter(input.filterNeedsManualAction),
 			},
 		});
 

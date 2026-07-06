@@ -24,6 +24,13 @@ export const queryPaymentsSchemaInput = z.object({
 		.nullable()
 		.describe('The smart contract address of the payment source'),
 	filterOnChainState: z.nativeEnum(OnChainState).optional().describe('Filter by on-chain state'),
+	filterNeedsManualAction: z
+		.string()
+		.optional()
+		.transform((val) => val?.toLowerCase() == 'true')
+		.describe(
+			'When true, only returns payments that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it',
+		),
 	searchQuery: z
 		.string()
 		.optional()
@@ -43,6 +50,13 @@ export const queryPaymentCountSchemaInput = z.object({
 		.optional()
 		.nullable()
 		.describe('The smart contract address of the payment source'),
+	filterNeedsManualAction: z
+		.string()
+		.optional()
+		.transform((val) => val?.toLowerCase() == 'true')
+		.describe(
+			'When true, only counts payments that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it',
+		),
 });
 
 export const queryPaymentCountSchemaOutput = z.object({

@@ -11,6 +11,7 @@ import { recordBusinessEndpointError } from '@/utils/metrics';
 import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
+import { buildNeedsManualActionFilter } from '@/utils/shared/queries';
 import { resolvePurchaseCreationContext } from './shared';
 import {
 	createPurchaseInitSchemaInput,
@@ -64,6 +65,7 @@ export const queryPurchaseCountGet = readAuthenticatedEndpointFactory.build({
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
 				},
 				...buildWalletScopeFilter(ctx.walletScopeIds),
+				...buildNeedsManualActionFilter(input.filterNeedsManualAction),
 			},
 		});
 

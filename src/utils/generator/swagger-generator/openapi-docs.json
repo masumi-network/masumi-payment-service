@@ -6094,6 +6094,16 @@
                     {
                         "schema": {
                             "type": "string",
+                            "description": "When true, only returns payments that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it"
+                        },
+                        "required": false,
+                        "description": "When true, only returns payments that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it",
+                        "name": "filterNeedsManualAction",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
                             "description": "Search query to filter by ID, hash, state, network, wallet address, or amount"
                         },
                         "required": false,
@@ -7349,6 +7359,16 @@
                         "description": "The smart contract address of the payment source",
                         "name": "filterSmartContractAddress",
                         "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "When true, only counts payments that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it"
+                        },
+                        "required": false,
+                        "description": "When true, only counts payments that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it",
+                        "name": "filterNeedsManualAction",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -7428,6 +7448,16 @@
                         "required": false,
                         "description": "The smart contract address of the payment source",
                         "name": "filterSmartContractAddress",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "When true, only counts purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it"
+                        },
+                        "required": false,
+                        "description": "When true, only counts purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it",
+                        "name": "filterNeedsManualAction",
                         "in": "query"
                     }
                 ],
@@ -12007,6 +12037,16 @@
                         "required": false,
                         "description": "Filter by on-chain state",
                         "name": "filterOnChainState",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "When true, only returns purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it"
+                        },
+                        "required": false,
+                        "description": "When true, only returns purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it",
+                        "name": "filterNeedsManualAction",
                         "in": "query"
                     },
                     {

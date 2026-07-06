@@ -3230,6 +3230,10 @@ export type GetPaymentData = {
          */
         filterOnChainState?: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
         /**
+         * When true, only returns payments that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it
+         */
+        filterNeedsManualAction?: string;
+        /**
          * Search query to filter by ID, hash, state, network, wallet address, or amount
          */
         searchQuery?: string;
@@ -3739,6 +3743,10 @@ export type GetPaymentCountData = {
          * The smart contract address of the payment source
          */
         filterSmartContractAddress?: string | null;
+        /**
+         * When true, only counts payments that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it
+         */
+        filterNeedsManualAction?: string;
     };
     url: '/payment/count';
 };
@@ -3772,6 +3780,10 @@ export type GetPurchaseCountData = {
          * The smart contract address of the payment source
          */
         filterSmartContractAddress?: string | null;
+        /**
+         * When true, only counts purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it
+         */
+        filterNeedsManualAction?: string;
     };
     url: '/purchase/count';
 };
@@ -5807,6 +5819,10 @@ export type GetPurchaseData = {
          * Filter by on-chain state
          */
         filterOnChainState?: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
+        /**
+         * When true, only returns purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it
+         */
+        filterNeedsManualAction?: string;
         /**
          * Search query to filter by ID, hash, state, network, wallet address, or amount
          */
