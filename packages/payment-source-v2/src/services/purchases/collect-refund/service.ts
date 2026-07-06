@@ -2,7 +2,6 @@ import {
 	OnChainState,
 	PaymentSourceType,
 	Prisma,
-	PurchaseErrorType,
 	PurchasingAction,
 	TransactionStatus,
 } from '@/generated/prisma/client';
@@ -14,14 +13,15 @@ import { asV2Provider } from '../../provider-cast';
 import type { BlockfrostProvider } from '@/services/shared';
 import { logger } from '@masumi/payment-core/logger';
 import { recordV2BatchHashDivergence } from '@masumi/payment-core/metrics';
-import { SmartContractState, smartContractStateEqualsOnChainState } from '@/utils/generator/contract-generator';
+import { SmartContractState } from '@/utils/generator/contract-generator';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { DecodedV1ContractDatum } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPurchases } from '@/utils/db/lock-and-query-purchases';
-import { retryOnSerializationConflict } from '@/utils/db/retry';
+import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
 import { isDefinitiveNodeRejection } from '../../submit-error-classifier';
-import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
+import { makeHotWalletUnlocker, makePurchaseRequestFailureMarker } from '../../request-failure';
+import { findMatchingPurchaseUtxo } from '../../utxo-matching';
 import { advancedRetry, delayErrorResolver } from 'advanced-retry';
 import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
@@ -105,62 +105,12 @@ type ValidatedCollectRefundItem = {
 
 const mutex = new Mutex();
 
-async function markRequestFailed(request: PurchaseRequestWithRelations, error: unknown): Promise<void> {
-	logger.error(`Error collecting V2 refund ${request.id}`, { error });
-	await prisma.purchaseRequest.update({
-		where: { id: request.id },
-		data: {
-			...connectPreviousAction(request.nextActionId),
-			...createNextPurchaseAction(PurchasingAction.WaitingForManualAction, {
-				errorType: PurchaseErrorType.Unknown,
-				errorNote: 'Collecting refund failed: ' + interpretBlockchainError(error),
-			}),
-			SmartContractWallet: { update: { lockedAt: null } },
-		},
-	});
-}
+const markRequestFailed = makePurchaseRequestFailureMarker({
+	logMessage: 'Error collecting V2 refund',
+	errorNotePrefix: 'Collecting refund failed: ',
+});
 
-async function unlockHotWallet(walletId: string): Promise<void> {
-	try {
-		await prisma.hotWallet.update({
-			where: { id: walletId, deletedAt: null },
-			data: { lockedAt: null },
-		});
-	} catch (error) {
-		logger.warn('Failed to unlock V2 collect-refund hot wallet', { error, walletId });
-	}
-}
-
-function findMatchingUtxo(
-	utxoList: UTxO[],
-	txHash: string,
-	request: PurchaseRequestWithRelations,
-	network: 'mainnet' | 'preprod',
-	smartContractAddress: string,
-): UTxO | undefined {
-	return utxoList.find((utxo) => {
-		if (utxo.input.txHash !== txHash) return false;
-		const utxoDatum = utxo.output.plutusData;
-		if (!utxoDatum) return false;
-		const decodedDatum: unknown = deserializeDatum(utxoDatum);
-		const decodedContract = decodeV2ContractDatum(decodedDatum, network, smartContractAddress);
-		if (decodedContract == null) return false;
-		return (
-			smartContractStateEqualsOnChainState(decodedContract.state, request.onChainState) &&
-			decodedContract.buyerVkey === request.SmartContractWallet?.walletVkey &&
-			decodedContract.sellerVkey === request.SellerWallet.walletVkey &&
-			decodedContract.buyerAddress === request.SmartContractWallet?.walletAddress &&
-			decodedContract.sellerAddress === request.SellerWallet.walletAddress &&
-			decodedContract.blockchainIdentifier === request.blockchainIdentifier &&
-			decodedContract.inputHash === request.inputHash &&
-			BigInt(decodedContract.resultTime) === BigInt(request.submitResultTime) &&
-			BigInt(decodedContract.unlockTime) === BigInt(request.unlockTime) &&
-			BigInt(decodedContract.externalDisputeUnlockTime) === BigInt(request.externalDisputeUnlockTime) &&
-			BigInt(decodedContract.collateralReturnLovelace) === BigInt(request.collateralReturnLovelace ?? 0) &&
-			BigInt(decodedContract.payByTime) === BigInt(request.payByTime ?? 0)
-		);
-	});
-}
+const unlockHotWallet = makeHotWalletUnlocker('collect-refund');
 
 async function validateAndBuildItem(
 	request: PurchaseRequestWithRelations,
@@ -183,7 +133,7 @@ async function validateAndBuildItem(
 		throw new Error('Transaction hash not found');
 	}
 	const utxoByHash = await fetchUTxOsWithDeferOnEmpty(blockchainProvider, txHash);
-	const utxo = findMatchingUtxo(utxoByHash, txHash, request, network, smartContractAddress);
+	const utxo = findMatchingPurchaseUtxo(utxoByHash, txHash, request, network, smartContractAddress);
 	if (!utxo) {
 		throw new Error(`${LOOKUP_DEFERRED_PREFIX} UTXO not found`);
 	}

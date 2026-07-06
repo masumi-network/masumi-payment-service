@@ -7,15 +7,17 @@ import {
 	Prisma,
 } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
-// TODO(v1-package-boundary): move db/retry, wallet-generator, blockchain-error-interpreter, min-utxo to @masumi/payment-core
-import { retryOnSerializationConflict } from '@/utils/db/retry';
-import { withSerializableSlot } from '@/utils/db/serializable-semaphore';
+// db/retry + blockchain-error-interpreter now live in @masumi/payment-core.
+// wallet-generator and min-utxo intentionally stay in root src/: both import
+// @meshsdk/core, so they are V1-mesh-pinned (ADR 0005) and don't belong in core.
+import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
+import { withSerializableSlot } from '@masumi/payment-core/serializable-semaphore';
 import { BlockfrostProvider, MeshWallet, Transaction, UTxO } from '@meshsdk/core';
 import { logger } from '@masumi/payment-core/logger';
 import { generateWalletExtended } from '@/utils/generator/wallet-generator';
 import { SmartContractState } from '@masumi/payment-core/smart-contract-state';
 import { convertNetwork } from '@masumi/payment-core/network';
-import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
+import { interpretBlockchainError } from '@masumi/payment-core/blockchain-error-interpreter';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { CONSTANTS } from '@masumi/payment-core/config';
 import { calculateMinUtxo, DUMMY_RESULT_HASH } from '@/utils/min-utxo';

@@ -7,7 +7,7 @@ import { convertNetwork } from '@masumi/payment-core/network';
 // TODO(v1-package-boundary): move string-datum-convert, lock-and-query-payments, blockchain-error-interpreter, utxo, transaction-generator to @masumi/payment-core
 import { DecodedV1ContractDatum, decodeV1ContractDatum, newCooldownTime } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
-import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
+import { interpretBlockchainError } from '@masumi/payment-core/blockchain-error-interpreter';
 import { sortAndLimitUtxos } from '@/utils/utxo';
 import { delayErrorResolver } from 'advanced-retry';
 import { advancedRetryAll } from 'advanced-retry';
