@@ -63,8 +63,18 @@ jobs:
       - name: Run Open API Generator
         run: pnpm run swagger-json
 
+      - name: Check OpenAPI docs are in sync
+        run: |
+          # Endpoint docs live next to their routes (src/routes/api/*/docs.ts)
+          # or in swagger-generator/registrars. If this fails, run
+          # `pnpm run swagger-json` locally and commit the regenerated JSON.
+          git diff --exit-code -- src/utils/generator/swagger-generator/openapi-docs.json
+
       - name: Run Backend ESLint
         run: pnpm run lint:backend
+
+      - name: Run Backend Format Check
+        run: pnpm run format:check:backend
 
       - name: Run Backend TypeScript Check
         run: pnpm run typecheck:backend
@@ -77,6 +87,9 @@ jobs:
 
       - name: Run Frontend ESLint
         run: pnpm -C frontend run lint
+
+      - name: Run Frontend Format Check
+        run: pnpm -C frontend run format:check
 
       - name: Run Frontend TypeScript Check
         run: pnpm run typecheck:frontend

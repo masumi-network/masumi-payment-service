@@ -12,7 +12,7 @@ We're happy you're interested in contributing! This document provides guidelines
 
 1. Fork the repository
 2. Create a new branch for your feature/fix
-3. Setup your development environment (see [Development Guide](docs/DEVELOPMENT.md))
+3. Setup your development environment (see [Development Guide](docs/development.md))
 4. Commit your changes
 5. Create a pull request to the `dev` branch only
 
@@ -51,9 +51,12 @@ The `.editorconfig` file ensures your editor applies these settings automaticall
 ### Testing
 
 - Add tests for new features
-- Run `pnpm run test` to ensure all tests pass
+- Run `pnpm run test` to ensure all tests pass — always via the pnpm script,
+  never bare `npx jest` (the script sets required Node ESM flags; bare jest
+  fails with misleading module errors)
 - Aim for good test coverage
 - Include both happy and error paths
+- For end-to-end tests see [docs/e2e-testing.md](docs/e2e-testing.md)
 
 ### Pull Request Process
 
