@@ -2,7 +2,7 @@ export {
 	MAX_SUPPORTED_PAYMENT_SOURCES,
 	SupportedPaymentSourceChain,
 	isCardanoAddressForNetwork,
-	isCardanoPubKeyBaseAddressForNetwork,
+	isCardanoPubKeyAddressForNetwork,
 	parseSupportedPaymentSourcesFromMetadata,
 	supportedPaymentSourceSchema,
 	supportedPaymentSourceMetadataSchema,
