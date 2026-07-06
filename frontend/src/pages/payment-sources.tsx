@@ -39,7 +39,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { BadgeWithTooltip } from '@/components/ui/badge-with-tooltip';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { TOOLTIP_TEXTS } from '@/lib/constants/tooltips';
-import { handleApiCall } from '@/lib/utils';
+import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import { useRouter } from 'next/router';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { extractApiErrorMessage } from '@/lib/api-error';
@@ -167,7 +167,11 @@ export default function PaymentSourcesPage() {
 
   const [sourceToDelete, setSourceToDelete] = useState<PaymentSourceExtended | null>(null);
   const [sourceToUpdate, setSourceToUpdate] = useState<PaymentSourceExtended | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const deleteSourceMutation = useApiMutation({
+    mutationFn: (body: { id: string }) => deletePaymentSourceExtended({ client: apiClient, body }),
+    errorMessage: 'Failed to delete payment source',
+  });
+  const isDeleting = deleteSourceMutation.isPending;
   const { apiClient, selectedPaymentSourceId, network, setSelectedPaymentSourceId, setActiveRail } =
     useAppContext();
   const { paymentSources: ps, isLoading, refetch } = usePaymentSourceExtendedAll();
@@ -211,40 +215,26 @@ export default function PaymentSourcesPage() {
   const handleDeleteSource = async () => {
     if (!sourceToDelete) return;
 
-    setIsDeleting(true);
-    await handleApiCall(
-      () =>
-        deletePaymentSourceExtended({
-          client: apiClient,
-          body: {
-            id: sourceToDelete.id,
-          },
-        }),
-      {
-        onSuccess: async () => {
-          toast.success('Payment source deleted successfully');
-          refetch();
-          // Dashboard cards keyed by selectedPaymentSourceId continue
-          // rendering against caches that no longer match a live source.
-          // Invalidate sibling queries so wallets / transactions / agents
-          // refetch against whatever source the user selects next instead
-          // of showing rows from the deleted one until the next ~25s tick.
-          queryClient.invalidateQueries({ queryKey: ['payment-sources-all'] });
-          queryClient.invalidateQueries({ queryKey: ['wallets'] });
-          queryClient.invalidateQueries({ queryKey: ['transactions'] });
-          invalidateAgentQueries(queryClient);
-        },
-        onError: (error: any) => {
-          console.error('Error deleting payment source:', error);
-          toast.error(extractApiErrorMessage(error, 'Failed to delete payment source'));
-        },
-        onFinally: () => {
-          setIsDeleting(false);
-          setSourceToDelete(null);
-        },
-        errorMessage: 'Failed to delete payment source',
-      },
-    );
+    const response = await deleteSourceMutation
+      .mutateAsync({ id: sourceToDelete.id })
+      .catch((error: unknown) => {
+        console.error('Error deleting payment source:', error);
+        return null;
+      });
+    setSourceToDelete(null);
+    if (!response) return;
+
+    toast.success('Payment source deleted successfully');
+    refetch();
+    // Dashboard cards keyed by selectedPaymentSourceId continue
+    // rendering against caches that no longer match a live source.
+    // Invalidate sibling queries so wallets / transactions / agents
+    // refetch against whatever source the user selects next instead
+    // of showing rows from the deleted one until the next ~25s tick.
+    queryClient.invalidateQueries({ queryKey: ['payment-sources-all'] });
+    queryClient.invalidateQueries({ queryKey: ['wallets'] });
+    queryClient.invalidateQueries({ queryKey: ['transactions'] });
+    invalidateAgentQueries(queryClient);
   };
 
   return (

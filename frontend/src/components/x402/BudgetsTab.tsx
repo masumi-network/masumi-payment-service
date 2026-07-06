@@ -29,8 +29,9 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { useApiKey } from '@/lib/hooks/useApiKey';
 import { useX402Budgets, useX402Networks, useX402Wallets } from '@/lib/hooks/useX402';
 import { CopyButton } from '@/components/ui/copy-button';
-import { groupDigits, handleApiCall, shortenAddress } from '@/lib/utils';
-import { postX402Budgets, X402Budget } from '@/lib/api/generated';
+import { groupDigits, shortenAddress } from '@/lib/utils';
+import { useApiMutation } from '@/lib/hooks/useApiMutation';
+import { postX402Budgets, X402Budget, PostX402BudgetsData } from '@/lib/api/generated';
 
 const budgetFormSchema = z.object({
   apiKeyId: z.string().min(1, 'Required'),
@@ -212,7 +213,12 @@ export function BudgetDialog({
   // Only load the wallet set while the form is open (it feeds the picker). Budgets fund
   // outbound payments, so only Purchasing wallets are selectable.
   const { wallets } = useX402Wallets(open, 'Purchasing');
-  const [isSaving, setIsSaving] = useState(false);
+  const saveBudget = useApiMutation({
+    mutationFn: (body: NonNullable<PostX402BudgetsData['body']>) =>
+      postX402Budgets({ client: apiClient, body }),
+    errorMessage: 'Failed to save budget',
+  });
+  const isSaving = saveBudget.isPending;
 
   // The shared API-key query is page-based (20 per page); the picker must offer every
   // key, so page eagerly to exhaustion while the dialog is open (same idea as
@@ -252,28 +258,18 @@ export function BudgetDialog({
   };
 
   const onSubmit = async (data: BudgetFormValues) => {
-    setIsSaving(true);
-    await handleApiCall(
-      () =>
-        postX402Budgets({
-          client: apiClient,
-          body: {
-            apiKeyId: data.apiKeyId,
-            evmWalletId: data.evmWalletId,
-            caip2Network: data.caip2Network,
-            asset: data.asset,
-            remainingAmount: data.remainingAmount,
-          },
-        }),
-      {
-        onSuccess: () => {
-          toast.success(editing ? 'Budget updated' : 'Budget set');
-          onSaved();
-        },
-        onFinally: () => setIsSaving(false),
-        errorMessage: 'Failed to save budget',
-      },
-    );
+    const response = await saveBudget
+      .mutateAsync({
+        apiKeyId: data.apiKeyId,
+        evmWalletId: data.evmWalletId,
+        caip2Network: data.caip2Network,
+        asset: data.asset,
+        remainingAmount: data.remainingAmount,
+      })
+      .catch(() => null);
+    if (!response) return;
+    toast.success(editing ? 'Budget updated' : 'Budget set');
+    onSaved();
   };
 
   return (
