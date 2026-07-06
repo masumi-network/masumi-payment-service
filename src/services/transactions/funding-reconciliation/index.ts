@@ -2,8 +2,8 @@ import { PurchasingAction, TransactionStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
-import { retryOnSerializationConflict } from '@/utils/db/retry';
-import { withSerializableSlotRetry } from '@/utils/db/serializable-semaphore';
+import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
+import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 
 // Reverting an ambiguous submit must resume the SAME sub-flow the request was
 // in, not blindly reset to funding. `intendedTxHash` is set by batch-payments

@@ -1,6 +1,18 @@
 import { OnChainState } from '@prisma/client';
 
 /**
+ * Inclusive cursor pagination args for list endpoints. The cursor row is
+ * intentionally returned again (no `skip: 1`) so retries and polling stay
+ * idempotent — see docs/development.md#api-pagination before changing.
+ */
+export function cursorPaginationArgs(cursorId: string | null | undefined, take: number | undefined) {
+	return {
+		cursor: cursorId ? { id: cursorId } : undefined,
+		take,
+	};
+}
+
+/**
  * Parse a numeric search string into a lovelace range for amount filtering.
  * Mirrored by frontend/src/lib/parseAmountSearchRange.ts — keep in sync.
  *

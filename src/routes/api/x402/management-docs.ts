@@ -1,3 +1,6 @@
+// Colocated OpenAPI docs for this route area. When you add or change an
+// endpoint here, update THIS file in the same PR — CI regenerates
+// openapi-docs.json and fails on drift.
 import {
 	analyticsSchemaInput,
 	analyticsSchemaOutput,
@@ -32,7 +35,7 @@ import {
 	x402WalletBalanceResponseExample,
 	x402WalletExample,
 } from '@/routes/api/x402/examples';
-import { successResponse, type SwaggerRegistrarContext } from '../shared';
+import { successResponse, type SwaggerRegistrarContext } from '@/utils/generator/swagger-generator/shared';
 
 // Management/observability endpoints for the x402 rail (wallet note/balance, low-balance
 // rules, counts, analytics). Split from the core x402 registrar to keep each file focused.

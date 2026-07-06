@@ -1,3 +1,6 @@
+// Colocated OpenAPI docs for this route area. When you add or change an
+// endpoint here, update THIS file in the same PR — CI regenerates
+// openapi-docs.json and fails on drift.
 import { Network } from '@/generated/prisma/client';
 import {
 	deleteInboxAgentRegistrationSchemaInput,
@@ -23,7 +26,7 @@ import {
 	unregisterInboxAgentSchemaOutput,
 } from '@/routes/api/registry-inbox/deregister';
 import { registryInboxEntryExample } from '@/routes/api/registry-inbox/examples';
-import { successResponse, type SwaggerRegistrarContext } from '../shared';
+import { successResponse, type SwaggerRegistrarContext } from '@/utils/generator/swagger-generator/shared';
 
 export function registerRegistryInboxSupportPaths({ registry, apiKeyAuth }: SwaggerRegistrarContext) {
 	registry.registerPath({

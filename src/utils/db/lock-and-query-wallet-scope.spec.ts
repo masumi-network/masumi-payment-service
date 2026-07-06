@@ -57,7 +57,7 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	},
 }));
 
-jest.unstable_mockModule('@/utils/db/serializable-semaphore', () => ({
+jest.unstable_mockModule('@masumi/payment-core/serializable-semaphore', () => ({
 	withSerializableSlotRetry: jest.fn(async (operation: () => Promise<unknown>) => await operation()),
 }));
 

@@ -1,4 +1,5 @@
 import { prisma } from '@masumi/payment-core/db';
+import { cursorPaginationArgs } from '@/utils/shared/queries';
 import { AuthContext } from '@masumi/payment-core/auth';
 import { HotWalletType } from '@/generated/prisma/client';
 import { buildHotWalletScopeFilter } from '@/utils/shared/wallet-scope';
@@ -77,11 +78,10 @@ export async function getPaymentSourceExtendedForQuery(
 			},
 			deletedAt: null,
 		},
-		take: input.take,
 		orderBy: {
 			createdAt: 'desc',
 		},
-		cursor: input.cursorId ? { id: input.cursorId } : undefined,
+		...cursorPaginationArgs(input.cursorId, input.take),
 		include: paymentSourceExtendedInclude,
 	});
 }

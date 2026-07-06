@@ -1,3 +1,6 @@
+// Colocated OpenAPI docs for this route area. When you add or change an
+// endpoint here, update THIS file in the same PR — CI regenerates
+// openapi-docs.json and fails on drift.
 import {
 	budgetSchema,
 	createPaymentSchemaInput,
@@ -47,7 +50,7 @@ import {
 	x402BudgetExample,
 	x402NetworkExample,
 } from '@/routes/api/x402/examples';
-import { successResponse, type SwaggerRegistrarContext } from '../shared';
+import { successResponse, type SwaggerRegistrarContext } from '@/utils/generator/swagger-generator/shared';
 
 export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarContext) {
 	registry.registerPath({

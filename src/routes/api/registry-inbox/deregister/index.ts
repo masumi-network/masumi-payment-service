@@ -11,7 +11,7 @@ import { registryInboxRequestOutputSchema } from '@/routes/api/registry-inbox';
 import { extractAssetName } from '@/utils/converter/agent-identifier';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
-import { retryOnSerializationConflict } from '@/utils/db/retry';
+import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { serializeInboxRegistryEntry } from '../serializers';
 
 export const unregisterInboxAgentSchemaInput = z.object({

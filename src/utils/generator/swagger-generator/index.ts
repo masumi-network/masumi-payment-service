@@ -4,10 +4,13 @@ import { registerAdminPaths } from './registrars/admin';
 import { registerPaymentPaths } from './registrars/payments';
 import { registerInvoiceAndPurchasePaths } from './registrars/invoices-purchases';
 import { registerRegistrySupportPaths } from './registrars/registry-support';
-import { registerRegistryInboxSupportPaths } from './registrars/registry-inbox-support';
-import { registerMonitoringPaths } from './registrars/monitoring';
-import { registerX402Paths } from './registrars/x402';
-import { registerX402ManagementPaths } from './registrars/x402-management';
+// Colocated docs: these route areas keep their OpenAPI docs next to their
+// schemas/handlers (src/routes/api/<area>/docs.ts). The remaining ./registrars
+// files span multiple route areas and are migrated area-by-area.
+import { registerRegistryInboxSupportPaths } from '@/routes/api/registry-inbox/docs';
+import { registerMonitoringPaths } from '@/routes/api/monitoring/docs';
+import { registerX402Paths } from '@/routes/api/x402/docs';
+import { registerX402ManagementPaths } from '@/routes/api/x402/management-docs';
 
 extendZodWithOpenApi(z);
 

@@ -22,8 +22,8 @@ import {
 	UpdateTransactionInput,
 } from './tx';
 import { createApiClient, withJobLock } from '@/services/shared';
-import { retryOnSerializationConflict } from '@/utils/db/retry';
-import { withSerializableSlotRetry } from '@/utils/db/serializable-semaphore';
+import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
+import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 
 type PaymentSourceWithConfig = PaymentSource & {
 	PaymentSourceConfig: PaymentSourceConfig;

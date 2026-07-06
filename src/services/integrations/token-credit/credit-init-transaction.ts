@@ -1,12 +1,12 @@
 import { prisma } from '@masumi/payment-core/db';
 import { cardanoNetworkToCaip2 } from '@masumi/payment-core/network';
 import createHttpError from 'http-errors';
-import { InsufficientFundsError } from '@/utils/errors/insufficient-funds-error';
+import { InsufficientFundsError } from '@masumi/payment-core/insufficient-funds-error';
 import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import { Network, PricingType, PurchasingAction, WalletBase, WalletType } from '@/generated/prisma/client';
-import { withSerializableSlotRetry } from '@/utils/db/serializable-semaphore';
+import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 
-async function handlePurchaseCreditInit({
+export async function runPurchaseCreditInitTransaction({
 	id,
 	walletScopeIds,
 	cost,
@@ -49,7 +49,7 @@ async function handlePurchaseCreditInit({
 }) {
 	// Gate Serializable $transaction through the shared semaphore so concurrent
 	// HTTP requests don't exhaust the pg connection pool. See
-	// `src/utils/db/serializable-semaphore.ts`.
+	// `@masumi/payment-core/serializable-semaphore`.
 	return await withSerializableSlotRetry(
 		() =>
 			prisma.$transaction(
@@ -266,5 +266,3 @@ async function handlePurchaseCreditInit({
 		},
 	);
 }
-
-export const creditTokenRepository = { handlePurchaseCreditInit };

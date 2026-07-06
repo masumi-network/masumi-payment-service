@@ -1,3 +1,6 @@
+// Colocated OpenAPI docs for this route area. When you add or change an
+// endpoint here, update THIS file in the same PR — CI regenerates
+// openapi-docs.json and fails on drift.
 import {
 	monitoringStatusResponseSchema,
 	startMonitoringResponseSchema,
@@ -5,7 +8,7 @@ import {
 	stopMonitoringResponseSchema,
 	triggerMonitoringCycleResponseSchema,
 } from '@/routes/api/monitoring/schemas';
-import { successResponse, type SwaggerRegistrarContext } from '../shared';
+import { successResponse, type SwaggerRegistrarContext } from '@/utils/generator/swagger-generator/shared';
 
 export function registerMonitoringPaths({ registry, apiKeyAuth }: SwaggerRegistrarContext) {
 	registry.registerPath({
