@@ -31,6 +31,13 @@ export const queryPurchaseRequestSchemaInput = z.object({
 		.describe(
 			'Filter by payment source type. When omitted with no smart-contract-address filter, purchase list/count endpoints default to Web3CardanoV1 for backwards compatibility.',
 		),
+	filterNeedsManualAction: z
+		.string()
+		.optional()
+		.transform((val) => val?.toLowerCase() == 'true')
+		.describe(
+			'When true, only returns purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it',
+		),
 	searchQuery: z
 		.string()
 		.optional()
@@ -45,6 +52,13 @@ export const queryPurchaseRequestSchemaInput = z.object({
 
 export const queryPurchaseCountSchemaInput = z.object({
 	network: z.nativeEnum(Network).describe('The network the purchases were made on'),
+	filterNeedsManualAction: z
+		.string()
+		.optional()
+		.transform((val) => val?.toLowerCase() == 'true')
+		.describe(
+			'When true, only counts purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it',
+		),
 	filterSmartContractAddress: z
 		.string()
 		.optional()

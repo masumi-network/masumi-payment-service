@@ -31,6 +31,9 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { X402PaymentAttempt } from '@/lib/api/generated';
 
 const ALL = '__all__';
+// Pseudo status-option: Verified attempts whose settle failed or threw, left
+// for manual reconciliation (maps to filterNeedsManualAction, not a status).
+const NEEDS_ACTION = '__needs_action__';
 
 const STATUS_OPTIONS: X402PaymentAttempt['status'][] = [
   'PaymentRequired',
@@ -107,11 +110,15 @@ export function PaymentsTab() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <Select
-            value={filters.status ?? ALL}
+            value={filters.needsManualAction ? NEEDS_ACTION : (filters.status ?? ALL)}
             onValueChange={(value) =>
               setFilters((prev) => ({
                 ...prev,
-                status: value === ALL ? undefined : (value as X402PaymentAttempt['status']),
+                needsManualAction: value === NEEDS_ACTION ? true : undefined,
+                status:
+                  value === ALL || value === NEEDS_ACTION
+                    ? undefined
+                    : (value as X402PaymentAttempt['status']),
               }))
             }
           >
@@ -120,6 +127,7 @@ export function PaymentsTab() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={ALL}>All statuses</SelectItem>
+              <SelectItem value={NEEDS_ACTION}>Needs action</SelectItem>
               {STATUS_OPTIONS.map((status) => (
                 <SelectItem key={status} value={status}>
                   {status}

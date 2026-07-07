@@ -4,10 +4,10 @@ import { TransactionStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { recordV2CollateralPrepHashDivergence } from '@masumi/payment-core/metrics';
-import { retryOnSerializationConflict } from '@/utils/db/retry';
+import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { resolveTxHash, SLOT_CONFIG_NETWORK, unixTimeToEnclosingSlot } from '@meshsdk/core';
 import type { Network, UTxO } from '@meshsdk/core';
-import { isDefinitiveNodeRejection } from '../submit-error-classifier';
+import { isDefinitiveNodeRejection } from '@masumi/payment-core/submit-error-classifier';
 
 /**
  * Current service-level wallet shape for collateral readiness:

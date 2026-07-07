@@ -23,6 +23,37 @@ Masumi is a decentralized protocol designed to enable AI agents to collaborate a
 
 Learn more about Masumi in our [Introduction Guide](https://docs.masumi.network/get-started/introduction).
 
+## Getting Started
+
+Prerequisites: Node.js ≥ 20, [pnpm](https://pnpm.io), and a PostgreSQL database.
+
+```bash
+git clone https://github.com/masumi-network/masumi-payment-service.git
+cd masumi-payment-service
+pnpm install                    # installs deps + generates the Prisma client
+
+cp .env.example .env            # then fill in DATABASE_URL, ENCRYPTION_KEY,
+                                # Blockfrost keys, ... (see docs/configuration.md)
+
+pnpm run prisma:migrate:dev     # apply database migrations
+pnpm run prisma:seed            # seed initial data (admin key, payment source)
+
+pnpm run dev                    # start the API server
+```
+
+The admin dashboard is a separate Next.js app with its own install:
+
+```bash
+cd frontend
+pnpm install
+pnpm run dev
+```
+
+Useful commands: `pnpm run test` (unit tests — always via pnpm, not bare
+`npx jest`), `pnpm run lint`, `pnpm run format`, `pnpm run typecheck`. See the
+[Development Guide](docs/development.md) for architecture and testing details
+and [docs/e2e-testing.md](docs/e2e-testing.md) for end-to-end tests.
+
 ## Documentation
 
 We have been audited by [TxPipe](https://txpipe.io/) please check the [full report](docs/audit.pdf) for details.

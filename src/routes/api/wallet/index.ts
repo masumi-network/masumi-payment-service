@@ -1,4 +1,5 @@
 import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { cursorPaginationArgs } from '@/utils/shared/queries';
 import { z } from '@masumi/payment-core/zod';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
@@ -39,9 +40,8 @@ export const queryWalletListEndpointGet = adminAuthenticatedEndpointFactory.buil
 	output: getWalletListSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof getWalletListSchemaInput>; ctx: AuthContext }) => {
 		const wallets = await prisma.hotWallet.findMany({
-			take: input.take,
 			orderBy: { createdAt: 'desc' },
-			cursor: input.cursorId ? { id: input.cursorId } : undefined,
+			...cursorPaginationArgs(input.cursorId, input.take),
 			where: {
 				deletedAt: null,
 				...(input.walletType != null ? { type: input.walletType } : {}),

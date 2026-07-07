@@ -1,4 +1,5 @@
 import { prisma } from '@masumi/payment-core/db';
+import { cursorPaginationArgs } from '@/utils/shared/queries';
 import { z } from '@masumi/payment-core/zod';
 import { getSwapTransactionsSchemaInput } from './schemas';
 
@@ -10,8 +11,7 @@ export async function getSwapTransactionsForWallet(hotWalletId: string, input: S
 			hotWalletId,
 		},
 		orderBy: { createdAt: 'desc' },
-		cursor: input.cursorId ? { id: input.cursorId } : undefined,
-		take: input.limit,
+		...cursorPaginationArgs(input.cursorId, input.limit),
 	});
 }
 

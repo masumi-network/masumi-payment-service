@@ -1,26 +1,20 @@
-import {
-	OnChainState,
-	PaymentAction,
-	PaymentErrorType,
-	PaymentSourceType,
-	Prisma,
-	TransactionStatus,
-} from '@/generated/prisma/client';
+import { OnChainState, PaymentAction, PaymentSourceType, Prisma, TransactionStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
-import { deserializeDatum, resolveTxHash, UTxO } from '@meshsdk/core';
-import { isDefinitiveNodeRejection } from '../../submit-error-classifier';
+import { resolveTxHash, UTxO } from '@meshsdk/core';
+import { isDefinitiveNodeRejection } from '@masumi/payment-core/submit-error-classifier';
+import { makeHotWalletUnlocker, makePaymentRequestFailureMarker } from '../../request-failure';
+import { findMatchingPaymentUtxoWithContract } from '../../utxo-matching';
 import type { LanguageVersion } from '@meshsdk/core';
 import { asV2Provider } from '../../provider-cast';
 import type { BlockfrostProvider } from '@/services/shared';
 import { logger } from '@masumi/payment-core/logger';
 import { recordV2BatchHashDivergence } from '@masumi/payment-core/metrics';
-import { SmartContractState, smartContractStateEqualsOnChainState } from '@/utils/generator/contract-generator';
+import { SmartContractState } from '@/utils/generator/contract-generator';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { DecodedV1ContractDatum, newCooldownTime } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
-import { retryOnSerializationConflict } from '@/utils/db/retry';
+import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
-import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { sortAndLimitUtxos } from '@/utils/utxo';
 import { delayErrorResolver } from 'advanced-retry';
 import { advancedRetry } from 'advanced-retry';
@@ -43,7 +37,6 @@ import {
 	safeDeleteOrphanNextPaymentAction,
 } from '@/services/shared';
 import { createDatumFromDecodedContractV2, getPaymentScriptFromPaymentSourceV2 } from '@masumi/payment-source-v2';
-import { decodeV2ContractDatum } from '@/utils/converter/string-datum-convert';
 import {
 	assertNoCollateralOverlap,
 	assertTxSizeWithinLimit,
@@ -90,11 +83,6 @@ type PaymentSourceWithRelations = Prisma.PaymentSourceGetPayload<{
 }>;
 
 type PaymentRequestWithRelations = PaymentSourceWithRelations['PaymentRequests'][number];
-
-type MatchingUtxoResult = {
-	utxo: UTxO;
-	decodedContract: DecodedV1ContractDatum;
-};
 
 type ValidatedSubmitItem = {
 	request: PaymentRequestWithRelations;
@@ -197,116 +185,16 @@ function resolveSubmitResultConstrainAfterMs(decodedContract: DecodedV1ContractD
 	);
 }
 
-async function markRequestFailed(
-	request: PaymentRequestWithRelations,
-	error: unknown,
-	options: { unlockWallet?: boolean } = {},
-): Promise<void> {
-	// unlockWallet=true only when this failure OWNS the wallet lock (single-item
-	// path). In the batch validation loop the shared wallet lock must survive:
-	// releasing it mid-batch lets a concurrent service lock the same wallet and
-	// submit a conflicting tx from the same UTxO set while this batch keeps
-	// building the remaining validated items. The batch's terminal paths
-	// (all-failed unlock, submit success → PendingTransaction, or fallback)
-	// release it instead.
-	const unlockWallet = options.unlockWallet ?? true;
-	logger.error(`Error submitting V2 result ${request.id}`, { error });
-	await prisma.paymentRequest.update({
-		where: { id: request.id },
-		data: {
-			...connectPreviousAction(request.nextActionId),
-			...createNextPaymentAction(PaymentAction.WaitingForManualAction, {
-				// Carry forward the seller-supplied result hash so operator forensics
-				// preserve the originally-attempted submission. Without this the
-				// hash is lost when the request parks in WaitingForManualAction.
-				resultHash: request.NextAction?.resultHash ?? null,
-				errorType: PaymentErrorType.Unknown,
-				errorNote: 'Submitting result failed: ' + interpretBlockchainError(error),
-			}),
-			...(unlockWallet ? { SmartContractWallet: { update: { lockedAt: null } } } : {}),
-		},
-	});
-}
+const markRequestFailed = makePaymentRequestFailureMarker({
+	logMessage: 'Error submitting V2 result',
+	errorNotePrefix: 'Submitting result failed: ',
+	// Carry forward the seller-supplied result hash so operator forensics
+	// preserve the originally-attempted submission. Without this the hash is
+	// lost when the request parks in WaitingForManualAction.
+	carryResultHash: true,
+});
 
-async function unlockHotWallet(walletId: string): Promise<void> {
-	try {
-		await prisma.hotWallet.update({
-			where: { id: walletId, deletedAt: null },
-			data: { lockedAt: null },
-		});
-	} catch (error) {
-		logger.warn('Failed to unlock V2 submit-result hot wallet', { error, walletId });
-	}
-}
-
-function findMatchingUtxoAndDecodeContract(
-	utxoList: UTxO[],
-	txHash: string,
-	request: PaymentRequestWithRelations,
-	paymentContract: PaymentSourceWithRelations,
-): MatchingUtxoResult | undefined {
-	for (const utxo of utxoList) {
-		if (utxo.input.txHash !== txHash) {
-			continue;
-		}
-
-		const utxoDatum = utxo.output.plutusData;
-		if (!utxoDatum) {
-			continue;
-		}
-
-		const decodedDatum: unknown = deserializeDatum(utxoDatum);
-		const decodedContract = decodeV2ContractDatum(
-			decodedDatum,
-			convertNetwork(paymentContract.network),
-			paymentContract.smartContractAddress,
-		);
-		if (decodedContract === null) {
-			continue;
-		}
-
-		if (!smartContractStateEqualsOnChainState(decodedContract.state, request.onChainState)) {
-			continue;
-		}
-		if (decodedContract.buyerVkey !== request.BuyerWallet!.walletVkey) {
-			continue;
-		}
-		if (decodedContract.sellerVkey !== request.SmartContractWallet!.walletVkey) {
-			continue;
-		}
-		if (decodedContract.buyerAddress !== request.BuyerWallet!.walletAddress) {
-			continue;
-		}
-		if (decodedContract.sellerAddress !== request.SmartContractWallet!.walletAddress) {
-			continue;
-		}
-		if (decodedContract.blockchainIdentifier !== request.blockchainIdentifier) {
-			continue;
-		}
-		if (decodedContract.inputHash !== request.inputHash) {
-			continue;
-		}
-		if (BigInt(decodedContract.resultTime) !== BigInt(request.submitResultTime)) {
-			continue;
-		}
-		if (BigInt(decodedContract.unlockTime) !== BigInt(request.unlockTime)) {
-			continue;
-		}
-		if (BigInt(decodedContract.externalDisputeUnlockTime) !== BigInt(request.externalDisputeUnlockTime)) {
-			continue;
-		}
-		if (BigInt(decodedContract.collateralReturnLovelace) !== BigInt(request.collateralReturnLovelace!)) {
-			continue;
-		}
-		if (BigInt(decodedContract.payByTime) !== BigInt(request.payByTime!)) {
-			continue;
-		}
-
-		return { utxo, decodedContract };
-	}
-
-	return undefined;
-}
+const unlockHotWallet = makeHotWalletUnlocker('submit-result');
 
 /**
  * Per-request validation. Locates the matching script UTxO, decodes the on-chain
@@ -334,7 +222,13 @@ async function validateAndBuildItem(
 		throw new Error('No transaction hash found');
 	}
 	const utxoByHash = await fetchUTxOsWithDeferOnEmpty(blockchainProvider, txHash);
-	const matchResult = findMatchingUtxoAndDecodeContract(utxoByHash, txHash, request, paymentContract);
+	const matchResult = findMatchingPaymentUtxoWithContract(
+		utxoByHash,
+		txHash,
+		request,
+		convertNetwork(paymentContract.network),
+		paymentContract.smartContractAddress,
+	);
 	if (!matchResult) {
 		throw new Error(`${LOOKUP_DEFERRED_PREFIX} UTXO not found`);
 	}
@@ -448,7 +342,13 @@ async function processSinglePaymentRequest(
 	}
 	const utxoByHash = await fetchUTxOsWithDeferOnEmpty(blockchainProvider, txHash);
 
-	const matchResult = findMatchingUtxoAndDecodeContract(utxoByHash, txHash, request, paymentContract);
+	const matchResult = findMatchingPaymentUtxoWithContract(
+		utxoByHash,
+		txHash,
+		request,
+		convertNetwork(paymentContract.network),
+		paymentContract.smartContractAddress,
+	);
 
 	if (!matchResult) {
 		throw new Error(`${LOOKUP_DEFERRED_PREFIX} UTXO not found`);

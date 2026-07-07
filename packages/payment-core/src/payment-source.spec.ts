@@ -1,13 +1,15 @@
 import { Network, PaymentSourceType } from '@prisma/client';
 import {
 	isCardanoAddressForNetwork,
-	isCardanoPubKeyBaseAddressForNetwork,
+	isCardanoPubKeyAddressForNetwork,
 	supportedPaymentSourceSchema,
 	validateSupportedPaymentSourcesOrThrow,
 } from './payment-source';
 
 const PREPROD_BASE_ADDRESS =
 	'addr_test1qq0e6dy7cehm9zfqurcf8mwwg9te9nszsx5gy5q4eclpd0czhmdlpagxe5n8ppnrf6424tt8gwweumrtg2q7234x2p2qzjenfx';
+// Same payment key hash as PREPROD_BASE_ADDRESS, no stake credential.
+const PREPROD_ENTERPRISE_ADDRESS = 'addr_test1vq0e6dy7cehm9zfqurcf8mwwg9te9nszsx5gy5q4eclpd0c75xvdu';
 const PREPROD_SCRIPT_ADDRESS = 'addr_test1wz7j4kmg2cs7yf92uat3ed4a3u97kr7axxr4avaz0lhwdsqukgwfm';
 
 describe('payment-source address validation', () => {
@@ -15,9 +17,14 @@ describe('payment-source address validation', () => {
 		expect(isCardanoAddressForNetwork(PREPROD_SCRIPT_ADDRESS, Network.Preprod)).toBe(true);
 	});
 
-	it('requires a stake credential for V2 return addresses', () => {
-		expect(isCardanoPubKeyBaseAddressForNetwork(PREPROD_BASE_ADDRESS, Network.Preprod)).toBe(true);
-		expect(isCardanoPubKeyBaseAddressForNetwork(PREPROD_SCRIPT_ADDRESS, Network.Preprod)).toBe(false);
+	it('accepts base and enterprise pubkey addresses, rejects script addresses', () => {
+		expect(isCardanoPubKeyAddressForNetwork(PREPROD_BASE_ADDRESS, Network.Preprod)).toBe(true);
+		expect(isCardanoPubKeyAddressForNetwork(PREPROD_ENTERPRISE_ADDRESS, Network.Preprod)).toBe(true);
+		expect(isCardanoPubKeyAddressForNetwork(PREPROD_SCRIPT_ADDRESS, Network.Preprod)).toBe(false);
+	});
+
+	it('rejects addresses from the wrong network', () => {
+		expect(isCardanoPubKeyAddressForNetwork(PREPROD_ENTERPRISE_ADDRESS, Network.Mainnet)).toBe(false);
 	});
 
 	it('accepts standard x402 EVM sources for V2 registry entries without requiring address duplication', () => {

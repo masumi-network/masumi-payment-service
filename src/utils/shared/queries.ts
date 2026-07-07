@@ -1,6 +1,18 @@
 import { OnChainState } from '@prisma/client';
 
 /**
+ * Inclusive cursor pagination args for list endpoints. The cursor row is
+ * intentionally returned again (no `skip: 1`) so retries and polling stay
+ * idempotent — see docs/development.md#api-pagination before changing.
+ */
+export function cursorPaginationArgs(cursorId: string | null | undefined, take: number | undefined) {
+	return {
+		cursor: cursorId ? { id: cursorId } : undefined,
+		take,
+	};
+}
+
+/**
  * Parse a numeric search string into a lovelace range for amount filtering.
  * Mirrored by frontend/src/lib/parseAmountSearchRange.ts — keep in sync.
  *
@@ -45,6 +57,25 @@ export function buildMatchingStates(searchLower: string | undefined): OnChainSta
 				.toLowerCase()
 				.includes(searchLower),
 	);
+}
+
+/**
+ * Prisma where-fragment selecting payment/purchase requests that need an
+ * operator to step in: the automated state machine parked them in
+ * WaitingForManualAction (the only state error-state-recovery accepts), or a
+ * NextAction error was recorded without changing the requested action.
+ *
+ * Shared between PaymentRequest and PurchaseRequest: both relate to their
+ * action-data row via `NextAction`, and PaymentAction and PurchasingAction
+ * both contain the literal 'WaitingForManualAction'.
+ */
+export function buildNeedsManualActionFilter(filterNeedsManualAction: boolean | undefined) {
+	if (filterNeedsManualAction !== true) return {};
+	return {
+		NextAction: {
+			OR: [{ requestedAction: 'WaitingForManualAction' as const }, { errorType: { not: null } }],
+		},
+	};
 }
 
 export function buildTransactionSearchFilter(

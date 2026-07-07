@@ -236,6 +236,8 @@ export type X402PaymentFilters = {
   status?: X402PaymentAttempt['status'];
   direction?: X402PaymentAttempt['direction'];
   caip2Network?: string;
+  /** Only attempts left Verified with a recorded settle error (manual reconciliation). */
+  needsManualAction?: boolean;
 };
 
 export function useX402PaymentAttempts(filters: X402PaymentFilters = {}) {
@@ -247,6 +249,7 @@ export function useX402PaymentAttempts(filters: X402PaymentFilters = {}) {
       filters.status ?? null,
       filters.direction ?? null,
       filters.caip2Network ?? null,
+      filters.needsManualAction ?? false,
     ],
     queryFn: async ({ pageParam }) => {
       const response = await handleApiCall(
@@ -259,6 +262,7 @@ export function useX402PaymentAttempts(filters: X402PaymentFilters = {}) {
               status: filters.status,
               direction: filters.direction,
               caip2Network: filters.caip2Network,
+              filterNeedsManualAction: filters.needsManualAction ? ('true' as const) : undefined,
             },
           }),
         { errorMessage: 'Failed to fetch x402 payments' },

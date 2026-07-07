@@ -1,7 +1,13 @@
 import { prisma } from '@masumi/payment-core/db';
 import { z } from '@masumi/payment-core/zod';
 import { AuthContext } from '@masumi/payment-core/auth';
-import { parseAmountSearchRange, buildMatchingStates, buildTransactionSearchFilter } from '@/utils/shared/queries';
+import {
+	cursorPaginationArgs,
+	parseAmountSearchRange,
+	buildMatchingStates,
+	buildNeedsManualActionFilter,
+	buildTransactionSearchFilter,
+} from '@/utils/shared/queries';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { queryPaymentsSchemaInput } from './schemas';
 import { PaymentSourceType } from '@/generated/prisma/client';
@@ -33,15 +39,11 @@ export async function getPaymentsForQuery(input: PaymentListQueryInput, walletSc
 			},
 			...buildWalletScopeFilter(walletScopeIds),
 			...(input.filterOnChainState ? { onChainState: input.filterOnChainState } : {}),
+			...buildNeedsManualActionFilter(input.filterNeedsManualAction),
 			...buildTransactionSearchFilter(searchLower, matchingStates, amountFilter, 'RequestedFunds'),
 		},
 		orderBy: { createdAt: 'desc' },
-		cursor: input.cursorId
-			? {
-					id: input.cursorId,
-				}
-			: undefined,
-		take: input.limit,
+		...cursorPaginationArgs(input.cursorId, input.limit),
 		include: {
 			BuyerWallet: { select: { id: true, walletVkey: true } },
 			SmartContractWallet: {

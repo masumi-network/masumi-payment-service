@@ -13,7 +13,7 @@ import { smartContractStateEqualsOnChainState } from '@masumi/payment-core/smart
 import { convertNetwork } from '@masumi/payment-core/network';
 // TODO(v1-package-boundary): move lock-and-query-payments, blockchain-error-interpreter, utxo, transaction-generator, string-datum-convert to @masumi/payment-core
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
-import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
+import { interpretBlockchainError } from '@masumi/payment-core/blockchain-error-interpreter';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';

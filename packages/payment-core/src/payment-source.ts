@@ -155,24 +155,37 @@ export function isCardanoAddressForNetwork(address: string, network: Network): b
 	}
 }
 
-function validateCardanoPubKeyBaseAddressForNetwork(address: string, network: Network) {
+function validateCardanoPubKeyAddressForNetwork(address: string, network: Network) {
 	validateCardanoAddressForNetwork(address, network);
 	const parsedAddress = deserializeAddress(address);
-	if (parsedAddress.getType() !== AddressType.BasePaymentKeyStakeKey) {
-		throw new Error('Cardano address must be a base address with payment and stake key credentials');
+	const addressType = parsedAddress.getType();
+	// The vested_pay validators (V1 and V2) only ever read the PAYMENT
+	// credential of participant addresses (`address_to_verification_key`
+	// matches `VerificationKey(vkey)` and ignores the stake part), and payouts
+	// are full-address equality against the datum. Base (payment key + stake
+	// key) and enterprise (payment key, no stake) addresses are therefore both
+	// safe; the datum builders encode a missing stake credential as Plutus
+	// `None`. Script payment credentials remain banned — every spending
+	// redeemer does `expect Some(vk) = address_to_verification_key(...)`, so a
+	// script-credential participant permanently bricks the escrow. Pointer,
+	// reward, and script-stake variants stay rejected as well.
+	if (addressType !== AddressType.BasePaymentKeyStakeKey && addressType !== AddressType.EnterpriseKey) {
+		throw new Error('Cardano address must be a base or enterprise address with a payment key credential');
 	}
 
 	try {
 		resolvePaymentKeyHash(address);
-		resolveStakeKeyHash(address);
+		if (addressType === AddressType.BasePaymentKeyStakeKey) {
+			resolveStakeKeyHash(address);
+		}
 	} catch {
-		throw new Error('Cardano address must include payment and stake key credentials');
+		throw new Error('Cardano address must include a payment key credential');
 	}
 }
 
-export function isCardanoPubKeyBaseAddressForNetwork(address: string, network: Network): boolean {
+export function isCardanoPubKeyAddressForNetwork(address: string, network: Network): boolean {
 	try {
-		validateCardanoPubKeyBaseAddressForNetwork(address, network);
+		validateCardanoPubKeyAddressForNetwork(address, network);
 		return true;
 	} catch {
 		return false;

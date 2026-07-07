@@ -31,8 +31,9 @@ import { RefreshButton } from '@/components/RefreshButton';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { useX402Networks, useX402Wallets } from '@/lib/hooks/useX402';
 import { isTestnetEnv } from '@/lib/x402-rail';
-import { handleApiCall, shortenAddress } from '@/lib/utils';
-import { postX402Networks, X402Network } from '@/lib/api/generated';
+import { shortenAddress } from '@/lib/utils';
+import { useApiMutation } from '@/lib/hooks/useApiMutation';
+import { postX402Networks, X402Network, PostX402NetworksData } from '@/lib/api/generated';
 
 const NO_FACILITATOR = '__none__';
 
@@ -241,7 +242,12 @@ export function ChainDialog({
   // Only load the wallet set while the form is open (it feeds the picker). A facilitator
   // settles inbound payments, so only Selling wallets are selectable.
   const { wallets } = useX402Wallets(open, 'Selling');
-  const [isSaving, setIsSaving] = useState(false);
+  const saveChain = useApiMutation({
+    mutationFn: (body: NonNullable<PostX402NetworksData['body']>) =>
+      postX402Networks({ client: apiClient, body }),
+    errorMessage: 'Failed to save chain',
+  });
+  const isSaving = saveChain.isPending;
 
   const {
     register,
@@ -264,33 +270,23 @@ export function ChainDialog({
   });
 
   const onSubmit = async (data: ChainFormValues) => {
-    setIsSaving(true);
-    await handleApiCall(
-      () =>
-        postX402Networks({
-          client: apiClient,
-          body: {
-            caip2Id: data.caip2Id,
-            displayName: data.displayName,
-            rpcUrl: data.rpcUrl,
-            isTestnet: data.isTestnet,
-            isEnabled: data.isEnabled,
-            defaultAsset: data.defaultAsset ? data.defaultAsset : null,
-            facilitatorWalletId:
-              data.facilitatorWalletId && data.facilitatorWalletId !== NO_FACILITATOR
-                ? data.facilitatorWalletId
-                : null,
-          },
-        }),
-      {
-        onSuccess: () => {
-          toast.success(editing ? 'Chain updated' : 'Chain added');
-          onSaved();
-        },
-        onFinally: () => setIsSaving(false),
-        errorMessage: 'Failed to save chain',
-      },
-    );
+    const response = await saveChain
+      .mutateAsync({
+        caip2Id: data.caip2Id,
+        displayName: data.displayName,
+        rpcUrl: data.rpcUrl,
+        isTestnet: data.isTestnet,
+        isEnabled: data.isEnabled,
+        defaultAsset: data.defaultAsset ? data.defaultAsset : null,
+        facilitatorWalletId:
+          data.facilitatorWalletId && data.facilitatorWalletId !== NO_FACILITATOR
+            ? data.facilitatorWalletId
+            : null,
+      })
+      .catch(() => null);
+    if (!response) return;
+    toast.success(editing ? 'Chain updated' : 'Chain added');
+    onSaved();
   };
 
   return (

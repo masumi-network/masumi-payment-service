@@ -7522,6 +7522,16 @@
                     {
                         "schema": {
                             "type": "string",
+                            "description": "When true, only returns payments that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it"
+                        },
+                        "required": false,
+                        "description": "When true, only returns payments that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it",
+                        "name": "filterNeedsManualAction",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
                             "description": "Search query to filter by ID, hash, agent name, state, network, wallet address, or amount"
                         },
                         "required": false,
@@ -8860,6 +8870,16 @@
                     {
                         "schema": {
                             "type": "string",
+                            "description": "When true, only counts payments that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it"
+                        },
+                        "required": false,
+                        "description": "When true, only counts payments that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it",
+                        "name": "filterNeedsManualAction",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
                             "nullable": true,
                             "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, payment count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source."
                         },
@@ -8949,6 +8969,16 @@
                         "required": true,
                         "description": "The network the purchases were made on",
                         "name": "network",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "When true, only counts purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it"
+                        },
+                        "required": false,
+                        "description": "When true, only counts purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it",
+                        "name": "filterNeedsManualAction",
                         "in": "query"
                     },
                     {
@@ -13747,6 +13777,16 @@
                         "required": false,
                         "description": "Filter by payment source type. When omitted with no smart-contract-address filter, purchase list/count endpoints default to Web3CardanoV1 for backwards compatibility.",
                         "name": "filterPaymentSourceType",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "When true, only returns purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it"
+                        },
+                        "required": false,
+                        "description": "When true, only returns purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it",
+                        "name": "filterNeedsManualAction",
                         "in": "query"
                     },
                     {
@@ -25501,6 +25541,20 @@
                         "description": "Filter by CAIP-2 chain id",
                         "name": "caip2Network",
                         "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "true",
+                                "false"
+                            ],
+                            "description": "When true, only returns attempts that require manual reconciliation: settle failed or threw after verification, leaving the attempt Verified with a recorded error. Overrides the status filter."
+                        },
+                        "required": false,
+                        "description": "When true, only returns attempts that require manual reconciliation: settle failed or threw after verification, leaving the attempt Verified with a recorded error. Overrides the status filter.",
+                        "name": "filterNeedsManualAction",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -26455,6 +26509,20 @@
                         },
                         "required": false,
                         "name": "caip2Network",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "true",
+                                "false"
+                            ],
+                            "description": "When true, only counts attempts that require manual reconciliation: settle failed or threw after verification, leaving the attempt Verified with a recorded error. Overrides the status filter."
+                        },
+                        "required": false,
+                        "description": "When true, only counts attempts that require manual reconciliation: settle failed or threw after verification, leaving the attempt Verified with a recorded error. Overrides the status filter.",
+                        "name": "filterNeedsManualAction",
                         "in": "query"
                     }
                 ],

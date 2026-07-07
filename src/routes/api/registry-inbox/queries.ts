@@ -1,4 +1,5 @@
 import { PaymentSourceType, RegistrationState } from '@/generated/prisma/client';
+import { cursorPaginationArgs } from '@/utils/shared/queries';
 import { prisma } from '@masumi/payment-core/db';
 import { AuthContext } from '@masumi/payment-core/auth';
 import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
@@ -95,8 +96,7 @@ export async function getInboxRegistryEntriesForQuery(
 				: {}),
 		},
 		orderBy: { createdAt: 'desc' },
-		take: input.limit,
-		cursor: input.cursorId ? { id: input.cursorId } : undefined,
+		...cursorPaginationArgs(input.cursorId, input.limit),
 		include: {
 			SmartContractWallet: {
 				select: { walletVkey: true, walletAddress: true },

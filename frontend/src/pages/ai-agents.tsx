@@ -14,7 +14,7 @@ import { deleteRegistry, RegistryEntry, postRegistryDeregister } from '@/lib/api
 import { agentHasX402Options } from '@/components/ai-agents/AgentX402Options';
 import { agentHasVerifications } from '@/components/ai-agents/AgentVerifications';
 import { toast } from 'react-toastify';
-import { handleApiCall } from '@/lib/utils';
+import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import Head from 'next/head';
 import { AIAgentTableSkeleton } from '@/components/skeletons/AIAgentTableSkeleton';
 import { Spinner } from '@/components/ui/spinner';
@@ -36,7 +36,6 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { SearchInput } from '@/components/ui/search-input';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { parseAmountSearchRange, parseAmountToBigInt } from '@/lib/parseAmountSearchRange';
-import { extractApiErrorMessage } from '@/lib/api-error';
 import { useRegistryEntryByAgentIdentifier } from '@/lib/queries/useRegistryEntryByAgentIdentifier';
 import { useAgentDetailsDialog } from '@/lib/contexts/AgentDetailsDialogContext';
 import { lookupWalletByVkey } from '@/lib/wallet-lookup';
@@ -163,7 +162,19 @@ export default function AIAgentsPage() {
 
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedAgentToDelete, setSelectedAgentToDelete] = useState<AIAgent | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const deleteAgentMutation = useApiMutation({
+    mutationFn: (body: { id: string }) => deleteRegistry({ client: apiClient, body }),
+    errorMessage: 'Failed to delete AI agent',
+  });
+  const deregisterAgentMutation = useApiMutation({
+    mutationFn: (body: {
+      agentIdentifier: string;
+      network: typeof network;
+      smartContractAddress: string;
+    }) => postRegistryDeregister({ client: apiClient, body }),
+    errorMessage: 'Failed to deregister AI agent',
+  });
+  const isDeleting = deleteAgentMutation.isPending || deregisterAgentMutation.isPending;
   // Synchronous in-flight guard for delete/deregister. `setIsDeleting(true)` is
   // async, so a fast double-click on Confirm fires `handleDeleteConfirm` twice
   // before the button disables — sending two DELETEs for the same id. The second
@@ -324,32 +335,18 @@ export default function AIAgentsPage() {
       selectedAgentToDelete?.state === 'RegistrationFailed' ||
       selectedAgentToDelete?.state === 'DeregistrationConfirmed'
     ) {
-      setIsDeleting(true);
-      await handleApiCall(
-        () =>
-          deleteRegistry({
-            client: apiClient,
-            body: {
-              id: selectedAgentToDelete.id,
-            },
-          }),
-        {
-          onSuccess: () => {
-            toast.success('AI agent deleted successfully');
-            setIsDeleteDialogOpen(false);
-            setSelectedAgentToDelete(null);
-            refetchAfterMutation();
-          },
-          onError: (error: unknown) => {
-            console.error('Error deleting agent:', error);
-            toast.error(extractApiErrorMessage(error, 'Failed to delete AI agent'));
-          },
-          onFinally: () => {
-            setIsDeleting(false);
-          },
-          errorMessage: 'Failed to delete AI agent',
-        },
-      );
+      const response = await deleteAgentMutation
+        .mutateAsync({ id: selectedAgentToDelete.id })
+        .catch((error: unknown) => {
+          console.error('Error deleting agent:', error);
+          return null;
+        });
+      if (response) {
+        toast.success('AI agent deleted successfully');
+        setIsDeleteDialogOpen(false);
+        setSelectedAgentToDelete(null);
+        refetchAfterMutation();
+      }
     } else if (isDeregisterableAgentState(selectedAgentToDelete?.state)) {
       if (!selectedAgentToDelete?.agentIdentifier) {
         toast.error('Cannot deregister agent: Missing identifier');
@@ -359,34 +356,22 @@ export default function AIAgentsPage() {
         toast.error('Cannot deregister agent: Missing payment source');
         return;
       }
-      setIsDeleting(true);
-      await handleApiCall(
-        () =>
-          postRegistryDeregister({
-            client: apiClient,
-            body: {
-              agentIdentifier: selectedAgentToDelete.agentIdentifier!,
-              network: network,
-              smartContractAddress: selectedPaymentSource.smartContractAddress,
-            },
-          }),
-        {
-          onSuccess: () => {
-            toast.success('AI agent deregistered successfully');
-            setIsDeleteDialogOpen(false);
-            setSelectedAgentToDelete(null);
-            refetchAfterMutation();
-          },
-          onError: (error: unknown) => {
-            console.error('Error deregistering agent:', error);
-            toast.error(extractApiErrorMessage(error, 'Failed to deregister AI agent'));
-          },
-          onFinally: () => {
-            setIsDeleting(false);
-          },
-          errorMessage: 'Failed to deregister AI agent',
-        },
-      );
+      const response = await deregisterAgentMutation
+        .mutateAsync({
+          agentIdentifier: selectedAgentToDelete.agentIdentifier!,
+          network: network,
+          smartContractAddress: selectedPaymentSource.smartContractAddress,
+        })
+        .catch((error: unknown) => {
+          console.error('Error deregistering agent:', error);
+          return null;
+        });
+      if (response) {
+        toast.success('AI agent deregistered successfully');
+        setIsDeleteDialogOpen(false);
+        setSelectedAgentToDelete(null);
+        refetchAfterMutation();
+      }
     } else {
       toast.error(
         'Cannot delete agent: Agent is not in a state to be deleted. Please wait for transactions to settle.',

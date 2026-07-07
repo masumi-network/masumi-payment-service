@@ -19,7 +19,8 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { postApiKey } from '@/lib/api/generated';
 import { useX402Networks } from '@/lib/hooks/useX402';
 import { toast } from 'react-toastify';
-import { handleApiCall } from '@/lib/utils';
+import { useApiMutation } from '@/lib/hooks/useApiMutation';
+import { FormField } from '@/components/ui/form-field';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useForm, Controller, useWatch } from 'react-hook-form';
 import { z } from 'zod';
@@ -35,7 +36,7 @@ import {
   getActiveStablecoinSymbol,
 } from '@/lib/constants/defaultWallets';
 import { convertDecimalToBaseUnits, isValidDecimalAmount } from '@/lib/convertDecimalToBaseUnits';
-import type { ApiKey } from '@/lib/api/generated';
+import type { ApiKey, PostApiKeyData } from '@/lib/api/generated';
 
 interface AddApiKeyDialogProps {
   open: boolean;
@@ -120,9 +121,15 @@ function presetToFlags(preset: PermissionPreset): {
 }
 
 export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogProps) {
-  const [isLoading, setIsLoading] = useState(false);
   const [createdApiKey, setCreatedApiKey] = useState<ApiKey | null>(null);
   const { apiClient, network } = useAppContext();
+
+  const createApiKey = useApiMutation({
+    mutationFn: (body: NonNullable<PostApiKeyData['body']>) =>
+      postApiKey({ client: apiClient, body }),
+    errorMessage: 'Failed to create API key',
+  });
+  const isLoading = createApiKey.isPending;
   const { paymentSources } = usePaymentSourceExtendedAll();
   const { wallets: managedWallets } = useAllWallets(open);
   // A key's NetworkLimit can span both Cardano networks, so offer EVM chains from every
@@ -197,7 +204,6 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
   }, [permissionPreset, setValue]);
 
   const onSubmit = async (data: ApiKeyFormValues) => {
-    setIsLoading(true);
     const isReadOnly = !data.canPay && !data.canAdmin;
     const defaultCredits = [
       {
@@ -205,65 +211,56 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
         amount: '1000000000', // 1000 ADA
       },
     ];
-    await handleApiCall(
-      () =>
-        postApiKey({
-          client: apiClient,
-          body: {
-            // Send flag-based permissions
-            canRead: data.canRead,
-            canPay: data.canPay,
-            canAdmin: data.canAdmin,
-            usageLimited: isReadOnly ? 'true' : data.usageLimited.toString(),
-            NetworkLimit: data.networks,
-            ChainIdLimit: data.canPay && !data.canAdmin ? data.evmChains : [],
-            UsageCredits: isReadOnly
-              ? defaultCredits
-              : data.usageLimited
-                ? [
-                    ...(data.credits.lovelace
-                      ? [
-                          {
-                            unit: 'lovelace',
-                            amount: convertDecimalToBaseUnits(data.credits.lovelace),
-                          },
-                        ]
-                      : []),
-                    ...(data.credits.usdcx
-                      ? [
-                          {
-                            unit: getActiveStablecoinConfig(network).fullAssetId,
-                            amount: convertDecimalToBaseUnits(data.credits.usdcx),
-                          },
-                        ]
-                      : []),
-                  ]
-                : [],
-            walletScopeEnabled: data.walletScopeEnabled.toString(),
-            WalletScopeHotWalletIds: data.walletScopeEnabled ? data.walletScopeIds : [],
-          },
-        }),
-      {
-        onSuccess: (response) => {
-          const created = extractApiPayload<ApiKey>(response);
-          if (!created?.token || created.token.startsWith('*****')) {
-            toast.error(
-              'API key was created but the full token was not returned. Delete it and create a new one.',
-            );
-            onSuccess();
-            onClose();
-            return;
-          }
+    // Errors are toasted by the mutation hook; nothing further to do here.
+    const response = await createApiKey
+      .mutateAsync({
+        // Send flag-based permissions
+        canRead: data.canRead,
+        canPay: data.canPay,
+        canAdmin: data.canAdmin,
+        usageLimited: isReadOnly ? 'true' : data.usageLimited.toString(),
+        NetworkLimit: data.networks,
+        ChainIdLimit: data.canPay && !data.canAdmin ? data.evmChains : [],
+        UsageCredits: isReadOnly
+          ? defaultCredits
+          : data.usageLimited
+            ? [
+                ...(data.credits.lovelace
+                  ? [
+                      {
+                        unit: 'lovelace',
+                        amount: convertDecimalToBaseUnits(data.credits.lovelace),
+                      },
+                    ]
+                  : []),
+                ...(data.credits.usdcx
+                  ? [
+                      {
+                        unit: getActiveStablecoinConfig(network).fullAssetId,
+                        amount: convertDecimalToBaseUnits(data.credits.usdcx),
+                      },
+                    ]
+                  : []),
+              ]
+            : [],
+        walletScopeEnabled: data.walletScopeEnabled.toString(),
+        WalletScopeHotWalletIds: data.walletScopeEnabled ? data.walletScopeIds : [],
+      })
+      .catch(() => null);
+    if (!response) return;
 
-          toast.success('API key created successfully');
-          setCreatedApiKey(created);
-        },
-        onFinally: () => {
-          setIsLoading(false);
-        },
-        errorMessage: 'Failed to create API key',
-      },
-    );
+    const created = extractApiPayload<ApiKey>(response);
+    if (!created?.token || created.token.startsWith('*****')) {
+      toast.error(
+        'API key was created but the full token was not returned. Delete it and create a new one.',
+      );
+      onSuccess();
+      onClose();
+      return;
+    }
+
+    toast.success('API key created successfully');
+    setCreatedApiKey(created);
   };
 
   const handleClose = () => {
@@ -464,10 +461,16 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
 
               {usageLimited && !isReadOnly && (
                 <>
-                  <div className="space-y-2">
-                    <label htmlFor="apikey-ada-limit" className="text-sm font-medium">
-                      ADA Limit
-                    </label>
+                  <FormField
+                    label="ADA Limit"
+                    htmlFor="apikey-ada-limit"
+                    error={
+                      errors.credits && 'lovelace' in errors.credits
+                        ? errors.credits.lovelace?.message
+                        : undefined
+                    }
+                    className="space-y-2"
+                  >
                     <Input
                       id="apikey-ada-limit"
                       type="number"
@@ -477,29 +480,25 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                     <p className="text-xs text-muted-foreground">
                       Amount in ADA (will be converted to lovelace)
                     </p>
-                    {errors.credits && 'lovelace' in errors.credits && errors.credits.lovelace && (
-                      <p className="text-xs text-destructive mt-1">
-                        {(errors.credits.lovelace as any).message}
-                      </p>
-                    )}
-                  </div>
+                  </FormField>
 
-                  <div className="space-y-2">
-                    <label htmlFor="apikey-usdcx-limit" className="text-sm font-medium">
-                      {getActiveStablecoinSymbol(network)} Limit
-                    </label>
+                  <FormField
+                    label={`${getActiveStablecoinSymbol(network)} Limit`}
+                    htmlFor="apikey-usdcx-limit"
+                    error={
+                      errors.credits && 'usdcx' in errors.credits
+                        ? errors.credits.usdcx?.message
+                        : undefined
+                    }
+                    className="space-y-2"
+                  >
                     <Input
                       id="apikey-usdcx-limit"
                       type="number"
                       placeholder="0.00"
                       {...register('credits.usdcx')}
                     />
-                    {errors.credits && 'usdcx' in errors.credits && errors.credits.usdcx && (
-                      <p className="text-xs text-destructive mt-1">
-                        {(errors.credits.usdcx as any).message}
-                      </p>
-                    )}
-                  </div>
+                  </FormField>
                 </>
               )}
 
