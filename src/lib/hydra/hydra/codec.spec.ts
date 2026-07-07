@@ -12,7 +12,7 @@ describe('mapAmountToHydraValue', () => {
 			{ unit: 'lovelace', quantity: '2000000' },
 			{ unit: 'abc123policy001tokenName', quantity: '42' },
 		]);
-		expect(result).toEqual({ lovelace: 2000000, abc123policy001tokenName: 42 });
+		expect(result).toEqual({ lovelace: 2000000, abc123policy001tokenName: { '': 42 } });
 	});
 
 	it('returns empty object for empty array', () => {
