@@ -1,7 +1,12 @@
 import { prisma } from '@masumi/payment-core/db';
 import { z } from '@masumi/payment-core/zod';
 import { AuthContext } from '@masumi/payment-core/auth';
-import { parseAmountSearchRange, buildMatchingStates, buildTransactionSearchFilter } from '@/utils/shared/queries';
+import {
+	cursorPaginationArgs,
+	parseAmountSearchRange,
+	buildMatchingStates,
+	buildTransactionSearchFilter,
+} from '@/utils/shared/queries';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { queryPurchaseRequestSchemaInput } from './schemas';
 import { PaymentSourceType } from '@/generated/prisma/client';
@@ -38,8 +43,7 @@ export async function getPurchasesForQuery(
 			...(input.filterOnChainState ? { onChainState: input.filterOnChainState } : {}),
 			...buildTransactionSearchFilter(searchLower, matchingStates, amountFilter, 'PaidFunds'),
 		},
-		cursor: input.cursorId ? { id: input.cursorId } : undefined,
-		take: input.limit,
+		...cursorPaginationArgs(input.cursorId, input.limit),
 		orderBy: { createdAt: 'desc' },
 		include: {
 			NextAction: {

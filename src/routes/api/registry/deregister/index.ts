@@ -11,7 +11,7 @@ import { extractAssetName, extractPolicyId } from '@/utils/converter/agent-ident
 import { registryRequestOutputSchema } from '@/routes/api/registry';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
-import { retryOnSerializationConflict } from '@/utils/db/retry';
+import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { serializeSupportedPaymentSources, serializeVerifications } from '../serializers';
 
 export const unregisterAgentSchemaInput = z.object({

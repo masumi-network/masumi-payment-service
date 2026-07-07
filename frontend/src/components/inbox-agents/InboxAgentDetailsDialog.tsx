@@ -10,14 +10,14 @@ import {
   postInboxAgentsDeregister,
   RegistryInboxEntry,
 } from '@/lib/api/generated';
-import { extractApiErrorMessage } from '@/lib/api-error';
 import { getAgentStatusBadgeVariant } from '@/lib/agent-status';
 import { formatDateTime } from '@/lib/format-date';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import formatBalance from '@/lib/formatBalance';
 import { lookupWalletByVkey } from '@/lib/wallet-lookup';
-import { handleApiCall, shortenAddress } from '@/lib/utils';
+import { shortenAddress } from '@/lib/utils';
+import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import { useCallback, useMemo, useState } from 'react';
 import { toast } from 'react-toastify';
 
@@ -64,7 +64,22 @@ export function InboxAgentDetailsDialog({
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
     useState<WalletWithBalance | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
+
+  const deleteAgent = useApiMutation({
+    mutationFn: (body: { id: string }) => deleteInboxAgents({ client: apiClient, body }),
+    errorMessage: 'Failed to delete inbox agent',
+  });
+  const deregisterAgent = useApiMutation({
+    mutationFn: (body: {
+      agentIdentifier: string;
+      network: typeof network;
+      smartContractAddress: string | undefined;
+    }) => postInboxAgentsDeregister({ client: apiClient, body }),
+    errorMessage: 'Failed to deregister inbox agent',
+  });
+  const { mutateAsync: deleteAgentAsync } = deleteAgent;
+  const { mutateAsync: deregisterAgentAsync } = deregisterAgent;
+  const isDeleting = deleteAgent.isPending || deregisterAgent.isPending;
 
   const currentNetworkPaymentSources = useMemo(
     () => paymentSources.filter((paymentSource) => paymentSource.network === network),
@@ -120,31 +135,13 @@ export function InboxAgentDetailsDialog({
     }
 
     if (agent.state === 'RegistrationFailed' || agent.state === 'DeregistrationConfirmed') {
-      setIsDeleting(true);
-      await handleApiCall(
-        () =>
-          deleteInboxAgents({
-            client: apiClient,
-            body: {
-              id: agent.id,
-            },
-          }),
-        {
-          onSuccess: () => {
-            toast.success('Inbox agent deleted successfully');
-            onClose();
-            onSuccess?.();
-          },
-          onError: (error: unknown) => {
-            toast.error(extractApiErrorMessage(error, 'Failed to delete inbox agent'));
-          },
-          onFinally: () => {
-            setIsDeleting(false);
-            setIsDeleteDialogOpen(false);
-          },
-          errorMessage: 'Failed to delete inbox agent',
-        },
-      );
+      const response = await deleteAgentAsync({ id: agent.id }).catch(() => null);
+      setIsDeleteDialogOpen(false);
+      if (response) {
+        toast.success('Inbox agent deleted successfully');
+        onClose();
+        onSuccess?.();
+      }
       return;
     }
 
@@ -162,33 +159,17 @@ export function InboxAgentDetailsDialog({
         return;
       }
 
-      setIsDeleting(true);
-      await handleApiCall(
-        () =>
-          postInboxAgentsDeregister({
-            client: apiClient,
-            body: {
-              agentIdentifier: agent.agentIdentifier!,
-              network,
-              smartContractAddress: selectedPaymentSource.smartContractAddress || undefined,
-            },
-          }),
-        {
-          onSuccess: () => {
-            toast.success('Inbox agent deregistration initiated successfully');
-            onClose();
-            onSuccess?.();
-          },
-          onError: (error: unknown) => {
-            toast.error(extractApiErrorMessage(error, 'Failed to deregister inbox agent'));
-          },
-          onFinally: () => {
-            setIsDeleting(false);
-            setIsDeleteDialogOpen(false);
-          },
-          errorMessage: 'Failed to deregister inbox agent',
-        },
-      );
+      const response = await deregisterAgentAsync({
+        agentIdentifier: agent.agentIdentifier!,
+        network,
+        smartContractAddress: selectedPaymentSource.smartContractAddress || undefined,
+      }).catch(() => null);
+      setIsDeleteDialogOpen(false);
+      if (response) {
+        toast.success('Inbox agent deregistration initiated successfully');
+        onClose();
+        onSuccess?.();
+      }
       return;
     }
 
@@ -197,8 +178,9 @@ export function InboxAgentDetailsDialog({
     );
   }, [
     agent,
-    apiClient,
     currentNetworkPaymentSources,
+    deleteAgentAsync,
+    deregisterAgentAsync,
     network,
     onClose,
     onSuccess,

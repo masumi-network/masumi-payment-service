@@ -22,6 +22,8 @@
 		"typecheck:frontend": "pnpm -C frontend exec tsc --noEmit",
 		"typecheck": "pnpm run typecheck:backend && pnpm run typecheck:frontend",
 		"format": "prettier --log-level silent --write \"src/**/*.{ts,js}\" \"packages/**/src/**/*.{ts,js}\" && pnpm -C frontend run format",
+		"format:check": "prettier --check \"src/**/*.{ts,js}\" \"packages/**/src/**/*.{ts,js}\" && pnpm -C frontend run format:check",
+		"format:check:backend": "prettier --check \"src/**/*.{ts,js}\" \"packages/**/src/**/*.{ts,js}\"",
 		"test": "cross-env NODE_OPTIONS=\"--experimental-vm-modules --require ./jest.preload.cjs\" jest",
 		"test:watch": "cross-env NODE_OPTIONS=\"--experimental-vm-modules --require ./jest.preload.cjs\" jest --watch",
 		"test:coverage": "cross-env NODE_OPTIONS=\"--experimental-vm-modules --require ./jest.preload.cjs\" jest --coverage",

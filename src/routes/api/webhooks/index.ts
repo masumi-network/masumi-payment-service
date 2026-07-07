@@ -1,4 +1,5 @@
 import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { cursorPaginationArgs } from '@/utils/shared/queries';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { Network, WebhookFormat } from '@/generated/prisma/client';
@@ -268,8 +269,7 @@ export const listWebhooksGet = payAuthenticatedEndpointFactory.build({
 				},
 			},
 			orderBy: { createdAt: 'desc' },
-			take: input.limit,
-			cursor: input.cursorId ? { id: input.cursorId } : undefined,
+			...cursorPaginationArgs(input.cursorId, input.limit),
 		});
 
 		return {

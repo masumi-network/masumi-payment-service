@@ -9,7 +9,8 @@ import Head from 'next/head';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { deleteApiKey } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
-import { formatAssetAmount, handleApiCall } from '@/lib/utils';
+import { formatAssetAmount } from '@/lib/utils';
+import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import { AddApiKeyDialog } from '@/components/api-keys/AddApiKeyDialog';
 import { UpdateApiKeyDialog } from '@/components/api-keys/UpdateApiKeyDialog';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -28,7 +29,6 @@ import { CopyButton } from '@/components/ui/copy-button';
 import { shortenAddress } from '@/lib/utils';
 import { useApiKey } from '@/lib/hooks/useApiKey';
 import { ApiKey } from '@/lib/api/generated';
-import { extractApiErrorMessage } from '@/lib/api-error';
 
 /**
  * Get a human-readable permission label from flags.
@@ -68,7 +68,11 @@ export default function ApiKeys() {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [keyToUpdate, setKeyToUpdate] = useState<ApiKey | null>(null);
   const [keyToDelete, setKeyToDelete] = useState<ApiKey | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const deleteKeyMutation = useApiMutation({
+    mutationFn: (body: { id: string }) => deleteApiKey({ client: apiClient, body }),
+    errorMessage: 'Failed to delete API key',
+  });
+  const isDeleting = deleteKeyMutation.isPending;
   // Synchronous in-flight guard for delete. `setIsDeleting(true)` is async, so
   // a fast double-click on Confirm fires `handleDeleteApiKey` twice before the
   // button disables — sending two DELETEs for the same id. A ref flips
@@ -147,33 +151,19 @@ export default function ApiKeys() {
     if (!keyToDelete || !keyToDelete.id) return;
     if (isDeletingRef.current) return;
     isDeletingRef.current = true;
-    setIsDeleting(true);
 
     try {
-      await handleApiCall(
-        () =>
-          deleteApiKey({
-            client: apiClient,
-            body: {
-              id: keyToDelete.id,
-            },
-          }),
-        {
-          onSuccess: () => {
-            toast.success('API key deleted successfully');
-            void reset();
-          },
-          onError: (error: any) => {
-            console.error('Error deleting API key:', error);
-            toast.error(extractApiErrorMessage(error, 'Failed to delete API key'));
-          },
-          onFinally: () => {
-            setIsDeleting(false);
-            setKeyToDelete(null);
-          },
-          errorMessage: 'Failed to delete API key',
-        },
-      );
+      const response = await deleteKeyMutation
+        .mutateAsync({ id: keyToDelete.id })
+        .catch((error: unknown) => {
+          console.error('Error deleting API key:', error);
+          return null;
+        });
+      setKeyToDelete(null);
+      if (response) {
+        toast.success('API key deleted successfully');
+        void reset();
+      }
     } finally {
       isDeletingRef.current = false;
     }

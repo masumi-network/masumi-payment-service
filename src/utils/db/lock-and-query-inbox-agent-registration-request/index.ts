@@ -1,6 +1,6 @@
 import { HotWalletType, PaymentSourceType, RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
-import { withSerializableSlotRetry } from '@/utils/db/serializable-semaphore';
+import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 
 export async function lockAndQueryInboxAgentRegistrationRequests({
 	state,

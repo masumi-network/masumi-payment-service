@@ -15,10 +15,10 @@ import { RefreshButton } from '@/components/RefreshButton';
 import { SearchInput } from '@/components/ui/search-input';
 import { Tabs } from '@/components/ui/tabs';
 import { WebhookDialog } from '@/components/webhooks/WebhookDialog';
-import { extractApiErrorMessage } from '@/lib/api-error';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { useWebhooks } from '@/lib/hooks/useWebhooks';
-import { handleApiCall, shortenAddress } from '@/lib/utils';
+import { shortenAddress } from '@/lib/utils';
+import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import {
   WEBHOOK_EVENT_LABELS,
   WEBHOOK_FORMAT_LABELS,
@@ -64,7 +64,15 @@ export default function WebhooksPage() {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [webhookToEdit, setWebhookToEdit] = useState<WebhookRecord | null>(null);
   const [webhookToDelete, setWebhookToDelete] = useState<WebhookRecord | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const deleteWebhookMutation = useApiMutation({
+    mutationFn: (body: { webhookId: string }) => deleteWebhooks({ client: apiClient, body }),
+    errorMessage: 'Failed to delete webhook',
+  });
+  const isDeleting = deleteWebhookMutation.isPending;
+  const testWebhookMutation = useApiMutation({
+    mutationFn: (body: { webhookId: string }) => postWebhooksTest({ client: apiClient, body }),
+    errorMessage: 'Failed to send test webhook',
+  });
   const [testingWebhookId, setTestingWebhookId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -154,84 +162,61 @@ export default function WebhooksPage() {
   const handleDeleteWebhook = async () => {
     if (!webhookToDelete) return;
 
-    setIsDeleting(true);
-
-    await handleApiCall(
-      () =>
-        deleteWebhooks({
-          client: apiClient,
-          body: {
-            webhookId: webhookToDelete.id,
-          },
-        }),
-      {
-        onSuccess: () => {
-          toast.success('Webhook deleted successfully');
-          void reset();
-        },
-        onError: (error: unknown) => {
-          console.error('Failed to delete webhook:', error);
-          toast.error(extractApiErrorMessage(error, 'Failed to delete webhook'));
-        },
-        onFinally: () => {
-          setIsDeleting(false);
-          setWebhookToDelete(null);
-        },
-        errorMessage: 'Failed to delete webhook',
-      },
-    );
+    const response = await deleteWebhookMutation
+      .mutateAsync({ webhookId: webhookToDelete.id })
+      .catch((error: unknown) => {
+        console.error('Failed to delete webhook:', error);
+        return null;
+      });
+    setWebhookToDelete(null);
+    if (response) {
+      toast.success('Webhook deleted successfully');
+      void reset();
+    }
   };
 
   const handleSendTestWebhook = async (webhook: WebhookRecord) => {
     setTestingWebhookId(webhook.id);
 
-    await handleApiCall(
-      () =>
-        postWebhooksTest({
-          client: apiClient,
-          body: {
-            webhookId: webhook.id,
-          },
-        }),
-      {
-        onSuccess: (response) => {
-          const result = (
-            response as {
-              data?: {
-                data?: {
-                  webhookId: string;
-                  success: boolean;
-                  responseCode: number | null;
-                  errorMessage: string | null;
-                  durationMs: number;
-                };
-              };
-            }
-          ).data?.data;
+    const response = await testWebhookMutation
+      .mutateAsync({ webhookId: webhook.id })
+      .catch((error: unknown) => {
+        console.error('Failed to send test webhook:', error);
+        return null;
+      });
+    setTestingWebhookId(null);
+    if (response) {
+      handleTestResult(response);
+    }
+  };
 
-          if (!result) {
-            toast.error('Missing test delivery result');
-            return;
-          }
+  const handleTestResult = (response: Awaited<ReturnType<typeof postWebhooksTest>>) => {
+    const result = (
+      response as {
+        data?: {
+          data?: {
+            webhookId: string;
+            success: boolean;
+            responseCode: number | null;
+            errorMessage: string | null;
+            durationMs: number;
+          };
+        };
+      }
+    ).data?.data;
 
-          if (result.success) {
-            toast.success('Test webhook delivered successfully');
-            void refetch();
-            return;
-          }
+    if (!result) {
+      toast.error('Missing test delivery result');
+      return;
+    }
 
-          toast.error(result.errorMessage || 'Delivery failed');
-        },
-        onError: (error: unknown) => {
-          console.error('Failed to send test webhook:', error);
-          toast.error(extractApiErrorMessage(error, 'Failed to send test webhook'));
-        },
-        onFinally: () => {
-          setTestingWebhookId(null);
-        },
-        errorMessage: 'Failed to send test webhook',
-      },
-    );
+    if (result.success) {
+      toast.success('Test webhook delivered successfully');
+      void refetch();
+      return;
+    }
+
+    toast.error(result.errorMessage || 'Delivery failed');
   };
 
   const renderTable = () => {
