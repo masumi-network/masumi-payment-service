@@ -27,7 +27,7 @@ import {
 } from './schemas';
 import { getPurchasesForQuery, resolvePurchasePaymentSourceTypeFilter } from './queries';
 import { serializePurchasesResponse } from './serializers';
-import { isCardanoPubKeyBaseAddressForNetwork } from '@/types/payment-source';
+import { isCardanoPubKeyAddressForNetwork } from '@/types/payment-source';
 
 export {
 	createPurchaseInitSchemaInput,
@@ -331,12 +331,18 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 			if (isV2) {
 				if (
 					input.buyerReturnAddress != null &&
-					!isCardanoPubKeyBaseAddressForNetwork(input.buyerReturnAddress, input.network)
+					!isCardanoPubKeyAddressForNetwork(input.buyerReturnAddress, input.network)
 				) {
-					throw createHttpError(400, 'buyerReturnAddress must be a Cardano base address with a stake credential');
+					throw createHttpError(
+						400,
+						'buyerReturnAddress must be a Cardano base or enterprise address with a payment key credential',
+					);
 				}
-				if (sellerReturnAddress != null && !isCardanoPubKeyBaseAddressForNetwork(sellerReturnAddress, input.network)) {
-					throw createHttpError(400, 'sellerReturnAddress must be a Cardano base address with a stake credential');
+				if (sellerReturnAddress != null && !isCardanoPubKeyAddressForNetwork(sellerReturnAddress, input.network)) {
+					throw createHttpError(
+						400,
+						'sellerReturnAddress must be a Cardano base or enterprise address with a payment key credential',
+					);
 				}
 			}
 			// V2 contract trap: `address_to_verification_key(seller)` returns None
@@ -346,10 +352,10 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 			// referencing the seller principal would fail and funds locked
 			// against this seller would be permanently unspendable. Reject
 			// before constructing the purchase request.
-			if (isV2 && !isCardanoPubKeyBaseAddressForNetwork(sellerAddress, input.network)) {
+			if (isV2 && !isCardanoPubKeyAddressForNetwork(sellerAddress, input.network)) {
 				throw createHttpError(
 					400,
-					'Seller principal address (resolved from agent NFT holder) must be a Cardano base address with a verification-key payment credential. Script-credential addresses (smart wallets, multisig wrappers) cannot interact with the escrow contract; the seller must move the agent NFT to a verification-key address before purchases can be processed.',
+					'Seller principal address (resolved from agent NFT holder) must be a Cardano base or enterprise address with a verification-key payment credential. Script-credential addresses (smart wallets, multisig wrappers) cannot interact with the escrow contract; the seller must move the agent NFT to a verification-key address before purchases can be processed.',
 				);
 			}
 
