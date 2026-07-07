@@ -18,7 +18,16 @@ import { HydraProvider } from '@/lib/hydra/hydra/provider';
 
 const MASUMI_ADDR = process.argv[2];
 const AMOUNT = process.argv[3] ?? '60000000';
-const ALICE_FUNDS_SK = '/devnet/credentials/alice-funds.sk';
+const NETWORK = process.env.HYDRA_FLOW_NETWORK ?? 'devnet';
+const ALICE_FUNDS_SK = NETWORK === 'preprod' ? '/keys/purchasing-cardano.sk' : '/devnet/credentials/alice-funds.sk';
+
+function derivePurchasingAddr(): string {
+	const preprodDir = join(process.cwd(), 'hydra-l2-flow', 'preprod');
+	return execSync(
+		`docker run --rm -v ${JSON.stringify(preprodDir)}:/keys --entrypoint cardano-cli ghcr.io/intersectmbo/cardano-node:10.6.2 address build --payment-verification-key-file /keys/purchasing-cardano.vk --testnet-magic 1`,
+		{ encoding: 'utf-8' },
+	).trim();
+}
 
 function log(m: string) {
 	console.log(`[fund-in-head] ${new Date().toISOString().slice(11, 19)} ${m}`);
@@ -29,6 +38,15 @@ function signWithCardanoCli(cborHex: string, credKeyPath: string): string {
 	const tmpOut = join(tmpdir(), `l2-signed-${Date.now()}.tx`);
 	writeFileSync(tmpIn, JSON.stringify({ type: 'Tx ConwayEra', description: '', cborHex }));
 	try {
+		if (NETWORK === 'preprod') {
+			const preprodDir = join(process.cwd(), 'hydra-l2-flow', 'preprod');
+			const signedJson = execSync(
+				`docker run --rm -i -v ${JSON.stringify(preprodDir)}:/keys --entrypoint sh ghcr.io/intersectmbo/cardano-node:10.6.2 -c ` +
+					JSON.stringify(`cat > /tmp/d.tx && cardano-cli conway transaction sign --tx-file /tmp/d.tx --signing-key-file ${credKeyPath} --testnet-magic 1 --out-file /tmp/s.tx && cat /tmp/s.tx`),
+				{ input: readFileSync(tmpIn, 'utf-8'), encoding: 'utf-8' },
+			);
+			return (JSON.parse(signedJson) as { cborHex: string }).cborHex;
+		}
 		const id = Date.now();
 		execSync(`docker cp "${tmpIn}" demo-cardano-node-1:/tmp/d-${id}.tx`, { stdio: 'pipe' });
 		execSync(
@@ -67,9 +85,9 @@ async function main() {
 		const ada = u.output.amount.find((a) => a.unit === 'lovelace')?.quantity;
 		log(`  ${u.input.txHash.slice(0, 12)}…#${u.input.outputIndex} ${u.output.address.slice(0, 22)}… ${ada}`);
 	}
-	// Pick the largest pure-ADA UTxO owned by alice-funds as the funding source.
+	// Pick the largest pure-ADA UTxO owned by alice-funds (devnet) or purchasing (preprod) as the funding source.
 	// Exclude datum-bearing (script) outputs — they can't be key-signed.
-	const ALICE_FUNDS_ADDR = 'addr_test1vp5cxztpc6hep9ds7fjgmle3l225tk8ske3rmwr9adu0m6qchmx5z';
+	const ALICE_FUNDS_ADDR = NETWORK === 'preprod' ? derivePurchasingAddr() : 'addr_test1vp5cxztpc6hep9ds7fjgmle3l225tk8ske3rmwr9adu0m6qchmx5z';
 	const source = [...utxos]
 		.filter(
 			(u) =>

@@ -294,14 +294,35 @@ async function generateMasumiSmartContractInteractionTransactionCustomFee(
 		)
 		.txInScript(script.code) // ,script.version)
 		.txInRedeemerValue(redeemerData, 'Mesh', exUnits)
-		.txInInlineDatumPresent()
-		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
+		.txInInlineDatumPresent();
+
+	// On a Hydra head, mesh must NOT try to resolve an input via
+	// fetcher.fetchUTxOs(txHash): in-head UTxOs are head-only and the per-tx query
+	// path stalls the build (see l2-lock.ts). Supply the collateral + wallet inputs
+	// with full amount + address (+ scriptSize 0) so each input is self-complete
+	// and no fetch is attempted. On L1 the 2-arg form is fine (Blockfrost resolves).
+	if (isHydra) {
+		txBuilder.txInCollateral(
+			collateralUtxo.input.txHash,
+			collateralUtxo.input.outputIndex,
+			collateralUtxo.output.amount,
+			collateralUtxo.output.address,
+		);
+	} else {
+		txBuilder.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex);
+	}
+
+	txBuilder
 		.setTotalCollateral('3000000')
 		.txOut(smartContractAddress, outputAmount)
 		.txOutInlineDatumValue(newInlineDatum);
 
 	for (const utxo of walletUtxos) {
-		txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
+		if (isHydra) {
+			txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex, utxo.output.amount, utxo.output.address, 0);
+		} else {
+			txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
+		}
 	}
 
 	// Optional self-send splitter for V2 single-item callers. See docstring
@@ -515,10 +536,23 @@ async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 		)
 		.txInScript(script.code) // ,script.version)
 		.txInRedeemerValue(redeemerData, 'Mesh', exUnits)
-		.txInInlineDatumPresent()
-		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
-		.setTotalCollateral('3000000')
-		.txOut(collection.collectionAddress, collection.collectAssets);
+		.txInInlineDatumPresent();
+
+	// Hydra head: supply collateral + wallet inputs with full info so mesh never
+	// resolves them via fetchUTxOs(txHash) (head-only UTxOs stall the build — see
+	// l2-lock.ts). On L1 the 2-arg form is fine (Blockfrost resolves).
+	if (isHydra) {
+		txBuilder.txInCollateral(
+			collateralUtxo.input.txHash,
+			collateralUtxo.input.outputIndex,
+			collateralUtxo.output.amount,
+			collateralUtxo.output.address,
+		);
+	} else {
+		txBuilder.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex);
+	}
+
+	txBuilder.setTotalCollateral('3000000').txOut(collection.collectionAddress, collection.collectAssets);
 
 	if (tagMainOutputAsOwnRef) {
 		txBuilder.txOutInlineDatumValue(
@@ -527,7 +561,11 @@ async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 	}
 
 	for (const utxo of walletUtxos) {
-		txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
+		if (isHydra) {
+			txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex, utxo.output.amount, utxo.output.address, 0);
+		} else {
+			txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
+		}
 	}
 
 	if (fee) {

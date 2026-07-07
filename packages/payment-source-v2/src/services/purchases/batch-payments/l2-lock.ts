@@ -12,8 +12,8 @@
  *     execution, so there is no cost-model / script-data-hash concern.
  *
  * Mesh pinning (ADR-0005): this file is in the V2 package and imports
- * `@meshsdk/core` → **beta.102**. The (root, beta.96) `HydraProvider` is bridged
- * into the 102 type surface via `asV2Provider` — same pattern as the
+ * `@meshsdk/core` → **beta.103**. The (root, beta.96) `HydraProvider` is bridged
+ * into the 103 type surface via `asV2Provider` — same pattern as the
  * `submit-result` L2 reference. The lock wallet is constructed bound to the head
  * provider so coin-selection draws from the buyer's IN-HEAD UTxOs (committed via
  * the head `commit` lifecycle), not L1.
@@ -21,7 +21,7 @@
  * Requires a funded open head. In-head acceptance was validated on a Hydra
  * devnet with committed funds (see docs/hydra-l2-devnet-findings.md).
  */
-import { MeshWallet, Transaction } from '@meshsdk/core';
+import { MeshTxBuilder, MeshWallet } from '@meshsdk/core';
 import {
 	HotWalletType,
 	PaymentSourceType,
@@ -37,6 +37,7 @@ import { resolveUsableHydraHeadForPurchase } from '@/utils/hydra/resolve-hydra-h
 import { asV2Provider } from '../../provider-cast';
 import { createDatumFromBlockchainIdentifierV2 } from '@masumi/payment-source-v2';
 import { buildL2LockDatumParams, mapPaidFundsToAssets, resolveL2BuyerReturnAddress } from './l2-lock-helpers';
+import { WALLET_SPLITTER_LOVELACE } from '../../../builders/batch-helpers';
 import { convertNetwork, convertNetworkToId } from '@/utils/converter/network-convert';
 import { decrypt } from '@/utils/security/encryption';
 import { connectPreviousAction, createNextPurchaseAction } from '@/services/shared';
@@ -131,29 +132,106 @@ async function executeL2Lock(
 		}),
 	);
 
-	// isHydra: true → head protocol params, no L1 fee/validity-window handling.
-	// No invalidBefore/invalidHereafter on L2 (matches 6b58c22e): head txs are
-	// not subject to L1 slot validity windows.
-	const unsignedTx = new Transaction({
-		initiator: wallet,
-		fetcher: hydraV2Provider,
-		isHydra: true,
-	}).setMetadata(674, {
-		msg: ['Masumi', 'PaymentBatched'],
-	});
+	// Build the in-head lock on MeshTxBuilder with EXPLICIT inputs, mirroring the
+	// proven 02-fund-in-head transfer (which completes on this exact head).
+	//
+	// We deliberately do NOT use selectUtxosFrom / automatic coin selection: when
+	// mesh's selector adds an input it re-resolves the UTxO via
+	// fetcher.fetchUTxOs(txHash) (MeshTxBuilder.getUTxOInfo). The Hydra provider
+	// serves only full head snapshots, not per-tx UTxO queries, so that call never
+	// returns and complete() stalls — the exact hang seen with both the legacy
+	// `Transaction` class and selectUtxosFrom. Supplying each input's amount +
+	// address up front keeps complete() fully offline. The lock is a script OUTPUT
+	// with an inline datum and NO script execution → no redeemer, no collateral,
+	// no script_data_hash, so no evaluation is needed.
+	const getLovelace = (u: { output: { amount: Array<{ unit: string; quantity: string }> } }): bigint =>
+		BigInt(u.output.amount.find((a) => a.unit === 'lovelace' || a.unit === '')?.quantity ?? '0');
 
-	unsignedTx.sendAssets(
-		{ address: paymentContract.smartContractAddress, datum },
-		mapPaidFundsToAssets(request.PaidFunds),
+	const walletUtxos = await wallet.getUtxos();
+	// Pure-ADA, non-script in-head UTxOs owned by the buyer fund the lock. Largest
+	// first so the fewest inputs cover the target.
+	const fundingUtxos = walletUtxos
+		.filter((u) => !u.output.plutusData && u.output.amount.every((a) => a.unit === 'lovelace' || a.unit === ''))
+		.sort((a, b) => Number(getLovelace(b) - getLovelace(a)));
+	if (fundingUtxos.length === 0) {
+		throw new Error('buyer wallet has no pure-ADA in-head UTxOs to fund the lock');
+	}
+
+	const lockLovelace = request.PaidFunds.reduce(
+		(sum, f) => sum + (f.unit === '' || f.unit.toLowerCase() === 'lovelace' ? f.amount : 0n),
+		0n,
 	);
-	unsignedTx.setNetwork(convertNetwork(paymentContract.network));
+	// Cover: lock value + the splitter self-send + a min-UTxO change floor. With a
+	// zero fee, change = selected − (lock + splitter).
+	const MIN_CHANGE_LOVELACE = 1_000_000n;
+	const targetLovelace = lockLovelace + WALLET_SPLITTER_LOVELACE + MIN_CHANGE_LOVELACE;
+	const selected: typeof fundingUtxos = [];
+	let selectedLovelace = 0n;
+	for (const u of fundingUtxos) {
+		selected.push(u);
+		selectedLovelace += getLovelace(u);
+		if (selectedLovelace >= targetLovelace) break;
+	}
+	if (selectedLovelace < targetLovelace) {
+		throw new Error(
+			`insufficient in-head ADA to lock: have ${selectedLovelace.toString()}, need ${targetLovelace.toString()}`,
+		);
+	}
 
-	const completeTx = await unsignedTx.build();
+	// isHydra zeroes the fee params; setFee('0') keeps the in-head value conserved
+	// exactly. A non-zero fee skims value from the head on every op (fees are not
+	// redistributed in-head), accumulating into the head's headAdaOverhead until
+	// Close fails the strict-equality check (H65, ChangedHeadAdaOverhead).
+	const txBuilder = new MeshTxBuilder({ fetcher: hydraV2Provider, isHydra: true });
+	for (const u of selected) {
+		// The 5th arg (scriptSize = 0) is ESSENTIAL on a Hydra head. Without it mesh
+		// marks the input "incomplete" (isInputInfoComplete requires scriptSize to be
+		// defined) and during complete() resolves it via fetcher.fetchUTxOs(txHash).
+		// The buyer's in-head UTxOs were created by an L2-native tx whose hash exists
+		// ONLY inside the head — a per-tx query the Hydra provider cannot answer, so
+		// the build hangs forever. Passing scriptSize makes the input self-complete
+		// (these are pure pubkey UTxOs, no script ref) so mesh never queries.
+		txBuilder.txIn(u.input.txHash, u.input.outputIndex, u.output.amount, u.output.address, 0);
+	}
+	// Script OUTPUT with the FundsLocked inline datum (matches the spend builders'
+	// txInInlineDatumPresent()). `datum` is { value, inline } from getDatumV2;
+	// txOutInlineDatumValue takes the Mesh Data value. The splitter self-send keeps
+	// the buyer wallet at >=2 in-head UTxOs after the lock so the eventual
+	// collect-refund / authorize-withdrawal script spend has a separate collateral
+	// input. No invalidBefore/invalidHereafter on L2 (matches 6b58c22e): head txs
+	// are not subject to L1 slot validity windows.
+	txBuilder
+		.txOut(paymentContract.smartContractAddress, mapPaidFundsToAssets(request.PaidFunds))
+		.txOutInlineDatumValue(datum.value)
+		.txOut(buyerAddress, [{ unit: 'lovelace', quantity: WALLET_SPLITTER_LOVELACE.toString() }])
+		.setFee('0')
+		.changeAddress(buyerAddress)
+		.setNetwork(convertNetwork(paymentContract.network))
+		.metadataValue(674, { msg: ['Masumi', 'PaymentBatched'] });
+
+	const tBuild = Date.now();
+	await txBuilder.complete();
+	const buildMs = Date.now() - tBuild;
+	const completeTx = txBuilder.txHex;
+
+	const tSign = Date.now();
 	const signedTx = await wallet.signTx(completeTx);
+	const signMs = Date.now() - tSign;
+
 	// Synchronous submit to the head (TxValid / TxInvalid). No reconciliation
 	// window: a throw means the tx did not enter the head, so the request stays
 	// FundsLockingRequested for the next tick.
+	const tSubmit = Date.now();
 	const txHash = await hydraProvider.submitTx(signedTx);
+	const submitMs = Date.now() - tSubmit;
+
+	logger.info('L2 lock tx timing', {
+		purchaseRequestId: request.id,
+		hydraHeadId,
+		buildMs,
+		signMs,
+		submitMs,
+	});
 
 	await prisma.$transaction(async (tx) => {
 		const l2Transaction = await tx.transaction.create({

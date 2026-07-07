@@ -23,11 +23,15 @@
 #   node3/carol : api 127.0.0.1:4003  etcd 127.0.0.1:5003  monitoring 6003
 #
 # Usage:
-#   ./hydra-native.sh up      # bridge + 3 native nodes (publish-scripts first if needed)
-#   ./hydra-native.sh down    # stop nodes + bridge
-#   ./hydra-native.sh status  # show node/bridge/API state
-#   ./hydra-native.sh publish # (re)publish 2.2.0 reference scripts natively -> $DEMO/.env
-#   ./hydra-native.sh bin     # ensure native binary is present (download if missing)
+#   ./hydra-native.sh up        # bridge + 3 native nodes (publish-scripts first if needed)
+#   ./hydra-native.sh down      # stop nodes + bridge
+#   ./hydra-native.sh restart   # down + up, persistence intact (preprod: re-runs the
+#                               # Blockfrost catch-up burst → drift collapses to ~0)
+#   ./hydra-native.sh wait-sync # block until node drift < DRIFT_TARGET (default 60s)
+#   ./hydra-native.sh drift [n] # print node n's current drift in seconds (default node 1)
+#   ./hydra-native.sh status    # show node/bridge/API state
+#   ./hydra-native.sh publish   # (re)publish 2.2.0 reference scripts natively -> $DEMO/.env
+#   ./hydra-native.sh bin       # ensure native binary is present (download if missing)
 #
 set -uo pipefail
 
@@ -42,6 +46,9 @@ HYDRA_VERSION="${HYDRA_VERSION:-2.2.0}"
 # assets exist; the binaries are published as workflow artifacts).
 HYDRA_BIN_RUN_ID="${HYDRA_BIN_RUN_ID:-27418396480}"
 HYDRA_BIN_ARTIFACT="${HYDRA_BIN_ARTIFACT:-hydra-aarch64-darwin-${HYDRA_VERSION}}"
+
+NETWORK="${NETWORK:-devnet}"   # devnet | preprod
+PREPROD_DIR="${PREPROD_DIR:-$REPO/hydra-l2-flow/preprod}"
 
 BIN_DIR="${BIN_DIR:-$REPO/hydra-l2-flow/.bin}"
 NATIVE_BIN="${NATIVE_BIN:-$BIN_DIR/hydra-node}"
@@ -197,8 +204,58 @@ start_node(){
   )
 }
 
+# preprod: 2 parties, blockfrost backend, no socket/bridge/$DEMO
+start_node_preprod(){
+  local idx="$1" party="$2"
+  local api=$((4000 + idx)) p2p=$((5000 + idx)) mon=$((6000 + idx))
+  local other=$(( idx == 1 ? 2 : 1 ))
+  local persist="$PREPROD_DIR/persistence/$party"
+  mkdir -p "$persist"
+  local other_vk; other_vk="$([ "$idx" = 1 ] && echo selling-hydra.vk || echo purchasing-hydra.vk)"
+  local other_cvk; other_cvk="$([ "$idx" = 1 ] && echo selling-cardano.vk || echo purchasing-cardano.vk)"
+  ( "$NATIVE_BIN" \
+      --node-id "$idx" \
+      --api-host 127.0.0.1 --api-port "$api" \
+      --listen "127.0.0.1:$p2p" --monitoring-port "$mon" \
+      --peer "127.0.0.1:$((5000 + other))" \
+      --network preprod \
+      --hydra-signing-key "$PREPROD_DIR/$party-hydra.sk" \
+      --hydra-verification-key "$PREPROD_DIR/$other_vk" \
+      --cardano-signing-key "$PREPROD_DIR/$party-cardano.sk" \
+      --cardano-verification-key "$PREPROD_DIR/$other_cvk" \
+      --ledger-protocol-parameters "$PREPROD_DIR/protocol-parameters.json" \
+      --blockfrost "$PREPROD_DIR/blockfrost.txt" \
+      --blockfrost-query-timeout "${BLOCKFROST_QUERY_TIMEOUT:-10}" \
+      --persistence-dir "$persist" \
+      --contestation-period "${CONTESTATION_PERIOD:-220s}" \
+      --deposit-period "${DEPOSIT_PERIOD:-300s}" \
+      --unsynced-period "${UNSYNCED_PERIOD:-1800s}" \
+      ${START_CHAIN_FROM:+--start-chain-from "${START_CHAIN_FROM//\//.}"} \
+      >>"$STATE/node$idx.log" 2>&1 ) &
+  echo $! > "$STATE/node$idx.pid"
+}
+
 nodes_up(){
   ensure_bin
+  if [ "$NETWORK" = preprod ]; then
+    for f in blockfrost.txt protocol-parameters.json purchasing-cardano.sk purchasing-hydra.sk selling-cardano.sk selling-hydra.sk; do
+      [ -f "$PREPROD_DIR/$f" ] || { c_red "missing $PREPROD_DIR/$f — run hydra-l2-flow/gen-preprod-keys.sh first"; exit 1; }
+    done
+    c_blu "Starting 2 native hydra-nodes on preprod (blockfrost)…"
+    start_node_preprod 1 purchasing
+    sleep 8
+    start_node_preprod 2 selling
+    c_blu "Waiting for node APIs (preprod chain sync can take longer than devnet)…"
+    local ok=0
+    for _ in $(seq 1 120); do
+      if curl -s "http://127.0.0.1:4001/protocol-parameters" >/dev/null 2>&1 \
+         && curl -s "http://127.0.0.1:4002/protocol-parameters" >/dev/null 2>&1; then ok=1; break; fi
+      sleep 1
+    done
+    [ "$ok" = 1 ] && c_grn "  both node APIs up (4001/4002)" || { c_red "  node APIs did not come up — see $STATE/node1.log / node2.log"; exit 1; }
+    return
+  fi
+
   [ -f "$DEMO/.env" ] || publish
   SCRIPTS_TX_ID="$(sed -n 's/^HYDRA_SCRIPTS_TX_ID=//p' "$DEMO/.env" | tr -d '[:space:]')"
   [ -n "$SCRIPTS_TX_ID" ] || { c_red "no HYDRA_SCRIPTS_TX_ID in $DEMO/.env (run: $0 publish)"; exit 1; }
@@ -236,11 +293,112 @@ nodes_up(){
 }
 
 nodes_down(){
-  for i in 1 2 3; do
+  local max=3; [ "$NETWORK" = preprod ] && max=2
+  for i in $(seq 1 $max); do
     if [ -f "$STATE/node$i.pid" ]; then kill "$(cat "$STATE/node$i.pid")" 2>/dev/null; rm -f "$STATE/node$i.pid"; fi
   done
-  # also sweep any stragglers bound to our ports
   pkill -f "$NATIVE_BIN --node-id" 2>/dev/null
+}
+
+# ── drift / wait-sync / restart (preprod, blockfrost) ────────────────────────
+# Hydra 2.2.0's Blockfrost chain-follower has two modes (Hydra/Chain/Blockfrost.hs):
+# a startup CATCH-UP loop that fetches blocks back-to-back at full API speed, and
+# a steady-state POLL loop that sleeps one block-time (~20s on preprod) and then
+# processes exactly ONE block. The poll loop therefore loses the per-block API
+# latency (~17s/min measured) and can NEVER recover — but a node restart re-runs
+# the catch-up loop and collapses drift to ~0 in a minute or two. These commands
+# expose that as an operational lever: restart → wait-sync → act.
+
+# node_drift <logfile> → seconds between now and the node's latest Tick chainTime
+# (its observed L1 time). Prints 999999 when no Tick is found (e.g. right after
+# a restart, before the first block is applied) so callers treat it as "behind".
+node_drift(){
+  python3 - "$1" <<'PY'
+import sys, re, datetime
+tick = None
+try:
+    with open(sys.argv[1], 'rb') as f:
+        f.seek(0, 2); size = f.tell()
+        # Busy escrow steps can flood megabytes of log between Ticks, so scan
+        # backwards in growing windows until one is found (or the file starts).
+        for window in (200_000, 2_000_000, 20_000_000, size):
+            f.seek(max(0, size - window))
+            for line in f.read().decode('utf-8', 'replace').splitlines():
+                if '"Tick"' in line:
+                    m = re.search(r'"chainTime":"([^"]+)"', line)
+                    if m: tick = m.group(1)
+            if tick is not None or window >= size:
+                break
+except OSError:
+    pass
+if tick is None:
+    print(999999); sys.exit(0)
+t = tick.rstrip('Z')
+if '.' in t:
+    head, frac = t.split('.', 1); t = f"{head}.{(frac + '000000')[:6]}"
+else:
+    t += '.000000'
+chain = datetime.datetime.fromisoformat(t).replace(tzinfo=datetime.timezone.utc)
+now = datetime.datetime.now(datetime.timezone.utc)
+print(int((now - chain).total_seconds()))
+PY
+}
+
+# Block until every preprod node's drift < DRIFT_TARGET (default 60s) or
+# WAIT_SYNC_TIMEOUT (default 900s) elapses. No-op on devnet (no drift there).
+wait_sync(){
+  [ "$NETWORK" = preprod ] || { c_grn "wait-sync: devnet has no Blockfrost drift — nothing to wait for"; return 0; }
+  # 180s default: the post-catch-up steady state oscillates 90-160s (each new
+  # block resets drift to ~latency, then the one-block-per-poll loop bleeds
+  # ~20s/cycle until the next block lands) — demanding less just flaps. 180s is
+  # still far under the 600s unsynced gate, and the Close tx's validity is
+  # anchored to a FRESH Blockfrost tip query, so it doesn't depend on drift.
+  local target="${DRIFT_TARGET:-180}" timeout="${WAIT_SYNC_TIMEOUT:-900}" waited=0
+  c_blu "waiting for node drift < ${target}s (timeout ${timeout}s)…"
+  while :; do
+    local worst=0 i d
+    for i in 1 2; do
+      d="$(node_drift "$STATE/node$i.log")"
+      [ "$d" -gt "$worst" ] && worst="$d"
+    done
+    if [ "$worst" -lt "$target" ]; then c_grn "  in sync (worst drift ${worst}s)"; return 0; fi
+    if [ "$waited" -ge "$timeout" ]; then c_red "  wait-sync timed out (worst drift still ${worst}s)"; return 1; fi
+    echo "  worst drift ${worst}s — catching up…"
+    sleep 10; waited=$((waited+10))
+  done
+}
+
+# Restart the nodes in place (persistence intact → the open head survives; the
+# restarted follower re-runs its catch-up burst).
+nodes_restart(){
+  local try
+  for try in 1 2 3; do
+    nodes_down
+    # Wait for the old processes to actually die and their ports (api/etcd) to
+    # be released — a 5s flat sleep proved too short (2026-07-02: restart #1
+    # silently failed to bind, leaving 17 min of dead air until the next guard).
+    local waited=0
+    while pgrep -f "$NATIVE_BIN --node-id" >/dev/null 2>&1 && [ "$waited" -lt 30 ]; do
+      sleep 2; waited=$((waited+2))
+    done
+    sleep 5
+    if ! nodes_up; then
+      c_red "  restart try $try: nodes_up failed — retrying"
+      continue
+    fi
+    # Verify the fresh nodes are actually WRITING (API up alone is not enough —
+    # a wedged chain layer serves /protocol-parameters but never ticks).
+    local lines0; lines0="$(wc -l < "$STATE/node1.log" 2>/dev/null || echo 0)"
+    sleep 20
+    local lines1; lines1="$(wc -l < "$STATE/node1.log" 2>/dev/null || echo 0)"
+    if [ "$((lines1 - lines0))" -ge 3 ]; then
+      c_grn "  restart verified (node1 log advancing)"
+      return 0
+    fi
+    c_red "  restart try $try: node1 log silent after 20s — retrying"
+  done
+  c_red "  restart FAILED after 3 tries"
+  return 1
 }
 
 status(){
@@ -254,13 +412,18 @@ status(){
   done
 }
 
-[ -d "$DEMO" ] || { c_red "hydra demo dir not found (set HYDRA_DEMO_DIR): $DEMO"; exit 1; }
+if [ "$NETWORK" = devnet ]; then
+  [ -d "$DEMO" ] || { c_red "hydra demo dir not found (set HYDRA_DEMO_DIR): $DEMO"; exit 1; }
+fi
 
 case "${1:-}" in
-  bin)     ensure_bin ;;
-  publish) publish ;;
-  up)      nodes_up ;;
-  down)    nodes_down; bridge_down; c_grn "native hydra layer down" ;;
-  status)  status ;;
-  *) echo "usage: $0 {up|down|status|publish|bin}"; exit 1 ;;
+  bin)       ensure_bin ;;
+  publish)   publish ;;
+  up)        nodes_up ;;
+  down)      nodes_down; [ "$NETWORK" = devnet ] && bridge_down; c_grn "native hydra layer down" ;;
+  restart)   nodes_restart ;;
+  wait-sync) wait_sync ;;
+  drift)     node_drift "$STATE/node${2:-1}.log" ;;
+  status)    status ;;
+  *) echo "usage: $0 {up|down|restart|wait-sync|drift [n]|status|publish|bin}"; exit 1 ;;
 esac

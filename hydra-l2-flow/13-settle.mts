@@ -16,10 +16,15 @@ import { HydraHeadStatus } from '@/generated/prisma/client';
 
 const NODE1 = process.env.NODE1 ?? 'http://127.0.0.1:4001';
 const NATIVE_LOG = process.env.NATIVE_LOG ?? '';
+const NETWORK = process.env.HYDRA_FLOW_NETWORK ?? 'devnet';
 // Settlement facts are written as machine-readable state; build-evidence.cjs folds
 // them into the combined EVIDENCE.md so escrow proof + settlement live in one file.
 const STATE_FILE = process.env.SETTLEMENT_STATE ?? 'hydra-l2-flow/.native-state/settlement.json';
-const FANOUT_WAIT_MS = 30000; // contestation is 3s; 30s covers it with wide margin
+// Must exceed the node's --contestation-period (devnet 3s; preprod 220s, see
+// hydra-native.sh) before ReadyToFanout is reached, plus margin for the node's own
+// observed chain-time to catch up to the deadline. A value tuned for devnet's 3s CP
+// (previously a flat 30s) unconditionally times out on preprod's much longer CP.
+const FANOUT_WAIT_MS = Number(process.env.FANOUT_WAIT_MS ?? (NETWORK === 'preprod' ? 300000 : 30000));
 
 function log(m: string): void {
 	console.log(`[settle] ${new Date().toISOString().slice(11, 19)} ${m}`);
@@ -104,7 +109,7 @@ async function main(): Promise<void> {
 	const state = {
 		generated: new Date().toISOString(),
 		node: NODE1,
-		network: 'local devnet (testnet-magic 42)',
+		network: process.env.HYDRA_FLOW_NETWORK === 'preprod' ? 'Cardano preprod (blockfrost)' : 'local devnet (testnet-magic 42)',
 		preCloseUtxoCount: pre.length,
 		totalLovelaceSettled: totalLovelace.toString(),
 		closeTx: closeTx || null,

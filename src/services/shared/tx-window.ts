@@ -65,9 +65,18 @@ export function createTxWindow(
 	const defaultInvalidAfter = unixTimeToEnclosingSlot(nowMs + afterBufferMs, slotConfig) + validitySlotBuffer;
 
 	if (constrainAfterMsNum == null) {
+		// When `constrainBeforeMs` pushes the lower bound forward (e.g. a
+		// cooldown that expires just ahead of `nowMs`), the default upper bound
+		// can land only a handful of slots above it — a window the validating
+		// node's clock may never observe (seen on a Hydra head lagging its L1:
+		// [127319734, 127319738] = 4 slots → OutsideValidityIntervalUTxO).
+		// No `constrainAfterMs` means no contract constraint on the upper
+		// bound, so widening it is always safe: keep at least the default
+		// buffer's width above `invalidBefore`.
+		const minWindowSlots = validitySlotBuffer + Math.ceil((beforeBufferMs + afterBufferMs) / 1000);
 		return {
 			invalidBefore,
-			invalidAfter: defaultInvalidAfter,
+			invalidAfter: Math.max(defaultInvalidAfter, invalidBefore + minWindowSlots),
 		};
 	}
 
