@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/dialog';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { formatX402Amount, handleApiCall } from '@/lib/utils';
+import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import { getX402WalletsBalance, postX402WalletsUpdate, X402Wallet } from '@/lib/api/generated';
 
 export function WalletBalanceDialog({
@@ -135,27 +136,23 @@ export function EditWalletNoteDialog({
 }) {
   const { apiClient } = useAppContext();
   const [note, setNote] = useState(wallet?.note ?? '');
-  const [isSaving, setIsSaving] = useState(false);
+
+  const updateWallet = useApiMutation({
+    mutationFn: (body: { id: string; note: string | null }) =>
+      postX402WalletsUpdate({ client: apiClient, body }),
+    errorMessage: 'Failed to update wallet',
+  });
+  const isSaving = updateWallet.isPending;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!wallet) return;
-    setIsSaving(true);
-    await handleApiCall(
-      () =>
-        postX402WalletsUpdate({
-          client: apiClient,
-          body: { id: wallet.id, note: note.trim() === '' ? null : note.trim() },
-        }),
-      {
-        onSuccess: () => {
-          toast.success('Wallet updated');
-          onSaved();
-        },
-        onFinally: () => setIsSaving(false),
-        errorMessage: 'Failed to update wallet',
-      },
-    );
+    const response = await updateWallet
+      .mutateAsync({ id: wallet.id, note: note.trim() === '' ? null : note.trim() })
+      .catch(() => null);
+    if (!response) return;
+    toast.success('Wallet updated');
+    onSaved();
   };
 
   return (

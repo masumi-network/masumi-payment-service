@@ -1,14 +1,7 @@
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  cn,
-  shortenAddress,
-  handleApiCall,
-  formatFundUnit,
-  formatAssetAmount,
-  getExplorerUrl,
-} from '@/lib/utils';
+import { cn, shortenAddress, formatFundUnit, formatAssetAmount, getExplorerUrl } from '@/lib/utils';
 import { WalletLink } from '@/components/ui/wallet-link';
 import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/WalletDetailsDialog';
 import { CopyButton } from '@/components/ui/copy-button';
@@ -24,13 +17,13 @@ import { Link2, RotateCcw, ShieldCheck, Trash2 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { RegisterAIAgentDialog } from './RegisterAIAgentDialog';
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { toast } from 'react-toastify';
 import { Tabs } from '@/components/ui/tabs';
 import { AgentEarningsOverview } from './AgentEarningsOverview';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
-import { extractApiErrorMessage } from '@/lib/api-error';
 import { lookupWalletByVkey } from '@/lib/wallet-lookup';
 import { useMemo } from 'react';
 import { VerifyAndPublishAgentDialog } from './VerifyAndPublishAgentDialog';
@@ -61,7 +54,22 @@ export function AIAgentDetailsDialog({
 }: AIAgentDetailsDialogProps) {
   const { apiClient, selectedPaymentSourceId, network } = useAppContext();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
+
+  const deleteAgent = useApiMutation({
+    mutationFn: (body: { id: string }) => deleteRegistry({ client: apiClient, body }),
+    errorMessage: 'Failed to delete AI agent',
+  });
+  const deregisterAgent = useApiMutation({
+    mutationFn: (body: {
+      agentIdentifier: string;
+      network: typeof network;
+      smartContractAddress: string;
+    }) => postRegistryDeregister({ client: apiClient, body }),
+    errorMessage: 'Failed to deregister AI agent',
+  });
+  const { mutateAsync: deleteAgentAsync } = deleteAgent;
+  const { mutateAsync: deregisterAgentAsync } = deregisterAgent;
+  const isDeleting = deleteAgent.isPending || deregisterAgent.isPending;
   const [isPurchaseDialogOpen] = useState(false);
   const [isVerifyDialogOpen, setIsVerifyDialogOpen] = useState(false);
   // Re-register (deregistered agents only): confirm the new-identifier caveat,
@@ -131,31 +139,13 @@ export function AIAgentDetailsDialog({
     isDeletingRef.current = true;
     try {
       if (isDbDeletableAgentState(agent.state)) {
-        setIsDeleting(true);
-        await handleApiCall(
-          () =>
-            deleteRegistry({
-              client: apiClient,
-              body: {
-                id: agent.id,
-              },
-            }),
-          {
-            onSuccess: () => {
-              toast.success('AI agent deleted from the database successfully');
-              onClose();
-              onSuccess?.();
-            },
-            onError: (error: unknown) => {
-              toast.error(extractApiErrorMessage(error, 'Failed to delete AI agent'));
-            },
-            onFinally: () => {
-              setIsDeleting(false);
-              setIsDeleteDialogOpen(false);
-            },
-            errorMessage: 'Failed to delete AI agent',
-          },
-        );
+        const response = await deleteAgentAsync({ id: agent.id }).catch(() => null);
+        setIsDeleteDialogOpen(false);
+        if (response) {
+          toast.success('AI agent deleted from the database successfully');
+          onClose();
+          onSuccess?.();
+        }
       } else if (isDeregisterableAgentState(agent.state)) {
         if (!agent.agentIdentifier) {
           toast.error('Cannot delete agent: Missing identifier');
@@ -168,35 +158,17 @@ export function AIAgentDetailsDialog({
           toast.error('Cannot delete agent: Missing payment source');
           return;
         }
-        // Only set after every early-return guard above — bailing out with
-        // isDeleting stuck true would disable both dialog buttons forever.
-        setIsDeleting(true);
-        await handleApiCall(
-          () =>
-            postRegistryDeregister({
-              client: apiClient,
-              body: {
-                agentIdentifier: agent.agentIdentifier!,
-                network: network,
-                smartContractAddress: selectedPaymentSource.smartContractAddress,
-              },
-            }),
-          {
-            onSuccess: () => {
-              toast.success('AI agent deregistration initiated successfully');
-              onClose();
-              onSuccess?.();
-            },
-            onError: (error: unknown) => {
-              toast.error(extractApiErrorMessage(error, 'Failed to deregister AI agent'));
-            },
-            onFinally: () => {
-              setIsDeleting(false);
-              setIsDeleteDialogOpen(false);
-            },
-            errorMessage: 'Failed to deregister AI agent',
-          },
-        );
+        const response = await deregisterAgentAsync({
+          agentIdentifier: agent.agentIdentifier!,
+          network: network,
+          smartContractAddress: selectedPaymentSource.smartContractAddress,
+        }).catch(() => null);
+        setIsDeleteDialogOpen(false);
+        if (response) {
+          toast.success('AI agent deregistration initiated successfully');
+          onClose();
+          onSuccess?.();
+        }
       } else {
         toast.error(
           'Cannot delete agent: Agent is not in a deletable state, please wait until pending states have been resolved',
@@ -207,7 +179,8 @@ export function AIAgentDetailsDialog({
     }
   }, [
     agent,
-    apiClient,
+    deleteAgentAsync,
+    deregisterAgentAsync,
     onClose,
     onSuccess,
     currentNetworkPaymentSources,

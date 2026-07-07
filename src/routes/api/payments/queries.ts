@@ -2,6 +2,7 @@ import { prisma } from '@masumi/payment-core/db';
 import { z } from '@masumi/payment-core/zod';
 import { AuthContext } from '@masumi/payment-core/auth';
 import {
+	cursorPaginationArgs,
 	parseAmountSearchRange,
 	buildMatchingStates,
 	buildNeedsManualActionFilter,
@@ -42,12 +43,7 @@ export async function getPaymentsForQuery(input: PaymentListQueryInput, walletSc
 			...buildTransactionSearchFilter(searchLower, matchingStates, amountFilter, 'RequestedFunds'),
 		},
 		orderBy: { createdAt: 'desc' },
-		cursor: input.cursorId
-			? {
-					id: input.cursorId,
-				}
-			: undefined,
-		take: input.limit,
+		...cursorPaginationArgs(input.cursorId, input.limit),
 		include: {
 			BuyerWallet: { select: { id: true, walletVkey: true } },
 			SmartContractWallet: {

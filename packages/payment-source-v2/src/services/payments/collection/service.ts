@@ -1,11 +1,4 @@
-import {
-	OnChainState,
-	PaymentAction,
-	PaymentErrorType,
-	PaymentSourceType,
-	TransactionStatus,
-	Prisma,
-} from '@/generated/prisma/client';
+import { OnChainState, PaymentAction, PaymentSourceType, TransactionStatus, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { resolveTxHash } from '@meshsdk/core';
 import { Asset, deserializeDatum } from '@meshsdk/core';
@@ -14,14 +7,15 @@ import { asV2Provider } from '../../provider-cast';
 import type { BlockfrostProvider } from '@/services/shared';
 import { logger } from '@masumi/payment-core/logger';
 import { recordV2BatchHashDivergence } from '@masumi/payment-core/metrics';
-import { SmartContractState, smartContractStateEqualsOnChainState } from '@/utils/generator/contract-generator';
+import { SmartContractState } from '@/utils/generator/contract-generator';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { DecodedV1ContractDatum } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
-import { retryOnSerializationConflict } from '@/utils/db/retry';
+import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
 import { isDefinitiveNodeRejection } from '@masumi/payment-core/submit-error-classifier';
-import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
+import { makeHotWalletUnlocker, makePaymentRequestFailureMarker } from '../../request-failure';
+import { findMatchingPaymentUtxo } from '../../utxo-matching';
 import { advancedRetry, delayErrorResolver } from 'advanced-retry';
 import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
@@ -113,72 +107,12 @@ type ValidatedCollectionItem = {
 
 const mutex = new Mutex();
 
-async function markRequestFailed(
-	request: PaymentRequestWithRelations,
-	error: unknown,
-	options: { unlockWallet?: boolean } = {},
-): Promise<void> {
-	// unlockWallet=true only when this failure OWNS the wallet lock (single-item
-	// path). In the batch validation loop the shared wallet lock must survive so
-	// a concurrent service can't lock the same wallet and submit a conflicting tx
-	// from the same UTxO set while this batch keeps building the remaining items;
-	// the batch's terminal paths release it instead.
-	const unlockWallet = options.unlockWallet ?? true;
-	logger.error(`Error collecting V2 payments ${request.id}`, { error });
-	await prisma.paymentRequest.update({
-		where: { id: request.id },
-		data: {
-			...connectPreviousAction(request.nextActionId),
-			...createNextPaymentAction(PaymentAction.WaitingForManualAction, {
-				errorType: PaymentErrorType.Unknown,
-				errorNote: 'Collecting payments failed: ' + interpretBlockchainError(error),
-			}),
-			...(unlockWallet ? { SmartContractWallet: { update: { lockedAt: null } } } : {}),
-		},
-	});
-}
+const markRequestFailed = makePaymentRequestFailureMarker({
+	logMessage: 'Error collecting V2 payments',
+	errorNotePrefix: 'Collecting payments failed: ',
+});
 
-async function unlockHotWallet(walletId: string): Promise<void> {
-	try {
-		await prisma.hotWallet.update({
-			where: { id: walletId, deletedAt: null },
-			data: { lockedAt: null },
-		});
-	} catch (error) {
-		logger.warn('Failed to unlock V2 collection hot wallet', { error, walletId });
-	}
-}
-
-function findMatchingUtxo(
-	utxoList: UTxO[],
-	txHash: string,
-	request: PaymentRequestWithRelations,
-	network: 'mainnet' | 'preprod',
-	smartContractAddress: string,
-): UTxO | undefined {
-	return utxoList.find((utxo) => {
-		if (utxo.input.txHash !== txHash) return false;
-		const utxoDatum = utxo.output.plutusData;
-		if (!utxoDatum) return false;
-		const decodedDatum: unknown = deserializeDatum(utxoDatum);
-		const decodedContract = decodeV2ContractDatum(decodedDatum, network, smartContractAddress);
-		if (decodedContract == null) return false;
-		return (
-			smartContractStateEqualsOnChainState(decodedContract.state, request.onChainState) &&
-			decodedContract.buyerAddress === request.BuyerWallet!.walletAddress &&
-			decodedContract.sellerAddress === request.SmartContractWallet!.walletAddress &&
-			decodedContract.buyerVkey === request.BuyerWallet!.walletVkey &&
-			decodedContract.sellerVkey === request.SmartContractWallet!.walletVkey &&
-			decodedContract.blockchainIdentifier === request.blockchainIdentifier &&
-			decodedContract.inputHash === request.inputHash &&
-			BigInt(decodedContract.resultTime) === BigInt(request.submitResultTime) &&
-			BigInt(decodedContract.unlockTime) === BigInt(request.unlockTime) &&
-			BigInt(decodedContract.externalDisputeUnlockTime) === BigInt(request.externalDisputeUnlockTime) &&
-			BigInt(decodedContract.collateralReturnLovelace) === BigInt(request.collateralReturnLovelace ?? 0) &&
-			BigInt(decodedContract.payByTime) === BigInt(request.payByTime ?? 0)
-		);
-	});
-}
+const unlockHotWallet = makeHotWalletUnlocker('collection');
 
 async function validateAndBuildItem(
 	request: PaymentRequestWithRelations,
@@ -200,7 +134,7 @@ async function validateAndBuildItem(
 		throw new Error('Transaction hash not found');
 	}
 	const utxoByHash = await fetchUTxOsWithDeferOnEmpty(blockchainProvider, txHash);
-	const utxo = findMatchingUtxo(utxoByHash, txHash, request, network, smartContractAddress);
+	const utxo = findMatchingPaymentUtxo(utxoByHash, txHash, request, network, smartContractAddress);
 	if (!utxo) {
 		throw new Error(`${LOOKUP_DEFERRED_PREFIX} UTXO not found`);
 	}

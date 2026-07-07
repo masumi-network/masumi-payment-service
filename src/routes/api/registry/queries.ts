@@ -2,7 +2,7 @@ import { PaymentSourceType, PricingType, RegistrationState } from '@/generated/p
 import type { Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { AuthContext } from '@masumi/payment-core/auth';
-import { parseAmountSearchRange } from '@/utils/shared/queries';
+import { cursorPaginationArgs, parseAmountSearchRange } from '@/utils/shared/queries';
 import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { z } from '@masumi/payment-core/zod';
 import { FilterStatus, queryRegistryRequestSchemaInput } from './schemas';
@@ -189,8 +189,7 @@ export async function getRegistryEntriesForQuery(
 				: {}),
 		},
 		orderBy: { createdAt: 'desc' },
-		take: input.limit,
-		cursor: input.cursorId ? { id: input.cursorId } : undefined,
+		...cursorPaginationArgs(input.cursorId, input.limit),
 		include: {
 			SmartContractWallet: {
 				select: { walletVkey: true, walletAddress: true },

@@ -30,7 +30,8 @@ import { RefreshButton } from '@/components/RefreshButton';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useX402LowBalanceRules, useX402Networks, useX402Wallets } from '@/lib/hooks/useX402';
-import { cn, formatX402Amount, groupDigits, handleApiCall, shortenAddress } from '@/lib/utils';
+import { cn, formatX402Amount, groupDigits, shortenAddress } from '@/lib/utils';
+import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import {
   deleteX402LowBalance,
   patchX402LowBalance,
@@ -91,37 +92,36 @@ export function AlertsTab() {
     [rules, envChainIds],
   );
 
+  const toggleRule = useApiMutation({
+    mutationFn: (body: { ruleId: string; enabled: boolean }) =>
+      patchX402LowBalance({ client: apiClient, body }),
+    errorMessage: 'Failed to update rule',
+  });
+  const deleteRule = useApiMutation({
+    mutationFn: (body: { ruleId: string }) => deleteX402LowBalance({ client: apiClient, body }),
+    errorMessage: 'Failed to delete rule',
+  });
+
   const toggleEnabled = async (rule: X402LowBalanceRule) => {
     setBusyId(rule.id);
-    await handleApiCall(
-      () =>
-        patchX402LowBalance({
-          client: apiClient,
-          body: { ruleId: rule.id, enabled: !rule.enabled },
-        }),
-      {
-        onSuccess: () => refetch(),
-        onFinally: () => setBusyId(null),
-        errorMessage: 'Failed to update rule',
-      },
-    );
+    const response = await toggleRule
+      .mutateAsync({ ruleId: rule.id, enabled: !rule.enabled })
+      .catch(() => null);
+    setBusyId(null);
+    if (response) refetch();
   };
 
   const confirmDelete = async () => {
     if (!ruleToDelete) return;
     const ruleId = ruleToDelete.id;
     setBusyId(ruleId);
-    await handleApiCall(() => deleteX402LowBalance({ client: apiClient, body: { ruleId } }), {
-      onSuccess: () => {
-        toast.success('Alert deleted');
-        refetch();
-      },
-      onFinally: () => {
-        setBusyId(null);
-        setRuleToDelete(null);
-      },
-      errorMessage: 'Failed to delete rule',
-    });
+    const response = await deleteRule.mutateAsync({ ruleId }).catch(() => null);
+    setBusyId(null);
+    setRuleToDelete(null);
+    if (response) {
+      toast.success('Alert deleted');
+      refetch();
+    }
   };
 
   return (
@@ -302,7 +302,20 @@ function AlertDialog({
   const { apiClient } = useAppContext();
   const { networks } = useX402Networks();
   const { wallets } = useX402Wallets(open);
-  const [isSaving, setIsSaving] = useState(false);
+  type NewAlertBody = {
+    evmWalletId: string;
+    caip2Network: string;
+    asset: string;
+    thresholdAmount: string;
+  };
+  const saveAlert = useApiMutation({
+    mutationFn: (input: { ruleId: string; thresholdAmount: string } | NewAlertBody) =>
+      'ruleId' in input
+        ? patchX402LowBalance({ client: apiClient, body: input })
+        : postX402LowBalance({ client: apiClient, body: input }),
+    errorMessage: 'Failed to save alert',
+  });
+  const isSaving = saveAlert.isPending;
 
   const editingAssetKind =
     editing == null ? 'native' : editing.asset === NATIVE ? 'native' : 'token';
@@ -328,34 +341,24 @@ function AlertDialog({
   const selectedNetwork = useWatch({ control, name: 'caip2Network' });
 
   const onSubmit = async (data: RuleFormValues) => {
-    setIsSaving(true);
     const asset = data.assetKind === 'native' ? NATIVE : data.asset;
     // An existing rule is keyed by (wallet, chain, asset); only the threshold is editable in
     // place, so patch it. Creating goes through the upserting POST.
-    const call = editing
-      ? () =>
-          patchX402LowBalance({
-            client: apiClient,
-            body: { ruleId: editing.id, thresholdAmount: data.thresholdAmount },
-          })
-      : () =>
-          postX402LowBalance({
-            client: apiClient,
-            body: {
+    const response = await saveAlert
+      .mutateAsync(
+        editing
+          ? { ruleId: editing.id, thresholdAmount: data.thresholdAmount }
+          : {
               evmWalletId: data.evmWalletId,
               caip2Network: data.caip2Network,
               asset,
               thresholdAmount: data.thresholdAmount,
             },
-          });
-    await handleApiCall(call, {
-      onSuccess: () => {
-        toast.success(editing ? 'Alert updated' : 'Alert added');
-        onSaved();
-      },
-      onFinally: () => setIsSaving(false),
-      errorMessage: 'Failed to save alert',
-    });
+      )
+      .catch(() => null);
+    if (!response) return;
+    toast.success(editing ? 'Alert updated' : 'Alert added');
+    onSaved();
   };
 
   return (
