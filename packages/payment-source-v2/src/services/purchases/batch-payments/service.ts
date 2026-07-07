@@ -30,8 +30,8 @@ import {
 	createTxWindow,
 } from '@/services/shared';
 import { createDatumFromBlockchainIdentifierV2 } from '@masumi/payment-source-v2';
-import { isDefinitiveNodeRejection } from '../../submit-error-classifier';
-import { isTransientPreSubmitError } from './pre-submit-error';
+import { isDefinitiveNodeRejection } from '@masumi/payment-core/submit-error-classifier';
+import { isTransientPreSubmitError } from '@masumi/payment-core/pre-submit-error';
 import { WALLET_SPLITTER_LOVELACE } from '../../../builders/batch-helpers';
 import { syncMeshCostModelsFromChainV2 } from '../../../utils/mesh-cost-model-sync';
 import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
@@ -1487,9 +1487,38 @@ export async function batchLatestPaymentEntriesV2() {
 						paymentContract.HotWallets.map(async (candidateWallet) => {
 							const fresh = await prisma.hotWallet.findUnique({
 								where: { id: candidateWallet.id, deletedAt: null },
-								select: { pendingTransactionId: true, type: true },
+								select: {
+									pendingTransactionId: true,
+									type: true,
+									PendingTransaction: { select: { status: true, intendedTxHash: true, txHash: true } },
+								},
 							});
 							if (fresh == null || fresh.type !== HotWalletType.Purchasing) return;
+							// CRITICAL double-lock guard: only roll back + unlock a pending tx that
+							// PROVABLY never broadcast (both hashes null — an unused placeholder or a
+							// pre-submit failure). If a per-outcome revert above threw and jumped us
+							// here while a sibling pairing had already succeeded (txHash set) or
+							// returned submit-ambiguous (intendedTxHash set, txHash null, tx MAY be on
+							// chain), rolling its shared tx back would hide it from
+							// funding-reconciliation / tx-sync (both key on status: Pending) AND free
+							// the wallet into a double-lock. Leave any tx with either hash set.
+							const pendingTx = fresh.PendingTransaction;
+							if (
+								pendingTx != null &&
+								pendingTx.status === TransactionStatus.Pending &&
+								(pendingTx.intendedTxHash != null || pendingTx.txHash != null)
+							) {
+								logger.warn(
+									'batch-payments outer-catch: preserving possibly-on-chain funding tx (leaving Pending + wallet locked)',
+									{
+										walletId: candidateWallet.id,
+										pendingTransactionId: fresh.pendingTransactionId,
+										hasTxHash: pendingTx.txHash != null,
+										hasIntendedTxHash: pendingTx.intendedTxHash != null,
+									},
+								);
+								return;
+							}
 							if (fresh.pendingTransactionId != null) {
 								try {
 									await prisma.transaction.update({

@@ -8,7 +8,7 @@ import {
 } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { deserializeDatum, resolveTxHash, UTxO } from '@meshsdk/core';
-import { isDefinitiveNodeRejection } from '../../submit-error-classifier';
+import { isDefinitiveNodeRejection } from '@masumi/payment-core/submit-error-classifier';
 import type { LanguageVersion } from '@meshsdk/core';
 import { asV2Provider } from '../../provider-cast';
 import type { BlockfrostProvider } from '@/services/shared';

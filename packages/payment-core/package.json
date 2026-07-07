@@ -21,7 +21,9 @@
 		"./object-properties": "./src/object-properties.ts",
 		"./payment-source": "./src/payment-source.ts",
 		"./permissions": "./src/permissions.ts",
+		"./pre-submit-error": "./src/pre-submit-error.ts",
 		"./smart-contract-state": "./src/smart-contract-state.ts",
+		"./submit-error-classifier": "./src/submit-error-classifier.ts",
 		"./verification": "./src/verification.ts",
 		"./zod": "./src/zod.ts",
 		"./zod-openapi": "./src/zod-openapi.ts"
