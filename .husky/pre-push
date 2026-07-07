@@ -71,25 +71,34 @@ if ! pnpm run format; then
     exit 4
 fi
 
+# Generate Prisma client before type-aware ESLint. The client is ignored, so it
+# can be stale after branch switches and make Prisma enums/models resolve as
+# error types during lint.
+echo "${BLUE}🔍 Generating Prisma client...${NC}"
+if ! pnpm run prisma:generate; then
+    echo "${RED}❌ Prisma client generation failed. Please fix errors and try again.${NC}"
+    exit 5
+fi
+
 # Run backend ESLint
 echo "${BLUE}🔍 Running backend ESLint...${NC}"
 if ! pnpm run lint:backend; then
     echo "${RED}❌ Backend ESLint check failed. Please fix the errors and try committing again.${NC}"
-    exit 5
+    exit 6
 fi
 
 # Run frontend ESLint
 echo "${BLUE}🔍 Running frontend ESLint...${NC}"
 if ! pnpm -C frontend run lint; then
     echo "${RED}❌ Frontend ESLint check failed. Please fix the errors and try committing again.${NC}"
-    exit 6
+    exit 7
 fi
 
 # Generate Swagger JSON
 echo "${BLUE}🔍 Generating Swagger JSON...${NC}"
 if ! pnpm run swagger-json; then
     echo "${RED}❌ Swagger JSON generation failed. Please fix errors and try again.${NC}"
-    exit 7
+    exit 8
 fi
 
 # Check if OpenAPI JSON file changed
@@ -100,7 +109,7 @@ else
     echo "${BLUE}🔍 OpenAPI JSON changed, generating Postman collection...${NC}"
     if ! pnpm run swagger-postman; then
         echo "${RED}❌ Postman collection generation failed. Please fix errors and try again.${NC}"
-        exit 8
+        exit 9
     fi
 fi
 
@@ -108,21 +117,21 @@ fi
 echo "${BLUE}🔍 Generating frontend types...${NC}"
 if ! (cd frontend && pnpm run openapi-ts-latest); then
     echo "${RED}❌ Type generation for the frontend failed. Please fix errors and try again.${NC}"
-    exit 9
+    exit 10
 fi
 
 # Run backend TypeScript checks
 echo "${BLUE}🔍 Running backend TypeScript checks...${NC}"
 if ! pnpm run typecheck:backend; then
     echo "${RED}❌ Backend TypeScript check failed. Please fix errors and try again.${NC}"
-    exit 10
+    exit 11
 fi
 
 # Run frontend TypeScript checks
 echo "${BLUE}🔍 Running frontend TypeScript checks...${NC}"
 if ! pnpm run typecheck:frontend; then
     echo "${RED}❌ Frontend TypeScript check failed. Please fix errors and try again.${NC}"
-    exit 11
+    exit 12
 fi
 
 # Check for changes in generated files

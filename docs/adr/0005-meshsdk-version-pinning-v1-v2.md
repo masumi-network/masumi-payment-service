@@ -91,6 +91,41 @@ isolation by their respective code paths.
   to. Mocks must therefore enumerate the symbols actually imported by code
   under test, not assume only the V1 surface.
 
+## Production bundling (mesh MUST be bundled, not externalized)
+
+The "resolves via the nearest `package.json`" guarantee above only holds while
+each module runs from its own package directory — i.e. under `tsx` / `jest` /
+`pnpm dev`. The production build (`pnpm build` → `pkgroll`) FLATTENS every
+workspace package (`@masumi/payment-source-v2`, etc.) into the root `dist/`
+chunks.
+
+`pkgroll` externalizes anything in the root `dependencies` /
+`peerDependencies` as a bare specifier. If `@meshsdk/core` /
+`@meshsdk/core-cst` are externalized, the flattened bundle emits bare
+`import ... from '@meshsdk/core'` for BOTH V1 and V2 code, and at runtime
+`node dist/index.js` resolves that single specifier from the ROOT
+`node_modules` (the `.96` / `.90` V1 line). The bundled V2 code then silently
+runs on the V1 mesh line and derives the WRONG V2 script address in production
+— dev/tsx is unaffected, so it passes locally and fails only in prod.
+
+Fix: `@meshsdk/core` + `@meshsdk/core-cst` live in the root
+**`devDependencies`**, NOT `dependencies`. pkgroll therefore BUNDLES them, and
+rollup resolves each source file's mesh import relative to that file's
+location — V1 sources inline `.96` / `.90` (from root `node_modules`), V2
+sources inline `.102` (from `packages/payment-source-v2/node_modules`). Both
+versions coexist in the bundle; there is no runtime mesh resolution to
+collapse. Mesh is pure JS (no WASM/native), so it bundles cleanly.
+
+Rules:
+
+- Do NOT move `@meshsdk/*` back to root `dependencies` — that re-externalizes
+  them and reintroduces the V1/V2 collapse in production. See the
+  `_meshsdk_devdep_note` in the root `package.json`.
+- Verification: a bundled `getPaymentScriptV1(...)` / `getPaymentScriptV2(...)`
+  must derive `DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_PREPROD` and
+  `DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_V2_PREPROD` respectively. If V2
+  derives the V1 address (or vice versa), mesh got externalized/collapsed.
+
 ## Notes
 
 - Related: ADR 0004 (per-payment-source-type service trees). The mesh pinning

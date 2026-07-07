@@ -1,3 +1,28 @@
+import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
+
+/** Serialize a transaction record for API responses: BigInt fees → string. */
+function transformTransactionWithFees<T extends { fees: bigint | null }>(
+	tx: T,
+): Omit<T, 'fees'> & { fees: string | null } {
+	return { ...tx, fees: tx.fees?.toString() ?? null };
+}
+
+export function transformCurrentTransaction<T extends { fees: bigint | null }>(tx: T | null) {
+	return tx ? transformTransactionWithFees(tx) : null;
+}
+
+export function transformTransactionHistory<T extends { fees: bigint | null }>(history: T[] | null | undefined) {
+	return history ? history.map(transformTransactionWithFees) : null;
+}
+
+/** Prefer the synced agentIdentifier, fall back to decoding it from the blockchain identifier. */
+export function resolveAgentIdentifier(record: {
+	agentIdentifier: string | null;
+	blockchainIdentifier: string;
+}): string | null {
+	return record.agentIdentifier ?? decodeBlockchainIdentifier(record.blockchainIdentifier)?.agentIdentifier ?? null;
+}
+
 export function transformBigIntAmounts<T extends { unit: string; amount: bigint }>(
 	amounts: T[],
 ): Array<{ unit: string; amount: string }> {

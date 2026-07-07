@@ -45,12 +45,6 @@ importers:
       '@masumi/payment-source-x402':
         specifier: workspace:*
         version: link:packages/payment-source-x402
-      '@meshsdk/core':
-        specifier: 1.9.0-beta.96
-        version: 1.9.0-beta.96(@bufbuild/protobuf@1.10.1)(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)
-      '@meshsdk/core-cst':
-        specifier: 1.9.0-beta.90
-        version: 1.9.0-beta.90(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)
       '@opentelemetry/api':
         specifier: 1.9.1
         version: 1.9.1
@@ -199,6 +193,12 @@ importers:
       '@jest/types':
         specifier: 30.4.1
         version: 30.4.1
+      '@meshsdk/core':
+        specifier: 1.9.0-beta.96
+        version: 1.9.0-beta.96(@bufbuild/protobuf@1.10.1)(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)
+      '@meshsdk/core-cst':
+        specifier: 1.9.0-beta.90
+        version: 1.9.0-beta.90(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/crypto@0.2.5)(rxjs@7.8.2)
       '@types/http-errors':
         specifier: 2.0.5
         version: 2.0.5
@@ -437,6 +437,9 @@ importers:
       '@prisma/client':
         specifier: '*'
         version: 7.2.0(prisma@7.8.0(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(typescript@5.8.3))(typescript@5.8.3)
+      async-mutex:
+        specifier: 0.5.0
+        version: 0.5.0
       dotenv:
         specifier: 17.4.2
         version: 17.4.2

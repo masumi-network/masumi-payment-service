@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/button';
+import { formatDateTime } from '@/lib/format-date';
 import { Input } from '@/components/ui/input';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Plus, Trash2, Edit2, Wand2, AlertTriangle, ShieldCheck, Eye, EyeOff } from 'lucide-react';
@@ -38,11 +39,12 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { BadgeWithTooltip } from '@/components/ui/badge-with-tooltip';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { TOOLTIP_TEXTS } from '@/lib/constants/tooltips';
-import { handleApiCall } from '@/lib/utils';
+import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import { useRouter } from 'next/router';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { extractApiErrorMessage } from '@/lib/api-error';
 import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
+import { PaymentSourceSyncBadge } from '@/components/payment-sources/PaymentSourceSyncBadge';
 import {
   DEFAULT_PAYMENT_SOURCE_TYPE,
   getPaymentSourceTypeLabel,
@@ -165,7 +167,11 @@ export default function PaymentSourcesPage() {
 
   const [sourceToDelete, setSourceToDelete] = useState<PaymentSourceExtended | null>(null);
   const [sourceToUpdate, setSourceToUpdate] = useState<PaymentSourceExtended | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const deleteSourceMutation = useApiMutation({
+    mutationFn: (body: { id: string }) => deletePaymentSourceExtended({ client: apiClient, body }),
+    errorMessage: 'Failed to delete payment source',
+  });
+  const isDeleting = deleteSourceMutation.isPending;
   const { apiClient, selectedPaymentSourceId, network, setSelectedPaymentSourceId, setActiveRail } =
     useAppContext();
   const { paymentSources: ps, isLoading, refetch } = usePaymentSourceExtendedAll();
@@ -209,40 +215,26 @@ export default function PaymentSourcesPage() {
   const handleDeleteSource = async () => {
     if (!sourceToDelete) return;
 
-    await handleApiCall(
-      () =>
-        deletePaymentSourceExtended({
-          client: apiClient,
-          body: {
-            id: sourceToDelete.id,
-          },
-        }),
-      {
-        onSuccess: async () => {
-          toast.success('Payment source deleted successfully');
-          refetch();
-          // Dashboard cards keyed by selectedPaymentSourceId continue
-          // rendering against caches that no longer match a live source.
-          // Invalidate sibling queries so wallets / transactions / agents
-          // refetch against whatever source the user selects next instead
-          // of showing rows from the deleted one until the next ~25s tick.
-          queryClient.invalidateQueries({ queryKey: ['payment-sources-all'] });
-          queryClient.invalidateQueries({ queryKey: ['wallets'] });
-          queryClient.invalidateQueries({ queryKey: ['transactions'] });
-          invalidateAgentQueries(queryClient);
-          queryClient.invalidateQueries({ queryKey: ['payment-source-extended'] });
-        },
-        onError: (error: any) => {
-          console.error('Error deleting payment source:', error);
-          toast.error(extractApiErrorMessage(error, 'Failed to delete payment source'));
-        },
-        onFinally: () => {
-          setIsDeleting(false);
-          setSourceToDelete(null);
-        },
-        errorMessage: 'Failed to delete payment source',
-      },
-    );
+    const response = await deleteSourceMutation
+      .mutateAsync({ id: sourceToDelete.id })
+      .catch((error: unknown) => {
+        console.error('Error deleting payment source:', error);
+        return null;
+      });
+    setSourceToDelete(null);
+    if (!response) return;
+
+    toast.success('Payment source deleted successfully');
+    refetch();
+    // Dashboard cards keyed by selectedPaymentSourceId continue
+    // rendering against caches that no longer match a live source.
+    // Invalidate sibling queries so wallets / transactions / agents
+    // refetch against whatever source the user selects next instead
+    // of showing rows from the deleted one until the next ~25s tick.
+    queryClient.invalidateQueries({ queryKey: ['payment-sources-all'] });
+    queryClient.invalidateQueries({ queryKey: ['wallets'] });
+    queryClient.invalidateQueries({ queryKey: ['transactions'] });
+    invalidateAgentQueries(queryClient);
   };
 
   return (
@@ -268,6 +260,7 @@ export default function PaymentSourcesPage() {
                 <Link
                   href="https://docs.masumi.network/api-reference/payment-service/get-payment-source"
                   target="_blank"
+                  rel="noopener noreferrer"
                   className="text-primary hover:underline"
                 >
                   Learn more
@@ -452,10 +445,13 @@ export default function PaymentSourcesPage() {
                           </div>
                         </td>
                         <td className="p-4">
-                          <PaymentSourceTypeBadge
-                            paymentSourceType={source.paymentSourceType}
-                            showDefault
-                          />
+                          <div className="flex flex-wrap items-center gap-2">
+                            <PaymentSourceTypeBadge
+                              paymentSourceType={source.paymentSourceType}
+                              showDefault
+                            />
+                            <PaymentSourceSyncBadge status={source.contractSyncStatus} />
+                          </div>
                         </td>
                         <td className="p-4">
                           <div className="text-sm flex items-center gap-2">
@@ -476,7 +472,7 @@ export default function PaymentSourcesPage() {
                         </td>
                         <td className="p-4">
                           <div className="text-xs text-muted-foreground">
-                            {new Date(source.createdAt).toLocaleString()}
+                            {formatDateTime(source.createdAt)}
                           </div>
                         </td>
                         <td className="p-4">
@@ -549,7 +545,11 @@ export default function PaymentSourcesPage() {
 
           <AddSourceDialog open={isAddDialogOpen} onClose={() => setIsAddDialogOpen(false)} />
 
+          {/* Remount per source: the dialog seeds its apiKey state once from
+              currentApiKey, so without a key the field would keep stale text
+              typed for a previously edited source. */}
           <UpdatePaymentSourceDialog
+            key={sourceToUpdate?.id ?? 'closed'}
             open={!!sourceToUpdate}
             onClose={() => setSourceToUpdate(null)}
             onSuccess={() => {

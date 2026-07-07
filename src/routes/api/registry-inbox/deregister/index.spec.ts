@@ -13,6 +13,24 @@ const mockAssetsAddresses = jest.fn() as AnyMock;
 const mockResolvePaymentKeyHash = jest.fn() as AnyMock;
 const mockGetRegistryScript = jest.fn() as AnyMock;
 
+const txClient = {
+	inboxAgentRegistrationRequest: {
+		findUnique: mockFindInboxRequest,
+		update: mockUpdateInboxRequest,
+	},
+};
+
+// `unregisterInboxAgentPost` now wraps its update in a Serializable `$transaction`
+// (with an in-tx state re-read) to close the TOCTOU window and block deregisters
+// on rows mid-flight in another lifecycle action. Stub the helper so the handler
+// runs once against a `tx` exposing the same inbox mocks.
+const mockTransaction = jest.fn(async (arg: unknown) => {
+	if (typeof arg === 'function') {
+		return await (arg as (tx: typeof txClient) => Promise<unknown>)(txClient);
+	}
+	return arg;
+}) as AnyMock;
+
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		apiKey: {
@@ -25,6 +43,7 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 			findUnique: mockFindInboxRequest,
 			update: mockUpdateInboxRequest,
 		},
+		$transaction: mockTransaction,
 	},
 }));
 
@@ -212,8 +231,12 @@ describe('unregisterInboxAgentPost', () => {
 				},
 			],
 		});
+		// Includes `state` because the route now re-reads the row inside a
+		// Serializable transaction and rejects deregisters unless the current
+		// state is one that may be deregistered.
 		mockFindInboxRequest.mockResolvedValue({
 			id: 'inbox-request-1',
+			state: RegistrationState.RegistrationConfirmed,
 		});
 		mockUpdateInboxRequest.mockResolvedValue(buildInboxUpdateResponse());
 	});
@@ -263,6 +286,31 @@ describe('unregisterInboxAgentPost', () => {
 		});
 
 		expect(responseMock.statusCode).toBe(403);
+		expect(mockUpdateInboxRequest).not.toHaveBeenCalled();
+	});
+
+	it('returns 409 when the registration is in a non-deregisterable state', async () => {
+		// The in-transaction re-read reports a mid-flight lifecycle state. Only
+		// RegistrationConfirmed / DeregistrationFailed may be deregistered; anything
+		// else must 409 so a deregister can't race the register/deregister schedulers.
+		mockFindInboxRequest.mockResolvedValue({
+			id: 'inbox-request-1',
+			state: RegistrationState.DeregistrationInitiated,
+		});
+
+		const { responseMock } = await testEndpoint({
+			endpoint: unregisterInboxAgentPost,
+			requestProps: {
+				method: 'POST',
+				headers: { token: 'valid' },
+				body: {
+					agentIdentifier: 'p'.repeat(56) + 'asset',
+					network: Network.Preprod,
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(409);
 		expect(mockUpdateInboxRequest).not.toHaveBeenCalled();
 	});
 

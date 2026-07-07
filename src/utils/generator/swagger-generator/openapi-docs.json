@@ -87,7 +87,7 @@
                                 },
                                 "amount": {
                                     "type": "string",
-                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                 }
                             },
                             "required": [
@@ -442,6 +442,11 @@
                         "type": "string",
                         "nullable": true,
                         "description": "Identifier of the agent that is being paid"
+                    },
+                    "agentName": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Display name of the agent when known"
                     },
                     "pricingType": {
                         "type": "string",
@@ -924,7 +929,7 @@
                             "properties": {
                                 "amount": {
                                     "type": "string",
-                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                 },
                                 "unit": {
                                     "type": "string",
@@ -1076,6 +1081,7 @@
                     "updatedAt",
                     "blockchainIdentifier",
                     "agentIdentifier",
+                    "agentName",
                     "pricingType",
                     "lastCheckedAt",
                     "payByTime",
@@ -1134,6 +1140,11 @@
                         "type": "string",
                         "nullable": true,
                         "description": "Identifier of the agent that is being purchased"
+                    },
+                    "agentName": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Display name of the agent when known"
                     },
                     "pricingType": {
                         "type": "string",
@@ -1746,6 +1757,7 @@
                     "updatedAt",
                     "blockchainIdentifier",
                     "agentIdentifier",
+                    "agentName",
                     "pricingType",
                     "lastCheckedAt",
                     "payByTime",
@@ -1946,7 +1958,7 @@
                                                     "properties": {
                                                         "amount": {
                                                             "type": "string",
-                                                            "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                                            "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                                         },
                                                         "unit": {
                                                             "type": "string",
@@ -2463,7 +2475,7 @@
                                                     "properties": {
                                                         "amount": {
                                                             "type": "string",
-                                                            "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                                            "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                                         },
                                                         "unit": {
                                                             "type": "string",
@@ -3012,7 +3024,7 @@
                                             "properties": {
                                                 "amount": {
                                                     "type": "string",
-                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                                 },
                                                 "unit": {
                                                     "type": "string",
@@ -3612,6 +3624,15 @@
                         "type": "string",
                         "description": "Address of the smart contract for this payment source"
                     },
+                    "contractSyncStatus": {
+                        "type": "string",
+                        "enum": [
+                            "in_sync",
+                            "outdated_contract",
+                            "custom_address"
+                        ],
+                        "description": "Whether a Web3CardanoV2 source is on the current on-chain contract. \"outdated_contract\": registry policyId differs from the current default (retired contract — agents orphaned, payment address stale); \"custom_address\": current version but a non-default admin-wallet address; \"in_sync\": matches the current default (also for V1 and any non-V2 source)."
+                    },
                     "PaymentSourceConfig": {
                         "type": "object",
                         "properties": {
@@ -3707,6 +3728,7 @@
                     "requiredAdminSignatures",
                     "policyId",
                     "smartContractAddress",
+                    "contractSyncStatus",
                     "PaymentSourceConfig",
                     "lastIdentifierChecked",
                     "syncInProgress",
@@ -3786,7 +3808,7 @@
                         "nullable": true,
                         "minimum": 0,
                         "maximum": 100000000000000,
-                        "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                        "description": "The quantity of the asset in its smallest unit. For ADA, this is lovelace (1 ADA = 1000000 lovelace)"
                     }
                 },
                 "required": [
@@ -6265,7 +6287,7 @@
                                                 },
                                                 "amount": {
                                                     "type": "string",
-                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                                 }
                                             },
                                             "required": [
@@ -6460,7 +6482,7 @@
                                                 },
                                                 "amount": {
                                                     "type": "string",
-                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                                 }
                                             },
                                             "required": [
@@ -7506,10 +7528,10 @@
                         "schema": {
                             "type": "string",
                             "nullable": true,
-                            "description": "The smart contract address of the payment source"
+                            "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, payment list/count endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source."
                         },
                         "required": false,
-                        "description": "The smart contract address of the payment source",
+                        "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, payment list/count endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.",
                         "name": "filterSmartContractAddress",
                         "in": "query"
                     },
@@ -7542,20 +7564,20 @@
                                 "Web3CardanoV1",
                                 "Web3CardanoV2"
                             ],
-                            "description": "Filter by payment source type"
+                            "description": "Filter by payment source type. When omitted with no smart-contract-address filter, payment list/count endpoints default to Web3CardanoV1 for backwards compatibility."
                         },
                         "required": false,
-                        "description": "Filter by payment source type",
+                        "description": "Filter by payment source type. When omitted with no smart-contract-address filter, payment list/count endpoints default to Web3CardanoV1 for backwards compatibility.",
                         "name": "filterPaymentSourceType",
                         "in": "query"
                     },
                     {
                         "schema": {
                             "type": "string",
-                            "description": "Search query to filter by ID, hash, state, network, wallet address, or amount"
+                            "description": "Search query to filter by ID, hash, agent name, state, network, wallet address, or amount"
                         },
                         "required": false,
-                        "description": "Search query to filter by ID, hash, state, network, wallet address, or amount",
+                        "description": "Search query to filter by ID, hash, agent name, state, network, wallet address, or amount",
                         "name": "searchQuery",
                         "in": "query"
                     },
@@ -7609,6 +7631,7 @@
                                                     "id": "cuid_v2_auto_generated",
                                                     "blockchainIdentifier": "blockchain_identifier",
                                                     "agentIdentifier": "agent_identifier",
+                                                    "agentName": "Example Agent",
                                                     "pricingType": "Fixed",
                                                     "createdAt": "1970-01-20T20:00:36.260Z",
                                                     "updatedAt": "1970-01-20T20:00:36.260Z",
@@ -7884,6 +7907,11 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being paid"
                                                 },
+                                                "agentName": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Display name of the agent when known"
+                                                },
                                                 "pricingType": {
                                                     "type": "string",
                                                     "enum": [
@@ -8167,7 +8195,7 @@
                                                         "properties": {
                                                             "amount": {
                                                                 "type": "string",
-                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                                             },
                                                             "unit": {
                                                                 "type": "string",
@@ -8319,6 +8347,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "agentName",
                                                 "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
@@ -8364,6 +8393,7 @@
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
                                             "agentIdentifier": "agent_identifier",
+                                            "agentName": "Example Agent",
                                             "pricingType": "Fixed",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
@@ -8507,10 +8537,10 @@
                         "schema": {
                             "type": "string",
                             "nullable": true,
-                            "description": "The smart contract address of the payment source"
+                            "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, payment diff endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source."
                         },
                         "required": false,
-                        "description": "The smart contract address of the payment source",
+                        "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, payment diff endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.",
                         "name": "filterSmartContractAddress",
                         "in": "query"
                     },
@@ -8521,10 +8551,10 @@
                                 "Web3CardanoV1",
                                 "Web3CardanoV2"
                             ],
-                            "description": "Filter by payment source type"
+                            "description": "Filter by payment source type. When omitted with no smart-contract-address filter, payment diff endpoints default to Web3CardanoV1 for backwards compatibility."
                         },
                         "required": false,
-                        "description": "Filter by payment source type",
+                        "description": "Filter by payment source type. When omitted with no smart-contract-address filter, payment diff endpoints default to Web3CardanoV1 for backwards compatibility.",
                         "name": "filterPaymentSourceType",
                         "in": "query"
                     },
@@ -8578,6 +8608,7 @@
                                                     "id": "cuid_v2_auto_generated",
                                                     "blockchainIdentifier": "blockchain_identifier",
                                                     "agentIdentifier": "agent_identifier",
+                                                    "agentName": "Example Agent",
                                                     "pricingType": "Fixed",
                                                     "createdAt": "1970-01-20T20:00:36.260Z",
                                                     "updatedAt": "1970-01-20T20:00:36.260Z",
@@ -8724,10 +8755,10 @@
                         "schema": {
                             "type": "string",
                             "nullable": true,
-                            "description": "The smart contract address of the payment source"
+                            "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, payment diff endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source."
                         },
                         "required": false,
-                        "description": "The smart contract address of the payment source",
+                        "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, payment diff endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.",
                         "name": "filterSmartContractAddress",
                         "in": "query"
                     },
@@ -8738,10 +8769,10 @@
                                 "Web3CardanoV1",
                                 "Web3CardanoV2"
                             ],
-                            "description": "Filter by payment source type"
+                            "description": "Filter by payment source type. When omitted with no smart-contract-address filter, payment diff endpoints default to Web3CardanoV1 for backwards compatibility."
                         },
                         "required": false,
-                        "description": "Filter by payment source type",
+                        "description": "Filter by payment source type. When omitted with no smart-contract-address filter, payment diff endpoints default to Web3CardanoV1 for backwards compatibility.",
                         "name": "filterPaymentSourceType",
                         "in": "query"
                     },
@@ -8795,6 +8826,7 @@
                                                     "id": "cuid_v2_auto_generated",
                                                     "blockchainIdentifier": "blockchain_identifier",
                                                     "agentIdentifier": "agent_identifier",
+                                                    "agentName": "Example Agent",
                                                     "pricingType": "Fixed",
                                                     "createdAt": "1970-01-20T20:00:36.260Z",
                                                     "updatedAt": "1970-01-20T20:00:36.260Z",
@@ -8894,10 +8926,10 @@
                         "schema": {
                             "type": "string",
                             "nullable": true,
-                            "description": "The smart contract address of the payment source"
+                            "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, payment count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source."
                         },
                         "required": false,
-                        "description": "The smart contract address of the payment source",
+                        "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, payment count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.",
                         "name": "filterSmartContractAddress",
                         "in": "query"
                     },
@@ -8908,10 +8940,10 @@
                                 "Web3CardanoV1",
                                 "Web3CardanoV2"
                             ],
-                            "description": "Filter by payment source type"
+                            "description": "Filter by payment source type. When omitted with no smart-contract-address filter, payment count defaults to Web3CardanoV1 for backwards compatibility."
                         },
                         "required": false,
-                        "description": "Filter by payment source type",
+                        "description": "Filter by payment source type. When omitted with no smart-contract-address filter, payment count defaults to Web3CardanoV1 for backwards compatibility.",
                         "name": "filterPaymentSourceType",
                         "in": "query"
                     }
@@ -8988,10 +9020,10 @@
                         "schema": {
                             "type": "string",
                             "nullable": true,
-                            "description": "The smart contract address of the payment source"
+                            "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, purchase count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source."
                         },
                         "required": false,
-                        "description": "The smart contract address of the payment source",
+                        "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, purchase count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.",
                         "name": "filterSmartContractAddress",
                         "in": "query"
                     },
@@ -9002,10 +9034,10 @@
                                 "Web3CardanoV1",
                                 "Web3CardanoV2"
                             ],
-                            "description": "Filter by payment source type"
+                            "description": "Filter by payment source type. When omitted with no smart-contract-address filter, purchase count defaults to Web3CardanoV1 for backwards compatibility."
                         },
                         "required": false,
-                        "description": "Filter by payment source type",
+                        "description": "Filter by payment source type. When omitted with no smart-contract-address filter, purchase count defaults to Web3CardanoV1 for backwards compatibility.",
                         "name": "filterPaymentSourceType",
                         "in": "query"
                     }
@@ -9129,10 +9161,10 @@
                         "schema": {
                             "type": "string",
                             "nullable": true,
-                            "description": "The smart contract address of the payment source"
+                            "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, payment diff endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source."
                         },
                         "required": false,
-                        "description": "The smart contract address of the payment source",
+                        "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, payment diff endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.",
                         "name": "filterSmartContractAddress",
                         "in": "query"
                     },
@@ -9143,10 +9175,10 @@
                                 "Web3CardanoV1",
                                 "Web3CardanoV2"
                             ],
-                            "description": "Filter by payment source type"
+                            "description": "Filter by payment source type. When omitted with no smart-contract-address filter, payment diff endpoints default to Web3CardanoV1 for backwards compatibility."
                         },
                         "required": false,
-                        "description": "Filter by payment source type",
+                        "description": "Filter by payment source type. When omitted with no smart-contract-address filter, payment diff endpoints default to Web3CardanoV1 for backwards compatibility.",
                         "name": "filterPaymentSourceType",
                         "in": "query"
                     },
@@ -9200,6 +9232,7 @@
                                                     "id": "cuid_v2_auto_generated",
                                                     "blockchainIdentifier": "blockchain_identifier",
                                                     "agentIdentifier": "agent_identifier",
+                                                    "agentName": "Example Agent",
                                                     "pricingType": "Fixed",
                                                     "createdAt": "1970-01-20T20:00:36.260Z",
                                                     "updatedAt": "1970-01-20T20:00:36.260Z",
@@ -9357,6 +9390,11 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being paid"
                                                 },
+                                                "agentName": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Display name of the agent when known"
+                                                },
                                                 "pricingType": {
                                                     "type": "string",
                                                     "enum": [
@@ -9640,7 +9678,7 @@
                                                         "properties": {
                                                             "amount": {
                                                                 "type": "string",
-                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                                             },
                                                             "unit": {
                                                                 "type": "string",
@@ -9792,6 +9830,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "agentName",
                                                 "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
@@ -9837,6 +9876,7 @@
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
                                             "agentIdentifier": "agent_identifier",
+                                            "agentName": "Example Agent",
                                             "pricingType": "Fixed",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
@@ -9987,6 +10027,11 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being paid"
                                                 },
+                                                "agentName": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Display name of the agent when known"
+                                                },
                                                 "pricingType": {
                                                     "type": "string",
                                                     "enum": [
@@ -10270,7 +10315,7 @@
                                                         "properties": {
                                                             "amount": {
                                                                 "type": "string",
-                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                                             },
                                                             "unit": {
                                                                 "type": "string",
@@ -10422,6 +10467,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "agentName",
                                                 "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
@@ -10467,6 +10513,7 @@
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
                                             "agentIdentifier": "agent_identifier",
+                                            "agentName": "Example Agent",
                                             "pricingType": "Fixed",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
@@ -10640,6 +10687,11 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being paid"
                                                 },
+                                                "agentName": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Display name of the agent when known"
+                                                },
                                                 "pricingType": {
                                                     "type": "string",
                                                     "enum": [
@@ -10923,7 +10975,7 @@
                                                         "properties": {
                                                             "amount": {
                                                                 "type": "string",
-                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                                             },
                                                             "unit": {
                                                                 "type": "string",
@@ -11075,6 +11127,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "agentName",
                                                 "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
@@ -11303,6 +11356,11 @@
                                                     "type": "string",
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being purchased"
+                                                },
+                                                "agentName": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Display name of the agent when known"
                                                 },
                                                 "pricingType": {
                                                     "type": "string",
@@ -11724,6 +11782,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "agentName",
                                                 "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
@@ -13027,10 +13086,10 @@
                         "schema": {
                             "type": "string",
                             "nullable": true,
-                            "description": "The smart contract address of the payment source"
+                            "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source."
                         },
                         "required": false,
-                        "description": "The smart contract address of the payment source",
+                        "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.",
                         "name": "filterSmartContractAddress",
                         "in": "query"
                     },
@@ -13041,10 +13100,10 @@
                                 "Web3CardanoV1",
                                 "Web3CardanoV2"
                             ],
-                            "description": "Filter by payment source type"
+                            "description": "Filter by payment source type. When omitted with no smart-contract-address filter, count defaults to Web3CardanoV1 for backwards compatibility."
                         },
                         "required": false,
-                        "description": "Filter by payment source type",
+                        "description": "Filter by payment source type. When omitted with no smart-contract-address filter, count defaults to Web3CardanoV1 for backwards compatibility.",
                         "name": "filterPaymentSourceType",
                         "in": "query"
                     }
@@ -13764,10 +13823,10 @@
                         "schema": {
                             "type": "string",
                             "nullable": true,
-                            "description": "The smart contract address of the payment source"
+                            "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, purchase list/count endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source."
                         },
                         "required": false,
-                        "description": "The smart contract address of the payment source",
+                        "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, purchase list/count endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.",
                         "name": "filterSmartContractAddress",
                         "in": "query"
                     },
@@ -13800,20 +13859,20 @@
                                 "Web3CardanoV1",
                                 "Web3CardanoV2"
                             ],
-                            "description": "Filter by payment source type"
+                            "description": "Filter by payment source type. When omitted with no smart-contract-address filter, purchase list/count endpoints default to Web3CardanoV1 for backwards compatibility."
                         },
                         "required": false,
-                        "description": "Filter by payment source type",
+                        "description": "Filter by payment source type. When omitted with no smart-contract-address filter, purchase list/count endpoints default to Web3CardanoV1 for backwards compatibility.",
                         "name": "filterPaymentSourceType",
                         "in": "query"
                     },
                     {
                         "schema": {
                             "type": "string",
-                            "description": "Search query to filter by ID, hash, state, network, wallet address, or amount"
+                            "description": "Search query to filter by ID, hash, agent name, state, network, wallet address, or amount"
                         },
                         "required": false,
-                        "description": "Search query to filter by ID, hash, state, network, wallet address, or amount",
+                        "description": "Search query to filter by ID, hash, agent name, state, network, wallet address, or amount",
                         "name": "searchQuery",
                         "in": "query"
                     },
@@ -14107,6 +14166,11 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being purchased"
                                                 },
+                                                "agentName": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Display name of the agent when known"
+                                                },
                                                 "pricingType": {
                                                     "type": "string",
                                                     "enum": [
@@ -14527,6 +14591,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "agentName",
                                                 "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
@@ -14572,6 +14637,7 @@
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
                                             "agentIdentifier": "agent_identifier",
+                                            "agentName": "Example Agent",
                                             "pricingType": "Fixed",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
@@ -14680,6 +14746,11 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being purchased"
                                                 },
+                                                "agentName": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Display name of the agent when known"
+                                                },
                                                 "pricingType": {
                                                     "type": "string",
                                                     "enum": [
@@ -15100,6 +15171,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "agentName",
                                                 "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
@@ -15149,6 +15221,7 @@
                                         "id": "cuid_v2_auto_generated",
                                         "blockchainIdentifier": "blockchain_identifier",
                                         "agentIdentifier": "agent_identifier",
+                                        "agentName": "Example Agent",
                                         "pricingType": "Fixed",
                                         "createdAt": "1970-01-20T20:00:36.260Z",
                                         "updatedAt": "1970-01-20T20:00:36.260Z",
@@ -15839,6 +15912,11 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being purchased"
                                                 },
+                                                "agentName": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Display name of the agent when known"
+                                                },
                                                 "pricingType": {
                                                     "type": "string",
                                                     "enum": [
@@ -16259,6 +16337,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "agentName",
                                                 "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
@@ -16304,6 +16383,7 @@
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
                                             "agentIdentifier": "agent_identifier",
+                                            "agentName": "Example Agent",
                                             "pricingType": "Fixed",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
@@ -16453,6 +16533,11 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being purchased"
                                                 },
+                                                "agentName": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Display name of the agent when known"
+                                                },
                                                 "pricingType": {
                                                     "type": "string",
                                                     "enum": [
@@ -16873,6 +16958,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "agentName",
                                                 "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
@@ -16918,6 +17004,7 @@
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
                                             "agentIdentifier": "agent_identifier",
+                                            "agentName": "Example Agent",
                                             "pricingType": "Fixed",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
@@ -17596,10 +17683,10 @@
                         "schema": {
                             "type": "string",
                             "nullable": true,
-                            "description": "The smart contract address of the payment source"
+                            "description": "The smart contract address of the payment source. When omitted with no V2-aware filters, registry list/count endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source."
                         },
                         "required": false,
-                        "description": "The smart contract address of the payment source",
+                        "description": "The smart contract address of the payment source. When omitted with no V2-aware filters, registry list/count endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.",
                         "name": "filterSmartContractAddress",
                         "in": "query"
                     },
@@ -17610,10 +17697,10 @@
                                 "Web3CardanoV1",
                                 "Web3CardanoV2"
                             ],
-                            "description": "Filter by payment source type"
+                            "description": "Filter by payment source type. When omitted with no source/address/identifier support filters, the endpoint defaults to Web3CardanoV1 for backwards compatibility."
                         },
                         "required": false,
-                        "description": "Filter by payment source type",
+                        "description": "Filter by payment source type. When omitted with no source/address/identifier support filters, the endpoint defaults to Web3CardanoV1 for backwards compatibility.",
                         "name": "filterPaymentSourceType",
                         "in": "query"
                     },
@@ -17648,30 +17735,30 @@
                             "type": "string",
                             "minLength": 57,
                             "maxLength": 250,
-                            "description": "When set, return only the registry entry whose on-chain agent identifier matches exactly (same scope as list: network, payment source, and wallet permissions)"
+                            "description": "When set, return only the registry entry whose on-chain agent identifier matches exactly (same scope as list: network, payment source, and wallet permissions). This exact lookup does not apply the default Web3CardanoV1 compatibility filter."
                         },
                         "required": false,
-                        "description": "When set, return only the registry entry whose on-chain agent identifier matches exactly (same scope as list: network, payment source, and wallet permissions)",
+                        "description": "When set, return only the registry entry whose on-chain agent identifier matches exactly (same scope as list: network, payment source, and wallet permissions). This exact lookup does not apply the default Web3CardanoV1 compatibility filter.",
                         "name": "filterAgentIdentifier",
                         "in": "query"
                     },
                     {
                         "schema": {
                             "type": "string",
-                            "description": "Return only entries that advertise a supported payment source with this address (the Cardano smart-contract address, or an EVM x402 payTo/address). Matched server-side so callers do not have to fetch every entry and filter client-side. Combined with filterSupportedPaymentSourceNetworks as a logical OR."
+                            "description": "Return only entries that advertise a supported payment source with this address (the Cardano smart-contract address, or an EVM x402 payTo/address). Matched server-side so callers do not have to fetch every entry and filter client-side. Combined with filterSupportedPaymentSourceNetworks as a logical OR. This V2-aware filter opts out of the default Web3CardanoV1 compatibility filter."
                         },
                         "required": false,
-                        "description": "Return only entries that advertise a supported payment source with this address (the Cardano smart-contract address, or an EVM x402 payTo/address). Matched server-side so callers do not have to fetch every entry and filter client-side. Combined with filterSupportedPaymentSourceNetworks as a logical OR.",
+                        "description": "Return only entries that advertise a supported payment source with this address (the Cardano smart-contract address, or an EVM x402 payTo/address). Matched server-side so callers do not have to fetch every entry and filter client-side. Combined with filterSupportedPaymentSourceNetworks as a logical OR. This V2-aware filter opts out of the default Web3CardanoV1 compatibility filter.",
                         "name": "filterSupportedPaymentSourceAddress",
                         "in": "query"
                     },
                     {
                         "schema": {
                             "type": "string",
-                            "description": "Comma-separated list of supported-payment-source networks to match (Cardano network name, or CAIP-2 EVM chain ids such as eip155:8453). Returns entries advertising a supported payment source on any of these networks. Combined with filterSupportedPaymentSourceAddress as a logical OR."
+                            "description": "Comma-separated list of supported-payment-source networks to match (Cardano network name, or CAIP-2 EVM chain ids such as eip155:8453). Returns entries advertising a supported payment source on any of these networks. Combined with filterSupportedPaymentSourceAddress as a logical OR. This V2-aware filter opts out of the default Web3CardanoV1 compatibility filter."
                         },
                         "required": false,
-                        "description": "Comma-separated list of supported-payment-source networks to match (Cardano network name, or CAIP-2 EVM chain ids such as eip155:8453). Returns entries advertising a supported payment source on any of these networks. Combined with filterSupportedPaymentSourceAddress as a logical OR.",
+                        "description": "Comma-separated list of supported-payment-source networks to match (Cardano network name, or CAIP-2 EVM chain ids such as eip155:8453). Returns entries advertising a supported payment source on any of these networks. Combined with filterSupportedPaymentSourceAddress as a logical OR. This V2-aware filter opts out of the default Web3CardanoV1 compatibility filter.",
                         "name": "filterSupportedPaymentSourceNetworks",
                         "in": "query"
                     }
@@ -18175,7 +18262,7 @@
                                                                 "amount": {
                                                                     "type": "string",
                                                                     "maxLength": 25,
-                                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                                                 }
                                                             },
                                                             "required": [
@@ -18756,10 +18843,10 @@
                         "schema": {
                             "type": "string",
                             "nullable": true,
-                            "description": "The smart contract address of the payment source"
+                            "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, registry diff defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source."
                         },
                         "required": false,
-                        "description": "The smart contract address of the payment source",
+                        "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, registry diff defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.",
                         "name": "filterSmartContractAddress",
                         "in": "query"
                     },
@@ -18770,10 +18857,10 @@
                                 "Web3CardanoV1",
                                 "Web3CardanoV2"
                             ],
-                            "description": "Filter by payment source type"
+                            "description": "Filter by payment source type. When omitted with no smart-contract-address filter, registry diff defaults to Web3CardanoV1 for backwards compatibility."
                         },
                         "required": false,
-                        "description": "Filter by payment source type",
+                        "description": "Filter by payment source type. When omitted with no smart-contract-address filter, registry diff defaults to Web3CardanoV1 for backwards compatibility.",
                         "name": "filterPaymentSourceType",
                         "in": "query"
                     }
@@ -19392,7 +19479,7 @@
                                                                 "amount": {
                                                                     "type": "string",
                                                                     "maxLength": 25,
-                                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                                                 }
                                                             },
                                                             "required": [
@@ -19813,6 +19900,20 @@
                         "description": "Used to paginate through the payment sources",
                         "name": "cursorId",
                         "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Preprod",
+                                "Mainnet"
+                            ],
+                            "description": "Restrict results to a single Cardano network (still bounded by the key network limit)"
+                        },
+                        "required": false,
+                        "description": "Restrict results to a single Cardano network (still bounded by the key network limit)",
+                        "name": "network",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -19861,6 +19962,7 @@
                                                     "syncInProgress": true,
                                                     "policyId": "policy_id",
                                                     "smartContractAddress": "address_of_the_smart_contract",
+                                                    "contractSyncStatus": "in_sync",
                                                     "AdminWallets": [
                                                         {
                                                             "walletAddress": "wallet_address",
@@ -20144,6 +20246,7 @@
                                             "requiredAdminSignatures": null,
                                             "policyId": "policy_id",
                                             "smartContractAddress": "address_of_the_smart_contract",
+                                            "contractSyncStatus": "in_sync",
                                             "PaymentSourceConfig": {
                                                 "rpcProviderApiKey": "rpc_provider_api_key_blockfrost",
                                                 "rpcProvider": "Blockfrost"
@@ -20397,6 +20500,7 @@
                                             "requiredAdminSignatures": null,
                                             "policyId": "policy_id",
                                             "smartContractAddress": "address_of_the_smart_contract",
+                                            "contractSyncStatus": "in_sync",
                                             "PaymentSourceConfig": {
                                                 "rpcProviderApiKey": "rpc_provider_api_key_blockfrost",
                                                 "rpcProvider": "Blockfrost"
@@ -20495,6 +20599,7 @@
                                             "requiredAdminSignatures": null,
                                             "policyId": "policy_id",
                                             "smartContractAddress": "address_of_the_smart_contract",
+                                            "contractSyncStatus": "in_sync",
                                             "PaymentSourceConfig": {
                                                 "rpcProviderApiKey": "rpc_provider_api_key_blockfrost",
                                                 "rpcProvider": "Blockfrost"
@@ -20857,7 +20962,7 @@
                                             "Web3CardanoV1",
                                             "Web3CardanoV2"
                                         ],
-                                        "description": "Filter by payment source type"
+                                        "description": "Filter by payment source type. When omitted, spending totals default to Web3CardanoV1 for backwards compatibility."
                                     }
                                 },
                                 "required": [
@@ -20922,7 +21027,7 @@
                                                                     "unit",
                                                                     "amount"
                                                                 ],
-                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                             }
                                                         },
                                                         "blockchainFees": {
@@ -20953,7 +21058,7 @@
                                                                     "unit",
                                                                     "amount"
                                                                 ],
-                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                             }
                                                         },
                                                         "blockchainFees": {
@@ -20984,7 +21089,7 @@
                                                                     "unit",
                                                                     "amount"
                                                                 ],
-                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                             }
                                                         },
                                                         "blockchainFees": {
@@ -21029,7 +21134,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
@@ -21078,7 +21183,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
@@ -21127,7 +21232,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
@@ -21172,7 +21277,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
@@ -21216,7 +21321,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
@@ -21260,7 +21365,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
@@ -21503,7 +21608,7 @@
                                             "Web3CardanoV1",
                                             "Web3CardanoV2"
                                         ],
-                                        "description": "Filter by payment source type"
+                                        "description": "Filter by payment source type. When omitted, income totals default to Web3CardanoV1 for backwards compatibility."
                                     }
                                 },
                                 "required": [
@@ -21568,7 +21673,7 @@
                                                                     "unit",
                                                                     "amount"
                                                                 ],
-                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                             }
                                                         },
                                                         "blockchainFees": {
@@ -21599,7 +21704,7 @@
                                                                     "unit",
                                                                     "amount"
                                                                 ],
-                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                             }
                                                         },
                                                         "blockchainFees": {
@@ -21630,7 +21735,7 @@
                                                                     "unit",
                                                                     "amount"
                                                                 ],
-                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                             }
                                                         },
                                                         "blockchainFees": {
@@ -21675,7 +21780,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
@@ -21724,7 +21829,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
@@ -21773,7 +21878,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
@@ -21818,7 +21923,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
@@ -21862,7 +21967,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
@@ -21906,7 +22011,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
@@ -23184,10 +23289,10 @@
                         "schema": {
                             "type": "string",
                             "nullable": true,
-                            "description": "The smart contract address of the payment source"
+                            "description": "The smart contract address of the payment source. When omitted, inbox registry list/count endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source."
                         },
                         "required": false,
-                        "description": "The smart contract address of the payment source",
+                        "description": "The smart contract address of the payment source. When omitted, inbox registry list/count endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.",
                         "name": "filterSmartContractAddress",
                         "in": "query"
                     },
@@ -23578,10 +23683,10 @@
                         "schema": {
                             "type": "string",
                             "nullable": true,
-                            "description": "The smart contract address of the payment source"
+                            "description": "The smart contract address of the payment source. When omitted, inbox registry diff defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source."
                         },
                         "required": false,
-                        "description": "The smart contract address of the payment source",
+                        "description": "The smart contract address of the payment source. When omitted, inbox registry diff defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.",
                         "name": "filterSmartContractAddress",
                         "in": "query"
                     }
@@ -23796,10 +23901,10 @@
                         "schema": {
                             "type": "string",
                             "nullable": true,
-                            "description": "The smart contract address of the payment source"
+                            "description": "The smart contract address of the payment source. When omitted, inbox registry count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source."
                         },
                         "required": false,
-                        "description": "The smart contract address of the payment source",
+                        "description": "The smart contract address of the payment source. When omitted, inbox registry count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.",
                         "name": "filterSmartContractAddress",
                         "in": "query"
                     }

@@ -10,12 +10,14 @@ import {
   postInboxAgentsDeregister,
   RegistryInboxEntry,
 } from '@/lib/api/generated';
-import { extractApiErrorMessage } from '@/lib/api-error';
+import { getAgentStatusBadgeVariant } from '@/lib/agent-status';
+import { formatDateTime } from '@/lib/format-date';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import formatBalance from '@/lib/formatBalance';
 import { lookupWalletByVkey } from '@/lib/wallet-lookup';
-import { cn, handleApiCall, shortenAddress } from '@/lib/utils';
+import { shortenAddress } from '@/lib/utils';
+import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import { useCallback, useMemo, useState } from 'react';
 import { toast } from 'react-toastify';
 
@@ -48,26 +50,8 @@ const parseInboxAgentStatus = (status: RegistryInboxEntry['state']): string => {
   }
 };
 
-const getStatusBadgeVariant = (status: RegistryInboxEntry['state']) => {
-  if (status === 'RegistrationConfirmed') return 'default';
-  if (status.includes('Failed')) return 'destructive';
-  if (status.includes('Initiated')) return 'secondary';
-  if (status.includes('Requested')) return 'secondary';
-  if (status === 'DeregistrationConfirmed') return 'secondary';
-  return 'secondary';
-};
-
 function formatLovelaceToAda(amount: string) {
   return `${formatBalance((parseInt(amount, 10) / 1000000).toFixed(2))} ADA`;
-}
-
-function formatDate(date: Date | string | null | undefined) {
-  if (!date) {
-    return '—';
-  }
-
-  const value = typeof date === 'string' ? new Date(date) : date;
-  return value.toLocaleString();
 }
 
 export function InboxAgentDetailsDialog({
@@ -80,7 +64,22 @@ export function InboxAgentDetailsDialog({
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
     useState<WalletWithBalance | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
+
+  const deleteAgent = useApiMutation({
+    mutationFn: (body: { id: string }) => deleteInboxAgents({ client: apiClient, body }),
+    errorMessage: 'Failed to delete inbox agent',
+  });
+  const deregisterAgent = useApiMutation({
+    mutationFn: (body: {
+      agentIdentifier: string;
+      network: typeof network;
+      smartContractAddress: string | undefined;
+    }) => postInboxAgentsDeregister({ client: apiClient, body }),
+    errorMessage: 'Failed to deregister inbox agent',
+  });
+  const { mutateAsync: deleteAgentAsync } = deleteAgent;
+  const { mutateAsync: deregisterAgentAsync } = deregisterAgent;
+  const isDeleting = deleteAgent.isPending || deregisterAgent.isPending;
 
   const currentNetworkPaymentSources = useMemo(
     () => paymentSources.filter((paymentSource) => paymentSource.network === network),
@@ -136,31 +135,13 @@ export function InboxAgentDetailsDialog({
     }
 
     if (agent.state === 'RegistrationFailed' || agent.state === 'DeregistrationConfirmed') {
-      setIsDeleting(true);
-      await handleApiCall(
-        () =>
-          deleteInboxAgents({
-            client: apiClient,
-            body: {
-              id: agent.id,
-            },
-          }),
-        {
-          onSuccess: () => {
-            toast.success('Inbox agent deleted successfully');
-            onClose();
-            onSuccess?.();
-          },
-          onError: (error: unknown) => {
-            toast.error(extractApiErrorMessage(error, 'Failed to delete inbox agent'));
-          },
-          onFinally: () => {
-            setIsDeleting(false);
-            setIsDeleteDialogOpen(false);
-          },
-          errorMessage: 'Failed to delete inbox agent',
-        },
-      );
+      const response = await deleteAgentAsync({ id: agent.id }).catch(() => null);
+      setIsDeleteDialogOpen(false);
+      if (response) {
+        toast.success('Inbox agent deleted successfully');
+        onClose();
+        onSuccess?.();
+      }
       return;
     }
 
@@ -178,33 +159,17 @@ export function InboxAgentDetailsDialog({
         return;
       }
 
-      setIsDeleting(true);
-      await handleApiCall(
-        () =>
-          postInboxAgentsDeregister({
-            client: apiClient,
-            body: {
-              agentIdentifier: agent.agentIdentifier!,
-              network,
-              smartContractAddress: selectedPaymentSource.smartContractAddress || undefined,
-            },
-          }),
-        {
-          onSuccess: () => {
-            toast.success('Inbox agent deregistration initiated successfully');
-            onClose();
-            onSuccess?.();
-          },
-          onError: (error: unknown) => {
-            toast.error(extractApiErrorMessage(error, 'Failed to deregister inbox agent'));
-          },
-          onFinally: () => {
-            setIsDeleting(false);
-            setIsDeleteDialogOpen(false);
-          },
-          errorMessage: 'Failed to deregister inbox agent',
-        },
-      );
+      const response = await deregisterAgentAsync({
+        agentIdentifier: agent.agentIdentifier!,
+        network,
+        smartContractAddress: selectedPaymentSource.smartContractAddress || undefined,
+      }).catch(() => null);
+      setIsDeleteDialogOpen(false);
+      if (response) {
+        toast.success('Inbox agent deregistration initiated successfully');
+        onClose();
+        onSuccess?.();
+      }
       return;
     }
 
@@ -213,8 +178,9 @@ export function InboxAgentDetailsDialog({
     );
   }, [
     agent,
-    apiClient,
     currentNetworkPaymentSources,
+    deleteAgentAsync,
+    deregisterAgentAsync,
     network,
     onClose,
     onSuccess,
@@ -225,7 +191,8 @@ export function InboxAgentDetailsDialog({
     <>
       <Dialog open={!!agent && !isDeleteDialogOpen} onOpenChange={onClose}>
         <DialogContent
-          className="max-w-[640px] max-h-[90vh] overflow-y-auto"
+          size="md"
+          className="max-h-[90vh] overflow-y-auto"
           isPushedBack={!!selectedWalletForDetails}
         >
           {agent && (
@@ -238,13 +205,7 @@ export function InboxAgentDetailsDialog({
                       Inbox slug: <span className="font-mono">{agent.agentSlug}</span>
                     </p>
                   </div>
-                  <Badge
-                    variant={getStatusBadgeVariant(agent.state)}
-                    className={cn(
-                      agent.state === 'RegistrationConfirmed' &&
-                        'bg-green-50 text-green-700 hover:bg-green-50/80',
-                    )}
-                  >
+                  <Badge variant={getAgentStatusBadgeVariant(agent.state)}>
                     {parseInboxAgentStatus(agent.state)}
                   </Badge>
                 </div>
@@ -285,11 +246,15 @@ export function InboxAgentDetailsDialog({
                       </div>
                       <div>
                         <div className="font-medium mb-1">Created</div>
-                        <div className="text-muted-foreground">{formatDate(agent.createdAt)}</div>
+                        <div className="text-muted-foreground">
+                          {formatDateTime(agent.createdAt)}
+                        </div>
                       </div>
                       <div>
                         <div className="font-medium mb-1">Updated</div>
-                        <div className="text-muted-foreground">{formatDate(agent.updatedAt)}</div>
+                        <div className="text-muted-foreground">
+                          {formatDateTime(agent.updatedAt)}
+                        </div>
                       </div>
                     </div>
                   </CardContent>
@@ -319,10 +284,10 @@ export function InboxAgentDetailsDialog({
                     {holdingWallet && usesCombinedWallet ? (
                       <div>
                         <div className="font-medium mb-1">Minting &amp; holding wallet</div>
-                        <div className="flex items-center gap-2 text-muted-foreground font-mono text-xs">
+                        <div className="flex items-center gap-2 text-muted-foreground font-mono text-xs break-all">
                           <button
                             type="button"
-                            className="hover:text-primary text-left"
+                            className="hover:text-primary text-left min-w-0 break-all"
                             onClick={() => handleWalletClick(holdingWallet.walletVkey)}
                           >
                             {holdingWallet.walletAddress}
@@ -334,10 +299,10 @@ export function InboxAgentDetailsDialog({
                       <>
                         <div>
                           <div className="font-medium mb-1">Minting wallet</div>
-                          <div className="flex items-center gap-2 text-muted-foreground font-mono text-xs">
+                          <div className="flex items-center gap-2 text-muted-foreground font-mono text-xs break-all">
                             <button
                               type="button"
-                              className="hover:text-primary text-left"
+                              className="hover:text-primary text-left min-w-0 break-all"
                               onClick={() =>
                                 handleWalletClick(agent.SmartContractWallet.walletVkey)
                               }
@@ -350,10 +315,10 @@ export function InboxAgentDetailsDialog({
                         {holdingWallet && (
                           <div>
                             <div className="font-medium mb-1">Holding wallet</div>
-                            <div className="flex items-center gap-2 text-muted-foreground font-mono text-xs">
+                            <div className="flex items-center gap-2 text-muted-foreground font-mono text-xs break-all">
                               <button
                                 type="button"
-                                className="hover:text-primary text-left"
+                                className="hover:text-primary text-left min-w-0 break-all"
                                 onClick={() => handleWalletClick(holdingWallet.walletVkey)}
                               >
                                 {holdingWallet.walletAddress}
@@ -398,7 +363,7 @@ export function InboxAgentDetailsDialog({
                           <div className="font-medium mb-1">Block time</div>
                           <div className="text-muted-foreground">
                             {agent.CurrentTransaction.blockTime
-                              ? formatDate(new Date(agent.CurrentTransaction.blockTime * 1000))
+                              ? formatDateTime(new Date(agent.CurrentTransaction.blockTime * 1000))
                               : '—'}
                           </div>
                         </div>

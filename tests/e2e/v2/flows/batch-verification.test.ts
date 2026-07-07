@@ -16,7 +16,7 @@
  * `packages/payment-source-v2/src/services/`), so 3 is well below the cap and
  * also leaves room for a future variant that pushes closer to the cap.
  *
- * V2-only by design. When the workflow pins this jest invocation to V1 via
+ * V2-only by design. When CI pins this jest invocation to V1 via
  * TEST_PAYMENT_SOURCE_TYPE, the whole suite is `describe.skip`-ed.
  */
 

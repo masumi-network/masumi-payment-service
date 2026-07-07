@@ -1,4 +1,5 @@
 import { prisma } from '@masumi/payment-core/db';
+import { cursorPaginationArgs } from '@/utils/shared/queries';
 import { AuthContext } from '@masumi/payment-core/auth';
 import { HotWalletType } from '@/generated/prisma/client';
 import { buildHotWalletScopeFilter } from '@/utils/shared/wallet-scope';
@@ -67,18 +68,20 @@ export async function getPaymentSourceExtendedForQuery(
 	input: PaymentSourceExtendedListQueryInput,
 	networkLimit: AuthContext['networkLimit'],
 ) {
+	// Optional single-network filter, still bounded by the key's networkLimit: a
+	// requested network outside the limit yields an empty set (never widens access).
+	const networks = input.network ? networkLimit.filter((allowed) => allowed === input.network) : networkLimit;
 	return prisma.paymentSource.findMany({
 		where: {
 			network: {
-				in: networkLimit,
+				in: networks,
 			},
 			deletedAt: null,
 		},
-		take: input.take,
 		orderBy: {
 			createdAt: 'desc',
 		},
-		cursor: input.cursorId ? { id: input.cursorId } : undefined,
+		...cursorPaginationArgs(input.cursorId, input.take),
 		include: paymentSourceExtendedInclude,
 	});
 }

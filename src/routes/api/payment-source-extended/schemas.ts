@@ -4,6 +4,10 @@ import { z } from '@masumi/payment-core/zod';
 export const paymentSourceExtendedSchemaInput = z.object({
 	take: z.coerce.number().min(1).max(100).default(10).describe('The number of payment sources to return'),
 	cursorId: z.string().max(250).optional().describe('Used to paginate through the payment sources'),
+	network: z
+		.nativeEnum(Network)
+		.optional()
+		.describe('Restrict results to a single Cardano network (still bounded by the key network limit)'),
 });
 
 export const paymentSourceExtendedOutputSchema = z
@@ -20,6 +24,14 @@ export const paymentSourceExtendedOutputSchema = z
 			.describe('Required weighted admin signatures for Web3CardanoV2 sources. Null for Web3CardanoV1.'),
 		policyId: z.string().nullable().describe('Policy ID for the agent registry NFTs. Null if not applicable'),
 		smartContractAddress: z.string().describe('Address of the smart contract for this payment source'),
+		contractSyncStatus: z
+			.enum(['in_sync', 'outdated_contract', 'custom_address'])
+			.describe(
+				'Whether a Web3CardanoV2 source is on the current on-chain contract. ' +
+					'"outdated_contract": registry policyId differs from the current default (retired contract — agents ' +
+					'orphaned, payment address stale); "custom_address": current version but a non-default admin-wallet ' +
+					'address; "in_sync": matches the current default (also for V1 and any non-V2 source).',
+			),
 		PaymentSourceConfig: z
 			.object({
 				rpcProviderApiKey: z.string().describe('The RPC provider API key (e.g., Blockfrost project ID)'),

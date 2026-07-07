@@ -129,6 +129,16 @@ function buildSellingWallet() {
 	};
 }
 
+function buildV1SellingWallet() {
+	return {
+		...buildSellingWallet(),
+		PaymentSource: {
+			...buildSellingWallet().PaymentSource,
+			paymentSourceType: PaymentSourceType.Web3CardanoV1,
+		},
+	};
+}
+
 function buildRegistryRequestResponse(
 	recipientWallet: { walletVkey: string; walletAddress: string } | null,
 	sendFundingLovelace: bigint | null = null,
@@ -200,6 +210,12 @@ describe('registerAgentPost', () => {
 		expect(mockFindRegistryRequests).toHaveBeenCalledWith(
 			expect.objectContaining({
 				where: expect.objectContaining({
+					PaymentSource: {
+						network: Network.Preprod,
+						deletedAt: null,
+						smartContractAddress: undefined,
+						paymentSourceType: PaymentSourceType.Web3CardanoV1,
+					},
 					AND: [
 						{
 							OR: [
@@ -212,6 +228,55 @@ describe('registerAgentPost', () => {
 									deregistrationHotWalletId: null,
 									recipientHotWalletId: null,
 									smartContractWalletId: { in: ['holding-wallet-id'] },
+								},
+							],
+						},
+					],
+				}),
+			}),
+		);
+	});
+
+	it('matches supported payment source filters against implicit registered Cardano sources', async () => {
+		const { responseMock } = await testEndpoint({
+			endpoint: queryRegistryRequestGet,
+			requestProps: {
+				method: 'GET',
+				headers: { token: 'valid' },
+				query: {
+					network: Network.Preprod,
+					limit: '10',
+					filterSupportedPaymentSourceAddress: 'addr_test1smartcontract',
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(200);
+		expect(mockFindRegistryRequests).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					PaymentSource: {
+						network: Network.Preprod,
+						deletedAt: null,
+						smartContractAddress: undefined,
+						paymentSourceType: undefined,
+					},
+					AND: [
+						{
+							OR: [
+								{
+									SupportedPaymentSources: {
+										some: {
+											OR: [{ address: 'addr_test1smartcontract' }],
+										},
+									},
+								},
+								{
+									PaymentSource: {
+										network: Network.Preprod,
+										deletedAt: null,
+										smartContractAddress: 'addr_test1smartcontract',
+									},
 								},
 							],
 						},
@@ -242,6 +307,7 @@ describe('registerAgentPost', () => {
 					network: Network.Preprod,
 					deletedAt: null,
 					smartContractAddress: undefined,
+					paymentSourceType: PaymentSourceType.Web3CardanoV1,
 				},
 				SmartContractWallet: { deletedAt: null },
 				AND: [
@@ -300,6 +366,81 @@ describe('registerAgentPost', () => {
 		expect(responseMock._getJSONData().data.RecipientWallet).toBeNull();
 		expect(responseMock._getJSONData().data.supportedPaymentSources).toBeNull();
 		expect(responseMock._getJSONData().data.sendFundingLovelace).toBeNull();
+	});
+
+	it('keeps V1 registrations on metadata schema version 1 for old-schema compatibility', async () => {
+		mockFindSellingWallet.mockResolvedValue(buildV1SellingWallet());
+
+		const { responseMock } = await testEndpoint({
+			endpoint: registerAgentPost,
+			requestProps: {
+				method: 'POST',
+				headers: { token: 'valid' },
+				body: {
+					network: Network.Preprod,
+					sellingWalletVkey: 'b'.repeat(56),
+					name: 'Legacy Agent',
+					description: 'Agent description',
+					apiBaseUrl: 'https://example.com/agent',
+					Tags: ['demo'],
+					Capability: {
+						name: 'demo',
+						version: '1.0.0',
+					},
+					AgentPricing: {
+						pricingType: PricingType.Free,
+					},
+					Author: {
+						name: 'Author',
+					},
+					supportedPaymentSources: [
+						{
+							chain: 'Cardano',
+							network: Network.Preprod,
+							paymentSourceType: PaymentSourceType.Web3CardanoV1,
+							address: 'addr_test1smartcontract',
+						},
+					],
+					ExampleOutputs: [],
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(200);
+		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.metadataVersion).toBe(1);
+		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.SupportedPaymentSources).toBeUndefined();
+	});
+
+	it('keeps V2 registrations on registry metadata schema version 2', async () => {
+		const { responseMock } = await testEndpoint({
+			endpoint: registerAgentPost,
+			requestProps: {
+				method: 'POST',
+				headers: { token: 'valid' },
+				body: {
+					network: Network.Preprod,
+					sellingWalletVkey: 'b'.repeat(56),
+					name: 'V2 Agent',
+					description: 'Agent description',
+					apiBaseUrl: 'https://example.com/agent',
+					Tags: ['demo'],
+					Capability: {
+						name: 'demo',
+						version: '1.0.0',
+					},
+					AgentPricing: {
+						pricingType: PricingType.Free,
+					},
+					Author: {
+						name: 'Author',
+					},
+					ExampleOutputs: [],
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(200);
+		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.metadataVersion).toBe(2);
 	});
 
 	it('stores a managed recipient wallet override when provided', async () => {

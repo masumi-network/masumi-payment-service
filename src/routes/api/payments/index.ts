@@ -19,6 +19,7 @@ import { buildSignedBlockchainIdentifierPayload } from '@/utils/generator/blockc
 import { validateHexString } from '@/utils/validator/hex';
 import { lovelaceToAdaNumberSafe } from '@/utils/lovelace';
 import { transformPaymentGetAmounts, transformPaymentGetTimestamps } from '@/utils/shared/transformers';
+import { resolveTransactionAgentName } from '@/utils/shared/resolve-transaction-agent-name';
 import { extractPolicyId } from '@/utils/converter/agent-identifier';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
@@ -32,7 +33,7 @@ import {
 	queryPaymentsSchemaInput,
 	queryPaymentsSchemaOutput,
 } from './schemas';
-import { getPaymentsForQuery } from './queries';
+import { getPaymentsForQuery, resolvePaymentPaymentSourceTypeFilter } from './queries';
 import { serializePaymentsResponse } from './serializers';
 import { isCardanoPubKeyBaseAddressForNetwork } from '@/types/payment-source';
 
@@ -73,7 +74,7 @@ export const queryPaymentCountGet = readAuthenticatedEndpointFactory.build({
 				PaymentSource: {
 					network: input.network,
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
-					paymentSourceType: input.filterPaymentSourceType,
+					paymentSourceType: resolvePaymentPaymentSourceTypeFilter(input),
 					deletedAt: null,
 				},
 				...buildWalletScopeFilter(ctx.walletScopeIds),
@@ -369,6 +370,12 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 			throw new HttpExistsError('Payment exists', existingPaymentRequest.id, serialized as never);
 		}
 
+		const agentName = await resolveTransactionAgentName({
+			agentIdentifier: input.agentIdentifier,
+			onChainName: metadataToString(parsedMetadata.name),
+			preferOnChain: true,
+		});
+
 		const payment = await prisma.paymentRequest.create({
 			data: {
 				totalBuyerCardanoFees: BigInt(0),
@@ -377,6 +384,8 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 				blockchainIdentifier: compressedEncodedBlockchainIdentifier,
 				agentIdentifier: input.agentIdentifier,
 				agentIdentifierSyncedAt: new Date(),
+				agentName,
+				agentNameSyncedAt: new Date(),
 				PaymentSource: { connect: { id: specifiedPaymentContract.id } },
 				RequestedFunds: {
 					createMany: {

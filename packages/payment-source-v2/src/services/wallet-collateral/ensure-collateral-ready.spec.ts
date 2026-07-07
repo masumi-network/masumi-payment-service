@@ -106,9 +106,10 @@ describe('classifyWalletState', () => {
 	});
 
 	it('refuses ready when only one mixed-asset UTxO is present (single-UTxO trap still applies)', () => {
-		// Mixed-asset UTxO is acceptable for collateral, but the
-		// inputs/collateral_inputs overlap rule requires a SECOND UTxO for the
-		// fee input. The single-UTxO trap is unchanged by Babbage.
+		// Mixed-asset UTxO is acceptable for collateral, and the ledger allows a
+		// VKey UTxO to be both collateral and a regular input. This helper still
+		// enforces the current V2 separate-reserve invariant, so a single-UTxO
+		// wallet is not considered ready.
 		const result = classifyWalletState([makeUtxo({ amount: [lovelace('8000000'), token('100')] })]);
 		expect(result.hasGoodCollateral).toBe(true);
 		expect(result.utxoCount).toBe(1);

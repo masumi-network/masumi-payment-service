@@ -13,7 +13,7 @@ import { smartContractStateEqualsOnChainState } from '@masumi/payment-core/smart
 import { convertNetwork } from '@masumi/payment-core/network';
 // TODO(v1-package-boundary): move lock-and-query-payments, blockchain-error-interpreter, utxo, transaction-generator, string-datum-convert to @masumi/payment-core
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
-import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
+import { interpretBlockchainError } from '@masumi/payment-core/blockchain-error-interpreter';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
@@ -174,18 +174,23 @@ async function processSinglePaymentCollection(
 	const feeAssets: { [key: string]: Asset } = {};
 	for (const assetValue of utxo.output.amount) {
 		const assetKey = assetValue.unit;
-		let minFee = 0;
-		if (
-			paymentContract.paymentSourceType !== PaymentSourceType.Web3CardanoV2 &&
-			(assetValue.unit == '' || assetValue.unit.toLowerCase() == 'lovelace')
-		) {
-			minFee = Number(CONSTANTS.MIN_COLLATERAL_LOVELACE);
-		}
 		const value = BigInt(assetValue.quantity);
+		const isLovelace = assetValue.unit == '' || assetValue.unit.toLowerCase() == 'lovelace';
+		// Fee math must stay in BigInt. The old `BigInt(Math.max(minFee, Number(value) * permille / 1000))`
+		// threw RangeError on any non-integer result (e.g. native tokens, or lovelace fees above the
+		// collateral floor) and lost precision above 2^53 — crashing every collection retry and stranding
+		// the seller's withdrawal in WaitingForManualAction.
+		const minFee =
+			paymentContract.paymentSourceType !== PaymentSourceType.Web3CardanoV2 && isLovelace
+				? CONSTANTS.MIN_COLLATERAL_LOVELACE
+				: 0n;
+		const proportionalFee = (value * BigInt(paymentContract.feeRatePermille)) / 1000n;
 		const feeValue =
 			paymentContract.paymentSourceType === PaymentSourceType.Web3CardanoV2
 				? 0n
-				: BigInt(Math.max(minFee, (Number(value) * paymentContract.feeRatePermille) / 1000));
+				: proportionalFee > minFee
+					? proportionalFee
+					: minFee;
 		const remainingValue = value - feeValue;
 		const remainingValueAsset: Asset = {
 			unit: assetValue.unit,

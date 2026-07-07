@@ -152,9 +152,14 @@ export async function buildX402FundsLockingTransactionV2({
 		throw createHttpError(400, 'payByTime exceeds safe integer range');
 	}
 	const invalidAfterMs = Number(buildData.payByTime);
-	const invalidAfter =
-		unixTimeToEnclosingSlot(invalidAfterMs, SLOT_CONFIG_NETWORK[meshNetwork]) +
-		SERVICE_CONSTANTS.TRANSACTION.validitySlotBuffer;
+	// payByTime is a HARD deadline: the seller-side tx-sync marks the payment
+	// FundsOrDatumInvalid when `blockTime > payByTime`. The buffer must NOT be
+	// ADDED here — doing so left the tx valid ~30s PAST payByTime, so a buyer
+	// could sign and land a block after the deadline and get invalidated with
+	// funds locked. Anchor the upper bound to the slot enclosing payByTime (the
+	// tx becomes invalid at that slot), keeping every accepted block strictly
+	// before the deadline.
+	const invalidAfter = unixTimeToEnclosingSlot(invalidAfterMs, SLOT_CONFIG_NETWORK[meshNetwork]);
 
 	// Pull live chain protocol params so script_data_hash matches the
 	// ledger's computation. See generateRegistryMintTransaction in

@@ -1,4 +1,5 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { formatDateTime } from '@/lib/format-date';
 import { Button } from '@/components/ui/button';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { shortenAddress } from '@/lib/utils';
@@ -107,7 +108,7 @@ export function PaymentSourceDialog({ open, onClose, paymentSource }: PaymentSou
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-muted-foreground">Created At</label>
-                <div className="text-sm">{new Date(paymentSource.createdAt).toLocaleString()}</div>
+                <div className="text-sm">{formatDateTime(paymentSource.createdAt)}</div>
               </div>
             </div>
           </div>

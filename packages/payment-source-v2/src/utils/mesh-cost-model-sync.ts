@@ -117,7 +117,13 @@ export async function syncMeshCostModelsFromChainV2(
 			v3Length: DEFAULT_V3_COST_MODEL_LIST.length,
 		});
 
-		lastV2SyncByKey.set(blockfrostApiKey, { at: now });
+		// Only record the TTL marker when every list was actually patched. If a
+		// malformed raw payload left any array on its stale/bundled default,
+		// suppressing re-patch for the full TTL would strand V2 tx building on
+		// wrong cost models (PPViewHashesDontMatch) with no retry until expiry.
+		if (v1Patched && v2Patched && v3Patched) {
+			lastV2SyncByKey.set(blockfrostApiKey, { at: now });
+		}
 	});
 	return sharedProtocol;
 }

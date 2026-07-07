@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { errorToString } from '@/utils/converter/error-string-convert';
+import { errorToString } from '@masumi/payment-core/error-string-convert';
 import { jsonToString } from '@/utils/converter/json-to-string';
 import { HydraHeadStatus } from '@/generated/prisma/client';
 

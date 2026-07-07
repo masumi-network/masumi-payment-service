@@ -1,7 +1,6 @@
 import {
 	OnChainState,
 	PaymentAction,
-	PaymentErrorType,
 	PaymentSourceType,
 	Prisma,
 	TransactionLayer,
@@ -16,16 +15,17 @@ import { asV2Provider } from '../../provider-cast';
 import type { BlockfrostProvider } from '@/services/shared';
 import { logger } from '@masumi/payment-core/logger';
 import { recordV2BatchHashDivergence } from '@masumi/payment-core/metrics';
-import { SmartContractState, smartContractStateEqualsOnChainState } from '@/utils/generator/contract-generator';
+import { SmartContractState } from '@/utils/generator/contract-generator';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { DecodedV1ContractDatum, newCooldownTime } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
-import { retryOnSerializationConflict } from '@/utils/db/retry';
+import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
 import { syncMeshCostModelsFromHeadV2 } from '../../../utils/mesh-cost-model-sync';
 import { getHydraL2SlotContext } from '@/utils/hydra/l2-slot-context';
 import { isDefinitiveNodeRejection } from '../../submit-error-classifier';
-import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
+import { makeHotWalletUnlocker, makePaymentRequestFailureMarker } from '../../request-failure';
+import { findMatchingPaymentUtxo } from '../../utxo-matching';
 import { advancedRetry, delayErrorResolver } from 'advanced-retry';
 import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, tryAcquire, MutexInterface } from 'async-mutex';
@@ -129,62 +129,12 @@ function validatePaymentRequestFields(request: {
 	}
 }
 
-async function markRequestFailed(request: PaymentRequestWithRelations, error: unknown): Promise<void> {
-	logger.error(`Error authorizing V2 refund ${request.id}`, { error });
-	await prisma.paymentRequest.update({
-		where: { id: request.id },
-		data: {
-			...connectPreviousAction(request.nextActionId),
-			...createNextPaymentAction(PaymentAction.WaitingForManualAction, {
-				errorType: PaymentErrorType.Unknown,
-				errorNote: 'Authorizing refund failed: ' + interpretBlockchainError(error),
-			}),
-			SmartContractWallet: { update: { lockedAt: null } },
-		},
-	});
-}
+const markRequestFailed = makePaymentRequestFailureMarker({
+	logMessage: 'Error authorizing V2 refund',
+	errorNotePrefix: 'Authorizing refund failed: ',
+});
 
-async function unlockHotWallet(walletId: string): Promise<void> {
-	try {
-		await prisma.hotWallet.update({
-			where: { id: walletId, deletedAt: null },
-			data: { lockedAt: null },
-		});
-	} catch (error) {
-		logger.warn('Failed to unlock V2 authorize-refund hot wallet', { error, walletId });
-	}
-}
-
-function findMatchingUtxo(
-	utxoList: UTxO[],
-	txHash: string,
-	request: PaymentRequestWithRelations,
-	network: 'mainnet' | 'preprod',
-	smartContractAddress: string,
-): UTxO | undefined {
-	return utxoList.find((utxo) => {
-		if (utxo.input.txHash !== txHash) return false;
-		const utxoDatum = utxo.output.plutusData;
-		if (!utxoDatum) return false;
-		const decodedDatum: unknown = deserializeDatum(utxoDatum);
-		const decodedContract = decodeV2ContractDatum(decodedDatum, network, smartContractAddress);
-		if (decodedContract == null) return false;
-		return (
-			smartContractStateEqualsOnChainState(decodedContract.state, request.onChainState) &&
-			decodedContract.buyerVkey === request.BuyerWallet!.walletVkey &&
-			decodedContract.sellerVkey === request.SmartContractWallet!.walletVkey &&
-			decodedContract.buyerAddress === request.BuyerWallet!.walletAddress &&
-			decodedContract.sellerAddress === request.SmartContractWallet!.walletAddress &&
-			decodedContract.blockchainIdentifier === request.blockchainIdentifier &&
-			decodedContract.inputHash === request.inputHash &&
-			BigInt(decodedContract.resultTime) === BigInt(request.submitResultTime) &&
-			BigInt(decodedContract.unlockTime) === BigInt(request.unlockTime) &&
-			BigInt(decodedContract.externalDisputeUnlockTime) === BigInt(request.externalDisputeUnlockTime) &&
-			BigInt(decodedContract.collateralReturnLovelace) === BigInt(request.collateralReturnLovelace ?? 0) &&
-			BigInt(decodedContract.payByTime) === BigInt(request.payByTime ?? 0)
-		);
-	});
-}
+const unlockHotWallet = makeHotWalletUnlocker('authorize-refund');
 
 async function validateAndBuildItem(
 	request: PaymentRequestWithRelations,
@@ -196,7 +146,7 @@ async function validateAndBuildItem(
 	validatePaymentRequestFields(request);
 	const txHash = request.CurrentTransaction!.txHash!;
 	const utxoByHash = await fetchUTxOsWithDeferOnEmpty(blockchainProvider, txHash);
-	const utxo = findMatchingUtxo(utxoByHash, txHash, request, network, smartContractAddress);
+	const utxo = findMatchingPaymentUtxo(utxoByHash, txHash, request, network, smartContractAddress);
 	if (!utxo) {
 		throw new Error(`${LOOKUP_DEFERRED_PREFIX} UTXO not found`);
 	}
@@ -279,7 +229,7 @@ async function processSinglePaymentRequest(
 	const { script, smartContractAddress } = await getPaymentScriptFromPaymentSourceV2(paymentContract);
 	const txHash = request.CurrentTransaction!.txHash!;
 	const utxoByHash = await fetchUTxOsWithDeferOnEmpty(blockchainProvider, txHash);
-	const utxo = findMatchingUtxo(utxoByHash, txHash, request, network, smartContractAddress);
+	const utxo = findMatchingPaymentUtxo(utxoByHash, txHash, request, network, smartContractAddress);
 	if (!utxo) {
 		throw new Error(`${LOOKUP_DEFERRED_PREFIX} UTXO not found`);
 	}
@@ -308,6 +258,17 @@ async function processSinglePaymentRequest(
 		constrainBeforeMs: decodedContract.sellerCooldownTime,
 	});
 	const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
+	// Collateral must cover the pinned 3 ADA total_collateral. limitedFilteredUtxos
+	// is sorted by ASCENDING asset bloat, so [0] can be a pure-ADA DUST UTxO (< 3
+	// ADA) → deterministic phase-1 InsufficientCollateral. Prefer the smallest
+	// qualifying >= 5 ADA UTxO (the same floor the batch path enforces via
+	// pickBatchCollateral); ensureCollateralReady above provisions a 5 ADA
+	// reserve, so this normally succeeds. Fall back to [0] only if the wallet has
+	// nothing larger (no worse than the previous behaviour).
+	const collateralUtxo = pickBatchCollateral(limitedFilteredUtxos, [utxo.input]) ?? limitedFilteredUtxos[0];
+	if (collateralUtxo == null) {
+		throw new Error('Collateral UTXO not found');
+	}
 	const unsignedTx = await withMeshCostModelLock(
 		paymentContract.PaymentSourceConfig.rpcProviderApiKey,
 		async () =>
@@ -320,7 +281,7 @@ async function processSinglePaymentRequest(
 				script,
 				address,
 				utxo,
-				limitedFilteredUtxos[0],
+				collateralUtxo,
 				limitedFilteredUtxos,
 				datum.value,
 				invalidBefore,
@@ -360,7 +321,16 @@ async function processSinglePaymentRequest(
 			nodeTxHash: newTxHash,
 		});
 	}
-	await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
+	// Non-fatal: the tx is already on-chain. A projection failure must NOT
+	// propagate to advancedRetry and rebuild+resubmit an already-broadcast tx.
+	try {
+		await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
+	} catch (projectionError) {
+		logger.warn('V2 authorize-refund single-item: post-submit balance projection failed (non-fatal)', {
+			txHash: newTxHash,
+			error: projectionError instanceof Error ? projectionError.message : String(projectionError),
+		});
+	}
 	// retryOnSerializationConflict — see #24 note in V2 collection:
 	// post-submit conflict bubbling to advancedRetry would re-submit.
 	await retryOnSerializationConflict(
@@ -540,7 +510,8 @@ async function processWalletBatch(
 					blockchainIdentifier: request.blockchainIdentifier,
 					error: error instanceof Error ? { message: error.message, name: error.name } : error,
 				});
-				await markRequestFailed(request, error);
+				// Mid-batch: keep the shared wallet lock (see markRequestFailed).
+				await markRequestFailed(request, error, { unlockWallet: false });
 			}
 		}
 	}
@@ -1048,7 +1019,7 @@ async function processL2AuthorizeRefund(
 	}
 
 	const utxoByHash = await hydraProvider.fetchUTxOs(txHash);
-	const utxo = findMatchingUtxo(utxoByHash, txHash, request, network, smartContractAddress);
+	const utxo = findMatchingPaymentUtxo(utxoByHash, txHash, request, network, smartContractAddress);
 	if (!utxo) {
 		throw new Error(`${LOOKUP_DEFERRED_PREFIX} L2 contract UTXO not found in head`);
 	}

@@ -7,8 +7,8 @@ type HydraAwareTransactionRecord = {
 
 export type PaymentTx = Omit<Payment, 'CurrentTransaction' | 'TransactionHistory'> & {
   type: 'payment';
+  agentName?: string | null;
   RequestedFunds?: { amount: string; unit: string }[];
-  Amounts?: { amount: string; unit: string }[];
   unlockTime?: string | null;
   CurrentTransaction:
     | (NonNullable<Payment['CurrentTransaction']> & HydraAwareTransactionRecord)
@@ -23,8 +23,8 @@ export type PaymentTx = Omit<Payment, 'CurrentTransaction' | 'TransactionHistory
 
 export type PurchaseTx = Omit<Purchase, 'CurrentTransaction' | 'TransactionHistory'> & {
   type: 'purchase';
+  agentName?: string | null;
   PaidFunds?: { amount: string; unit: string }[];
-  Amounts?: { amount: string; unit: string }[];
   unlockTime?: string | null;
   CurrentTransaction:
     | (NonNullable<Purchase['CurrentTransaction']> & HydraAwareTransactionRecord)

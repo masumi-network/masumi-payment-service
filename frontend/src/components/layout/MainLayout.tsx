@@ -422,6 +422,7 @@ export function MainLayout({ children }: MainLayoutProps) {
               <Button
                 variant="ghost"
                 size="icon"
+                aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                 className={cn(
                   'h-8 w-8',
                   collapsed ? 'text-muted-foreground opacity-50' : 'text-foreground opacity-100',
@@ -474,6 +475,12 @@ export function MainLayout({ children }: MainLayoutProps) {
                 )}
                 <Link
                   href={item.href}
+                  onMouseEnter={() => {
+                    // Warm the target route's bundle on hover so the click lands
+                    // on an already-prefetched page (belt-and-suspenders over
+                    // Link's default viewport prefetch).
+                    if (item.href.startsWith('/')) void router.prefetch(item.href);
+                  }}
                   className={cn(
                     'flex items-center rounded-lg text-sm transition-colors duration-150 relative sidebar-active-indicator',
                     isDev
@@ -573,6 +580,7 @@ export function MainLayout({ children }: MainLayoutProps) {
               <Link
                 href="https://www.masumi.network/about"
                 target="_blank"
+                rel="noopener noreferrer"
                 className="truncate hover:text-foreground transition-colors"
               >
                 About
@@ -581,6 +589,7 @@ export function MainLayout({ children }: MainLayoutProps) {
               <Link
                 href="https://www.house-of-communication.com/de/en/footer/privacy-policy.html"
                 target="_blank"
+                rel="noopener noreferrer"
                 className="truncate hover:text-foreground transition-colors"
               >
                 Privacy
@@ -589,6 +598,7 @@ export function MainLayout({ children }: MainLayoutProps) {
               <Link
                 href="https://www.masumi.network/product-releases"
                 target="_blank"
+                rel="noopener noreferrer"
                 className="truncate hover:text-foreground transition-colors"
               >
                 Changelog
@@ -597,6 +607,7 @@ export function MainLayout({ children }: MainLayoutProps) {
             <Button
               variant="ghost"
               size="icon"
+              aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
               className={cn('h-8 w-8', collapsed && !isHovered && 'mx-auto')}
               onClick={() => setThemePreference(theme === 'dark' ? 'light' : 'dark')}
             >
@@ -633,6 +644,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                   <Link
                     href="https://docs.masumi.network"
                     target="_blank"
+                    rel="noopener noreferrer"
                     className="flex items-center gap-2"
                   >
                     <BookOpen className="h-4 w-4" />
@@ -643,6 +655,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                   <Link
                     href="https://www.masumi.network/contact"
                     target="_blank"
+                    rel="noopener noreferrer"
                     className="flex items-center gap-2"
                   >
                     <MessageSquare className="h-4 w-4" />

@@ -34,8 +34,8 @@ smart-contracts/payment/wallet_2_.addr
 scripts/add-mock-payments.ts
 
 otelcol-contrib
-test-output/example-invoice.pdf
-test-output/minimal-invoice.pdf
+# invoice-generator test artifacts
+test-output/
 tests/e2e/.e2e-global-state.json
 scripts/example-invoice.pdf
 scripts/example-invoice.html

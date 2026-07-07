@@ -2,8 +2,25 @@ import { PurchasingAction, TransactionStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
-import { retryOnSerializationConflict } from '@/utils/db/retry';
-import { withSerializableSlotRetry } from '@/utils/db/serializable-semaphore';
+import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
+import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
+
+// Reverting an ambiguous submit must resume the SAME sub-flow the request was
+// in, not blindly reset to funding. `intendedTxHash` is set by batch-payments
+// (FundsLockingInitiated), by the refund/withdraw services, AND by
+// collateral-prep on behalf of any of them — so a dependent PurchaseRequest can
+// be mid-refund or mid-withdrawal. Map its in-flight `*Initiated` action back to
+// the matching `*Requested` action that re-triggers its cron. Resetting a
+// refund/withdraw request to `FundsLockingRequested` (the old behaviour) matched
+// no cron and silently dropped the refund, letting the on-chain unlock window
+// lapse (H5).
+const REVERT_REQUEUE_ACTION: Partial<Record<PurchasingAction, PurchasingAction>> = {
+	[PurchasingAction.FundsLockingInitiated]: PurchasingAction.FundsLockingRequested,
+	[PurchasingAction.SetRefundRequestedInitiated]: PurchasingAction.SetRefundRequestedRequested,
+	[PurchasingAction.UnSetRefundRequestedInitiated]: PurchasingAction.UnSetRefundRequestedRequested,
+	[PurchasingAction.WithdrawRefundInitiated]: PurchasingAction.WithdrawRefundRequested,
+	[PurchasingAction.AuthorizeWithdrawalInitiated]: PurchasingAction.AuthorizeWithdrawalRequested,
+};
 
 /**
  * Reconciliation worker for V2 funding transactions whose submit outcome was
@@ -22,9 +39,10 @@ import { withSerializableSlotRetry } from '@/utils/db/serializable-semaphore';
  *
  *   - intendedTxHash NOT found AND `current_slot > invalidHereafterSlot + GRACE`
  *     → the ledger can never accept this txBody (TTL expired). Safe to mark
- *     the shared Transaction `RolledBack`, free the wallet, and reset the
- *     batched PurchaseRequests back to `FundsLockingRequested` so the next
- *     batch tick can re-lock them. A fresh build will use different inputs
+ *     the shared Transaction `RolledBack`, free the wallet, and requeue each
+ *     dependent PurchaseRequest to the `*Requested` action of the sub-flow it
+ *     was in (funding / set-refund / withdraw-refund / authorize-withdrawal) so
+ *     the matching cron re-drives it. A fresh build will use different inputs
  *     so no double-spend is possible.
  *
  *   - intendedTxHash NOT found AND still within TTL → leave Pending. Try
@@ -351,8 +369,9 @@ export async function reconcileOne(tx: ReconcileCandidate): Promise<void> {
 					}
 
 					// Invariant: intendedTxHash is only set on Transactions owned by
-					// PurchaseRequest (V2 collateral-prep + batch-payments). The revert
-					// path below only resets PurchaseRequest.currentTransactionId. If a
+					// PurchaseRequest (V2 batch-payments, the refund/withdraw services,
+					// and collateral-prep on their behalf). The revert path below only
+					// resets PurchaseRequest.currentTransactionId. If a
 					// future caller ever sets intendedTxHash on a Transaction also
 					// referenced by PaymentRequest or RegistryRequest, this assert fires
 					// so the orphan-FK is caught at runtime instead of silently
@@ -372,19 +391,33 @@ export async function reconcileOne(tx: ReconcileCandidate): Promise<void> {
 								`Generalize the revert to handle these request types before extending the flow.`,
 						);
 					}
-					// Reset every PurchaseRequest whose CurrentTransaction points at this row.
+					// Reset every PurchaseRequest whose CurrentTransaction points at this
+					// row, requeuing each to the *Requested action for the sub-flow it
+					// was in (funding / set-refund / withdraw-refund / authorize-
+					// withdrawal) so the correct cron picks it up. A fresh build uses
+					// different inputs, so no double-spend is possible.
 					const dependentPurchases = await txdb.purchaseRequest.findMany({
 						where: { currentTransactionId: tx.id },
-						select: { id: true, nextActionId: true },
+						select: { id: true, nextActionId: true, NextAction: { select: { requestedAction: true } } },
 					});
 					for (const pr of dependentPurchases) {
+						const inFlightAction = pr.NextAction?.requestedAction;
+						const requeueAction =
+							(inFlightAction != null ? REVERT_REQUEUE_ACTION[inFlightAction] : undefined) ??
+							PurchasingAction.FundsLockingRequested;
+						if (inFlightAction == null || REVERT_REQUEUE_ACTION[inFlightAction] == null) {
+							logger.warn(
+								'funding-reconciliation: unrecognised in-flight action on revert, defaulting to FundsLockingRequested',
+								{ txId: tx.id, purchaseRequestId: pr.id, inFlightAction },
+							);
+						}
 						await txdb.purchaseRequest.update({
 							where: { id: pr.id },
 							data: {
 								ActionHistory: { connect: { id: pr.nextActionId } },
 								NextAction: {
 									create: {
-										requestedAction: PurchasingAction.FundsLockingRequested,
+										requestedAction: requeueAction,
 										errorType: null,
 										errorNote: null,
 									},

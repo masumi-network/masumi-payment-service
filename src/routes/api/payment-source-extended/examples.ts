@@ -11,6 +11,7 @@ export const paymentSourceExtendedExample = {
 	requiredAdminSignatures: null,
 	policyId: 'policy_id',
 	smartContractAddress: 'address_of_the_smart_contract',
+	contractSyncStatus: 'in_sync',
 	PaymentSourceConfig: {
 		rpcProviderApiKey: 'rpc_provider_api_key_blockfrost',
 		rpcProvider: RPCProvider.Blockfrost,
@@ -49,6 +50,7 @@ export const listPaymentSourceExtendedResponseExample = {
 			syncInProgress: true,
 			policyId: 'policy_id',
 			smartContractAddress: 'address_of_the_smart_contract',
+			contractSyncStatus: 'in_sync',
 			AdminWallets: [
 				{ walletAddress: 'wallet_address', order: 0 },
 				{ walletAddress: 'wallet_address', order: 1 },

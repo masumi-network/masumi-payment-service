@@ -5,6 +5,7 @@ import {
 	assertRpcServesDeclaredChain,
 	createChain,
 	type HexAddress,
+	nativeCurrencyForCaip2,
 	normalizeAddress,
 	safeHttpTransport,
 } from './internal';
@@ -116,10 +117,15 @@ export async function getX402WalletBalances(input: {
 						? readErc20Balance(client, network.defaultAsset as HexAddress, owner)
 						: Promise.resolve(null),
 				]);
+				const nativeCurrency = nativeCurrencyForCaip2(network.caip2Id);
 				return {
 					caip2Network: network.caip2Id,
 					displayName: network.displayName,
-					native: { symbol: 'ETH', decimals: 18, amount: nativeAmount.toString() },
+					native: {
+						symbol: nativeCurrency.symbol,
+						decimals: nativeCurrency.decimals,
+						amount: nativeAmount.toString(),
+					},
 					asset: assetBalance,
 					error: null,
 				};

@@ -21,10 +21,13 @@ pub type AssetValue =
 // short value would make accidental collisions far more likely.
 const min_reference_signature_bytes: Int = 16
 
-// CIP-8 protected headers value pinned to EdDSA (`{1: -8}` = `a10127`). The
-// admin signature payload is a CIP-8 Sig_structure, so accepting only the
-// standard EdDSA headers prevents header divergence between signers.
-const cip8_eddsa_protected_headers: ByteArray = #"a10127"
+// Maximum accepted byte length of a CIP-8 protected-headers value. CIP-30
+// mandates that wallet `signData` protected headers carry `alg` (1: -8) and
+// `"address"` (raw address bytes), and wallets commonly add `kid`; real-world
+// header maps are ~105 bytes. The cap only bounds redeemer-driven hashing
+// work in `cip8_sig_structure` (DoS symmetry with the H3 signature-count
+// bound) and does not constrain any legitimate signer.
+const max_protected_headers_bytes: Int = 256
 
 pub type State {
   FundsLocked
@@ -537,6 +540,14 @@ validator vested_pay(
         expect countOfAdmins >= 1
         // Prevent a zero-threshold configuration from authorizing everyone.
         expect required_admins_multi_sig > 0
+        // Reachability guard: with weighted voting, at most countOfAdmins
+        // votes exist, so a larger threshold can never be met — every
+        // settlement would silently miss the final count check. Off-chain
+        // derivation (getPaymentScriptV2) rejects such parameters before an
+        // address is ever created; this expect adds the same bound on-chain
+        // for deployments that bypass our tooling and turns the
+        // misconfiguration into an explicit trace.
+        expect required_admins_multi_sig <= countOfAdmins
 
         expect state == Disputed
 
@@ -842,22 +853,61 @@ fn has_valid_admin_signature(
   list.any(
     admin_signatures,
     fn(admin_signature) {
-      // L2: pin the CIP-8 protected headers to the standard EdDSA value
-      // (`{1: -8}` = `a10127`). Letting submitters choose `protected_headers`
-      // would let two admins sign syntactically distinct Sig_structures that
-      // an off-chain attacker could splice; enforcing a single canonical
-      // header eliminates that divergence and matches what every standard
-      // Cardano wallet emits.
-      expect admin_signature.protected_headers == cip8_eddsa_protected_headers
-      let sig_structure =
-        cip8_sig_structure(admin_signature.protected_headers, intent_hash)
+      // CIP-30 `signData` signs a Sig_structure whose protected headers MUST
+      // contain `alg` (1: -8) and `"address"` (per CIP-30), so the exact
+      // header bytes differ per wallet and per signing address. The validator
+      // therefore reconstructs the Sig_structure from the SUBMITTED headers
+      // and verifies the ed25519 signature over headers + payload together.
+      // This is sound without pinning the header bytes: the signature covers
+      // the full structure, so a submitter cannot pair one admin's headers
+      // with another payload (or vice versa) — any mutation breaks
+      // verification. Authorization is bound by the payload (own_ref +
+      // signed payout minimums) and by the key-hash check below, never by
+      // header contents. Raw-signing tools that emit bare `{1: -8}` headers
+      // remain accepted. The length cap bounds per-signature hashing work.
+      //
+      // NOTE ON STRUCTURE: the `expect …` below and the `and { … }` block are
+      // TWO separate statements, not one expression. `expect <len <= cap>` is a
+      // guard that hard-fails the validator when the protected-header blob is
+      // oversized; the trailing `and { … }` (Aiken's standalone block-AND) is
+      // this closure's Bool return value. It visually reads as
+      // `expect (len <= cap and { … })` but does not parse that way.
+      //
+      // Two payload modes are accepted, mirroring CIP-8:
+      //   * raw:    Sig_structure payload = intent_hash (software wallets;
+      //             CIP-30 mandates non-hashed payloads)
+      //   * hashed: Sig_structure payload = blake2b_224(intent_hash)
+      //             (hardware wallets signing with the CIP-8 `hashed: true`
+      //             flag; the flag lives in the UNPROTECTED headers, so it is
+      //             neither signed nor submitted — only the payload differs)
+      // Exactly one hash level is accepted (see the double-hashed rejection
+      // test). Cross-mode confusion would require a blake2b_224 preimage
+      // (intent_hash_B == blake2b_224(intent_hash_A)), and a malicious dApp
+      // still needs an admin to blind-sign the exact intent hash in either
+      // mode, so the authorization surface is unchanged. The hashed branch is
+      // short-circuited: valid raw signatures cost one ed25519 verify as
+      // before; only raw-invalid signatures pay the second verify, doubling
+      // the worst-case per-signature work still bounded by H3 + the header
+      // length cap.
+      expect
+        bytearray.length(admin_signature.protected_headers) <= max_protected_headers_bytes
       and {
         blake2b_224(admin_signature.verification_key) == admin_vk_hash,
-        verify_ed25519_signature(
-          admin_signature.verification_key,
-          sig_structure,
-          admin_signature.signature,
-        ),
+        or {
+          verify_ed25519_signature(
+            admin_signature.verification_key,
+            cip8_sig_structure(admin_signature.protected_headers, intent_hash),
+            admin_signature.signature,
+          ),
+          verify_ed25519_signature(
+            admin_signature.verification_key,
+            cip8_sig_structure(
+              admin_signature.protected_headers,
+              blake2b_224(intent_hash),
+            ),
+            admin_signature.signature,
+          ),
+        },
       }
     },
   )
@@ -1864,7 +1914,296 @@ test withdraw_disputed_not_disputed_state_rejected() fail {
     tx,
   )
 }
-// TODO: WithdrawDisputed happy-path test that exercises the CIP-8 ed25519
-// signature verification is intentionally omitted -- it requires generating
-// a real ed25519 keypair and signing the CBOR-encoded DisputeWithdrawal
-// payload off-chain, which is non-trivial in pure Aiken test land.
+// ---------------------------------------------------------------------------
+// 5. WithdrawDisputed happy paths with REAL ed25519 CIP-8 signatures.
+//
+// Vectors are generated deterministically by generate-cip8-test-vector.mjs
+// (same directory). All vectors sign the identical intent hash for
+// own_ref = stub_own_ref(0) (tx id 0x11*32, index 0) with empty buyer/seller
+// values:
+//   * cip30_*: a genuine CIP-30 `MeshWallet.signData` signature whose
+//     protected headers carry the CIP-30-mandated `alg` + `address` (+ `kid`)
+//     entries -- the exact shape every spec-compliant browser wallet emits.
+//   * raw_*: a bare-`{1: -8}` (`a10127`) Sig_structure signed with a raw
+//     ed25519 key, as produced by key-in-hand admin tooling.
+//   * hashed_*: a CIP-8 hashed-mode signature whose Sig_structure payload is
+//     blake2b_224(intent_hash) -- the shape hardware wallets emit when
+//     signing with `hashed: true`.
+//   * double_hashed_signature: NEGATIVE -- signs
+//     blake2b_224(blake2b_224(intent_hash)); exactly one hash level is
+//     accepted, so this must fail.
+// ---------------------------------------------------------------------------
+
+const cip30_admin_vk: ByteArray =
+  #"c32dfdb461dd016e8fdd9b6d424a77439eab8f8c644a804b013b6cefa2454f95"
+
+const cip30_admin_vk_hash: ByteArray =
+  #"5867c3b8e27840f556ac268b781578b14c5661fc63ee720dbeab663f"
+
+const cip30_protected_headers: ByteArray =
+  #"a30127045820c32dfdb461dd016e8fdd9b6d424a77439eab8f8c644a804b013b6cefa2454f9567616464726573735839005867c3b8e27840f556ac268b781578b14c5661fc63ee720dbeab663f9d4dcd7e454d2434164f4efb8edeb358d86a1dad9ec6224cfcbce3e6"
+
+const cip30_signature: ByteArray =
+  #"1eadf611c719a35bdd30fb9e1712cd493d8a7982ffd1dbacb7f05eb778af4768a176fd59bb3fff52c66111e603f0f8b01bbcb6d49896d04f4c589c011d97ec02"
+
+const raw_admin_vk: ByteArray =
+  #"e734ea6c2b6257de72355e472aa05a4c487e6b463c029ed306df2f01b5636b58"
+
+const raw_admin_vk_hash: ByteArray =
+  #"e4ff642ed686b644c5cb39c230c24b0e8a5d850701971bdde3253cec"
+
+const raw_signature: ByteArray =
+  #"35d26314b3d2efd22e7e45d1a1a3baefd7d9988636dab010126663f0099ad296ef7c7a85feed18ba5626993aa6c4abcb47617041481941d7419671575a5eed09"
+
+const hashed_admin_vk: ByteArray =
+  #"7d59c5623dd40a74aa4d5a32ac645d3b3f95daeae4c22be25476dd6a486f7382"
+
+const hashed_admin_vk_hash: ByteArray =
+  #"79246393d6ca4adbd40d61f492963390e5568afab38d26632725daab"
+
+const hashed_signature: ByteArray =
+  #"d7bb6c902225a66f248c051b3c80857fa2983c8df69a53326ac289cd87672014576d5276cc3d30794284ed407ef5d17c54dd2146725cd62151e5b6b8ff307b0b"
+
+const double_hashed_signature: ByteArray =
+  #"9c70279d27fc400399479dd9d2a79d53db4747ec56752d9adb9ef0e17af93bf5abdcd8fd19c9f70dbfce7033763e30c4f0e672ea026442ff9f5acfef5e40d206"
+
+fn stub_disputed_settlement_tx() -> (Datum, OutputReference, Transaction) {
+  // external_dispute_unlock_time = 2000; settle at [2000, 2500].
+  let own_ref = stub_own_ref(0)
+  let in_datum =
+    stub_datum(Disputed, result_hash_default, ref_sig_default, 500, 1000, 2000, 0, 0)
+  let val = assets.from_lovelace(1_000_000)
+  let inp = stub_input(script_address(), val, in_datum, own_ref)
+  let tx = stub_tx([inp], [], interval.between(2000, 2500), [other_vk_hash])
+  (in_datum, own_ref, tx)
+}
+
+test withdraw_disputed_accepts_cip30_wallet_signature() {
+  let (in_datum, own_ref, tx) = stub_disputed_settlement_tx()
+
+  vested_pay.spend(
+    1,
+    [cip30_admin_vk_hash],
+    100,
+    Some(in_datum),
+    WithdrawDisputed {
+      buyer_value: [],
+      seller_value: [],
+      admin_signatures: [
+        AdminSignature {
+          verification_key: cip30_admin_vk,
+          protected_headers: cip30_protected_headers,
+          signature: cip30_signature,
+        },
+      ],
+    },
+    own_ref,
+    tx,
+  )
+}
+
+test withdraw_disputed_accepts_bare_eddsa_header_signature() {
+  let (in_datum, own_ref, tx) = stub_disputed_settlement_tx()
+
+  vested_pay.spend(
+    1,
+    [raw_admin_vk_hash],
+    100,
+    Some(in_datum),
+    WithdrawDisputed {
+      buyer_value: [],
+      seller_value: [],
+      admin_signatures: [
+        AdminSignature {
+          verification_key: raw_admin_vk,
+          protected_headers: #"a10127",
+          signature: raw_signature,
+        },
+      ],
+    },
+    own_ref,
+    tx,
+  )
+}
+
+test withdraw_disputed_accepts_mixed_header_multisig() {
+  // 2-of-2 with one CIP-30 wallet signer and one raw signer over the same
+  // intent hash: header styles may coexist within a single settlement.
+  let (in_datum, own_ref, tx) = stub_disputed_settlement_tx()
+
+  vested_pay.spend(
+    2,
+    [cip30_admin_vk_hash, raw_admin_vk_hash],
+    100,
+    Some(in_datum),
+    WithdrawDisputed {
+      buyer_value: [],
+      seller_value: [],
+      admin_signatures: [
+        AdminSignature {
+          verification_key: cip30_admin_vk,
+          protected_headers: cip30_protected_headers,
+          signature: cip30_signature,
+        },
+        AdminSignature {
+          verification_key: raw_admin_vk,
+          protected_headers: #"a10127",
+          signature: raw_signature,
+        },
+      ],
+    },
+    own_ref,
+    tx,
+  )
+}
+
+test withdraw_disputed_accepts_hashed_payload_signature() {
+  // CIP-8 hashed mode: the Sig_structure payload is blake2b_224(intent_hash)
+  // instead of the intent hash itself (hardware wallets with `hashed: true`).
+  let (in_datum, own_ref, tx) = stub_disputed_settlement_tx()
+
+  vested_pay.spend(
+    1,
+    [hashed_admin_vk_hash],
+    100,
+    Some(in_datum),
+    WithdrawDisputed {
+      buyer_value: [],
+      seller_value: [],
+      admin_signatures: [
+        AdminSignature {
+          verification_key: hashed_admin_vk,
+          protected_headers: #"a10127",
+          signature: hashed_signature,
+        },
+      ],
+    },
+    own_ref,
+    tx,
+  )
+}
+
+test withdraw_disputed_accepts_mixed_raw_and_hashed_multisig() {
+  // 3-of-3 mixing all accepted signature shapes over the same intent hash:
+  // CIP-30 wallet headers (raw payload), bare headers (raw payload), and
+  // bare headers with a CIP-8 hashed-mode payload.
+  let (in_datum, own_ref, tx) = stub_disputed_settlement_tx()
+
+  vested_pay.spend(
+    3,
+    [cip30_admin_vk_hash, raw_admin_vk_hash, hashed_admin_vk_hash],
+    100,
+    Some(in_datum),
+    WithdrawDisputed {
+      buyer_value: [],
+      seller_value: [],
+      admin_signatures: [
+        AdminSignature {
+          verification_key: cip30_admin_vk,
+          protected_headers: cip30_protected_headers,
+          signature: cip30_signature,
+        },
+        AdminSignature {
+          verification_key: raw_admin_vk,
+          protected_headers: #"a10127",
+          signature: raw_signature,
+        },
+        AdminSignature {
+          verification_key: hashed_admin_vk,
+          protected_headers: #"a10127",
+          signature: hashed_signature,
+        },
+      ],
+    },
+    own_ref,
+    tx,
+  )
+}
+
+test withdraw_disputed_rejects_double_hashed_payload_signature() fail {
+  // Signature over blake2b_224(blake2b_224(intent_hash)): exactly one hash
+  // level is accepted, so re-hashing beyond CIP-8 hashed mode must fail both
+  // the raw and the hashed verification branches.
+  let (in_datum, own_ref, tx) = stub_disputed_settlement_tx()
+
+  vested_pay.spend(
+    1,
+    [hashed_admin_vk_hash],
+    100,
+    Some(in_datum),
+    WithdrawDisputed {
+      buyer_value: [],
+      seller_value: [],
+      admin_signatures: [
+        AdminSignature {
+          verification_key: hashed_admin_vk,
+          protected_headers: #"a10127",
+          signature: double_hashed_signature,
+        },
+      ],
+    },
+    own_ref,
+    tx,
+  )
+}
+
+test withdraw_disputed_rejects_signature_with_tampered_headers() fail {
+  // Valid CIP-30 signature but the submitted headers differ from the signed
+  // ones (bare a10127 instead of the wallet's alg+kid+address map). The
+  // reconstructed Sig_structure no longer matches -> ed25519 verify fails ->
+  // threshold not met.
+  let (in_datum, own_ref, tx) = stub_disputed_settlement_tx()
+
+  vested_pay.spend(
+    1,
+    [cip30_admin_vk_hash],
+    100,
+    Some(in_datum),
+    WithdrawDisputed {
+      buyer_value: [],
+      seller_value: [],
+      admin_signatures: [
+        AdminSignature {
+          verification_key: cip30_admin_vk,
+          protected_headers: #"a10127",
+          signature: cip30_signature,
+        },
+      ],
+    },
+    own_ref,
+    tx,
+  )
+}
+
+test withdraw_disputed_rejects_oversized_protected_headers() fail {
+  // 320-byte headers (64-byte chunk + four concats) exceed
+  // max_protected_headers_bytes and abort before any signature verification.
+  let (in_datum, own_ref, tx) = stub_disputed_settlement_tx()
+  let chunk = cip30_signature
+  let oversized_headers =
+    chunk
+      |> bytearray.concat(chunk)
+      |> bytearray.concat(chunk)
+      |> bytearray.concat(chunk)
+      |> bytearray.concat(chunk)
+
+  vested_pay.spend(
+    1,
+    [cip30_admin_vk_hash],
+    100,
+    Some(in_datum),
+    WithdrawDisputed {
+      buyer_value: [],
+      seller_value: [],
+      admin_signatures: [
+        AdminSignature {
+          verification_key: cip30_admin_vk,
+          protected_headers: oversized_headers,
+          signature: cip30_signature,
+        },
+      ],
+    },
+    own_ref,
+    tx,
+  )
+}

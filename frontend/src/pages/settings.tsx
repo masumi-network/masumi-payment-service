@@ -55,6 +55,7 @@ export default function Settings() {
                     <Button
                       variant="ghost"
                       size="icon"
+                      aria-label={showApiKey ? 'Hide API key' : 'Show API key'}
                       className="h-8 w-8"
                       onClick={() => setShowApiKey(!showApiKey)}
                     >

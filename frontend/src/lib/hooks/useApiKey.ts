@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from 'react';
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { getApiKey, ApiKey } from '@/lib/api/generated';
 import { handleApiCall } from '@/lib/utils';
@@ -9,6 +9,7 @@ const PAGE_SIZE = 20;
 
 export function useApiKey() {
   const { apiClient } = useAppContext();
+  const queryClient = useQueryClient();
 
   const query = useInfiniteQuery({
     queryKey: ['api-keys'],
@@ -76,6 +77,13 @@ export function useApiKey() {
     }
   }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
+  // Clear the list to its skeleton state, then refetch. Use after a mutation
+  // that changes membership (delete / create a key) so stale rows aren't shown.
+  const reset = useCallback(
+    () => queryClient.resetQueries({ queryKey: ['api-keys'] }),
+    [queryClient],
+  );
+
   return {
     apiKeys,
     allApiKeys: apiKeys,
@@ -84,6 +92,7 @@ export function useApiKey() {
     loadMore,
     isFetchingNextPage,
     refetch,
+    reset,
     isRefetching,
   };
 }

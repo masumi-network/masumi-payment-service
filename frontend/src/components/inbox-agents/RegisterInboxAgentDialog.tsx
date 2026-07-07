@@ -15,6 +15,7 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'react-toastify';
 import { postInboxAgents } from '@/lib/api/generated';
+import { extractApiErrorMessage } from '@/lib/api-error';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { shortenAddress } from '@/lib/utils';
 import { useWallets } from '@/lib/queries/useWallets';
@@ -25,19 +26,12 @@ import {
   isReservedInboxSlug,
   normalizeInboxSlug,
 } from '@/lib/registry-validation';
+import { convertDecimalToBaseUnits } from '@/lib/convertDecimalToBaseUnits';
 
 interface RegisterInboxAgentDialogProps {
   open: boolean;
   onClose: () => void;
   onSuccess: () => void;
-}
-
-function convertDecimalToBaseUnits(value: string, decimals = 6): string {
-  const [wholePart, fractionalPart = ''] = value.split('.');
-  const normalizedFractionalPart = fractionalPart.padEnd(decimals, '0').slice(0, decimals);
-  const scale = BigInt(10 ** decimals);
-
-  return (BigInt(wholePart || '0') * scale + BigInt(normalizedFractionalPart || '0')).toString();
 }
 
 const inboxAgentSchema = z.object({
@@ -207,17 +201,24 @@ export function RegisterInboxAgentDialog({
           },
         });
 
-        if (!response.data?.data?.id) {
-          throw new Error('Failed to register inbox agent: Invalid response from server');
+        // The generated client returns {data, error} and never throws —
+        // surface the real backend error instead of the generic fallback.
+        if (response.error || !response.data?.data?.id) {
+          throw new Error(
+            extractApiErrorMessage(
+              response.error,
+              'Failed to register inbox agent: Invalid response from server',
+            ),
+          );
         }
 
         toast.success('Inbox agent registered successfully');
         onSuccess();
         onClose();
         reset();
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error('Error registering inbox agent:', error);
-        toast.error(error?.message ?? 'Failed to register inbox agent');
+        toast.error(error instanceof Error ? error.message : 'Failed to register inbox agent');
       } finally {
         setIsLoading(false);
       }
@@ -227,7 +228,7 @@ export function RegisterInboxAgentDialog({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[640px] overflow-y-auto">
+      <DialogContent size="md" className="overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Register Inbox Agent</DialogTitle>
           <p className="text-sm text-muted-foreground mt-2">
@@ -237,15 +238,15 @@ export function RegisterInboxAgentDialog({
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              Name <span className="text-red-500">*</span>
+              Name <span className="text-destructive">*</span>
             </label>
             <Input
               {...register('name')}
               maxLength={INBOX_REGISTRY_LIMITS.agentName}
               placeholder="Enter a name for your inbox agent"
-              className={errors.name ? 'border-red-500' : ''}
+              className={errors.name ? 'border-destructive' : ''}
             />
-            {errors.name && <p className="text-sm text-red-500">{errors.name.message}</p>}
+            {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
           </div>
 
           <div className="space-y-2">
@@ -256,20 +257,20 @@ export function RegisterInboxAgentDialog({
                 rows={4}
                 maxLength={INBOX_REGISTRY_LIMITS.description}
                 placeholder="Describe what this inbox agent is used for"
-                className={`resize-none overflow-y-auto h-[112px] ${errors.description ? 'border-red-500' : ''}`}
+                className={`resize-none overflow-y-auto h-[112px] ${errors.description ? 'border-destructive' : ''}`}
               />
               <div className="absolute bottom-2 right-2 text-xs text-muted-foreground">
                 {watch('description')?.length || 0}/{INBOX_REGISTRY_LIMITS.description}
               </div>
             </div>
             {errors.description && (
-              <p className="text-sm text-red-500">{errors.description.message}</p>
+              <p className="text-sm text-destructive">{errors.description.message}</p>
             )}
           </div>
 
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              Inbox slug <span className="text-red-500">*</span>
+              Inbox slug <span className="text-destructive">*</span>
             </label>
             <Input
               {...register('agentSlug', {
@@ -282,17 +283,19 @@ export function RegisterInboxAgentDialog({
               })}
               maxLength={INBOX_REGISTRY_LIMITS.agentSlug}
               placeholder="support-inbox"
-              className={errors.agentSlug ? 'border-red-500' : ''}
+              className={errors.agentSlug ? 'border-destructive' : ''}
             />
             <p className="text-xs text-muted-foreground">
               Use lowercase letters, numbers, and hyphens. The value must already be canonical.
             </p>
-            {errors.agentSlug && <p className="text-sm text-red-500">{errors.agentSlug.message}</p>}
+            {errors.agentSlug && (
+              <p className="text-sm text-destructive">{errors.agentSlug.message}</p>
+            )}
           </div>
 
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              Minting wallet <span className="text-red-500">*</span>
+              Minting wallet <span className="text-destructive">*</span>
             </label>
             <Controller
               control={control}
@@ -301,7 +304,7 @@ export function RegisterInboxAgentDialog({
                 <Select value={field.value} onValueChange={field.onChange}>
                   <SelectTrigger
                     disabled={isLoadingWallets}
-                    className={`${errors.selectedWallet ? 'border-red-500' : ''} ${isLoadingWallets ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    className={`${errors.selectedWallet ? 'border-destructive' : ''} ${isLoadingWallets ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     <SelectValue
                       placeholder={
@@ -327,7 +330,7 @@ export function RegisterInboxAgentDialog({
               )}
             />
             {errors.selectedWallet && (
-              <p className="text-sm text-red-500">{errors.selectedWallet.message}</p>
+              <p className="text-sm text-destructive">{errors.selectedWallet.message}</p>
             )}
           </div>
 
@@ -388,7 +391,7 @@ export function RegisterInboxAgentDialog({
               step="0.000001"
               placeholder="Optional ADA amount"
               disabled={!selectedRecipientWalletAddress}
-              className={errors.sendFundingAda ? 'border-red-500' : ''}
+              className={errors.sendFundingAda ? 'border-destructive' : ''}
             />
             <p className="text-xs text-muted-foreground">
               Optional. Sends ADA with the minted NFT to the selected holding wallet. The minimum
@@ -400,7 +403,7 @@ export function RegisterInboxAgentDialog({
               </p>
             )}
             {errors.sendFundingAda && (
-              <p className="text-sm text-red-500">{errors.sendFundingAda.message}</p>
+              <p className="text-sm text-destructive">{errors.sendFundingAda.message}</p>
             )}
           </div>
 

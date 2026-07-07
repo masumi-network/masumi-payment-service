@@ -38,6 +38,12 @@ const DialogContent = React.forwardRef<
     isPushedBack?: boolean;
     hideOverlay?: boolean;
     onBack?: () => void;
+    /**
+     * Standard modal width scale. Prefer this over ad-hoc `max-w-[...]` classes
+     * so dialogs stay visually consistent: sm=480 (compact forms/confirms),
+     * md=600 (detail views), lg=700 (large forms), xl=800 (wide/multi-column).
+     */
+    size?: 'sm' | 'md' | 'lg' | 'xl';
     /** Stack above default modals (e.g. agent details over transaction modal). */
     elevatedStack?: boolean;
     /** Stack above an elevated parent (e.g. verify/wallet over elevated agent dialog). */
@@ -55,6 +61,7 @@ const DialogContent = React.forwardRef<
       isPushedBack,
       hideOverlay,
       onBack,
+      size,
       elevatedStack,
       elevatedChildStack,
       elevatedGrandchildStack,
@@ -62,6 +69,14 @@ const DialogContent = React.forwardRef<
     },
     ref,
   ) => {
+    const sizeClass = size
+      ? {
+          sm: 'sm:max-w-[480px]',
+          md: 'sm:max-w-[600px]',
+          lg: 'sm:max-w-[700px]',
+          xl: 'sm:max-w-[800px]',
+        }[size]
+      : undefined;
     const useCustomAnimation = variant !== undefined || isPushedBack !== undefined;
 
     const variantClass =
@@ -103,6 +118,7 @@ const DialogContent = React.forwardRef<
             isPushedBack !== undefined && 'dialog-content-stackable',
             isPushedBack && 'is-pushed-back',
             onBack && 'pt-12',
+            sizeClass,
             className,
           )}
           {...props}

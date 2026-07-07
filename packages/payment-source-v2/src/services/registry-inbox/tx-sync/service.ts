@@ -52,6 +52,7 @@ async function syncInboxAgentRegistrationRequests(
 		CurrentTransaction: {
 			BlocksWallet: { id: string } | null;
 			txHash: string | null;
+			status: TransactionStatus;
 		} | null;
 		agentIdentifier: string | null;
 	}>,
@@ -96,6 +97,20 @@ async function syncInboxAgentRegistrationRequests(
 							data: { lockedAt: null },
 						});
 					}
+				} else if (request.CurrentTransaction?.status === TransactionStatus.FailedViaTimeout) {
+					// Force-failed by the wallet-lock timeout sweep (broadcast but never
+					// seen on chain past the lock timeout) AND the asset is still absent —
+					// the mint tx was dropped, not indexer-lagged (a landed tx matches the
+					// confirm branch above). Surface as RegistrationFailed so the row is not
+					// left invisible-stuck in RegistrationInitiated forever.
+					await prisma.inboxAgentRegistrationRequest.update({
+						where: { id: request.id },
+						data: {
+							state: RegistrationState.RegistrationFailed,
+							error:
+								'Inbox registration transaction was broadcast but never landed on chain (dropped); force-failed by the wallet-lock timeout sweep',
+						},
+					});
 				} else {
 					await prisma.inboxAgentRegistrationRequest.update({
 						where: { id: request.id },
@@ -137,6 +152,19 @@ async function syncInboxAgentRegistrationRequests(
 							data: { lockedAt: null },
 						});
 					}
+				} else if (request.CurrentTransaction?.status === TransactionStatus.FailedViaTimeout) {
+					// Force-failed by the wallet-lock timeout sweep and the asset is still
+					// on chain (deregistration never took effect) — the burn tx was dropped.
+					// Surface as DeregistrationFailed so the row is not left invisible-stuck
+					// in DeregistrationInitiated forever.
+					await prisma.inboxAgentRegistrationRequest.update({
+						where: { id: request.id },
+						data: {
+							state: RegistrationState.DeregistrationFailed,
+							error:
+								'Inbox deregistration transaction was broadcast but never landed on chain (dropped); force-failed by the wallet-lock timeout sweep',
+						},
+					});
 				} else {
 					await prisma.inboxAgentRegistrationRequest.update({
 						where: { id: request.id },

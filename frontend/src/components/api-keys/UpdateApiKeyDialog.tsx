@@ -17,8 +17,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { PatchApiKeyResponse } from '@/lib/api/generated/types.gen';
-import { handleApiCall } from '@/lib/utils';
+import { PatchApiKeyData, PatchApiKeyResponse } from '@/lib/api/generated/types.gen';
+import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import { useForm, Controller, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -30,7 +30,7 @@ import {
   getActiveStablecoinConfig,
   getActiveStablecoinSymbol,
 } from '@/lib/constants/defaultWallets';
-import { convertDecimalToBaseUnits } from '@/lib/convertDecimalToBaseUnits';
+import { convertDecimalToBaseUnits, isValidDecimalAmount } from '@/lib/convertDecimalToBaseUnits';
 
 interface UpdateApiKeyDialogProps {
   open: boolean;
@@ -71,14 +71,17 @@ const updateApiKeySchema = z
     evmChains: z.array(z.string()),
   })
   .superRefine((val, ctx) => {
-    if (val.credits?.lovelace && isNaN(parseFloat(val.credits.lovelace))) {
+    if (
+      val.credits?.lovelace &&
+      !isValidDecimalAmount(val.credits.lovelace, { allowNegative: true })
+    ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'Invalid ADA amount',
         path: ['credits', 'lovelace'],
       });
     }
-    if (val.credits?.usdcx && isNaN(parseFloat(val.credits.usdcx))) {
+    if (val.credits?.usdcx && !isValidDecimalAmount(val.credits.usdcx, { allowNegative: true })) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'Invalid USDCx amount',
@@ -99,10 +102,16 @@ function getPermissionLabel(_canRead: boolean, canPay: boolean, canAdmin: boolea
 }
 
 export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateApiKeyDialogProps) {
-  const [isLoading, setIsLoading] = useState(false);
   const [showToken, setShowToken] = useState(false);
   const tokenInputRef = useRef<HTMLInputElement | null>(null);
   const { apiClient, network } = useAppContext();
+
+  const updateApiKey = useApiMutation({
+    mutationFn: (body: NonNullable<PatchApiKeyData['body']>) =>
+      patchApiKey({ client: apiClient, body }),
+    errorMessage: 'Failed to update API key',
+  });
+  const isLoading = updateApiKey.isPending;
   const { paymentSources } = usePaymentSourceExtendedAll();
   const { wallets: managedWallets } = useAllWallets(open);
   // A key's NetworkLimit can span both Cardano networks, so offer EVM chains from every
@@ -179,50 +188,40 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
     const evmChainsChanged =
       JSON.stringify([...data.evmChains].sort()) !== JSON.stringify([...initialEvmChains].sort());
 
-    await handleApiCall(
-      () =>
-        patchApiKey({
-          client: apiClient,
-          body: {
-            id: apiKey.id,
-            ...(data.newToken && { token: data.newToken }),
-            ...(data.status !== apiKey.status && { status: data.status }),
-            ...(usageCredits.length > 0 && {
-              UsageCreditsToAddOrRemove: usageCredits,
-            }),
-            ...(walletScopeChanged && {
-              walletScopeEnabled: data.walletScopeEnabled,
-              WalletScopeHotWalletIds: data.walletScopeEnabled ? data.walletScopeIds : [],
-            }),
-            ...(apiKey.canPay &&
-              !apiKey.canAdmin &&
-              evmChainsChanged && {
-                // ChainIdLimit replaces the whole networkLimit on update; preserve
-                // the existing Cardano grants and only rewrite the EVM ones.
-                ChainIdLimit: [
-                  ...apiKey.ChainIdLimit.filter((chainId) => !chainId.startsWith('eip155:')),
-                  ...data.evmChains,
-                ],
-              }),
-          },
+    const response = await updateApiKey
+      .mutateAsync({
+        id: apiKey.id,
+        ...(data.newToken && { token: data.newToken }),
+        ...(data.status !== apiKey.status && { status: data.status }),
+        ...(usageCredits.length > 0 && {
+          UsageCreditsToAddOrRemove: usageCredits,
         }),
-      {
-        onSuccess: (response) => {
-          const responseData = response?.data as PatchApiKeyResponse;
-          if (!responseData?.data?.id) {
-            toast.error('Failed to update API key: Invalid response from server');
-            return;
-          }
-          toast.success('API key updated successfully');
-          onSuccess();
-          handleClose();
-        },
-        onFinally: () => {
-          setIsLoading(false);
-        },
-        errorMessage: 'Failed to update API key',
-      },
-    );
+        ...(walletScopeChanged && {
+          walletScopeEnabled: data.walletScopeEnabled,
+          WalletScopeHotWalletIds: data.walletScopeEnabled ? data.walletScopeIds : [],
+        }),
+        ...(apiKey.canPay &&
+          !apiKey.canAdmin &&
+          evmChainsChanged && {
+            // ChainIdLimit replaces the whole networkLimit on update; preserve
+            // the existing Cardano grants and only rewrite the EVM ones.
+            ChainIdLimit: [
+              ...apiKey.ChainIdLimit.filter((chainId) => !chainId.startsWith('eip155:')),
+              ...data.evmChains,
+            ],
+          }),
+      })
+      .catch(() => null);
+    if (!response) return;
+
+    const responseData = response?.data as PatchApiKeyResponse;
+    if (!responseData?.data?.id) {
+      toast.error('Failed to update API key: Invalid response from server');
+      return;
+    }
+    toast.success('API key updated successfully');
+    onSuccess();
+    handleClose();
   };
 
   const handleClose = () => {
