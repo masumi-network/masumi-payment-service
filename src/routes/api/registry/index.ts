@@ -1,17 +1,20 @@
 import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
-import { PaymentSourceType, PricingType, Prisma, RegistrationState } from '@/generated/prisma/client';
+import { PaymentSourceType, PricingType, RegistrationState } from '@/generated/prisma/client';
+import type { Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { DEFAULTS } from '@masumi/payment-core/config';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
+import { logger } from '@masumi/payment-core/logger';
 import { getBlockfrostInstance, validateAssetsOnChain } from '@/utils/blockfrost';
 import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { normalizeRequestedRegistryFundingLovelace } from '@/services/registry/shared';
 import { validateSupportedPaymentSourcesOrThrow } from '@/types/payment-source';
+import { verificationToRow } from '@/types/verification';
 import {
 	deleteAgentRegistrationSchemaInput,
 	deleteAgentRegistrationSchemaOutput,
@@ -24,8 +27,12 @@ import {
 	registerAgentSchemaOutput,
 	registryRequestOutputSchema,
 } from './schemas';
-import { getRegistryEntriesForQuery } from './queries';
-import { serializeRegistryEntriesResponse, serializeSupportedPaymentSources } from './serializers';
+import { getRegistryEntriesForQuery, resolveRegistryPaymentSourceTypeFilter } from './queries';
+import {
+	serializeRegistryEntriesResponse,
+	serializeSupportedPaymentSources,
+	serializeVerifications,
+} from './serializers';
 import { resolveScopedRecipientWalletOrThrow, resolveScopedSellingWalletOrThrow } from './shared';
 
 export {
@@ -66,7 +73,7 @@ export const queryRegistryCountGet = readAuthenticatedEndpointFactory.build({
 					network: input.network,
 					deletedAt: null,
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
-					paymentSourceType: input.filterPaymentSourceType,
+					paymentSourceType: resolveRegistryPaymentSourceTypeFilter(input),
 				},
 				SmartContractWallet: { deletedAt: null },
 				...buildManagedHolderWalletScopeFilter(ctx.walletScopeIds),
@@ -172,7 +179,10 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 					sendFundingLovelace,
 					state: RegistrationState.RegistrationRequested,
 					agentIdentifier: null,
-					metadataVersion: DEFAULTS.DEFAULT_REGISTRY_METADATA_VERSION,
+					metadataVersion:
+						sellingWallet.PaymentSource.paymentSourceType === PaymentSourceType.Web3CardanoV1
+							? DEFAULTS.DEFAULT_METADATA_VERSION
+							: DEFAULTS.DEFAULT_REGISTRY_METADATA_VERSION,
 					// Tenant ownership — enforced on subsequent mutate routes
 					// (deregister, future update flows) so a key cannot mutate
 					// registrations another key created on the same payment
@@ -233,6 +243,9 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 						},
 					},
 					tags: input.Tags,
+					...(input.verifications && input.verifications.length > 0
+						? { Verifications: { createMany: { data: input.verifications.map(verificationToRow) } } }
+						: {}),
 					Pricing: {
 						create:
 							input.AgentPricing.pricingType == PricingType.Fixed
@@ -277,6 +290,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 							mimeType: true,
 						},
 					},
+					Verifications: true,
 					SupportedPaymentSources: {
 						select: {
 							chain: true,
@@ -337,6 +351,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 							},
 				sendFundingLovelace: result.sendFundingLovelace?.toString() ?? null,
 				supportedPaymentSources: serializeSupportedPaymentSources(result.SupportedPaymentSources),
+				verifications: serializeVerifications(result.Verifications),
 				Tags: result.tags,
 				RecipientWallet: result.RecipientWallet,
 				CurrentTransaction: result.CurrentTransaction
@@ -373,20 +388,59 @@ export const deleteAgentRegistration = adminAuthenticatedEndpointFactory.build({
 	handler: async ({ input }) => {
 		const startTime = Date.now();
 		try {
+			// Shared include so the record we read up front matches the shape we
+			// return — this lets us return the already-read record verbatim if the
+			// delete races with a concurrent removal (see the P2025 handling below).
+			const deleteRegistryInclude = {
+				Pricing: {
+					include: {
+						FixedPricing: {
+							include: { Amounts: { select: { unit: true, amount: true } } },
+						},
+					},
+				},
+				SmartContractWallet: {
+					select: { walletVkey: true, walletAddress: true },
+				},
+				RecipientWallet: {
+					select: { walletVkey: true, walletAddress: true },
+				},
+				ExampleOutputs: {
+					select: { name: true, url: true, mimeType: true },
+				},
+				Verifications: true,
+				SupportedPaymentSources: {
+					select: {
+						chain: true,
+						network: true,
+						paymentSourceType: true,
+						address: true,
+						scheme: true,
+						asset: true,
+						amount: true,
+						decimals: true,
+						payTo: true,
+						resource: true,
+						extra: true,
+					},
+				},
+				CurrentTransaction: {
+					select: {
+						txHash: true,
+						status: true,
+						confirmations: true,
+						fees: true,
+						blockHeight: true,
+						blockTime: true,
+					},
+				},
+			} satisfies Prisma.RegistryRequestInclude;
+
 			const registryRequest = await prisma.registryRequest.findUnique({
 				where: {
 					id: input.id,
 				},
-				include: {
-					PaymentSource: {
-						select: {
-							id: true,
-							network: true,
-							policyId: true,
-							smartContractAddress: true,
-						},
-					},
-				},
+				include: deleteRegistryInclude,
 			});
 
 			if (!registryRequest) {
@@ -423,54 +477,44 @@ export const deleteAgentRegistration = adminAuthenticatedEndpointFactory.build({
 				);
 			}
 
-			const item = await prisma.registryRequest.delete({
-				where: {
-					id: registryRequest.id,
-				},
-				include: {
-					Pricing: {
-						include: {
-							FixedPricing: {
-								include: { Amounts: { select: { unit: true, amount: true } } },
-							},
-						},
+			const item = await prisma.registryRequest
+				.delete({
+					where: {
+						id: registryRequest.id,
 					},
-					SmartContractWallet: {
-						select: { walletVkey: true, walletAddress: true },
-					},
-					RecipientWallet: {
-						select: { walletVkey: true, walletAddress: true },
-					},
-					ExampleOutputs: {
-						select: { name: true, url: true, mimeType: true },
-					},
-					SupportedPaymentSources: {
-						select: {
-							chain: true,
-							network: true,
-							paymentSourceType: true,
-							address: true,
-							scheme: true,
-							asset: true,
-							amount: true,
-							decimals: true,
-							payTo: true,
-							resource: true,
-							extra: true,
-						},
-					},
-					CurrentTransaction: {
-						select: {
-							txHash: true,
-							status: true,
-							confirmations: true,
-							fees: true,
-							blockHeight: true,
-							blockTime: true,
-						},
-					},
-				},
-			});
+					include: deleteRegistryInclude,
+				})
+				.catch(async (error: unknown) => {
+					// P2025 = "record required but not found" for the delete. With a
+					// pure-id delete this can only happen when the row was already gone
+					// at delete time — i.e. a duplicate/concurrent DELETE for the same id
+					// removed it first (this endpoint is the ONLY code that deletes
+					// registry rows). Confirm it is genuinely gone before reporting
+					// success rather than assuming: if it is gone, deletion is idempotent
+					// so return the record we already read and let the client close the
+					// dialog and drop the row (the previous behaviour surfaced an opaque
+					// 500 and left the stale row on screen). If — against expectation —
+					// the row is still present, surface a retryable error instead of
+					// faking a success the UI can't honour.
+					// Structural P2025 check (not `instanceof Prisma.*`) to match the
+					// rest of this route dir (see update/index.ts) and stay compatible
+					// with the unit-test prisma mock, which re-exports enums only and has
+					// no `Prisma` namespace at runtime.
+					if ((error as { code?: string }).code === 'P2025') {
+						const stillExists = await prisma.registryRequest.findUnique({
+							where: { id: registryRequest.id },
+							select: { id: true },
+						});
+						if (!stillExists) {
+							logger.info('Registry delete raced with a concurrent removal; row already gone, treating as deleted', {
+								id: input.id,
+							});
+							return registryRequest;
+						}
+						throw createHttpError(409, 'Agent Registration could not be deleted; please retry');
+					}
+					throw error;
+				});
 
 			return {
 				...item,
@@ -504,6 +548,7 @@ export const deleteAgentRegistration = adminAuthenticatedEndpointFactory.build({
 							},
 				sendFundingLovelace: item.sendFundingLovelace?.toString() ?? null,
 				supportedPaymentSources: serializeSupportedPaymentSources(item.SupportedPaymentSources),
+				verifications: serializeVerifications(item.Verifications),
 				Tags: item.tags,
 				RecipientWallet: item.RecipientWallet,
 				CurrentTransaction: item.CurrentTransaction

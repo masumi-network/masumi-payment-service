@@ -4,7 +4,7 @@ import { logger } from '@masumi/payment-core/logger';
 import { Transaction } from '@meshsdk/core';
 import { generateWalletExtended } from '@/utils/generator/wallet-generator';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
-import { errorToString } from '@/utils/converter/error-string-convert';
+import { errorToString } from '@masumi/payment-core/error-string-convert';
 import { walletLowBalanceMonitorService } from '@/services/wallets/low-balance/service';
 import { convertNetwork } from '@/utils/converter/network-convert';
 

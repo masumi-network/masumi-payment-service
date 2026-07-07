@@ -8,20 +8,21 @@ import { useRouter } from 'next/router';
 import { RegisterAIAgentDialog } from '@/components/ai-agents/RegisterAIAgentDialog';
 import { Badge } from '@/components/ui/badge';
 
-import { cn, shortenAddress } from '@/lib/utils';
+import { cn, formatAssetAmount, shortenAddress, getExplorerUrl } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { deleteRegistry, RegistryEntry, postRegistryDeregister } from '@/lib/api/generated';
 import { agentHasX402Options } from '@/components/ai-agents/AgentX402Options';
+import { agentHasVerifications } from '@/components/ai-agents/AgentVerifications';
 import { toast } from 'react-toastify';
-import { handleApiCall } from '@/lib/utils';
+import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import Head from 'next/head';
 import { AIAgentTableSkeleton } from '@/components/skeletons/AIAgentTableSkeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { useQueryClient } from '@tanstack/react-query';
 import { useContextAgents, type AgentRelation } from '@/lib/queries/useContextAgents';
-import { invalidateAgentQueries } from '@/lib/queries/agent-cache';
+import { invalidateAgentQueries, resetAgentQueries } from '@/lib/queries/agent-cache';
 import { rowActivation } from '@/lib/a11y';
-import formatBalance from '@/lib/formatBalance';
+import { isDeregisterableAgentState } from '@/lib/registry-states';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { FaRegClock } from 'react-icons/fa';
 import { Tabs } from '@/components/ui/tabs';
@@ -29,19 +30,19 @@ import { Pagination } from '@/components/ui/pagination';
 import { VerifyAndPublishAgentDialog } from '@/components/ai-agents/VerifyAndPublishAgentDialog';
 import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/WalletDetailsDialog';
 import { CopyButton } from '@/components/ui/copy-button';
-import { TESTUSDM_CONFIG, getUsdmConfig, getUsdcxConfig } from '@/lib/constants/defaultWallets';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { EmptyState } from '@/components/ui/empty-state';
 import { SearchInput } from '@/components/ui/search-input';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
-import { parseAmountSearchRange } from '@/lib/parseAmountSearchRange';
-import { extractApiErrorMessage } from '@/lib/api-error';
+import { parseAmountSearchRange, parseAmountToBigInt } from '@/lib/parseAmountSearchRange';
 import { useRegistryEntryByAgentIdentifier } from '@/lib/queries/useRegistryEntryByAgentIdentifier';
 import { useAgentDetailsDialog } from '@/lib/contexts/AgentDetailsDialogContext';
 import { lookupWalletByVkey } from '@/lib/wallet-lookup';
 import { isV2PaymentSource } from '@/lib/payment-source-type';
 import { MigrateAgentsDialog } from '@/components/ai-agents/MigrateAgentsDialog';
+import { parseAgentStatus, getAgentStatusBadgeVariant } from '@/lib/agent-status';
+import { formatDate } from '@/lib/format-date';
 type AIAgent = RegistryEntry & { relation?: AgentRelation };
 
 // Tells apart agents registered on the active source from those registered elsewhere that
@@ -53,13 +54,13 @@ function RelationBadge({ relation }: { relation?: AgentRelation }) {
         variant="outline"
         className="mt-1 border-indigo-300 bg-indigo-50 text-[10px] text-indigo-700 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-300"
       >
-        Payment accepted
+        Registered elsewhere
       </Badge>
     );
   }
   return (
     <Badge variant="outline" className="mt-1 text-[10px]">
-      On this source
+      Registered here
     </Badge>
   );
 }
@@ -68,29 +69,6 @@ const getHoldingWallet = (agent: AIAgent) => agent.RecipientWallet ?? agent.Smar
 
 const usesCombinedWallet = (agent: AIAgent) =>
   getHoldingWallet(agent).walletVkey === agent.SmartContractWallet.walletVkey;
-
-const parseAgentStatus = (status: AIAgent['state']): string => {
-  switch (status) {
-    case 'RegistrationRequested':
-      return 'Pending';
-    case 'RegistrationInitiated':
-      return 'Registering';
-    case 'RegistrationConfirmed':
-      return 'Registered';
-    case 'RegistrationFailed':
-      return 'Registration Failed';
-    case 'DeregistrationRequested':
-      return 'Pending';
-    case 'DeregistrationInitiated':
-      return 'Deregistering';
-    case 'DeregistrationConfirmed':
-      return 'Deregistered';
-    case 'DeregistrationFailed':
-      return 'Deregistration Failed';
-    default:
-      return status;
-  }
-};
 
 export default function AIAgentsPage() {
   const router = useRouter();
@@ -108,29 +86,39 @@ export default function AIAgentsPage() {
 
   // Rail-aware agent list: shows agents registered on the active context plus those
   // registered elsewhere that accept payment on it (Cardano source, or EVM chains over
-  // x402). The list is fetched in full and filtered client-side, so there is no server
-  // cursor to page — the load-more control is inert here.
+  // x402). Results load one cursor page at a time so navigation stays quick.
   const {
     agents,
     truncated,
+    hasMore: hasMoreAgents,
     isLoading,
     isFetching: isFetchingAgents,
+    isFetchingNextPage,
     isPlaceholderData,
+    loadMore,
   } = useContextAgents({
     filterStatus,
     searchQuery: debouncedSearchQuery || undefined,
   });
-  const hasMoreAgents = false;
-  const loadMore = () => {};
 
   const queryClient = useQueryClient();
   const { openAgentDetails, closeAgentDetails } = useAgentDetailsDialog();
 
+  // Passive refresh (the refresh button): keep the current rows on screen and
+  // refetch in the background.
   const refetchAll = useCallback(() => {
     // Invalidate the full ['context-agents'] and ['agents'] prefixes so EVERY status-tab /
     // search variant refetches (not just the active query), and the dashboard / testing
     // dialogs reflect the mutation too. Also refresh wallet balances (fees/settlement).
     invalidateAgentQueries(queryClient);
+    void queryClient.invalidateQueries({ queryKey: ['wallets'] });
+  }, [queryClient]);
+
+  // Post-mutation refresh (register / update / deregister / delete): the current
+  // rows are now stale, so clear the agent lists to their skeleton while the
+  // fresh data loads. Wallet balances stay put (invalidate, not reset).
+  const refetchAfterMutation = useCallback(() => {
+    resetAgentQueries(queryClient);
     void queryClient.invalidateQueries({ queryKey: ['wallets'] });
   }, [queryClient]);
 
@@ -163,8 +151,8 @@ export default function AIAgentsPage() {
         amountRange &&
         agent.AgentPricing?.pricingType === 'Fixed' &&
         agent.AgentPricing.Pricing?.some((p) => {
-          const amt = parseInt(p.amount);
-          return amt >= amountRange.min && amt <= amountRange.max;
+          const amt = parseAmountToBigInt(p.amount);
+          return amt != null && amt >= amountRange.min && amt <= amountRange.max;
         })
       )
         return true;
@@ -174,7 +162,26 @@ export default function AIAgentsPage() {
 
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedAgentToDelete, setSelectedAgentToDelete] = useState<AIAgent | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const deleteAgentMutation = useApiMutation({
+    mutationFn: (body: { id: string }) => deleteRegistry({ client: apiClient, body }),
+    errorMessage: 'Failed to delete AI agent',
+  });
+  const deregisterAgentMutation = useApiMutation({
+    mutationFn: (body: {
+      agentIdentifier: string;
+      network: typeof network;
+      smartContractAddress: string;
+    }) => postRegistryDeregister({ client: apiClient, body }),
+    errorMessage: 'Failed to deregister AI agent',
+  });
+  const isDeleting = deleteAgentMutation.isPending || deregisterAgentMutation.isPending;
+  // Synchronous in-flight guard for delete/deregister. `setIsDeleting(true)` is
+  // async, so a fast double-click on Confirm fires `handleDeleteConfirm` twice
+  // before the button disables — sending two DELETEs for the same id. The second
+  // then races the first (the backend reports the row already gone). A ref flips
+  // synchronously on the first call so the duplicate is rejected immediately;
+  // `isDeleting` on the button is post-render defence-in-depth.
+  const isDeletingRef = useRef(false);
   const [selectedAgentToUpdate, setSelectedAgentToUpdate] = useState<AIAgent | null>(null);
   // Snapshot the agent's payment-source smart-contract address AT CLICK TIME.
   // The agent list is already filtered to `selectedPaymentSource`, so at the
@@ -201,8 +208,8 @@ export default function AIAgentsPage() {
   // "Migrate to V2" only applies while viewing a legacy (V1) source — it migrates
   // the listed agents onto the V2 contract. Hide it when the selected source is
   // already V2 (nothing to migrate from here) or when no V2 target exists to
-  // migrate into. The dashboard nudge (useMigrationStatus) remains the entry
-  // point for migrating regardless of which source is selected.
+  // migrate into. The dashboard also shows a lightweight V1 hint without scanning
+  // agents until the migration dialog opens.
   const isViewingLegacySource =
     !!selectedPaymentSource && !isV2PaymentSource(selectedPaymentSource);
   const canMigrate = hasV2Source && isViewingLegacySource;
@@ -268,32 +275,26 @@ export default function AIAgentsPage() {
     { name: 'Failed', count: null },
   ];
 
-  const [dismissedQueryAction, setDismissedQueryAction] = useState(false);
+  // Open the register dialog when the ?action=register_agent deep link arrives,
+  // then strip the param so the same quick action can fire again while already
+  // on this page. Registration is Cardano-only, so the deep link must not pop
+  // the dialog while the x402 rail is active (the button is hidden there too).
+  useEffect(() => {
+    if (router.query.action !== 'register_agent') return;
+    // Strip the action param regardless of the active rail. If we only stripped
+    // it on the cardano rail (as before), arriving on the x402 rail would leave
+    // ?action=register_agent lingering in the URL and then pop the dialog on a
+    // later switch to the cardano rail. Preserve any other params (e.g. the
+    // agentIdentifier deep link).
+    const { action: _action, ...rest } = router.query;
+    void router.replace({ pathname: '/ai-agents', query: rest }, undefined, { shallow: true });
+    // Registration is Cardano-only, so only actually open the dialog there.
+    if (activeRail === 'cardano') {
+      queueMicrotask(() => setIsRegisterDialogOpen(true));
+    }
+  }, [router.query.action, activeRail, router]);
 
-  // Registration is Cardano-only, so the register_agent deep link must not pop the dialog
-  // while the x402 rail is active (the button is hidden there too).
-  const shouldOpenRegisterDialog =
-    activeRail === 'cardano' &&
-    (isRegisterDialogOpen || (router.query.action === 'register_agent' && !dismissedQueryAction));
-
-  const formatDate = (date: Date | string) => {
-    const dateObj = typeof date === 'string' ? new Date(date) : date;
-    return dateObj.toLocaleDateString();
-  };
-
-  const getStatusBadgeVariant = (status: AIAgent['state']) => {
-    if (status === 'RegistrationConfirmed') return 'default';
-    if (status.includes('Failed')) return 'destructive';
-    if (status.includes('Initiated')) return 'processing';
-    if (status.includes('Requested')) return 'pending';
-    if (status === 'DeregistrationConfirmed') return 'secondary';
-    return 'secondary';
-  };
-
-  const formatPrice = (amount: string | undefined) => {
-    if (!amount) return '—';
-    return formatBalance((parseInt(amount) / 1000000).toFixed(2));
-  };
+  const shouldOpenRegisterDialog = activeRail === 'cardano' && isRegisterDialogOpen;
 
   const handleDeleteClick = (agent: AIAgent) => {
     setSelectedAgentToDelete(agent);
@@ -320,37 +321,33 @@ export default function AIAgentsPage() {
   };
 
   const handleDeleteConfirm = async () => {
+    if (isDeletingRef.current) return;
+    isDeletingRef.current = true;
+    try {
+      await runDeleteConfirm();
+    } finally {
+      isDeletingRef.current = false;
+    }
+  };
+
+  const runDeleteConfirm = async () => {
     if (
       selectedAgentToDelete?.state === 'RegistrationFailed' ||
       selectedAgentToDelete?.state === 'DeregistrationConfirmed'
     ) {
-      setIsDeleting(true);
-      await handleApiCall(
-        () =>
-          deleteRegistry({
-            client: apiClient,
-            body: {
-              id: selectedAgentToDelete.id,
-            },
-          }),
-        {
-          onSuccess: () => {
-            toast.success('AI agent deleted successfully');
-            setIsDeleteDialogOpen(false);
-            setSelectedAgentToDelete(null);
-            refetchAll();
-          },
-          onError: (error: unknown) => {
-            console.error('Error deleting agent:', error);
-            toast.error(extractApiErrorMessage(error, 'Failed to delete AI agent'));
-          },
-          onFinally: () => {
-            setIsDeleting(false);
-          },
-          errorMessage: 'Failed to delete AI agent',
-        },
-      );
-    } else if (selectedAgentToDelete?.state === 'RegistrationConfirmed') {
+      const response = await deleteAgentMutation
+        .mutateAsync({ id: selectedAgentToDelete.id })
+        .catch((error: unknown) => {
+          console.error('Error deleting agent:', error);
+          return null;
+        });
+      if (response) {
+        toast.success('AI agent deleted successfully');
+        setIsDeleteDialogOpen(false);
+        setSelectedAgentToDelete(null);
+        refetchAfterMutation();
+      }
+    } else if (isDeregisterableAgentState(selectedAgentToDelete?.state)) {
       if (!selectedAgentToDelete?.agentIdentifier) {
         toast.error('Cannot deregister agent: Missing identifier');
         return;
@@ -359,34 +356,22 @@ export default function AIAgentsPage() {
         toast.error('Cannot deregister agent: Missing payment source');
         return;
       }
-      setIsDeleting(true);
-      await handleApiCall(
-        () =>
-          postRegistryDeregister({
-            client: apiClient,
-            body: {
-              agentIdentifier: selectedAgentToDelete.agentIdentifier!,
-              network: network,
-              smartContractAddress: selectedPaymentSource.smartContractAddress,
-            },
-          }),
-        {
-          onSuccess: () => {
-            toast.success('AI agent deregistered successfully');
-            setIsDeleteDialogOpen(false);
-            setSelectedAgentToDelete(null);
-            refetchAll();
-          },
-          onError: (error: unknown) => {
-            console.error('Error deregistering agent:', error);
-            toast.error(extractApiErrorMessage(error, 'Failed to deregister AI agent'));
-          },
-          onFinally: () => {
-            setIsDeleting(false);
-          },
-          errorMessage: 'Failed to deregister AI agent',
-        },
-      );
+      const response = await deregisterAgentMutation
+        .mutateAsync({
+          agentIdentifier: selectedAgentToDelete.agentIdentifier!,
+          network: network,
+          smartContractAddress: selectedPaymentSource.smartContractAddress,
+        })
+        .catch((error: unknown) => {
+          console.error('Error deregistering agent:', error);
+          return null;
+        });
+      if (response) {
+        toast.success('AI agent deregistered successfully');
+        setIsDeleteDialogOpen(false);
+        setSelectedAgentToDelete(null);
+        refetchAfterMutation();
+      }
     } else {
       toast.error(
         'Cannot delete agent: Agent is not in a state to be deleted. Please wait for transactions to settle.',
@@ -431,6 +416,7 @@ export default function AIAgentsPage() {
                 <a
                   href="https://docs.masumi.network/core-concepts/agentic-service"
                   target="_blank"
+                  rel="noopener noreferrer"
                   className="text-primary hover:underline"
                 >
                   Learn more
@@ -597,9 +583,13 @@ export default function AIAgentsPage() {
                           {...rowActivation(() => handleAgentClick(agent))}
                         >
                           <td className="p-4 max-w-50 truncate pl-6">
-                            <div className="text-sm font-medium">{agent.name}</div>
-                            <RelationBadge relation={agent.relation} />
-                            <div className="text-xs text-muted-foreground truncate">
+                            <div className="text-sm font-medium truncate" title={agent.name}>
+                              {agent.name}
+                            </div>
+                            <div
+                              className="text-xs text-muted-foreground truncate"
+                              title={agent.description ?? undefined}
+                            >
                               {agent.description}
                             </div>
                           </td>
@@ -607,9 +597,16 @@ export default function AIAgentsPage() {
                           <td className="p-4">
                             {agent.agentIdentifier ? (
                               <div className="text-xs font-mono truncate max-w-50 flex items-center gap-2">
-                                <span className="cursor-pointer hover:text-primary">
+                                <a
+                                  href={getExplorerUrl(agent.agentIdentifier, network, 'token')}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="text-primary hover:underline flex items-center gap-1 truncate"
+                                >
                                   {shortenAddress(agent.agentIdentifier)}
-                                </span>
+                                  <ExternalLink className="h-3 w-3 shrink-0" />
+                                </a>
                                 <CopyButton value={agent.agentIdentifier} />
                               </div>
                             ) : (
@@ -618,6 +615,7 @@ export default function AIAgentsPage() {
                           </td>
                           <td className="p-4">
                             <div className="space-y-2">
+                              <RelationBadge relation={agent.relation} />
                               {isCombinedWallet ? (
                                 <div>
                                   <div className="text-xs font-medium">
@@ -683,14 +681,17 @@ export default function AIAgentsPage() {
                               agent.AgentPricing.pricingType == 'Fixed' &&
                               agent.AgentPricing.Pricing?.map((price, index) => (
                                 <div key={index} className="whitespace-nowrap">
-                                  {price.unit === 'lovelace' || !price.unit
-                                    ? `${formatPrice(price.amount)} ADA`
-                                    : `${formatPrice(price.amount)} ${price.unit === getUsdcxConfig(network).fullAssetId ? 'USDCx' : price.unit === getUsdmConfig(network).fullAssetId ? (network === 'Mainnet' ? 'USDM' : 'tUSDM') : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
+                                  {formatAssetAmount(price.amount, price.unit, network)}
                                 </div>
                               ))}
                             {agentHasX402Options(agent.supportedPaymentSources) && (
                               <div className="mt-1">
                                 <Badge variant="secondary">x402</Badge>
+                              </div>
+                            )}
+                            {agentHasVerifications(agent.verifications) && (
+                              <div className="mt-1">
+                                <Badge variant="outline">Verifiable</Badge>
                               </div>
                             )}
                           </td>
@@ -702,18 +703,12 @@ export default function AIAgentsPage() {
                             )}
                           </td>
                           <td className="p-4">
-                            <Badge
-                              variant={getStatusBadgeVariant(agent.state)}
-                              className={cn(
-                                agent.state === 'RegistrationConfirmed' &&
-                                  'bg-green-50 text-green-700 hover:bg-green-50/80',
-                              )}
-                            >
+                            <Badge variant={getAgentStatusBadgeVariant(agent.state)}>
                               {parseAgentStatus(agent.state)}
                             </Badge>
                           </td>
                           <td className="p-4 pr-8">
-                            {['RegistrationConfirmed'].includes(agent.state) ? (
+                            {isDeregisterableAgentState(agent.state) ? (
                               <div className="flex items-center gap-1">
                                 {/* Manage actions (verify/update/delete) only apply to agents
                                     registered on the active source. Agents shown because they
@@ -800,7 +795,7 @@ export default function AIAgentsPage() {
               {!(isLoading && !agents.length) && (
                 <Pagination
                   hasMore={hasMoreAgents}
-                  isLoading={isFetchingAgents}
+                  isLoading={isFetchingNextPage || (isFetchingAgents && !isPlaceholderData)}
                   onLoadMore={loadMore}
                 />
               )}
@@ -811,14 +806,10 @@ export default function AIAgentsPage() {
             open={shouldOpenRegisterDialog}
             onClose={() => {
               setIsRegisterDialogOpen(false);
-              if (router.query.action === 'register_agent') {
-                setDismissedQueryAction(true);
-                void router.replace('/ai-agents', undefined, { shallow: true });
-              }
             }}
             onSuccess={() => {
               setTimeout(() => {
-                refetchAll();
+                refetchAfterMutation();
               }, 250);
             }}
           />
@@ -835,7 +826,7 @@ export default function AIAgentsPage() {
               setSelectedAgentToUpdate(null);
               setUpdateAgentSmartContractAddress(null);
               setTimeout(() => {
-                refetchAll();
+                refetchAfterMutation();
               }, 250);
             }}
           />
@@ -881,7 +872,7 @@ export default function AIAgentsPage() {
             open={isMigrateDialogOpen}
             onClose={() => setIsMigrateDialogOpen(false)}
             onSuccess={() => {
-              setTimeout(() => refetchAll(), 250);
+              setTimeout(() => refetchAfterMutation(), 250);
             }}
           />
         </div>

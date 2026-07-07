@@ -94,13 +94,35 @@ export function safeHttpTransport(rpcUrl: string) {
 	return http(rpcUrl, { timeout: RPC_REQUEST_TIMEOUT_MS });
 }
 
+// EVM native currencies are all 18 decimals, but the symbol differs per chain.
+// Hardcoding 'ETH' mislabels the native balance on non-Ethereum EVM networks
+// (Polygon POL, Avalanche AVAX, Gnosis xDAI, BNB, ...). Keyed by eip155 chain id;
+// unknown chains fall back to ETH.
+const NATIVE_CURRENCY_BY_CHAIN_ID: Record<number, { name: string; symbol: string; decimals: number }> = {
+	1: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+	10: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+	56: { name: 'BNB', symbol: 'BNB', decimals: 18 },
+	100: { name: 'xDAI', symbol: 'xDAI', decimals: 18 },
+	137: { name: 'POL', symbol: 'POL', decimals: 18 },
+	8453: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+	42161: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+	43114: { name: 'Avalanche', symbol: 'AVAX', decimals: 18 },
+	84532: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+	11155111: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+};
+
+export function nativeCurrencyForCaip2(caip2Network: string): { name: string; symbol: string; decimals: number } {
+	const chainId = getEip155ChainId(caip2Network);
+	return NATIVE_CURRENCY_BY_CHAIN_ID[chainId] ?? { name: 'Ether', symbol: 'ETH', decimals: 18 };
+}
+
 export function createChain(caip2Network: string, rpcUrl: string, displayName: string) {
 	const chainId = getEip155ChainId(caip2Network);
 
 	return defineChain({
 		id: chainId,
 		name: displayName,
-		nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+		nativeCurrency: nativeCurrencyForCaip2(caip2Network),
 		rpcUrls: {
 			default: { http: [rpcUrl] },
 		},

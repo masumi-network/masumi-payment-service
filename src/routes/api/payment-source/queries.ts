@@ -1,4 +1,5 @@
 import { prisma } from '@masumi/payment-core/db';
+import { cursorPaginationArgs } from '@/utils/shared/queries';
 import { AuthContext } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
 import { paymentSourceSchemaInput } from './schemas';
@@ -10,11 +11,10 @@ export async function getPaymentSourcesForQuery(
 	networkLimit: AuthContext['networkLimit'],
 ) {
 	return prisma.paymentSource.findMany({
-		take: input.take,
 		orderBy: {
 			createdAt: 'desc',
 		},
-		cursor: input.cursorId ? { id: input.cursorId } : undefined,
+		...cursorPaginationArgs(input.cursorId, input.take),
 		where: {
 			network: { in: networkLimit },
 			deletedAt: null,

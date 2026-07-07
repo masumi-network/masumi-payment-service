@@ -21,11 +21,14 @@ export function useInboxAgents(params?: {
   );
 
   const query = useInfiniteQuery({
+    // Key on the source id only — NOT the whole selectedPaymentSource object.
+    // The object carries volatile sync fields (lastCheckedAt, syncInProgress, …)
+    // that change on every payment-sources refetch, which would discard all
+    // loaded pages, and it embeds the rpcProviderApiKey secret in the key hash.
     queryKey: [
       'inbox-agents',
       network,
       selectedPaymentSourceId,
-      selectedPaymentSource,
       params?.filterStatus,
       params?.searchQuery,
     ],

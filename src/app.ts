@@ -15,6 +15,8 @@ import { generateApiKeySecureHash } from '@masumi/payment-core/api-key-hash';
 import { migrateApiKeyEncryption } from '@/utils/startup-migrations/api-key-encryption';
 import { migrateWebhookEncryption } from '@/utils/startup-migrations/webhook-encryption';
 import { backfillTransactionAgentIdentifiers } from '@/utils/startup-migrations/backfill-transaction-agent-identifiers';
+import { backfillTransactionAgentNames } from '@/utils/startup-migrations/backfill-transaction-agent-names';
+import { warnOutOfSyncV2PaymentSources } from '@/utils/startup-migrations/warn-out-of-sync-v2-sources';
 import { blockchainStateMonitorService } from '@/services/monitoring';
 import fs from 'fs';
 import helmet from 'helmet';
@@ -27,6 +29,8 @@ async function initialize() {
 	await migrateApiKeyEncryption();
 	await migrateWebhookEncryption();
 	await backfillTransactionAgentIdentifiers();
+	await backfillTransactionAgentNames();
+	await warnOutOfSyncV2PaymentSources();
 
 	const defaultAdminHash = await generateApiKeySecureHash(DEFAULTS.DEFAULT_ADMIN_KEY);
 	const defaultKeyRow = await prisma.apiKey.findFirst({

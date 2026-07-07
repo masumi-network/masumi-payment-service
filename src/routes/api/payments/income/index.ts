@@ -16,6 +16,7 @@ import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
 import { ez } from 'express-zod-api';
 import spacetime from 'spacetime';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
+import { resolvePaymentPaymentSourceTypeFilter } from '../queries';
 
 export const postPaymentIncomeSchemaInput = z.object({
 	agentIdentifier: z
@@ -48,7 +49,12 @@ export const postPaymentIncomeSchemaInput = z.object({
 			'The time zone to use for the income calculation. If not provided, will use the UTC time zone. Must be a valid IANA time zone name, see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones',
 		),
 	network: z.nativeEnum(Network).describe('The Cardano network to query income from'),
-	filterPaymentSourceType: z.nativeEnum(PaymentSourceType).optional().describe('Filter by payment source type'),
+	filterPaymentSourceType: z
+		.nativeEnum(PaymentSourceType)
+		.optional()
+		.describe(
+			'Filter by payment source type. When omitted, income totals default to Web3CardanoV1 for backwards compatibility.',
+		),
 });
 
 const unitAmountSchema = z
@@ -57,7 +63,7 @@ const unitAmountSchema = z
 		amount: z.number(),
 	})
 	.describe(
-		'The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is ""',
+		'The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is ""',
 	);
 
 export const postPaymentIncomeSchemaOutput = z.object({
@@ -160,7 +166,7 @@ export const getPaymentIncome = readAuthenticatedEndpointFactory.build({
 					onChainState: { not: null },
 					PaymentSource: {
 						network: input.network,
-						paymentSourceType: input.filterPaymentSourceType,
+						paymentSourceType: resolvePaymentPaymentSourceTypeFilter(input),
 						deletedAt: null,
 					},
 					...buildWalletScopeFilter(ctx.walletScopeIds),
@@ -183,17 +189,17 @@ export const getPaymentIncome = readAuthenticatedEndpointFactory.build({
 
 			const allPaymentsFiltered = filterByAgentIdentifier(allPayments, input.agentIdentifier);
 
-			const totalRefundedMap = {
-				units: new Map<string, number>(),
-				blockchainFees: 0,
+			const totalRefundedMap: Fund = {
+				units: new Map<string, bigint>(),
+				blockchainFees: 0n,
 			};
 			const totalIncomeMap: Fund = {
-				units: new Map<string, number>(),
-				blockchainFees: 0,
+				units: new Map<string, bigint>(),
+				blockchainFees: 0n,
 			};
-			const totalPendingMap = {
-				units: new Map<string, number>(),
-				blockchainFees: 0,
+			const totalPendingMap: Fund = {
+				units: new Map<string, bigint>(),
+				blockchainFees: 0n,
 			};
 
 			const dayRefundedMap = new Map<string, Fund>();

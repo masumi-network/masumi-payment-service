@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { Button } from '../ui/button';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { CopyButton } from '../ui/copy-button';
@@ -10,6 +9,11 @@ interface TransakWidgetProps {
   isOpen: boolean;
   onClose: () => void;
   walletAddress: string;
+  /**
+   * Legacy Transak-iframe success callback. No Transak iframe is rendered
+   * anymore (this dialog only shows static faucet/exchange links), so it is
+   * never invoked. Kept so existing call sites keep compiling.
+   */
   onSuccess?: () => void;
   isChild?: boolean;
   elevatedGrandchildStack?: boolean;
@@ -19,31 +23,10 @@ export function TransakWidget({
   isOpen,
   onClose,
   walletAddress,
-  onSuccess,
   isChild,
   elevatedGrandchildStack,
 }: TransakWidgetProps) {
   const { network } = useAppContext();
-
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (event.data.type === 'TRANSAK_ORDER_SUCCESSFUL') {
-        onSuccess?.();
-        onClose();
-      } else if (event.data.type === 'TRANSAK_ORDER_FAILED') {
-        console.error('Order failed:', event.data);
-        onClose();
-      } else if (
-        event.data.type?.includes('TRANSAK_WIDGET_CLOSE') ||
-        event.data.type?.includes('TRANSAK_EXIT')
-      ) {
-        onClose();
-      }
-    };
-
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, [onClose, onSuccess]);
 
   if (!isOpen) return null;
 

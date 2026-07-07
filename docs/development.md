@@ -54,13 +54,25 @@ The `.editorconfig` file at the project root ensures your editor applies these s
 ### Project Structure
 
 - [**src/routes/\*\***](../src/routes/): API routes and validation
-- [**src/repositories/\*\***](../src/repositories/): Repository pattern for data access
 - [**src/services/\*\***](../src/services/): Business logic and core functionality
 - [**src/utils/\*\***](../src/utils/): Helper functions and utilities
 - [**src/middleware/auth-middleware/\*\***](../src/middleware/auth-middleware/): Authentication middleware
 - [**src/config/\*\***](../src/config/): Configuration settings
 
 - [**prisma/\*\***](../prisma/): Database generation and ORM related files
+
+## API documentation (OpenAPI)
+
+Endpoint documentation is registered against the zod schemas the routes
+themselves use. Docs for a route area live next to the routes in
+`src/routes/api/<area>/docs.ts` (e.g. `monitoring`, `registry-inbox`, `x402`);
+older multi-area registrars still live in
+`src/utils/generator/swagger-generator/registrars/` and are being migrated
+area by area — put NEW endpoint docs in the route area's `docs.ts`.
+
+When you add or change an endpoint: update the area's docs in the same PR and
+run `pnpm run swagger-json`. CI fails if `openapi-docs.json` is out of sync
+with the code.
 
 ## API Pagination
 
@@ -79,6 +91,15 @@ This project uses Jest as the testing framework. Here's how you can run tests:
 - Run `pnpm run test` to execute all tests.
 - Run `pnpm run test:watch` to run tests in watch mode, which will re-run tests on file changes.
 - Run `pnpm run test:coverage` to see the test coverage report.
+
+> **Always run tests through the pnpm scripts, never bare `npx jest`.** The
+> scripts set `NODE_OPTIONS="--experimental-vm-modules --require ./jest.preload.cjs"`,
+> which Jest needs for this ESM codebase. Bare `jest` fails with misleading
+> errors about `import.meta`, top-level `await`, or `express-zod-api` imports —
+> those are NOT real test failures.
+
+End-to-end tests (real Preprod blockchain, separate database) are documented in
+[e2e-testing.md](e2e-testing.md).
 
 ### Writing Tests
 

@@ -1,5 +1,5 @@
-import { creditTokenRepository } from '@/repositories/creditTokens';
-import { InsufficientFundsError } from '@/utils/errors/insufficient-funds-error';
+import { runPurchaseCreditInitTransaction } from './credit-init-transaction';
+import { InsufficientFundsError } from '@masumi/payment-core/insufficient-funds-error';
 import { logger } from '@masumi/payment-core/logger';
 import { Network, PricingType } from '@/generated/prisma/client';
 import createHttpError from 'http-errors';
@@ -23,6 +23,7 @@ export async function handlePurchaseCreditInit({
 	collateralReturnLovelace,
 	buyerReturnAddress,
 	sellerReturnAddress,
+	agentName,
 }: {
 	id: string;
 	walletScopeIds: string[] | null;
@@ -42,11 +43,12 @@ export async function handlePurchaseCreditInit({
 	collateralReturnLovelace?: bigint;
 	buyerReturnAddress?: string | null;
 	sellerReturnAddress?: string | null;
+	agentName?: string | null;
 }) {
 	let remainingAttempts = 5;
 	while (remainingAttempts > 0) {
 		try {
-			return await creditTokenRepository.handlePurchaseCreditInit({
+			return await runPurchaseCreditInitTransaction({
 				id,
 				walletScopeIds,
 				cost,
@@ -65,6 +67,7 @@ export async function handlePurchaseCreditInit({
 				collateralReturnLovelace,
 				buyerReturnAddress,
 				sellerReturnAddress,
+				agentName,
 			});
 		} catch (error) {
 			if (error instanceof InsufficientFundsError) {

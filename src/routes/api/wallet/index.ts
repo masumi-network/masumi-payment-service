@@ -1,9 +1,11 @@
 import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { cursorPaginationArgs } from '@/utils/shared/queries';
 import { z } from '@masumi/payment-core/zod';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { decrypt } from '@/utils/security/encryption';
 import { HotWalletType, Prisma } from '@/generated/prisma/client';
+import { isCardanoAddressForNetwork } from '@masumi/payment-core/payment-source';
 import { MeshWallet, resolvePaymentKeyHash } from '@meshsdk/core';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
@@ -46,9 +48,8 @@ export const queryWalletListEndpointGet = adminAuthenticatedEndpointFactory.buil
 	output: getWalletListSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof getWalletListSchemaInput>; ctx: AuthContext }) => {
 		const wallets = await prisma.hotWallet.findMany({
-			take: input.take,
 			orderBy: { createdAt: 'desc' },
-			cursor: input.cursorId ? { id: input.cursorId } : undefined,
+			...cursorPaginationArgs(input.cursorId, input.take),
 			where: {
 				deletedAt: null,
 				...(input.walletType != null ? { type: input.walletType } : {}),
@@ -459,10 +460,23 @@ export const patchWalletEndpointPatch = adminAuthenticatedEndpointFactory.build(
 				id: input.id,
 				deletedAt: null,
 			},
+			include: { PaymentSource: { select: { network: true } } },
 		});
 
 		if (wallet == null) {
 			throw createHttpError(404, `${input.id} wallet not found`);
+		}
+
+		// Validate the collection address against the wallet's network. Without
+		// this an admin typo / wrong-network address is stored silently and every
+		// later automated collection/batching tx for this wallet fails at build
+		// time (or funds get directed to an unspendable-for-them address). null
+		// clears the override (the column is set to NULL); only a non-empty
+		// value is network-validated before being stored.
+		if (input.newCollectionAddress != null && input.newCollectionAddress !== '') {
+			if (!isCardanoAddressForNetwork(input.newCollectionAddress, wallet.PaymentSource.network)) {
+				throw createHttpError(400, 'newCollectionAddress is not a valid Cardano address for this wallet network');
+			}
 		}
 
 		const result = await prisma.hotWallet.update({

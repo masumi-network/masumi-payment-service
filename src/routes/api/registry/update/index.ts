@@ -10,10 +10,11 @@ import { extractAssetName, extractPolicyId } from '@/utils/converter/agent-ident
 import { registryRequestOutputSchema, registerAgentSchemaInput } from '@/routes/api/registry';
 import { getBlockfrostInstance, validateAssetsOnChain } from '@/utils/blockfrost';
 import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
-import { bumpRegistryAssetNameVersionV2 } from '@/services/registry/shared';
+import { bumpRegistryAssetNameVersionV2, normalizeRequestedRegistryFundingLovelace } from '@/services/registry/shared';
 import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
 import { supportedPaymentSourceSchema, validateSupportedPaymentSourcesOrThrow } from '@/types/payment-source';
-import { serializeSupportedPaymentSources } from '../serializers';
+import { serializeSupportedPaymentSources, serializeVerifications } from '../serializers';
+import { verificationToRow } from '@/types/verification';
 
 const updateSupportedPaymentSourcesSchema = z
 	.array(supportedPaymentSourceSchema)
@@ -300,10 +301,28 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 						authorContactEmail: input.Author.contactEmail,
 						authorContactOther: input.Author.contactOther,
 						authorOrganization: input.Author.organization,
-						sendFundingLovelace: input.sendFundingLovelace != null ? BigInt(input.sendFundingLovelace) : null,
+						// Clamp to the minimum NFT funding like the register path; a raw value
+						// below the min (e.g. "1") would build an update mint output under
+						// min-UTXO and fail, stranding the row in UpdateRequested/UpdateFailed.
+						// null still means "leave funding unchanged".
+						sendFundingLovelace:
+							input.sendFundingLovelace != null
+								? normalizeRequestedRegistryFundingLovelace(input.sendFundingLovelace)
+								: null,
 						state: RegistrationState.UpdateRequested,
 						error: null,
 						tags: input.Tags,
+						// verifications is OPTIONAL on update: replace only when the caller
+						// provided the field (an empty array clears it); omitting it leaves
+						// the existing rows to carry into the re-mint.
+						...(input.verifications !== undefined
+							? {
+									Verifications: {
+										deleteMany: {},
+										createMany: { data: input.verifications.map(verificationToRow) },
+									},
+								}
+							: {}),
 						// Re-use the deregistration hot-wallet relation as the
 						// holder-side action wallet — the lock-and-query
 						// path already keys non-RegistrationRequested
@@ -373,6 +392,7 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 						SmartContractWallet: { select: { walletVkey: true, walletAddress: true } },
 						RecipientWallet: { select: { walletVkey: true, walletAddress: true } },
 						ExampleOutputs: { select: { name: true, url: true, mimeType: true } },
+						Verifications: true,
 						SupportedPaymentSources: {
 							select: {
 								chain: true,
@@ -434,6 +454,7 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 							},
 				sendFundingLovelace: result.sendFundingLovelace?.toString() ?? null,
 				supportedPaymentSources: serializeSupportedPaymentSources(result.SupportedPaymentSources),
+				verifications: serializeVerifications(result.Verifications),
 				Tags: result.tags,
 				RecipientWallet: result.RecipientWallet,
 				CurrentTransaction: result.CurrentTransaction

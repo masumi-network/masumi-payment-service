@@ -3,7 +3,7 @@ import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { createMeshProvider } from '@/services/shared/provider-factory';
 import { CONFIG } from '@masumi/payment-core/config';
-import { errorToString } from '@/utils/converter/error-string-convert';
+import { errorToString } from '@masumi/payment-core/error-string-convert';
 
 export async function checkFundTransferConfirmations(): Promise<void> {
 	// Find wallets that have an active pending fund transfer due for a confirmation check.
