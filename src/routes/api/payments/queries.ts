@@ -5,6 +5,7 @@ import {
 	cursorPaginationArgs,
 	parseAmountSearchRange,
 	buildMatchingStates,
+	buildNeedsManualActionFilter,
 	buildTransactionSearchFilter,
 } from '@/utils/shared/queries';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
@@ -38,6 +39,7 @@ export async function getPaymentsForQuery(input: PaymentListQueryInput, walletSc
 			},
 			...buildWalletScopeFilter(walletScopeIds),
 			...(input.filterOnChainState ? { onChainState: input.filterOnChainState } : {}),
+			...buildNeedsManualActionFilter(input.filterNeedsManualAction),
 			...buildTransactionSearchFilter(searchLower, matchingStates, amountFilter, 'RequestedFunds'),
 		},
 		orderBy: { createdAt: 'desc' },

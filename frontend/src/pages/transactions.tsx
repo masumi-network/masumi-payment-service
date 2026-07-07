@@ -26,6 +26,15 @@ import Link from 'next/link';
 import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
 import { getPaymentSourceTypeLabel } from '@/lib/payment-source-type';
 import { TransactionAgentIdentifierCell } from '@/components/transactions/TransactionAgentIdentifierCell';
+import { getLatestTxHash } from '@/components/transactions/transaction-format.helpers';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  TransactionFilters,
+  EMPTY_FILTERS,
+  type TransactionFilterState,
+} from '@/components/transactions/TransactionFilters';
+import { useBulkClearTransactionErrors } from '@/lib/hooks/useBulkClearTransactionErrors';
+import { toast } from 'react-toastify';
 
 type Transaction = ReturnType<typeof useTransactions>['transactions'][number];
 
@@ -39,11 +48,14 @@ export default function Transactions() {
 
   const [activeTab, setActiveTab] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
+  const [filters, setFilters] = useState<TransactionFilterState>(EMPTY_FILTERS);
   const debouncedSearchQuery = useDebouncedValue(searchQuery);
+  const isNeedsActionTab = activeTab === 'Needs Action';
 
   const filterParams = useMemo(() => {
     const params: {
       filterOnChainState?: OnChainStateFilter;
+      filterNeedsManualAction?: boolean;
       searchQuery?: string;
       transactionType?: 'payment' | 'purchase';
     } = {};
@@ -52,11 +64,17 @@ export default function Transactions() {
     else if (activeTab === 'Purchases') params.transactionType = 'purchase';
     else if (activeTab === 'Refund Requests') params.filterOnChainState = 'RefundRequested';
     else if (activeTab === 'Disputes') params.filterOnChainState = 'Disputed';
+    else if (activeTab === 'Needs Action') params.filterNeedsManualAction = true;
+
+    // Explicit filters override the tab defaults (errorType is client-side only).
+    if (filters.type) params.transactionType = filters.type;
+    if (filters.status) params.filterOnChainState = filters.status;
+    if (filters.needsAction) params.filterNeedsManualAction = true;
 
     if (debouncedSearchQuery) params.searchQuery = debouncedSearchQuery;
 
     return params;
-  }, [activeTab, debouncedSearchQuery]);
+  }, [activeTab, debouncedSearchQuery, filters]);
 
   const {
     transactions,
@@ -74,6 +92,10 @@ export default function Transactions() {
 
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [showDownloadDialog, setShowDownloadDialog] = useState(false);
+  // Multi-row selection is only offered on the Needs Action tab, where every row
+  // is in an error state that can be bulk-cleared. Keyed by transaction id.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const { clearErrors, isClearing } = useBulkClearTransactionErrors();
   const isLoadingMore = isFetchingNextPage;
   const isInitialLoading = isLoading && !transactions.length;
 
@@ -90,6 +112,12 @@ export default function Transactions() {
       (t) => t.onChainState === 'RefundRequested',
     ).length;
     const disputeCount = dedupedTransactions.filter((t) => t.onChainState === 'Disputed').length;
+    // Mirrors the backend filterNeedsManualAction predicate (buildNeedsManualActionFilter):
+    // parked in WaitingForManualAction or a recorded NextAction error.
+    const needsActionCount = dedupedTransactions.filter(
+      (t) =>
+        t.NextAction?.requestedAction === 'WaitingForManualAction' || !!t.NextAction?.errorType,
+    ).length;
 
     return [
       { name: 'All', count: null },
@@ -103,6 +131,11 @@ export default function Transactions() {
       {
         name: 'Disputes',
         count: disputeCount || null,
+        variant: 'alert' as const,
+      },
+      {
+        name: 'Needs Action',
+        count: needsActionCount || null,
         variant: 'alert' as const,
       },
     ];
@@ -141,7 +174,7 @@ export default function Transactions() {
 
     return filteredTransactions.filter((tx) => {
       if (tx.id?.toLowerCase().includes(query)) return true;
-      if (tx.CurrentTransaction?.txHash?.toLowerCase().includes(query)) return true;
+      if (getLatestTxHash(tx)?.toLowerCase().includes(query)) return true;
       if (tx.SmartContractWallet?.walletAddress?.toLowerCase().includes(query)) return true;
       if (tx.PaymentSource?.network?.toLowerCase().includes(query)) return true;
       if (tx.PaymentSource?.paymentSourceType?.toLowerCase().includes(query)) return true;
@@ -165,6 +198,60 @@ export default function Transactions() {
     });
   }, [filteredTransactions, searchQuery, debouncedSearchQuery, isPlaceholderData]);
 
+  const refreshTransactions = useCallback(() => {
+    void refetchTransactions?.();
+  }, [refetchTransactions]);
+
+  // Error type has no server-side param, so narrow it client-side. Pagination-limited.
+  const visibleTransactions = useMemo(() => {
+    if (!filters.errorType) return displayTransactions;
+    return displayTransactions.filter((tx) => tx.NextAction?.errorType === filters.errorType);
+  }, [displayTransactions, filters.errorType]);
+
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
+
+  const selectableIds = useMemo(
+    () => visibleTransactions.map((tx) => tx.id).filter((id): id is string => Boolean(id)),
+    [visibleTransactions],
+  );
+  const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selectedIds.has(id));
+  const someSelected = selectedIds.size > 0 && !allSelected;
+
+  const toggleAll = useCallback(() => {
+    setSelectedIds((prev) => {
+      const everySelected = selectableIds.length > 0 && selectableIds.every((id) => prev.has(id));
+      return everySelected ? new Set() : new Set(selectableIds);
+    });
+  }, [selectableIds]);
+
+  const toggleRow = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleBulkClearErrors = useCallback(async () => {
+    const selected = visibleTransactions.filter((tx) => tx.id && selectedIds.has(tx.id));
+    if (selected.length === 0) return;
+
+    const { succeeded, failed, failedIds } = await clearErrors(selected);
+    if (succeeded > 0) {
+      toast.success(
+        `Cleared error state for ${succeeded} transaction${succeeded === 1 ? '' : 's'}`,
+      );
+    }
+    if (failed > 0) {
+      toast.error(`Failed to clear ${failed} transaction${failed === 1 ? '' : 's'}`);
+    }
+
+    // Keep only the failed rows selected so the user can retry them.
+    setSelectedIds(new Set(failedIds));
+    refreshTransactions();
+  }, [visibleTransactions, selectedIds, clearErrors, refreshTransactions]);
+
   // When context changes, clear "new transactions" badge via the hook (single source of truth for localStorage)
   const markAllAsReadRef = useRef(markAllAsRead);
   useEffect(() => {
@@ -173,10 +260,6 @@ export default function Transactions() {
   useEffect(() => {
     markAllAsReadRef.current();
   }, [network, apiClient, selectedPaymentSourceId]);
-
-  const refreshTransactions = useCallback(() => {
-    void refetchTransactions?.();
-  }, [refetchTransactions]);
 
   const handleLoadMore = useCallback(() => {
     if (hasMore && !isLoadingMore) {
@@ -247,7 +330,7 @@ export default function Transactions() {
         }
         const amount = paymentAmounts.join(', ');
 
-        const hash = transaction.CurrentTransaction?.txHash || '—';
+        const hash = getLatestTxHash(transaction) || '—';
         const agentName = transaction.agentName?.trim() || '—';
         const agentIdentifier = transaction.agentIdentifier?.trim() || '—';
         const status = formatStatus(transaction.onChainState);
@@ -324,7 +407,7 @@ export default function Transactions() {
               />
               <Button
                 onClick={() => setShowDownloadDialog(true)}
-                disabled={displayTransactions.length === 0}
+                disabled={visibleTransactions.length === 0}
                 variant="outline"
                 className="flex items-center gap-2 btn-hover-lift"
               >
@@ -345,20 +428,57 @@ export default function Transactions() {
             activeTab={activeTab}
             onTabChange={(tab) => {
               setActiveTab(tab);
+              clearSelection();
             }}
           />
 
-          <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
             <div className="flex-1">
               <SearchInput
                 value={searchQuery}
-                onChange={setSearchQuery}
-                placeholder="Search by agent name, ID, hash, status, amount..."
+                onChange={(value) => {
+                  setSearchQuery(value);
+                  clearSelection();
+                }}
+                placeholder="Search by agent name, ID, hash, wallet, status, amount..."
                 className="max-w-xs"
                 isLoading={isSearchPending && !!searchQuery}
               />
             </div>
+            <TransactionFilters
+              filters={filters}
+              onChange={(next) => {
+                setFilters(next);
+                clearSelection();
+              }}
+            />
           </div>
+
+          {isNeedsActionTab && selectedIds.size > 0 && (
+            <div className="flex items-center justify-between gap-4 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-2 animate-fade-in">
+              <span className="text-sm font-medium">{selectedIds.size} selected</span>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSelectedIds(new Set())}
+                  disabled={isClearing}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleBulkClearErrors}
+                  disabled={isClearing}
+                >
+                  {isClearing
+                    ? 'Clearing error states...'
+                    : `Clear error state (${selectedIds.size})`}
+                </Button>
+              </div>
+            </div>
+          )}
 
           <div className="border rounded-lg overflow-x-auto">
             <table
@@ -369,7 +489,22 @@ export default function Transactions() {
             >
               <thead className="bg-muted/30 dark:bg-muted/15">
                 <tr className="border-b">
-                  <th className="p-4 text-left text-sm font-medium text-muted-foreground pl-6">
+                  {isNeedsActionTab && (
+                    <th className="p-4 pl-6 w-10">
+                      <Checkbox
+                        checked={allSelected ? true : someSelected ? 'indeterminate' : false}
+                        onCheckedChange={toggleAll}
+                        aria-label="Select all transactions"
+                        disabled={selectableIds.length === 0}
+                      />
+                    </th>
+                  )}
+                  <th
+                    className={cn(
+                      'p-4 text-left text-sm font-medium text-muted-foreground',
+                      !isNeedsActionTab && 'pl-6',
+                    )}
+                  >
                     Type
                   </th>
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">
@@ -393,11 +528,11 @@ export default function Transactions() {
                 </tr>
               </thead>
               <tbody>
-                {isInitialLoading || (displayTransactions.length === 0 && isSearchPending) ? (
+                {isInitialLoading || (visibleTransactions.length === 0 && isSearchPending) ? (
                   <TransactionTableSkeleton rows={5} />
-                ) : displayTransactions.length === 0 ? (
+                ) : visibleTransactions.length === 0 ? (
                   <tr>
-                    <td colSpan={9}>
+                    <td colSpan={isNeedsActionTab ? 10 : 9}>
                       <EmptyState
                         icon={searchQuery ? 'search' : 'inbox'}
                         title={
@@ -425,7 +560,7 @@ export default function Transactions() {
                     </td>
                   </tr>
                 ) : (
-                  displayTransactions.map((transaction, index) => (
+                  visibleTransactions.map((transaction, index) => (
                     <tr
                       key={transaction.id}
                       className={cn(
@@ -434,24 +569,38 @@ export default function Transactions() {
                           ? 'bg-destructive/10 border-l-2 border-l-destructive'
                           : '',
                         'cursor-pointer hover:bg-muted/50',
+                        transaction.id && selectedIds.has(transaction.id) && 'bg-muted/50',
                       )}
                       style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
                       onClick={() => setSelectedTransaction(transaction)}
                     >
-                      <td className="p-4 pl-6">
+                      {isNeedsActionTab && (
+                        <td className="p-4 pl-6 w-10" onClick={(e) => e.stopPropagation()}>
+                          <Checkbox
+                            checked={transaction.id ? selectedIds.has(transaction.id) : false}
+                            onCheckedChange={() => transaction.id && toggleRow(transaction.id)}
+                            disabled={!transaction.id}
+                            aria-label="Select transaction"
+                          />
+                        </td>
+                      )}
+                      <td className={cn('p-4', !isNeedsActionTab && 'pl-6')}>
                         <span className="capitalize">{transaction.type}</span>
                       </td>
                       <td className="p-4">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-sm text-muted-foreground">
-                            {transaction.CurrentTransaction?.txHash
-                              ? `${transaction.CurrentTransaction.txHash.slice(0, 8)}...${transaction.CurrentTransaction.txHash.slice(-8)}`
-                              : '—'}
-                          </span>
-                          {transaction.CurrentTransaction?.txHash && (
-                            <CopyButton value={transaction.CurrentTransaction?.txHash} />
-                          )}
-                        </div>
+                        {(() => {
+                          const displayTxHash = getLatestTxHash(transaction);
+                          return (
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-sm text-muted-foreground">
+                                {displayTxHash
+                                  ? `${displayTxHash.slice(0, 8)}...${displayTxHash.slice(-8)}`
+                                  : '—'}
+                              </span>
+                              {displayTxHash && <CopyButton value={displayTxHash} />}
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="p-4">
                         <TransactionAgentIdentifierCell

@@ -3829,6 +3829,10 @@ export type GetPaymentData = {
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
         /**
+         * When true, only returns payments that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it
+         */
+        filterNeedsManualAction?: string;
+        /**
          * Search query to filter by ID, hash, agent name, state, network, wallet address, or amount
          */
         searchQuery?: string;
@@ -4367,6 +4371,10 @@ export type GetPaymentCountData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
+         * When true, only counts payments that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it
+         */
+        filterNeedsManualAction?: string;
+        /**
          * The smart contract address of the payment source. When omitted with no explicit payment source type, payment count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.
          */
         filterSmartContractAddress?: string | null;
@@ -4403,6 +4411,10 @@ export type GetPurchaseCountData = {
          * The network the purchases were made on
          */
         network: 'Preprod' | 'Mainnet';
+        /**
+         * When true, only counts purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it
+         */
+        filterNeedsManualAction?: string;
         /**
          * The smart contract address of the payment source. When omitted with no explicit payment source type, purchase count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.
          */
@@ -6519,6 +6531,10 @@ export type GetPurchaseData = {
          * Filter by payment source type. When omitted with no smart-contract-address filter, purchase list/count endpoints default to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
+        /**
+         * When true, only returns purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it
+         */
+        filterNeedsManualAction?: string;
         /**
          * Search query to filter by ID, hash, agent name, state, network, wallet address, or amount
          */
@@ -10928,6 +10944,10 @@ export type GetX402PaymentsData = {
          * Filter by CAIP-2 chain id
          */
         caip2Network?: string;
+        /**
+         * When true, only returns attempts that require manual reconciliation: settle failed or threw after verification, leaving the attempt Verified with a recorded error. Overrides the status filter.
+         */
+        filterNeedsManualAction?: 'true' | 'false';
     };
     url: '/x402/payments';
 };
@@ -11221,6 +11241,10 @@ export type GetX402PaymentsCountData = {
         status?: 'PaymentRequired' | 'Verified' | 'Settled' | 'Failed' | 'Replayed';
         direction?: 'InboundVerify' | 'InboundSettle' | 'OutboundPayment';
         caip2Network?: string;
+        /**
+         * When true, only counts attempts that require manual reconciliation: settle failed or threw after verification, leaving the attempt Verified with a recorded error. Overrides the status filter.
+         */
+        filterNeedsManualAction?: 'true' | 'false';
     };
     url: '/x402/payments/count';
 };

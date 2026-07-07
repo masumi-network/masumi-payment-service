@@ -13,6 +13,7 @@ import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/u
 import { resolveTransactionAgentName } from '@/utils/shared/resolve-transaction-agent-name';
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
+import { buildNeedsManualActionFilter } from '@/utils/shared/queries';
 import { resolvePurchaseCreationContext } from './shared';
 import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import {
@@ -69,6 +70,7 @@ export const queryPurchaseCountGet = readAuthenticatedEndpointFactory.build({
 					paymentSourceType: resolvePurchasePaymentSourceTypeFilter(input),
 				},
 				...buildWalletScopeFilter(ctx.walletScopeIds),
+				...buildNeedsManualActionFilter(input.filterNeedsManualAction),
 			},
 		});
 

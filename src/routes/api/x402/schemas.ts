@@ -188,6 +188,11 @@ export const paymentAttemptsCountSchemaInput = z.object({
 	status: z.nativeEnum(X402PaymentStatus).optional(),
 	direction: z.nativeEnum(X402PaymentDirection).optional(),
 	caip2Network: caip2Eip155Schema.optional(),
+	filterNeedsManualAction: booleanQuerySchema
+		.optional()
+		.describe(
+			'When true, only counts attempts that require manual reconciliation: settle failed or threw after verification, leaving the attempt Verified with a recorded error. Overrides the status filter.',
+		),
 });
 
 export const settlementsCountSchemaInput = z.object({
@@ -447,6 +452,11 @@ export const listPaymentAttemptsSchemaInput = z.object({
 	status: z.nativeEnum(X402PaymentStatus).optional().describe('Filter by payment status'),
 	direction: z.nativeEnum(X402PaymentDirection).optional().describe('Filter by payment direction'),
 	caip2Network: caip2Eip155Schema.optional().describe('Filter by CAIP-2 chain id'),
+	filterNeedsManualAction: booleanQuerySchema
+		.optional()
+		.describe(
+			'When true, only returns attempts that require manual reconciliation: settle failed or threw after verification, leaving the attempt Verified with a recorded error. Overrides the status filter.',
+		),
 });
 
 export const listPaymentAttemptsSchemaOutput = z.object({

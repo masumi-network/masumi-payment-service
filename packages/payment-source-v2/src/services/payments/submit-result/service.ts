@@ -1,7 +1,7 @@
 import { OnChainState, PaymentAction, PaymentSourceType, Prisma, TransactionStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { resolveTxHash, UTxO } from '@meshsdk/core';
-import { isDefinitiveNodeRejection } from '../../submit-error-classifier';
+import { isDefinitiveNodeRejection } from '@masumi/payment-core/submit-error-classifier';
 import { makeHotWalletUnlocker, makePaymentRequestFailureMarker } from '../../request-failure';
 import { findMatchingPaymentUtxoWithContract } from '../../utxo-matching';
 import type { LanguageVersion } from '@meshsdk/core';

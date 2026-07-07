@@ -33,6 +33,8 @@ export type OnChainStateFilter = (typeof ON_CHAIN_STATES)[number];
 type TransactionQueryParams = {
   filterOnChainState?: OnChainStateFilter;
   filterPaymentSourceType?: PaymentSourceType;
+  /** Only rows needing manual resolution (WaitingForManualAction or recorded error). */
+  filterNeedsManualAction?: boolean;
   searchQuery?: string;
   transactionType?: 'payment' | 'purchase';
 };
@@ -109,6 +111,7 @@ export function useTransactions(
       network,
       params?.filterOnChainState,
       filterPaymentSourceType,
+      params?.filterNeedsManualAction ?? false,
       params?.searchQuery,
       params?.transactionType,
     ],
@@ -131,6 +134,7 @@ export function useTransactions(
                   limit: TRANSACTION_PAGE_SIZE,
                   filterOnChainState: params?.filterOnChainState,
                   filterPaymentSourceType,
+                  filterNeedsManualAction: params?.filterNeedsManualAction ? 'true' : undefined,
                   searchQuery: params?.searchQuery || undefined,
                 },
               }),
@@ -155,6 +159,7 @@ export function useTransactions(
                   limit: TRANSACTION_PAGE_SIZE,
                   filterOnChainState: params?.filterOnChainState,
                   filterPaymentSourceType,
+                  filterNeedsManualAction: params?.filterNeedsManualAction ? 'true' : undefined,
                   searchQuery: params?.searchQuery || undefined,
                 },
               }),

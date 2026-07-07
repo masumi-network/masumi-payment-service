@@ -59,6 +59,25 @@ export function buildMatchingStates(searchLower: string | undefined): OnChainSta
 	);
 }
 
+/**
+ * Prisma where-fragment selecting payment/purchase requests that need an
+ * operator to step in: the automated state machine parked them in
+ * WaitingForManualAction (the only state error-state-recovery accepts), or a
+ * NextAction error was recorded without changing the requested action.
+ *
+ * Shared between PaymentRequest and PurchaseRequest: both relate to their
+ * action-data row via `NextAction`, and PaymentAction and PurchasingAction
+ * both contain the literal 'WaitingForManualAction'.
+ */
+export function buildNeedsManualActionFilter(filterNeedsManualAction: boolean | undefined) {
+	if (filterNeedsManualAction !== true) return {};
+	return {
+		NextAction: {
+			OR: [{ requestedAction: 'WaitingForManualAction' as const }, { errorType: { not: null } }],
+		},
+	};
+}
+
 export function buildTransactionSearchFilter(
 	searchLower: string | undefined,
 	matchingStates: OnChainState[] | undefined,
