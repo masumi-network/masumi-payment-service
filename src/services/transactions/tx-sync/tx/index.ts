@@ -33,8 +33,8 @@ import { TransactionMetadata } from '@/services/transactions/tx-sync/blockchain'
 import { calculateMinUtxo, getLovelaceFromAmounts, getNativeTokenCount, DUMMY_RESULT_HASH } from '@/utils/min-utxo';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { getDatumNetwork, getPaymentSourceContractAdapter } from '@/services/payment-source-adapters';
-import { retryOnSerializationConflict } from '@/utils/db/retry';
-import { withSerializableSlotRetry } from '@/utils/db/serializable-semaphore';
+import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
+import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 import {
 	handleV1PaymentTransaction,
 	handleV1PurchasingTransaction,

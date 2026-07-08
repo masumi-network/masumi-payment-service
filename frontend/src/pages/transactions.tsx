@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 
-import { cn, formatFundUnit } from '@/lib/utils';
+import { cn, formatAssetAmount } from '@/lib/utils';
+import { formatDateTime } from '@/lib/format-date';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
 import Head from 'next/head';
@@ -20,23 +21,13 @@ import { AnimatedPage } from '@/components/ui/animated-page';
 import { SearchInput } from '@/components/ui/search-input';
 import { EmptyState } from '@/components/ui/empty-state';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
-import { parseAmountSearchRange } from '@/lib/parseAmountSearchRange';
+import { parseAmountSearchRange, parseAmountToBigInt } from '@/lib/parseAmountSearchRange';
 import Link from 'next/link';
 import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
 import { getPaymentSourceTypeLabel } from '@/lib/payment-source-type';
 import { TransactionAgentIdentifierCell } from '@/components/transactions/TransactionAgentIdentifierCell';
 
 type Transaction = ReturnType<typeof useTransactions>['transactions'][number];
-
-const formatTimestamp = (timestamp: string | null | undefined): string => {
-  if (!timestamp) return '—';
-
-  if (/^\d+$/.test(timestamp)) {
-    return new Date(parseInt(timestamp)).toLocaleString();
-  }
-
-  return new Date(timestamp).toLocaleString();
-};
 
 const formatStatus = (status: string | null) => {
   if (!status) return '—';
@@ -80,17 +71,6 @@ export default function Transactions() {
 
   // Unfiltered call for tab badge counts (reuses dashboard cache when no args); only this instance updates localStorage
   const { transactions: allTransactionsForCounts, markAllAsRead } = useTransactions();
-
-  // Format price helper function
-  const formatPrice = (amount: string | undefined) => {
-    if (!amount) return '—';
-    const numericAmount = parseInt(amount) / 1000000;
-    return new Intl.NumberFormat(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-      useGrouping: true,
-    }).format(numericAmount);
-  };
 
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [showDownloadDialog, setShowDownloadDialog] = useState(false);
@@ -169,13 +149,14 @@ export default function Transactions() {
       if (matchingStates.length > 0 && tx.onChainState && matchingStates.includes(tx.onChainState))
         return true;
       if (tx.agentIdentifier?.toLowerCase().includes(query)) return true;
+      if (tx.agentName?.toLowerCase().includes(query)) return true;
       if (amountRange) {
         const funds =
           tx.type === 'payment' ? tx.RequestedFunds : tx.type === 'purchase' ? tx.PaidFunds : [];
         if (
           funds?.some((f) => {
-            const amt = parseInt(f.amount);
-            return amt >= amountRange.min && amt <= amountRange.max;
+            const amt = parseAmountToBigInt(f.amount);
+            return amt != null && amt >= amountRange.min && amt <= amountRange.max;
           })
         )
           return true;
@@ -194,7 +175,7 @@ export default function Transactions() {
   }, [network, apiClient, selectedPaymentSourceId]);
 
   const refreshTransactions = useCallback(() => {
-    refetchTransactions?.();
+    void refetchTransactions?.();
   }, [refetchTransactions]);
 
   const handleLoadMore = useCallback(() => {
@@ -219,7 +200,7 @@ export default function Transactions() {
         return 'text-blue-500';
       case 'disputed':
       case 'disputedwithdrawn':
-        return 'text-red-500';
+        return 'text-destructive';
       default:
         return 'text-muted-foreground';
     }
@@ -231,6 +212,7 @@ export default function Transactions() {
       const headers = [
         'Transaction Type',
         'Transaction Hash',
+        'Agent Name',
         'Agent Identifier',
         'Payment Amounts',
         'Network',
@@ -240,35 +222,41 @@ export default function Transactions() {
         'Fee rate (%)',
       ];
       const rows = transactions.map((transaction) => {
-        const feeRatePermille = selectedPaymentSource?.feeRatePermille;
+        // The list is filtered by network + source type only, so rows can
+        // belong to OTHER sources than the selected one. Only stamp the
+        // selected source's fee rate onto rows that actually belong to it.
+        const feeRatePermille =
+          transaction.PaymentSource?.id === selectedPaymentSource?.id
+            ? selectedPaymentSource?.feeRatePermille
+            : undefined;
         const feeRateDisplay =
           typeof feeRatePermille === 'number' ? (feeRatePermille / 10).toFixed(1) + '%' : 'Unknown';
-        const paymentAmounts = [];
+        const paymentAmounts: string[] = [];
         if (transaction.type === 'payment' && transaction.RequestedFunds) {
           paymentAmounts.push(
-            ...transaction.RequestedFunds.map((fund) => ({
-              amount: formatPrice(fund.amount),
-              unit: formatFundUnit(fund.unit, network),
-            })),
+            ...transaction.RequestedFunds.map((fund) =>
+              formatAssetAmount(fund.amount, fund.unit, network),
+            ),
           );
         } else if (transaction.type === 'purchase' && transaction.PaidFunds) {
           paymentAmounts.push(
-            ...transaction.PaidFunds.map((fund) => ({
-              amount: formatPrice(fund.amount),
-              unit: formatFundUnit(fund.unit, network),
-            })),
+            ...transaction.PaidFunds.map((fund) =>
+              formatAssetAmount(fund.amount, fund.unit, network),
+            ),
           );
         }
-        const amount = paymentAmounts.map((amount) => `${amount.amount} ${amount.unit}`).join(', ');
+        const amount = paymentAmounts.join(', ');
 
         const hash = transaction.CurrentTransaction?.txHash || '—';
+        const agentName = transaction.agentName?.trim() || '—';
         const agentIdentifier = transaction.agentIdentifier?.trim() || '—';
         const status = formatStatus(transaction.onChainState);
-        const date = new Date(transaction.createdAt).toLocaleString();
+        const date = formatDateTime(transaction.createdAt);
 
         return [
           transaction.type,
           hash,
+          agentName,
           agentIdentifier,
           amount,
           transaction.PaymentSource.network,
@@ -289,7 +277,7 @@ export default function Transactions() {
         `"${String(value ?? '').replace(/"/g, '""')}"`;
       return [headers, ...rows].map((row) => row.map(escapeCsvField).join(',')).join('\n');
     },
-    [selectedPaymentSource?.feeRatePermille, network],
+    [selectedPaymentSource?.id, selectedPaymentSource?.feeRatePermille, network],
   );
 
   // Download CSV file
@@ -304,6 +292,7 @@ export default function Transactions() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -321,6 +310,7 @@ export default function Transactions() {
                 <a
                   href="https://docs.masumi.network/core-concepts/agent-to-agent-payments"
                   target="_blank"
+                  rel="noopener noreferrer"
                   className="text-primary hover:underline"
                 >
                   Learn more
@@ -363,7 +353,7 @@ export default function Transactions() {
               <SearchInput
                 value={searchQuery}
                 onChange={setSearchQuery}
-                placeholder="Search by ID, hash, status, amount, or source..."
+                placeholder="Search by agent name, ID, hash, status, amount..."
                 className="max-w-xs"
                 isLoading={isSearchPending && !!searchQuery}
               />
@@ -385,9 +375,7 @@ export default function Transactions() {
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">
                     Transaction Hash
                   </th>
-                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">
-                    Agent identifier
-                  </th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">Agent</th>
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">
                     Amount
                   </th>
@@ -468,6 +456,7 @@ export default function Transactions() {
                       <td className="p-4">
                         <TransactionAgentIdentifierCell
                           agentIdentifier={transaction.agentIdentifier}
+                          agentName={transaction.agentName}
                           smartContractAddress={
                             transaction.PaymentSource?.smartContractAddress ?? null
                           }
@@ -476,25 +465,17 @@ export default function Transactions() {
                       </td>
                       <td className="p-4">
                         {transaction.type === 'payment' && transaction.RequestedFunds?.length
-                          ? transaction.RequestedFunds.map((fund, index) => {
-                              const amount = formatPrice(fund.amount);
-                              const unit = formatFundUnit(fund.unit, network);
-                              return (
-                                <div key={index} className="text-sm">
-                                  {amount} {unit}
-                                </div>
-                              );
-                            })
+                          ? transaction.RequestedFunds.map((fund, index) => (
+                              <div key={index} className="text-sm">
+                                {formatAssetAmount(fund.amount, fund.unit, network)}
+                              </div>
+                            ))
                           : transaction.type === 'purchase' && transaction.PaidFunds?.length
-                            ? transaction.PaidFunds.map((fund, index) => {
-                                const amount = formatPrice(fund.amount);
-                                const unit = formatFundUnit(fund.unit, network);
-                                return (
-                                  <div key={index} className="text-sm">
-                                    {amount} {unit}
-                                  </div>
-                                );
-                              })
+                            ? transaction.PaidFunds.map((fund, index) => (
+                                <div key={index} className="text-sm">
+                                  {formatAssetAmount(fund.amount, fund.unit, network)}
+                                </div>
+                              ))
                             : '—'}
                       </td>
                       <td className="p-4">
@@ -525,12 +506,17 @@ export default function Transactions() {
                       </td>
                       <td className="p-4">
                         {transaction.onChainState === 'ResultSubmitted'
-                          ? formatTimestamp(transaction.unlockTime)
+                          ? formatDateTime(transaction.unlockTime)
                           : '—'}
                       </td>
-                      <td className="p-4">{new Date(transaction.createdAt).toLocaleString()}</td>
+                      <td className="p-4">{formatDateTime(transaction.createdAt)}</td>
                       <td className="p-4 pr-8">
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label="More actions"
+                          className="h-8 w-8"
+                        >
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </td>

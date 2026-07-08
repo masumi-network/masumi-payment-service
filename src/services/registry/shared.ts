@@ -64,6 +64,7 @@ const V2_UPDATE_REDEEMER_ALTERNATIVE = 1;
 // the existing `@/services/registry/shared` import surface stable.
 export {
 	bumpRegistryAssetNameVersionV2,
+	unbumpRegistryAssetNameVersionV2,
 	generateRegistryAssetNameV2,
 	registryNonceForIndex,
 	V2_REGISTRY_MAX_MINTS_PER_UTXO,
@@ -385,10 +386,22 @@ async function generateRegistryUpdateTransaction(
 	txBuilder.protocolParams(protocolParameters);
 	const deserializedAddress = txBuilder.serializer.deserializer.key.deserializeAddress(walletAddress);
 
+	// Burn-old + mint-new are two mint legs under one UpdateAction policy bucket.
+	// Mesh's `mint()` flushes the PREVIOUS leg via `queueMint()`, which throws
+	// `queueMint: Missing mint script information` unless that leg already carries
+	// its `scriptSource` — so the script + redeemer must be attached to EACH leg,
+	// not once after both (doing it once threw as soon as the mint-new `mint()`
+	// flushed the unscripted burn-old leg). `mintPlutusScript()` also only arms
+	// the very next `mint()`, so it precedes each. `queueMint` then merges both
+	// same-policy legs into one bucket (it asserts the redeemer + scriptSource are
+	// identical across legs, which they are).
 	txBuilder
 		.txIn(assetUtxo.input.txHash, assetUtxo.input.outputIndex)
 		.mintPlutusScript(script.version)
 		.mint('-1', policyId, oldAssetName)
+		.mintingScript(script.code)
+		.mintRedeemerValue({ alternative: V2_UPDATE_REDEEMER_ALTERNATIVE, fields: [] }, 'Mesh', exUnits)
+		.mintPlutusScript(script.version)
 		.mint(SERVICE_CONSTANTS.SMART_CONTRACT.mintQuantity, policyId, newAssetName)
 		.mintingScript(script.code)
 		.mintRedeemerValue({ alternative: V2_UPDATE_REDEEMER_ALTERNATIVE, fields: [] }, 'Mesh', exUnits)

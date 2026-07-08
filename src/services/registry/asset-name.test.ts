@@ -1,7 +1,9 @@
 import type { UTxO } from '@meshsdk/core';
 import {
+	bumpRegistryAssetNameVersionV2,
 	generateRegistryAssetNameV2,
 	registryNonceForIndex,
+	unbumpRegistryAssetNameVersionV2,
 	V2_REGISTRY_MAX_MINTS_PER_UTXO,
 } from '@/services/registry/asset-name';
 
@@ -104,5 +106,39 @@ describe('oneshot batch invariant', () => {
 		expect(() =>
 			generateRegistryAssetNameV2(utxo, registryNonceForIndex(V2_REGISTRY_MAX_MINTS_PER_UTXO - 1)),
 		).not.toThrow();
+	});
+});
+
+describe('bump/unbump registry asset name version', () => {
+	const base = generateRegistryAssetNameV2(makeUtxo(TX_A, 0)); // version 000000
+
+	it('bump increments the 3-byte version, keeping nonce + root', () => {
+		const bumped = bumpRegistryAssetNameVersionV2(base);
+		expect(bumped.slice(0, 2)).toBe(base.slice(0, 2)); // nonce unchanged
+		expect(bumped.slice(2, 58)).toBe(base.slice(2, 58)); // root unchanged
+		expect(bumped.slice(58, 64)).toBe('000001');
+	});
+
+	it('unbump is the exact inverse of bump (round-trips)', () => {
+		let name = base;
+		for (let i = 0; i < 5; i++) {
+			const bumped = bumpRegistryAssetNameVersionV2(name);
+			expect(unbumpRegistryAssetNameVersionV2(bumped)).toBe(name);
+			name = bumped;
+		}
+	});
+
+	it('unbump decrements a higher version correctly', () => {
+		// 0x000010 -> 0x00000f
+		const v16 = base.slice(0, 58) + '000010';
+		expect(unbumpRegistryAssetNameVersionV2(v16)).toBe(base.slice(0, 58) + '00000f');
+	});
+
+	it('unbump refuses to go below version 0 (a version-0 asset was never updated)', () => {
+		expect(() => unbumpRegistryAssetNameVersionV2(base)).toThrow(/below 0/);
+	});
+
+	it('unbump rejects a wrong-length asset name', () => {
+		expect(() => unbumpRegistryAssetNameVersionV2('abcd')).toThrow(/hex chars/);
 	});
 });

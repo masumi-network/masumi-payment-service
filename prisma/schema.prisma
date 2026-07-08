@@ -266,11 +266,17 @@ model RegistryRequest {
   registrationStateLastChangedAt DateTime                 @default(now())
   currentTransactionId           String?
   error                          String?
+  // Consecutive collateral-prep (`prep_tx_failed`) failures for this request.
+  // Bounded by MAX_COLLATERAL_PREP_FAILURES: a deterministically-failing prep
+  // surfaces as *Failed instead of retrying silently forever. Reset to 0 once
+  // collateral prep succeeds (the `ready` gate).
+  collateralPrepFailureCount     Int                      @default(0)
   // Nullable: legacy rows created before this column existed have NULL.
   // Deregister/mutate routes treat NULL-owner rows as admin-only.
   requestedById                  String?
   ExampleOutputs                 ExampleOutput[]
   SupportedPaymentSources        SupportedPaymentSource[]
+  Verifications                  AgentVerification[]
   Pricing                        AgentPricing             @relation(fields: [agentPricingId], references: [id])
   CurrentTransaction             Transaction?             @relation(fields: [currentTransactionId], references: [id])
   PaymentSource                  PaymentSource            @relation(fields: [paymentSourceId], references: [id])
@@ -285,10 +291,44 @@ model RegistryRequest {
   @@index([requestedById])
 }
 
+/// One KERI/Veridian verification claim advertised by a registry entry. Flat,
+/// queryable columns (no JSON blob); the nested issuer/schema/credential/holder
+/// grouping is reconstructed at the API boundary (see @masumi/payment-core/
+/// verification). Emitted into CIP-25 mint/update metadata for trustless,
+/// issuer-agnostic third-party verification.
+model AgentVerification {
+  id                 String          @id @default(cuid())
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  registryRequestId  String
+  /// Verification method discriminator, e.g. "KERI-ACDC".
+  method             String
+  schemaVersion      String?
+  /// Issuer KERI AID (ACDC sad.i) + OOBI resolving its KEL.
+  issuerAid          String
+  issuerOobi         String
+  /// Credential schema SAID (ACDC sad.s) + OOBI resolving the JSON schema.
+  schemaSaid         String
+  schemaOobi         String
+  /// Credential SAID (ACDC sad.d) + OOBI serving the signed ACDC.
+  credentialSaid     String
+  credentialOobi     String
+  /// Credential status registry / TEL SAID (ACDC sad.ri) for revocation. Optional.
+  credentialRegistry String?
+  /// Issuee/holder KERI AID (ACDC sad.a.i) + OOBI resolving its KEL.
+  holderAid          String
+  holderOobi         String
+  /// Optional witness/KERIA resolver root for live key-state and TEL queries.
+  baseUrl            String?
+  RegistryRequest    RegistryRequest @relation(fields: [registryRequestId], references: [id], onDelete: Cascade)
+
+  @@index([registryRequestId])
+}
+
 model SupportedPaymentSource {
-  id                String              @id @default(cuid())
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
+  id                String               @id @default(cuid())
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
   registryRequestId String
   /// Payment rail / chain family advertised by the registry metadata.
   /// Existing Cardano rows use `Cardano`; standard x402 rows use `EVM`.
@@ -307,7 +347,7 @@ model SupportedPaymentSource {
   payTo             String?
   resource          String?
   extra             Json?
-  RegistryRequest   RegistryRequest     @relation(fields: [registryRequestId], references: [id], onDelete: Cascade)
+  RegistryRequest   RegistryRequest      @relation(fields: [registryRequestId], references: [id], onDelete: Cascade)
   X402Attempts      X402PaymentAttempt[]
 
   // Partial database unique indexes preserve the legacy Cardano key and the
@@ -339,17 +379,17 @@ model X402Network {
 }
 
 model X402EvmWallet {
-  id                  String                @id @default(cuid())
-  createdAt           DateTime              @default(now())
-  updatedAt           DateTime              @updatedAt
-  address             String                @unique
+  id                  String                        @id @default(cuid())
+  createdAt           DateTime                      @default(now())
+  updatedAt           DateTime                      @updatedAt
+  address             String                        @unique
   type                X402EvmWalletType
   encryptedPrivateKey String
   note                String?
   deletedAt           DateTime?
   createdById         String?
-  CreatedBy           ApiKey?               @relation(fields: [createdById], references: [id], onDelete: SetNull)
-  FacilitatesNetworks X402Network[]         @relation("X402NetworkFacilitatorWallet")
+  CreatedBy           ApiKey?                       @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  FacilitatesNetworks X402Network[]                 @relation("X402NetworkFacilitatorWallet")
   Budgets             X402WalletBudget[]
   PaymentAttempts     X402PaymentAttempt[]
   LowBalanceRules     X402EvmWalletLowBalanceRule[]
@@ -441,6 +481,9 @@ model X402PaymentAttempt {
   @@index([paymentIdentifier])
   @@index([caip2Network, asset])
   @@index([status, createdAt])
+  // Settle dedup/crash-window guards look up attempts by paymentPayloadHash
+  // (+ direction/status) on every settle; without this they scan the table.
+  @@index([paymentPayloadHash])
 }
 
 model X402Settlement {
@@ -480,6 +523,11 @@ model InboxAgentRegistrationRequest {
   registrationStateLastChangedAt DateTime          @default(now())
   currentTransactionId           String?
   error                          String?
+  // Consecutive collateral-prep (`prep_tx_failed`) failures for this request.
+  // Bounded by MAX_COLLATERAL_PREP_FAILURES: a deterministically-failing prep
+  // surfaces as *Failed instead of retrying silently forever. Reset to 0 once
+  // collateral prep succeeds (the `ready` gate).
+  collateralPrepFailureCount     Int               @default(0)
   // Nullable: legacy rows created before this column existed have NULL.
   // Deregister/mutate routes treat NULL-owner rows as admin-only.
   requestedById                  String?
@@ -541,6 +589,10 @@ model PaymentRequest {
   agentIdentifier                               String?
   /// Populated when agentIdentifier was aligned from blockchainIdentifier (create path or startup backfill). Null only on legacy rows pending sync.
   agentIdentifierSyncedAt                       DateTime?
+  /// Denormalized agent display name for search; snapshot at create/backfill from registry or on-chain metadata.
+  agentName                                     String?
+  /// Populated when agentName was aligned (create path or startup backfill). Null only on legacy rows pending sync.
+  agentNameSyncedAt                             DateTime?
   submitResultTime                              BigInt
   unlockTime                                    BigInt
   externalDisputeUnlockTime                     BigInt
@@ -618,6 +670,10 @@ model PurchaseRequest {
   agentIdentifier                               String?
   /// Populated when agentIdentifier was aligned from blockchainIdentifier (create path or startup backfill). Null only on legacy rows pending sync.
   agentIdentifierSyncedAt                       DateTime?
+  /// Denormalized agent display name for search; snapshot at create/backfill from registry or on-chain metadata.
+  agentName                                     String?
+  /// Populated when agentName was aligned (create path or startup backfill). Null only on legacy rows pending sync.
+  agentNameSyncedAt                             DateTime?
   submitResultTime                              BigInt
   unlockTime                                    BigInt
   externalDisputeUnlockTime                     BigInt

@@ -4,6 +4,7 @@ import {
 	assertTxSizeWithinLimit,
 	computeCollateralFromExUnits,
 	intersectTxWindows,
+	isTxSizeWithinLimit,
 	MAX_SAFE_TX_BYTES,
 	pickBatchCollateral,
 	shrinkBatchToFit,
@@ -409,5 +410,30 @@ describe('assertTxSizeWithinLimit', () => {
 
 	it('exports MAX_SAFE_TX_BYTES as 14_000', () => {
 		expect(MAX_SAFE_TX_BYTES).toBe(14_000);
+	});
+});
+
+describe('isTxSizeWithinLimit', () => {
+	it('returns true for an empty tx hex', () => {
+		expect(isTxSizeWithinLimit('')).toBe(true);
+	});
+
+	it('returns true exactly at the limit', () => {
+		const hex = '0'.repeat(MAX_SAFE_TX_BYTES * 2);
+		expect(isTxSizeWithinLimit(hex)).toBe(true);
+	});
+
+	it('returns false one byte over the limit', () => {
+		const hex = '0'.repeat((MAX_SAFE_TX_BYTES + 1) * 2);
+		expect(isTxSizeWithinLimit(hex)).toBe(false);
+	});
+
+	it('agrees with assertTxSizeWithinLimit at the boundary', () => {
+		const atLimit = '0'.repeat(MAX_SAFE_TX_BYTES * 2);
+		const overLimit = '0'.repeat((MAX_SAFE_TX_BYTES + 1) * 2);
+		expect(isTxSizeWithinLimit(atLimit)).toBe(true);
+		expect(() => assertTxSizeWithinLimit(atLimit, 'label')).not.toThrow();
+		expect(isTxSizeWithinLimit(overLimit)).toBe(false);
+		expect(() => assertTxSizeWithinLimit(overLimit, 'label')).toThrow();
 	});
 });

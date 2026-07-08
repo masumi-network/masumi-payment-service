@@ -18,7 +18,7 @@ import { decrypt } from '@/utils/security/encryption';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { logger } from '@masumi/payment-core/logger';
 import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
-import { withSerializableSlot } from '@/utils/db/serializable-semaphore';
+import { withSerializableSlot } from '@masumi/payment-core/serializable-semaphore';
 import {
 	swapTokensSchemaInput,
 	swapTokensSchemaOutput,

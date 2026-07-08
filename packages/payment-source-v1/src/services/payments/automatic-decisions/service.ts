@@ -9,7 +9,7 @@ import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { CONFIG } from '@masumi/payment-core/config';
 // TODO(v1-package-boundary): move db/retry to @masumi/payment-core
-import { retryOnSerializationConflict } from '@/utils/db/retry';
+import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 
 import { Mutex } from 'async-mutex';
 import { withJobLock } from '@/services/shared';

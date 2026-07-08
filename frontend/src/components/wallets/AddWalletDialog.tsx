@@ -18,7 +18,8 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { Eye, EyeOff } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
-import { patchPaymentSourceExtended, postWallet, getUtxos } from '@/lib/api/generated';
+import { patchPaymentSourceExtended, postWallet } from '@/lib/api/generated';
+import { fetchAllUtxos } from '@/lib/wallet-balance';
 import { toast } from 'react-toastify';
 import { useAppContext } from '@/lib/contexts/AppContext';
 
@@ -26,7 +27,9 @@ import { Spinner } from '@/components/ui/spinner';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { handleApiCall, shortenAddress, validateCardanoAddress } from '@/lib/utils';
+import { shortenAddress, validateCardanoAddress } from '@/lib/utils';
+import { useApiMutation } from '@/lib/hooks/useApiMutation';
+import type { PatchPaymentSourceExtendedData } from '@/lib/api/generated';
 import { WalletTypeBadge } from '@/components/ui/wallet-type-badge';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { extractApiErrorMessage } from '@/lib/api-error';
@@ -54,7 +57,9 @@ type WalletFormValues = z.infer<typeof walletSchema>;
 
 export function AddWalletDialog({ open, onClose, onSuccess }: AddWalletDialogProps) {
   const [type, setType] = useState<'Purchasing' | 'Selling'>('Purchasing');
-  const [isLoading, setIsLoading] = useState(false);
+  // Covers the pre-submit collection-address check; the API call itself is
+  // tracked by addWallet.isPending below.
+  const [isPreparing, setIsPreparing] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   // Mnemonic textarea defaults to masked-by-CSS so a typed/pasted seed
   // phrase isn't visible to over-shoulder readers, screen-share, or
@@ -108,7 +113,7 @@ export function AddWalletDialog({ open, onClose, onSuccess }: AddWalletDialogPro
     } else {
       reset();
       setError('');
-      setIsLoading(false);
+      setIsPreparing(false);
       setPaymentSourceId(null);
     }
   }, [defaultPaymentSource?.id, open, reset]);
@@ -153,79 +158,79 @@ export function AddWalletDialog({ open, onClose, onSuccess }: AddWalletDialogPro
     }
   };
 
+  const addWallet = useApiMutation({
+    mutationFn: (body: NonNullable<PatchPaymentSourceExtendedData['body']>) =>
+      patchPaymentSourceExtended({ client: apiClient, body }),
+    errorMessage: `Failed to add ${type} wallet`,
+    toastOnError: false,
+  });
+  const isLoading = isPreparing || addWallet.isPending;
+
   const onSubmit = async (data: WalletFormValues) => {
     setError('');
-    setIsLoading(true);
+    setIsPreparing(true);
 
     let collectionAddress: string | null = data.collectionAddress?.trim() || null;
 
-    // Validate collection address if provided
-    if (collectionAddress) {
-      const validation = validateCardanoAddress(collectionAddress, network);
+    try {
+      // Validate collection address if provided
+      if (collectionAddress) {
+        const validation = validateCardanoAddress(collectionAddress, network);
 
-      if (!validation.isValid) {
-        setError('Invalid collection address: ' + validation.error);
-        setIsLoading(false);
+        if (!validation.isValid) {
+          setError('Invalid collection address: ' + validation.error);
+          return;
+        }
+
+        let isAddressUnused = false;
+        try {
+          const utxos = await fetchAllUtxos(apiClient, network, collectionAddress);
+          isAddressUnused = utxos.length === 0;
+        } catch {
+          isAddressUnused = true;
+        }
+        if (isAddressUnused) {
+          toast.warning(
+            'Collection address has not been used yet, please check if this is the correct address',
+          );
+        }
+      } else {
+        collectionAddress = null;
+      }
+
+      if (!paymentSourceId) {
+        setError('No payment source available');
         return;
       }
 
-      const balance = await getUtxos({
-        client: apiClient,
-        query: {
-          address: collectionAddress,
-          network: network,
-        },
-      });
-      if (balance.error || balance.data?.data?.Utxos?.length === 0) {
-        toast.warning(
-          'Collection address has not been used yet, please check if this is the correct address',
-        );
-      }
-    } else {
-      collectionAddress = null;
-    }
+      const response = await addWallet
+        .mutateAsync({
+          id: paymentSourceId,
+          [type === 'Purchasing' ? 'AddPurchasingWallets' : 'AddSellingWallets']: [
+            {
+              walletMnemonic: data.mnemonic.trim(),
+              note: data.note.trim(),
+              collectionAddress: collectionAddress,
+            },
+          ],
+        })
+        .catch((error: Error) => {
+          setError(error.message);
+          return null;
+        });
+      if (!response) return;
 
-    if (!paymentSourceId) {
-      setError('No payment source available');
-      setIsLoading(false);
-      return;
+      toast.success(`${type} wallet added successfully`);
+      onSuccess?.();
+      onClose();
+    } finally {
+      setIsPreparing(false);
     }
-
-    await handleApiCall(
-      () =>
-        patchPaymentSourceExtended({
-          client: apiClient,
-          body: {
-            id: paymentSourceId,
-            [type === 'Purchasing' ? 'AddPurchasingWallets' : 'AddSellingWallets']: [
-              {
-                walletMnemonic: data.mnemonic.trim(),
-                note: data.note.trim(),
-                collectionAddress: collectionAddress,
-              },
-            ],
-          },
-        }),
-      {
-        onSuccess: () => {
-          toast.success(`${type} wallet added successfully`);
-          onSuccess?.();
-          onClose();
-        },
-        onError: (error: unknown) => {
-          setError(extractApiErrorMessage(error, `Failed to add ${type} wallet`));
-        },
-        onFinally: () => {
-          setIsLoading(false);
-        },
-        errorMessage: `Failed to add ${type} wallet`,
-      },
-    );
   };
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[600px]">
+      <DialogContent size="md">
         <DialogHeader>
           <DialogTitle>Add {type} Wallet</DialogTitle>
           <DialogDescription>

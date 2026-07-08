@@ -13,11 +13,11 @@ import swappableTokens from '@/assets/swappableTokens.json';
 import { ArrowDownUp, Check, ChevronDown, ExternalLink, RefreshCw, XCircle } from 'lucide-react';
 import {
   getSwapEstimate,
-  getUtxos,
   postSwap,
   postSwapCancel,
   postSwapAcknowledgeTimeout,
 } from '@/lib/api/generated';
+import { fetchAllUtxos } from '@/lib/wallet-balance';
 import { useQuery } from '@tanstack/react-query';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { useRate } from '@/lib/hooks/useRate';
@@ -237,7 +237,7 @@ export function SwapDialog({
         return true;
       }
 
-      if (status !== 'confirmed') {
+      if (status !== 'Confirmed') {
         return false;
       }
 
@@ -308,69 +308,47 @@ export function SwapDialog({
 
   const fetchBalance = async () => {
     try {
-      const result = await getUtxos({
-        client: apiClient,
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          Pragma: 'no-cache',
-          Expires: '0',
-        },
-        query: {
-          address: walletAddress,
-          network: network,
-        },
-      });
-      const lovelace =
-        result?.data?.data?.Utxos?.reduce((acc, utxo) => {
-          return (
-            acc +
-            utxo.Amounts.reduce((acc, asset) => {
-              if (asset.unit === 'lovelace' || asset.unit === '') {
-                return acc + (asset.quantity ?? 0);
-              }
-              return acc;
-            }, 0)
-          );
-        }, 0) ?? 0;
+      const utxos = await fetchAllUtxos(apiClient, network, walletAddress);
       const usdmConfig = getUsdmConfig(network);
-      const usdm =
-        result?.data?.data?.Utxos?.reduce((acc, utxo) => {
-          return (
-            acc +
-            utxo.Amounts.reduce((acc, asset) => {
-              if (asset.unit === usdmConfig.fullAssetId) {
-                return acc + (asset.quantity ?? 0);
-              }
-              return acc;
-            }, 0)
-          );
-        }, 0) ?? 0;
+
+      const otherTokens = swappableTokens.filter(
+        (token) =>
+          token.symbol !== 'ADA' &&
+          token.symbol !== 'USDM' &&
+          !!token.policyId &&
+          !!token.hexedAssetName &&
+          token.hexedAssetName !== 'NATIVE',
+      );
+      const otherSums = new Map<string, bigint>(
+        otherTokens.map((token) => [token.policyId + token.hexedAssetName, BigInt(0)]),
+      );
+
+      let lovelace = BigInt(0);
+      let usdm = BigInt(0);
+      for (const utxo of utxos) {
+        for (const asset of utxo.Amounts) {
+          const quantity = BigInt(asset.quantity ?? 0);
+          if (asset.unit === 'lovelace' || asset.unit === '') {
+            lovelace += quantity;
+          } else if (asset.unit === usdmConfig.fullAssetId) {
+            usdm += quantity;
+          } else if (otherSums.has(asset.unit)) {
+            otherSums.set(asset.unit, (otherSums.get(asset.unit) ?? BigInt(0)) + quantity);
+          }
+        }
+      }
 
       const others: Record<string, number> = {};
-      for (const token of swappableTokens) {
-        if (token.symbol === 'ADA' || token.symbol === 'USDM') continue;
-        if (!token.policyId || !token.hexedAssetName || token.hexedAssetName === 'NATIVE') continue;
-        const fullUnit = token.policyId + token.hexedAssetName;
-        const sum =
-          result?.data?.data?.Utxos?.reduce((acc, utxo) => {
-            return (
-              acc +
-              utxo.Amounts.reduce((acc, asset) => {
-                if (asset.unit === fullUnit) {
-                  return acc + (asset.quantity ?? 0);
-                }
-                return acc;
-              }, 0)
-            );
-          }, 0) ?? 0;
+      for (const token of otherTokens) {
         const decimals = (token as { decimals?: number }).decimals ?? 6;
-        others[token.symbol] = sum / Math.pow(10, decimals);
+        const sum = otherSums.get(token.policyId + token.hexedAssetName) ?? BigInt(0);
+        others[token.symbol] = Number(sum) / Math.pow(10, decimals);
       }
 
       const adaDecimals = swappableTokens.find((t) => t.symbol === 'ADA')?.decimals ?? 6;
       const usdmDecimals = swappableTokens.find((t) => t.symbol === 'USDM')?.decimals ?? 6;
-      setAdaBalance(lovelace / Math.pow(10, adaDecimals));
-      setUsdmBalance(usdm / Math.pow(10, usdmDecimals));
+      setAdaBalance(Number(lovelace) / Math.pow(10, adaDecimals));
+      setUsdmBalance(Number(usdm) / Math.pow(10, usdmDecimals));
       setOtherTokenBalances(others);
       setError(null);
     } catch (error) {
@@ -749,6 +727,7 @@ export function SwapDialog({
               }}
               disabled={isFetchingDetails || isSwapping}
               title="Refresh balance"
+              aria-label="Refresh balance"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${isFetchingDetails ? 'animate-spin' : ''}`} />
             </Button>
@@ -901,10 +880,10 @@ export function SwapDialog({
 
               {/* Timeout — acknowledge & recover */}
               {swapStatus === 'timeout' && !isSwapping && (
-                <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/5 p-4 space-y-3">
+                <div className="mt-4 rounded-xl border border-destructive/30 bg-red-500/5 p-4 space-y-3">
                   <div className="flex items-start gap-3">
                     <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-red-500/15">
-                      <XCircle className="h-3 w-3 text-red-500" />
+                      <XCircle className="h-3 w-3 text-destructive" />
                     </div>
                     <div className="space-y-0.5">
                       <p className="text-sm font-medium text-red-400">Transaction timed out</p>
@@ -915,7 +894,7 @@ export function SwapDialog({
                   </div>
                   <Button
                     variant="outline"
-                    className="w-full h-9 text-sm rounded-xl border-red-500/40 text-red-400 hover:bg-red-500/10"
+                    className="w-full h-9 text-sm rounded-xl border-destructive/40 text-red-400 hover:bg-red-500/10"
                     onClick={handleAcknowledgeTimeout}
                     disabled={!swapTransactionId}
                   >

@@ -1,16 +1,15 @@
 import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { cursorPaginationArgs } from '@/utils/shared/queries';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { Network, WebhookFormat } from '@/generated/prisma/client';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
-import { decrypt } from '@/utils/security/encryption';
 import {
 	decryptWebhookUrlSafe,
 	encryptWebhookAuthToken,
 	encryptWebhookUrl,
 	generateWebhookUrlHash,
 } from '@/utils/security/webhook-secrets';
-import { logger } from '@masumi/payment-core/logger';
 import { CONFIG } from '@masumi/payment-core/config';
 import { webhookSenderService } from '@/services/webhooks/sender.service';
 import { createAuthenticatedRateLimitMiddleware } from '@/utils/middleware/rate-limit';
@@ -44,16 +43,6 @@ export {
 	registerWebhookSchemaOutput,
 	testWebhookSchemaInput,
 	testWebhookSchemaOutput,
-};
-
-const decryptApiKeyTokenSafe = (encryptedToken: string | null): string | null => {
-	if (!encryptedToken) return null;
-	try {
-		return decrypt(encryptedToken);
-	} catch (e) {
-		logger.error('Failed to decrypt API key token for webhook CreatedBy field', { error: e });
-		return null;
-	}
 };
 
 const webhookMutationEndpointFactory = payAuthenticatedEndpointFactory.addMiddleware(
@@ -112,11 +101,15 @@ export const registerWebhookPost = webhookMutationEndpointFactory.build({
 			}
 		}
 
-		// Checking if webhook URL already exist for this payment source
+		// Checking if webhook URL already exist for this payment source.
+		// `?? null` is required: when paymentSourceId is undefined (a global
+		// webhook) Prisma drops the key from the filter, which would match a
+		// webhook on ANY source and raise a false 409. Coercing to null scopes
+		// the check to global webhooks only.
 		const existingWebhook = await prisma.webhookEndpoint.findFirst({
 			where: {
 				urlHash,
-				paymentSourceId: input.paymentSourceId,
+				paymentSourceId: input.paymentSourceId ?? null,
 				format: input.format,
 			},
 		});
@@ -242,25 +235,41 @@ export const listWebhooksGet = payAuthenticatedEndpointFactory.build({
 	handler: async ({ input, ctx }) => {
 		const webhooks = await prisma.webhookEndpoint.findMany({
 			where: {
-				PaymentSource: {
-					network: ctx.canAdmin ? undefined : { in: ctx.networkLimit },
-					deletedAt: null,
-					...(input.paymentSourceId ? { id: input.paymentSourceId } : {}),
-				},
 				// Only show webhooks created by this API key, unless user is admin
 				...(ctx.canAdmin ? {} : { createdByApiKeyId: ctx.id }),
+				...(input.paymentSourceId
+					? {
+							paymentSourceId: input.paymentSourceId,
+							PaymentSource: {
+								network: ctx.canAdmin ? undefined : { in: ctx.networkLimit },
+								deletedAt: null,
+							},
+						}
+					: {
+							// Global webhooks have a null paymentSourceId; a bare relation
+							// filter drops null-relation rows and hid every global webhook
+							// from this list. Include them alongside source-scoped ones.
+							OR: [
+								{ paymentSourceId: null },
+								{
+									PaymentSource: {
+										network: ctx.canAdmin ? undefined : { in: ctx.networkLimit },
+										deletedAt: null,
+									},
+								},
+							],
+						}),
 			},
 			include: {
 				CreatedByApiKey: {
 					select: {
 						id: true,
-						encryptedToken: true,
+						token: true,
 					},
 				},
 			},
 			orderBy: { createdAt: 'desc' },
-			take: input.limit,
-			cursor: input.cursorId ? { id: input.cursorId } : undefined,
+			...cursorPaginationArgs(input.cursorId, input.limit),
 		});
 
 		return {
@@ -279,8 +288,12 @@ export const listWebhooksGet = payAuthenticatedEndpointFactory.build({
 				disabledAt: webhook.disabledAt,
 				CreatedBy: webhook.CreatedByApiKey
 					? {
+							// Return the pre-masked stored token form (`*****xxxx`), never the
+							// decrypted plaintext — a list response (or response-logging
+							// middleware) must not leak every creator's full API key. Mirrors
+							// the masking policy documented in the api-key serializer.
+							apiKeyToken: webhook.CreatedByApiKey.token ?? '*****',
 							apiKeyId: webhook.CreatedByApiKey.id,
-							apiKeyToken: decryptApiKeyTokenSafe(webhook.CreatedByApiKey.encryptedToken),
 						}
 					: null,
 			})),

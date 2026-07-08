@@ -24,13 +24,20 @@ export const queryPaymentsSchemaInput = z.object({
 		.string()
 		.optional()
 		.nullable()
-		.describe('The smart contract address of the payment source'),
+		.describe(
+			'The smart contract address of the payment source. When omitted with no explicit payment source type, payment list/count endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.',
+		),
 	filterOnChainState: z.nativeEnum(OnChainState).optional().describe('Filter by on-chain state'),
-	filterPaymentSourceType: z.nativeEnum(PaymentSourceType).optional().describe('Filter by payment source type'),
+	filterPaymentSourceType: z
+		.nativeEnum(PaymentSourceType)
+		.optional()
+		.describe(
+			'Filter by payment source type. When omitted with no smart-contract-address filter, payment list/count endpoints default to Web3CardanoV1 for backwards compatibility.',
+		),
 	searchQuery: z
 		.string()
 		.optional()
-		.describe('Search query to filter by ID, hash, state, network, wallet address, or amount'),
+		.describe('Search query to filter by ID, hash, agent name, state, network, wallet address, or amount'),
 	includeHistory: z
 		.string()
 		.default('false')
@@ -45,8 +52,15 @@ export const queryPaymentCountSchemaInput = z.object({
 		.string()
 		.optional()
 		.nullable()
-		.describe('The smart contract address of the payment source'),
-	filterPaymentSourceType: z.nativeEnum(PaymentSourceType).optional().describe('Filter by payment source type'),
+		.describe(
+			'The smart contract address of the payment source. When omitted with no explicit payment source type, payment count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.',
+		),
+	filterPaymentSourceType: z
+		.nativeEnum(PaymentSourceType)
+		.optional()
+		.describe(
+			'Filter by payment source type. When omitted with no smart-contract-address filter, payment count defaults to Web3CardanoV1 for backwards compatibility.',
+		),
 });
 
 export const queryPaymentCountSchemaOutput = z.object({
@@ -60,6 +74,7 @@ export const paymentResponseSchema = z
 		updatedAt: z.date().describe('Timestamp when the payment was last updated'),
 		blockchainIdentifier: z.string().describe('Unique blockchain identifier for the payment'),
 		agentIdentifier: z.string().nullable().describe('Identifier of the agent that is being paid'),
+		agentName: z.string().nullable().describe('Display name of the agent when known'),
 		pricingType: z.nativeEnum(PricingType).describe('Pricing type of the agent (Fixed, Free, or Dynamic)'),
 		lastCheckedAt: z
 			.date()
@@ -188,7 +203,7 @@ export const paymentResponseSchema = z
 				amount: z
 					.string()
 					.describe(
-						'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
+						'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)',
 					),
 				unit: z
 					.string()

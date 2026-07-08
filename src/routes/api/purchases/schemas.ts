@@ -21,13 +21,20 @@ export const queryPurchaseRequestSchemaInput = z.object({
 		.string()
 		.optional()
 		.nullable()
-		.describe('The smart contract address of the payment source'),
+		.describe(
+			'The smart contract address of the payment source. When omitted with no explicit payment source type, purchase list/count endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.',
+		),
 	filterOnChainState: z.nativeEnum(OnChainState).optional().describe('Filter by on-chain state'),
-	filterPaymentSourceType: z.nativeEnum(PaymentSourceType).optional().describe('Filter by payment source type'),
+	filterPaymentSourceType: z
+		.nativeEnum(PaymentSourceType)
+		.optional()
+		.describe(
+			'Filter by payment source type. When omitted with no smart-contract-address filter, purchase list/count endpoints default to Web3CardanoV1 for backwards compatibility.',
+		),
 	searchQuery: z
 		.string()
 		.optional()
-		.describe('Search query to filter by ID, hash, state, network, wallet address, or amount'),
+		.describe('Search query to filter by ID, hash, agent name, state, network, wallet address, or amount'),
 	includeHistory: z
 		.string()
 		.default('false')
@@ -42,8 +49,15 @@ export const queryPurchaseCountSchemaInput = z.object({
 		.string()
 		.optional()
 		.nullable()
-		.describe('The smart contract address of the payment source'),
-	filterPaymentSourceType: z.nativeEnum(PaymentSourceType).optional().describe('Filter by payment source type'),
+		.describe(
+			'The smart contract address of the payment source. When omitted with no explicit payment source type, purchase count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.',
+		),
+	filterPaymentSourceType: z
+		.nativeEnum(PaymentSourceType)
+		.optional()
+		.describe(
+			'Filter by payment source type. When omitted with no smart-contract-address filter, purchase count defaults to Web3CardanoV1 for backwards compatibility.',
+		),
 });
 
 export const queryPurchaseCountSchemaOutput = z.object({
@@ -57,6 +71,7 @@ export const purchaseResponseSchema = z
 		updatedAt: z.date().describe('Timestamp when the purchase was last updated'),
 		blockchainIdentifier: z.string().describe('Unique blockchain identifier for the purchase'),
 		agentIdentifier: z.string().nullable().describe('Identifier of the agent that is being purchased'),
+		agentName: z.string().nullable().describe('Display name of the agent when known'),
 		pricingType: z.nativeEnum(PricingType).describe('Pricing type of the agent (Fixed, Free, or Dynamic)'),
 		lastCheckedAt: z
 			.date()

@@ -4,7 +4,7 @@ import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { generateSHA256Hash } from '@/utils/crypto';
 import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
-import { metadataSchema } from '../registry/wallet';
+import { metadataSchema, resolveAgentPricingFromMetadata } from '../registry/wallet';
 import { normalizePurchaseUnit } from '@/utils/shared/transformers';
 import { validateHexString } from '@/utils/validator/hex';
 import { checkSignature, resolvePaymentKeyHash } from '@meshsdk/core';
@@ -117,7 +117,10 @@ export async function resolvePurchaseCreationContext({
 		throw createHttpError(404, 'Agent identifier metadata invalid or unsupported');
 	}
 
-	const pricing = parsedMetadata.data.agentPricing;
+	const pricing = resolveAgentPricingFromMetadata(parsedMetadata.data);
+	if (pricing == null) {
+		throw createHttpError(400, 'Agent metadata does not advertise any pricing');
+	}
 	if (pricing.pricingType !== PricingType.Fixed && pricing.pricingType !== PricingType.Dynamic) {
 		throw createHttpError(400, 'Agent identifier pricing type not supported');
 	}
@@ -240,6 +243,7 @@ export async function resolvePurchaseCreationContext({
 		sellerAddress,
 		sellerReturnAddress,
 		pricingType: pricing.pricingType,
+		onChainAgentName: metadataToString(parsedMetadata.data.name),
 		requestedCost: Array.from(requestedCostMap.entries()).map(([unit, amount]) => ({
 			amount,
 			unit,
