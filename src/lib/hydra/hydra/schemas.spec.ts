@@ -4,6 +4,7 @@ import {
 	hydraHeadStatusSchema,
 	hydraTransactionSchema,
 	snapshotConfirmedMessageSchema,
+	headClockMessageSchema,
 } from './schemas';
 
 describe('messageSchema', () => {
@@ -163,5 +164,42 @@ describe('snapshotConfirmedMessageSchema', () => {
 				snapshot: {},
 			}),
 		).toThrow();
+	});
+});
+
+describe('headClockMessageSchema', () => {
+	it('parses a Tick message', () => {
+		const parsed = headClockMessageSchema.parse({
+			tag: 'Tick',
+			chainTime: '2026-07-08T07:19:17Z',
+			chainSlot: 127811957,
+		});
+		expect(parsed.tag).toBe('Tick');
+		expect(parsed.chainTime).toBe('2026-07-08T07:19:17Z');
+		expect(parsed.chainSlot).toBe(127811957);
+	});
+
+	it('parses a SyncedStatusReport message (extra fields ignored)', () => {
+		const parsed = headClockMessageSchema.parse({
+			tag: 'SyncedStatusReport',
+			chainSlot: 127811957,
+			chainTime: '2026-07-08T07:19:17Z',
+			drift: 7735.89,
+			synced: 'CatchingUp',
+		});
+		expect(parsed.tag).toBe('SyncedStatusReport');
+	});
+
+	it('parses a Tick without chainSlot', () => {
+		const parsed = headClockMessageSchema.parse({ tag: 'Tick', chainTime: '2026-07-08T07:19:17Z' });
+		expect(parsed.chainSlot).toBeUndefined();
+	});
+
+	it('rejects other tags', () => {
+		expect(() => headClockMessageSchema.parse({ tag: 'Greetings', chainTime: '2026-07-08T07:19:17Z' })).toThrow();
+	});
+
+	it('rejects missing chainTime', () => {
+		expect(() => headClockMessageSchema.parse({ tag: 'Tick', chainSlot: 5 })).toThrow();
 	});
 });

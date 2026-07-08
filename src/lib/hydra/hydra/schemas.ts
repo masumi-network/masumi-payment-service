@@ -27,3 +27,17 @@ export const snapshotConfirmedMessageSchema = z.looseObject({
 		confirmed: z.array(hydraTransactionSchema),
 	}),
 });
+
+/**
+ * Head chain-clock broadcast: release hydra-nodes emit `Tick` on the API
+ * websocket for every observed L1 block; Blockfrost-backed master builds emit
+ * `SyncedStatusReport` (which additionally carries `drift`/`synced`). Both
+ * carry the head's observed L1 time — the clock its ledger validates tx
+ * validity intervals against. `chainSlot` is optional because older release
+ * `Tick`s carried only `chainTime`.
+ */
+export const headClockMessageSchema = z.looseObject({
+	tag: z.enum(['Tick', 'SyncedStatusReport']),
+	chainTime: z.string(),
+	chainSlot: z.number().optional(),
+});
