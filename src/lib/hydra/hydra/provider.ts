@@ -12,7 +12,7 @@ import type {
 import { POLICY_ID_LENGTH } from '@meshsdk/core';
 import type { IFetcher, ISubmitter } from '@meshsdk/core';
 
-import type { HydraRawCostModels, IHydraNode } from './node';
+import type { HydraHeadClock, HydraRawCostModels, IHydraNode } from './node';
 import { HydraTransactionType } from './types';
 import type { HydraTransaction } from './types';
 
@@ -55,6 +55,17 @@ export class HydraProvider implements IFetcher, ISubmitter {
 	 */
 	async fetchRawCostModels(): Promise<HydraRawCostModels> {
 		return await this._node.fetchRawCostModels();
+	}
+
+	/**
+	 * The head's last observed L1 chain time (see `HydraHeadClock`). L2 tx
+	 * validity windows must anchor here: the head's ledger clock can lag
+	 * wall-clock by more than the default window buffers, in which case
+	 * `Date.now()`-anchored windows are rejected with
+	 * `OutsideValidityIntervalUTxO`.
+	 */
+	getHeadClock(): HydraHeadClock | undefined {
+		return this._node.headClock;
 	}
 
 	async fetchUTxOs(hash?: string, index?: number): Promise<UTxO[]> {

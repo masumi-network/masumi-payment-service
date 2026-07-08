@@ -64,6 +64,7 @@ function makeNodeMock(): jest.Mocked<IHydraNode> {
 		status: HydraHeadStatus.Open,
 		httpUrl: 'http://localhost:4001',
 		wsUrl: 'ws://localhost:4001',
+		headClock: undefined,
 	};
 	return mock as unknown as jest.Mocked<IHydraNode>;
 }
@@ -281,6 +282,23 @@ describe('HydraProvider', () => {
 
 		it('fetchTxInfo throws', async () => {
 			await expect(provider.fetchTxInfo('somehash')).rejects.toThrow(errorMessage);
+		});
+	});
+
+	// -------------------------------------------------------------------------
+	// getHeadClock
+	// -------------------------------------------------------------------------
+
+	describe('getHeadClock', () => {
+		it('returns the node headClock', () => {
+			const clock = { chainTimeMs: 1751959157000, chainSlot: 127811957, receivedAtMs: Date.now() };
+			const clockNode = { ...makeNodeMock(), headClock: clock } as unknown as jest.Mocked<IHydraNode>;
+			const clockProvider = new HydraProvider({ node: clockNode });
+			expect(clockProvider.getHeadClock()).toEqual(clock);
+		});
+
+		it('returns undefined when the node has seen no clock message', () => {
+			expect(provider.getHeadClock()).toBeUndefined();
 		});
 	});
 });
