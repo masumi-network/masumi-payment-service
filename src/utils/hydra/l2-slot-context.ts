@@ -78,3 +78,59 @@ export function getHydraL2SlotContext(): HydraL2SlotContext | undefined {
 		validitySlotBuffer,
 	};
 }
+
+/** Options spreadable directly into `createTxWindow` for a Hydra L2 build. */
+export interface HydraL2WindowOptions {
+	nowMs?: number;
+	slotConfig?: SlotConfig;
+	beforeBufferMs?: number;
+	afterBufferMs?: number;
+	validitySlotBuffer?: number;
+}
+
+/**
+ * Resolve window options for an in-head tx. Precedence:
+ * 1. Env devnet override (`getHydraL2SlotContext`) — a head on a different
+ *    chain needs its own slot config AND anchor.
+ * 2. The provider's live head clock — same-network head (production preprod):
+ *    the network slot config is correct but the head's ledger clock lags
+ *    wall-clock (Blockfrost poll drift, grows unbounded while the head is
+ *    open), so `nowMs` must anchor to what the head last observed. Windows
+ *    built off `Date.now()` get rejected with `OutsideValidityIntervalUTxO`
+ *    once the lag exceeds the before-buffer.
+ * 3. Empty — no head clock seen yet on the websocket; fall back to wall clock
+ *    (pre-fix behavior) rather than blocking the tx entirely.
+ */
+export function resolveHydraL2WindowOptions(provider: {
+	getHeadClock(): { chainTimeMs: number } | undefined;
+}): HydraL2WindowOptions {
+	const envCtx = getHydraL2SlotContext();
+	if (envCtx) {
+		return {
+			nowMs: envCtx.nowMs,
+			slotConfig: envCtx.slotConfig,
+			beforeBufferMs: envCtx.beforeBufferMs,
+			afterBufferMs: envCtx.afterBufferMs,
+			validitySlotBuffer: envCtx.validitySlotBuffer,
+		};
+	}
+	const headClock = provider.getHeadClock();
+	if (headClock) {
+		return { nowMs: headClock.chainTimeMs };
+	}
+	return {};
+}
+
+/**
+ * How many ms the head's clock still has to advance before a tx constrained
+ * by `must_start_after(cooldownMs)` can validate in-head. When > 0, submitting
+ * is pointless — the head will reject `OutsideValidityIntervalUTxO` until its
+ * observed chain time passes the cooldown — so callers should defer and let
+ * the cron retry. 0 means safe to build/submit (also when no head anchor is
+ * known: wall-clock semantics apply and the pre-existing behavior stands).
+ */
+export function headClockBehindCooldownMs(options: HydraL2WindowOptions, cooldownMs: number | bigint): number {
+	if (options.nowMs == null) return 0;
+	const cooldown = typeof cooldownMs === 'bigint' ? Number(cooldownMs) : cooldownMs;
+	return Math.max(0, cooldown - options.nowMs);
+}
