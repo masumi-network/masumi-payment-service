@@ -360,10 +360,19 @@ export function decodeV2ContractDatum(
 	}
 }
 
+const DEFAULT_COOLDOWN_BLOCKTIME_BUFFER_MS = BigInt(1000 * 60 * 10);
+
 export function newCooldownTime(cooldownTime: bigint) {
-	//We add some additional cooldown time to avoid validity issues with blocktime
-	const cooldownTimeMs = BigInt(Date.now()) + cooldownTime + BigInt(1000 * 60 * 10);
-	return cooldownTimeMs;
+	// Add a blocktime buffer on top of the contract cooldown to avoid validity
+	// issues from L1 block-production jitter. On a Hydra head txs confirm in
+	// ~1s, so test harnesses may shrink the buffer via env; production L1 paths
+	// keep the 10-min default.
+	const rawBuffer = process.env.COOLDOWN_BLOCKTIME_BUFFER_MS;
+	let bufferMs = DEFAULT_COOLDOWN_BLOCKTIME_BUFFER_MS;
+	if (rawBuffer != null && /^\d+$/.test(rawBuffer)) {
+		bufferMs = BigInt(rawBuffer);
+	}
+	return BigInt(Date.now()) + cooldownTime + bufferMs;
 }
 
 function valueToStatus(value: unknown) {

@@ -62,6 +62,13 @@ fi
 NETWORK="${NETWORK:-devnet}"
 export NETWORK
 export HYDRA_FLOW_NETWORK="$NETWORK"
+# Shrink newCooldownTime's blocktime buffer (default 10 min, sized for L1 block
+# jitter) for in-head runs where txs confirm in ~1s. With the seeded 60s
+# cooldownTime this cuts each cooldown wait from ~11 min to ~2 min. Test
+# harness only — production keeps the 10-min default.
+export COOLDOWN_BLOCKTIME_BUFFER_MS="${COOLDOWN_BLOCKTIME_BUFFER_MS:-60000}"
+# Countdown seconds ≈ cooldownTime(60s) + buffer(60s) + submit/observe margin.
+COOLDOWN_COUNTDOWN="${COOLDOWN_COUNTDOWN:-150}"
 NATIVE_SH="$REPO/hydra-l2-flow/hydra-native.sh"
 NATIVE_STATE="$REPO/hydra-l2-flow/.native-state"
 NATIVE_LOG="$NATIVE_STATE/node1.log"
@@ -550,8 +557,8 @@ cmd_flow1(){
   # settle), never right before the validity-bounded step — that ordering is
   # what produced the 2026-07-06 authorize-withdrawal OutsideValidityIntervalUTxO.
   DRIFT_GUARD="${DRIFT_GUARD:-250}" drift_guard
-  c_blu "── collection waits the contract seller-cooldown (~13 min)…"
-  countdown 780 "seller-cooldown"
+  c_blu "── collection waits the contract seller-cooldown (~$((COOLDOWN_COUNTDOWN / 60)) min)…"
+  countdown "$COOLDOWN_COUNTDOWN" "seller-cooldown"
   wait_chain_past "$(date +%s)" 3600
   step "collection"     hydra-l2-flow/07-collection.mts
   c_grn "=== FLOW1 done (lock → submit-result → collection) ==="
@@ -579,8 +586,8 @@ cmd_flow3(){
   unset REQUEST_REFUND_FROM_STATE
   # Drift restart at cooldown START — see cmd_flow1 for rationale.
   DRIFT_GUARD="${DRIFT_GUARD:-250}" drift_guard
-  c_blu "── authorize-withdrawal waits the contract buyer-cooldown (~13 min)…"
-  countdown 780 "buyer-cooldown"
+  c_blu "── authorize-withdrawal waits the contract buyer-cooldown (~$((COOLDOWN_COUNTDOWN / 60)) min)…"
+  countdown "$COOLDOWN_COUNTDOWN" "buyer-cooldown"
   wait_chain_past "$(date +%s)" 3600
   step "authorize-withdrawal" hydra-l2-flow/11-authorize-withdrawal.mts
   c_grn "=== FLOW3 done (lock → submit → request(→Disputed) → authorize-withdrawal) ==="
