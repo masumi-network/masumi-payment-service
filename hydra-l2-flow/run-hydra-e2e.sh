@@ -474,9 +474,13 @@ drift_guard(){
 # seconds. Validity-bounded steps (collection, authorize-withdrawal) carry
 # invalidBefore ≈ the contract cooldown expiry (≈ when the countdown ended); the
 # drift-lagged head must tick past it or the tx is OutsideValidityIntervalUTxO.
+# Default cap 3600s: with restarts disabled the head clock advances at ~1/3
+# real-time (drift grows ~40s/min), so covering an 800s gap takes ~2400s of
+# wall time — the old 600s cap guaranteed failure once drift passed it
+# (2026-07-08: 803s drift → authorize-withdrawal rejected twice).
 wait_chain_past(){
   [ "$NETWORK" = preprod ] || return 0
-  local target="$1" timeout="${2:-600}" waited=0
+  local target="$1" timeout="${2:-3600}" waited=0
   c_blu "   waiting for head clock to pass $(date -u -r "$target" +%H:%M:%SZ 2>/dev/null || echo "$target")…"
   while :; do
     local t es
@@ -495,19 +499,23 @@ wait_chain_past(){
 step(){ # step <label> <script> [extra env already exported]
   unlock; drift_guard; slotenv
   c_blu "── $1 (slot $HYDRA_L2_CURRENT_SLOT)"
-  local before hash attempt
+  local before hash attempt stepstart
+  stepstart="$(date +%s)"
   for attempt in 1 2; do
     before="$(nlog_len)"   # mark the log so verdict sees ONLY this step
     run_tsx "$2"
     hash="$(head_tx_since "$before")"
     [ -n "$hash" ] && break
-    # Timing edge: the tx validity window (anchored to real-time cooldown expiry)
-    # is ahead of the drift-lagged head clock → OutsideValidityIntervalUTxO. The
-    # head keeps ticking forward, so ONE bounded retry after it advances passes
-    # (proven 2026-07-02: authorize-withdrawal d7fb3845… passed on first retry).
+    # Timing edge: the tx validity window (invalidBefore forced past the
+    # contract cooldown) is ahead of the drift-lagged head clock →
+    # OutsideValidityIntervalUTxO. A fixed 90s retry only works while drift is
+    # small (the head advances ~1/3 real-time without restarts), so wait until
+    # the head clock actually passes the step start (> cooldown expiry, since
+    # the countdown ended before this step began), then rebuild.
     if [ "$attempt" = 1 ] && verdict_since "$before" | grep -q OutsideValidityIntervalUTxO; then
-      c_blu "   OutsideValidityIntervalUTxO — head clock behind tx window; retrying once in 90s…"
-      sleep 90; unlock; slotenv
+      c_blu "   OutsideValidityIntervalUTxO — head clock behind tx window; waiting for head to catch up…"
+      wait_chain_past "$stepstart" 3600 || c_red "   head still behind after 3600s — retrying anyway"
+      unlock; slotenv
       c_blu "── $1 retry (slot $HYDRA_L2_CURRENT_SLOT)"
       continue
     fi
@@ -544,7 +552,7 @@ cmd_flow1(){
   DRIFT_GUARD="${DRIFT_GUARD:-250}" drift_guard
   c_blu "── collection waits the contract seller-cooldown (~13 min)…"
   countdown 780 "seller-cooldown"
-  wait_chain_past "$(date +%s)" 600
+  wait_chain_past "$(date +%s)" 3600
   step "collection"     hydra-l2-flow/07-collection.mts
   c_grn "=== FLOW1 done (lock → submit-result → collection) ==="
 }
@@ -573,7 +581,7 @@ cmd_flow3(){
   DRIFT_GUARD="${DRIFT_GUARD:-250}" drift_guard
   c_blu "── authorize-withdrawal waits the contract buyer-cooldown (~13 min)…"
   countdown 780 "buyer-cooldown"
-  wait_chain_past "$(date +%s)" 600
+  wait_chain_past "$(date +%s)" 3600
   step "authorize-withdrawal" hydra-l2-flow/11-authorize-withdrawal.mts
   c_grn "=== FLOW3 done (lock → submit → request(→Disputed) → authorize-withdrawal) ==="
 }
@@ -701,8 +709,10 @@ cmd_settle(){
     c_blu "   SETTLE_SKIP_RESTART=1 → using already-fresh nodes"
     # Overridable: with a lagging follower the node observes the Close block
     # ~drift seconds late, pushing ReadyToFanout past the default budget.
+    # settle_timeout must cover BOTH budgets (ReadyToFanout wait + the fanout
+    # retry loop each get up to FANOUT_WAIT_MS) plus Close posting.
     fanout_wait_ms="${FANOUT_WAIT_MS:-900000}"
-    settle_timeout="${SETTLE_TIMEOUT:-1020}"
+    settle_timeout="${SETTLE_TIMEOUT:-2000}"
   elif [ "$NETWORK" = preprod ]; then
     # The 2.2.0 Blockfrost poll loop loses ~17s/min and only the STARTUP
     # catch-up burst can close the gap (see BLOCKFROST-PLAN.md). By settle time
@@ -716,12 +726,13 @@ cmd_settle(){
     NETWORK=preprod "$NATIVE_SH" wait-sync \
       || { c_red "   nodes never reached sync — Close would be rejected, aborting"; exit 1; }
     # Close observation + 220s contestation period + fanout posting, all while
-    # drift regrows at ~17s/min from ~0 → comfortably inside 10 min.
+    # drift regrows at ~17s/min from ~0. settle_timeout covers both
+    # FANOUT_WAIT_MS budgets (ReadyToFanout wait + fanout retry loop) + Close.
     fanout_wait_ms=600000
-    settle_timeout=720
+    settle_timeout=1400
   else
     fanout_wait_ms=30000
-    settle_timeout=90
+    settle_timeout=150
   fi
   # Burn the deposit re-apply phantom AFTER the (possible) restart and BEFORE
   # Close — no restart may happen in between, or the phantom regrows.
