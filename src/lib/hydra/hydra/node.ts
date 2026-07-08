@@ -8,7 +8,12 @@ import { castProtocol, Protocol, resolveTxHash, UTxO } from '@meshsdk/core';
 
 import { mapHydraUTxOToUTxO, mapUTxOToHydraUTxO } from './codec';
 import { Connection } from './connection';
-import { headClockMessageSchema, hydraHeadStatusSchema, messageSchema, snapshotConfirmedMessageSchema } from './schemas';
+import {
+	headClockMessageSchema,
+	hydraHeadStatusSchema,
+	messageSchema,
+	snapshotConfirmedMessageSchema,
+} from './schemas';
 import { HydraNodeEvent, HydraTransaction, HydraUTxO, StatusChangeData } from './types';
 import { jsonToString } from '@/utils/converter/json-to-string';
 import { HydraHeadStatus } from '@/generated/prisma/client';
