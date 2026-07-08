@@ -3,6 +3,8 @@ import { X402EvmWalletType, prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { defineChain, http } from 'viem';
 
+import { assertX402WalletCustody, type X402WalletCustodyScope } from './custody';
+
 export type HexAddress = `0x${string}`;
 export type PrivateKey = `0x${string}`;
 
@@ -171,13 +173,18 @@ export async function getX402NetworkOrThrow(caip2Network: string) {
 	return network;
 }
 
-export async function getManagedWalletOrThrow(evmWalletId: string, expectedType?: X402EvmWalletType) {
+export async function getManagedWalletOrThrow(
+	evmWalletId: string,
+	expectedType?: X402EvmWalletType,
+	custodyScope?: X402WalletCustodyScope,
+) {
 	const wallet = await prisma.x402EvmWallet.findUnique({
 		where: { id: evmWalletId, deletedAt: null },
 	});
 	if (wallet == null) {
 		throw createHttpError(404, 'Managed EVM wallet not found');
 	}
+	assertX402WalletCustody(custodyScope ?? null, wallet);
 	// Enforce the direction split: a Purchasing wallet may only fund outbound payments
 	// and a Selling wallet may only settle inbound ones, so reject a wallet used for the
 	// wrong side rather than letting it sign on a side it was not provisioned for.

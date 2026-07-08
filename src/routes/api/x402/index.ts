@@ -72,6 +72,10 @@ import {
 	x402NetworkSchema,
 } from './schemas';
 
+function x402CustodyScope(ctx: AuthContext) {
+	return ctx.canAdmin ? null : ctx.id;
+}
+
 function serializeBudget(budget: {
 	id: string;
 	apiKeyId: string;
@@ -129,6 +133,7 @@ export const verifyX402Post = payAuthenticatedEndpointFactory.build({
 		verifyX402Payment({
 			apiKeyId: ctx.id,
 			caip2NetworkLimit: ctx.caip2NetworkLimit,
+			custodyScope: x402CustodyScope(ctx),
 			supportedPaymentSourceId: input.supportedPaymentSourceId,
 			paymentPayload: input.paymentPayload as Parameters<typeof verifyX402Payment>[0]['paymentPayload'],
 		}),
@@ -142,6 +147,7 @@ export const settleX402Post = payAuthenticatedEndpointFactory.build({
 		const result = await settleX402Payment({
 			apiKeyId: ctx.id,
 			caip2NetworkLimit: ctx.caip2NetworkLimit,
+			custodyScope: x402CustodyScope(ctx),
 			supportedPaymentSourceId: input.supportedPaymentSourceId,
 			paymentPayload: input.paymentPayload as Parameters<typeof settleX402Payment>[0]['paymentPayload'],
 		});
@@ -165,6 +171,7 @@ export const createX402PaymentPost = payAuthenticatedEndpointFactory.build({
 		createX402Payment({
 			apiKeyId: ctx.id,
 			caip2NetworkLimit: ctx.caip2NetworkLimit,
+			custodyScope: x402CustodyScope(ctx),
 			evmWalletId: input.evmWalletId,
 			paymentRequired: input.paymentRequired as Parameters<typeof createX402Payment>[0]['paymentRequired'],
 			preferredNetwork: input.preferredNetwork,
@@ -173,16 +180,21 @@ export const createX402PaymentPost = payAuthenticatedEndpointFactory.build({
 		}),
 });
 
-export const listX402WalletsGet = adminAuthenticatedEndpointFactory.build({
+export const listX402WalletsGet = payAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: listWalletsSchemaInput,
 	output: listWalletsSchemaOutput,
-	handler: async ({ input }: { input: z.infer<typeof listWalletsSchemaInput> }) => ({
-		Wallets: await listX402ManagedWallets({ take: input.take, cursorId: input.cursorId, type: input.type }),
+	handler: async ({ input, ctx }: { input: z.infer<typeof listWalletsSchemaInput>; ctx: AuthContext }) => ({
+		Wallets: await listX402ManagedWallets({
+			take: input.take,
+			cursorId: input.cursorId,
+			type: input.type,
+			custodyScope: x402CustodyScope(ctx),
+		}),
 	}),
 });
 
-export const createX402WalletPost = adminAuthenticatedEndpointFactory.build({
+export const createX402WalletPost = payAuthenticatedEndpointFactory.build({
 	method: 'post',
 	input: createWalletSchemaInput,
 	output: createWalletSchemaOutput,
@@ -195,36 +207,45 @@ export const createX402WalletPost = adminAuthenticatedEndpointFactory.build({
 		}),
 });
 
-export const updateX402WalletPost = adminAuthenticatedEndpointFactory.build({
+export const updateX402WalletPost = payAuthenticatedEndpointFactory.build({
 	method: 'post',
 	input: updateWalletSchemaInput,
 	output: walletSchemaOutput,
-	handler: async ({ input }: { input: z.infer<typeof updateWalletSchemaInput> }) =>
-		updateX402ManagedWallet({ id: input.id, note: input.note }),
+	handler: async ({ input, ctx }: { input: z.infer<typeof updateWalletSchemaInput>; ctx: AuthContext }) =>
+		updateX402ManagedWallet({
+			id: input.id,
+			note: input.note,
+			custodyScope: x402CustodyScope(ctx),
+		}),
 });
 
-export const x402WalletBalanceGet = adminAuthenticatedEndpointFactory.build({
+export const x402WalletBalanceGet = payAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: walletBalanceSchemaInput,
 	output: walletBalanceSchemaOutput,
-	handler: async ({ input }: { input: z.infer<typeof walletBalanceSchemaInput> }) =>
-		getX402WalletBalances({ evmWalletId: input.id, caip2Network: input.caip2Network }),
+	handler: async ({ input, ctx }: { input: z.infer<typeof walletBalanceSchemaInput>; ctx: AuthContext }) =>
+		getX402WalletBalances({
+			evmWalletId: input.id,
+			caip2Network: input.caip2Network,
+			custodyScope: x402CustodyScope(ctx),
+		}),
 });
 
-export const x402WalletsCountGet = adminAuthenticatedEndpointFactory.build({
+export const x402WalletsCountGet = payAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: walletsCountSchemaInput,
 	output: countSchemaOutput,
-	handler: async ({ input }: { input: z.infer<typeof walletsCountSchemaInput> }) => ({
-		total: await countX402ManagedWallets({ type: input.type }),
+	handler: async ({ input, ctx }: { input: z.infer<typeof walletsCountSchemaInput>; ctx: AuthContext }) => ({
+		total: await countX402ManagedWallets({ type: input.type, custodyScope: x402CustodyScope(ctx) }),
 	}),
 });
 
-export const deleteX402WalletPost = adminAuthenticatedEndpointFactory.build({
+export const deleteX402WalletPost = payAuthenticatedEndpointFactory.build({
 	method: 'post',
 	input: deleteWalletSchemaInput,
 	output: deleteWalletSchemaOutput,
-	handler: async ({ input }: { input: z.infer<typeof deleteWalletSchemaInput> }) => deleteX402ManagedWallet(input.id),
+	handler: async ({ input, ctx }: { input: z.infer<typeof deleteWalletSchemaInput>; ctx: AuthContext }) =>
+		deleteX402ManagedWallet(input.id, x402CustodyScope(ctx)),
 });
 
 export const listX402NetworksGet = adminAuthenticatedEndpointFactory.build({

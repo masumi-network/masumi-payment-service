@@ -2,6 +2,11 @@ import createHttpError from 'http-errors';
 import { Prisma, X402EvmWalletType, prisma } from '@masumi/payment-core/db';
 import { encrypt } from '@masumi/payment-core/encryption';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
+import {
+	assertX402WalletCustody,
+	buildX402WalletCustodyWhere,
+	type X402WalletCustodyScope,
+} from './custody.js';
 import { assertValidPrivateKey } from './internal';
 
 // The non-secret projection returned to the dashboard for every managed wallet. The
@@ -61,9 +66,19 @@ export async function createX402ManagedWallet({
 	}
 }
 
-export async function listX402ManagedWallets(input?: { take?: number; cursorId?: string; type?: X402EvmWalletType }) {
+export async function listX402ManagedWallets(input?: {
+	take?: number;
+	cursorId?: string;
+	type?: X402EvmWalletType;
+	custodyScope?: X402WalletCustodyScope;
+}) {
+	const custodyScope = input?.custodyScope ?? null;
 	return prisma.x402EvmWallet.findMany({
-		where: { deletedAt: null, type: input?.type },
+		where: {
+			deletedAt: null,
+			type: input?.type,
+			...buildX402WalletCustodyWhere(custodyScope),
+		},
 		orderBy: { createdAt: 'desc' },
 		take: input?.take,
 		cursor: input?.cursorId ? { id: input.cursorId } : undefined,
@@ -71,7 +86,10 @@ export async function listX402ManagedWallets(input?: { take?: number; cursorId?:
 	});
 }
 
-export async function getX402ManagedWallet(evmWalletId: string) {
+export async function getX402ManagedWallet(
+	evmWalletId: string,
+	custodyScope?: X402WalletCustodyScope,
+) {
 	const wallet = await prisma.x402EvmWallet.findUnique({
 		where: { id: evmWalletId, deletedAt: null },
 		select: WALLET_OUTPUT_SELECT,
@@ -79,19 +97,25 @@ export async function getX402ManagedWallet(evmWalletId: string) {
 	if (wallet == null) {
 		throw createHttpError(404, 'Managed EVM wallet not found');
 	}
+	assertX402WalletCustody(custodyScope ?? null, wallet);
 	return wallet;
 }
 
-export async function updateX402ManagedWallet(input: { id: string; note?: string | null }) {
+export async function updateX402ManagedWallet(input: {
+	id: string;
+	note?: string | null;
+	custodyScope?: X402WalletCustodyScope;
+}) {
 	// Only the human-facing note is mutable; address/type/key are immutable for an
 	// existing wallet (changing them would change which on-chain account it controls).
 	const existing = await prisma.x402EvmWallet.findUnique({
 		where: { id: input.id, deletedAt: null },
-		select: { id: true },
+		select: WALLET_OUTPUT_SELECT,
 	});
 	if (existing == null) {
 		throw createHttpError(404, 'Managed EVM wallet not found');
 	}
+	assertX402WalletCustody(input.custodyScope ?? null, existing);
 	return prisma.x402EvmWallet.update({
 		where: { id: input.id },
 		data: { note: input.note ?? null },
@@ -99,14 +123,18 @@ export async function updateX402ManagedWallet(input: { id: string; note?: string
 	});
 }
 
-export async function deleteX402ManagedWallet(evmWalletId: string) {
+export async function deleteX402ManagedWallet(
+	evmWalletId: string,
+	custodyScope?: X402WalletCustodyScope,
+) {
 	const wallet = await prisma.x402EvmWallet.findUnique({
 		where: { id: evmWalletId, deletedAt: null },
-		select: { id: true },
+		select: WALLET_OUTPUT_SELECT,
 	});
 	if (wallet == null) {
 		throw createHttpError(404, 'Managed EVM wallet not found');
 	}
+	assertX402WalletCustody(custodyScope ?? null, wallet);
 
 	// Soft-delete the wallet, disable its budgets and low-balance rules, and detach it
 	// from any network it facilitates, so a retired/compromised key can no longer sign,

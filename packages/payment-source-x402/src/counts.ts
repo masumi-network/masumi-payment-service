@@ -1,8 +1,18 @@
 import { X402EvmWalletType, prisma } from '@masumi/payment-core/db';
 import { buildX402AttemptWhere, X402AttemptFilterInput } from './attempt-filters';
+import { buildX402WalletCustodyWhere, type X402WalletCustodyScope } from './custody';
 
-export async function countX402ManagedWallets(input?: { type?: X402EvmWalletType }) {
-	return prisma.x402EvmWallet.count({ where: { deletedAt: null, type: input?.type } });
+export async function countX402ManagedWallets(input?: {
+	type?: X402EvmWalletType;
+	custodyScope?: X402WalletCustodyScope;
+}) {
+	return prisma.x402EvmWallet.count({
+		where: {
+			deletedAt: null,
+			type: input?.type,
+			...buildX402WalletCustodyWhere(input?.custodyScope ?? null),
+		},
+	});
 }
 
 export async function countX402PaymentAttempts(input?: X402AttemptFilterInput) {

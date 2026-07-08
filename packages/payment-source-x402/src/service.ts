@@ -22,6 +22,7 @@ import {
 	prisma,
 } from '@masumi/payment-core/db';
 import { buildX402AttemptWhere } from './attempt-filters';
+import { assertX402WalletCustody, type X402WalletCustodyScope } from './custody';
 import { decrypt, encrypt } from '@masumi/payment-core/encryption';
 import { logger } from '@masumi/payment-core/logger';
 import { isAllowedCaip2Network } from '@masumi/payment-core/network';
@@ -175,9 +176,13 @@ async function getX402SupportedPaymentSourceOrThrow(supportedPaymentSourceId: st
 	return source;
 }
 
-async function getClientForWallet(walletId: string, caip2Network: string) {
+async function getClientForWallet(
+	walletId: string,
+	caip2Network: string,
+	custodyScope?: X402WalletCustodyScope,
+) {
 	const [wallet, network] = await Promise.all([
-		getManagedWalletOrThrow(walletId, X402EvmWalletType.Purchasing),
+		getManagedWalletOrThrow(walletId, X402EvmWalletType.Purchasing, custodyScope),
 		getX402NetworkOrThrow(caip2Network),
 	]);
 	const privateKey = decrypt(wallet.encryptedPrivateKey) as PrivateKey;
@@ -205,11 +210,15 @@ async function getClientForWallet(walletId: string, caip2Network: string) {
 	};
 }
 
-async function getFacilitatorForNetwork(caip2Network: string) {
+async function getFacilitatorForNetwork(
+	caip2Network: string,
+	custodyScope?: X402WalletCustodyScope,
+) {
 	const network = await getX402NetworkOrThrow(caip2Network);
 	if (network.FacilitatorWallet == null) {
 		throw createHttpError(400, 'x402 network has no facilitator wallet configured');
 	}
+	assertX402WalletCustody(custodyScope ?? null, network.FacilitatorWallet);
 	// A retired (soft-deleted) facilitator key must never sign settlements, even if it is
 	// still attached to the network (e.g. re-assigned after deletion).
 	if (network.FacilitatorWallet.deletedAt != null) {
@@ -662,11 +671,13 @@ export async function verifyX402Payment({
 	caip2NetworkLimit,
 	supportedPaymentSourceId,
 	paymentPayload,
+	custodyScope,
 }: {
 	apiKeyId: string;
 	caip2NetworkLimit: string[] | null;
 	supportedPaymentSourceId: string;
 	paymentPayload: PaymentPayload;
+	custodyScope?: X402WalletCustodyScope;
 }) {
 	const source = await getX402SupportedPaymentSourceOrThrow(supportedPaymentSourceId);
 	assertPaymentPayloadMatchesRegisteredResource(source, paymentPayload);
@@ -675,7 +686,7 @@ export async function verifyX402Payment({
 		throw createHttpError(401, 'Unauthorized network');
 	}
 	assertPayloadRequirementsMatchRegisteredSource(paymentPayload.accepted, requirements);
-	const facilitator = await getFacilitatorForNetwork(requirements.network);
+	const facilitator = await getFacilitatorForNetwork(requirements.network, custodyScope);
 	const paymentPayloadHash = hashX402PaymentPayload(paymentPayload);
 	const identifier = getPaymentIdentifier(paymentPayload);
 	if (identifier.errors.length > 0) {
@@ -729,11 +740,13 @@ export async function settleX402Payment({
 	caip2NetworkLimit,
 	supportedPaymentSourceId,
 	paymentPayload,
+	custodyScope,
 }: {
 	apiKeyId: string;
 	caip2NetworkLimit: string[] | null;
 	supportedPaymentSourceId: string;
 	paymentPayload: PaymentPayload;
+	custodyScope?: X402WalletCustodyScope;
 }) {
 	const source = await getX402SupportedPaymentSourceOrThrow(supportedPaymentSourceId);
 	assertPaymentPayloadMatchesRegisteredResource(source, paymentPayload);
@@ -806,7 +819,7 @@ export async function settleX402Payment({
 	// Validate the facilitator wallet (retired / non-Selling → 400) BEFORE any
 	// settle-prep work, so a bad wallet is rejected without querying for or
 	// creating a pre-settle attempt row.
-	const facilitator = await getFacilitatorForNetwork(requirements.network);
+	const facilitator = await getFacilitatorForNetwork(requirements.network, custodyScope);
 
 	// Crash-window guard: refuse to settle if a prior attempt for this exact
 	// payload already reached the on-chain settle stage. A completed settlement
@@ -972,6 +985,7 @@ export async function createX402Payment({
 	preferredNetwork,
 	preferredAsset,
 	paymentIdentifier,
+	custodyScope,
 }: {
 	apiKeyId: string;
 	caip2NetworkLimit: string[] | null;
@@ -980,6 +994,7 @@ export async function createX402Payment({
 	preferredNetwork?: string;
 	preferredAsset?: string;
 	paymentIdentifier?: string;
+	custodyScope?: X402WalletCustodyScope;
 }) {
 	const accepts = paymentRequired.accepts;
 	if (!Array.isArray(accepts) || accepts.length === 0) {
@@ -1037,7 +1052,7 @@ export async function createX402Payment({
 	}
 	const selected = selectedRequirement;
 
-	const { client, payer } = await getClientForWallet(evmWalletId, selected.network);
+	const { client, payer } = await getClientForWallet(evmWalletId, selected.network, custodyScope);
 
 	// Pin the client to the single requirement we selected and budgeted for, so the
 	// default selector cannot sign a different (e.g. costlier) option from accepts[].

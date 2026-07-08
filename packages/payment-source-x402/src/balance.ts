@@ -10,6 +10,7 @@ import {
 	safeHttpTransport,
 } from './internal';
 import { getX402ManagedWallet } from './wallets';
+import type { X402WalletCustodyScope } from './custody';
 
 // Minimal ERC-20 read surface — balance plus display metadata.
 const ERC20_ABI = [
@@ -96,8 +97,9 @@ async function readErc20Balance(
 export async function getX402WalletBalances(input: {
 	evmWalletId: string;
 	caip2Network?: string;
+	custodyScope?: X402WalletCustodyScope;
 }): Promise<{ evmWalletId: string; address: string; Balances: X402NetworkBalance[] }> {
-	const wallet = await getX402ManagedWallet(input.evmWalletId);
+	const wallet = await getX402ManagedWallet(input.evmWalletId, input.custodyScope);
 	const owner = wallet.address as HexAddress;
 
 	const networks = await prisma.x402Network.findMany({
