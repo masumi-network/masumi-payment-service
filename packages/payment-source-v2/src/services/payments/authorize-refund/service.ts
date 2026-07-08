@@ -22,7 +22,7 @@ import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
 import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
 import { syncMeshCostModelsFromHeadV2 } from '../../../utils/mesh-cost-model-sync';
-import { getHydraL2SlotContext } from '@/utils/hydra/l2-slot-context';
+import { headClockBehindCooldownMs, resolveHydraL2WindowOptions } from '@/utils/hydra/l2-slot-context';
 import { isDefinitiveNodeRejection } from '../../submit-error-classifier';
 import { makeHotWalletUnlocker, makePaymentRequestFailureMarker } from '../../request-failure';
 import { findMatchingPaymentUtxo } from '../../utxo-matching';
@@ -1044,20 +1044,19 @@ async function processL2AuthorizeRefund(
 		state: SmartContractState.RefundAuthorized,
 	});
 
-	// L2: derive the validity window from the head's slot timeline when it
-	// differs from `network` (devnet); undefined on a preprod head → default.
-	const l2SlotCtx = getHydraL2SlotContext();
+	// L2: anchor the validity window to the head's clock (env devnet override or
+	// live head Tick/SyncedStatusReport); the head's ledger clock can lag L1
+	// wall-clock by more than the default window buffers.
+	const l2WindowOptions = resolveHydraL2WindowOptions(hydraProvider);
+	const headBehindMs = headClockBehindCooldownMs(l2WindowOptions, decodedContract.sellerCooldownTime);
+	if (headBehindMs > 0) {
+		throw new Error(
+			`${LOOKUP_DEFERRED_PREFIX} head clock is ${Math.ceil(headBehindMs / 1000)}s behind the seller cooldown; retry next tick`,
+		);
+	}
 	const { invalidBefore, invalidAfter } = createTxWindow(network, {
 		constrainBeforeMs: decodedContract.sellerCooldownTime,
-		...(l2SlotCtx
-			? {
-					slotConfig: l2SlotCtx.slotConfig,
-					nowMs: l2SlotCtx.nowMs,
-					beforeBufferMs: l2SlotCtx.beforeBufferMs,
-					afterBufferMs: l2SlotCtx.afterBufferMs,
-					validitySlotBuffer: l2SlotCtx.validitySlotBuffer,
-				}
-			: {}),
+		...l2WindowOptions,
 	});
 
 	const limitedUtxos = sortAndLimitUtxos(headWalletUtxos, 8000000);

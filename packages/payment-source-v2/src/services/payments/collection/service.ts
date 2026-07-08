@@ -22,7 +22,11 @@ import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
 import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
 import { syncMeshCostModelsFromHeadV2 } from '../../../utils/mesh-cost-model-sync';
-import { getHydraL2SlotContext, type HydraL2SlotContext } from '@/utils/hydra/l2-slot-context';
+import {
+	headClockBehindCooldownMs,
+	resolveHydraL2WindowOptions,
+	type HydraL2WindowOptions,
+} from '@/utils/hydra/l2-slot-context';
 import { isDefinitiveNodeRejection } from '../../submit-error-classifier';
 import { makeHotWalletUnlocker, makePaymentRequestFailureMarker } from '../../request-failure';
 import { findMatchingPaymentUtxo } from '../../utxo-matching';
@@ -129,12 +133,11 @@ async function validateAndBuildItem(
 	blockchainProvider: BlockfrostProvider,
 	network: 'mainnet' | 'preprod',
 	smartContractAddress: string,
-	// L2 only: when the contract settles on a Hydra head whose slot timeline
-	// differs from `network` (e.g. a local devnet), the validity window must use
-	// the head's slot config + current slot, or the head rejects with
-	// OutsideValidityIntervalUTxO. undefined (L1, or a preprod head) → default
-	// network slot config. See getHydraL2SlotContext / submit-result L2 path.
-	l2SlotCtx?: HydraL2SlotContext,
+	// L2 only: validity-window overrides anchoring to the head's clock (devnet
+	// env slot config, or the live head Tick/SyncedStatusReport time on a
+	// same-network head). Without this the head's lagging ledger clock rejects
+	// the window with OutsideValidityIntervalUTxO. undefined → L1 defaults.
+	l2WindowOptions?: HydraL2WindowOptions,
 ): Promise<ValidatedCollectionItem> {
 	if (request.payByTime == null) {
 		throw new Error('Pay by time is null, this is deprecated');
@@ -243,17 +246,15 @@ async function validateAndBuildItem(
 			: decodedContract.sellerCooldownTime > decodedContract.unlockTime
 				? decodedContract.sellerCooldownTime
 				: decodedContract.unlockTime;
+	const headBehindMs = headClockBehindCooldownMs(l2WindowOptions ?? {}, lowerBoundMs);
+	if (headBehindMs > 0) {
+		throw new Error(
+			`${LOOKUP_DEFERRED_PREFIX} head clock is ${Math.ceil(headBehindMs / 1000)}s behind the unlock/cooldown bound; retry next tick`,
+		);
+	}
 	const { invalidBefore, invalidAfter } = createTxWindow(network, {
 		constrainBeforeMs: lowerBoundMs,
-		...(l2SlotCtx
-			? {
-					slotConfig: l2SlotCtx.slotConfig,
-					nowMs: l2SlotCtx.nowMs,
-					beforeBufferMs: l2SlotCtx.beforeBufferMs,
-					afterBufferMs: l2SlotCtx.afterBufferMs,
-					validitySlotBuffer: l2SlotCtx.validitySlotBuffer,
-				}
-			: {}),
+		...(l2WindowOptions ?? {}),
 	});
 
 	return {
@@ -1123,9 +1124,9 @@ async function processL2Collection(
 		hydraProvider as unknown as BlockfrostProvider,
 		network,
 		smartContractAddress,
-		// L2: derive the validity window from the head's slot timeline (devnet);
-		// undefined on a preprod head → default network slot config.
-		getHydraL2SlotContext(),
+		// L2: anchor the validity window to the head's clock (env devnet override
+		// or live head Tick/SyncedStatusReport time).
+		resolveHydraL2WindowOptions(hydraProvider),
 	);
 
 	const limitedUtxos = sortAndLimitUtxos(headWalletUtxos, 8000000);

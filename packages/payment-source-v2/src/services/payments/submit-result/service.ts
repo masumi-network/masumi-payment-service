@@ -45,7 +45,7 @@ import {
 	safeDeleteOrphanNextPaymentAction,
 } from '@/services/shared';
 import { createDatumFromDecodedContractV2, getPaymentScriptFromPaymentSourceV2 } from '@masumi/payment-source-v2';
-import { getHydraL2SlotContext } from '@/utils/hydra/l2-slot-context';
+import { headClockBehindCooldownMs, resolveHydraL2WindowOptions } from '@/utils/hydra/l2-slot-context';
 import { syncMeshCostModelsFromHeadV2 } from '../../../utils/mesh-cost-model-sync';
 import {
 	assertNoCollateralOverlap,
@@ -586,26 +586,22 @@ async function processL2SubmitResult(
 		state: determineNewContractState(decodedContract.state),
 	});
 
-	// L2 (in-head) txs are checked against the HEAD's slot timeline, which only
-	// matches the configured network for a head that settles on that same L1
-	// (e.g. a preprod head). For a head on a different chain (local devnet), the
-	// window must use the head's own slot config + current slot, or the head's
-	// ledger rejects it with OutsideValidityIntervalUTxO. getHydraL2SlotContext()
-	// returns undefined for the preprod path → createTxWindow uses the network
-	// config + Date.now() as before.
-	const l2SlotCtx = getHydraL2SlotContext();
+	// L2 (in-head) txs are checked against the HEAD's slot timeline AND the
+	// head's own (lagging) clock. Anchor the window to the head: env devnet
+	// override (own slot config) or the live head Tick/SyncedStatusReport time
+	// on a same-network head; empty options → network config + Date.now() as
+	// before (no head clock observed yet).
+	const l2WindowOptions = resolveHydraL2WindowOptions(hydraProvider);
+	const headBehindMs = headClockBehindCooldownMs(l2WindowOptions, decodedContract.sellerCooldownTime);
+	if (headBehindMs > 0) {
+		throw new Error(
+			`${LOOKUP_DEFERRED_PREFIX} head clock is ${Math.ceil(headBehindMs / 1000)}s behind the seller cooldown; retry next tick`,
+		);
+	}
 	const { invalidBefore, invalidAfter } = createTxWindow(network, {
-		constrainAfterMs: resolveSubmitResultConstrainAfterMs(decodedContract, l2SlotCtx?.nowMs ?? Date.now()),
+		constrainAfterMs: resolveSubmitResultConstrainAfterMs(decodedContract, l2WindowOptions.nowMs ?? Date.now()),
 		constrainBeforeMs: decodedContract.sellerCooldownTime,
-		...(l2SlotCtx
-			? {
-					slotConfig: l2SlotCtx.slotConfig,
-					nowMs: l2SlotCtx.nowMs,
-					beforeBufferMs: l2SlotCtx.beforeBufferMs,
-					afterBufferMs: l2SlotCtx.afterBufferMs,
-					validitySlotBuffer: l2SlotCtx.validitySlotBuffer,
-				}
-			: {}),
+		...l2WindowOptions,
 	});
 
 	const limitedUtxos = sortAndLimitUtxos(headWalletUtxos, 8000000);
