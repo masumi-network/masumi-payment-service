@@ -8,7 +8,7 @@ import { castProtocol, Protocol, resolveTxHash, UTxO } from '@meshsdk/core';
 
 import { mapHydraUTxOToUTxO, mapUTxOToHydraUTxO } from './codec';
 import { Connection } from './connection';
-import { hydraHeadStatusSchema, messageSchema, snapshotConfirmedMessageSchema } from './schemas';
+import { headClockMessageSchema, hydraHeadStatusSchema, messageSchema, snapshotConfirmedMessageSchema } from './schemas';
 import { HydraNodeEvent, HydraTransaction, HydraUTxO, StatusChangeData } from './types';
 import { jsonToString } from '@/utils/converter/json-to-string';
 import { HydraHeadStatus } from '@/generated/prisma/client';
@@ -49,6 +49,20 @@ type RawHydraProtocolParameters = {
 	executionUnitPrices: { priceMemory: number; priceSteps: number };
 };
 
+/**
+ * The head's last observed L1 chain time, from the API websocket's
+ * `Tick`/`SyncedStatusReport` broadcasts. This is the clock the head's ledger
+ * checks tx validity intervals against — it can lag wall-clock time by many
+ * minutes (Blockfrost-backed chain followers drift), so L2 validity windows
+ * must anchor to it, not to `Date.now()`. `receivedAtMs` lets consumers judge
+ * staleness.
+ */
+export interface HydraHeadClock {
+	chainTimeMs: number;
+	chainSlot?: number;
+	receivedAtMs: number;
+}
+
 export interface IHydraNode {
 	connect(): void | Promise<void>;
 	init(): Promise<unknown>;
@@ -71,6 +85,7 @@ export interface IHydraNode {
 	get status(): HydraHeadStatus;
 	get httpUrl(): string;
 	get wsUrl(): string;
+	get headClock(): HydraHeadClock | undefined;
 }
 
 export class HydraNode extends EventEmitter {
@@ -79,6 +94,7 @@ export class HydraNode extends EventEmitter {
 	private _status: HydraHeadStatus;
 	private readonly _connection: Connection;
 	private readonly _txCircularBuffer: CircularBuffer<string>;
+	private _headClock: HydraHeadClock | undefined;
 
 	constructor(config: { httpUrl: string; wsUrl?: string }) {
 		super();
@@ -93,6 +109,7 @@ export class HydraNode extends EventEmitter {
 		if (this._status === HydraHeadStatus.Disconnected) {
 			this._connection.on('message', (data) => this.processStatus(data));
 			this._connection.on('message', (data) => void this.processConfirmedTx(data));
+			this._connection.on('message', (data) => this.processHeadClock(data));
 			void this._connection.connect();
 		}
 	}
@@ -116,9 +133,31 @@ export class HydraNode extends EventEmitter {
 				});
 			}
 		} catch (error) {
+			// Never rethrow: this runs as a fire-and-forget ws 'message' handler,
+			// so a throw becomes an unhandled rejection that can kill the process
+			// on any malformed frame.
 			console.error('[HydraNode] Error processing confirmed tx', error);
-			throw error;
 		}
+	}
+
+	private processHeadClock(rawMessage: string) {
+		try {
+			const parsed = headClockMessageSchema.safeParse(JSON.parse(rawMessage));
+			if (!parsed.success) return;
+			const chainTimeMs = Date.parse(parsed.data.chainTime);
+			if (Number.isNaN(chainTimeMs)) return;
+			this._headClock = {
+				chainTimeMs,
+				chainSlot: parsed.data.chainSlot,
+				receivedAtMs: Date.now(),
+			};
+		} catch {
+			// non-JSON frames are other consumers' problem; the clock just skips them
+		}
+	}
+
+	get headClock(): HydraHeadClock | undefined {
+		return this._headClock;
 	}
 
 	async init() {

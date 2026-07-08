@@ -496,4 +496,64 @@ describe('HydraNode', () => {
 			expect(result.PlutusV2).toBeUndefined();
 		});
 	});
+
+	describe('head clock tracking', () => {
+		it('captures chainTime/chainSlot from a Tick message', () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({ tag: 'Tick', chainTime: '2026-07-08T07:19:17Z', chainSlot: 127811957 }),
+			);
+			expect(node.headClock).toBeDefined();
+			expect(node.headClock!.chainTimeMs).toBe(Date.parse('2026-07-08T07:19:17Z'));
+			expect(node.headClock!.chainSlot).toBe(127811957);
+			expect(node.headClock!.receivedAtMs).toBeGreaterThan(0);
+		});
+
+		it('captures the clock from a SyncedStatusReport message', () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({
+					tag: 'SyncedStatusReport',
+					chainSlot: 127811957,
+					chainTime: '2026-07-08T07:19:17Z',
+					drift: 7735.89,
+					synced: 'CatchingUp',
+				}),
+			);
+			expect(node.headClock!.chainTimeMs).toBe(Date.parse('2026-07-08T07:19:17Z'));
+		});
+
+		it('keeps the newest clock and ignores unrelated/invalid messages', () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({ tag: 'Tick', chainTime: '2026-07-08T07:00:00Z', chainSlot: 1 }),
+			);
+			mockConnectionInstance.emit('message', JSON.stringify({ tag: 'Greetings', headStatus: 'Open' }));
+			mockConnectionInstance.emit('message', 'not-json');
+			mockConnectionInstance.emit(
+				'message',
+				JSON.stringify({ tag: 'Tick', chainTime: '2026-07-08T07:19:17Z', chainSlot: 2 }),
+			);
+			expect(node.headClock!.chainSlot).toBe(2);
+		});
+
+		it('ignores a clock message with an unparseable chainTime', () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+			mockConnectionInstance.emit('message', JSON.stringify({ tag: 'Tick', chainTime: 'not-a-time' }));
+			expect(node.headClock).toBeUndefined();
+		});
+
+		it('returns undefined before any clock message', () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+			expect(node.headClock).toBeUndefined();
+		});
+	});
 });
