@@ -1,4 +1,4 @@
-import { X402PaymentDirection, X402PaymentStatus } from '@masumi/payment-core/db';
+import { Prisma, X402PaymentDirection, X402PaymentStatus } from '@masumi/payment-core/db';
 
 export type X402AttemptFilterInput = {
 	status?: X402PaymentStatus;
@@ -18,18 +18,21 @@ export type X402AttemptFilterInput = {
  * operator to check the chain before retrying or refunding, so this filter
  * overrides an explicit status filter.
  */
-export function buildX402AttemptWhere(input: X402AttemptFilterInput) {
+export function buildX402AttemptWhere(input: X402AttemptFilterInput): Prisma.X402PaymentAttemptWhereInput {
+	// Network is filtered through the rail relation now that the attempt has no caip2Network column.
+	const networkFilter: Prisma.X402PaymentAttemptWhereInput =
+		input.caip2Network != null ? { Network: { caip2Id: input.caip2Network } } : {};
 	if (input.filterNeedsManualAction === true) {
 		return {
+			...networkFilter,
 			direction: input.direction,
-			caip2Network: input.caip2Network,
 			status: X402PaymentStatus.Verified,
 			errorReason: { not: null },
 		};
 	}
 	return {
+		...networkFilter,
 		status: input.status,
 		direction: input.direction,
-		caip2Network: input.caip2Network,
 	};
 }

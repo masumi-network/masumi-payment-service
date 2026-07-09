@@ -19,11 +19,15 @@ import {
 	listSettlementsSchemaOutput,
 	listWalletsSchemaInput,
 	listWalletsSchemaOutput,
+	reconcilePaymentSchemaInput,
+	reconcilePaymentSchemaOutput,
 	setBudgetSchemaInput,
 	settleSchemaOutput,
 	upsertNetworkSchemaInput,
 	verifySchemaOutput,
 	verifySettleSchemaInput,
+	walletDetailSchemaInput,
+	walletSchemaOutput,
 	x402NetworkSchema,
 } from '@/routes/api/x402/schemas';
 import {
@@ -49,6 +53,7 @@ import {
 	verifyX402ResponseExample,
 	x402BudgetExample,
 	x402NetworkExample,
+	x402WalletExample,
 } from '@/routes/api/x402/examples';
 import { successResponse, type SwaggerRegistrarContext } from '@/utils/generator/swagger-generator/shared';
 
@@ -121,6 +126,21 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 		},
 		responses: {
 			200: successResponse('Managed wallet created', createWalletSchemaOutput, createX402WalletResponseExample),
+		},
+	});
+
+	registry.registerPath({
+		method: 'get',
+		path: '/x402/wallets/detail',
+		description: 'Fetches a single managed EVM wallet by id, including the network it is bound to.',
+		summary: 'Get a managed x402 EVM wallet by id. (admin access required)',
+		tags: ['x402'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			query: walletDetailSchemaInput.openapi({ example: { id: x402WalletExample.id } }),
+		},
+		responses: {
+			200: successResponse('Managed x402 EVM wallet', walletSchemaOutput, x402WalletExample),
 		},
 	});
 
@@ -265,6 +285,38 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 				listPaymentAttemptsSchemaOutput,
 				listX402PaymentAttemptsResponseExample,
 			),
+		},
+	});
+
+	registry.registerPath({
+		method: 'post',
+		path: '/x402/payments/reconcile',
+		description:
+			'Manually resolves an inbound settle left awaiting reconciliation (settle threw or the facilitator reported failure after the on-chain call). The operator confirms on-chain whether funds moved: "settled" records the settlement (txHash required), "failed" marks it Failed so a fresh settle can retry.',
+		summary: 'Reconcile an ambiguous x402 settlement. (admin access required)',
+		tags: ['x402'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			body: {
+				description: 'The attempt to reconcile and the operator-confirmed outcome',
+				content: {
+					'application/json': {
+						schema: reconcilePaymentSchemaInput.openapi({
+							example: {
+								attemptId: 'clx402attempt0001',
+								resolution: 'settled',
+								txHash: '0x4242424242424242424242424242424242424242424242424242424242424242',
+							},
+						}),
+					},
+				},
+			},
+		},
+		responses: {
+			200: successResponse('Reconciliation result', reconcilePaymentSchemaOutput, {
+				attemptId: 'clx402attempt0001',
+				status: 'Settled',
+			}),
 		},
 	});
 

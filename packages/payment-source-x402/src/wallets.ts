@@ -6,24 +6,35 @@ import { assertValidPrivateKey } from './internal';
 
 // The non-secret projection returned to the dashboard for every managed wallet. The
 // encrypted private key is never part of this set; the plaintext key is only ever
-// returned once, by createX402ManagedWallet, for backup.
+// returned once, by createX402ManagedWallet, for backup. The bound network is exposed as
+// the flat caip2Network string (see flattenWallet) so callers keep a stable wire shape.
 const WALLET_OUTPUT_SELECT = {
 	id: true,
+	networkId: true,
 	address: true,
 	type: true,
 	note: true,
 	createdAt: true,
 	updatedAt: true,
 	createdById: true,
+	Network: { select: { caip2Id: true } },
 } satisfies Prisma.X402EvmWalletSelect;
+
+type WalletOutputRow = Prisma.X402EvmWalletGetPayload<{ select: typeof WALLET_OUTPUT_SELECT }>;
+
+function flattenWallet({ Network, ...wallet }: WalletOutputRow) {
+	return { ...wallet, caip2Network: Network.caip2Id };
+}
 
 export async function createX402ManagedWallet({
 	createdByApiKeyId,
+	networkId,
 	type,
 	note,
 	privateKey,
 }: {
 	createdByApiKeyId: string;
+	networkId: string;
 	type: X402EvmWalletType;
 	note?: string | null;
 	privateKey?: string;
@@ -38,37 +49,64 @@ export async function createX402ManagedWallet({
 	assertValidPrivateKey(walletPrivateKey);
 	const account = privateKeyToAccount(walletPrivateKey);
 
+	// A wallet is bound to exactly one payment source (network); reject an unknown one up
+	// front with a clear 404 instead of an opaque foreign-key 500.
+	const network = await prisma.x402Network.findUnique({ where: { id: networkId }, select: { id: true } });
+	if (network == null) {
+		throw createHttpError(404, 'x402 network is not registered; add the network before creating a wallet');
+	}
+
+	// The same EVM keypair may already back a wallet on another network. Reuse that shared
+	// secret so one key maps to one secret row; otherwise create a fresh secret. Dedup is by
+	// address (deterministic from the key) because AES-CBC ciphertext is non-deterministic.
+	const existingByAddress = await prisma.x402EvmWallet.findFirst({
+		where: { address: account.address },
+		select: { secretId: true },
+	});
+
 	try {
 		const created = await prisma.x402EvmWallet.create({
+			// Nested relation writes require the checked form, so the network and creator are
+			// connected as relations rather than via scalar FKs.
 			data: {
+				Network: { connect: { id: networkId } },
 				address: account.address,
 				type,
 				note: note ?? null,
-				encryptedPrivateKey: encrypt(walletPrivateKey),
-				createdById: createdByApiKeyId,
+				CreatedBy: { connect: { id: createdByApiKeyId } },
+				Secret:
+					existingByAddress != null
+						? { connect: { id: existingByAddress.secretId } }
+						: { create: { encryptedPrivateKey: encrypt(walletPrivateKey) } },
 			},
 			select: WALLET_OUTPUT_SELECT,
 		});
 		// One-time backup secret. Never persisted in plaintext, never retrievable again.
-		return { ...created, privateKey: wasGenerated ? walletPrivateKey : null };
+		return { ...flattenWallet(created), privateKey: wasGenerated ? walletPrivateKey : null };
 	} catch (error) {
-		// address is @unique (including soft-deleted rows), so importing a key whose address
-		// already exists surfaces a clear 409 instead of an opaque Prisma 500.
+		// (networkId, address) is unique, so importing a key already bound to this network
+		// surfaces a clear 409 instead of an opaque Prisma 500.
 		if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-			throw createHttpError(409, 'A managed EVM wallet with this address already exists');
+			throw createHttpError(409, 'A managed EVM wallet with this address already exists on this network');
 		}
 		throw error;
 	}
 }
 
-export async function listX402ManagedWallets(input?: { take?: number; cursorId?: string; type?: X402EvmWalletType }) {
-	return prisma.x402EvmWallet.findMany({
-		where: { deletedAt: null, type: input?.type },
+export async function listX402ManagedWallets(input?: {
+	take?: number;
+	cursorId?: string;
+	type?: X402EvmWalletType;
+	networkId?: string;
+}) {
+	const wallets = await prisma.x402EvmWallet.findMany({
+		where: { deletedAt: null, type: input?.type, networkId: input?.networkId },
 		orderBy: { createdAt: 'desc' },
 		take: input?.take,
 		cursor: input?.cursorId ? { id: input.cursorId } : undefined,
 		select: WALLET_OUTPUT_SELECT,
 	});
+	return wallets.map(flattenWallet);
 }
 
 export async function getX402ManagedWallet(evmWalletId: string) {
@@ -79,7 +117,7 @@ export async function getX402ManagedWallet(evmWalletId: string) {
 	if (wallet == null) {
 		throw createHttpError(404, 'Managed EVM wallet not found');
 	}
-	return wallet;
+	return flattenWallet(wallet);
 }
 
 export async function updateX402ManagedWallet(input: { id: string; note?: string | null }) {
@@ -92,11 +130,12 @@ export async function updateX402ManagedWallet(input: { id: string; note?: string
 	if (existing == null) {
 		throw createHttpError(404, 'Managed EVM wallet not found');
 	}
-	return prisma.x402EvmWallet.update({
+	const updated = await prisma.x402EvmWallet.update({
 		where: { id: input.id },
 		data: { note: input.note ?? null },
 		select: WALLET_OUTPUT_SELECT,
 	});
+	return flattenWallet(updated);
 }
 
 export async function deleteX402ManagedWallet(evmWalletId: string) {

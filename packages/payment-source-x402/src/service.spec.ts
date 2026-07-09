@@ -7,9 +7,13 @@ const mockX402SettlementUpsert = jest.fn() as jest.Mock<any>;
 const mockX402PaymentAttemptCreate = jest.fn() as jest.Mock<any>;
 const mockX402PaymentAttemptUpdate = jest.fn() as jest.Mock<any>;
 const mockX402PaymentAttemptFindFirst = jest.fn() as jest.Mock<any>;
+const mockX402PaymentAttemptFindUnique = jest.fn() as jest.Mock<any>;
 const mockX402EvmWalletFindUnique = jest.fn() as jest.Mock<any>;
+const mockX402EvmWalletFindFirst = jest.fn() as jest.Mock<any>;
+const mockX402EvmWalletUpdateMany = jest.fn() as jest.Mock<any>;
 const mockApiKeyFindUnique = jest.fn() as jest.Mock<any>;
 const mockX402EvmWalletCreate = jest.fn() as jest.Mock<any>;
+const mockCounterpartyUpsert = jest.fn() as jest.Mock<any>;
 const mockBudgetFindFirst = jest.fn() as jest.Mock<any>;
 
 // Minimal stand-in for Prisma's known-request error so the service's
@@ -72,6 +76,10 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 		Purchasing: 'Purchasing',
 		Selling: 'Selling',
 	},
+	X402CounterpartyRole: {
+		Payee: 'Payee',
+		Payer: 'Payer',
+	},
 	X402PaymentDirection: {
 		InboundVerify: 'InboundVerify',
 		InboundSettle: 'InboundSettle',
@@ -105,11 +113,17 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 			create: mockX402PaymentAttemptCreate,
 			update: mockX402PaymentAttemptUpdate,
 			findFirst: mockX402PaymentAttemptFindFirst,
+			findUnique: mockX402PaymentAttemptFindUnique,
 		},
 		x402EvmWallet: {
 			findUnique: mockX402EvmWalletFindUnique,
+			findFirst: mockX402EvmWalletFindFirst,
 			create: mockX402EvmWalletCreate,
+			updateMany: mockX402EvmWalletUpdateMany,
 			findMany: jest.fn(),
+		},
+		x402CounterpartyWallet: {
+			upsert: mockCounterpartyUpsert,
 		},
 		x402WalletBudget: {
 			findFirst: mockBudgetFindFirst,
@@ -138,8 +152,22 @@ jest.unstable_mockModule('@x402/core/facilitator', () => ({
 	})),
 }));
 
+class HTTPFacilitatorClientMock {
+	config: unknown;
+	constructor(config: unknown) {
+		this.config = config;
+	}
+	verify(...args: unknown[]) {
+		return mockFacilitatorVerify(...args);
+	}
+	settle(...args: unknown[]) {
+		return mockFacilitatorSettle(...args);
+	}
+}
+
 jest.unstable_mockModule('@x402/core/http', () => ({
 	encodePaymentSignatureHeader: mockEncodePaymentSignatureHeader,
+	HTTPFacilitatorClient: HTTPFacilitatorClientMock,
 }));
 
 jest.unstable_mockModule('@x402/evm', () => ({
@@ -249,27 +277,46 @@ describe('x402 service helpers', () => {
 			displayName: 'Base Sepolia',
 			rpcUrl: 'https://sepolia.base.org',
 			isEnabled: true,
+			facilitatorWalletId: 'wallet-facilitator',
+			facilitatorUrl: null,
+			facilitatorAuthEnc: null,
 			FacilitatorWallet: {
 				id: 'wallet-facilitator',
 				type: 'Selling',
-				encryptedPrivateKey: 'encrypted-private-key',
+				deletedAt: null,
+				Secret: { encryptedPrivateKey: 'encrypted-private-key' },
 			},
 		});
 		mockX402EvmWalletFindUnique.mockResolvedValue({
 			id: 'wallet-1',
+			networkId: 'network-1',
+			secretId: 'secret-1',
 			address: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
 			type: 'Purchasing',
-			encryptedPrivateKey: 'encrypted-private-key',
 			deletedAt: null,
+			Secret: { encryptedPrivateKey: 'encrypted-private-key' },
+			Network: {
+				id: 'network-1',
+				caip2Id: source.network,
+				rpcUrl: 'https://sepolia.base.org',
+				displayName: 'Base Sepolia',
+			},
 		});
+		mockX402EvmWalletFindFirst.mockResolvedValue(null);
+		// Settle lock acquire/release both go through updateMany (wallet.lockedAt); count:1 = ok.
+		mockX402EvmWalletUpdateMany.mockResolvedValue({ count: 1 });
+		mockCounterpartyUpsert.mockResolvedValue({ id: 'counterparty-1' });
 		mockApiKeyFindUnique.mockResolvedValue({ id: 'api-key-1' });
 		mockX402EvmWalletCreate.mockResolvedValue({
 			id: 'wallet-new',
+			networkId: 'network-1',
 			address: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
 			type: 'Purchasing',
+			note: null,
 			createdAt: new Date('2026-01-01T00:00:00.000Z'),
 			updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 			createdById: 'api-key-1',
+			Network: { caip2Id: source.network },
 		});
 		mockX402SettlementFindUnique.mockResolvedValue(null);
 		mockX402SettlementUpsert.mockResolvedValue({ id: 'settlement-1' });
@@ -301,16 +348,21 @@ describe('x402 service helpers', () => {
 			id: 'budget-1',
 			apiKeyId: 'api-key-1',
 			evmWalletId: 'wallet-1',
-			caip2Network: source.network,
 			asset: source.asset.toLowerCase(),
 			remainingAmount: 100n,
 			spentAmount: 0n,
+			createdById: null,
 			createdAt: new Date('2026-01-01T00:00:00.000Z'),
 			updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+			EvmWallet: { address: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', Network: { caip2Id: source.network } },
 		});
 		mockTxPaymentAttemptCreate.mockResolvedValue({ id: 'attempt-outbound-1' });
-		mockPrismaTransaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) =>
-			callback({
+		mockPrismaTransaction.mockImplementation(async (arg: unknown) => {
+			// Prisma.$transaction supports both the array form (reconcile) and the callback form
+			// (reserveBudgetForAttempt); the mock handles both.
+			if (Array.isArray(arg)) return Promise.all(arg);
+			const callback = arg as (tx: unknown) => Promise<unknown>;
+			return callback({
 				x402WalletBudget: {
 					findFirst: mockBudgetFindFirst,
 					updateMany: mockBudgetUpdateMany,
@@ -318,8 +370,11 @@ describe('x402 service helpers', () => {
 				x402PaymentAttempt: {
 					create: mockTxPaymentAttemptCreate,
 				},
-			}),
-		);
+				x402CounterpartyWallet: {
+					upsert: mockCounterpartyUpsert,
+				},
+			});
+		});
 	});
 
 	it('hashes canonical payment payload JSON independent of object key order', () => {
@@ -370,13 +425,13 @@ describe('x402 service helpers', () => {
 			id: 'settlement-1',
 			paymentPayloadHash,
 			txHash: '0xsettled',
-			caip2Network: source.network,
 			amount: source.amount,
-			payer: null,
 			PaymentAttempt: {
 				id: 'attempt-original',
-				payer: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
 				supportedPaymentSourceId: source.id,
+				networkId: 'network-1',
+				Network: { caip2Id: source.network },
+				CounterpartyWallet: { address: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
 			},
 		});
 		mockX402PaymentAttemptCreate.mockResolvedValue({ id: 'attempt-replay' });
@@ -417,13 +472,13 @@ describe('x402 service helpers', () => {
 			id: 'settlement-1',
 			paymentPayloadHash,
 			txHash: '0xsettled',
-			caip2Network: source.network,
 			amount: source.amount,
-			payer: null,
 			PaymentAttempt: {
 				id: 'attempt-original',
-				payer: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
 				supportedPaymentSourceId: 'a-different-source',
+				networkId: 'network-1',
+				Network: { caip2Id: source.network },
+				CounterpartyWallet: { address: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
 			},
 		});
 
@@ -540,10 +595,9 @@ describe('x402 service helpers', () => {
 		expect(mockBudgetUpsert).toHaveBeenCalledWith(
 			expect.objectContaining({
 				where: {
-					apiKeyId_evmWalletId_caip2Network_asset: {
+					apiKeyId_evmWalletId_asset: {
 						apiKeyId: 'api-key-1',
 						evmWalletId: 'wallet-1',
-						caip2Network: source.network,
 						asset: source.asset.toLowerCase(),
 					},
 				},
@@ -554,17 +608,17 @@ describe('x402 service helpers', () => {
 		);
 	});
 
-	it('rejects setting a budget for an unregistered network with a 404', async () => {
-		mockX402NetworkFindUnique.mockResolvedValueOnce(null);
+	it('rejects setting a budget whose caip2Network does not match the wallet network with a 400', async () => {
 		await expect(
 			service.setX402WalletBudget({
 				apiKeyId: 'api-key-1',
 				evmWalletId: 'wallet-1',
-				caip2Network: source.network,
+				// The wallet is bound to source.network; a different chain must be rejected.
+				caip2Network: 'eip155:1',
 				asset: source.asset,
 				remainingAmount: '100',
 			}),
-		).rejects.toMatchObject({ status: 404 });
+		).rejects.toMatchObject({ status: 400 });
 		expect(mockBudgetUpsert).not.toHaveBeenCalled();
 	});
 
@@ -589,6 +643,7 @@ describe('x402 service helpers', () => {
 		await expect(
 			service.createX402ManagedWallet({
 				createdByApiKeyId: 'api-key-1',
+				networkId: 'network-1',
 				type: 'Purchasing' as Parameters<typeof service.createX402ManagedWallet>[0]['type'],
 				privateKey: `0x${'a'.repeat(64)}`,
 			}),
@@ -598,6 +653,7 @@ describe('x402 service helpers', () => {
 	it('returns the generated private key once when no key is supplied', async () => {
 		const result = await service.createX402ManagedWallet({
 			createdByApiKeyId: 'api-key-1',
+			networkId: 'network-1',
 			type: 'Purchasing' as Parameters<typeof service.createX402ManagedWallet>[0]['type'],
 		});
 		// generatePrivateKey is mocked to a fixed 0xbb… key; it must be surfaced for backup.
@@ -607,6 +663,7 @@ describe('x402 service helpers', () => {
 	it('does not echo back a caller-supplied private key', async () => {
 		const result = await service.createX402ManagedWallet({
 			createdByApiKeyId: 'api-key-1',
+			networkId: 'network-1',
 			type: 'Purchasing' as Parameters<typeof service.createX402ManagedWallet>[0]['type'],
 			privateKey: `0x${'a'.repeat(64)}`,
 		});
@@ -916,6 +973,248 @@ describe('x402 service helpers', () => {
 					create: expect.objectContaining({ createdById: 'admin-key-1' }),
 				}),
 			);
+		});
+	});
+
+	describe('facilitator + counterparty modelling', () => {
+		it('settles through a remote facilitator (facilitatorUrl) with no owned wallet', async () => {
+			mockX402NetworkFindUnique.mockResolvedValue({
+				id: 'network-1',
+				caip2Id: source.network,
+				displayName: 'Base Sepolia',
+				rpcUrl: 'https://sepolia.base.org',
+				isEnabled: true,
+				facilitatorWalletId: null,
+				facilitatorUrl: 'https://facilitator.example',
+				facilitatorAuthEnc: null,
+				FacilitatorWallet: null,
+			});
+
+			const result = await service.settleX402Payment({
+				apiKeyId: 'api-key-1',
+				caip2NetworkLimit: [source.network],
+				supportedPaymentSourceId: source.id,
+				paymentPayload: typedPaymentPayload,
+			});
+
+			expect(result.settleResponse.success).toBe(true);
+			expect(mockFacilitatorSettle).toHaveBeenCalled();
+			// A remote-facilitator network owns no key, so the inbound attempt has no wallet.
+			expect(mockX402PaymentAttemptCreate).toHaveBeenCalledWith(
+				expect.objectContaining({
+					data: expect.objectContaining({
+						direction: 'InboundSettle',
+						evmWalletId: null,
+						networkId: 'network-1',
+					}),
+				}),
+			);
+		});
+
+		it('binds the self-hosted facilitator wallet to the inbound settle attempt', async () => {
+			await service.settleX402Payment({
+				apiKeyId: 'api-key-1',
+				caip2NetworkLimit: [source.network],
+				supportedPaymentSourceId: source.id,
+				paymentPayload: typedPaymentPayload,
+			});
+
+			expect(mockX402PaymentAttemptCreate).toHaveBeenCalledWith(
+				expect.objectContaining({
+					data: expect.objectContaining({ direction: 'InboundSettle', evmWalletId: 'wallet-facilitator' }),
+				}),
+			);
+		});
+
+		it('records the buyer as a Payer counterparty on verify', async () => {
+			await service.verifyX402Payment({
+				apiKeyId: 'api-key-1',
+				caip2NetworkLimit: [source.network],
+				supportedPaymentSourceId: source.id,
+				paymentPayload: typedPaymentPayload,
+			});
+
+			expect(mockCounterpartyUpsert).toHaveBeenCalledWith(
+				expect.objectContaining({
+					where: {
+						caip2Network_address_role: {
+							caip2Network: source.network,
+							address: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+							role: 'Payer',
+						},
+					},
+				}),
+			);
+			expect(mockX402PaymentAttemptCreate).toHaveBeenCalledWith(
+				expect.objectContaining({
+					data: expect.objectContaining({
+						direction: 'InboundVerify',
+						counterpartyWalletId: 'counterparty-1',
+						networkId: 'network-1',
+					}),
+				}),
+			);
+		});
+
+		it('records the payee (payTo) as a Payee counterparty on an outbound payment', async () => {
+			await service.createX402Payment({
+				apiKeyId: 'api-key-1',
+				caip2NetworkLimit: [source.network],
+				evmWalletId: 'wallet-1',
+				paymentRequired,
+			});
+
+			expect(mockCounterpartyUpsert).toHaveBeenCalledWith(
+				expect.objectContaining({
+					where: {
+						caip2Network_address_role: {
+							caip2Network: source.network,
+							address: source.payTo.toLowerCase(),
+							role: 'Payee',
+						},
+					},
+				}),
+			);
+		});
+	});
+
+	describe('upsertX402Network facilitator validation', () => {
+		it('rejects configuring both a facilitator wallet and a facilitator URL', async () => {
+			await expect(
+				service.upsertX402Network({
+					caip2Id: source.network,
+					displayName: 'Base Sepolia',
+					rpcUrl: 'https://sepolia.base.org',
+					facilitatorWalletId: 'wallet-facilitator',
+					facilitatorUrl: 'https://facilitator.example',
+				}),
+			).rejects.toMatchObject({ status: 400 });
+		});
+
+		it('rejects a facilitator wallet bound to a different network', async () => {
+			// A Selling wallet exists, but it is bound to eip155:1, not the configured chain.
+			mockX402EvmWalletFindUnique.mockResolvedValueOnce({
+				id: 'wallet-facilitator',
+				type: 'Selling',
+				Network: { caip2Id: 'eip155:1' },
+			});
+			await expect(
+				service.upsertX402Network({
+					caip2Id: source.network,
+					displayName: 'Base Sepolia',
+					rpcUrl: 'https://sepolia.base.org',
+					facilitatorWalletId: 'wallet-facilitator',
+				}),
+			).rejects.toMatchObject({ status: 400 });
+		});
+	});
+
+	describe('reconcileX402PaymentAttempt', () => {
+		// The reconciliation backlog: an inbound settle left Verified with a recorded error.
+		const backlogAttempt = {
+			id: 'attempt-stuck',
+			direction: 'InboundSettle',
+			status: 'Verified',
+			errorReason: 'settle_threw',
+			paymentPayloadHash: 'hash-1',
+		};
+
+		it('marks an ambiguous attempt Failed when the operator confirms funds did not move', async () => {
+			mockX402PaymentAttemptFindUnique.mockResolvedValueOnce(backlogAttempt);
+
+			const result = await service.reconcileX402PaymentAttempt({ attemptId: 'attempt-stuck', resolution: 'failed' });
+
+			expect(result).toEqual({ attemptId: 'attempt-stuck', status: 'Failed' });
+			expect(mockX402PaymentAttemptUpdate).toHaveBeenCalledWith(
+				expect.objectContaining({ where: { id: 'attempt-stuck' }, data: { status: 'Failed' } }),
+			);
+			expect(mockX402SettlementUpsert).not.toHaveBeenCalled();
+		});
+
+		it('records the settlement and marks the attempt Settled when funds moved', async () => {
+			mockX402PaymentAttemptFindUnique.mockResolvedValueOnce(backlogAttempt);
+
+			const result = await service.reconcileX402PaymentAttempt({
+				attemptId: 'attempt-stuck',
+				resolution: 'settled',
+				txHash: '0xtx',
+			});
+
+			expect(result).toEqual({ attemptId: 'attempt-stuck', status: 'Settled' });
+			expect(mockX402SettlementUpsert).toHaveBeenCalledWith(
+				expect.objectContaining({
+					where: { paymentPayloadHash: 'hash-1' },
+					create: expect.objectContaining({ paymentAttemptId: 'attempt-stuck', success: true, txHash: '0xtx' }),
+				}),
+			);
+		});
+
+		it('requires a txHash to reconcile as settled', async () => {
+			mockX402PaymentAttemptFindUnique.mockResolvedValueOnce(backlogAttempt);
+			await expect(
+				service.reconcileX402PaymentAttempt({ attemptId: 'attempt-stuck', resolution: 'settled' }),
+			).rejects.toMatchObject({ status: 400 });
+			expect(mockX402SettlementUpsert).not.toHaveBeenCalled();
+		});
+
+		it('refuses to reconcile an attempt that is not awaiting reconciliation', async () => {
+			// Already Settled → not in the backlog.
+			mockX402PaymentAttemptFindUnique.mockResolvedValueOnce({ ...backlogAttempt, status: 'Settled' });
+			await expect(
+				service.reconcileX402PaymentAttempt({ attemptId: 'attempt-stuck', resolution: 'failed' }),
+			).rejects.toMatchObject({ status: 409 });
+			expect(mockX402PaymentAttemptUpdate).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('settle concurrency lock', () => {
+		it('takes and releases the per-facilitator DB settle lock around the on-chain settle', async () => {
+			await service.settleX402Payment({
+				apiKeyId: 'api-key-1',
+				caip2NetworkLimit: [source.network],
+				supportedPaymentSourceId: source.id,
+				paymentPayload: typedPaymentPayload,
+			});
+
+			// Acquire: atomically set wallet.lockedAt on the facilitator wallet when it is free/stale.
+			expect(mockX402EvmWalletUpdateMany).toHaveBeenCalledWith(
+				expect.objectContaining({
+					where: expect.objectContaining({ id: 'wallet-facilitator' }),
+					data: { lockedAt: expect.any(Date) },
+				}),
+			);
+			// Release: clear it, guarded on the token still being ours (compare-and-release).
+			expect(mockX402EvmWalletUpdateMany).toHaveBeenCalledWith(
+				expect.objectContaining({
+					where: expect.objectContaining({ id: 'wallet-facilitator', lockedAt: expect.any(Date) }),
+					data: { lockedAt: null },
+				}),
+			);
+			expect(mockFacilitatorSettle).toHaveBeenCalledTimes(1);
+		});
+
+		it('does not take a settle lock for a remote facilitator (it manages its own nonce)', async () => {
+			mockX402NetworkFindUnique.mockResolvedValue({
+				id: 'network-1',
+				caip2Id: source.network,
+				displayName: 'Base Sepolia',
+				rpcUrl: 'https://sepolia.base.org',
+				isEnabled: true,
+				facilitatorWalletId: null,
+				facilitatorUrl: 'https://facilitator.example',
+				facilitatorAuthEnc: null,
+				FacilitatorWallet: null,
+			});
+
+			await service.settleX402Payment({
+				apiKeyId: 'api-key-1',
+				caip2NetworkLimit: [source.network],
+				supportedPaymentSourceId: source.id,
+				paymentPayload: typedPaymentPayload,
+			});
+
+			expect(mockFacilitatorSettle).toHaveBeenCalledTimes(1);
+			expect(mockX402EvmWalletUpdateMany).not.toHaveBeenCalled();
 		});
 	});
 });

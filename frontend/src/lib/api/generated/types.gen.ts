@@ -2361,13 +2361,17 @@ export type X402Network = {
      */
     defaultAsset: string | null;
     /**
-     * Id of the managed EVM wallet used to settle payments on this chain
+     * Id of the managed EVM wallet used to settle payments on this chain (self-hosted facilitator)
      */
     facilitatorWalletId: string | null;
     /**
-     * Resolved address of the facilitator wallet. Null when no facilitator is set.
+     * Resolved address of the facilitator wallet. Null when no self-hosted facilitator is set.
      */
     facilitatorWalletAddress: string | null;
+    /**
+     * URL of a remote x402 facilitator used to settle payments on this chain (no owned wallet needed)
+     */
+    facilitatorUrl: string | null;
     /**
      * Id of the API key that created this chain configuration
      */
@@ -2381,6 +2385,14 @@ export type X402Wallet = {
      * Unique identifier of the managed EVM wallet
      */
     id: string;
+    /**
+     * Id of the x402 network (payment source) this wallet is bound to
+     */
+    networkId: string;
+    /**
+     * CAIP-2 chain id of the network this wallet is bound to
+     */
+    caip2Network: string;
     /**
      * The EVM address derived from the wallet private key
      */
@@ -2459,7 +2471,10 @@ export type X402PaymentAttempt = {
      * Payment amount in token base units
      */
     amount: string;
-    payTo: string;
+    /**
+     * Payee address. Null for inbound attempts with no linked registered payment source.
+     */
+    payTo: string | null;
     payer: string | null;
     resource: string | null;
     paymentIdentifier: string | null;
@@ -10531,7 +10546,18 @@ export type PostX402NetworksData = {
         isTestnet?: boolean;
         isEnabled?: boolean;
         defaultAsset?: string | null;
+        /**
+         * Self-hosted facilitator: owned Selling wallet id
+         */
         facilitatorWalletId?: string | null;
+        /**
+         * Remote facilitator: HTTP(S) endpoint
+         */
+        facilitatorUrl?: string | null;
+        /**
+         * Optional Authorization header value for the remote facilitator; stored encrypted at rest
+         */
+        facilitatorAuth?: string | null;
     };
     path?: never;
     query?: never;
@@ -10566,6 +10592,10 @@ export type GetX402WalletsData = {
          * Filter wallets by direction (Purchasing or Selling)
          */
         type?: 'Purchasing' | 'Selling';
+        /**
+         * Filter wallets by the bound x402 network id
+         */
+        networkId?: string;
     };
     url: '/x402/wallets';
 };
@@ -10589,6 +10619,10 @@ export type PostX402WalletsData = {
      * Optional private key to import
      */
     body?: {
+        /**
+         * Id of the x402 network (payment source) to bind this wallet to
+         */
+        networkId: string;
         /**
          * Purchasing wallets fund outbound payments; Selling wallets settle inbound ones as facilitators
          */
@@ -10618,6 +10652,30 @@ export type PostX402WalletsResponses = {
 };
 
 export type PostX402WalletsResponse = PostX402WalletsResponses[keyof PostX402WalletsResponses];
+
+export type GetX402WalletsDetailData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Id of the managed EVM wallet to fetch
+         */
+        id: string;
+    };
+    url: '/x402/wallets/detail';
+};
+
+export type GetX402WalletsDetailResponses = {
+    /**
+     * Managed x402 EVM wallet
+     */
+    200: {
+        status: 'success';
+        data: X402Wallet;
+    };
+};
+
+export type GetX402WalletsDetailResponse = GetX402WalletsDetailResponses[keyof GetX402WalletsDetailResponses];
 
 export type PostX402WalletsDeleteData = {
     /**
@@ -10965,6 +11023,44 @@ export type GetX402PaymentsResponses = {
 };
 
 export type GetX402PaymentsResponse = GetX402PaymentsResponses[keyof GetX402PaymentsResponses];
+
+export type PostX402PaymentsReconcileData = {
+    /**
+     * The attempt to reconcile and the operator-confirmed outcome
+     */
+    body?: {
+        /**
+         * Id of the InboundSettle attempt awaiting reconciliation
+         */
+        attemptId: string;
+        /**
+         * Operator's on-chain finding: 'settled' if funds moved (provide txHash), 'failed' if they did not (safe to retry).
+         */
+        resolution: 'settled' | 'failed';
+        /**
+         * On-chain settlement transaction hash; required when resolution is settled
+         */
+        txHash?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/x402/payments/reconcile';
+};
+
+export type PostX402PaymentsReconcileResponses = {
+    /**
+     * Reconciliation result
+     */
+    200: {
+        status: 'success';
+        data: {
+            attemptId: string;
+            status: 'PaymentRequired' | 'Verified' | 'Settled' | 'Failed' | 'Replayed';
+        };
+    };
+};
+
+export type PostX402PaymentsReconcileResponse = PostX402PaymentsReconcileResponses[keyof PostX402PaymentsReconcileResponses];
 
 export type GetX402SettlementsData = {
     body?: never;

@@ -12,14 +12,14 @@ describe('buildX402AttemptWhere', () => {
 		).toEqual({
 			status: X402PaymentStatus.Settled,
 			direction: X402PaymentDirection.InboundSettle,
-			caip2Network: 'eip155:8453',
+			// Network is filtered through the rail relation now that the attempt has no caip2Network column.
+			Network: { caip2Id: 'eip155:8453' },
 		});
 	});
 
 	it('selects Verified attempts with a recorded error when the manual-action filter is on', () => {
 		expect(buildX402AttemptWhere({ filterNeedsManualAction: true })).toEqual({
 			direction: undefined,
-			caip2Network: undefined,
 			status: X402PaymentStatus.Verified,
 			errorReason: { not: null },
 		});

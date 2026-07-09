@@ -4290,12 +4290,17 @@
                     "facilitatorWalletId": {
                         "type": "string",
                         "nullable": true,
-                        "description": "Id of the managed EVM wallet used to settle payments on this chain"
+                        "description": "Id of the managed EVM wallet used to settle payments on this chain (self-hosted facilitator)"
                     },
                     "facilitatorWalletAddress": {
                         "type": "string",
                         "nullable": true,
-                        "description": "Resolved address of the facilitator wallet. Null when no facilitator is set."
+                        "description": "Resolved address of the facilitator wallet. Null when no self-hosted facilitator is set."
+                    },
+                    "facilitatorUrl": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "URL of a remote x402 facilitator used to settle payments on this chain (no owned wallet needed)"
                     },
                     "createdById": {
                         "type": "string",
@@ -4321,6 +4326,7 @@
                     "defaultAsset",
                     "facilitatorWalletId",
                     "facilitatorWalletAddress",
+                    "facilitatorUrl",
                     "createdById",
                     "createdAt",
                     "updatedAt"
@@ -4332,6 +4338,15 @@
                     "id": {
                         "type": "string",
                         "description": "Unique identifier of the managed EVM wallet"
+                    },
+                    "networkId": {
+                        "type": "string",
+                        "description": "Id of the x402 network (payment source) this wallet is bound to"
+                    },
+                    "caip2Network": {
+                        "type": "string",
+                        "pattern": "^eip155:\\d+$",
+                        "description": "CAIP-2 chain id of the network this wallet is bound to"
                     },
                     "address": {
                         "type": "string",
@@ -4367,6 +4382,8 @@
                 },
                 "required": [
                     "id",
+                    "networkId",
+                    "caip2Network",
                     "address",
                     "type",
                     "note",
@@ -4516,7 +4533,9 @@
                         "description": "Payment amount in token base units"
                     },
                     "payTo": {
-                        "type": "string"
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Payee address. Null for inbound attempts with no linked registered payment source."
                     },
                     "payer": {
                         "type": "string",
@@ -24160,6 +24179,7 @@
                                                     "defaultAsset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
                                                     "facilitatorWalletId": "clmanagedwallet0002",
                                                     "facilitatorWalletAddress": "0x5555555555555555555555555555555555555555",
+                                                    "facilitatorUrl": null,
                                                     "createdById": "api_key_id",
                                                     "createdAt": "2026-06-02T12:00:00.000Z",
                                                     "updatedAt": "2026-06-02T12:00:00.000Z"
@@ -24217,7 +24237,19 @@
                                     },
                                     "facilitatorWalletId": {
                                         "type": "string",
-                                        "nullable": true
+                                        "nullable": true,
+                                        "description": "Self-hosted facilitator: owned Selling wallet id"
+                                    },
+                                    "facilitatorUrl": {
+                                        "type": "string",
+                                        "nullable": true,
+                                        "format": "uri",
+                                        "description": "Remote facilitator: HTTP(S) endpoint"
+                                    },
+                                    "facilitatorAuth": {
+                                        "type": "string",
+                                        "nullable": true,
+                                        "description": "Optional Authorization header value for the remote facilitator; stored encrypted at rest"
                                     }
                                 },
                                 "required": [
@@ -24272,6 +24304,7 @@
                                             "defaultAsset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
                                             "facilitatorWalletId": "clmanagedwallet0002",
                                             "facilitatorWalletAddress": "0x5555555555555555555555555555555555555555",
+                                            "facilitatorUrl": null,
                                             "createdById": "api_key_id",
                                             "createdAt": "2026-06-02T12:00:00.000Z",
                                             "updatedAt": "2026-06-02T12:00:00.000Z"
@@ -24334,6 +24367,16 @@
                         "description": "Filter wallets by direction (Purchasing or Selling)",
                         "name": "type",
                         "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Filter wallets by the bound x402 network id"
+                        },
+                        "required": false,
+                        "description": "Filter wallets by the bound x402 network id",
+                        "name": "networkId",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -24375,6 +24418,8 @@
                                             "Wallets": [
                                                 {
                                                     "id": "clmanagedwallet0001",
+                                                    "networkId": "clx402network0001",
+                                                    "caip2Network": "eip155:8453",
                                                     "address": "0x1111111111111111111111111111111111111111",
                                                     "type": "Purchasing",
                                                     "note": "Agent payout buyer wallet",
@@ -24384,6 +24429,8 @@
                                                 },
                                                 {
                                                     "id": "clmanagedwallet0002",
+                                                    "networkId": "clx402network0001",
+                                                    "caip2Network": "eip155:8453",
                                                     "address": "0x5555555555555555555555555555555555555555",
                                                     "type": "Selling",
                                                     "note": "Base facilitator",
@@ -24418,6 +24465,10 @@
                             "schema": {
                                 "type": "object",
                                 "properties": {
+                                    "networkId": {
+                                        "type": "string",
+                                        "description": "Id of the x402 network (payment source) to bind this wallet to"
+                                    },
                                     "type": {
                                         "type": "string",
                                         "enum": [
@@ -24438,6 +24489,7 @@
                                     }
                                 },
                                 "required": [
+                                    "networkId",
                                     "type"
                                 ],
                                 "example": {
@@ -24473,6 +24525,8 @@
                                         "status": "success",
                                         "data": {
                                             "id": "clmanagedwallet0001",
+                                            "networkId": "clx402network0001",
+                                            "caip2Network": "eip155:8453",
                                             "address": "0x1111111111111111111111111111111111111111",
                                             "type": "Purchasing",
                                             "note": "Agent payout buyer wallet",
@@ -24480,6 +24534,73 @@
                                             "createdAt": "2026-06-02T12:00:00.000Z",
                                             "updatedAt": "2026-06-02T12:00:00.000Z",
                                             "privateKey": "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/x402/wallets/detail": {
+            "get": {
+                "description": "Fetches a single managed EVM wallet by id, including the network it is bound to.",
+                "summary": "Get a managed x402 EVM wallet by id. (admin access required)",
+                "tags": [
+                    "x402"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Id of the managed EVM wallet to fetch"
+                        },
+                        "required": true,
+                        "description": "Id of the managed EVM wallet to fetch",
+                        "name": "id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Managed x402 EVM wallet",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/X402Wallet"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "id": "clmanagedwallet0001",
+                                            "networkId": "clx402network0001",
+                                            "caip2Network": "eip155:8453",
+                                            "address": "0x1111111111111111111111111111111111111111",
+                                            "type": "Purchasing",
+                                            "note": "Agent payout buyer wallet",
+                                            "createdById": "api_key_id",
+                                            "createdAt": "2026-06-02T12:00:00.000Z",
+                                            "updatedAt": "2026-06-02T12:00:00.000Z"
                                         }
                                     }
                                 }
@@ -25632,6 +25753,110 @@
                 }
             }
         },
+        "/x402/payments/reconcile": {
+            "post": {
+                "description": "Manually resolves an inbound settle left awaiting reconciliation (settle threw or the facilitator reported failure after the on-chain call). The operator confirms on-chain whether funds moved: \"settled\" records the settlement (txHash required), \"failed\" marks it Failed so a fresh settle can retry.",
+                "summary": "Reconcile an ambiguous x402 settlement. (admin access required)",
+                "tags": [
+                    "x402"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "The attempt to reconcile and the operator-confirmed outcome",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "attemptId": {
+                                        "type": "string",
+                                        "description": "Id of the InboundSettle attempt awaiting reconciliation"
+                                    },
+                                    "resolution": {
+                                        "type": "string",
+                                        "enum": [
+                                            "settled",
+                                            "failed"
+                                        ],
+                                        "description": "Operator's on-chain finding: 'settled' if funds moved (provide txHash), 'failed' if they did not (safe to retry)."
+                                    },
+                                    "txHash": {
+                                        "type": "string",
+                                        "description": "On-chain settlement transaction hash; required when resolution is settled"
+                                    }
+                                },
+                                "required": [
+                                    "attemptId",
+                                    "resolution"
+                                ],
+                                "example": {
+                                    "attemptId": "clx402attempt0001",
+                                    "resolution": "settled",
+                                    "txHash": "0x4242424242424242424242424242424242424242424242424242424242424242"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Reconciliation result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "attemptId": {
+                                                    "type": "string"
+                                                },
+                                                "status": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "PaymentRequired",
+                                                        "Verified",
+                                                        "Settled",
+                                                        "Failed",
+                                                        "Replayed"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "attemptId",
+                                                "status"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "attemptId": "clx402attempt0001",
+                                            "status": "Settled"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/x402/settlements": {
             "get": {
                 "description": "Lists x402 on-chain settlements, newest first.",
@@ -25807,6 +26032,8 @@
                                         "status": "success",
                                         "data": {
                                             "id": "clmanagedwallet0001",
+                                            "networkId": "clx402network0001",
+                                            "caip2Network": "eip155:8453",
                                             "address": "0x1111111111111111111111111111111111111111",
                                             "type": "Purchasing",
                                             "note": "Agent payout buyer wallet",

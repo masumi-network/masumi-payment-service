@@ -97,9 +97,11 @@ import {
 	listX402BudgetsGet,
 	listX402LowBalanceRulesGet,
 	listX402NetworksGet,
+	getX402WalletGet,
 	listX402PaymentAttemptsGet,
 	listX402SettlementsGet,
 	listX402WalletsGet,
+	reconcileX402PaymentPost,
 	setX402BudgetPost,
 	setX402LowBalanceRulePost,
 	settleX402Post,
@@ -296,6 +298,9 @@ export const apiRouter: Routing = {
 			wallets: {
 				get: listX402WalletsGet,
 				post: createX402WalletPost,
+				detail: {
+					get: getX402WalletGet,
+				},
 				update: {
 					post: updateX402WalletPost,
 				},
@@ -327,6 +332,9 @@ export const apiRouter: Routing = {
 				get: listX402PaymentAttemptsGet,
 				count: {
 					get: x402PaymentAttemptsCountGet,
+				},
+				reconcile: {
+					post: reconcileX402PaymentPost,
 				},
 			},
 			settlements: {

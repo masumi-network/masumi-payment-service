@@ -34,10 +34,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { useX402WalletsPaginated } from '@/lib/hooks/useX402';
+import { useX402Networks, useX402WalletsPaginated } from '@/lib/hooks/useX402';
 import { cn, copyToClipboard, shortenAddress } from '@/lib/utils';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import { extractApiPayload } from '@/lib/api-response';
@@ -285,6 +292,9 @@ export function CreateWalletDialog({
   defaultType?: WalletType;
 }) {
   const { apiClient } = useAppContext();
+  // A managed wallet is bound to exactly one x402 network (payment source).
+  const { networks, isLoading: networksLoading } = useX402Networks();
+  const [networkId, setNetworkId] = useState('');
   const [type, setType] = useState<WalletType>(defaultType);
   const [keySource, setKeySource] = useState<KeySource>('generate');
   const [privateKey, setPrivateKey] = useState('');
@@ -301,6 +311,10 @@ export function CreateWalletDialog({
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!networkId) {
+      setError('Select the network this wallet operates on');
+      return;
+    }
     const trimmed = privateKey.trim();
     if (keySource === 'import' && !PRIVATE_KEY_REGEX.test(trimmed)) {
       setError('Private key must be a 0x-prefixed 32-byte hex string');
@@ -308,7 +322,9 @@ export function CreateWalletDialog({
     }
     setError(null);
     const response = await createWallet
-      .mutateAsync(keySource === 'import' ? { type, privateKey: trimmed } : { type })
+      .mutateAsync(
+        keySource === 'import' ? { networkId, type, privateKey: trimmed } : { networkId, type },
+      )
       .catch(() => null);
     if (!response) return;
 
@@ -358,6 +374,27 @@ export function CreateWalletDialog({
                 server.
               </DialogDescription>
             </DialogHeader>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Network</Label>
+              <Select value={networkId} onValueChange={setNetworkId} disabled={networksLoading}>
+                <SelectTrigger aria-label="Network">
+                  <SelectValue
+                    placeholder={networksLoading ? 'Loading networks…' : 'Select a network'}
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {networks.map((network) => (
+                    <SelectItem key={network.id} value={network.id}>
+                      {network.displayName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs leading-snug text-muted-foreground">
+                The wallet is bound to this payment source and can only transact on its chain.
+              </p>
+            </div>
 
             <div className="space-y-2">
               <Label className="text-sm font-medium">Direction</Label>

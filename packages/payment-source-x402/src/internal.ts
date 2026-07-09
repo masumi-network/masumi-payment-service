@@ -1,5 +1,5 @@
 import createHttpError from 'http-errors';
-import { X402EvmWalletType, prisma } from '@masumi/payment-core/db';
+import { Prisma, X402CounterpartyRole, X402EvmWalletType, prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { defineChain, http } from 'viem';
 
@@ -162,7 +162,10 @@ export async function getX402NetworkOrThrow(caip2Network: string) {
 	const network = await prisma.x402Network.findUnique({
 		where: { caip2Id: caip2Network },
 		include: {
-			FacilitatorWallet: true,
+			// The facilitator's Secret is needed to build a local settlement signer; loading it
+			// here keeps getFacilitatorForNetwork to a single query. Remote-facilitator networks
+			// have no FacilitatorWallet and rely on facilitatorUrl instead.
+			FacilitatorWallet: { include: { Secret: true } },
 		},
 	});
 	if (network == null || !network.isEnabled) {
@@ -171,13 +174,7 @@ export async function getX402NetworkOrThrow(caip2Network: string) {
 	return network;
 }
 
-export async function getManagedWalletOrThrow(evmWalletId: string, expectedType?: X402EvmWalletType) {
-	const wallet = await prisma.x402EvmWallet.findUnique({
-		where: { id: evmWalletId, deletedAt: null },
-	});
-	if (wallet == null) {
-		throw createHttpError(404, 'Managed EVM wallet not found');
-	}
+function assertWalletType(wallet: { type: X402EvmWalletType }, expectedType?: X402EvmWalletType) {
 	// Enforce the direction split: a Purchasing wallet may only fund outbound payments
 	// and a Selling wallet may only settle inbound ones, so reject a wallet used for the
 	// wrong side rather than letting it sign on a side it was not provisioned for.
@@ -189,5 +186,50 @@ export async function getManagedWalletOrThrow(evmWalletId: string, expectedType?
 				: 'Managed EVM wallet is not a Selling wallet',
 		);
 	}
+}
+
+export async function getManagedWalletOrThrow(evmWalletId: string, expectedType?: X402EvmWalletType) {
+	const wallet = await prisma.x402EvmWallet.findUnique({
+		where: { id: evmWalletId, deletedAt: null },
+	});
+	if (wallet == null) {
+		throw createHttpError(404, 'Managed EVM wallet not found');
+	}
+	assertWalletType(wallet, expectedType);
 	return wallet;
+}
+
+// Load a managed wallet together with its encrypted key (Secret) and bound Network, for the
+// signing/settling paths that must decrypt the key and pin the chain. Kept separate from
+// getManagedWalletOrThrow so validation-only callers never over-fetch the secret material.
+export async function getManagedWalletWithSecretOrThrow(evmWalletId: string, expectedType?: X402EvmWalletType) {
+	const wallet = await prisma.x402EvmWallet.findUnique({
+		where: { id: evmWalletId, deletedAt: null },
+		include: { Secret: true, Network: true },
+	});
+	if (wallet == null) {
+		throw createHttpError(404, 'Managed EVM wallet not found');
+	}
+	assertWalletType(wallet, expectedType);
+	return wallet;
+}
+
+// Resolve (idempotently) the counterparty entity for an attempt and return its id. The
+// address is normalized so the same on-chain party dedupes to one row per (chain, role).
+// Returns null for a missing/empty address (e.g. an inbound payer not yet reported).
+export async function upsertCounterpartyWalletId(
+	client: Prisma.TransactionClient | typeof prisma,
+	input: { caip2Network: string; address: string | null | undefined; role: X402CounterpartyRole },
+): Promise<string | null> {
+	if (input.address == null || input.address === '') return null;
+	const address = normalizeAddress(input.address);
+	const counterparty = await client.x402CounterpartyWallet.upsert({
+		where: {
+			caip2Network_address_role: { caip2Network: input.caip2Network, address, role: input.role },
+		},
+		create: { caip2Network: input.caip2Network, address, role: input.role },
+		update: {},
+		select: { id: true },
+	});
+	return counterparty.id;
 }

@@ -13,6 +13,10 @@ export async function countX402PaymentAttempts(input?: X402AttemptFilterInput) {
 
 export async function countX402Settlements(input?: { caip2Network?: string; success?: boolean }) {
 	return prisma.x402Settlement.count({
-		where: { caip2Network: input?.caip2Network, success: input?.success },
+		// Network is now carried by the linked attempt's rail, not a settlement column.
+		where: {
+			success: input?.success,
+			PaymentAttempt: input?.caip2Network != null ? { Network: { caip2Id: input.caip2Network } } : undefined,
+		},
 	});
 }

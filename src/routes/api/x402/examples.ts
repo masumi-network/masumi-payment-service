@@ -24,6 +24,8 @@ const examplePayer = '0x3333333333333333333333333333333333333333';
 
 export const x402WalletExample = {
 	id: 'clmanagedwallet0001',
+	networkId: 'clx402network0001',
+	caip2Network: 'eip155:8453',
 	address: '0x1111111111111111111111111111111111111111',
 	type: X402EvmWalletType.Purchasing,
 	note: 'Agent payout buyer wallet',
@@ -36,6 +38,8 @@ export const x402WalletExample = {
 // one rather than the Purchasing wallet above.
 export const x402FacilitatorWalletExample = {
 	id: 'clmanagedwallet0002',
+	networkId: 'clx402network0001',
+	caip2Network: 'eip155:8453',
 	address: '0x5555555555555555555555555555555555555555',
 	type: X402EvmWalletType.Selling,
 	note: 'Base facilitator',
@@ -54,6 +58,7 @@ export const x402NetworkExample = {
 	defaultAsset: exampleUsdcAsset,
 	facilitatorWalletId: x402FacilitatorWalletExample.id,
 	facilitatorWalletAddress: x402FacilitatorWalletExample.address,
+	facilitatorUrl: null,
 	createdById: 'api_key_id',
 	createdAt: exampleDate,
 	updatedAt: exampleDate,

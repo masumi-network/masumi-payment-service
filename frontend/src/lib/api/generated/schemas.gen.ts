@@ -4292,12 +4292,17 @@ export const X402NetworkSchema = {
         facilitatorWalletId: {
             type: 'string',
             nullable: true,
-            description: 'Id of the managed EVM wallet used to settle payments on this chain'
+            description: 'Id of the managed EVM wallet used to settle payments on this chain (self-hosted facilitator)'
         },
         facilitatorWalletAddress: {
             type: 'string',
             nullable: true,
-            description: 'Resolved address of the facilitator wallet. Null when no facilitator is set.'
+            description: 'Resolved address of the facilitator wallet. Null when no self-hosted facilitator is set.'
+        },
+        facilitatorUrl: {
+            type: 'string',
+            nullable: true,
+            description: 'URL of a remote x402 facilitator used to settle payments on this chain (no owned wallet needed)'
         },
         createdById: {
             type: 'string',
@@ -4323,6 +4328,7 @@ export const X402NetworkSchema = {
         'defaultAsset',
         'facilitatorWalletId',
         'facilitatorWalletAddress',
+        'facilitatorUrl',
         'createdById',
         'createdAt',
         'updatedAt'
@@ -4335,6 +4341,15 @@ export const X402WalletSchema = {
         id: {
             type: 'string',
             description: 'Unique identifier of the managed EVM wallet'
+        },
+        networkId: {
+            type: 'string',
+            description: 'Id of the x402 network (payment source) this wallet is bound to'
+        },
+        caip2Network: {
+            type: 'string',
+            pattern: '^eip155:\\d+$',
+            description: 'CAIP-2 chain id of the network this wallet is bound to'
         },
         address: {
             type: 'string',
@@ -4370,6 +4385,8 @@ export const X402WalletSchema = {
     },
     required: [
         'id',
+        'networkId',
+        'caip2Network',
         'address',
         'type',
         'note',
@@ -4522,7 +4539,9 @@ export const X402PaymentAttemptSchema = {
             description: 'Payment amount in token base units'
         },
         payTo: {
-            type: 'string'
+            type: 'string',
+            nullable: true,
+            description: 'Payee address. Null for inbound attempts with no linked registered payment source.'
         },
         payer: {
             type: 'string',

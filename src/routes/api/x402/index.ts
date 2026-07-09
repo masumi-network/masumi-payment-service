@@ -14,6 +14,7 @@ import {
 	deleteX402LowBalanceRule,
 	deleteX402ManagedWallet,
 	getX402Analytics,
+	getX402ManagedWallet,
 	getX402WalletBalances,
 	listX402LowBalanceRules,
 	listX402ManagedWallets,
@@ -22,6 +23,7 @@ import {
 	listX402Settlements,
 	listX402WalletBudgets,
 	setX402LowBalanceRule,
+	reconcileX402PaymentAttempt,
 	setX402WalletBudget,
 	settleX402Payment,
 	updateX402LowBalanceRule,
@@ -56,6 +58,8 @@ import {
 	listWalletsSchemaOutput,
 	lowBalanceRuleSchema,
 	paymentAttemptsCountSchemaInput,
+	reconcilePaymentSchemaInput,
+	reconcilePaymentSchemaOutput,
 	setBudgetSchemaInput,
 	setLowBalanceRuleSchemaInput,
 	settleSchemaOutput,
@@ -67,6 +71,7 @@ import {
 	verifySettleSchemaInput,
 	walletBalanceSchemaInput,
 	walletBalanceSchemaOutput,
+	walletDetailSchemaInput,
 	walletSchemaOutput,
 	walletsCountSchemaInput,
 	x402NetworkSchema,
@@ -189,10 +194,18 @@ export const createX402WalletPost = adminAuthenticatedEndpointFactory.build({
 	handler: async ({ input, ctx }: { input: z.infer<typeof createWalletSchemaInput>; ctx: AuthContext }) =>
 		createX402ManagedWallet({
 			createdByApiKeyId: ctx.id,
+			networkId: input.networkId,
 			type: input.type,
 			note: input.note,
 			privateKey: input.privateKey,
 		}),
+});
+
+export const getX402WalletGet = adminAuthenticatedEndpointFactory.build({
+	method: 'get',
+	input: walletDetailSchemaInput,
+	output: walletSchemaOutput,
+	handler: async ({ input }: { input: z.infer<typeof walletDetailSchemaInput> }) => getX402ManagedWallet(input.id),
 });
 
 export const updateX402WalletPost = adminAuthenticatedEndpointFactory.build({
@@ -268,6 +281,14 @@ export const listX402PaymentAttemptsGet = adminAuthenticatedEndpointFactory.buil
 	handler: async ({ input }: { input: z.infer<typeof listPaymentAttemptsSchemaInput> }) => ({
 		PaymentAttempts: (await listX402PaymentAttempts(input)).map(serializePaymentAttempt),
 	}),
+});
+
+export const reconcileX402PaymentPost = adminAuthenticatedEndpointFactory.build({
+	method: 'post',
+	input: reconcilePaymentSchemaInput,
+	output: reconcilePaymentSchemaOutput,
+	handler: async ({ input }: { input: z.infer<typeof reconcilePaymentSchemaInput> }) =>
+		reconcileX402PaymentAttempt(input),
 });
 
 export const listX402SettlementsGet = adminAuthenticatedEndpointFactory.build({
