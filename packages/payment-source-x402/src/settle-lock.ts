@@ -25,7 +25,10 @@ import { logger } from '@masumi/payment-core/logger';
 // A settle that legitimately runs longer than this is treated as impossible; a lock older than
 // this means the holder crashed mid-settle, so it may be stolen. Must exceed the slowest real
 // settle (broadcast + confirmation on a congested chain) to avoid stealing an ACTIVE lock.
-const STALE_MS = 300_000;
+// Exported because reconciliation reuses the bound: a pre-settle marker (or a settlement-less
+// Settled attempt) older than this cannot belong to a live settle either, so it is provably
+// stuck and safe to surface for manual resolution.
+export const SETTLE_STALE_MS = 300_000;
 // Max time a settle will queue behind others on the same facilitator before giving up (503).
 const MAX_WAIT_MS = 120_000;
 // Base poll interval; jitter is added so many waiters don't retry in lockstep (thundering herd).
@@ -39,7 +42,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 // Returns the timestamp token we wrote (used to release only our own hold), or null if not taken.
 async function tryAcquire(walletId: string): Promise<Date | null> {
 	const token = new Date();
-	const staleBefore = new Date(token.getTime() - STALE_MS);
+	const staleBefore = new Date(token.getTime() - SETTLE_STALE_MS);
 	const result = await prisma.x402EvmWallet.updateMany({
 		where: {
 			id: walletId,
@@ -51,7 +54,8 @@ async function tryAcquire(walletId: string): Promise<Date | null> {
 }
 
 // Release only if we still hold the lock (lockedAt still equals our token). If our settle overran
-// STALE_MS and another instance stole the lock, the token no longer matches and this is a no-op —
+// SETTLE_STALE_MS and another instance stole the lock, the token no longer matches and this is a
+// no-op —
 // so we never clear a lock the stealer now holds.
 async function releaseLock(walletId: string, token: Date): Promise<void> {
 	await prisma.x402EvmWallet.updateMany({
@@ -62,7 +66,7 @@ async function releaseLock(walletId: string, token: Date): Promise<void> {
 
 // Serialize `fn` per facilitator wallet across ALL instances. A null key means a REMOTE
 // facilitator, which manages its own nonce/queue server-side → no lock, `fn` runs immediately.
-// The lock auto-heals: a crashed holder's stale lock is stolen after STALE_MS.
+// The lock auto-heals: a crashed holder's stale lock is stolen after SETTLE_STALE_MS.
 export async function withFacilitatorSettleLock<T>(key: string | null, fn: () => Promise<T>): Promise<T> {
 	if (key == null) return fn();
 

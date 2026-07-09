@@ -1117,7 +1117,11 @@ describe('x402 service helpers', () => {
 			status: 'Verified',
 			errorReason: 'settle_threw',
 			paymentPayloadHash: 'hash-1',
+			updatedAt: new Date(),
+			Settlement: null,
 		};
+		// Older than SETTLE_STALE_MS (300s): no live settle can still hold a row this old.
+		const staleUpdatedAt = new Date(Date.now() - 600_000);
 
 		it('marks an ambiguous attempt Failed when the operator confirms funds did not move', async () => {
 			mockX402PaymentAttemptFindUnique.mockResolvedValueOnce(backlogAttempt);
@@ -1158,8 +1162,77 @@ describe('x402 service helpers', () => {
 		});
 
 		it('refuses to reconcile an attempt that is not awaiting reconciliation', async () => {
-			// Already Settled → not in the backlog.
-			mockX402PaymentAttemptFindUnique.mockResolvedValueOnce({ ...backlogAttempt, status: 'Settled' });
+			// Already Settled WITH its settlement row → fully resolved, not in the backlog.
+			mockX402PaymentAttemptFindUnique.mockResolvedValueOnce({
+				...backlogAttempt,
+				status: 'Settled',
+				errorReason: null,
+				Settlement: { id: 'settlement-1' },
+			});
+			await expect(
+				service.reconcileX402PaymentAttempt({ attemptId: 'attempt-stuck', resolution: 'failed' }),
+			).rejects.toMatchObject({ status: 409 });
+			expect(mockX402PaymentAttemptUpdate).not.toHaveBeenCalled();
+		});
+
+		it('reconciles an interrupted settle that left no error trace once it is stale', async () => {
+			// Process died mid-settle (or recording the outcome failed): Verified, NO errorReason.
+			// Reconcilable purely by age — the marker outlived every legitimate settle.
+			mockX402PaymentAttemptFindUnique.mockResolvedValueOnce({
+				...backlogAttempt,
+				errorReason: null,
+				updatedAt: staleUpdatedAt,
+			});
+
+			const result = await service.reconcileX402PaymentAttempt({ attemptId: 'attempt-stuck', resolution: 'failed' });
+
+			expect(result).toEqual({ attemptId: 'attempt-stuck', status: 'Failed' });
+		});
+
+		it('refuses to reconcile a trace-less Verified marker that may still be an in-flight settle', async () => {
+			// Fresh + no errorReason: the settle may be live right now; declaring an outcome here
+			// could race the real one, so age must gate it.
+			mockX402PaymentAttemptFindUnique.mockResolvedValueOnce({ ...backlogAttempt, errorReason: null });
+			await expect(
+				service.reconcileX402PaymentAttempt({ attemptId: 'attempt-stuck', resolution: 'failed' }),
+			).rejects.toMatchObject({ status: 409 });
+			expect(mockX402PaymentAttemptUpdate).not.toHaveBeenCalled();
+		});
+
+		it('records the lost settlement row for a stale Settled attempt missing one', async () => {
+			// Settle succeeded but persisting the settlement failed: buyer replays 409 until the
+			// row exists. Reconciling as settled recreates it (status update is a no-op).
+			mockX402PaymentAttemptFindUnique.mockResolvedValueOnce({
+				...backlogAttempt,
+				status: 'Settled',
+				errorReason: null,
+				updatedAt: staleUpdatedAt,
+			});
+
+			const result = await service.reconcileX402PaymentAttempt({
+				attemptId: 'attempt-stuck',
+				resolution: 'settled',
+				txHash: '0xtx',
+			});
+
+			expect(result).toEqual({ attemptId: 'attempt-stuck', status: 'Settled' });
+			expect(mockX402SettlementUpsert).toHaveBeenCalledWith(
+				expect.objectContaining({
+					where: { paymentPayloadHash: 'hash-1' },
+					create: expect.objectContaining({ paymentAttemptId: 'attempt-stuck', success: true, txHash: '0xtx' }),
+				}),
+			);
+		});
+
+		it('refuses to mark a stale settlement-less Settled attempt as failed', async () => {
+			// The facilitator already reported success — funds moved and the nonce is consumed, so
+			// Failed (which would invite a retry) can never be the right resolution here.
+			mockX402PaymentAttemptFindUnique.mockResolvedValueOnce({
+				...backlogAttempt,
+				status: 'Settled',
+				errorReason: null,
+				updatedAt: staleUpdatedAt,
+			});
 			await expect(
 				service.reconcileX402PaymentAttempt({ attemptId: 'attempt-stuck', resolution: 'failed' }),
 			).rejects.toMatchObject({ status: 409 });

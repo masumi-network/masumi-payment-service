@@ -292,7 +292,7 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 		method: 'post',
 		path: '/x402/payments/reconcile',
 		description:
-			'Manually resolves an inbound settle left awaiting reconciliation (settle threw or the facilitator reported failure after the on-chain call). The operator confirms on-chain whether funds moved: "settled" records the settlement (txHash required), "failed" marks it Failed so a fresh settle can retry.',
+			'Manually resolves an inbound settle left awaiting reconciliation: settle threw or the facilitator reported failure after the on-chain call, the settle was interrupted before recording any outcome (a Verified marker with no error, reconcilable once stale), or the settle succeeded but persisting the settlement record failed (a stale Settled attempt with no settlement record; only "settled" is accepted). The operator confirms on-chain whether funds moved: "settled" records the settlement (txHash required), "failed" marks it Failed so a fresh settle can retry.',
 		summary: 'Reconcile an ambiguous x402 settlement. (admin access required)',
 		tags: ['x402'],
 		security: [{ [apiKeyAuth.name]: [] }],

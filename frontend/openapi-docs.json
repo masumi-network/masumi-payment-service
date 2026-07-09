@@ -25670,10 +25670,10 @@
                                 "true",
                                 "false"
                             ],
-                            "description": "When true, only returns attempts that require manual reconciliation: settle failed or threw after verification, leaving the attempt Verified with a recorded error. Overrides the status filter."
+                            "description": "When true, only returns attempts that require manual reconciliation: a settle that failed, threw, or was interrupted without recording its outcome (a stale Verified marker, or a stale Settled attempt missing its settlement record). Overrides the status filter."
                         },
                         "required": false,
-                        "description": "When true, only returns attempts that require manual reconciliation: settle failed or threw after verification, leaving the attempt Verified with a recorded error. Overrides the status filter.",
+                        "description": "When true, only returns attempts that require manual reconciliation: a settle that failed, threw, or was interrupted without recording its outcome (a stale Verified marker, or a stale Settled attempt missing its settlement record). Overrides the status filter.",
                         "name": "filterNeedsManualAction",
                         "in": "query"
                     }
@@ -25755,7 +25755,7 @@
         },
         "/x402/payments/reconcile": {
             "post": {
-                "description": "Manually resolves an inbound settle left awaiting reconciliation (settle threw or the facilitator reported failure after the on-chain call). The operator confirms on-chain whether funds moved: \"settled\" records the settlement (txHash required), \"failed\" marks it Failed so a fresh settle can retry.",
+                "description": "Manually resolves an inbound settle left awaiting reconciliation: settle threw or the facilitator reported failure after the on-chain call, the settle was interrupted before recording any outcome (a Verified marker with no error, reconcilable once stale), or the settle succeeded but persisting the settlement record failed (a stale Settled attempt with no settlement record; only \"settled\" is accepted). The operator confirms on-chain whether funds moved: \"settled\" records the settlement (txHash required), \"failed\" marks it Failed so a fresh settle can retry.",
                 "summary": "Reconcile an ambiguous x402 settlement. (admin access required)",
                 "tags": [
                     "x402"
@@ -26745,10 +26745,10 @@
                                 "true",
                                 "false"
                             ],
-                            "description": "When true, only counts attempts that require manual reconciliation: settle failed or threw after verification, leaving the attempt Verified with a recorded error. Overrides the status filter."
+                            "description": "When true, only counts attempts that require manual reconciliation: a settle that failed, threw, or was interrupted without recording its outcome (a stale Verified marker, or a stale Settled attempt missing its settlement record). Overrides the status filter."
                         },
                         "required": false,
-                        "description": "When true, only counts attempts that require manual reconciliation: settle failed or threw after verification, leaving the attempt Verified with a recorded error. Overrides the status filter.",
+                        "description": "When true, only counts attempts that require manual reconciliation: a settle that failed, threw, or was interrupted without recording its outcome (a stale Verified marker, or a stale Settled attempt missing its settlement record). Overrides the status filter.",
                         "name": "filterNeedsManualAction",
                         "in": "query"
                     }

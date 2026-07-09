@@ -199,7 +199,7 @@ export const paymentAttemptsCountSchemaInput = z.object({
 	filterNeedsManualAction: booleanQuerySchema
 		.optional()
 		.describe(
-			'When true, only counts attempts that require manual reconciliation: settle failed or threw after verification, leaving the attempt Verified with a recorded error. Overrides the status filter.',
+			'When true, only counts attempts that require manual reconciliation: a settle that failed, threw, or was interrupted without recording its outcome (a stale Verified marker, or a stale Settled attempt missing its settlement record). Overrides the status filter.',
 		),
 });
 
@@ -478,7 +478,7 @@ export const listPaymentAttemptsSchemaInput = z.object({
 	filterNeedsManualAction: booleanQuerySchema
 		.optional()
 		.describe(
-			'When true, only returns attempts that require manual reconciliation: settle failed or threw after verification, leaving the attempt Verified with a recorded error. Overrides the status filter.',
+			'When true, only returns attempts that require manual reconciliation: a settle that failed, threw, or was interrupted without recording its outcome (a stale Verified marker, or a stale Settled attempt missing its settlement record). Overrides the status filter.',
 		),
 });
 

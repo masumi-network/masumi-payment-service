@@ -11003,7 +11003,7 @@ export type GetX402PaymentsData = {
          */
         caip2Network?: string;
         /**
-         * When true, only returns attempts that require manual reconciliation: settle failed or threw after verification, leaving the attempt Verified with a recorded error. Overrides the status filter.
+         * When true, only returns attempts that require manual reconciliation: a settle that failed, threw, or was interrupted without recording its outcome (a stale Verified marker, or a stale Settled attempt missing its settlement record). Overrides the status filter.
          */
         filterNeedsManualAction?: 'true' | 'false';
     };
@@ -11338,7 +11338,7 @@ export type GetX402PaymentsCountData = {
         direction?: 'InboundVerify' | 'InboundSettle' | 'OutboundPayment';
         caip2Network?: string;
         /**
-         * When true, only counts attempts that require manual reconciliation: settle failed or threw after verification, leaving the attempt Verified with a recorded error. Overrides the status filter.
+         * When true, only counts attempts that require manual reconciliation: a settle that failed, threw, or was interrupted without recording its outcome (a stale Verified marker, or a stale Settled attempt missing its settlement record). Overrides the status filter.
          */
         filterNeedsManualAction?: 'true' | 'false';
     };

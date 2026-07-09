@@ -1,5 +1,6 @@
 import { X402PaymentDirection, X402PaymentStatus } from '@masumi/payment-core/db';
 import { buildX402AttemptWhere } from './attempt-filters';
+import { SETTLE_STALE_MS } from './settle-lock';
 
 describe('buildX402AttemptWhere', () => {
 	it('passes plain filters through when the manual-action filter is off', () => {
@@ -17,20 +18,49 @@ describe('buildX402AttemptWhere', () => {
 		});
 	});
 
-	it('selects Verified attempts with a recorded error when the manual-action filter is on', () => {
-		expect(buildX402AttemptWhere({ filterNeedsManualAction: true })).toEqual({
+	it('selects the full reconciliation backlog when the manual-action filter is on', () => {
+		const before = Date.now();
+		const where = buildX402AttemptWhere({ filterNeedsManualAction: true });
+		const after = Date.now();
+
+		expect(where).toEqual({
 			direction: undefined,
-			status: X402PaymentStatus.Verified,
-			errorReason: { not: null },
+			OR: [
+				// Settle left an explicit error trace (threw / facilitator failure).
+				{ status: X402PaymentStatus.Verified, errorReason: { not: null } },
+				// Interrupted mid-settle: a stale trace-less pre-settle marker.
+				{
+					direction: X402PaymentDirection.InboundSettle,
+					status: X402PaymentStatus.Verified,
+					updatedAt: { lt: expect.any(Date) },
+				},
+				// Settle succeeded but the settlement row was never persisted.
+				{
+					direction: X402PaymentDirection.InboundSettle,
+					status: X402PaymentStatus.Settled,
+					Settlement: { is: null },
+					updatedAt: { lt: expect.any(Date) },
+				},
+			],
 		});
+
+		// The stuck bound is "now minus the settle stale window", so live in-flight settles
+		// (which are always younger than SETTLE_STALE_MS) never appear in the backlog.
+		const or = (where as { OR: Array<{ updatedAt?: { lt: Date } }> }).OR;
+		for (const branch of [or[1], or[2]]) {
+			const stuckBefore = branch.updatedAt!.lt.getTime();
+			expect(stuckBefore).toBeGreaterThanOrEqual(before - SETTLE_STALE_MS);
+			expect(stuckBefore).toBeLessThanOrEqual(after - SETTLE_STALE_MS);
+		}
 	});
 
 	it('overrides an explicit status filter when the manual-action filter is on', () => {
-		expect(
-			buildX402AttemptWhere({
-				status: X402PaymentStatus.Settled,
-				filterNeedsManualAction: true,
-			}),
-		).toEqual(expect.objectContaining({ status: X402PaymentStatus.Verified, errorReason: { not: null } }));
+		const where = buildX402AttemptWhere({
+			status: X402PaymentStatus.Settled,
+			filterNeedsManualAction: true,
+		});
+		// No top-level status: the backlog branches carry their own, so the explicit filter is ignored.
+		expect(where).not.toHaveProperty('status');
+		expect(where.OR?.[0]).toEqual({ status: X402PaymentStatus.Verified, errorReason: { not: null } });
 	});
 });
