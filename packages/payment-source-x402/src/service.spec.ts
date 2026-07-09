@@ -14,6 +14,8 @@ const mockX402EvmWalletUpdateMany = jest.fn() as jest.Mock<any>;
 const mockApiKeyFindUnique = jest.fn() as jest.Mock<any>;
 const mockX402EvmWalletCreate = jest.fn() as jest.Mock<any>;
 const mockCounterpartyUpsert = jest.fn() as jest.Mock<any>;
+const mockCounterpartyFindUniqueOrThrow = jest.fn() as jest.Mock<any>;
+const mockExecuteRaw = jest.fn() as jest.Mock<any>;
 const mockBudgetFindFirst = jest.fn() as jest.Mock<any>;
 
 // Minimal stand-in for Prisma's known-request error so the service's
@@ -124,7 +126,9 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 		},
 		x402CounterpartyWallet: {
 			upsert: mockCounterpartyUpsert,
+			findUniqueOrThrow: mockCounterpartyFindUniqueOrThrow,
 		},
+		$executeRaw: mockExecuteRaw,
 		x402WalletBudget: {
 			findFirst: mockBudgetFindFirst,
 			update: mockBudgetUpdate,
@@ -306,6 +310,9 @@ describe('x402 service helpers', () => {
 		// Settle lock acquire/release both go through updateMany (wallet.lockedAt); count:1 = ok.
 		mockX402EvmWalletUpdateMany.mockResolvedValue({ count: 1 });
 		mockCounterpartyUpsert.mockResolvedValue({ id: 'counterparty-1' });
+		// Counterparty resolution is now a native ON CONFLICT insert ($executeRaw) + id read-back.
+		mockExecuteRaw.mockResolvedValue(1);
+		mockCounterpartyFindUniqueOrThrow.mockResolvedValue({ id: 'counterparty-1' });
 		mockApiKeyFindUnique.mockResolvedValue({ id: 'api-key-1' });
 		mockX402EvmWalletCreate.mockResolvedValue({
 			id: 'wallet-new',
@@ -372,7 +379,9 @@ describe('x402 service helpers', () => {
 				},
 				x402CounterpartyWallet: {
 					upsert: mockCounterpartyUpsert,
+					findUniqueOrThrow: mockCounterpartyFindUniqueOrThrow,
 				},
+				$executeRaw: mockExecuteRaw,
 			});
 		});
 	});
@@ -1034,7 +1043,7 @@ describe('x402 service helpers', () => {
 				paymentPayload: typedPaymentPayload,
 			});
 
-			expect(mockCounterpartyUpsert).toHaveBeenCalledWith(
+			expect(mockCounterpartyFindUniqueOrThrow).toHaveBeenCalledWith(
 				expect.objectContaining({
 					where: {
 						caip2Network_address_role: {
@@ -1064,7 +1073,7 @@ describe('x402 service helpers', () => {
 				paymentRequired,
 			});
 
-			expect(mockCounterpartyUpsert).toHaveBeenCalledWith(
+			expect(mockCounterpartyFindUniqueOrThrow).toHaveBeenCalledWith(
 				expect.objectContaining({
 					where: {
 						caip2Network_address_role: {

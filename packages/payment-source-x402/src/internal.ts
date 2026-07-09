@@ -223,12 +223,20 @@ export async function upsertCounterpartyWalletId(
 ): Promise<string | null> {
 	if (input.address == null || input.address === '') return null;
 	const address = normalizeAddress(input.address);
-	const counterparty = await client.x402CounterpartyWallet.upsert({
+	// Prisma's `upsert` compiles to find-then-create under the pg driver adapter (not a native
+	// ON CONFLICT), so two concurrent first-inserts of the same counterparty lose the unique race
+	// with P2002 — which, when this runs inside a transaction (the outbound reserve path), aborts
+	// the whole tx and fails the payment. Use a native ON CONFLICT DO NOTHING so concurrent callers
+	// converge on one row with no error, then read the id back (it is guaranteed to exist).
+	await client.$executeRaw`
+		INSERT INTO "X402CounterpartyWallet" ("id", "updatedAt", "caip2Network", "address", "role")
+		VALUES (gen_random_uuid()::text, now(), ${input.caip2Network}, ${address}, ${input.role}::"X402CounterpartyRole")
+		ON CONFLICT ("caip2Network", "address", "role") DO NOTHING
+	`;
+	const counterparty = await client.x402CounterpartyWallet.findUniqueOrThrow({
 		where: {
 			caip2Network_address_role: { caip2Network: input.caip2Network, address, role: input.role },
 		},
-		create: { caip2Network: input.caip2Network, address, role: input.role },
-		update: {},
 		select: { id: true },
 	});
 	return counterparty.id;
