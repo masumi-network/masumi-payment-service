@@ -18,14 +18,18 @@ import {
 	getX402NetworkOrThrow,
 	safeHttpTransport,
 	type PrivateKey,
+	type X402OwnerScope,
 } from './internal';
 
 // Build a signing client for an outbound payment. The wallet is bound to exactly one payment
 // source, so we refuse to sign on any chain other than the one it was provisioned for — this
 // is the constraint that replaces the previous "any Purchasing wallet, any chain" free-for-all.
-export async function getClientForWallet(walletId: string, caip2Network: string) {
+// ownerScope enforces tenant isolation: a scoped (non-admin) caller may only sign with a wallet
+// it created. The built publicClient is returned so callers can reuse it (e.g. an on-chain
+// balance pre-check) without re-running the chain-id assertion.
+export async function getClientForWallet(walletId: string, caip2Network: string, ownerScope: X402OwnerScope = null) {
 	const [wallet, network] = await Promise.all([
-		getManagedWalletWithSecretOrThrow(walletId, X402EvmWalletType.Purchasing),
+		getManagedWalletWithSecretOrThrow(walletId, X402EvmWalletType.Purchasing, ownerScope),
 		getX402NetworkOrThrow(caip2Network),
 	]);
 	if (wallet.networkId !== network.id) {
@@ -53,6 +57,7 @@ export async function getClientForWallet(walletId: string, caip2Network: string)
 		network,
 		wallet,
 		payer: account.address,
+		publicClient,
 	};
 }
 

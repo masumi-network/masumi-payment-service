@@ -81,4 +81,14 @@ describe('buildX402AttemptWhere', () => {
 			direction: X402PaymentDirection.InboundSettle,
 		});
 	});
+
+	it('scopes to the initiating apiKeyId when provided (tenant isolation)', () => {
+		expect(buildX402AttemptWhere({ apiKeyId: 'api-key-1' })).toMatchObject({ apiKeyId: 'api-key-1' });
+	});
+
+	it('applies the apiKeyId scope to the manual-action backlog too', () => {
+		expect(buildX402AttemptWhere({ apiKeyId: 'api-key-1', filterNeedsManualAction: true })).toMatchObject({
+			apiKeyId: 'api-key-1',
+		});
+	});
 });

@@ -174,6 +174,24 @@ export async function getX402NetworkOrThrow(caip2Network: string) {
 	return network;
 }
 
+// Ownership scope for managed EVM wallets. A wallet is owned by the API key that created it
+// (createdById). A null scope is an admin/operator with access to every wallet; a string scope
+// restricts access to the wallets that key created. This is the tenant-isolation primitive that
+// lets a downgraded (pay-authenticated) key manage and spend only its own custodial wallets —
+// without it any key could address another tenant's node-custodied wallet and drain it.
+export type X402OwnerScope = string | null;
+
+export function buildOwnerScopeWhere(scope: X402OwnerScope): { createdById?: string } {
+	return scope == null ? {} : { createdById: scope };
+}
+
+export function assertWalletOwner(scope: X402OwnerScope, wallet: { createdById: string | null }) {
+	// 404 (not 403) so a scoped key cannot distinguish "exists but not yours" from "absent".
+	if (scope != null && wallet.createdById !== scope) {
+		throw createHttpError(404, 'Managed EVM wallet not found');
+	}
+}
+
 function assertWalletType(wallet: { type: X402EvmWalletType }, expectedType?: X402EvmWalletType) {
 	// Enforce the direction split: a Purchasing wallet may only fund outbound payments
 	// and a Selling wallet may only settle inbound ones, so reject a wallet used for the
@@ -188,13 +206,18 @@ function assertWalletType(wallet: { type: X402EvmWalletType }, expectedType?: X4
 	}
 }
 
-export async function getManagedWalletOrThrow(evmWalletId: string, expectedType?: X402EvmWalletType) {
+export async function getManagedWalletOrThrow(
+	evmWalletId: string,
+	expectedType?: X402EvmWalletType,
+	ownerScope: X402OwnerScope = null,
+) {
 	const wallet = await prisma.x402EvmWallet.findUnique({
 		where: { id: evmWalletId, deletedAt: null },
 	});
 	if (wallet == null) {
 		throw createHttpError(404, 'Managed EVM wallet not found');
 	}
+	assertWalletOwner(ownerScope, wallet);
 	assertWalletType(wallet, expectedType);
 	return wallet;
 }
@@ -202,7 +225,11 @@ export async function getManagedWalletOrThrow(evmWalletId: string, expectedType?
 // Load a managed wallet together with its encrypted key (Secret) and bound Network, for the
 // signing/settling paths that must decrypt the key and pin the chain. Kept separate from
 // getManagedWalletOrThrow so validation-only callers never over-fetch the secret material.
-export async function getManagedWalletWithSecretOrThrow(evmWalletId: string, expectedType?: X402EvmWalletType) {
+export async function getManagedWalletWithSecretOrThrow(
+	evmWalletId: string,
+	expectedType?: X402EvmWalletType,
+	ownerScope: X402OwnerScope = null,
+) {
 	const wallet = await prisma.x402EvmWallet.findUnique({
 		where: { id: evmWalletId, deletedAt: null },
 		include: { Secret: true, Network: true },
@@ -210,6 +237,7 @@ export async function getManagedWalletWithSecretOrThrow(evmWalletId: string, exp
 	if (wallet == null) {
 		throw createHttpError(404, 'Managed EVM wallet not found');
 	}
+	assertWalletOwner(ownerScope, wallet);
 	assertWalletType(wallet, expectedType);
 	return wallet;
 }

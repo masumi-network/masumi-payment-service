@@ -76,6 +76,8 @@ export async function listX402PaymentAttempts(input: {
 	side?: 'buy' | 'sell';
 	caip2Network?: string;
 	filterNeedsManualAction?: boolean;
+	// Tenant scope: restricts to attempts initiated by this API key (undefined = all).
+	apiKeyId?: string;
 }) {
 	const attempts = await prisma.x402PaymentAttempt.findMany({
 		where: buildX402AttemptWhere(input),
@@ -112,9 +114,20 @@ function mapSettlement(settlement: SettlementRow) {
 	};
 }
 
-export async function listX402Settlements(input: { take: number; cursorId?: string; caip2Network?: string }) {
+export async function listX402Settlements(input: {
+	take: number;
+	cursorId?: string;
+	caip2Network?: string;
+	// Tenant scope: restricts to settlements whose attempt was initiated by this API key.
+	apiKeyId?: string;
+}) {
+	// Network + tenant scope both live on the linked attempt, not a settlement column.
+	const paymentAttemptFilter: Prisma.X402PaymentAttemptWhereInput = {
+		...(input.apiKeyId != null ? { apiKeyId: input.apiKeyId } : {}),
+		...(input.caip2Network != null ? { Network: { caip2Id: input.caip2Network } } : {}),
+	};
 	const settlements = await prisma.x402Settlement.findMany({
-		where: input.caip2Network != null ? { PaymentAttempt: { Network: { caip2Id: input.caip2Network } } } : undefined,
+		where: Object.keys(paymentAttemptFilter).length > 0 ? { PaymentAttempt: paymentAttemptFilter } : undefined,
 		orderBy: { createdAt: 'desc' },
 		take: input.take,
 		cursor: input.cursorId ? { id: input.cursorId } : undefined,

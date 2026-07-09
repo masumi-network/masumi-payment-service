@@ -9,6 +9,9 @@ export type X402AttemptFilterInput = {
 	side?: 'buy' | 'sell';
 	caip2Network?: string;
 	filterNeedsManualAction?: boolean;
+	// Tenant scope: when set, restricts to attempts initiated by this API key (undefined = all,
+	// for an admin/operator). This is how a downgraded pay key sees only its own node history.
+	apiKeyId?: string;
 };
 
 // Resolve the direction filter: an explicit direction wins; otherwise a side maps to its group
@@ -50,6 +53,7 @@ export function buildX402AttemptWhere(input: X402AttemptFilterInput): Prisma.X40
 		const stuckBefore = new Date(Date.now() - SETTLE_STALE_MS);
 		return {
 			...networkFilter,
+			apiKeyId: input.apiKeyId,
 			direction: resolveDirectionFilter(input),
 			OR: [
 				{ status: X402PaymentStatus.Verified, errorReason: { not: null } },
@@ -69,6 +73,7 @@ export function buildX402AttemptWhere(input: X402AttemptFilterInput): Prisma.X40
 	}
 	return {
 		...networkFilter,
+		apiKeyId: input.apiKeyId,
 		status: input.status,
 		direction: resolveDirectionFilter(input),
 	};

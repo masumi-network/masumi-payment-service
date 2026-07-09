@@ -9,6 +9,7 @@ import {
 	normalizeAddress,
 	safeHttpTransport,
 } from './internal';
+import type { X402OwnerScope } from './internal';
 import { getX402ManagedWallet } from './wallets';
 
 // Minimal ERC-20 read surface — balance plus display metadata.
@@ -96,8 +97,9 @@ async function readErc20Balance(
 export async function getX402WalletBalances(input: {
 	evmWalletId: string;
 	caip2Network?: string;
+	ownerScope?: X402OwnerScope;
 }): Promise<{ evmWalletId: string; address: string; Balances: X402NetworkBalance[] }> {
-	const wallet = await getX402ManagedWallet(input.evmWalletId);
+	const wallet = await getX402ManagedWallet(input.evmWalletId, input.ownerScope ?? null);
 	const owner = wallet.address as HexAddress;
 
 	// A managed wallet is bound to exactly one payment source, so its balance is read on that

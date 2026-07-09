@@ -1277,7 +1277,7 @@ export const postX402Networks = <ThrowOnError extends boolean = false>(options?:
 });
 
 /**
- * List managed x402 EVM wallets. (admin access required)
+ * List managed x402 EVM wallets. (pay access required; non-admin keys see only their own)
  *
  * Lists the managed EVM wallets used to fund x402 payments and settle inbound payments.
  */
@@ -1290,7 +1290,7 @@ export const getX402Wallets = <ThrowOnError extends boolean = false>(options?: O
 });
 
 /**
- * Create a managed x402 EVM wallet. (admin access required)
+ * Create a managed x402 EVM wallet. (pay access required; owned by the creating key)
  *
  * Creates a managed EVM wallet. A new private key is generated when none is supplied; the key is stored encrypted and never returned.
  */
@@ -1307,7 +1307,7 @@ export const postX402Wallets = <ThrowOnError extends boolean = false>(options?: 
 });
 
 /**
- * Get a managed x402 EVM wallet by id. (admin access required)
+ * Get a managed x402 EVM wallet by id. (pay access required; non-admin keys only their own)
  *
  * Fetches a single managed EVM wallet by id, including the network it is bound to.
  */
@@ -1320,7 +1320,7 @@ export const getX402WalletsDetail = <ThrowOnError extends boolean = false>(optio
 });
 
 /**
- * Retire a managed x402 EVM wallet. (admin access required)
+ * Retire a managed x402 EVM wallet. (pay access required; non-admin keys only their own)
  *
  * Retires a managed EVM wallet: soft-deletes it, disables its budgets, and detaches it from any chain it facilitates so a compromised key can no longer sign or settle.
  */
@@ -1414,7 +1414,7 @@ export const postX402Pay = <ThrowOnError extends boolean = false>(options?: Opti
 });
 
 /**
- * List x402 payment attempts. (admin access required)
+ * List x402 payment attempts. (pay access required; non-admin keys see only their own)
  *
  * Lists x402 payment attempts (inbound verify/settle and outbound payments), newest first, with their settlement result.
  */
@@ -1443,7 +1443,7 @@ export const postX402PaymentsReconcile = <ThrowOnError extends boolean = false>(
 });
 
 /**
- * List x402 settlements. (admin access required)
+ * List x402 settlements. (pay access required; non-admin keys see only their own)
  *
  * Lists x402 on-chain settlements, newest first.
  */
@@ -1456,7 +1456,7 @@ export const getX402Settlements = <ThrowOnError extends boolean = false>(options
 });
 
 /**
- * Update a managed x402 EVM wallet. (admin access required)
+ * Update a managed x402 EVM wallet. (pay access required; non-admin keys only their own)
  *
  * Updates the human-readable note of a managed EVM wallet.
  */
@@ -1473,7 +1473,7 @@ export const postX402WalletsUpdate = <ThrowOnError extends boolean = false>(opti
 });
 
 /**
- * Read managed x402 wallet balances. (admin access required)
+ * Read managed x402 wallet balances. (pay access required; non-admin keys only their own)
  *
  * Reads on-chain balances (native gas plus the default token) of a managed EVM wallet across the enabled chains, or a single chain.
  */
@@ -1485,7 +1485,7 @@ export const getX402WalletsBalance = <ThrowOnError extends boolean = false>(opti
 });
 
 /**
- * Count managed x402 wallets. (admin access required)
+ * Count managed x402 wallets. (pay access required; non-admin keys count only their own)
  *
  * Counts active managed EVM wallets, optionally filtered by direction.
  */
@@ -1561,7 +1561,7 @@ export const postX402LowBalance = <ThrowOnError extends boolean = false>(options
 });
 
 /**
- * Count x402 payment attempts. (admin access required)
+ * Count x402 payment attempts. (pay access required; non-admin keys count only their own)
  *
  * Counts x402 payment attempts, optionally filtered by status, direction and chain.
  */
@@ -1573,7 +1573,7 @@ export const getX402PaymentsCount = <ThrowOnError extends boolean = false>(optio
 });
 
 /**
- * Count x402 settlements. (admin access required)
+ * Count x402 settlements. (pay access required; non-admin keys count only their own)
  *
  * Counts x402 settlements, optionally filtered by chain and success.
  */

@@ -95,7 +95,7 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 		method: 'get',
 		path: '/x402/wallets',
 		description: 'Lists the managed EVM wallets used to fund x402 payments and settle inbound payments.',
-		summary: 'List managed x402 EVM wallets. (admin access required)',
+		summary: 'List managed x402 EVM wallets. (pay access required; non-admin keys see only their own)',
 		tags: ['x402'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {
@@ -111,7 +111,7 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 		path: '/x402/wallets',
 		description:
 			'Creates a managed EVM wallet. A new private key is generated when none is supplied; the key is stored encrypted and never returned.',
-		summary: 'Create a managed x402 EVM wallet. (admin access required)',
+		summary: 'Create a managed x402 EVM wallet. (pay access required; owned by the creating key)',
 		tags: ['x402'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {
@@ -133,7 +133,7 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 		method: 'get',
 		path: '/x402/wallets/detail',
 		description: 'Fetches a single managed EVM wallet by id, including the network it is bound to.',
-		summary: 'Get a managed x402 EVM wallet by id. (admin access required)',
+		summary: 'Get a managed x402 EVM wallet by id. (pay access required; non-admin keys only their own)',
 		tags: ['x402'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {
@@ -149,7 +149,7 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 		path: '/x402/wallets/delete',
 		description:
 			'Retires a managed EVM wallet: soft-deletes it, disables its budgets, and detaches it from any chain it facilitates so a compromised key can no longer sign or settle.',
-		summary: 'Retire a managed x402 EVM wallet. (admin access required)',
+		summary: 'Retire a managed x402 EVM wallet. (pay access required; non-admin keys only their own)',
 		tags: ['x402'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {
@@ -273,7 +273,7 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 		path: '/x402/payments',
 		description:
 			'Lists x402 payment attempts (inbound verify/settle and outbound payments), newest first, with their settlement result.',
-		summary: 'List x402 payment attempts. (admin access required)',
+		summary: 'List x402 payment attempts. (pay access required; non-admin keys see only their own)',
 		tags: ['x402'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {
@@ -324,7 +324,7 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 		method: 'get',
 		path: '/x402/settlements',
 		description: 'Lists x402 on-chain settlements, newest first.',
-		summary: 'List x402 settlements. (admin access required)',
+		summary: 'List x402 settlements. (pay access required; non-admin keys see only their own)',
 		tags: ['x402'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {

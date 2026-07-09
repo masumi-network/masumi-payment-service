@@ -2,7 +2,7 @@ import createHttpError from 'http-errors';
 import { Prisma, X402EvmWalletType, prisma } from '@masumi/payment-core/db';
 import { encrypt } from '@masumi/payment-core/encryption';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
-import { assertValidPrivateKey } from './internal';
+import { assertValidPrivateKey, assertWalletOwner, buildOwnerScopeWhere, type X402OwnerScope } from './internal';
 
 // The non-secret projection returned to the dashboard for every managed wallet. The
 // encrypted private key is never part of this set; the plaintext key is only ever
@@ -98,9 +98,15 @@ export async function listX402ManagedWallets(input?: {
 	cursorId?: string;
 	type?: X402EvmWalletType;
 	networkId?: string;
+	ownerScope?: X402OwnerScope;
 }) {
 	const wallets = await prisma.x402EvmWallet.findMany({
-		where: { deletedAt: null, type: input?.type, networkId: input?.networkId },
+		where: {
+			deletedAt: null,
+			type: input?.type,
+			networkId: input?.networkId,
+			...buildOwnerScopeWhere(input?.ownerScope ?? null),
+		},
 		orderBy: { createdAt: 'desc' },
 		take: input?.take,
 		cursor: input?.cursorId ? { id: input.cursorId } : undefined,
@@ -109,7 +115,7 @@ export async function listX402ManagedWallets(input?: {
 	return wallets.map(flattenWallet);
 }
 
-export async function getX402ManagedWallet(evmWalletId: string) {
+export async function getX402ManagedWallet(evmWalletId: string, ownerScope: X402OwnerScope = null) {
 	const wallet = await prisma.x402EvmWallet.findUnique({
 		where: { id: evmWalletId, deletedAt: null },
 		select: WALLET_OUTPUT_SELECT,
@@ -117,19 +123,25 @@ export async function getX402ManagedWallet(evmWalletId: string) {
 	if (wallet == null) {
 		throw createHttpError(404, 'Managed EVM wallet not found');
 	}
+	assertWalletOwner(ownerScope, wallet);
 	return flattenWallet(wallet);
 }
 
-export async function updateX402ManagedWallet(input: { id: string; note?: string | null }) {
+export async function updateX402ManagedWallet(input: {
+	id: string;
+	note?: string | null;
+	ownerScope?: X402OwnerScope;
+}) {
 	// Only the human-facing note is mutable; address/type/key are immutable for an
 	// existing wallet (changing them would change which on-chain account it controls).
 	const existing = await prisma.x402EvmWallet.findUnique({
 		where: { id: input.id, deletedAt: null },
-		select: { id: true },
+		select: { id: true, createdById: true },
 	});
 	if (existing == null) {
 		throw createHttpError(404, 'Managed EVM wallet not found');
 	}
+	assertWalletOwner(input.ownerScope ?? null, existing);
 	const updated = await prisma.x402EvmWallet.update({
 		where: { id: input.id },
 		data: { note: input.note ?? null },
@@ -138,14 +150,15 @@ export async function updateX402ManagedWallet(input: { id: string; note?: string
 	return flattenWallet(updated);
 }
 
-export async function deleteX402ManagedWallet(evmWalletId: string) {
+export async function deleteX402ManagedWallet(evmWalletId: string, ownerScope: X402OwnerScope = null) {
 	const wallet = await prisma.x402EvmWallet.findUnique({
 		where: { id: evmWalletId, deletedAt: null },
-		select: { id: true },
+		select: { id: true, createdById: true },
 	});
 	if (wallet == null) {
 		throw createHttpError(404, 'Managed EVM wallet not found');
 	}
+	assertWalletOwner(ownerScope, wallet);
 
 	// Soft-delete the wallet, disable its budgets and low-balance rules, and detach it
 	// from any network it facilitates, so a retired/compromised key can no longer sign,
