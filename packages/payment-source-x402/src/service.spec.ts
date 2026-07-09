@@ -1193,6 +1193,29 @@ describe('x402 service helpers', () => {
 			expect(mockFacilitatorSettle).toHaveBeenCalledTimes(1);
 		});
 
+		it('rejects a racing same-payload settle via the crash-window guard without leaving a stuck marker', async () => {
+			// A prior in-flight/settled attempt exists for this payload. The guard runs INSIDE the
+			// lock and BEFORE the pre-settle marker, so the racing settle must 409 without creating a
+			// marker and without recording settle_threw — the same "no marker → clean" path a lock
+			// acquisition timeout takes, so the payload stays cleanly retryable.
+			mockX402PaymentAttemptFindFirst.mockResolvedValueOnce({ id: 'prior-attempt' });
+
+			await expect(
+				service.settleX402Payment({
+					apiKeyId: 'api-key-1',
+					caip2NetworkLimit: [source.network],
+					supportedPaymentSourceId: source.id,
+					paymentPayload: typedPaymentPayload,
+				}),
+			).rejects.toMatchObject({ status: 409 });
+
+			expect(mockX402PaymentAttemptCreate).not.toHaveBeenCalled();
+			expect(mockFacilitatorSettle).not.toHaveBeenCalled();
+			expect(mockX402PaymentAttemptUpdate).not.toHaveBeenCalledWith(
+				expect.objectContaining({ data: expect.objectContaining({ errorReason: 'settle_threw' }) }),
+			);
+		});
+
 		it('does not take a settle lock for a remote facilitator (it manages its own nonce)', async () => {
 			mockX402NetworkFindUnique.mockResolvedValue({
 				id: 'network-1',
