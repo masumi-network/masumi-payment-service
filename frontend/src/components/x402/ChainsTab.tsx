@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm, Controller, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'react-toastify';
@@ -51,20 +51,31 @@ const chainSchema = z
       .regex(/^0x[a-fA-F0-9]{40}$/, 'Must be an EVM token address')
       .or(z.literal(''))
       .optional(),
+    // A chain settles either through an owned Selling wallet (self-hosted) or a remote
+    // facilitator URL — exactly one, enforced by the backend and by the mode toggle here.
+    facilitatorMode: z.enum(['wallet', 'remote']),
     facilitatorWalletId: z.string().optional(),
+    facilitatorUrl: z.string().url('Must be a valid URL').or(z.literal('')).optional(),
+    facilitatorAuth: z.string().optional(),
   })
   // An enabled chain becomes a live payment source the moment it is saved, so it must be
   // fully configured: a facilitator is required to settle on it. Leave the chain disabled
   // to save an incomplete draft instead of exposing a half-configured rail.
   .superRefine((data, ctx) => {
-    if (
-      data.isEnabled &&
-      (!data.facilitatorWalletId || data.facilitatorWalletId === NO_FACILITATOR)
-    ) {
+    if (!data.isEnabled) return;
+    if (data.facilitatorMode === 'wallet') {
+      if (!data.facilitatorWalletId || data.facilitatorWalletId === NO_FACILITATOR) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'A facilitator wallet is required to enable a chain',
+          path: ['facilitatorWalletId'],
+        });
+      }
+    } else if (!data.facilitatorUrl) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'A facilitator wallet is required to enable a chain',
-        path: ['facilitatorWalletId'],
+        message: 'A facilitator URL is required to enable a chain',
+        path: ['facilitatorUrl'],
       });
     }
   });
@@ -177,7 +188,17 @@ export function ChainsTab() {
                     )}
                   </td>
                   <td className="p-4 text-sm">
-                    {network.facilitatorWalletId ? (
+                    {network.facilitatorUrl ? (
+                      <span className="flex items-center gap-1.5">
+                        <Badge variant="outline">Remote</Badge>
+                        <span
+                          className="font-mono text-xs max-w-[180px] truncate"
+                          title={network.facilitatorUrl}
+                        >
+                          {network.facilitatorUrl}
+                        </span>
+                      </span>
+                    ) : network.facilitatorWalletId ? (
                       <FacilitatorLabel
                         address={network.facilitatorWalletAddress}
                         walletId={network.facilitatorWalletId}
@@ -265,11 +286,20 @@ export function ChainDialog({
       isTestnet: editing?.isTestnet ?? isTestnetEnv(network),
       isEnabled: editing?.isEnabled ?? true,
       defaultAsset: editing?.defaultAsset ?? '',
+      // Existing remote-facilitator chains open in remote mode; everything else defaults to
+      // the owned-wallet mode. facilitatorAuth is write-only, so it is never prefilled.
+      facilitatorMode: editing?.facilitatorUrl ? 'remote' : 'wallet',
       facilitatorWalletId: editing?.facilitatorWalletId ?? NO_FACILITATOR,
+      facilitatorUrl: editing?.facilitatorUrl ?? '',
+      facilitatorAuth: '',
     },
   });
 
+  const facilitatorMode = useWatch({ control, name: 'facilitatorMode' });
+
   const onSubmit = async (data: ChainFormValues) => {
+    // Send exactly one facilitator mode; null the other so the backend's exactly-one rule is met.
+    const isRemote = data.facilitatorMode === 'remote';
     const response = await saveChain
       .mutateAsync({
         caip2Id: data.caip2Id,
@@ -279,9 +309,11 @@ export function ChainDialog({
         isEnabled: data.isEnabled,
         defaultAsset: data.defaultAsset ? data.defaultAsset : null,
         facilitatorWalletId:
-          data.facilitatorWalletId && data.facilitatorWalletId !== NO_FACILITATOR
+          !isRemote && data.facilitatorWalletId && data.facilitatorWalletId !== NO_FACILITATOR
             ? data.facilitatorWalletId
             : null,
+        facilitatorUrl: isRemote && data.facilitatorUrl ? data.facilitatorUrl : null,
+        facilitatorAuth: isRemote && data.facilitatorAuth ? data.facilitatorAuth : null,
       })
       .catch(() => null);
     if (!response) return;
@@ -352,32 +384,73 @@ export function ChainDialog({
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">Facilitator wallet</label>
+            <label className="text-sm font-medium">Facilitator</label>
             <Controller
               control={control}
-              name="facilitatorWalletId"
+              name="facilitatorMode"
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger aria-label="Facilitator wallet">
-                    <SelectValue placeholder="Select a managed wallet" />
+                  <SelectTrigger aria-label="Facilitator mode">
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={NO_FACILITATOR}>None</SelectItem>
-                    {wallets.map((wallet) => (
-                      <SelectItem key={wallet.id} value={wallet.id} className="font-mono">
-                        {shortenAddress(wallet.address, 8)}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="wallet">Owned Selling wallet (self-hosted)</SelectItem>
+                    <SelectItem value="remote">Remote facilitator URL</SelectItem>
                   </SelectContent>
                 </Select>
               )}
             />
-            {errors.facilitatorWalletId ? (
-              <p className="text-xs text-destructive">{errors.facilitatorWalletId.message}</p>
+
+            {facilitatorMode === 'wallet' ? (
+              <>
+                <Controller
+                  control={control}
+                  name="facilitatorWalletId"
+                  render={({ field }) => (
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <SelectTrigger aria-label="Facilitator wallet">
+                        <SelectValue placeholder="Select a managed wallet" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NO_FACILITATOR}>None</SelectItem>
+                        {wallets.map((wallet) => (
+                          <SelectItem key={wallet.id} value={wallet.id} className="font-mono">
+                            {shortenAddress(wallet.address, 8)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+                {errors.facilitatorWalletId ? (
+                  <p className="text-xs text-destructive">{errors.facilitatorWalletId.message}</p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    An owned Selling wallet signs settlements locally and pays gas. Required to
+                    enable the chain.
+                  </p>
+                )}
+              </>
             ) : (
-              <p className="text-xs text-muted-foreground">
-                Signs settlements for inbound payments on this chain. Required to enable the chain.
-              </p>
+              <>
+                <Input
+                  placeholder="https://facilitator.example"
+                  aria-label="Facilitator URL"
+                  {...register('facilitatorUrl')}
+                />
+                {errors.facilitatorUrl && (
+                  <p className="text-xs text-destructive">{errors.facilitatorUrl.message}</p>
+                )}
+                <Input
+                  placeholder="Authorization header value (optional)"
+                  aria-label="Facilitator auth"
+                  {...register('facilitatorAuth')}
+                />
+                <p className="text-xs text-muted-foreground">
+                  A remote facilitator settles inbound payments over HTTP — the node holds no key on
+                  this chain. Auth is stored encrypted and never shown again.
+                </p>
+              </>
             )}
           </div>
 

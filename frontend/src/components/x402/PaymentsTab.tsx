@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
+import { toast } from 'react-toastify';
 import { formatDateTime } from '@/lib/format-date';
 import { rowActivation } from '@/lib/a11y';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Badge, type BadgeProps } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Spinner } from '@/components/ui/spinner';
@@ -28,7 +30,10 @@ import {
 } from '@/lib/hooks/useX402';
 import { groupDigits, shortenAddress } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { X402PaymentAttempt } from '@/lib/api/generated';
+import { useApiMutation } from '@/lib/hooks/useApiMutation';
+import { postX402PaymentsReconcile, X402PaymentAttempt } from '@/lib/api/generated';
+
+const TX_HASH_REGEX = /^0x[a-fA-F0-9]{64}$/;
 
 const ALL = '__all__';
 // Pseudo status-option: Verified attempts whose settle failed or threw, left
@@ -265,6 +270,10 @@ export function PaymentsTab() {
         attempt={selected}
         chainLabel={selected ? chainLabel(selected.caip2Network) : ''}
         onClose={() => setSelected(null)}
+        onReconciled={() => {
+          setSelected(null);
+          refetch();
+        }}
       />
     </div>
   );
@@ -293,10 +302,12 @@ function PaymentDetailsDialog({
   attempt,
   chainLabel,
   onClose,
+  onReconciled,
 }: {
   attempt: X402PaymentAttempt | null;
   chainLabel: string;
   onClose: () => void;
+  onReconciled: () => void;
 }) {
   return (
     <Dialog open={!!attempt} onOpenChange={(value) => !value && onClose()}>
@@ -365,9 +376,93 @@ function PaymentDetailsDialog({
                 )}
               </div>
             )}
+
+            <ReconcileSection attempt={attempt} onReconciled={onReconciled} />
           </div>
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+// An inbound settle can get stuck when the on-chain settle result is ambiguous (the settle threw
+// or crashed after broadcasting). Only an operator can resolve it — by confirming on-chain whether
+// funds moved. Shown for InboundSettle attempts left Verified, or Settled but missing their
+// settlement record (funds moved, only 'settled' is valid then).
+function ReconcileSection({
+  attempt,
+  onReconciled,
+}: {
+  attempt: X402PaymentAttempt;
+  onReconciled: () => void;
+}) {
+  const { apiClient } = useAppContext();
+  const [txHash, setTxHash] = useState('');
+  const reconcile = useApiMutation({
+    mutationFn: (body: { attemptId: string; resolution: 'settled' | 'failed'; txHash?: string }) =>
+      postX402PaymentsReconcile({ client: apiClient, body }),
+    errorMessage: 'Failed to reconcile payment',
+  });
+
+  const settledMissingRecord = attempt.status === 'Settled' && !attempt.Settlement;
+  const isReconcilable =
+    attempt.direction === 'InboundSettle' &&
+    (attempt.status === 'Verified' || settledMissingRecord);
+  if (!isReconcilable) return null;
+
+  const txHashValid = TX_HASH_REGEX.test(txHash);
+  const submit = async (resolution: 'settled' | 'failed') => {
+    const response = await reconcile
+      .mutateAsync({
+        attemptId: attempt.id,
+        resolution,
+        txHash: resolution === 'settled' ? txHash : undefined,
+      })
+      .catch(() => null);
+    if (!response) return;
+    toast.success(resolution === 'settled' ? 'Marked settled' : 'Marked failed');
+    onReconciled();
+  };
+
+  return (
+    <div className="rounded-lg border border-amber-300/60 bg-amber-50 p-3 space-y-3 dark:border-amber-900/40 dark:bg-amber-950/20">
+      <div>
+        <p className="text-sm font-medium">Needs reconciliation</p>
+        <p className="text-xs text-muted-foreground">
+          The settle outcome is unknown. Confirm on-chain whether the funds moved, then record it.
+        </p>
+      </div>
+      <div className="space-y-1.5">
+        <label htmlFor="reconcile-txhash" className="text-xs font-medium text-muted-foreground">
+          Settlement tx hash
+        </label>
+        <Input
+          id="reconcile-txhash"
+          placeholder="0x… 32-byte tx hash"
+          className="font-mono text-xs"
+          value={txHash}
+          onChange={(e) => setTxHash(e.target.value.trim())}
+        />
+      </div>
+      <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          disabled={!txHashValid || reconcile.isPending}
+          onClick={() => submit('settled')}
+        >
+          {reconcile.isPending ? 'Saving…' : 'Mark settled'}
+        </Button>
+        {!settledMissingRecord && (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={reconcile.isPending}
+            onClick={() => submit('failed')}
+          >
+            Mark failed (retryable)
+          </Button>
+        )}
+      </div>
+    </div>
   );
 }
