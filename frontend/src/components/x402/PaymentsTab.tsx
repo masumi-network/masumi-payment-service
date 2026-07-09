@@ -306,6 +306,16 @@ function DetailRow({
   );
 }
 
+// A mono value with a copy button, for ids / hashes / addresses.
+function CopyValue({ value }: { value: string }) {
+  return (
+    <span className="flex items-center justify-end gap-1">
+      <span className="font-mono text-sm text-right break-all">{value}</span>
+      <CopyButton value={value} />
+    </span>
+  );
+}
+
 function PaymentDetailsDialog({
   attempt,
   chainLabel,
@@ -328,17 +338,39 @@ function PaymentDetailsDialog({
         {attempt && (
           <div className="space-y-4">
             <div className="rounded-lg border p-3">
+              <p className="text-sm font-medium mb-2">Overview</p>
+              <DetailRow label="Attempt id" value={<CopyValue value={attempt.id} />} />
               <DetailRow label="Direction" value={DIRECTION_LABEL[attempt.direction]} />
               <DetailRow
                 label="Status"
                 value={<Badge variant={STATUS_VARIANT[attempt.status]}>{attempt.status}</Badge>}
               />
               <DetailRow label="Chain" value={chainLabel} />
+              <DetailRow label="Created" value={formatDateTime(attempt.createdAt)} />
+              <DetailRow label="Updated" value={formatDateTime(attempt.updatedAt)} />
+              <DetailRow label="API key" value={attempt.apiKeyId} mono />
+            </div>
+
+            <div className="rounded-lg border p-3">
+              <p className="text-sm font-medium mb-2">Payment</p>
               <DetailRow label="Amount (base units)" value={attempt.amount} mono />
               <DetailRow label="Asset" value={attempt.asset} mono />
-              <DetailRow label="Pay to" value={attempt.payTo} mono />
-              {attempt.payer && <DetailRow label="Payer" value={attempt.payer} mono />}
-              {attempt.facilitator && (
+              <DetailRow label="Pay to" value={attempt.payTo ?? '—'} mono={!!attempt.payTo} />
+              <DetailRow label="Payer" value={attempt.payer ?? '—'} mono={!!attempt.payer} />
+              {attempt.resource && <DetailRow label="Resource" value={attempt.resource} mono />}
+              {attempt.paymentIdentifier && (
+                <DetailRow label="Payment identifier" value={attempt.paymentIdentifier} mono />
+              )}
+            </div>
+
+            <div className="rounded-lg border p-3">
+              <p className="text-sm font-medium mb-2">Wallet &amp; facilitator</p>
+              {attempt.direction === 'OutboundPayment' ? (
+                <DetailRow
+                  label="Signing wallet"
+                  value={attempt.evmWalletId ? <CopyValue value={attempt.evmWalletId} /> : '—'}
+                />
+              ) : attempt.facilitator ? (
                 <DetailRow
                   label="Facilitator"
                   value={
@@ -348,12 +380,21 @@ function PaymentDetailsDialog({
                   }
                   mono={attempt.facilitator.mode === 'self_hosted' && !!attempt.facilitator.address}
                 />
+              ) : (
+                <DetailRow label="Facilitator" value="—" />
               )}
-              {attempt.resource && <DetailRow label="Resource" value={attempt.resource} mono />}
-              {attempt.paymentIdentifier && (
-                <DetailRow label="Payment identifier" value={attempt.paymentIdentifier} mono />
+              {attempt.supportedPaymentSourceId && (
+                <DetailRow
+                  label="Payment source"
+                  value={<CopyValue value={attempt.supportedPaymentSourceId} />}
+                />
               )}
-              <DetailRow label="Created" value={formatDateTime(attempt.createdAt)} />
+              {attempt.registryRequestId && (
+                <DetailRow
+                  label="Registry request"
+                  value={<CopyValue value={attempt.registryRequestId} />}
+                />
+              )}
             </div>
 
             {attempt.errorReason && (
@@ -393,6 +434,10 @@ function PaymentDetailsDialog({
                 {attempt.Settlement.payer && (
                   <DetailRow label="Payer" value={attempt.Settlement.payer} mono />
                 )}
+                <DetailRow
+                  label="Settled at"
+                  value={formatDateTime(attempt.Settlement.createdAt)}
+                />
               </div>
             )}
 
