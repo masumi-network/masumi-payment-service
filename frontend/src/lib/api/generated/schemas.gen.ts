@@ -4563,6 +4563,30 @@ export const X402PaymentAttemptSchema = {
             type: 'string',
             nullable: true
         },
+        facilitator: {
+            type: 'object',
+            nullable: true,
+            properties: {
+                mode: {
+                    type: 'string',
+                    enum: [
+                        'self_hosted',
+                        'remote'
+                    ],
+                    description: 'Whether an owned wallet or a remote URL settled'
+                },
+                address: {
+                    type: 'string',
+                    nullable: true,
+                    description: 'Self-hosted facilitator wallet address; null for remote (URL is not persisted)'
+                }
+            },
+            required: [
+                'mode',
+                'address'
+            ],
+            description: 'The facilitator that settled this inbound payment; null for outbound payments and verifies.'
+        },
         Settlement: {
             type: 'object',
             nullable: true,
@@ -4621,6 +4645,7 @@ export const X402PaymentAttemptSchema = {
         'paymentIdentifier',
         'errorReason',
         'errorMessage',
+        'facilitator',
         'Settlement'
     ]
 } as const;

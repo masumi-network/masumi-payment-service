@@ -48,11 +48,22 @@ function mapAttempt(attempt: AttemptRow) {
 	const counterparty = CounterpartyWallet?.address ?? null;
 	const payer = isOutbound ? (EvmWallet?.address ?? null) : counterparty;
 	const payTo = isOutbound ? counterparty : (SupportedPaymentSource?.payTo ?? null);
+	// Which facilitator settled this: only inbound settles have one. A self-hosted facilitator is
+	// the owned wallet on evmWalletId (its address is EvmWallet.address); a remote facilitator
+	// leaves evmWalletId null (the node owns no key). Outbound/verify rows have no facilitator.
+	// NOTE: the specific remote facilitator URL is not persisted, so `address` is null there.
+	const facilitator =
+		attempt.direction === X402PaymentDirection.InboundSettle
+			? attempt.evmWalletId != null
+				? { mode: 'self_hosted' as const, address: EvmWallet?.address ?? null }
+				: { mode: 'remote' as const, address: null }
+			: null;
 	return {
 		...rest,
 		caip2Network: Network.caip2Id,
 		payTo,
 		payer,
+		facilitator,
 		Settlement: Settlement == null ? null : { ...Settlement, payer },
 	};
 }
@@ -62,6 +73,7 @@ export async function listX402PaymentAttempts(input: {
 	cursorId?: string;
 	status?: X402PaymentStatus;
 	direction?: X402PaymentDirection;
+	side?: 'buy' | 'sell';
 	caip2Network?: string;
 	filterNeedsManualAction?: boolean;
 }) {

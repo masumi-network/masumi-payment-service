@@ -85,7 +85,7 @@ export const x402PaymentAttemptExample = {
 	direction: X402PaymentDirection.InboundSettle,
 	status: X402PaymentStatus.Settled,
 	apiKeyId: 'api_key_id',
-	evmWalletId: null,
+	evmWalletId: x402FacilitatorWalletExample.id,
 	registryRequestId: null,
 	supportedPaymentSourceId: 'supported_payment_source_id',
 	caip2Network: 'eip155:8453',
@@ -97,6 +97,7 @@ export const x402PaymentAttemptExample = {
 	paymentIdentifier: null,
 	errorReason: null,
 	errorMessage: null,
+	facilitator: { mode: 'self_hosted', address: x402FacilitatorWalletExample.address },
 	Settlement: {
 		id: 'clx402settlement0001',
 		success: true,

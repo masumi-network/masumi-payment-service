@@ -195,6 +195,7 @@ export const countSchemaOutput = z.object({ total: z.number().describe('Total nu
 export const paymentAttemptsCountSchemaInput = z.object({
 	status: z.nativeEnum(X402PaymentStatus).optional(),
 	direction: z.nativeEnum(X402PaymentDirection).optional(),
+	side: z.enum(['buy', 'sell']).optional().describe('Coarse side filter: buy = outbound, sell = inbound'),
 	caip2Network: caip2Eip155Schema.optional(),
 	filterNeedsManualAction: booleanQuerySchema
 		.optional()
@@ -465,6 +466,16 @@ export const x402PaymentAttemptSchema = z
 		paymentIdentifier: z.string().nullable(),
 		errorReason: z.string().nullable(),
 		errorMessage: z.string().nullable(),
+		facilitator: z
+			.object({
+				mode: z.enum(['self_hosted', 'remote']).describe('Whether an owned wallet or a remote URL settled'),
+				address: z
+					.string()
+					.nullable()
+					.describe('Self-hosted facilitator wallet address; null for remote (URL is not persisted)'),
+			})
+			.nullable()
+			.describe('The facilitator that settled this inbound payment; null for outbound payments and verifies.'),
 		Settlement: x402SettlementSummarySchema.nullable(),
 	})
 	.openapi('X402PaymentAttempt');
@@ -474,6 +485,10 @@ export const listPaymentAttemptsSchemaInput = z.object({
 	cursorId: z.string().max(550).optional().describe('Pagination cursor (provide the id of the last returned attempt)'),
 	status: z.nativeEnum(X402PaymentStatus).optional().describe('Filter by payment status'),
 	direction: z.nativeEnum(X402PaymentDirection).optional().describe('Filter by payment direction'),
+	side: z
+		.enum(['buy', 'sell'])
+		.optional()
+		.describe('Coarse side filter: buy = outbound payments, sell = inbound (verify + settle). A direction wins.'),
 	caip2Network: caip2Eip155Schema.optional().describe('Filter by CAIP-2 chain id'),
 	filterNeedsManualAction: booleanQuerySchema
 		.optional()

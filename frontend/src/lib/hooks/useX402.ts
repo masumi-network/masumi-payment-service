@@ -235,6 +235,8 @@ export function useX402LowBalanceRules(includeDisabled = true) {
 export type X402PaymentFilters = {
   status?: X402PaymentAttempt['status'];
   direction?: X402PaymentAttempt['direction'];
+  /** Coarse side switch: buy = outbound payments, sell = inbound (verify + settle). */
+  side?: 'buy' | 'sell';
   caip2Network?: string;
   /** Only attempts left Verified with a recorded settle error (manual reconciliation). */
   needsManualAction?: boolean;
@@ -248,6 +250,7 @@ export function useX402PaymentAttempts(filters: X402PaymentFilters = {}) {
       'x402-payments',
       filters.status ?? null,
       filters.direction ?? null,
+      filters.side ?? null,
       filters.caip2Network ?? null,
       filters.needsManualAction ?? false,
     ],
@@ -261,6 +264,7 @@ export function useX402PaymentAttempts(filters: X402PaymentFilters = {}) {
               cursorId: pageParam ?? undefined,
               status: filters.status,
               direction: filters.direction,
+              side: filters.side,
               caip2Network: filters.caip2Network,
               filterNeedsManualAction: filters.needsManualAction ? ('true' as const) : undefined,
             },

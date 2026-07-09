@@ -4,9 +4,23 @@ import { SETTLE_STALE_MS } from './settle-lock';
 export type X402AttemptFilterInput = {
 	status?: X402PaymentStatus;
 	direction?: X402PaymentDirection;
+	// Coarse buy/sell filter for the "Pay" (outbound) vs "Receive" (both inbound directions)
+	// views. A specific `direction` takes precedence when both are supplied.
+	side?: 'buy' | 'sell';
 	caip2Network?: string;
 	filterNeedsManualAction?: boolean;
 };
+
+// Resolve the direction filter: an explicit direction wins; otherwise a side maps to its group
+// (buy → the single outbound direction, sell → both inbound directions).
+function resolveDirectionFilter(input: X402AttemptFilterInput): Prisma.X402PaymentAttemptWhereInput['direction'] {
+	if (input.direction != null) return input.direction;
+	if (input.side === 'buy') return X402PaymentDirection.OutboundPayment;
+	if (input.side === 'sell') {
+		return { in: [X402PaymentDirection.InboundVerify, X402PaymentDirection.InboundSettle] };
+	}
+	return undefined;
+}
 
 /**
  * Where-fragment shared by listX402PaymentAttempts and
@@ -36,7 +50,7 @@ export function buildX402AttemptWhere(input: X402AttemptFilterInput): Prisma.X40
 		const stuckBefore = new Date(Date.now() - SETTLE_STALE_MS);
 		return {
 			...networkFilter,
-			direction: input.direction,
+			direction: resolveDirectionFilter(input),
 			OR: [
 				{ status: X402PaymentStatus.Verified, errorReason: { not: null } },
 				{
@@ -56,6 +70,6 @@ export function buildX402AttemptWhere(input: X402AttemptFilterInput): Prisma.X40
 	return {
 		...networkFilter,
 		status: input.status,
-		direction: input.direction,
+		direction: resolveDirectionFilter(input),
 	};
 }

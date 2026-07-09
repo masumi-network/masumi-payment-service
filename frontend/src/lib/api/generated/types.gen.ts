@@ -2480,6 +2480,19 @@ export type X402PaymentAttempt = {
     paymentIdentifier: string | null;
     errorReason: string | null;
     errorMessage: string | null;
+    /**
+     * The facilitator that settled this inbound payment; null for outbound payments and verifies.
+     */
+    facilitator: {
+        /**
+         * Whether an owned wallet or a remote URL settled
+         */
+        mode: 'self_hosted' | 'remote';
+        /**
+         * Self-hosted facilitator wallet address; null for remote (URL is not persisted)
+         */
+        address: string | null;
+    } | null;
     Settlement: {
         id: string;
         success: boolean;
@@ -10999,6 +11012,10 @@ export type GetX402PaymentsData = {
          */
         direction?: 'InboundVerify' | 'InboundSettle' | 'OutboundPayment';
         /**
+         * Coarse side filter: buy = outbound payments, sell = inbound (verify + settle). A direction wins.
+         */
+        side?: 'buy' | 'sell';
+        /**
          * Filter by CAIP-2 chain id
          */
         caip2Network?: string;
@@ -11336,6 +11353,10 @@ export type GetX402PaymentsCountData = {
     query?: {
         status?: 'PaymentRequired' | 'Verified' | 'Settled' | 'Failed' | 'Replayed';
         direction?: 'InboundVerify' | 'InboundSettle' | 'OutboundPayment';
+        /**
+         * Coarse side filter: buy = outbound, sell = inbound
+         */
+        side?: 'buy' | 'sell';
         caip2Network?: string;
         /**
          * When true, only counts attempts that require manual reconciliation: a settle that failed, threw, or was interrupted without recording its outcome (a stale Verified marker, or a stale Settled attempt missing its settlement record). Overrides the status filter.

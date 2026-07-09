@@ -63,4 +63,22 @@ describe('buildX402AttemptWhere', () => {
 		expect(where).not.toHaveProperty('status');
 		expect(where.OR?.[0]).toEqual({ status: X402PaymentStatus.Verified, errorReason: { not: null } });
 	});
+
+	it('maps side=buy to the outbound direction', () => {
+		expect(buildX402AttemptWhere({ side: 'buy' })).toMatchObject({
+			direction: X402PaymentDirection.OutboundPayment,
+		});
+	});
+
+	it('maps side=sell to both inbound directions', () => {
+		expect(buildX402AttemptWhere({ side: 'sell' })).toMatchObject({
+			direction: { in: [X402PaymentDirection.InboundVerify, X402PaymentDirection.InboundSettle] },
+		});
+	});
+
+	it('lets an explicit direction win over side', () => {
+		expect(buildX402AttemptWhere({ side: 'sell', direction: X402PaymentDirection.InboundSettle })).toMatchObject({
+			direction: X402PaymentDirection.InboundSettle,
+		});
+	});
 });

@@ -28,7 +28,7 @@ import {
   useX402PaymentAttempts,
   type X402PaymentFilters,
 } from '@/lib/hooks/useX402';
-import { groupDigits, shortenAddress } from '@/lib/utils';
+import { cn, groupDigits, shortenAddress } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import { postX402PaymentsReconcile, X402PaymentAttempt } from '@/lib/api/generated';
@@ -36,9 +36,16 @@ import { postX402PaymentsReconcile, X402PaymentAttempt } from '@/lib/api/generat
 const TX_HASH_REGEX = /^0x[a-fA-F0-9]{64}$/;
 
 const ALL = '__all__';
-// Pseudo status-option: Verified attempts whose settle failed or threw, left
-// for manual reconciliation (maps to filterNeedsManualAction, not a status).
-const NEEDS_ACTION = '__needs_action__';
+
+// Primary view switcher (mirrors Cardano's Payments/Purchases split): Pay = outbound, Receive =
+// both inbound directions, Needs action = the reconciliation backlog.
+type PaymentView = 'all' | 'buy' | 'sell' | 'needs';
+const VIEW_OPTIONS: { key: PaymentView; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'buy', label: 'Pay' },
+  { key: 'sell', label: 'Receive' },
+  { key: 'needs', label: 'Needs action' },
+];
 
 const STATUS_OPTIONS: X402PaymentAttempt['status'][] = [
   'PaymentRequired',
@@ -46,12 +53,6 @@ const STATUS_OPTIONS: X402PaymentAttempt['status'][] = [
   'Settled',
   'Failed',
   'Replayed',
-];
-
-const DIRECTION_OPTIONS: X402PaymentAttempt['direction'][] = [
-  'InboundVerify',
-  'InboundSettle',
-  'OutboundPayment',
 ];
 
 const STATUS_VARIANT: Record<X402PaymentAttempt['status'], BadgeProps['variant']> = {
@@ -106,62 +107,69 @@ export function PaymentsTab() {
   const chainLabel = (caip2: string) =>
     networks.find((n) => n.caip2Id === caip2)?.displayName ?? caip2;
 
+  // The switcher is the primary control; it maps to the coarse side/needs-action filters.
+  const activeView: PaymentView = filters.needsManualAction ? 'needs' : (filters.side ?? 'all');
+  const setView = (view: PaymentView) =>
+    setFilters((prev) => ({
+      ...prev,
+      side: view === 'buy' ? 'buy' : view === 'sell' ? 'sell' : undefined,
+      needsManualAction: view === 'needs' ? true : undefined,
+      // Needs-action pins its own set of states, so drop any status refinement + granular direction.
+      status: view === 'needs' ? undefined : prev.status,
+      direction: undefined,
+    }));
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        Every x402 payment this service signed (outbound) or verified and settled (inbound), newest
-        first. Filter by status, direction or chain.
+        Every x402 payment this service signed (Pay / outbound) or verified and settled (Receive /
+        inbound), newest first. Use the switcher for the buy vs sell side or the reconciliation
+        backlog.
       </p>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <Select
-            value={filters.needsManualAction ? NEEDS_ACTION : (filters.status ?? ALL)}
-            onValueChange={(value) =>
-              setFilters((prev) => ({
-                ...prev,
-                needsManualAction: value === NEEDS_ACTION ? true : undefined,
-                status:
-                  value === ALL || value === NEEDS_ACTION
-                    ? undefined
-                    : (value as X402PaymentAttempt['status']),
-              }))
-            }
-          >
-            <SelectTrigger className="w-[170px]">
-              <SelectValue placeholder="All statuses" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>All statuses</SelectItem>
-              <SelectItem value={NEEDS_ACTION}>Needs action</SelectItem>
-              {STATUS_OPTIONS.map((status) => (
-                <SelectItem key={status} value={status}>
-                  {status}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="inline-flex rounded-lg border bg-muted/40 p-0.5">
+            {VIEW_OPTIONS.map((v) => (
+              <button
+                key={v.key}
+                type="button"
+                onClick={() => setView(v.key)}
+                aria-pressed={activeView === v.key}
+                className={cn(
+                  'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                  activeView === v.key
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {v.label}
+              </button>
+            ))}
+          </div>
 
-          <Select
-            value={filters.direction ?? ALL}
-            onValueChange={(value) =>
-              setFilters((prev) => ({
-                ...prev,
-                direction: value === ALL ? undefined : (value as X402PaymentAttempt['direction']),
-              }))
-            }
-          >
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="All directions" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>All directions</SelectItem>
-              {DIRECTION_OPTIONS.map((direction) => (
-                <SelectItem key={direction} value={direction}>
-                  {DIRECTION_LABEL[direction]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {activeView !== 'needs' && (
+            <Select
+              value={filters.status ?? ALL}
+              onValueChange={(value) =>
+                setFilters((prev) => ({
+                  ...prev,
+                  status: value === ALL ? undefined : (value as X402PaymentAttempt['status']),
+                }))
+              }
+            >
+              <SelectTrigger className="w-[150px]">
+                <SelectValue placeholder="All statuses" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>All statuses</SelectItem>
+                {STATUS_OPTIONS.map((status) => (
+                  <SelectItem key={status} value={status}>
+                    {status}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
 
           <Select
             value={filters.caip2Network ?? ALL}
@@ -330,6 +338,17 @@ function PaymentDetailsDialog({
               <DetailRow label="Asset" value={attempt.asset} mono />
               <DetailRow label="Pay to" value={attempt.payTo} mono />
               {attempt.payer && <DetailRow label="Payer" value={attempt.payer} mono />}
+              {attempt.facilitator && (
+                <DetailRow
+                  label="Facilitator"
+                  value={
+                    attempt.facilitator.mode === 'remote'
+                      ? 'Remote facilitator'
+                      : (attempt.facilitator.address ?? 'Self-hosted wallet')
+                  }
+                  mono={attempt.facilitator.mode === 'self_hosted' && !!attempt.facilitator.address}
+                />
+              )}
               {attempt.resource && <DetailRow label="Resource" value={attempt.resource} mono />}
               {attempt.paymentIdentifier && (
                 <DetailRow label="Payment identifier" value={attempt.paymentIdentifier} mono />

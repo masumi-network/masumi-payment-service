@@ -4557,6 +4557,30 @@
                         "type": "string",
                         "nullable": true
                     },
+                    "facilitator": {
+                        "type": "object",
+                        "nullable": true,
+                        "properties": {
+                            "mode": {
+                                "type": "string",
+                                "enum": [
+                                    "self_hosted",
+                                    "remote"
+                                ],
+                                "description": "Whether an owned wallet or a remote URL settled"
+                            },
+                            "address": {
+                                "type": "string",
+                                "nullable": true,
+                                "description": "Self-hosted facilitator wallet address; null for remote (URL is not persisted)"
+                            }
+                        },
+                        "required": [
+                            "mode",
+                            "address"
+                        ],
+                        "description": "The facilitator that settled this inbound payment; null for outbound payments and verifies."
+                    },
                     "Settlement": {
                         "type": "object",
                         "nullable": true,
@@ -4615,6 +4639,7 @@
                     "paymentIdentifier",
                     "errorReason",
                     "errorMessage",
+                    "facilitator",
                     "Settlement"
                 ]
             },
@@ -25655,6 +25680,20 @@
                     {
                         "schema": {
                             "type": "string",
+                            "enum": [
+                                "buy",
+                                "sell"
+                            ],
+                            "description": "Coarse side filter: buy = outbound payments, sell = inbound (verify + settle). A direction wins."
+                        },
+                        "required": false,
+                        "description": "Coarse side filter: buy = outbound payments, sell = inbound (verify + settle). A direction wins.",
+                        "name": "side",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
                             "pattern": "^eip155:\\d+$",
                             "description": "Filter by CAIP-2 chain id"
                         },
@@ -25722,7 +25761,7 @@
                                                     "direction": "InboundSettle",
                                                     "status": "Settled",
                                                     "apiKeyId": "api_key_id",
-                                                    "evmWalletId": null,
+                                                    "evmWalletId": "clmanagedwallet0002",
                                                     "registryRequestId": null,
                                                     "supportedPaymentSourceId": "supported_payment_source_id",
                                                     "caip2Network": "eip155:8453",
@@ -25734,6 +25773,10 @@
                                                     "paymentIdentifier": null,
                                                     "errorReason": null,
                                                     "errorMessage": null,
+                                                    "facilitator": {
+                                                        "mode": "self_hosted",
+                                                        "address": "0x5555555555555555555555555555555555555555"
+                                                    },
                                                     "Settlement": {
                                                         "id": "clx402settlement0001",
                                                         "success": true,
@@ -26728,6 +26771,20 @@
                         },
                         "required": false,
                         "name": "direction",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "buy",
+                                "sell"
+                            ],
+                            "description": "Coarse side filter: buy = outbound, sell = inbound"
+                        },
+                        "required": false,
+                        "description": "Coarse side filter: buy = outbound, sell = inbound",
+                        "name": "side",
                         "in": "query"
                     },
                     {
