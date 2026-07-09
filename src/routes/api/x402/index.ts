@@ -287,8 +287,16 @@ export const reconcileX402PaymentPost = adminAuthenticatedEndpointFactory.build(
 	method: 'post',
 	input: reconcilePaymentSchemaInput,
 	output: reconcilePaymentSchemaOutput,
-	handler: async ({ input }: { input: z.infer<typeof reconcilePaymentSchemaInput> }) =>
-		reconcileX402PaymentAttempt(input),
+	handler: async ({ input }: { input: z.infer<typeof reconcilePaymentSchemaInput> }) => {
+		const result = await reconcileX402PaymentAttempt(input);
+		// Emit the settlement/failure webhook the interrupted settle never fired (it threw before
+		// the settle route could emit). Fire-and-forget: delivery must not block the response.
+		void webhookEventsService.triggerX402Payment(result.webhook.success, {
+			...result.webhook,
+			settledAt: new Date().toISOString(),
+		});
+		return result;
+	},
 });
 
 export const listX402SettlementsGet = adminAuthenticatedEndpointFactory.build({

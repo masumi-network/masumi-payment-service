@@ -325,6 +325,7 @@ export async function settleX402Payment({
 					id: true,
 					supportedPaymentSourceId: true,
 					networkId: true,
+					counterpartyWalletId: true,
 					Network: { select: { caip2Id: true } },
 					CounterpartyWallet: { select: { address: true } },
 				},
@@ -339,11 +340,9 @@ export async function settleX402Payment({
 			throw createHttpError(409, 'payment payload was already settled for a different registered resource');
 		}
 		const payerAddress = existingSettlement.PaymentAttempt.CounterpartyWallet?.address ?? null;
-		const counterpartyWalletId = await upsertCounterpartyWalletId(prisma, {
-			caip2Network: requirements.network,
-			address: payerAddress,
-			role: X402CounterpartyRole.Payer,
-		});
+		// Reuse the original attempt's counterparty directly (it IS the (chain, payer, Payer)
+		// row an upsert would resolve to) — same principle as reusing its networkId below.
+		const counterpartyWalletId = existingSettlement.PaymentAttempt.counterpartyWalletId;
 		const replayAttempt = await prisma.x402PaymentAttempt.create({
 			data: {
 				direction: X402PaymentDirection.InboundSettle,

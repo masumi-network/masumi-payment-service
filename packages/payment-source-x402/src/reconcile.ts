@@ -34,12 +34,39 @@ export async function reconcileX402PaymentAttempt(input: {
 			errorReason: true,
 			paymentPayloadHash: true,
 			updatedAt: true,
+			// Extra fields feed the settlement webhook the interrupted settle never emitted.
+			supportedPaymentSourceId: true,
+			registryRequestId: true,
+			asset: true,
+			amount: true,
+			Network: { select: { caip2Id: true } },
+			CounterpartyWallet: { select: { address: true } },
+			SupportedPaymentSource: { select: { payTo: true } },
 			Settlement: { select: { id: true } },
 		},
 	});
 	if (attempt == null) {
 		throw createHttpError(404, 'x402 payment attempt not found');
 	}
+
+	// The settlement/failure webhook the interrupted settle never emitted (a stuck settle threw
+	// before the route could fire it). Mirrors the settle path's webhook shape so subscribers see a
+	// manually-reconciled outcome exactly as they would a normal one.
+	const buildWebhook = (success: boolean, txHash: string | null) => ({
+		attemptId: attempt.id,
+		paymentPayloadHash: attempt.paymentPayloadHash,
+		supportedPaymentSourceId: attempt.supportedPaymentSourceId,
+		registryRequestId: attempt.registryRequestId,
+		caip2Network: attempt.Network.caip2Id,
+		asset: attempt.asset,
+		amount: attempt.amount.toString(),
+		payTo: attempt.SupportedPaymentSource?.payTo ?? null,
+		payer: attempt.CounterpartyWallet?.address ?? null,
+		txHash,
+		success,
+		errorReason: null,
+		errorMessage: null,
+	});
 	// Only the settle-reconciliation backlog is reconcilable; anything else is already resolved or
 	// was never in the ambiguous state, so reject rather than silently mutating an unrelated row.
 	const isStale = attempt.updatedAt.getTime() < Date.now() - SETTLE_STALE_MS;
@@ -60,7 +87,7 @@ export async function reconcileX402PaymentAttempt(input: {
 			where: { id: attempt.id },
 			data: { status: X402PaymentStatus.Failed },
 		});
-		return { attemptId: attempt.id, status: X402PaymentStatus.Failed };
+		return { attemptId: attempt.id, status: X402PaymentStatus.Failed, webhook: buildWebhook(false, null) };
 	}
 
 	if (input.txHash == null || input.txHash === '') {
@@ -89,5 +116,5 @@ export async function reconcileX402PaymentAttempt(input: {
 			data: { status: X402PaymentStatus.Settled },
 		}),
 	]);
-	return { attemptId: attempt.id, status: X402PaymentStatus.Settled };
+	return { attemptId: attempt.id, status: X402PaymentStatus.Settled, webhook: buildWebhook(true, input.txHash) };
 }

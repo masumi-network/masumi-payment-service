@@ -25786,6 +25786,7 @@
                                     },
                                     "txHash": {
                                         "type": "string",
+                                        "pattern": "^0x[a-fA-F0-9]{64}$",
                                         "description": "On-chain settlement transaction hash; required when resolution is settled"
                                     }
                                 },

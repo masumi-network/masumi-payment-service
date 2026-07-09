@@ -493,7 +493,11 @@ export const reconcilePaymentSchemaInput = z.object({
 		.describe(
 			"Operator's on-chain finding: 'settled' if funds moved (provide txHash), 'failed' if they did not (safe to retry).",
 		),
-	txHash: z.string().optional().describe('On-chain settlement transaction hash; required when resolution is settled'),
+	txHash: z
+		.string()
+		.regex(/^0x[a-fA-F0-9]{64}$/, 'txHash must be a 0x-prefixed 32-byte hex transaction hash')
+		.optional()
+		.describe('On-chain settlement transaction hash; required when resolution is settled'),
 });
 
 export const reconcilePaymentSchemaOutput = z.object({

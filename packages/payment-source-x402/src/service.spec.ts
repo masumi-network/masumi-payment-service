@@ -439,6 +439,7 @@ describe('x402 service helpers', () => {
 				id: 'attempt-original',
 				supportedPaymentSourceId: source.id,
 				networkId: 'network-1',
+				counterpartyWalletId: 'counterparty-original',
 				Network: { caip2Id: source.network },
 				CounterpartyWallet: { address: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
 			},
@@ -470,9 +471,12 @@ describe('x402 service helpers', () => {
 				data: expect.objectContaining({
 					status: 'Replayed',
 					paymentPayloadHash,
+					// The original attempt's counterparty is reused directly — no upsert round-trip.
+					counterpartyWalletId: 'counterparty-original',
 				}),
 			}),
 		);
+		expect(mockExecuteRaw).not.toHaveBeenCalled();
 	});
 
 	it('rejects a settle replay whose prior settlement belongs to a different source', async () => {
@@ -486,6 +490,7 @@ describe('x402 service helpers', () => {
 				id: 'attempt-original',
 				supportedPaymentSourceId: 'a-different-source',
 				networkId: 'network-1',
+				counterpartyWalletId: 'counterparty-original',
 				Network: { caip2Id: source.network },
 				CounterpartyWallet: { address: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
 			},
@@ -1127,6 +1132,14 @@ describe('x402 service helpers', () => {
 			errorReason: 'settle_threw',
 			paymentPayloadHash: 'hash-1',
 			updatedAt: new Date(),
+			// Fields the reconciliation webhook reads.
+			supportedPaymentSourceId: source.id,
+			registryRequestId: source.registryRequestId,
+			asset: source.asset,
+			amount: source.amount,
+			Network: { caip2Id: source.network },
+			CounterpartyWallet: { address: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
+			SupportedPaymentSource: { payTo: source.payTo },
 			Settlement: null,
 		};
 		// Older than SETTLE_STALE_MS (300s): no live settle can still hold a row this old.
@@ -1137,7 +1150,7 @@ describe('x402 service helpers', () => {
 
 			const result = await service.reconcileX402PaymentAttempt({ attemptId: 'attempt-stuck', resolution: 'failed' });
 
-			expect(result).toEqual({ attemptId: 'attempt-stuck', status: 'Failed' });
+			expect(result).toMatchObject({ attemptId: 'attempt-stuck', status: 'Failed' });
 			expect(mockX402PaymentAttemptUpdate).toHaveBeenCalledWith(
 				expect.objectContaining({ where: { id: 'attempt-stuck' }, data: { status: 'Failed' } }),
 			);
@@ -1153,7 +1166,7 @@ describe('x402 service helpers', () => {
 				txHash: '0xtx',
 			});
 
-			expect(result).toEqual({ attemptId: 'attempt-stuck', status: 'Settled' });
+			expect(result).toMatchObject({ attemptId: 'attempt-stuck', status: 'Settled' });
 			expect(mockX402SettlementUpsert).toHaveBeenCalledWith(
 				expect.objectContaining({
 					where: { paymentPayloadHash: 'hash-1' },
@@ -1195,7 +1208,7 @@ describe('x402 service helpers', () => {
 
 			const result = await service.reconcileX402PaymentAttempt({ attemptId: 'attempt-stuck', resolution: 'failed' });
 
-			expect(result).toEqual({ attemptId: 'attempt-stuck', status: 'Failed' });
+			expect(result).toMatchObject({ attemptId: 'attempt-stuck', status: 'Failed' });
 		});
 
 		it('refuses to reconcile a trace-less Verified marker that may still be an in-flight settle', async () => {
@@ -1224,7 +1237,7 @@ describe('x402 service helpers', () => {
 				txHash: '0xtx',
 			});
 
-			expect(result).toEqual({ attemptId: 'attempt-stuck', status: 'Settled' });
+			expect(result).toMatchObject({ attemptId: 'attempt-stuck', status: 'Settled' });
 			expect(mockX402SettlementUpsert).toHaveBeenCalledWith(
 				expect.objectContaining({
 					where: { paymentPayloadHash: 'hash-1' },
