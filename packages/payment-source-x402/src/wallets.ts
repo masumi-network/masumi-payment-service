@@ -2,11 +2,7 @@ import createHttpError from 'http-errors';
 import { Prisma, X402EvmWalletType, prisma } from '@masumi/payment-core/db';
 import { encrypt } from '@masumi/payment-core/encryption';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
-import {
-	assertX402WalletCustody,
-	buildX402WalletCustodyWhere,
-	type X402WalletCustodyScope,
-} from './custody.js';
+import { assertX402WalletCustody, buildX402WalletCustodyWhere, type X402WalletCustodyScope } from './custody.js';
 import { assertValidPrivateKey } from './internal';
 
 // The non-secret projection returned to the dashboard for every managed wallet. The
@@ -86,10 +82,7 @@ export async function listX402ManagedWallets(input?: {
 	});
 }
 
-export async function getX402ManagedWallet(
-	evmWalletId: string,
-	custodyScope?: X402WalletCustodyScope,
-) {
+export async function getX402ManagedWallet(evmWalletId: string, custodyScope?: X402WalletCustodyScope) {
 	const wallet = await prisma.x402EvmWallet.findUnique({
 		where: { id: evmWalletId, deletedAt: null },
 		select: WALLET_OUTPUT_SELECT,
@@ -123,10 +116,7 @@ export async function updateX402ManagedWallet(input: {
 	});
 }
 
-export async function deleteX402ManagedWallet(
-	evmWalletId: string,
-	custodyScope?: X402WalletCustodyScope,
-) {
+export async function deleteX402ManagedWallet(evmWalletId: string, custodyScope?: X402WalletCustodyScope) {
 	const wallet = await prisma.x402EvmWallet.findUnique({
 		where: { id: evmWalletId, deletedAt: null },
 		select: WALLET_OUTPUT_SELECT,

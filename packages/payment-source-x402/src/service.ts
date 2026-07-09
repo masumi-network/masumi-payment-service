@@ -176,11 +176,7 @@ async function getX402SupportedPaymentSourceOrThrow(supportedPaymentSourceId: st
 	return source;
 }
 
-async function getClientForWallet(
-	walletId: string,
-	caip2Network: string,
-	custodyScope?: X402WalletCustodyScope,
-) {
+async function getClientForWallet(walletId: string, caip2Network: string, custodyScope?: X402WalletCustodyScope) {
 	const [wallet, network] = await Promise.all([
 		getManagedWalletOrThrow(walletId, X402EvmWalletType.Purchasing, custodyScope),
 		getX402NetworkOrThrow(caip2Network),
@@ -210,10 +206,7 @@ async function getClientForWallet(
 	};
 }
 
-async function getFacilitatorForNetwork(
-	caip2Network: string,
-	custodyScope?: X402WalletCustodyScope,
-) {
+async function getFacilitatorForNetwork(caip2Network: string, custodyScope?: X402WalletCustodyScope) {
 	const network = await getX402NetworkOrThrow(caip2Network);
 	if (network.FacilitatorWallet == null) {
 		throw createHttpError(400, 'x402 network has no facilitator wallet configured');
