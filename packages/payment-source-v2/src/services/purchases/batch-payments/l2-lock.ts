@@ -36,7 +36,12 @@ import { getHydraConnectionManager } from '@/services/hydra-connection-manager/h
 import { resolveUsableHydraHeadForPurchase } from '@/utils/hydra/resolve-hydra-head';
 import { asV2Provider } from '../../provider-cast';
 import { createDatumFromBlockchainIdentifierV2 } from '@masumi/payment-source-v2';
-import { buildL2LockDatumParams, mapPaidFundsToAssets, resolveL2BuyerReturnAddress } from './l2-lock-helpers';
+import {
+	buildL2LockDatumParams,
+	mapPaidFundsToAssets,
+	resolveL2BuyerReturnAddress,
+	selectInHeadFundingUtxos,
+} from './l2-lock-helpers';
 import { WALLET_SPLITTER_LOVELACE } from '../../../builders/batch-helpers';
 import { convertNetwork, convertNetworkToId } from '@/utils/converter/network-convert';
 import { decrypt } from '@/utils/security/encryption';
@@ -144,39 +149,18 @@ async function executeL2Lock(
 	// address up front keeps complete() fully offline. The lock is a script OUTPUT
 	// with an inline datum and NO script execution → no redeemer, no collateral,
 	// no script_data_hash, so no evaluation is needed.
-	const getLovelace = (u: { output: { amount: Array<{ unit: string; quantity: string }> } }): bigint =>
-		BigInt(u.output.amount.find((a) => a.unit === 'lovelace' || a.unit === '')?.quantity ?? '0');
-
 	const walletUtxos = await wallet.getUtxos();
-	// Pure-ADA, non-script in-head UTxOs owned by the buyer fund the lock. Largest
-	// first so the fewest inputs cover the target.
-	const fundingUtxos = walletUtxos
-		.filter((u) => !u.output.plutusData && u.output.amount.every((a) => a.unit === 'lovelace' || a.unit === ''))
-		.sort((a, b) => Number(getLovelace(b) - getLovelace(a)));
-	if (fundingUtxos.length === 0) {
-		throw new Error('buyer wallet has no pure-ADA in-head UTxOs to fund the lock');
-	}
-
-	const lockLovelace = request.PaidFunds.reduce(
-		(sum, f) => sum + (f.unit === '' || f.unit.toLowerCase() === 'lovelace' ? f.amount : 0n),
-		0n,
+	// Select explicit inputs of ANY form (pure-ADA or asset-carrying) that cover
+	// the paid funds + a splitter self-send + a min-UTxO change floor; leftover
+	// assets are returned by changeAddress below. See selectInHeadFundingUtxos for
+	// why mesh's own coin selector cannot be used against the Hydra provider.
+	const MIN_CHANGE_LOVELACE = 2_000_000n;
+	const selected = selectInHeadFundingUtxos(
+		walletUtxos,
+		request.PaidFunds,
+		WALLET_SPLITTER_LOVELACE,
+		MIN_CHANGE_LOVELACE,
 	);
-	// Cover: lock value + the splitter self-send + a min-UTxO change floor. With a
-	// zero fee, change = selected − (lock + splitter).
-	const MIN_CHANGE_LOVELACE = 1_000_000n;
-	const targetLovelace = lockLovelace + WALLET_SPLITTER_LOVELACE + MIN_CHANGE_LOVELACE;
-	const selected: typeof fundingUtxos = [];
-	let selectedLovelace = 0n;
-	for (const u of fundingUtxos) {
-		selected.push(u);
-		selectedLovelace += getLovelace(u);
-		if (selectedLovelace >= targetLovelace) break;
-	}
-	if (selectedLovelace < targetLovelace) {
-		throw new Error(
-			`insufficient in-head ADA to lock: have ${selectedLovelace.toString()}, need ${targetLovelace.toString()}`,
-		);
-	}
 
 	// isHydra zeroes the fee params; setFee('0') keeps the in-head value conserved
 	// exactly. A non-zero fee skims value from the head on every op (fees are not

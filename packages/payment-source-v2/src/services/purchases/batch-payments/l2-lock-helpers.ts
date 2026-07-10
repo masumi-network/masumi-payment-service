@@ -27,6 +27,87 @@ export interface L2PaidFund {
 	amount: bigint;
 }
 
+/** Minimal shape of an in-head UTxO the funding selector needs. */
+export interface L2FundingUtxo {
+	input: { txHash: string; outputIndex: number };
+	output: {
+		address: string;
+		amount: Array<{ unit: string; quantity: string }>;
+		plutusData?: string | null;
+	};
+}
+
+const isLovelaceUnit = (unit: string) => unit === '' || unit.toLowerCase() === 'lovelace';
+
+const amountOfUnit = (u: L2FundingUtxo, unit: string): bigint =>
+	BigInt(
+		u.output.amount.find((a) => (unit === 'lovelace' ? isLovelaceUnit(a.unit) : a.unit === unit))?.quantity ?? '0',
+	);
+
+/**
+ * Select in-head UTxOs to fund a lock. Handles ANY UTxO form and ANY asset:
+ *
+ *  - covers the paid funds (which may themselves include native tokens),
+ *  - plus a splitter self-send + a min-UTxO change floor in lovelace,
+ *  - draws from pure-ADA OR asset-carrying UTxOs alike — a faucet-bundled token
+ *    on the buyer's ADA no longer disqualifies that UTxO. Leftover assets are
+ *    returned to the change address by the caller's `changeAddress`.
+ *
+ * EXPLICIT selection on purpose: mesh's own coin selector re-resolves inputs via
+ * `fetcher.fetchUTxOs(txHash)`, a per-tx query the snapshot-only Hydra provider
+ * cannot answer, so `complete()` would hang. Here we hand mesh fully-specified
+ * inputs and let it balance the (possibly multi-asset) change.
+ *
+ * Non-script UTxOs only — a UTxO carrying plutusData is an escrow output, not
+ * spendable buyer funds. Largest-ADA first so the fewest inputs cover the need.
+ * Throws (with the per-unit shortfall) when the wallet cannot cover the target.
+ */
+export function selectInHeadFundingUtxos<T extends L2FundingUtxo>(
+	walletUtxos: readonly T[],
+	paidFunds: readonly L2PaidFund[],
+	splitterLovelace: bigint,
+	minChangeLovelace: bigint,
+): T[] {
+	const spendable = walletUtxos
+		.filter((u) => !u.output.plutusData)
+		.slice()
+		.sort((a, b) => Number(amountOfUnit(b, 'lovelace') - amountOfUnit(a, 'lovelace')));
+	if (spendable.length === 0) {
+		throw new Error('buyer wallet has no spendable (non-script) in-head UTxOs to fund the lock');
+	}
+
+	const required = new Map<string, bigint>();
+	for (const f of paidFunds) {
+		const unit = isLovelaceUnit(f.unit) ? 'lovelace' : f.unit;
+		required.set(unit, (required.get(unit) ?? 0n) + f.amount);
+	}
+	required.set('lovelace', (required.get('lovelace') ?? 0n) + splitterLovelace + minChangeLovelace);
+
+	const remaining = new Map(required);
+	const covered = () => [...remaining.values()].every((v) => v <= 0n);
+	const pending = spendable.slice();
+	const selected: T[] = [];
+	while (!covered() && pending.length > 0) {
+		// Cover an outstanding non-ADA asset first (so token payments pull the
+		// token-bearing UTxOs); otherwise take the largest-ADA UTxO.
+		const neededAssets = [...remaining.entries()].filter(([u, v]) => u !== 'lovelace' && v > 0n).map(([u]) => u);
+		let idx =
+			neededAssets.length > 0 ? pending.findIndex((u) => neededAssets.some((unit) => amountOfUnit(u, unit) > 0n)) : 0;
+		if (idx < 0) idx = 0;
+		const [u] = pending.splice(idx, 1);
+		selected.push(u);
+		for (const unit of remaining.keys()) remaining.set(unit, remaining.get(unit)! - amountOfUnit(u, unit));
+	}
+	if (!covered()) {
+		const missing = [...remaining.entries()]
+			.filter(([, v]) => v > 0n)
+			.map(([u, v]) => `${v.toString()} ${u}`)
+			.join(', ');
+		throw new Error(`insufficient in-head funds to lock: missing ${missing}`);
+	}
+	return selected;
+}
+
 /**
  * The buyer's return address falls back to the lock wallet's collection address
  * when the request did not specify one. Both may be null (the datum field is

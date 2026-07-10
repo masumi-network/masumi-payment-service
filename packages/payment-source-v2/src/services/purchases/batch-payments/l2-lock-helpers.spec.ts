@@ -4,6 +4,8 @@ import {
 	buildL2LockDatumParams,
 	mapPaidFundsToAssets,
 	resolveL2BuyerReturnAddress,
+	selectInHeadFundingUtxos,
+	type L2FundingUtxo,
 	type L2LockRequestFields,
 } from './l2-lock-helpers';
 
@@ -107,5 +109,89 @@ describe('buildL2LockDatumParams', () => {
 			buyerReturnAddress: 'addr_collection_fallback',
 		});
 		expect(params.buyerReturnAddress).toBe('addr_collection_fallback');
+	});
+});
+
+describe('selectInHeadFundingUtxos', () => {
+	const SPLITTER = 5_000_000n;
+	const MIN_CHANGE = 2_000_000n;
+	const TOKEN = '16a55b2a349361ff88c03788f93e1e966e5d689605d044fef722ddde0014df10745553444d';
+	const ada = (n: bigint) => ({ unit: 'lovelace', quantity: n.toString() });
+	const asset = (unit: string, n: bigint) => ({ unit, quantity: n.toString() });
+	const utxo = (
+		idx: number,
+		amount: Array<{ unit: string; quantity: string }>,
+		plutusData?: string,
+	): L2FundingUtxo => ({
+		input: { txHash: `tx${idx}`, outputIndex: idx },
+		output: { address: 'addr_buyer', amount, plutusData: plutusData ?? null },
+	});
+	const lovelacePaid = (n: bigint) => [{ unit: '', amount: n }];
+
+	it('selects a single pure-ADA UTxO that covers lock + splitter + change', () => {
+		const utxos = [utxo(0, [ada(20_000_000n)])];
+		const selected = selectInHeadFundingUtxos(utxos, lovelacePaid(5_000_000n), SPLITTER, MIN_CHANGE);
+		expect(selected).toHaveLength(1);
+		expect(selected[0].input.txHash).toBe('tx0');
+	});
+
+	it('selects an asset-carrying UTxO for an ADA payment (faucet token no longer disqualifies it)', () => {
+		// The buyer's only funds ride on a UTxO that also carries a faucet token.
+		const utxos = [utxo(0, [ada(20_000_000n), asset(TOKEN, 1_000_000_000n)])];
+		const selected = selectInHeadFundingUtxos(utxos, lovelacePaid(5_000_000n), SPLITTER, MIN_CHANGE);
+		expect(selected).toHaveLength(1);
+		expect(selected[0].input.txHash).toBe('tx0');
+	});
+
+	it('pulls the token-bearing UTxO when the payment itself is in a native token', () => {
+		const pureAda = utxo(0, [ada(20_000_000n)]);
+		const tokenUtxo = utxo(1, [ada(3_000_000n), asset(TOKEN, 100n)]);
+		const selected = selectInHeadFundingUtxos(
+			[pureAda, tokenUtxo],
+			[
+				{ unit: TOKEN, amount: 100n },
+				{ unit: '', amount: 5_000_000n },
+			],
+			SPLITTER,
+			MIN_CHANGE,
+		);
+		const hashes = selected.map((u) => u.input.txHash);
+		expect(hashes).toContain('tx1'); // the token UTxO must be selected to cover the token
+	});
+
+	it('combines multiple small UTxOs to reach the target (any UTxO form)', () => {
+		const utxos = [utxo(0, [ada(4_000_000n)]), utxo(1, [ada(5_000_000n)]), utxo(2, [ada(6_000_000n)])];
+		// need 5 + 5 + 2 = 12 ADA; largest-first: 6 + 5 = 11 (<12) + 4 = 15 (>=12)
+		const selected = selectInHeadFundingUtxos(utxos, lovelacePaid(5_000_000n), SPLITTER, MIN_CHANGE);
+		expect(selected).toHaveLength(3);
+	});
+
+	it('ignores script (plutusData) UTxOs — they are escrow outputs, not spendable', () => {
+		const utxos = [utxo(0, [ada(50_000_000n)], 'd8799fff')];
+		expect(() => selectInHeadFundingUtxos(utxos, lovelacePaid(5_000_000n), SPLITTER, MIN_CHANGE)).toThrow(
+			/no spendable/i,
+		);
+	});
+
+	it('throws with the lovelace shortfall when ADA is insufficient', () => {
+		const utxos = [utxo(0, [ada(5_000_000n)])]; // needs 12 ADA
+		expect(() => selectInHeadFundingUtxos(utxos, lovelacePaid(5_000_000n), SPLITTER, MIN_CHANGE)).toThrow(
+			/insufficient in-head funds/i,
+		);
+	});
+
+	it('throws when a required token is not present in any UTxO', () => {
+		const utxos = [utxo(0, [ada(50_000_000n)])];
+		expect(() =>
+			selectInHeadFundingUtxos(
+				utxos,
+				[
+					{ unit: TOKEN, amount: 100n },
+					{ unit: '', amount: 5_000_000n },
+				],
+				SPLITTER,
+				MIN_CHANGE,
+			),
+		).toThrow(/insufficient in-head funds/i);
 	});
 });
