@@ -1287,9 +1287,9 @@ describe('x402 service helpers', () => {
 		it('rejects an auth-only change when no remote facilitator URL is configured', async () => {
 			// Default network mock has facilitatorUrl null → setting an auth header has nowhere to apply.
 			mockX402NetworkFindUnique.mockResolvedValueOnce({ facilitatorUrl: null });
-			await expect(
-				service.upsertX402Network({ ...baseInput, facilitatorAuth: 'Bearer orphan' }),
-			).rejects.toMatchObject({ status: 400 });
+			await expect(service.upsertX402Network({ ...baseInput, facilitatorAuth: 'Bearer orphan' })).rejects.toMatchObject(
+				{ status: 400 },
+			);
 			expect(mockX402NetworkUpsert).not.toHaveBeenCalled();
 		});
 
