@@ -384,14 +384,27 @@ export const upsertNetworkSchemaInput = z.object({
 	isEnabled: z.boolean().optional(),
 	defaultAsset: evmAddressSchema.nullable().optional(),
 	// Configure the facilitator in exactly one mode: an owned Selling wallet (self-hosted) or a
-	// remote facilitator URL. Supplying both is rejected by the service.
-	facilitatorWalletId: z.string().nullable().optional().describe('Self-hosted facilitator: owned Selling wallet id'),
-	facilitatorUrl: z.string().url().nullable().optional().describe('Remote facilitator: HTTP(S) endpoint'),
+	// remote facilitator URL. Supplying both is rejected by the service. Every field is tri-state
+	// on update: omit to keep the stored value, send a string to set it, or send explicit null to
+	// clear it. Sending both selectors as null detaches the facilitator entirely.
+	facilitatorWalletId: z
+		.string()
+		.nullable()
+		.optional()
+		.describe('Self-hosted facilitator: owned Selling wallet id (null clears it)'),
+	facilitatorUrl: z
+		.string()
+		.url()
+		.nullable()
+		.optional()
+		.describe('Remote facilitator: HTTP(S) endpoint (null clears it)'),
 	facilitatorAuth: z
 		.string()
 		.nullable()
 		.optional()
-		.describe('Optional Authorization header value for the remote facilitator; stored encrypted at rest'),
+		.describe(
+			'Authorization header value for the remote facilitator, stored encrypted at rest. Omit to keep the stored value unchanged, send a string to set/rotate it, or null to clear it. Requires a remote facilitator URL (existing or set in the same request).',
+		),
 });
 
 export const listNetworksSchemaInput = z.object({

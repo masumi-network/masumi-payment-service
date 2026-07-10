@@ -10560,15 +10560,15 @@ export type PostX402NetworksData = {
         isEnabled?: boolean;
         defaultAsset?: string | null;
         /**
-         * Self-hosted facilitator: owned Selling wallet id
+         * Self-hosted facilitator: owned Selling wallet id (null clears it)
          */
         facilitatorWalletId?: string | null;
         /**
-         * Remote facilitator: HTTP(S) endpoint
+         * Remote facilitator: HTTP(S) endpoint (null clears it)
          */
         facilitatorUrl?: string | null;
         /**
-         * Optional Authorization header value for the remote facilitator; stored encrypted at rest
+         * Authorization header value for the remote facilitator, stored encrypted at rest. Omit to keep the stored value unchanged, send a string to set/rotate it, or null to clear it. Requires a remote facilitator URL (existing or set in the same request).
          */
         facilitatorAuth?: string | null;
     };

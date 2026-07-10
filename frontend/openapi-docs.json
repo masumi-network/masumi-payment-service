@@ -24263,18 +24263,18 @@
                                     "facilitatorWalletId": {
                                         "type": "string",
                                         "nullable": true,
-                                        "description": "Self-hosted facilitator: owned Selling wallet id"
+                                        "description": "Self-hosted facilitator: owned Selling wallet id (null clears it)"
                                     },
                                     "facilitatorUrl": {
                                         "type": "string",
                                         "nullable": true,
                                         "format": "uri",
-                                        "description": "Remote facilitator: HTTP(S) endpoint"
+                                        "description": "Remote facilitator: HTTP(S) endpoint (null clears it)"
                                     },
                                     "facilitatorAuth": {
                                         "type": "string",
                                         "nullable": true,
-                                        "description": "Optional Authorization header value for the remote facilitator; stored encrypted at rest"
+                                        "description": "Authorization header value for the remote facilitator, stored encrypted at rest. Omit to keep the stored value unchanged, send a string to set/rotate it, or null to clear it. Requires a remote facilitator URL (existing or set in the same request)."
                                     }
                                 },
                                 "required": [

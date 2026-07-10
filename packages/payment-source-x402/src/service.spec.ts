@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
 const mockSupportedPaymentSourceFindUnique = jest.fn() as jest.Mock<any>;
 const mockX402NetworkFindUnique = jest.fn() as jest.Mock<any>;
+const mockX402NetworkUpsert = jest.fn() as jest.Mock<any>;
 const mockX402SettlementFindUnique = jest.fn() as jest.Mock<any>;
 const mockX402SettlementUpsert = jest.fn() as jest.Mock<any>;
 const mockX402PaymentAttemptCreate = jest.fn() as jest.Mock<any>;
@@ -107,6 +108,7 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 		},
 		x402Network: {
 			findUnique: mockX402NetworkFindUnique,
+			upsert: mockX402NetworkUpsert,
 		},
 		apiKey: {
 			findUnique: mockApiKeyFindUnique,
@@ -337,6 +339,23 @@ describe('x402 service helpers', () => {
 		mockX402PaymentAttemptCreate.mockResolvedValue({ id: 'attempt-1' });
 		mockX402PaymentAttemptUpdate.mockResolvedValue({ id: 'attempt-1' });
 		mockX402PaymentAttemptUpdateMany.mockResolvedValue({ count: 1 });
+		// The upsert echoes a NETWORK_SELECT-shaped row so flattenNetwork can project it; the
+		// facilitator-config tests assert on the `update` argument, not this return value.
+		mockX402NetworkUpsert.mockResolvedValue({
+			id: 'network-1',
+			caip2Id: source.network,
+			displayName: 'Base Sepolia',
+			rpcUrl: 'https://sepolia.base.org',
+			isTestnet: true,
+			isEnabled: true,
+			defaultAsset: null,
+			facilitatorWalletId: null,
+			facilitatorUrl: null,
+			FacilitatorWallet: null,
+			createdById: null,
+			createdAt: new Date('2026-01-01T00:00:00.000Z'),
+			updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+		});
 		mockFacilitatorVerify.mockResolvedValue({
 			isValid: true,
 			payer: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
@@ -1213,6 +1232,73 @@ describe('x402 service helpers', () => {
 					facilitatorWalletId: 'wallet-facilitator',
 				}),
 			).rejects.toMatchObject({ status: 400 });
+		});
+
+		// clearAllMocks runs before each test, so exactly one upsert call is recorded per case.
+		const upsertUpdateArg = () =>
+			(mockX402NetworkUpsert.mock.calls[0][0] as { update: Record<string, unknown> }).update;
+		const baseInput = { caip2Id: source.network, displayName: 'Base Sepolia', rpcUrl: 'https://sepolia.base.org' };
+
+		it('leaves every facilitator column untouched on a metadata-only edit', async () => {
+			await service.upsertX402Network({ ...baseInput, displayName: 'Renamed' });
+			const update = upsertUpdateArg();
+			expect(update).not.toHaveProperty('facilitatorWalletId');
+			expect(update).not.toHaveProperty('facilitatorUrl');
+			expect(update).not.toHaveProperty('facilitatorAuthEnc');
+		});
+
+		it('keeps the stored auth when a remote chain is edited without retyping auth', async () => {
+			// The dialog re-sends the URL but omits the write-only auth — the stored header must survive.
+			await service.upsertX402Network({ ...baseInput, facilitatorUrl: 'https://facilitator.example' });
+			const update = upsertUpdateArg();
+			expect(update.facilitatorUrl).toBe('https://facilitator.example');
+			expect(update.facilitatorWalletId).toBeNull();
+			expect(update).not.toHaveProperty('facilitatorAuthEnc');
+		});
+
+		it('sets (rotates) the auth when a new value is provided with the URL', async () => {
+			await service.upsertX402Network({
+				...baseInput,
+				facilitatorUrl: 'https://facilitator.example',
+				facilitatorAuth: 'Bearer new',
+			});
+			expect(upsertUpdateArg().facilitatorAuthEnc).toBe('encrypted:Bearer new');
+		});
+
+		it('clears the auth when an explicit null is sent with the URL', async () => {
+			await service.upsertX402Network({
+				...baseInput,
+				facilitatorUrl: 'https://facilitator.example',
+				facilitatorAuth: null,
+			});
+			expect(upsertUpdateArg().facilitatorAuthEnc).toBeNull();
+		});
+
+		it('rotates auth in place against an existing remote facilitator (auth only)', async () => {
+			mockX402NetworkFindUnique.mockResolvedValueOnce({ facilitatorUrl: 'https://facilitator.example' });
+			await service.upsertX402Network({ ...baseInput, facilitatorAuth: 'Bearer rotated' });
+			const update = upsertUpdateArg();
+			expect(update.facilitatorAuthEnc).toBe('encrypted:Bearer rotated');
+			// Auth-only must not disturb the mode selectors.
+			expect(update).not.toHaveProperty('facilitatorUrl');
+			expect(update).not.toHaveProperty('facilitatorWalletId');
+		});
+
+		it('rejects an auth-only change when no remote facilitator URL is configured', async () => {
+			// Default network mock has facilitatorUrl null → setting an auth header has nowhere to apply.
+			mockX402NetworkFindUnique.mockResolvedValueOnce({ facilitatorUrl: null });
+			await expect(
+				service.upsertX402Network({ ...baseInput, facilitatorAuth: 'Bearer orphan' }),
+			).rejects.toMatchObject({ status: 400 });
+			expect(mockX402NetworkUpsert).not.toHaveBeenCalled();
+		});
+
+		it('detaches the facilitator when both selectors are explicitly null', async () => {
+			await service.upsertX402Network({ ...baseInput, facilitatorWalletId: null, facilitatorUrl: null });
+			const update = upsertUpdateArg();
+			expect(update.facilitatorWalletId).toBeNull();
+			expect(update.facilitatorUrl).toBeNull();
+			expect(update.facilitatorAuthEnc).toBeNull();
 		});
 	});
 

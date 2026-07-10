@@ -40,20 +40,29 @@ export async function listX402Networks(input?: { isTestnet?: boolean }) {
 
 // Resolve the facilitator configuration into the columns to persist, enforcing the
 // "exactly one mode" invariant: a network settles either through an owned Selling wallet
-// (self-hosted) or a remote HTTP facilitator (facilitatorUrl), never both. Returns undefined
-// when the caller supplied neither field (leave the existing config untouched on update).
+// (self-hosted) or a remote HTTP facilitator (facilitatorUrl), never both.
+//
+// Every field is tri-state so the update can distinguish KEEP from CLEAR — the collapse of
+// `undefined` and `null` into one "not supplied" bucket was what let a plain metadata edit wipe
+// the stored remote-facilitator auth, silently unauthenticating every later settle:
+//   - a field is OMITTED (undefined)      → keep whatever is stored (that column is not written)
+//   - a selector is explicit `null`       → clear it
+//   - a selector is a string              → set that mode (and clear the other + its auth)
+//   - facilitatorAuth string / null / omit → set / clear / keep the remote auth header
+// Returns undefined when nothing facilitator-related was supplied (touch no facilitator column).
 async function resolveFacilitatorData(input: {
 	caip2Id: string;
 	facilitatorWalletId?: string | null;
 	facilitatorUrl?: string | null;
 	facilitatorAuth?: string | null;
 }): Promise<Prisma.X402NetworkUncheckedUpdateInput | undefined> {
-	const hasWallet = input.facilitatorWalletId != null;
-	const hasUrl = input.facilitatorUrl != null;
-	if (hasWallet && hasUrl) {
+	const wantsWallet = typeof input.facilitatorWalletId === 'string';
+	const wantsUrl = typeof input.facilitatorUrl === 'string';
+	if (wantsWallet && wantsUrl) {
 		throw createHttpError(400, 'Provide either facilitatorWalletId or facilitatorUrl, not both');
 	}
-	if (hasWallet) {
+
+	if (wantsWallet) {
 		// A facilitator must reference a live Selling wallet that is bound to THIS network.
 		// Validating here returns a clear 404/400 (instead of an opaque FK 500), stops a retired
 		// or Purchasing wallet from being wired up as a settlement signer, and enforces the
@@ -71,18 +80,47 @@ async function resolveFacilitatorData(input: {
 		if (wallet.Network.caip2Id !== input.caip2Id) {
 			throw createHttpError(400, 'Facilitator wallet is bound to a different network');
 		}
+		// Switching to self-hosted clears any remote endpoint and its auth.
 		return { facilitatorWalletId: input.facilitatorWalletId, facilitatorUrl: null, facilitatorAuthEnc: null };
 	}
-	if (hasUrl) {
+
+	if (wantsUrl) {
 		// The remote facilitator endpoint is admin-supplied and reached server-side, so guard
 		// it against SSRF exactly like the RPC URL.
 		assertSafeRpcUrl(input.facilitatorUrl as string);
-		return {
+		const data: Prisma.X402NetworkUncheckedUpdateInput = {
 			facilitatorWalletId: null,
 			facilitatorUrl: input.facilitatorUrl,
-			facilitatorAuthEnc: input.facilitatorAuth != null ? encrypt(input.facilitatorAuth) : null,
 		};
+		// Only touch the auth column when the caller actually spoke to it: a string sets/rotates
+		// it, an explicit null clears it, and omitting it (the dialog's default — auth is
+		// write-only and never prefilled) leaves the stored header intact across a URL/name edit.
+		if (input.facilitatorAuth !== undefined) {
+			data.facilitatorAuthEnc = input.facilitatorAuth != null ? encrypt(input.facilitatorAuth) : null;
+		}
+		return data;
 	}
+
+	// No mode selected but both selectors were explicitly nulled → detach the facilitator entirely
+	// (the only way to return a network to "no facilitator", e.g. the dialog's "None").
+	if (input.facilitatorWalletId === null && input.facilitatorUrl === null) {
+		return { facilitatorWalletId: null, facilitatorUrl: null, facilitatorAuthEnc: null };
+	}
+
+	// Auth-only change (rotate or clear the header) against the existing remote facilitator, with
+	// no selector supplied. Only valid when a remote URL is already configured — setting auth on a
+	// self-hosted or unconfigured network would store a header nothing ever reads.
+	if (input.facilitatorAuth !== undefined) {
+		const existing = await prisma.x402Network.findUnique({
+			where: { caip2Id: input.caip2Id },
+			select: { facilitatorUrl: true },
+		});
+		if (existing?.facilitatorUrl == null) {
+			throw createHttpError(400, 'facilitatorAuth can only be set on a network with a remote facilitator URL');
+		}
+		return { facilitatorAuthEnc: input.facilitatorAuth != null ? encrypt(input.facilitatorAuth) : null };
+	}
+
 	return undefined;
 }
 
