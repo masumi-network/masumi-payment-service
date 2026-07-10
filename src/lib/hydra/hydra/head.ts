@@ -70,7 +70,7 @@ export abstract class HydraHead<TNode extends IHydraNode = IHydraNode> extends E
 		}
 	}
 
-	abstract init(): Promise<void>;
+	abstract init(timeoutMs?: number): Promise<void>;
 
 	abstract commit(
 		utxos: UTxO[],

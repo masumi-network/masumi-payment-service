@@ -472,7 +472,20 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 				throw createHttpError(502, 'Failed to connect to Hydra node');
 			}
 
-			await hydraHead.init();
+			try {
+				await hydraHead.init();
+			} catch (initError) {
+				// A bounded init that never observed HeadIsInitializing means the
+				// hydra-node posted the InitTx but the chain backend (Blockfrost)
+				// silently dropped it — the node does not resubmit, so it is wedged.
+				// Leave the head Idle (no state regression) and return an actionable
+				// 504 so the operator retries rather than seeing a generic hang/500.
+				await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, initError, 'Init');
+				throw createHttpError(
+					504,
+					initError instanceof Error ? initError.message : 'Init did not confirm on-chain in time',
+				);
+			}
 
 			await prisma.hydraHead.update({
 				where: { id: head.id },
@@ -485,6 +498,9 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 			logger.info(`[HydraAPI] Head ${head.id} initialized`);
 			return { headId: head.id, status: HydraHeadStatus.Initializing };
 		} catch (error) {
+			if (createHttpError.isHttpError(error)) {
+				throw error;
+			}
 			await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, error, 'Init');
 			throw error;
 		}

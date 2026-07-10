@@ -35,11 +35,11 @@ export class CustomHydraHead extends HydraHead<HydraNode> {
 		});
 	}
 
-	async init(): Promise<void> {
+	async init(timeoutMs?: number): Promise<void> {
 		if (!this.mainNodeConnected) {
 			throw new Error('Main node not connected');
 		}
-		await this.mainNode.init();
+		await this.mainNode.init(timeoutMs);
 	}
 
 	async commit(
