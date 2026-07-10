@@ -261,8 +261,10 @@ export function ChainDialog({
 }) {
   const { apiClient, network } = useAppContext();
   // Only load the wallet set while the form is open (it feeds the picker). A facilitator
-  // settles inbound payments, so only Selling wallets are selectable.
-  const { wallets } = useX402Wallets(open, 'Selling');
+  // settles inbound payments and must be bound to THIS chain (the backend rejects any other
+  // binding), so only this chain's Selling wallets are selectable. A chain being created has
+  // no id yet — and can have no bound wallets — so the picker stays empty until it is saved.
+  const { wallets } = useX402Wallets(open && !!editing, 'Selling', editing?.id);
   const saveChain = useApiMutation({
     mutationFn: (body: NonNullable<PostX402NetworksData['body']>) =>
       postX402Networks({ client: apiClient, body }),
@@ -424,10 +426,15 @@ export function ChainDialog({
                 />
                 {errors.facilitatorWalletId ? (
                   <p className="text-xs text-destructive">{errors.facilitatorWalletId.message}</p>
+                ) : editing ? (
+                  <p className="text-xs text-muted-foreground">
+                    An owned Selling wallet bound to this chain signs settlements locally and pays
+                    gas. Required to enable the chain.
+                  </p>
                 ) : (
                   <p className="text-xs text-muted-foreground">
-                    An owned Selling wallet signs settlements locally and pays gas. Required to
-                    enable the chain.
+                    Save the chain first, then create a Selling wallet bound to it and assign it
+                    here as the facilitator.
                   </p>
                 )}
               </>

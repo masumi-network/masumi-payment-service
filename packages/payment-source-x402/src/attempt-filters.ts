@@ -46,17 +46,22 @@ export function buildX402AttemptWhere(input: X402AttemptFilterInput): Prisma.X40
 	const networkFilter: Prisma.X402PaymentAttemptWhereInput =
 		input.caip2Network != null ? { Network: { caip2Id: input.caip2Network } } : {};
 	if (input.filterNeedsManualAction === true) {
-		// `Verified` is also the terminal state of every successful InboundVerify attempt, so the
-		// trace-less branches pin direction to InboundSettle instead of flooding the backlog with
-		// healthy verifies (the errored branch is settle-only already: verifies record errors on
-		// Failed rows, never on Verified ones).
+		// `Verified` is also the terminal state of every successful InboundVerify attempt, so every
+		// branch pins direction to InboundSettle instead of flooding the backlog with healthy
+		// verifies. The errored branch needs the pin too: reconcile only accepts InboundSettle, so
+		// a Verified verify row carrying an errorReason (e.g. a remote facilitator returning
+		// isValid with an invalidReason) would otherwise be an unclearable backlog entry.
 		const stuckBefore = new Date(Date.now() - SETTLE_STALE_MS);
 		return {
 			...networkFilter,
 			apiKeyId: input.apiKeyId,
 			direction: resolveDirectionFilter(input),
 			OR: [
-				{ status: X402PaymentStatus.Verified, errorReason: { not: null } },
+				{
+					direction: X402PaymentDirection.InboundSettle,
+					status: X402PaymentStatus.Verified,
+					errorReason: { not: null },
+				},
 				{
 					direction: X402PaymentDirection.InboundSettle,
 					status: X402PaymentStatus.Verified,

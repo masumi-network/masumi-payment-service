@@ -128,8 +128,11 @@ export async function verifyX402Payment({
 			paymentPayloadHash,
 			paymentPayload: encryptPaymentPayloadForStorage(paymentPayload),
 			paymentIdentifier: identifier.id,
-			errorReason: verifyResponse.invalidReason,
-			errorMessage: verifyResponse.invalidMessage,
+			// Only a rejected verify carries a reason; a remote facilitator (untrusted JSON) may
+			// return isValid together with a non-null invalidReason, and persisting that onto a
+			// Verified row would strand it in the needs-manual-action backlog.
+			errorReason: verifyResponse.isValid ? null : verifyResponse.invalidReason,
+			errorMessage: verifyResponse.isValid ? null : verifyResponse.invalidMessage,
 		},
 		select: { id: true },
 	});
@@ -181,6 +184,7 @@ export async function settleX402Payment({
 					id: true,
 					supportedPaymentSourceId: true,
 					networkId: true,
+					evmWalletId: true,
 					counterpartyWalletId: true,
 					Network: { select: { caip2Id: true } },
 					CounterpartyWallet: { select: { address: true } },
@@ -204,8 +208,10 @@ export async function settleX402Payment({
 				direction: X402PaymentDirection.InboundSettle,
 				status: X402PaymentStatus.Replayed,
 				apiKeyId,
-				// Reuse the original attempt's rail so replay history stays on the same chain.
+				// Reuse the original attempt's rail so replay history stays on the same chain, and
+				// its facilitator wallet so the replay is not misattributed to a remote facilitator.
 				networkId: existingSettlement.PaymentAttempt.networkId,
+				evmWalletId: existingSettlement.PaymentAttempt.evmWalletId,
 				counterpartyWalletId,
 				registryRequestId: source.registryRequestId,
 				supportedPaymentSourceId,

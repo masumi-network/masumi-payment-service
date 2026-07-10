@@ -6,6 +6,7 @@ const mockX402SettlementFindUnique = jest.fn() as jest.Mock<any>;
 const mockX402SettlementUpsert = jest.fn() as jest.Mock<any>;
 const mockX402PaymentAttemptCreate = jest.fn() as jest.Mock<any>;
 const mockX402PaymentAttemptUpdate = jest.fn() as jest.Mock<any>;
+const mockX402PaymentAttemptUpdateMany = jest.fn() as jest.Mock<any>;
 const mockX402PaymentAttemptFindFirst = jest.fn() as jest.Mock<any>;
 const mockX402PaymentAttemptFindUnique = jest.fn() as jest.Mock<any>;
 const mockX402EvmWalletFindUnique = jest.fn() as jest.Mock<any>;
@@ -117,6 +118,7 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 		x402PaymentAttempt: {
 			create: mockX402PaymentAttemptCreate,
 			update: mockX402PaymentAttemptUpdate,
+			updateMany: mockX402PaymentAttemptUpdateMany,
 			findFirst: mockX402PaymentAttemptFindFirst,
 			findUnique: mockX402PaymentAttemptFindUnique,
 		},
@@ -334,6 +336,7 @@ describe('x402 service helpers', () => {
 		mockX402SettlementUpsert.mockResolvedValue({ id: 'settlement-1' });
 		mockX402PaymentAttemptCreate.mockResolvedValue({ id: 'attempt-1' });
 		mockX402PaymentAttemptUpdate.mockResolvedValue({ id: 'attempt-1' });
+		mockX402PaymentAttemptUpdateMany.mockResolvedValue({ count: 1 });
 		mockFacilitatorVerify.mockResolvedValue({
 			isValid: true,
 			payer: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
@@ -374,8 +377,8 @@ describe('x402 service helpers', () => {
 		});
 		mockTxPaymentAttemptCreate.mockResolvedValue({ id: 'attempt-outbound-1' });
 		mockPrismaTransaction.mockImplementation(async (arg: unknown) => {
-			// Prisma.$transaction supports both the array form (reconcile) and the callback form
-			// (reserveBudgetForAttempt); the mock handles both.
+			// Prisma.$transaction supports both the array form (wallet delete) and the callback form
+			// (reserveBudgetForAttempt, reconcile); the mock handles both.
 			if (Array.isArray(arg)) return Promise.all(arg);
 			const callback = arg as (tx: unknown) => Promise<unknown>;
 			return callback({
@@ -385,6 +388,10 @@ describe('x402 service helpers', () => {
 				},
 				x402PaymentAttempt: {
 					create: mockTxPaymentAttemptCreate,
+					updateMany: mockX402PaymentAttemptUpdateMany,
+				},
+				x402Settlement: {
+					upsert: mockX402SettlementUpsert,
 				},
 				x402CounterpartyWallet: {
 					upsert: mockCounterpartyUpsert,
@@ -1216,6 +1223,7 @@ describe('x402 service helpers', () => {
 			direction: 'InboundSettle',
 			status: 'Verified',
 			errorReason: 'settle_threw',
+			errorMessage: 'rpc getCode failed',
 			paymentPayloadHash: 'hash-1',
 			updatedAt: new Date(),
 			// Fields the reconciliation webhook reads.
@@ -1237,10 +1245,31 @@ describe('x402 service helpers', () => {
 			const result = await service.reconcileX402PaymentAttempt({ attemptId: 'attempt-stuck', resolution: 'failed' });
 
 			expect(result).toMatchObject({ attemptId: 'attempt-stuck', status: 'Failed' });
-			expect(mockX402PaymentAttemptUpdate).toHaveBeenCalledWith(
-				expect.objectContaining({ where: { id: 'attempt-stuck' }, data: { status: 'Failed' } }),
+			// Guarded on the status still being Verified so a concurrent resolution loses cleanly.
+			expect(mockX402PaymentAttemptUpdateMany).toHaveBeenCalledWith(
+				expect.objectContaining({
+					where: { id: 'attempt-stuck', status: 'Verified' },
+					data: { status: 'Failed' },
+				}),
 			);
+			// The failure webhook carries the reason the settle recorded before it got stuck.
+			expect(result.webhook).toMatchObject({
+				success: false,
+				errorReason: 'settle_threw',
+				errorMessage: 'rpc getCode failed',
+			});
 			expect(mockX402SettlementUpsert).not.toHaveBeenCalled();
+		});
+
+		it('409s a failed-resolution that lost the race to a concurrent resolution', async () => {
+			mockX402PaymentAttemptFindUnique.mockResolvedValueOnce(backlogAttempt);
+			// The eligibility read saw Verified, but by the time the guarded update runs another
+			// reconcile (or a late settle) already resolved the attempt.
+			mockX402PaymentAttemptUpdateMany.mockResolvedValueOnce({ count: 0 });
+
+			await expect(
+				service.reconcileX402PaymentAttempt({ attemptId: 'attempt-stuck', resolution: 'failed' }),
+			).rejects.toMatchObject({ status: 409 });
 		});
 
 		it('records the settlement and marks the attempt Settled when funds moved', async () => {
@@ -1256,9 +1285,28 @@ describe('x402 service helpers', () => {
 			expect(mockX402SettlementUpsert).toHaveBeenCalledWith(
 				expect.objectContaining({
 					where: { paymentPayloadHash: 'hash-1' },
-					create: expect.objectContaining({ paymentAttemptId: 'attempt-stuck', success: true, txHash: '0xtx' }),
+					// The reconciled settlement is as complete as a normally-persisted one: it
+					// carries the attempt's amount, not a null.
+					create: expect.objectContaining({
+						paymentAttemptId: 'attempt-stuck',
+						success: true,
+						txHash: '0xtx',
+						amount: source.amount,
+					}),
 				}),
 			);
+			expect(result.webhook).toMatchObject({ success: true, errorReason: null, errorMessage: null });
+		});
+
+		it('409s a settled-resolution that lost the race to a concurrent resolution', async () => {
+			mockX402PaymentAttemptFindUnique.mockResolvedValueOnce(backlogAttempt);
+			mockX402PaymentAttemptUpdateMany.mockResolvedValueOnce({ count: 0 });
+
+			await expect(
+				service.reconcileX402PaymentAttempt({ attemptId: 'attempt-stuck', resolution: 'settled', txHash: '0xtx' }),
+			).rejects.toMatchObject({ status: 409 });
+			// The guard aborts the transaction before the settlement row is written.
+			expect(mockX402SettlementUpsert).not.toHaveBeenCalled();
 		});
 
 		it('requires a txHash to reconcile as settled', async () => {
@@ -1280,7 +1328,7 @@ describe('x402 service helpers', () => {
 			await expect(
 				service.reconcileX402PaymentAttempt({ attemptId: 'attempt-stuck', resolution: 'failed' }),
 			).rejects.toMatchObject({ status: 409 });
-			expect(mockX402PaymentAttemptUpdate).not.toHaveBeenCalled();
+			expect(mockX402PaymentAttemptUpdateMany).not.toHaveBeenCalled();
 		});
 
 		it('reconciles an interrupted settle that left no error trace once it is stale', async () => {
@@ -1304,7 +1352,7 @@ describe('x402 service helpers', () => {
 			await expect(
 				service.reconcileX402PaymentAttempt({ attemptId: 'attempt-stuck', resolution: 'failed' }),
 			).rejects.toMatchObject({ status: 409 });
-			expect(mockX402PaymentAttemptUpdate).not.toHaveBeenCalled();
+			expect(mockX402PaymentAttemptUpdateMany).not.toHaveBeenCalled();
 		});
 
 		it('records the lost settlement row for a stale Settled attempt missing one', async () => {
@@ -1344,7 +1392,7 @@ describe('x402 service helpers', () => {
 			await expect(
 				service.reconcileX402PaymentAttempt({ attemptId: 'attempt-stuck', resolution: 'failed' }),
 			).rejects.toMatchObject({ status: 409 });
-			expect(mockX402PaymentAttemptUpdate).not.toHaveBeenCalled();
+			expect(mockX402PaymentAttemptUpdateMany).not.toHaveBeenCalled();
 		});
 	});
 

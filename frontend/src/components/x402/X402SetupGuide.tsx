@@ -41,8 +41,10 @@ export function X402SetupGuide() {
   // a Purchasing wallet funds outbound ones (budget). Each capability needs its own type.
   const hasSellingWallet = wallets.some((wallet) => wallet.type === 'Selling');
   const hasPurchasingWallet = wallets.some((wallet) => wallet.type === 'Purchasing');
+  // A chain settles either through an owned Selling wallet or a remote facilitator URL —
+  // both count as "receiving works", so a remote-only rail doesn't re-show the guide.
   const hasFacilitator = networks.some(
-    (network) => network.isEnabled && !!network.facilitatorWalletId,
+    (network) => network.isEnabled && (!!network.facilitatorWalletId || !!network.facilitatorUrl),
   );
   // `networks` is already scoped to the active environment (testnet chains ↔ Preprod,
   // mainnet ↔ Mainnet), but budgets are fetched across every environment. Scope budgets
@@ -62,12 +64,17 @@ export function X402SetupGuide() {
   if (!apiClient || !authorized || loading || usable) return null;
 
   // Prefer attaching a facilitator to an existing enabled chain — Base ships
-  // preconfigured by the seed — and fall back to adding a brand new chain.
+  // preconfigured by the seed — and fall back to adding a brand new chain. Never pick a
+  // chain that already has a facilitator (wallet OR remote): re-opening a configured
+  // remote chain in the edit dialog would resend its URL without the write-only auth.
   const chainToConfigure: X402Network | null =
-    networks.find((network) => network.isEnabled && !network.facilitatorWalletId) ??
+    networks.find(
+      (network) => network.isEnabled && !network.facilitatorWalletId && !network.facilitatorUrl,
+    ) ??
     networks[0] ??
     null;
-  const configuredChain = networks.find((n) => n.isEnabled && !!n.facilitatorWalletId) ?? null;
+  const configuredChain =
+    networks.find((n) => n.isEnabled && (!!n.facilitatorWalletId || !!n.facilitatorUrl)) ?? null;
 
   const invalidate = (keys: string[][]) =>
     keys.forEach((queryKey) => queryClient.invalidateQueries({ queryKey }));

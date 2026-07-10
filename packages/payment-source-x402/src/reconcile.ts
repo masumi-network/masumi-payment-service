@@ -32,6 +32,7 @@ export async function reconcileX402PaymentAttempt(input: {
 			direction: true,
 			status: true,
 			errorReason: true,
+			errorMessage: true,
 			paymentPayloadHash: true,
 			updatedAt: true,
 			// Extra fields feed the settlement webhook the interrupted settle never emitted.
@@ -64,8 +65,10 @@ export async function reconcileX402PaymentAttempt(input: {
 		payer: attempt.CounterpartyWallet?.address ?? null,
 		txHash,
 		success,
-		errorReason: null,
-		errorMessage: null,
+		// A failure webhook carries the reason the settle recorded before it got stuck (e.g.
+		// settle_threw), mirroring the settle path's failure webhook; a success carries none.
+		errorReason: success ? null : attempt.errorReason,
+		errorMessage: success ? null : attempt.errorMessage,
 	});
 	// Only the settle-reconciliation backlog is reconcilable; anything else is already resolved or
 	// was never in the ambiguous state, so reject rather than silently mutating an unrelated row.
@@ -83,10 +86,16 @@ export async function reconcileX402PaymentAttempt(input: {
 			throw createHttpError(409, 'x402 payment attempt already settled on-chain; reconcile it as settled');
 		}
 		// The crash-window guard does NOT block Failed, so a genuine retry can proceed.
-		await prisma.x402PaymentAttempt.update({
-			where: { id: attempt.id },
+		// Guard on the status still being Verified: the eligibility check above is a separate
+		// read, so a concurrent reconcile (or a late-completing settle) may have resolved the
+		// attempt in between — the loser must 409, not overwrite a Settled outcome with Failed.
+		const updated = await prisma.x402PaymentAttempt.updateMany({
+			where: { id: attempt.id, status: X402PaymentStatus.Verified },
 			data: { status: X402PaymentStatus.Failed },
 		});
+		if (updated.count !== 1) {
+			throw createHttpError(409, 'x402 payment attempt was concurrently resolved; re-check its state');
+		}
 		return { attemptId: attempt.id, status: X402PaymentStatus.Failed, webhook: buildWebhook(false, null) };
 	}
 
@@ -100,21 +109,31 @@ export async function reconcileX402PaymentAttempt(input: {
 	// paymentPayloadHash is unique on X402Settlement, so the upsert is idempotent: re-running the
 	// reconcile (or racing a late settle) will not create a duplicate settlement. For the
 	// Settled-missing-record state the status update is a no-op and only the settlement row lands.
-	await prisma.$transaction([
-		prisma.x402Settlement.upsert({
-			where: { paymentPayloadHash: attempt.paymentPayloadHash },
+	const paymentPayloadHash = attempt.paymentPayloadHash;
+	await prisma.$transaction(async (tx) => {
+		// Same TOCTOU guard as the failed path: only an attempt still in a reconcilable status may
+		// be flipped, so a concurrent 'failed' reconcile cannot interleave and leave a Failed
+		// attempt owning a success settlement. Settled stays allowed (the missing-record state).
+		const updated = await tx.x402PaymentAttempt.updateMany({
+			where: { id: attempt.id, status: { in: [X402PaymentStatus.Verified, X402PaymentStatus.Settled] } },
+			data: { status: X402PaymentStatus.Settled },
+		});
+		if (updated.count !== 1) {
+			throw createHttpError(409, 'x402 payment attempt was concurrently resolved; re-check its state');
+		}
+		await tx.x402Settlement.upsert({
+			where: { paymentPayloadHash },
 			create: {
 				paymentAttemptId: attempt.id,
-				paymentPayloadHash: attempt.paymentPayloadHash,
+				paymentPayloadHash,
 				success: true,
 				txHash: input.txHash,
+				// Keep the record as complete as a normally-persisted settlement; the attempt's
+				// amount is what the operator-confirmed on-chain transfer settled.
+				amount: attempt.amount,
 			},
 			update: {},
-		}),
-		prisma.x402PaymentAttempt.update({
-			where: { id: attempt.id },
-			data: { status: X402PaymentStatus.Settled },
-		}),
-	]);
+		});
+	});
 	return { attemptId: attempt.id, status: X402PaymentStatus.Settled, webhook: buildWebhook(true, input.txHash) };
 }

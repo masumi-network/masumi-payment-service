@@ -215,7 +215,9 @@ export const walletsCountSchemaInput = z.object({
 
 export const walletBalanceSchemaInput = z.object({
 	id: z.string().describe('Id of the managed EVM wallet to read balances for'),
-	caip2Network: caip2Eip155Schema.optional().describe('Restrict to a single chain; defaults to all enabled chains'),
+	caip2Network: caip2Eip155Schema
+		.optional()
+		.describe("Optional CAIP-2 chain id; must be the wallet's bound network (any other chain returns no balances)"),
 });
 
 export const walletBalanceSchemaOutput = z.object({

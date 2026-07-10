@@ -3,6 +3,7 @@ import { z } from '@masumi/payment-core/zod';
 import {
 	budgetSchema,
 	createPaymentSchemaOutput,
+	createWalletSchemaInput,
 	createWalletSchemaOutput,
 	listBudgetSchemaOutput,
 	listNetworksSchemaOutput,
@@ -147,8 +148,9 @@ export const listX402SettlementsResponseExample = {
 
 // Request examples. privateKey is intentionally omitted so a new key is generated server-side.
 export const createX402WalletBodyExample = {
+	networkId: x402WalletExample.networkId,
 	type: X402EvmWalletType.Purchasing,
-};
+} satisfies z.infer<typeof createWalletSchemaInput>;
 
 // The create response returns the generated key once for backup (null when imported).
 export const createX402WalletResponseExample = {

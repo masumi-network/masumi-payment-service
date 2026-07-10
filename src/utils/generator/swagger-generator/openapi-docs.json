@@ -24518,6 +24518,7 @@
                                     "type"
                                 ],
                                 "example": {
+                                    "networkId": "clx402network0001",
                                     "type": "Purchasing"
                                 }
                             }
@@ -26095,7 +26096,7 @@
         },
         "/x402/wallets/balance": {
             "get": {
-                "description": "Reads on-chain balances (native gas plus the default token) of a managed EVM wallet across the enabled chains, or a single chain.",
+                "description": "Reads on-chain balances (native gas plus the default token) of a managed EVM wallet on the wallet's bound network.",
                 "summary": "Read managed x402 wallet balances. (pay access required; non-admin keys only their own)",
                 "tags": [
                     "x402"
@@ -26120,10 +26121,10 @@
                         "schema": {
                             "type": "string",
                             "pattern": "^eip155:\\d+$",
-                            "description": "Restrict to a single chain; defaults to all enabled chains"
+                            "description": "Optional CAIP-2 chain id; must be the wallet's bound network (any other chain returns no balances)"
                         },
                         "required": false,
-                        "description": "Restrict to a single chain; defaults to all enabled chains",
+                        "description": "Optional CAIP-2 chain id; must be the wallet's bound network (any other chain returns no balances)",
                         "name": "caip2Network",
                         "in": "query"
                     }

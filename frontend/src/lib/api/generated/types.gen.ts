@@ -11153,7 +11153,7 @@ export type GetX402WalletsBalanceData = {
          */
         id: string;
         /**
-         * Restrict to a single chain; defaults to all enabled chains
+         * Optional CAIP-2 chain id; must be the wallet's bound network (any other chain returns no balances)
          */
         caip2Network?: string;
     };

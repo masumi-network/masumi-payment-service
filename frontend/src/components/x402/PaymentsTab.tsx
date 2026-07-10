@@ -35,6 +35,10 @@ import { postX402PaymentsReconcile, X402PaymentAttempt } from '@/lib/api/generat
 
 const TX_HASH_REGEX = /^0x[a-fA-F0-9]{64}$/;
 
+// Mirrors the backend's SETTLE_STALE_MS: a trace-less settle younger than this may still be a
+// live in-flight settle, so the backend refuses to reconcile it and the panel must not offer to.
+const SETTLE_STALE_MS = 300_000;
+
 const ALL = '__all__';
 
 // Primary view switcher (mirrors Cardano's Payments/Purchases split): Pay = outbound, Receive =
@@ -74,6 +78,14 @@ export function PaymentsTab() {
   const { activeRail, selectedX402ChainId } = useAppContext();
   const [filters, setFilters] = useState<X402PaymentFilters>({});
   const [selected, setSelected] = useState<X402PaymentAttempt | null>(null);
+  // Captured when the details dialog opens (event time, render stays pure); the reconcile
+  // panel compares it against the attempt's updatedAt to apply the backend's staleness gate.
+  const [detailsOpenedAt, setDetailsOpenedAt] = useState(0);
+  const openDetails = (attempt: X402PaymentAttempt) => {
+    setSelected(attempt);
+    // eslint-disable-next-line react-hooks/purity -- Event handler (invoked via onClick/rowActivation, never during render); the open-time snapshot is exactly what the staleness gate needs.
+    setDetailsOpenedAt(Date.now());
+  };
 
   // On the EVM rail, scope the payment list to the chain selected in the sidebar, and keep
   // it in sync when that selection changes. A manual chain filter persists until the
@@ -88,7 +100,6 @@ export function PaymentsTab() {
     if (!selectedX402ChainId) {
       if (lastAppliedCaip2.current !== undefined) {
         lastAppliedCaip2.current = undefined;
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- Clears the stale chain scope when the sidebar selection is cleared.
         setFilters((prev) => (prev.caip2Network ? { ...prev, caip2Network: undefined } : prev));
       }
       return;
@@ -114,9 +125,8 @@ export function PaymentsTab() {
       ...prev,
       side: view === 'buy' ? 'buy' : view === 'sell' ? 'sell' : undefined,
       needsManualAction: view === 'needs' ? true : undefined,
-      // Needs-action pins its own set of states, so drop any status refinement + granular direction.
+      // Needs-action pins its own set of states, so drop any status refinement.
       status: view === 'needs' ? undefined : prev.status,
-      direction: undefined,
     }));
 
   return (
@@ -244,8 +254,8 @@ export function PaymentsTab() {
                   key={attempt.id}
                   className="border-b last:border-0 cursor-pointer hover:bg-muted/40"
                   aria-label="View payment attempt details"
-                  onClick={() => setSelected(attempt)}
-                  {...rowActivation(() => setSelected(attempt))}
+                  onClick={() => openDetails(attempt)}
+                  {...rowActivation(() => openDetails(attempt))}
                 >
                   <td className="p-4 text-sm">{DIRECTION_LABEL[attempt.direction]}</td>
                   <td className="p-4">
@@ -277,6 +287,7 @@ export function PaymentsTab() {
       <PaymentDetailsDialog
         attempt={selected}
         chainLabel={selected ? chainLabel(selected.caip2Network) : ''}
+        openedAtMs={detailsOpenedAt}
         onClose={() => setSelected(null)}
         onReconciled={() => {
           setSelected(null);
@@ -319,11 +330,13 @@ function CopyValue({ value }: { value: string }) {
 function PaymentDetailsDialog({
   attempt,
   chainLabel,
+  openedAtMs,
   onClose,
   onReconciled,
 }: {
   attempt: X402PaymentAttempt | null;
   chainLabel: string;
+  openedAtMs: number;
   onClose: () => void;
   onReconciled: () => void;
 }) {
@@ -441,7 +454,11 @@ function PaymentDetailsDialog({
               </div>
             )}
 
-            <ReconcileSection attempt={attempt} onReconciled={onReconciled} />
+            <ReconcileSection
+              attempt={attempt}
+              openedAtMs={openedAtMs}
+              onReconciled={onReconciled}
+            />
           </div>
         )}
       </DialogContent>
@@ -451,38 +468,48 @@ function PaymentDetailsDialog({
 
 // An inbound settle can get stuck when the on-chain settle result is ambiguous (the settle threw
 // or crashed after broadcasting). Only an operator can resolve it — by confirming on-chain whether
-// funds moved. Shown for InboundSettle attempts left Verified, or Settled but missing their
-// settlement record (funds moved, only 'settled' is valid then).
+// funds moved. Shown only for the states the backend actually accepts: Verified with a recorded
+// error, or (once stale) a trace-less Verified marker / a Settled attempt missing its settlement
+// record — a fresh trace-less marker may still be a live in-flight settle.
 function ReconcileSection({
   attempt,
+  openedAtMs,
   onReconciled,
 }: {
   attempt: X402PaymentAttempt;
+  openedAtMs: number;
   onReconciled: () => void;
 }) {
   const { apiClient } = useAppContext();
   const [txHash, setTxHash] = useState('');
+  const [pendingResolution, setPendingResolution] = useState<'settled' | 'failed' | null>(null);
   const reconcile = useApiMutation({
     mutationFn: (body: { attemptId: string; resolution: 'settled' | 'failed'; txHash?: string }) =>
       postX402PaymentsReconcile({ client: apiClient, body }),
+    // Every filter combination is its own query key; invalidate the whole keyspace so the
+    // "Needs action" view can't keep showing an already-reconciled attempt from its cache.
+    invalidateKeys: [['x402-payments']],
     errorMessage: 'Failed to reconcile payment',
   });
 
-  const settledMissingRecord = attempt.status === 'Settled' && !attempt.Settlement;
+  const isStale = openedAtMs - new Date(attempt.updatedAt).getTime() > SETTLE_STALE_MS;
+  const settledMissingRecord = attempt.status === 'Settled' && !attempt.Settlement && isStale;
+  const ambiguousVerified = attempt.status === 'Verified' && (!!attempt.errorReason || isStale);
   const isReconcilable =
-    attempt.direction === 'InboundSettle' &&
-    (attempt.status === 'Verified' || settledMissingRecord);
+    attempt.direction === 'InboundSettle' && (ambiguousVerified || settledMissingRecord);
   if (!isReconcilable) return null;
 
   const txHashValid = TX_HASH_REGEX.test(txHash);
   const submit = async (resolution: 'settled' | 'failed') => {
+    setPendingResolution(resolution);
     const response = await reconcile
       .mutateAsync({
         attemptId: attempt.id,
         resolution,
         txHash: resolution === 'settled' ? txHash : undefined,
       })
-      .catch(() => null);
+      .catch(() => null)
+      .finally(() => setPendingResolution(null));
     if (!response) return;
     toast.success(resolution === 'settled' ? 'Marked settled' : 'Marked failed');
     onReconciled();
@@ -506,7 +533,14 @@ function ReconcileSection({
           className="font-mono text-xs"
           value={txHash}
           onChange={(e) => setTxHash(e.target.value.trim())}
+          aria-invalid={txHash !== '' && !txHashValid}
+          aria-describedby="reconcile-txhash-hint"
         />
+        <p id="reconcile-txhash-hint" className="text-xs text-muted-foreground">
+          {txHash !== '' && !txHashValid
+            ? 'Not a valid transaction hash — expected 0x followed by 64 hex characters.'
+            : 'Required to mark the attempt settled.'}
+        </p>
       </div>
       <div className="flex items-center gap-2">
         <Button
@@ -514,7 +548,7 @@ function ReconcileSection({
           disabled={!txHashValid || reconcile.isPending}
           onClick={() => submit('settled')}
         >
-          {reconcile.isPending ? 'Saving…' : 'Mark settled'}
+          {pendingResolution === 'settled' ? 'Saving…' : 'Mark settled'}
         </Button>
         {!settledMissingRecord && (
           <Button
@@ -523,7 +557,7 @@ function ReconcileSection({
             disabled={reconcile.isPending}
             onClick={() => submit('failed')}
           >
-            Mark failed (retryable)
+            {pendingResolution === 'failed' ? 'Saving…' : 'Mark failed (retryable)'}
           </Button>
         )}
       </div>

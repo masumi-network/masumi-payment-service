@@ -1475,7 +1475,7 @@ export const postX402WalletsUpdate = <ThrowOnError extends boolean = false>(opti
 /**
  * Read managed x402 wallet balances. (pay access required; non-admin keys only their own)
  *
- * Reads on-chain balances (native gas plus the default token) of a managed EVM wallet across the enabled chains, or a single chain.
+ * Reads on-chain balances (native gas plus the default token) of a managed EVM wallet on the wallet's bound network.
  */
 export const getX402WalletsBalance = <ThrowOnError extends boolean = false>(options: Options<GetX402WalletsBalanceData, ThrowOnError>): RequestResult<GetX402WalletsBalanceResponses, unknown, ThrowOnError> => (options.client ?? client).get<GetX402WalletsBalanceResponses, unknown, ThrowOnError>({
     responseType: 'json',

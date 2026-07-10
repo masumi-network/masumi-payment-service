@@ -64,7 +64,7 @@ export function registerX402ManagementPaths({ registry, apiKeyAuth }: SwaggerReg
 		method: 'get',
 		path: '/x402/wallets/balance',
 		description:
-			'Reads on-chain balances (native gas plus the default token) of a managed EVM wallet across the enabled chains, or a single chain.',
+			"Reads on-chain balances (native gas plus the default token) of a managed EVM wallet on the wallet's bound network.",
 		summary: 'Read managed x402 wallet balances. (pay access required; non-admin keys only their own)',
 		tags: ['x402'],
 		security: secured,

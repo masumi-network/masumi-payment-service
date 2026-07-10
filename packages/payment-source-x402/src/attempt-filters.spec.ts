@@ -26,8 +26,14 @@ describe('buildX402AttemptWhere', () => {
 		expect(where).toEqual({
 			direction: undefined,
 			OR: [
-				// Settle left an explicit error trace (threw / facilitator failure).
-				{ status: X402PaymentStatus.Verified, errorReason: { not: null } },
+				// Settle left an explicit error trace (threw / facilitator failure). Pinned to
+				// InboundSettle: reconcile refuses verifies, so an errored verify row must not
+				// surface as an unclearable backlog entry.
+				{
+					direction: X402PaymentDirection.InboundSettle,
+					status: X402PaymentStatus.Verified,
+					errorReason: { not: null },
+				},
 				// Interrupted mid-settle: a stale trace-less pre-settle marker.
 				{
 					direction: X402PaymentDirection.InboundSettle,
@@ -61,7 +67,11 @@ describe('buildX402AttemptWhere', () => {
 		});
 		// No top-level status: the backlog branches carry their own, so the explicit filter is ignored.
 		expect(where).not.toHaveProperty('status');
-		expect(where.OR?.[0]).toEqual({ status: X402PaymentStatus.Verified, errorReason: { not: null } });
+		expect(where.OR?.[0]).toEqual({
+			direction: X402PaymentDirection.InboundSettle,
+			status: X402PaymentStatus.Verified,
+			errorReason: { not: null },
+		});
 	});
 
 	it('maps side=buy to the outbound direction', () => {

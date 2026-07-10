@@ -90,6 +90,11 @@ export function WalletsTab() {
   const queryClient = useQueryClient();
   const { wallets, isLoading, isRefetching, refetch, hasMore, isFetchingNextPage, loadMore } =
     useX402WalletsPaginated();
+  // Label-only network lookup: the wallet list spans both environments, and a label miss
+  // falls back to the raw CAIP-2 id, so load silently across all environments.
+  const { networks } = useX402Networks({ silentErrors: true, allEnvironments: true });
+  const chainLabel = (caip2: string) =>
+    networks.find((network) => network.caip2Id === caip2)?.displayName ?? caip2;
   const [dialogOpen, setDialogOpen] = useState(false);
   const [retiringId, setRetiringId] = useState<string | null>(null);
   const [balanceWallet, setBalanceWallet] = useState<X402Wallet | null>(null);
@@ -146,6 +151,9 @@ export function WalletsTab() {
                 Type
               </th>
               <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                Network
+              </th>
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
                 Note
               </th>
               <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
@@ -159,7 +167,7 @@ export function WalletsTab() {
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={5} className="py-10">
+                <td colSpan={6} className="py-10">
                   <div className="flex justify-center">
                     <Spinner />
                   </div>
@@ -167,7 +175,7 @@ export function WalletsTab() {
               </tr>
             ) : wallets.length === 0 ? (
               <tr>
-                <td colSpan={5}>
+                <td colSpan={6}>
                   <EmptyState
                     title="No managed wallets"
                     description="Create a wallet to fund and settle x402 payments."
@@ -186,6 +194,7 @@ export function WalletsTab() {
                     </div>
                   </td>
                   <td className="p-4 text-sm">{WALLET_TYPE_LABEL[wallet.type]}</td>
+                  <td className="p-4 text-sm">{chainLabel(wallet.caip2Network)}</td>
                   <td className="p-4 text-sm text-muted-foreground">
                     {wallet.note || <span className="italic opacity-60">—</span>}
                   </td>
@@ -300,6 +309,9 @@ export function CreateWalletDialog({
   const [privateKey, setPrivateKey] = useState('');
   const [showImportKey, setShowImportKey] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Rendered under the Network select (not the shared key-section error), and cleared as
+  // soon as a network is picked, so the message sits next to the field it is about.
+  const [networkError, setNetworkError] = useState<string | null>(null);
   const createWallet = useApiMutation({
     mutationFn: (body: NonNullable<PostX402WalletsData['body']>) =>
       postX402Wallets({ client: apiClient, body }),
@@ -312,7 +324,7 @@ export function CreateWalletDialog({
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!networkId) {
-      setError('Select the network this wallet operates on');
+      setNetworkError('Select the network this wallet operates on');
       return;
     }
     const trimmed = privateKey.trim();
@@ -377,8 +389,15 @@ export function CreateWalletDialog({
 
             <div className="space-y-2">
               <Label className="text-sm font-medium">Network</Label>
-              <Select value={networkId} onValueChange={setNetworkId} disabled={networksLoading}>
-                <SelectTrigger aria-label="Network">
+              <Select
+                value={networkId}
+                onValueChange={(value) => {
+                  setNetworkId(value);
+                  setNetworkError(null);
+                }}
+                disabled={networksLoading}
+              >
+                <SelectTrigger aria-label="Network" aria-invalid={!!networkError}>
                   <SelectValue
                     placeholder={networksLoading ? 'Loading networks…' : 'Select a network'}
                   />
@@ -391,9 +410,13 @@ export function CreateWalletDialog({
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs leading-snug text-muted-foreground">
-                The wallet is bound to this payment source and can only transact on its chain.
-              </p>
+              {networkError ? (
+                <p className="text-xs text-destructive">{networkError}</p>
+              ) : (
+                <p className="text-xs leading-snug text-muted-foreground">
+                  The wallet is bound to this payment source and can only transact on its chain.
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">

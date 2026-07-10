@@ -78,11 +78,11 @@ export function useX402Networks(options?: {
  * fetch only Purchasing (budget) or Selling (facilitator) wallets. Read-only
  * labels should use the denormalized address on the network/budget instead.
  */
-export function useX402Wallets(enabled = true, type?: X402Wallet['type']) {
+export function useX402Wallets(enabled = true, type?: X402Wallet['type'], networkId?: string) {
   const { apiClient, authorized } = useAppContext();
 
   const query = useQuery({
-    queryKey: ['x402-wallets', 'all', type ?? 'any'],
+    queryKey: ['x402-wallets', 'all', type ?? 'any', networkId ?? 'any'],
     queryFn: async () => {
       let items: X402Wallet[] = [];
       let cursor: string | undefined;
@@ -91,7 +91,7 @@ export function useX402Wallets(enabled = true, type?: X402Wallet['type']) {
           () =>
             getX402Wallets({
               client: apiClient,
-              query: { take: PAGE_SIZE, cursorId: cursor, type },
+              query: { take: PAGE_SIZE, cursorId: cursor, type, networkId },
             }),
           { errorMessage: 'Failed to fetch wallets' },
         );
@@ -234,7 +234,6 @@ export function useX402LowBalanceRules(includeDisabled = true) {
 
 export type X402PaymentFilters = {
   status?: X402PaymentAttempt['status'];
-  direction?: X402PaymentAttempt['direction'];
   /** Coarse side switch: buy = outbound payments, sell = inbound (verify + settle). */
   side?: 'buy' | 'sell';
   caip2Network?: string;
@@ -249,7 +248,6 @@ export function useX402PaymentAttempts(filters: X402PaymentFilters = {}) {
     queryKey: [
       'x402-payments',
       filters.status ?? null,
-      filters.direction ?? null,
       filters.side ?? null,
       filters.caip2Network ?? null,
       filters.needsManualAction ?? false,
@@ -263,7 +261,6 @@ export function useX402PaymentAttempts(filters: X402PaymentFilters = {}) {
               take: PAGE_SIZE,
               cursorId: pageParam ?? undefined,
               status: filters.status,
-              direction: filters.direction,
               side: filters.side,
               caip2Network: filters.caip2Network,
               filterNeedsManualAction: filters.needsManualAction ? ('true' as const) : undefined,

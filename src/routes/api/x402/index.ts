@@ -201,6 +201,7 @@ export const listX402WalletsGet = payAuthenticatedEndpointFactory.build({
 			take: input.take,
 			cursorId: input.cursorId,
 			type: input.type,
+			networkId: input.networkId,
 			ownerScope: x402OwnerScope(ctx),
 		}),
 	}),
