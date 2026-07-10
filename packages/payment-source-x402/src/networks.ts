@@ -56,6 +56,8 @@ async function resolveFacilitatorData(input: {
 	facilitatorUrl?: string | null;
 	facilitatorAuth?: string | null;
 }): Promise<Prisma.X402NetworkUncheckedUpdateInput | undefined> {
+	const hasWalletSelector = input.facilitatorWalletId !== undefined;
+	const hasUrlSelector = input.facilitatorUrl !== undefined;
 	const wantsWallet = typeof input.facilitatorWalletId === 'string';
 	const wantsUrl = typeof input.facilitatorUrl === 'string';
 	if (wantsWallet && wantsUrl) {
@@ -92,25 +94,52 @@ async function resolveFacilitatorData(input: {
 			facilitatorWalletId: null,
 			facilitatorUrl: input.facilitatorUrl,
 		};
-		// Only touch the auth column when the caller actually spoke to it: a string sets/rotates
-		// it, an explicit null clears it, and omitting it (the dialog's default — auth is
-		// write-only and never prefilled) leaves the stored header intact across a URL/name edit.
+		// Only preserve write-only auth when the remote endpoint stays on the same origin. Carrying
+		// an Authorization value to another scheme/host/port would disclose that credential to the
+		// replacement facilitator. Path/query edits on the same origin may safely keep it.
 		if (input.facilitatorAuth !== undefined) {
 			data.facilitatorAuthEnc = input.facilitatorAuth != null ? encrypt(input.facilitatorAuth) : null;
+		} else {
+			const existing = await prisma.x402Network.findUnique({
+				where: { caip2Id: input.caip2Id },
+				select: { facilitatorUrl: true, facilitatorAuthEnc: true },
+			});
+			let hasSameOrigin = false;
+			try {
+				hasSameOrigin =
+					existing?.facilitatorUrl != null &&
+					new URL(existing.facilitatorUrl).origin === new URL(input.facilitatorUrl as string).origin;
+			} catch {
+				// Invalid legacy URLs must not cause their auth to be forwarded anywhere.
+			}
+			// Write the snapshotted value explicitly even when preserving it. An omitted column could
+			// race another URL/auth update and retain a credential that belongs to the other origin.
+			data.facilitatorAuthEnc = hasSameOrigin ? (existing?.facilitatorAuthEnc ?? null) : null;
 		}
 		return data;
 	}
 
-	// No mode selected but both selectors were explicitly nulled → detach the facilitator entirely
-	// (the only way to return a network to "no facilitator", e.g. the dialog's "None").
-	if (input.facilitatorWalletId === null && input.facilitatorUrl === null) {
-		return { facilitatorWalletId: null, facilitatorUrl: null, facilitatorAuthEnc: null };
+	if (!hasWalletSelector && !hasUrlSelector && input.facilitatorAuth === undefined) return undefined;
+
+	// Apply explicit selector clears independently. Clearing the remote URL also clears its auth;
+	// clearing only the wallet selector leaves an existing remote facilitator untouched.
+	const data: Prisma.X402NetworkUncheckedUpdateInput = {};
+	if (input.facilitatorWalletId === null) data.facilitatorWalletId = null;
+	if (input.facilitatorUrl === null) {
+		data.facilitatorUrl = null;
+		data.facilitatorAuthEnc = null;
 	}
 
 	// Auth-only change (rotate or clear the header) against the existing remote facilitator, with
 	// no selector supplied. Only valid when a remote URL is already configured — setting auth on a
 	// self-hosted or unconfigured network would store a header nothing ever reads.
 	if (input.facilitatorAuth !== undefined) {
+		if (input.facilitatorUrl === null) {
+			if (input.facilitatorAuth != null) {
+				throw createHttpError(400, 'facilitatorAuth cannot be set while clearing facilitatorUrl');
+			}
+			return data;
+		}
 		const existing = await prisma.x402Network.findUnique({
 			where: { caip2Id: input.caip2Id },
 			select: { facilitatorUrl: true },
@@ -118,10 +147,16 @@ async function resolveFacilitatorData(input: {
 		if (existing?.facilitatorUrl == null) {
 			throw createHttpError(400, 'facilitatorAuth can only be set on a network with a remote facilitator URL');
 		}
-		return { facilitatorAuthEnc: input.facilitatorAuth != null ? encrypt(input.facilitatorAuth) : null };
+		// Snapshot the whole observed remote mode, not only the credential. Otherwise an auth-only
+		// update that races a URL/mode switch could commit last and attach this old-origin secret to
+		// the newly configured endpoint. Last-writer-wins may restore the observed URL, but never
+		// crosses the credential's origin boundary.
+		data.facilitatorWalletId = null;
+		data.facilitatorUrl = existing.facilitatorUrl;
+		data.facilitatorAuthEnc = input.facilitatorAuth != null ? encrypt(input.facilitatorAuth) : null;
 	}
 
-	return undefined;
+	return data;
 }
 
 export async function upsertX402Network(input: {
@@ -247,10 +282,12 @@ export async function setX402WalletBudget(input: {
 		// createdById is intentionally not updated — it records who first set the budget.
 		// Setting a budget replaces the remaining amount with a fresh grant, so reset
 		// spentAmount too; otherwise "remaining + spent" no longer equals what was granted
-		// and the Spent column keeps stale consumption from the previous grant.
+		// and the Spent column keeps stale consumption from the previous grant. Incrementing
+		// generation prevents an in-flight refund from crediting this replacement grant.
 		update: {
 			remainingAmount,
 			spentAmount: 0n,
+			generation: { increment: 1 },
 		},
 		select: BUDGET_SELECT,
 	});

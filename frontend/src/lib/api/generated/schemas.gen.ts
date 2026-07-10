@@ -4541,7 +4541,7 @@ export const X402PaymentAttemptSchema = {
         payTo: {
             type: 'string',
             nullable: true,
-            description: 'Payee address. Null for inbound attempts with no linked registered payment source.'
+            description: 'Immutable payee-address snapshot. Null only for legacy transition rows without a snapshot.'
         },
         payer: {
             type: 'string',

@@ -464,6 +464,9 @@ model X402WalletBudget {
   asset           String
   remainingAmount BigInt
   spentAmount     BigInt        @default(0)
+  // Incremented whenever an admin replaces the grant. In-flight refunds must match the
+  // generation they reserved from so they cannot credit a later replacement grant.
+  generation      Int           @default(0)
   enabled         Boolean       @default(true)
   createdById     String?
   ApiKey          ApiKey        @relation("X402WalletBudgetGrantee", fields: [apiKeyId], references: [id], onDelete: Cascade)
@@ -499,6 +502,9 @@ model X402PaymentAttempt {
   scheme                   X402PaymentScheme       @default(Exact)
   asset                    String
   amount                   BigInt
+  // Immutable recipient snapshot. Inbound attempts must not derive historical payTo
+  // solely from SupportedPaymentSource because registry updates replace those rows.
+  payTo                    String?
   resource                 String?
   paymentPayloadHash       String?
   paymentPayload           Json?

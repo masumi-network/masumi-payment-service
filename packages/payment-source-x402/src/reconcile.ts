@@ -1,5 +1,5 @@
 import createHttpError from 'http-errors';
-import { X402PaymentDirection, X402PaymentStatus, prisma } from '@masumi/payment-core/db';
+import { Prisma, X402PaymentDirection, X402PaymentStatus, prisma } from '@masumi/payment-core/db';
 import { SETTLE_STALE_MS } from './settle-lock';
 
 // Manually resolve an inbound settle whose outcome the service does not know — the "needs manual
@@ -34,6 +34,7 @@ export async function reconcileX402PaymentAttempt(input: {
 			errorReason: true,
 			errorMessage: true,
 			paymentPayloadHash: true,
+			payTo: true,
 			updatedAt: true,
 			// Extra fields feed the settlement webhook the interrupted settle never emitted.
 			supportedPaymentSourceId: true,
@@ -61,7 +62,9 @@ export async function reconcileX402PaymentAttempt(input: {
 		caip2Network: attempt.Network.caip2Id,
 		asset: attempt.asset,
 		amount: attempt.amount.toString(),
-		payTo: attempt.SupportedPaymentSource?.payTo ?? null,
+		// Prefer the immutable attempt snapshot; transition rows created before the snapshot column
+		// was introduced may still need the live source as a nullable fallback.
+		payTo: attempt.payTo ?? attempt.SupportedPaymentSource?.payTo ?? null,
 		payer: attempt.CounterpartyWallet?.address ?? null,
 		txHash,
 		success,
@@ -106,34 +109,44 @@ export async function reconcileX402PaymentAttempt(input: {
 		throw createHttpError(400, 'x402 payment attempt has no payment payload hash to settle against');
 	}
 
-	// paymentPayloadHash is unique on X402Settlement, so the upsert is idempotent: re-running the
-	// reconcile (or racing a late settle) will not create a duplicate settlement. For the
-	// Settled-missing-record state the status update is a no-op and only the settlement row lands.
+	// The unique settlement insert is also the winner claim for two concurrent settled
+	// reconciliations. Empty-update upsert cannot serve as a claim: after the first caller changes
+	// Verified → Settled, the second status update still matches Settled and would emit its own
+	// possibly-conflicting tx hash while silently accepting the first caller's settlement row.
 	const paymentPayloadHash = attempt.paymentPayloadHash;
-	await prisma.$transaction(async (tx) => {
-		// Same TOCTOU guard as the failed path: only an attempt still in a reconcilable status may
-		// be flipped, so a concurrent 'failed' reconcile cannot interleave and leave a Failed
-		// attempt owning a success settlement. Settled stays allowed (the missing-record state).
-		const updated = await tx.x402PaymentAttempt.updateMany({
-			where: { id: attempt.id, status: { in: [X402PaymentStatus.Verified, X402PaymentStatus.Settled] } },
-			data: { status: X402PaymentStatus.Settled },
+	let settlement: { paymentAttemptId: string; txHash: string | null };
+	try {
+		settlement = await prisma.$transaction(async (tx) => {
+			// Same TOCTOU guard as the failed path: only an attempt still in a reconcilable status may
+			// be flipped, so a concurrent 'failed' reconcile cannot interleave and leave a Failed
+			// attempt owning a success settlement. Settled stays allowed (the missing-record state).
+			const updated = await tx.x402PaymentAttempt.updateMany({
+				where: { id: attempt.id, status: { in: [X402PaymentStatus.Verified, X402PaymentStatus.Settled] } },
+				data: { status: X402PaymentStatus.Settled },
+			});
+			if (updated.count !== 1) {
+				throw createHttpError(409, 'x402 payment attempt was concurrently resolved; re-check its state');
+			}
+			return tx.x402Settlement.create({
+				data: {
+					paymentAttemptId: attempt.id,
+					paymentPayloadHash,
+					success: true,
+					txHash: input.txHash,
+					// Keep the record as complete as a normally-persisted settlement; the attempt's
+					// amount is what the operator-confirmed on-chain transfer settled.
+					amount: attempt.amount,
+				},
+				select: { paymentAttemptId: true, txHash: true },
+			});
 		});
-		if (updated.count !== 1) {
-			throw createHttpError(409, 'x402 payment attempt was concurrently resolved; re-check its state');
+	} catch (error) {
+		if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+			// Covers both a concurrent winner for this attempt and a settlement with this payload hash
+			// owned by a different attempt. The transaction rolls the status update back in either case.
+			throw createHttpError(409, 'x402 payment payload was concurrently settled or belongs to another attempt');
 		}
-		await tx.x402Settlement.upsert({
-			where: { paymentPayloadHash },
-			create: {
-				paymentAttemptId: attempt.id,
-				paymentPayloadHash,
-				success: true,
-				txHash: input.txHash,
-				// Keep the record as complete as a normally-persisted settlement; the attempt's
-				// amount is what the operator-confirmed on-chain transfer settled.
-				amount: attempt.amount,
-			},
-			update: {},
-		});
-	});
-	return { attemptId: attempt.id, status: X402PaymentStatus.Settled, webhook: buildWebhook(true, input.txHash) };
+		throw error;
+	}
+	return { attemptId: attempt.id, status: X402PaymentStatus.Settled, webhook: buildWebhook(true, settlement.txHash) };
 }

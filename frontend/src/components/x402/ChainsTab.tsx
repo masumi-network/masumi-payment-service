@@ -315,9 +315,9 @@ export function ChainDialog({
             ? data.facilitatorWalletId
             : null,
         facilitatorUrl: isRemote && data.facilitatorUrl ? data.facilitatorUrl : null,
-        // Auth is write-only and never prefilled, so an empty field means "leave the stored auth
-        // as-is" — send undefined (omit) to keep it, not null (which would clear it) and silently
-        // unauthenticate every later settle. A retyped value sets/rotates it.
+        // Auth is write-only and never prefilled. Omission lets the backend preserve it for a
+        // same-origin URL edit; changing origin clears it so credentials cannot cross origins.
+        // A retyped value sets/rotates it for the submitted URL.
         facilitatorAuth: isRemote && data.facilitatorAuth ? data.facilitatorAuth : undefined,
       })
       .catch(() => null);
@@ -454,7 +454,7 @@ export function ChainDialog({
                 <Input
                   placeholder={
                     editing
-                      ? 'Authorization header value (leave blank to keep current)'
+                      ? 'Authorization header value (blank keeps it on the same origin)'
                       : 'Authorization header value (optional)'
                   }
                   aria-label="Facilitator auth"
@@ -463,7 +463,9 @@ export function ChainDialog({
                 <p className="text-xs text-muted-foreground">
                   A remote facilitator settles inbound payments over HTTP — the node holds no key on
                   this chain. Auth is stored encrypted and never shown again
-                  {editing ? '; leave this blank to keep the stored value unchanged.' : '.'}
+                  {editing
+                    ? '; blank preserves it only while the URL origin stays unchanged.'
+                    : '.'}
                 </p>
               </>
             )}

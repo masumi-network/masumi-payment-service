@@ -1,10 +1,10 @@
 import { Prisma, X402PaymentDirection, X402PaymentStatus, prisma } from '@masumi/payment-core/db';
 import { buildX402AttemptWhere } from './attempt-filters';
 
-// Attempt projection for the dashboard. Network, payTo and payer are no longer stored on the
-// attempt; they are reconstructed from the rail, the own wallet, the counterparty entity and
-// (for inbound) the registered payment source — see mapAttempt below. paymentPayload and any
-// encrypted material are never selected.
+// Attempt projection for the dashboard. Network and payer are reconstructed from the rail and
+// wallet relations. payTo is retained as an immutable snapshot so inbound history survives
+// registered-source replacement; nullable transition rows fall back to their relation below.
+// paymentPayload and any encrypted material are never selected.
 const ATTEMPT_SELECT = {
 	id: true,
 	createdAt: true,
@@ -17,6 +17,7 @@ const ATTEMPT_SELECT = {
 	supportedPaymentSourceId: true,
 	asset: true,
 	amount: true,
+	payTo: true,
 	resource: true,
 	paymentIdentifier: true,
 	errorReason: true,
@@ -39,15 +40,15 @@ const ATTEMPT_SELECT = {
 type AttemptRow = Prisma.X402PaymentAttemptGetPayload<{ select: typeof ATTEMPT_SELECT }>;
 
 // Reconstruct the legacy flat shape (caip2Network, payTo, payer) from the normalized model:
-//   outbound → payer is the own wallet, payTo is the counterparty (Payee)
-//   inbound  → payer is the counterparty (Payer), payTo is the registered source's payTo
+//   outbound → payer is the own wallet; null snapshot falls back to the Payee counterparty
+//   inbound  → payer is the Payer counterparty; null snapshot falls back to the live source
 // The settlement's payer mirrors the attempt payer (the buyer) for inbound settlements.
 function mapAttempt(attempt: AttemptRow) {
 	const { Network, EvmWallet, CounterpartyWallet, SupportedPaymentSource, Settlement, ...rest } = attempt;
 	const isOutbound = attempt.direction === X402PaymentDirection.OutboundPayment;
 	const counterparty = CounterpartyWallet?.address ?? null;
 	const payer = isOutbound ? (EvmWallet?.address ?? null) : counterparty;
-	const payTo = isOutbound ? counterparty : (SupportedPaymentSource?.payTo ?? null);
+	const payTo = attempt.payTo ?? (isOutbound ? counterparty : (SupportedPaymentSource?.payTo ?? null));
 	// Which facilitator settled this: only inbound settles have one. A self-hosted facilitator is
 	// the owned wallet on evmWalletId (its address is EvmWallet.address); a remote facilitator
 	// leaves evmWalletId null (the node owns no key). Outbound/verify rows have no facilitator.

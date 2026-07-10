@@ -1,6 +1,7 @@
 import createHttpError from 'http-errors';
 import type { Network, PaymentPayload, SettleResponse } from '@x402/core/types';
 import {
+	Prisma,
 	X402CounterpartyRole,
 	X402PaymentDirection,
 	X402PaymentScheme,
@@ -10,7 +11,7 @@ import {
 import { logger } from '@masumi/payment-core/logger';
 import { isAllowedCaip2Network } from '@masumi/payment-core/network';
 import { getFacilitatorForNetwork } from './facilitator';
-import { upsertCounterpartyWalletId } from './internal';
+import { normalizeAddress, upsertCounterpartyWalletId } from './internal';
 import {
 	encryptPaymentPayloadForStorage,
 	getPaymentIdentifier,
@@ -18,7 +19,7 @@ import {
 	parseUintStringOrNull,
 	toJsonValue,
 } from './payload';
-import { withFacilitatorSettleLock } from './settle-lock';
+import { withFacilitatorSettleLock, withPaymentPayloadSettleClaim } from './settle-lock';
 import {
 	assertPayloadRequirementsMatchRegisteredSource,
 	assertPaymentPayloadMatchesRegisteredResource,
@@ -43,20 +44,24 @@ export { reconcileX402PaymentAttempt } from './reconcile';
 export { createX402Payment } from './pay';
 export { hashX402PaymentPayload };
 
-async function writeSettlement({
-	attemptId,
-	paymentPayloadHash,
-	settleResponse,
-}: {
-	attemptId: string;
-	paymentPayloadHash: string;
-	settleResponse: SettleResponse;
-}) {
+async function createSettlement(
+	client: Prisma.TransactionClient,
+	{
+		attemptId,
+		paymentPayloadHash,
+		settleResponse,
+	}: {
+		attemptId: string;
+		paymentPayloadHash: string;
+		settleResponse: SettleResponse;
+	},
+) {
 	// Network + payer are derivable from the linked attempt (Network + CounterpartyWallet);
-	// the facilitator-reported originals are kept in rawResponse for audit.
-	return prisma.x402Settlement.upsert({
-		where: { paymentPayloadHash },
-		create: {
+	// the facilitator-reported originals are kept in rawResponse for audit. Create first rather
+	// than empty-update upsert: a settlement for this payload that belongs to another attempt is an
+	// invariant conflict, not success for the current attempt.
+	return client.x402Settlement.create({
+		data: {
 			paymentAttemptId: attemptId,
 			paymentPayloadHash,
 			success: settleResponse.success,
@@ -66,7 +71,7 @@ async function writeSettlement({
 			amount: parseUintStringOrNull(settleResponse.amount),
 			rawResponse: toJsonValue(settleResponse),
 		},
-		update: {},
+		select: { paymentAttemptId: true, paymentPayloadHash: true, txHash: true },
 	});
 }
 
@@ -122,6 +127,7 @@ export async function verifyX402Payment({
 			scheme: X402PaymentScheme.Exact,
 			asset: requirements.asset,
 			amount: BigInt(requirements.amount),
+			payTo: normalizeAddress(requirements.payTo),
 			// Attribute to the registered resource only; the payload resource is buyer-supplied
 			// and is unvalidated when the source pins no resource, so it must not be persisted.
 			resource: source.resource,
@@ -169,13 +175,10 @@ export async function settleX402Payment({
 		throw createHttpError(400, identifier.errors.join('; '));
 	}
 
-	// Idempotency model: this dedup lookup plus the X402Settlement.paymentPayloadHash
-	// unique constraint (writeSettlement is an upsert with an empty update) keep the
-	// DB record single. The check-then-settle is not locked across the on-chain call,
-	// so two concurrent settles of the SAME payload can both reach facilitator.settle;
-	// the on-chain authorization is single-use (Permit2/EIP-3009 nonce), so the second
-	// reverts on-chain — no double-spend, only a wasted tx. A cross-process lock would
-	// have to hold a DB connection across the settle and is intentionally avoided.
+	// Fast-path completed replays before facilitator resolution. New settles establish a durable
+	// Verified marker under the transaction-scoped payload claim below; the settlement hash remains
+	// unique as the final ownership guard. The claim transaction ends before the external settle,
+	// so cross-process deduplication does not hold a database connection during chain confirmation.
 	const existingSettlement = await prisma.x402Settlement.findUnique({
 		where: { paymentPayloadHash },
 		include: {
@@ -218,6 +221,7 @@ export async function settleX402Payment({
 				scheme: X402PaymentScheme.Exact,
 				asset: requirements.asset,
 				amount: BigInt(requirements.amount),
+				payTo: normalizeAddress(requirements.payTo),
 				// Registered resource only; never persist the buyer-supplied payload resource.
 				resource: source.resource,
 				paymentPayloadHash,
@@ -247,14 +251,15 @@ export async function settleX402Payment({
 	// a pre-settle attempt row. network.id pins the attempt's rail regardless of facilitator mode.
 	const { facilitator, network } = await getFacilitatorForNetwork(requirements.network);
 
-	// The crash-window guard, the durable pre-settle marker, and the on-chain settle all run UNDER
-	// the per-facilitator lock (self-hosted; remote facilitators manage their own nonce → key is
-	// null, no lock). Two reasons the lock must be taken BEFORE the marker is created:
+	// Self-hosted settles run under the per-facilitator wallet lock; remote facilitators have no
+	// local wallet key and skip that nonce lock. Every mode separately takes a short transaction-
+	// scoped advisory claim around the exact-payload guard + durable marker create. The wallet lock
+	// must be taken before that marker is created for two reasons:
 	//   1. A lock-acquire timeout (facilitator saturated) then throws a clean 503 with NO attempt
 	//      row, so the payload stays retryable — instead of leaving a stuck Verified marker that
 	//      the crash-window guard would 409 on every future retry (a self-inflicted deadlock).
-	//   2. Holding the guard under the lock makes a same-payload double-settle impossible at the
-	//      app layer (the second waiter sees the first's marker), not merely rejected on-chain.
+	//   2. A self-hosted waiter cannot create its marker until the active wallet settle completes;
+	//      the payload claim then makes the guard/create pair atomic for both local and remote modes.
 	//
 	// Crash-window guard: a completed settlement was replayed above; a Verified pre-settle marker
 	// (or a Settled attempt) with no settlement row means the previous settle crashed mid-flight or
@@ -276,39 +281,44 @@ export async function settleX402Payment({
 	let settleResponse: SettleResponse;
 	try {
 		settleResponse = await withFacilitatorSettleLock(network.facilitatorWalletId, async () => {
-			const priorSettleAttempt = await prisma.x402PaymentAttempt.findFirst({
-				where: {
-					paymentPayloadHash,
-					direction: X402PaymentDirection.InboundSettle,
-					status: { in: [X402PaymentStatus.Verified, X402PaymentStatus.Settled] },
-				},
-				select: { id: true },
-			});
-			if (priorSettleAttempt != null) {
-				throw createHttpError(
-					409,
-					'a settlement for this payment payload is already in progress or awaiting reconciliation',
-				);
-			}
-			const attempt = await prisma.x402PaymentAttempt.create({
-				data: {
-					direction: X402PaymentDirection.InboundSettle,
-					status: X402PaymentStatus.Verified,
-					apiKeyId,
-					networkId: network.id,
-					evmWalletId: network.facilitatorWalletId ?? null,
-					registryRequestId: source.registryRequestId,
-					supportedPaymentSourceId,
-					scheme: X402PaymentScheme.Exact,
-					asset: requirements.asset,
-					amount: BigInt(requirements.amount),
-					// Registered resource only; never persist the buyer-supplied payload resource.
-					resource: source.resource,
-					paymentPayloadHash,
-					paymentPayload: encryptPaymentPayloadForStorage(paymentPayload),
-					paymentIdentifier: identifier.id,
-				},
-				select: { id: true },
+			const attempt = await withPaymentPayloadSettleClaim(paymentPayloadHash, async (tx) => {
+				// The advisory claim serializes this exact-hash guard with marker creation even for
+				// remote facilitators, which have no wallet row to lock.
+				const priorSettleAttempt = await tx.x402PaymentAttempt.findFirst({
+					where: {
+						paymentPayloadHash,
+						direction: X402PaymentDirection.InboundSettle,
+						status: { in: [X402PaymentStatus.Verified, X402PaymentStatus.Settled] },
+					},
+					select: { id: true },
+				});
+				if (priorSettleAttempt != null) {
+					throw createHttpError(
+						409,
+						'a settlement for this payment payload is already in progress or awaiting reconciliation',
+					);
+				}
+				return tx.x402PaymentAttempt.create({
+					data: {
+						direction: X402PaymentDirection.InboundSettle,
+						status: X402PaymentStatus.Verified,
+						apiKeyId,
+						networkId: network.id,
+						evmWalletId: network.facilitatorWalletId ?? null,
+						registryRequestId: source.registryRequestId,
+						supportedPaymentSourceId,
+						scheme: X402PaymentScheme.Exact,
+						asset: requirements.asset,
+						amount: BigInt(requirements.amount),
+						payTo: normalizeAddress(requirements.payTo),
+						// Registered resource only; never persist the buyer-supplied payload resource.
+						resource: source.resource,
+						paymentPayloadHash,
+						paymentPayload: encryptPaymentPayloadForStorage(paymentPayload),
+						paymentIdentifier: identifier.id,
+					},
+					select: { id: true },
+				});
 			});
 			attemptId = attempt.id;
 			return facilitator.settle(paymentPayload, requirements);
@@ -363,25 +373,61 @@ export async function settleX402Payment({
 	// writes THROW after a SUCCESSFUL settle, funds already moved: keep the row
 	// Verified (never auto-fail) and log loudly WITH the txHash so an operator can
 	// confirm on-chain and reconcile.
+	let persistedSettlementTxHash: string | null = null;
 	try {
-		// Link the buyer (payer) reported by the facilitator as the Payer counterparty.
-		const counterpartyWalletId = await upsertCounterpartyWalletId(prisma, {
-			caip2Network: requirements.network,
-			address: settleResponse.payer,
-			role: X402CounterpartyRole.Payer,
-		});
-		await prisma.x402PaymentAttempt.update({
-			where: { id: attemptIdForSettle },
-			data: {
-				status: settleResponse.success ? X402PaymentStatus.Settled : X402PaymentStatus.Failed,
-				...(counterpartyWalletId != null ? { counterpartyWalletId } : {}),
-				errorReason: settleResponse.errorReason,
-				errorMessage: settleResponse.errorMessage,
-			},
-		});
-
 		if (settleResponse.success) {
-			await writeSettlement({ attemptId: attemptIdForSettle, paymentPayloadHash, settleResponse });
+			// Resolve the payer before the outcome transaction; linking this id to the attempt is still
+			// committed atomically with the status and settlement. An unreferenced counterparty row is
+			// harmless if the outcome claim loses.
+			const counterpartyWalletId = await upsertCounterpartyWalletId(prisma, {
+				caip2Network: requirements.network,
+				address: settleResponse.payer,
+				role: X402CounterpartyRole.Payer,
+			});
+			const settlement = await prisma.$transaction(async (tx) => {
+				// Claim the still-Verified marker before writing the settlement. This closes the race with
+				// a manual Failed reconciliation; exactly one outcome may commit and emit a webhook.
+				const updated = await tx.x402PaymentAttempt.updateMany({
+					where: { id: attemptIdForSettle, status: X402PaymentStatus.Verified },
+					data: {
+						status: X402PaymentStatus.Settled,
+						...(counterpartyWalletId != null ? { counterpartyWalletId } : {}),
+						errorReason: settleResponse.errorReason,
+						errorMessage: settleResponse.errorMessage,
+					},
+				});
+				if (updated.count !== 1) {
+					throw createHttpError(409, 'x402 payment attempt was concurrently resolved; re-check its state');
+				}
+				// Any unique ownership conflict rolls the status claim back, leaving the marker in its
+				// prior state rather than committing a settlement-less Settled attempt.
+				return createSettlement(tx, {
+					attemptId: attemptIdForSettle,
+					paymentPayloadHash,
+					settleResponse,
+				});
+			});
+			persistedSettlementTxHash = settlement.txHash;
+			settleResponse = { ...settleResponse, transaction: settlement.txHash ?? '' };
+		} else {
+			// A definite facilitator failure did not consume the authorization, so mark it retryable.
+			const counterpartyWalletId = await upsertCounterpartyWalletId(prisma, {
+				caip2Network: requirements.network,
+				address: settleResponse.payer,
+				role: X402CounterpartyRole.Payer,
+			});
+			const updated = await prisma.x402PaymentAttempt.updateMany({
+				where: { id: attemptIdForSettle, status: X402PaymentStatus.Verified },
+				data: {
+					status: X402PaymentStatus.Failed,
+					...(counterpartyWalletId != null ? { counterpartyWalletId } : {}),
+					errorReason: settleResponse.errorReason,
+					errorMessage: settleResponse.errorMessage,
+				},
+			});
+			if (updated.count !== 1) {
+				throw createHttpError(409, 'x402 payment attempt was concurrently resolved; re-check its state');
+			}
 		}
 	} catch (writeError) {
 		if (settleResponse.success) {
@@ -392,6 +438,9 @@ export async function settleX402Payment({
 				txHash: settleResponse.transaction ?? null,
 				error: writeError instanceof Error ? writeError.message : writeError,
 			});
+		}
+		if (writeError instanceof Prisma.PrismaClientKnownRequestError && writeError.code === 'P2002') {
+			throw createHttpError(409, 'x402 payment payload settlement belongs to another payment attempt');
 		}
 		throw writeError;
 	}
@@ -414,7 +463,7 @@ export async function settleX402Payment({
 			amount: requirements.amount,
 			payTo: requirements.payTo,
 			payer: settleResponse.payer ?? null,
-			txHash: settleResponse.transaction ?? null,
+			txHash: settleResponse.success ? persistedSettlementTxHash : (settleResponse.transaction ?? null),
 			success: settleResponse.success,
 			errorReason: settleResponse.errorReason ?? null,
 			errorMessage: settleResponse.errorMessage ?? null,

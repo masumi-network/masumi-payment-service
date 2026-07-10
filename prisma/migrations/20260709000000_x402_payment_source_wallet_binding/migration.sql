@@ -12,6 +12,19 @@
 -- Ordering: (1) additive DDL, (2) data backfill incl. per-network wallet fan-out,
 -- (3) enforce NOT NULL + swap indexes/constraints + drop legacy columns.
 
+-- A legacy wallet was allowed to exist without any configured network. The new model
+-- requires every wallet to belong to one, and inventing a chain/rpcUrl here would bind
+-- its key to an arbitrary payment rail. Fail before the first DDL so the operator can
+-- configure the intended network and rerun the migration without partial mutation.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM "X402EvmWallet")
+     AND NOT EXISTS (SELECT 1 FROM "X402Network") THEN
+    RAISE EXCEPTION 'Cannot migrate managed EVM wallets: no X402 network exists'
+      USING HINT = 'Configure at least one X402 network before rerunning this migration.';
+  END IF;
+END $$;
+
 -- ---------------------------------------------------------------------------
 -- (1) Additive: new enum, tables, and nullable staging columns
 -- ---------------------------------------------------------------------------
@@ -78,6 +91,10 @@ WHERE n."caip2Id" = a."caip2Network";
 --     one per network, all sharing the secret. The original row keeps the first network;
 --     each extra network gets a fresh row and its budgets/rules/attempts/facilitator link
 --     are repointed to it. Orphan wallets (no association) fall back to a deterministic net.
+--     Drop the legacy global address uniqueness before cloning: the replacement uniqueness
+--     is per-network and is created after the fan-out.
+DROP INDEX "X402EvmWallet_address_key";
+
 DO $$
 DECLARE
   w RECORD;
@@ -107,9 +124,9 @@ BEGIN
       ELSE
         new_wallet_id := gen_random_uuid()::text;
         INSERT INTO "X402EvmWallet"
-          ("id", "createdAt", "updatedAt", "networkId", "secretId", "address", "type", "note", "deletedAt", "createdById")
+          ("id", "createdAt", "updatedAt", "networkId", "secretId", "address", "type", "encryptedPrivateKey", "note", "deletedAt", "createdById")
         VALUES
-          (new_wallet_id, w."createdAt", CURRENT_TIMESTAMP, net.network_id, w."secretId", w."address", w."type", w."note", w."deletedAt", w."createdById");
+          (new_wallet_id, w."createdAt", CURRENT_TIMESTAMP, net.network_id, w."secretId", w."address", w."type", w."encryptedPrivateKey", w."note", w."deletedAt", w."createdById");
 
         UPDATE "X402WalletBudget"
           SET "evmWalletId" = new_wallet_id
@@ -202,7 +219,6 @@ DROP INDEX "X402WalletBudget_apiKeyId_evmWalletId_caip2Network_asset_key";
 DROP INDEX "X402WalletBudget_caip2Network_asset_idx";
 DROP INDEX "X402EvmWalletLowBalanceRule_evmWalletId_caip2Network_asset_key";
 DROP INDEX "X402Settlement_caip2Network_idx";
-DROP INDEX "X402EvmWallet_address_key";
 
 -- Wallet: enforce binding, drop the per-wallet key (now on the shared secret).
 ALTER TABLE "X402EvmWallet"
@@ -222,11 +238,13 @@ ALTER TABLE "X402EvmWalletLowBalanceRule" DROP COLUMN "caip2Network";
 CREATE UNIQUE INDEX "X402EvmWalletLowBalanceRule_evmWalletId_asset_key"
   ON "X402EvmWalletLowBalanceRule"("evmWalletId", "asset");
 
--- Attempt: network structural, counterparty linked; drop the loose strings.
+-- Attempt: network structural and counterparty linked. Retain payTo as an immutable
+-- recipient snapshot: inbound attempts otherwise lose it when their registered source
+-- is replaced and the source FK is set to NULL. New attempts may populate it directly.
 ALTER TABLE "X402PaymentAttempt"
   ALTER COLUMN "networkId" SET NOT NULL,
+  ALTER COLUMN "payTo" DROP NOT NULL,
   DROP COLUMN "caip2Network",
-  DROP COLUMN "payTo",
   DROP COLUMN "payer";
 CREATE INDEX "X402PaymentAttempt_networkId_asset_idx" ON "X402PaymentAttempt"("networkId", "asset");
 CREATE INDEX "X402PaymentAttempt_evmWalletId_idx" ON "X402PaymentAttempt"("evmWalletId");

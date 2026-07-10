@@ -403,7 +403,7 @@ export const upsertNetworkSchemaInput = z.object({
 		.nullable()
 		.optional()
 		.describe(
-			'Authorization header value for the remote facilitator, stored encrypted at rest. Omit to keep the stored value unchanged, send a string to set/rotate it, or null to clear it. Requires a remote facilitator URL (existing or set in the same request).',
+			'Authorization header value for the remote facilitator, stored encrypted at rest. Omit to preserve it only when the URL origin is unchanged; changing origin clears it. Send a string to set/rotate it, or null to clear it. Requires a remote facilitator URL (existing or set in the same request).',
 		),
 });
 
@@ -475,7 +475,7 @@ export const x402PaymentAttemptSchema = z
 		payTo: z
 			.string()
 			.nullable()
-			.describe('Payee address. Null for inbound attempts with no linked registered payment source.'),
+			.describe('Immutable payee-address snapshot. Null only for legacy transition rows without a snapshot.'),
 		payer: z.string().nullable(),
 		resource: z.string().nullable(),
 		paymentIdentifier: z.string().nullable(),

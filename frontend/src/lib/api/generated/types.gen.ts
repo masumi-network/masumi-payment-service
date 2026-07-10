@@ -2472,7 +2472,7 @@ export type X402PaymentAttempt = {
      */
     amount: string;
     /**
-     * Payee address. Null for inbound attempts with no linked registered payment source.
+     * Immutable payee-address snapshot. Null only for legacy transition rows without a snapshot.
      */
     payTo: string | null;
     payer: string | null;
@@ -10568,7 +10568,7 @@ export type PostX402NetworksData = {
          */
         facilitatorUrl?: string | null;
         /**
-         * Authorization header value for the remote facilitator, stored encrypted at rest. Omit to keep the stored value unchanged, send a string to set/rotate it, or null to clear it. Requires a remote facilitator URL (existing or set in the same request).
+         * Authorization header value for the remote facilitator, stored encrypted at rest. Omit to preserve it only when the URL origin is unchanged; changing origin clears it. Send a string to set/rotate it, or null to clear it. Requires a remote facilitator URL (existing or set in the same request).
          */
         facilitatorAuth?: string | null;
     };

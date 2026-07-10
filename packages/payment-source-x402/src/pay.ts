@@ -14,7 +14,13 @@ import { logger } from '@masumi/payment-core/logger';
 import { isAllowedCaip2Network } from '@masumi/payment-core/network';
 import { readAssetAmount } from './balance';
 import { getClientForWallet } from './facilitator';
-import { getManagedWalletOrThrow, normalizeAddress, upsertCounterpartyWalletId, type X402OwnerScope } from './internal';
+import {
+	assertWalletOwner,
+	getManagedWalletOrThrow,
+	normalizeAddress,
+	upsertCounterpartyWalletId,
+	type X402OwnerScope,
+} from './internal';
 import { encryptPaymentPayloadForStorage, getPaymentIdentifier, hashX402PaymentPayload } from './payload';
 import { EXACT_SCHEME, requirementsMatch } from './requirements';
 
@@ -32,12 +38,14 @@ async function reserveBudgetForAttempt({
 	evmWalletId,
 	networkId,
 	budgetId,
+	budgetGeneration,
 	requirements,
 }: {
 	apiKeyId: string;
 	evmWalletId: string;
 	networkId: string;
 	budgetId: string | null;
+	budgetGeneration: number | null;
 	requirements: PaymentRequirements;
 }) {
 	const amount = BigInt(requirements.amount);
@@ -45,9 +53,14 @@ async function reserveBudgetForAttempt({
 	const payTo = normalizeAddress(requirements.payTo);
 	const budgetAndAttempt = await prisma.$transaction(async (tx) => {
 		if (budgetId != null) {
+			if (budgetGeneration == null) throw createHttpError(500, 'x402 budget generation is missing');
 			const updateResult = await tx.x402WalletBudget.updateMany({
 				where: {
 					id: budgetId,
+					apiKeyId,
+					evmWalletId,
+					asset,
+					generation: budgetGeneration,
 					enabled: true,
 					remainingAmount: { gte: amount },
 				},
@@ -78,36 +91,40 @@ async function reserveBudgetForAttempt({
 				scheme: X402PaymentScheme.Exact,
 				asset,
 				amount,
+				payTo,
 			},
 			select: { id: true },
 		});
 
-		return { budgetId, attemptId: attempt.id, amount };
+		return { budgetId, budgetGeneration, attemptId: attempt.id, amount };
 	});
 
 	return budgetAndAttempt;
 }
 
-async function refundBudgetReservation(reservation: { budgetId: string | null; amount: bigint } | null) {
+async function refundBudgetReservation(
+	reservation: { budgetId: string | null; budgetGeneration: number | null; amount: bigint } | null,
+) {
 	// The uncapped path debited no budget, so there is nothing to refund.
-	if (reservation == null || reservation.budgetId == null) return;
-	// Guard the refund on the reservation still being reflected in spentAmount.
-	// Without the `spentAmount >= amount` predicate, an admin budget reset
-	// (setX402WalletBudget resets remainingAmount → fresh grant, spentAmount → 0)
-	// that races an in-flight payment would let this refund inflate the fresh
-	// grant beyond what the admin set AND drive spentAmount negative. If the guard
-	// matches no row the reservation was already wiped by a reset — nothing to
-	// refund.
+	if (reservation == null || reservation.budgetId == null || reservation.budgetGeneration == null) return;
+	// Both generation and spentAmount must still reflect this reservation. A reset increments
+	// generation and zeroes spentAmount, so an old refund cannot credit the replacement grant even
+	// after newer reservations have raised its aggregate spentAmount again.
 	const result = await prisma.x402WalletBudget.updateMany({
-		where: { id: reservation.budgetId, spentAmount: { gte: reservation.amount } },
+		where: {
+			id: reservation.budgetId,
+			generation: reservation.budgetGeneration,
+			spentAmount: { gte: reservation.amount },
+		},
 		data: {
 			remainingAmount: { increment: reservation.amount },
 			spentAmount: { decrement: reservation.amount },
 		},
 	});
 	if (result.count !== 1) {
-		logger.warn('x402 budget refund skipped: reservation no longer reflected in spentAmount (budget reset?)', {
+		logger.warn('x402 budget refund skipped: reservation generation/spend no longer matches (budget reset?)', {
 			budgetId: reservation.budgetId,
+			budgetGeneration: reservation.budgetGeneration,
 			amount: reservation.amount.toString(),
 		});
 	}
@@ -157,10 +174,37 @@ export async function createX402Payment({
 		throw createHttpError(400, 'No forwarded x402 requirement matches an allowed network/asset for this API key');
 	}
 
-	// The wallet is bound to exactly one payment source, so only a candidate on the wallet's
-	// own (enabled) network can be signed. ownerScope enforces tenant isolation: a scoped caller
-	// may only spend a wallet it created. Resolve the binding + ownership once up front.
-	const wallet = await getManagedWalletOrThrow(evmWalletId, X402EvmWalletType.Purchasing, ownerScope);
+	// Resolve public wallet metadata without applying owner scope or exposing type-specific errors.
+	// A matching enabled budget is an explicit delegation from the wallet operator to another API
+	// key; without ownership/admin access or such a grant, every foreign wallet remains a 404.
+	const walletMetadata = await getManagedWalletOrThrow(evmWalletId);
+	const hasOwnerAccess = ownerScope == null || walletMetadata.createdById === ownerScope;
+	const budgetsByCandidate = new Map<
+		PaymentRequirements,
+		{ id: string; remainingAmount: bigint; generation: number }
+	>();
+	for (const candidate of candidates) {
+		const budget = await prisma.x402WalletBudget.findFirst({
+			where: {
+				apiKeyId,
+				evmWalletId,
+				asset: normalizeAddress(candidate.asset),
+				enabled: true,
+			},
+			select: { id: true, remainingAmount: true, generation: true },
+		});
+		if (budget != null) budgetsByCandidate.set(candidate, budget);
+	}
+	const hasMatchingBudgetGrant = budgetsByCandidate.size > 0;
+	if (!hasOwnerAccess && !hasMatchingBudgetGrant) assertWalletOwner(ownerScope, walletMetadata);
+
+	// Authorization is now established, so type validation can safely return a specific error.
+	// Delegated access bypasses owner scope only after its matching grant has been found.
+	const wallet = await getManagedWalletOrThrow(
+		evmWalletId,
+		X402EvmWalletType.Purchasing,
+		hasOwnerAccess ? ownerScope : null,
+	);
 	const walletNetwork = await prisma.x402Network.findUnique({
 		where: { id: wallet.networkId },
 		select: { caip2Id: true, isEnabled: true },
@@ -171,34 +215,27 @@ export async function createX402Payment({
 
 	// Select the first candidate on the wallet's network. If a budget exists for (apiKey, wallet,
 	// asset) it must cover the amount (capped path). If no budget exists and the caller owns the
-	// wallet, the payment is uncapped at the node — the client (e.g. the SaaS) meters spend itself
-	// and the on-chain balance is the real ceiling (checked below). A budget that exists but is
-	// underfunded is a hard reject; we never fall through to the uncapped path for a wallet the
-	// caller does not own.
-	const selfOwned = wallet.createdById === apiKeyId;
+	// wallet or is an admin, payment is uncapped at the node — the client (e.g. the SaaS) meters
+	// spend itself and the on-chain balance is the real ceiling (checked below). An existing but
+	// underfunded budget is a hard reject; it never falls through to uncapped spending.
 	let selectedRequirement: PaymentRequirements | null = null;
 	let selectedBudgetId: string | null = null;
+	let selectedBudgetGeneration: number | null = null;
 	for (const candidate of candidates) {
 		if (candidate.network !== walletNetwork.caip2Id) continue;
 
-		const budget = await prisma.x402WalletBudget.findFirst({
-			where: {
-				apiKeyId,
-				evmWalletId,
-				asset: normalizeAddress(candidate.asset),
-				enabled: true,
-			},
-			select: { id: true, remainingAmount: true },
-		});
+		const budget = budgetsByCandidate.get(candidate);
 		if (budget != null) {
 			if (budget.remainingAmount < BigInt(candidate.amount)) continue;
 			selectedRequirement = candidate;
 			selectedBudgetId = budget.id;
+			selectedBudgetGeneration = budget.generation;
 			break;
 		}
-		if (selfOwned) {
+		if (hasOwnerAccess) {
 			selectedRequirement = candidate;
 			selectedBudgetId = null;
+			selectedBudgetGeneration = null;
 			break;
 		}
 	}
@@ -207,7 +244,14 @@ export async function createX402Payment({
 	}
 	const selected = selectedRequirement;
 
-	const { client, network, payer, publicClient } = await getClientForWallet(evmWalletId, selected.network, ownerScope);
+	// A funded budget authorizes this caller to use the delegated wallet. The reservation below
+	// rechecks the exact (apiKey, wallet, asset) grant and decrements it atomically before signing.
+	const signingOwnerScope = selectedBudgetId != null ? null : ownerScope;
+	const { client, network, payer, publicClient } = await getClientForWallet(
+		evmWalletId,
+		selected.network,
+		signingOwnerScope,
+	);
 
 	// The real spend ceiling for a node-custodial wallet is its on-chain balance, so reject early
 	// when the wallet cannot cover the transfer (the authorization would otherwise fail at settle).
@@ -257,6 +301,7 @@ export async function createX402Payment({
 		evmWalletId,
 		networkId: network.id,
 		budgetId: selectedBudgetId,
+		budgetGeneration: selectedBudgetGeneration,
 		requirements: selected,
 	});
 

@@ -29,12 +29,14 @@ export function chainsForEnv(chains: X402Network[], network: NetworkType): X402N
 
 /**
  * Whether a chain can actually serve x402 payments right now: enabled, reachable (RPC
- * URL set), and with a facilitator wallet assigned to settle on it. An enabled-but-
+ * URL set), and with either a self-hosted wallet or remote facilitator assigned. An enabled-but-
  * unconfigured chain (no facilitator / blank RPC) is not selectable as an active rail —
  * picking it should route to setup instead of pretending the rail works.
  */
 export function isX402ChainUsable(chain: X402Network): boolean {
-  return chain.isEnabled && !!chain.facilitatorWalletId && !!chain.rpcUrl;
+  return (
+    chain.isEnabled && (!!chain.facilitatorWalletId || !!chain.facilitatorUrl) && !!chain.rpcUrl
+  );
 }
 
 /**

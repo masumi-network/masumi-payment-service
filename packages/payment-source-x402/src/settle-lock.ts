@@ -1,5 +1,5 @@
 import createHttpError from 'http-errors';
-import { prisma } from '@masumi/payment-core/db';
+import { Prisma, prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 
 // Cross-instance serialization of on-chain settlement per facilitator wallet.
@@ -36,6 +36,30 @@ const POLL_BASE_MS = 150;
 const POLL_JITTER_MS = 150;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Serialize the short check-and-create step for one payment payload across every process and
+// facilitator mode. The wallet lock below cannot cover remote facilitators (they have no local
+// wallet row), while a plain findFirst + create allows two remote requests to both pass the check.
+//
+// This transaction-level advisory lock is held only until the durable Verified marker commits —
+// never across the remote/on-chain settle. `hashtextextended` can theoretically collide, but the
+// callback still checks the full payload hash, so a collision only serializes unrelated claims.
+export async function withPaymentPayloadSettleClaim<T>(
+	paymentPayloadHash: string,
+	claim: (tx: Prisma.TransactionClient) => Promise<T>,
+): Promise<T> {
+	return prisma.$transaction(async (tx) => {
+		// Materialize the volatile lock call but return an ordinary integer; returning PostgreSQL's
+		// `void` pseudo-type directly is not portable across Prisma driver adapters.
+		await tx.$queryRaw<Array<{ acquired: number }>>`
+			WITH payload_lock AS MATERIALIZED (
+				SELECT pg_advisory_xact_lock(hashtextextended(${paymentPayloadHash}, 0))
+			)
+			SELECT 1 AS acquired FROM payload_lock
+		`;
+		return claim(tx);
+	});
+}
 
 // Atomically take the lock for `walletId` iff it is free or stale. The `updateMany` is a single
 // atomic statement, so exactly one of N racing acquirers gets count === 1 (Postgres row lock).
