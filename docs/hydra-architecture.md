@@ -117,18 +117,60 @@ sequenceDiagram
 
 ## Hydra Lifecycle
 
+The `HydraHead.status` column blends two phases: a **connection phase** (the
+WebSocket link to the local hydra-node) and the **on-chain phase** (the head's
+Cardano lifecycle). The diagram shows both.
+
 ```mermaid
 stateDiagram-v2
-    [*] --> Idle
-    Idle --> Initializing: Admin calls init\nhydra-node posts Init on L1
-    Initializing --> Initializing: Local and remote participants commit\nL1 UTxOs enter the head
-    Initializing --> Open: Hydra observes all commits
-    Open --> Open: L2 escrow txs\nlock / submit / refund / collect
-    Open --> Closed: Admin calls close\nhead state posted to L1
-    Closed --> FanoutPossible: Contestation period passes
-    FanoutPossible --> Final: Admin calls fanout\nfinal in-head UTxOs settle back to L1
+    [*] --> Disconnected
+    Disconnected --> Connecting: HydraConnectionManager opens WS to local hydra-node
+    Connecting --> Connected: WS established
+    Connected --> Idle: Greetings(headStatus=Idle) — no head on chain yet
+    Connected --> Open: Greetings(headStatus=Open) — reconnected to a live head
+    Connected --> Disconnected: WS drops (auto-reconnect)
+    Idle --> Initializing: Admin POST /hydra/head/init\nhydra-node posts InitTx on L1 (HeadIsInitializing)
+    Initializing --> Initializing: Admin POST /hydra/head/commit\nlocal wallet UTxOs committed; remote party commits
+    Initializing --> Open: hydra-node observes all commits (HeadIsOpen)
+    Open --> Open: L2 escrow txs (lock / submit / refund / collect)\nand incremental commits (deposit) add funds
+    Open --> Closed: Admin POST /hydra/head/close (HeadIsClosed)
+    Closed --> FanoutPossible: contestation period passes (ReadyToFanout)
+    FanoutPossible --> Final: Admin POST /hydra/head/fanout (HeadIsFinalized)\nfinal in-head UTxOs settle to L1
     Final --> [*]
 ```
+
+### Head status model
+
+- **Connection phase** (`src/lib/hydra/hydra/connection.ts`):
+  `Disconnected → Connecting → Connected`. `HydraConnectionManager` keeps every
+  enabled head connected and reconnects on drop.
+- **On-chain phase** — the DB status is updated from hydra-node WS events, mapped
+  in `src/lib/hydra/hydra/node.ts`:
+
+  | hydra-node event | resulting status |
+  | --- | --- |
+  | `Greetings` (carries `headStatus`) | that status (e.g. Idle / Open on reconnect) |
+  | `HeadIsInitializing` | Initializing |
+  | `HeadIsOpen` | Open |
+  | `HeadIsClosed` | Closed |
+  | `ReadyToFanout` | FanoutPossible |
+  | `HeadIsFinalized` | Final |
+
+### Committing / funding a head
+
+Funds enter the head via **commits**. The `commit` endpoint drafts a commit tx
+for the local participant's wallet UTxOs (hydra-node `/commit`), signs it, and
+submits through the node's `/cardano-transaction`. Commits are accepted while the
+head is **Initializing** (the initial commit) **or Open** (an incremental
+*deposit*), so a head can open with empty commits and be funded later. On preprod
+a deposit incorporates only after the node's `deposit-period` (and lags further
+behind real time by the Blockfrost chain-follower drift), so committed funds
+appear in the in-head snapshot minutes after the deposit lands on L1.
+
+> `init` is bounded: it waits a fixed window to observe `HeadIsInitializing` and
+> then fails with a retryable error, because a hydra-node InitTx dropped by the
+> chain backend (a known Blockfrost silent-drop) is never resubmitted by the node
+> and would otherwise hang the request forever.
 
 ## What Runs Where
 
@@ -144,9 +186,14 @@ stateDiagram-v2
 
 - `src/routes/api/hydra/head/index.ts`: Hydra head CRUD plus `init`, `commit`, `close`, and `fanout` endpoints.
 - `src/services/hydra-connection-manager/hydra-connection-manager.service.ts`: keeps enabled heads connected, creates `HydraProvider`, and records head status events.
+- `src/lib/hydra/hydra/connection.ts`: the WebSocket connection + auto-reconnect state machine (`Disconnected → Connecting → Connected`).
+- `src/lib/hydra/hydra/node.ts`: one hydra-node client — sends commands (`Init`, `newTx`, `/cardano-transaction`), maps WS events to head status, and bounds `init()`.
 - `src/lib/hydra/hydra/provider.ts`: Mesh-compatible fetcher/submitter for in-head UTxOs, protocol parameters, cost models, and `/newTx` submission.
 - `src/services/hydra-tx-handler/hydra-tx-handler.service.ts`: confirms pending L2 transaction rows once the Hydra node reports them confirmed.
-- `packages/payment-source-v2/src/services/**`: normal V2 actions branch by transaction layer; L2 actions use the Hydra provider and record `hydraHeadId`.
+- `src/utils/hydra/resolve-hydra-head.ts`: the L1/L2 routing gate — resolves the enabled, **Open** head where the buyer HotWallet is the local participant and the seller WalletBase is the remote. Returns null otherwise, so purchases fall back to L1 when no usable head exists.
+- `packages/payment-source-v2/src/utils/mesh-cost-model-sync.ts`: splices the head's cost models into the V2 mesh line so the L2 script-data-hash matches the head's ledger (prevents `PPViewHashesDontMatch`).
+- `packages/payment-source-v2/src/services/**`: normal V2 actions branch by transaction layer; the batch-payments L2 pass (`processL2PurchaseLocks`) runs first and locks eligible requests into the head, else they fall through to L1.
+- `prisma/seed.ts`: seeds the `HydraRelation` / `HydraHead` / participants for the V2 preprod source from the `HYDRA_*` env vars.
 - `hydra-l2-flow/`: local/preprod harness that opens, funds, exercises, closes, and settles a Hydra head.
 
 ## Mental Model
