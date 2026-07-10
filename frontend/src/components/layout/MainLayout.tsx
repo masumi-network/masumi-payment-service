@@ -58,6 +58,7 @@ type NavItem = {
   icon: React.ReactNode;
   badge: string | null;
   group: number;
+  beta?: boolean;
   notificationDot?: boolean;
   notificationLabel?: string;
 };
@@ -158,7 +159,11 @@ export function MainLayout({ children }: MainLayoutProps) {
   );
   const hasPaymentSources = currentNetworkPaymentSources.length > 0;
   const hasV2PaymentSource = currentNetworkPaymentSources.some(isV2PaymentSource);
-  const canShowHydraNav = isV2PaymentSource(selectedPaymentSource);
+  // Hydra is V2-only (ADR 0005). Show the nav whenever the current network has a
+  // V2 source at all, not only when the *selected* source is V2 — otherwise the
+  // link flickers off during load / when another source is selected, hiding the
+  // very page users go to in order to set up a head.
+  const canShowHydraNav = hasV2PaymentSource;
   const hasLegacyOnlyPaymentSources = hasPaymentSources && !hasV2PaymentSource;
   const { networks: x402Networks, isLoading: x402Loading } = useX402Networks({
     silentErrors: true,
@@ -311,6 +316,7 @@ export function MainLayout({ children }: MainLayoutProps) {
               name: 'Hydra Heads',
               icon: <GitBranch className="h-4 w-4" />,
               badge: null,
+              beta: true,
               group: 0,
             },
           ]
@@ -503,7 +509,12 @@ export function MainLayout({ children }: MainLayoutProps) {
                 >
                   {item.icon}
                   {!(collapsed && !isHovered) && <span className="truncate">{item.name}</span>}
-                  {!(collapsed && !isHovered) && item.badge && (
+                  {!(collapsed && !isHovered) && item.beta && (
+                    <span className="ml-auto rounded-full border border-border bg-secondary px-1.5 py-0.5 text-[10px] font-medium uppercase leading-none tracking-wide text-muted-foreground">
+                      Beta
+                    </span>
+                  )}
+                  {!(collapsed && !isHovered) && !item.beta && item.badge && (
                     <span
                       key={item.badge}
                       className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-normal text-white animate-pop-in"
