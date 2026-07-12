@@ -13,8 +13,8 @@ export type X402AttemptFilterInput = {
  *
  * `filterNeedsManualAction` selects the settle-reconciliation backlog: rows
  * the settle path intentionally left `Verified` with a recorded error
- * (settle threw, or the facilitator reported failure) instead of
- * auto-failing — see the settle handling in service.ts. Those rows need an
+ * (settle threw, or a successful settle receipt could not be persisted)
+ * instead of auto-failing — see the settle handling in service.ts. Those rows need an
  * operator to check the chain before retrying or refunding, so this filter
  * overrides an explicit status filter.
  */

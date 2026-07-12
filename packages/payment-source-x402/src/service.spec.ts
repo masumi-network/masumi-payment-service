@@ -6,6 +6,8 @@ const mockX402SettlementFindUnique = jest.fn() as jest.Mock<any>;
 const mockX402SettlementUpsert = jest.fn() as jest.Mock<any>;
 const mockX402PaymentAttemptCreate = jest.fn() as jest.Mock<any>;
 const mockX402PaymentAttemptUpdate = jest.fn() as jest.Mock<any>;
+const mockX402PaymentAttemptUpdateMany = jest.fn() as jest.Mock<any>;
+const mockX402PaymentAttemptFindUnique = jest.fn() as jest.Mock<any>;
 const mockX402PaymentAttemptFindFirst = jest.fn() as jest.Mock<any>;
 const mockX402EvmWalletFindUnique = jest.fn() as jest.Mock<any>;
 const mockApiKeyFindUnique = jest.fn() as jest.Mock<any>;
@@ -27,6 +29,7 @@ const mockBudgetUpdate = jest.fn() as jest.Mock<any>;
 const mockBudgetUpsert = jest.fn() as jest.Mock<any>;
 const mockTxPaymentAttemptCreate = jest.fn() as jest.Mock<any>;
 const mockPrismaTransaction = jest.fn() as jest.Mock<any>;
+const mockAdvisoryQuery = jest.fn() as jest.Mock<any>;
 const mockFacilitatorVerify = jest.fn() as jest.Mock<any>;
 const mockFacilitatorSettle = jest.fn() as jest.Mock<any>;
 const mockExtractAndValidatePaymentIdentifier = jest.fn() as jest.Mock<any>;
@@ -104,6 +107,8 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 		x402PaymentAttempt: {
 			create: mockX402PaymentAttemptCreate,
 			update: mockX402PaymentAttemptUpdate,
+			updateMany: mockX402PaymentAttemptUpdateMany,
+			findUnique: mockX402PaymentAttemptFindUnique,
 			findFirst: mockX402PaymentAttemptFindFirst,
 		},
 		x402EvmWallet: {
@@ -238,6 +243,28 @@ const paymentRequired = {
 	accepts: [requirements],
 } as Parameters<typeof service.createX402Payment>[0]['paymentRequired'];
 
+function createMockTransactionClient() {
+	return {
+		$queryRaw: mockAdvisoryQuery,
+		x402Settlement: {
+			findUnique: mockX402SettlementFindUnique,
+			upsert: mockX402SettlementUpsert,
+		},
+		x402WalletBudget: {
+			findFirst: mockBudgetFindFirst,
+			updateMany: mockBudgetUpdateMany,
+		},
+		x402PaymentAttempt: {
+			findFirst: mockX402PaymentAttemptFindFirst,
+			update: mockX402PaymentAttemptUpdate,
+			create: (args: { data?: { direction?: string } }) =>
+				args.data?.direction === 'OutboundPayment'
+					? mockTxPaymentAttemptCreate(args)
+					: mockX402PaymentAttemptCreate(args),
+		},
+	};
+}
+
 describe('x402 service helpers', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
@@ -275,6 +302,8 @@ describe('x402 service helpers', () => {
 		mockX402SettlementUpsert.mockResolvedValue({ id: 'settlement-1' });
 		mockX402PaymentAttemptCreate.mockResolvedValue({ id: 'attempt-1' });
 		mockX402PaymentAttemptUpdate.mockResolvedValue({ id: 'attempt-1' });
+		mockX402PaymentAttemptUpdateMany.mockResolvedValue({ count: 1 });
+		mockX402PaymentAttemptFindUnique.mockResolvedValue({ id: 'attempt-1', status: 'Verified' });
 		mockFacilitatorVerify.mockResolvedValue({
 			isValid: true,
 			payer: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
@@ -309,16 +338,9 @@ describe('x402 service helpers', () => {
 			updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 		});
 		mockTxPaymentAttemptCreate.mockResolvedValue({ id: 'attempt-outbound-1' });
+		mockAdvisoryQuery.mockResolvedValue([]);
 		mockPrismaTransaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) =>
-			callback({
-				x402WalletBudget: {
-					findFirst: mockBudgetFindFirst,
-					updateMany: mockBudgetUpdateMany,
-				},
-				x402PaymentAttempt: {
-					create: mockTxPaymentAttemptCreate,
-				},
-			}),
+			callback(createMockTransactionClient()),
 		);
 	});
 
@@ -663,9 +685,284 @@ describe('x402 service helpers', () => {
 		expect(mockFacilitatorSettle).not.toHaveBeenCalled();
 	});
 
+	it('claims a payload under a database lock and atomically persists a successful settlement', async () => {
+		const paymentPayloadHash = service.hashX402PaymentPayload(paymentPayload);
+
+		const result = await service.settleX402Payment({
+			apiKeyId: 'api-key-1',
+			caip2NetworkLimit: [source.network],
+			supportedPaymentSourceId: source.id,
+			paymentPayload: typedPaymentPayload,
+		});
+
+		expect(result).toMatchObject({
+			attemptId: 'attempt-1',
+			paymentPayloadHash,
+			replay: false,
+		});
+		expect(mockPrismaTransaction).toHaveBeenNthCalledWith(
+			1,
+			expect.any(Function),
+			expect.objectContaining({ isolationLevel: 'ReadCommitted' }),
+		);
+		expect(mockPrismaTransaction).toHaveBeenNthCalledWith(
+			2,
+			expect.any(Function),
+			expect.objectContaining({ isolationLevel: 'Serializable' }),
+		);
+		expect(mockAdvisoryQuery).toHaveBeenCalledTimes(1);
+		expect(mockFacilitatorSettle).toHaveBeenCalledTimes(1);
+		expect(mockX402PaymentAttemptUpdate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { id: 'attempt-1' },
+				data: expect.objectContaining({ status: 'Settled' }),
+			}),
+		);
+		expect(mockX402SettlementUpsert).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { paymentPayloadHash },
+				create: expect.objectContaining({
+					paymentAttemptId: 'attempt-1',
+					paymentPayloadHash,
+					txHash: '0xsettlement',
+				}),
+			}),
+		);
+	});
+
+	it('rejects a concurrent settlement claim before submitting another transaction', async () => {
+		mockX402PaymentAttemptFindFirst.mockResolvedValueOnce({ id: 'attempt-in-flight' });
+
+		await expect(
+			service.settleX402Payment({
+				apiKeyId: 'api-key-1',
+				caip2NetworkLimit: [source.network],
+				supportedPaymentSourceId: source.id,
+				paymentPayload: typedPaymentPayload,
+			}),
+		).rejects.toMatchObject({ status: 409 });
+
+		expect(mockAdvisoryQuery).toHaveBeenCalledTimes(1);
+		expect(mockFacilitatorSettle).not.toHaveBeenCalled();
+	});
+
+	it('returns replay success when another worker commits between the fast lookup and locked claim', async () => {
+		const paymentPayloadHash = service.hashX402PaymentPayload(paymentPayload);
+		const completedSettlement = {
+			id: 'settlement-concurrent',
+			paymentAttemptId: 'attempt-original',
+			paymentPayloadHash,
+			txHash: '0xconcurrent',
+			caip2Network: source.network,
+			amount: source.amount,
+			payer: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+			PaymentAttempt: {
+				id: 'attempt-original',
+				payer: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+				supportedPaymentSourceId: source.id,
+			},
+		};
+		mockX402SettlementFindUnique
+			.mockResolvedValueOnce(null)
+			.mockResolvedValueOnce({ id: completedSettlement.id })
+			.mockResolvedValueOnce(completedSettlement);
+		mockX402PaymentAttemptCreate.mockResolvedValueOnce({ id: 'attempt-replay' });
+
+		const result = await service.settleX402Payment({
+			apiKeyId: 'api-key-1',
+			caip2NetworkLimit: [source.network],
+			supportedPaymentSourceId: source.id,
+			paymentPayload: typedPaymentPayload,
+		});
+
+		expect(result).toMatchObject({
+			attemptId: 'attempt-replay',
+			replay: true,
+			settleResponse: { success: true, transaction: '0xconcurrent' },
+		});
+		expect(mockFacilitatorSettle).not.toHaveBeenCalled();
+	});
+
+	it('maps the database active-claim constraint to 409 before settling', async () => {
+		mockX402PaymentAttemptCreate.mockRejectedValueOnce(
+			new MockPrismaClientKnownRequestError('active settlement already exists', 'P2002'),
+		);
+
+		await expect(
+			service.settleX402Payment({
+				apiKeyId: 'api-key-1',
+				caip2NetworkLimit: [source.network],
+				supportedPaymentSourceId: source.id,
+				paymentPayload: typedPaymentPayload,
+			}),
+		).rejects.toMatchObject({ status: 409 });
+
+		expect(mockFacilitatorSettle).not.toHaveBeenCalled();
+	});
+
+	it('retries a post-submit write conflict without settling the transaction twice', async () => {
+		let transactionCall = 0;
+		mockPrismaTransaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
+			transactionCall += 1;
+			if (transactionCall === 2) {
+				await callback(createMockTransactionClient());
+				throw new MockPrismaClientKnownRequestError('write conflict', 'P2034');
+			}
+			return callback(createMockTransactionClient());
+		});
+
+		await service.settleX402Payment({
+			apiKeyId: 'api-key-1',
+			caip2NetworkLimit: [source.network],
+			supportedPaymentSourceId: source.id,
+			paymentPayload: typedPaymentPayload,
+		});
+
+		expect(mockPrismaTransaction).toHaveBeenCalledTimes(3);
+		expect(mockFacilitatorSettle).toHaveBeenCalledTimes(1);
+		expect(mockX402PaymentAttemptUpdate).toHaveBeenCalledTimes(2);
+		expect(mockX402SettlementUpsert).toHaveBeenCalledTimes(2);
+	});
+
+	it('releases the active claim when a definitive failure needs fallback persistence', async () => {
+		mockFacilitatorSettle.mockResolvedValueOnce({
+			success: false,
+			network: source.network,
+			errorReason: 'invalid_authorization',
+			errorMessage: 'authorization rejected',
+		});
+		let transactionCall = 0;
+		mockPrismaTransaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
+			transactionCall += 1;
+			if (transactionCall === 2) throw new Error('outcome write unavailable');
+			return callback(createMockTransactionClient());
+		});
+
+		const result = await service.settleX402Payment({
+			apiKeyId: 'api-key-1',
+			caip2NetworkLimit: [source.network],
+			supportedPaymentSourceId: source.id,
+			paymentPayload: typedPaymentPayload,
+		});
+
+		expect(result.settleResponse.success).toBe(false);
+		expect(mockFacilitatorSettle).toHaveBeenCalledTimes(1);
+		expect(mockX402PaymentAttemptUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { id: 'attempt-1', status: 'Verified' },
+				data: expect.objectContaining({
+					status: 'Failed',
+					errorReason: 'invalid_authorization',
+				}),
+			}),
+		);
+	});
+
+	it('retries the definitive-failure fallback after a write conflict', async () => {
+		mockFacilitatorSettle.mockResolvedValueOnce({
+			success: false,
+			network: source.network,
+			errorReason: 'invalid_authorization',
+		});
+		let transactionCall = 0;
+		mockPrismaTransaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
+			transactionCall += 1;
+			if (transactionCall === 2) throw new Error('outcome write unavailable');
+			return callback(createMockTransactionClient());
+		});
+		mockX402PaymentAttemptUpdateMany
+			.mockRejectedValueOnce(new MockPrismaClientKnownRequestError('write conflict', 'P2034'))
+			.mockResolvedValueOnce({ count: 1 });
+
+		await service.settleX402Payment({
+			apiKeyId: 'api-key-1',
+			caip2NetworkLimit: [source.network],
+			supportedPaymentSourceId: source.id,
+			paymentPayload: typedPaymentPayload,
+		});
+
+		expect(mockX402PaymentAttemptUpdateMany).toHaveBeenCalledTimes(2);
+		expect(mockFacilitatorSettle).toHaveBeenCalledTimes(1);
+	});
+
+	it('retries and records the reconciliation marker after successful outcome persistence fails', async () => {
+		let transactionCall = 0;
+		mockPrismaTransaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
+			transactionCall += 1;
+			if (transactionCall === 2) throw new Error('outcome write unavailable');
+			return callback(createMockTransactionClient());
+		});
+		mockX402PaymentAttemptUpdateMany
+			.mockRejectedValueOnce(new MockPrismaClientKnownRequestError('write conflict', 'P2034'))
+			.mockResolvedValueOnce({ count: 1 });
+
+		await expect(
+			service.settleX402Payment({
+				apiKeyId: 'api-key-1',
+				caip2NetworkLimit: [source.network],
+				supportedPaymentSourceId: source.id,
+				paymentPayload: typedPaymentPayload,
+			}),
+		).rejects.toThrow('outcome write unavailable');
+
+		expect(mockFacilitatorSettle).toHaveBeenCalledTimes(1);
+		expect(mockX402PaymentAttemptUpdateMany).toHaveBeenCalledTimes(2);
+		expect(mockX402PaymentAttemptUpdateMany).toHaveBeenLastCalledWith(
+			expect.objectContaining({
+				where: { id: 'attempt-1', status: 'Verified' },
+				data: expect.objectContaining({
+					errorReason: 'settle_persist_failed',
+					errorMessage: expect.stringContaining('txHash=0xsettlement'),
+				}),
+			}),
+		);
+	});
+
+	it('returns success when a reported outcome-write failure is already committed', async () => {
+		const paymentPayloadHash = service.hashX402PaymentPayload(paymentPayload);
+		let transactionCall = 0;
+		mockPrismaTransaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
+			transactionCall += 1;
+			const result = await callback(createMockTransactionClient());
+			if (transactionCall === 2) throw new Error('connection lost during commit');
+			return result;
+		});
+		mockX402PaymentAttemptUpdateMany.mockResolvedValueOnce({ count: 0 });
+		mockX402SettlementFindUnique
+			.mockResolvedValueOnce(null)
+			.mockResolvedValueOnce(null)
+			.mockResolvedValueOnce({
+				id: 'settlement-1',
+				paymentAttemptId: 'attempt-1',
+				paymentPayloadHash,
+				txHash: '0xsettlement',
+				caip2Network: source.network,
+				amount: source.amount,
+				payer: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+				PaymentAttempt: {
+					id: 'attempt-1',
+					payer: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+					supportedPaymentSourceId: source.id,
+				},
+			});
+
+		const result = await service.settleX402Payment({
+			apiKeyId: 'api-key-1',
+			caip2NetworkLimit: [source.network],
+			supportedPaymentSourceId: source.id,
+			paymentPayload: typedPaymentPayload,
+		});
+
+		expect(result).toMatchObject({ attemptId: 'attempt-1', replay: false });
+		expect(mockFacilitatorSettle).toHaveBeenCalledTimes(1);
+	});
+
 	it('records the error and re-throws (no auto-fail) when facilitator.settle throws', async () => {
 		mockX402PaymentAttemptFindFirst.mockResolvedValue(null);
 		mockFacilitatorSettle.mockRejectedValueOnce(new Error('rpc getCode failed'));
+		mockX402PaymentAttemptUpdateMany
+			.mockRejectedValueOnce(new MockPrismaClientKnownRequestError('write conflict', 'P2034'))
+			.mockResolvedValueOnce({ count: 1 });
 
 		await expect(
 			service.settleX402Payment({
@@ -679,12 +976,13 @@ describe('x402 service helpers', () => {
 		// The pre-settle Verified marker is stamped with the error for diagnosis,
 		// NOT auto-failed (auto-failing could tell a possibly-charged buyer "failed"
 		// after a post-broadcast throw). The row stays Verified for reconciliation.
-		expect(mockX402PaymentAttemptUpdate).toHaveBeenCalledWith(
+		expect(mockX402PaymentAttemptUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
-				where: { id: 'attempt-1' },
-				data: { errorReason: 'settle_threw', errorMessage: 'rpc getCode failed' },
+				where: { id: 'attempt-1', status: 'Verified' },
+				data: expect.objectContaining({ errorReason: 'settle_threw', errorMessage: 'rpc getCode failed' }),
 			}),
 		);
+		expect(mockX402PaymentAttemptUpdateMany).toHaveBeenCalledTimes(2);
 		// No settlement row is written when settle throws.
 		expect(mockX402SettlementUpsert).not.toHaveBeenCalled();
 	});
