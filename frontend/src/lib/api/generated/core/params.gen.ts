@@ -62,7 +62,7 @@ type KeyMap = Map<
     }
 >;
 
-function buildKeyMap(fields: FieldsConfig, map?: KeyMap): KeyMap {
+const buildKeyMap = (fields: FieldsConfig, map?: KeyMap): KeyMap => {
   if (!map) {
     map = new Map();
   }
@@ -85,7 +85,7 @@ function buildKeyMap(fields: FieldsConfig, map?: KeyMap): KeyMap {
   }
 
   return map;
-}
+};
 
 interface Params {
   body: unknown;
@@ -94,22 +94,23 @@ interface Params {
   query: Record<string, unknown>;
 }
 
-type ParamsSlotMap = Record<Slot, unknown>;
-
-function stripEmptySlots(params: ParamsSlotMap): void {
+const stripEmptySlots = (params: Params) => {
   for (const [slot, value] of Object.entries(params)) {
-    if (value && typeof value === 'object' && !Array.isArray(value) && !Object.keys(value).length) {
+    if (value && typeof value === 'object' && !Object.keys(value).length) {
       delete params[slot as Slot];
     }
   }
-}
+};
 
-export function buildClientParams(args: ReadonlyArray<unknown>, fields: FieldsConfig): Params {
-  const params: ParamsSlotMap = {
-    body: Object.create(null),
-    headers: Object.create(null),
-    path: Object.create(null),
-    query: Object.create(null),
+export const buildClientParams = (
+  args: ReadonlyArray<unknown>,
+  fields: FieldsConfig,
+) => {
+  const params: Params = {
+    body: {},
+    headers: {},
+    path: {},
+    query: {},
   };
 
   const map = buildKeyMap(fields);
@@ -147,11 +148,15 @@ export function buildClientParams(args: ReadonlyArray<unknown>, fields: FieldsCo
             params[field.map] = value;
           }
         } else {
-          const extra = extraPrefixes.find(([prefix]) => key.startsWith(prefix));
+          const extra = extraPrefixes.find(([prefix]) =>
+            key.startsWith(prefix),
+          );
 
           if (extra) {
             const [prefix, slot] = extra;
-            (params[slot] as Record<string, unknown>)[key.slice(prefix.length)] = value;
+            (params[slot] as Record<string, unknown>)[
+              key.slice(prefix.length)
+            ] = value;
           } else if ('allowExtra' in config && config.allowExtra) {
             for (const [slot, allowed] of Object.entries(config.allowExtra)) {
               if (allowed) {
@@ -167,5 +172,5 @@ export function buildClientParams(args: ReadonlyArray<unknown>, fields: FieldsCo
 
   stripEmptySlots(params);
 
-  return params as Params;
-}
+  return params;
+};
