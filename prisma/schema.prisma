@@ -473,6 +473,9 @@ model X402PaymentAttempt {
   SupportedPaymentSource   SupportedPaymentSource? @relation(fields: [supportedPaymentSourceId], references: [id], onDelete: SetNull)
   Network                  X402Network             @relation(fields: [caip2Network], references: [caip2Id], onDelete: Restrict)
   Settlement               X402Settlement?
+  // A partial unique index created by migration 20260712000000 permits only one
+  // InboundSettle attempt in Verified/Settled state per paymentPayloadHash.
+  // Prisma schema syntax cannot represent partial unique indexes.
 
   @@index([apiKeyId, createdAt])
   @@index([registryRequestId, createdAt])
