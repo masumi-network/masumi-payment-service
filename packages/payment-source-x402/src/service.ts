@@ -569,7 +569,7 @@ async function recordSettlementReplay({
 		attemptId: replayAttempt.id,
 		paymentPayloadHash,
 		paymentIdentifier,
-		replay: true,
+		replay: true as const,
 		settleResponse: {
 			success: true,
 			transaction: existingSettlement.txHash ?? '',
@@ -1217,7 +1217,7 @@ export async function settleX402Payment({
 		attemptId,
 		paymentPayloadHash,
 		paymentIdentifier: identifier.id,
-		replay: false,
+		replay: false as const,
 		settleResponse,
 		// Webhook-ready summary for the route handler to emit (settled or failed). Not part
 		// of the HTTP response schema; the route strips it before responding.
