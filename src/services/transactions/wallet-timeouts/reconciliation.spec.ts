@@ -8,33 +8,33 @@ describe('wallet transaction reconciliation', () => {
 		expect(isTransactionNotFoundError('{"status":500,"message":"Server error"}')).toBe(false);
 	});
 
-	it('requires both expiry and a prior not-found observation before requeueing', () => {
-		const now = new Date('2026-07-12T12:10:00.000Z');
-		const expiredCreatedAt = new Date('2026-07-12T12:00:00.000Z');
-		const recentCreatedAt = new Date('2026-07-12T12:05:00.001Z');
-
+	it('requires persisted chain expiry and a prior not-found observation before requeueing', () => {
 		expect(
 			shouldRequeueMissingTransaction({
-				createdAt: expiredCreatedAt,
 				lastCheckedAt: null,
-				now,
-				timeoutMs: 5 * 60 * 1000,
+				invalidHereafterSlot: 1000n,
+				currentSlot: 1100,
 			}),
 		).toBe(false);
 		expect(
 			shouldRequeueMissingTransaction({
-				createdAt: recentCreatedAt,
 				lastCheckedAt: new Date('2026-07-12T12:09:00.000Z'),
-				now,
-				timeoutMs: 5 * 60 * 1000,
+				invalidHereafterSlot: null,
+				currentSlot: 1100,
 			}),
 		).toBe(false);
 		expect(
 			shouldRequeueMissingTransaction({
-				createdAt: expiredCreatedAt,
 				lastCheckedAt: new Date('2026-07-12T12:09:00.000Z'),
-				now,
-				timeoutMs: 5 * 60 * 1000,
+				invalidHereafterSlot: 1000n,
+				currentSlot: 1060,
+			}),
+		).toBe(false);
+		expect(
+			shouldRequeueMissingTransaction({
+				lastCheckedAt: new Date('2026-07-12T12:09:00.000Z'),
+				invalidHereafterSlot: 1000n,
+				currentSlot: 1061,
 			}),
 		).toBe(true);
 	});

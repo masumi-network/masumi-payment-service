@@ -387,6 +387,7 @@ export async function updateRolledBackTransaction(rolledBackTx: Array<{ tx_hash:
 				PaymentRequestHistory: true,
 				PurchaseRequestCurrent: true,
 				PurchaseRequestHistory: true,
+				LegacyPurchaseRequestHistory: true,
 				BlocksWallet: true,
 			},
 		});
@@ -440,17 +441,21 @@ export async function updateRolledBackTransaction(rolledBackTx: Array<{ tx_hash:
 					},
 				});
 			}
-			if (transaction.PurchaseRequestCurrent || transaction.PurchaseRequestHistory) {
+			const currentPurchaseRequestIds = new Set(transaction.PurchaseRequestCurrent.map((request) => request.id));
+			const relatedPurchaseRequests = new Map(
+				[
+					...transaction.PurchaseRequestCurrent,
+					...transaction.PurchaseRequestHistory,
+					...(transaction.LegacyPurchaseRequestHistory ? [transaction.LegacyPurchaseRequestHistory] : []),
+				].map((request) => [request.id, request]),
+			);
+			for (const purchaseRequest of relatedPurchaseRequests.values()) {
 				await prisma.purchaseRequest.update({
-					where: {
-						id: transaction.PurchaseRequestCurrent?.id ?? transaction.PurchaseRequestHistory!.id,
-					},
+					where: { id: purchaseRequest.id },
 					data: {
 						ActionHistory: {
-							connect: transaction.PurchaseRequestCurrent?.nextActionId
-								? {
-										id: transaction.PurchaseRequestCurrent.nextActionId,
-									}
+							connect: currentPurchaseRequestIds.has(purchaseRequest.id)
+								? { id: purchaseRequest.nextActionId }
 								: undefined,
 						},
 						NextAction: {

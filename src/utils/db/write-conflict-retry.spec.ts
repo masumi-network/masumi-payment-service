@@ -3,8 +3,19 @@ import { isPrismaWriteConflict, retryPrismaWriteConflict } from './write-conflic
 describe('write conflict retry', () => {
 	it('recognizes Prisma and nested PostgreSQL concurrency errors', () => {
 		expect(isPrismaWriteConflict({ code: 'P2034' })).toBe(true);
+		expect(isPrismaWriteConflict({ code: 'P2028' })).toBe(true);
 		expect(isPrismaWriteConflict({ cause: { code: '40001' } })).toBe(true);
 		expect(isPrismaWriteConflict({ cause: { code: '40P01' } })).toBe(true);
+		expect(isPrismaWriteConflict({ cause: { originalCode: '25001' } })).toBe(true);
+		expect(
+			isPrismaWriteConflict({
+				meta: {
+					driverAdapterError: {
+						cause: { code: '40001', originalCode: '40001' },
+					},
+				},
+			}),
+		).toBe(true);
 		expect(
 			isPrismaWriteConflict({
 				message: 'Transaction failed due to a write conflict or a deadlock. Please retry your transaction',

@@ -1,4 +1,11 @@
-import { HotWallet, HotWalletType, PurchaseErrorType, PurchasingAction, Prisma } from '@/generated/prisma/client';
+import {
+	HotWallet,
+	HotWalletType,
+	PurchaseErrorType,
+	PurchasingAction,
+	Prisma,
+	TransactionStatus,
+} from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import {
 	BlockfrostProvider,
@@ -18,8 +25,9 @@ import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { CONSTANTS } from '@/utils/config';
 import { calculateMinUtxo, DUMMY_RESULT_HASH } from '@/utils/min-utxo';
 import { toBalanceMapFromMeshUtxos, walletLowBalanceMonitorService } from '@/services/wallets';
-import { connectPreviousAction, createNextPurchaseAction, createPendingTransaction } from '@/services/shared';
+import { connectPreviousAction, createNextPurchaseAction } from '@/services/shared';
 import { isPrismaWriteConflict, retryPrismaWriteConflict } from '@/utils/db/write-conflict-retry';
+import { runBatchSubmissionLifecycle } from './submission-lifecycle';
 
 type PaymentSourceWithWallets = Prisma.PaymentSourceGetPayload<{
 	include: {
@@ -99,13 +107,14 @@ async function initializeBatchedPurchaseRequests(
 	batchedRequests: BatchedRequest[],
 	walletId: string,
 	txHash: string,
-): Promise<void> {
+	invalidHereafterSlot: number,
+): Promise<string> {
 	const sortedRequests = [...batchedRequests].sort((left, right) =>
 		left.paymentRequest.id.localeCompare(right.paymentRequest.id),
 	);
 	const purchaseRequestIds = sortedRequests.map((request) => request.paymentRequest.id);
 
-	await retryPrismaWriteConflict(
+	return retryPrismaWriteConflict(
 		() =>
 			prisma.$transaction(
 				async (transaction) => {
@@ -116,6 +125,16 @@ async function initializeBatchedPurchaseRequests(
 						)}) ORDER BY "id" FOR UPDATE`,
 					);
 					await transaction.$queryRaw(Prisma.sql`SELECT "id" FROM "HotWallet" WHERE "id" = ${walletId} FOR UPDATE`);
+
+					const sharedTransaction = await transaction.transaction.create({
+						data: {
+							txHash,
+							invalidHereafterSlot: BigInt(invalidHereafterSlot),
+							status: TransactionStatus.Pending,
+							BlocksWallet: { connect: { id: walletId } },
+						},
+						select: { id: true },
+					});
 
 					for (const request of sortedRequests) {
 						await transaction.purchaseRequest.update({
@@ -129,7 +148,7 @@ async function initializeBatchedPurchaseRequests(
 										id: walletId,
 									},
 								},
-								...createPendingTransaction(walletId, txHash),
+								CurrentTransaction: { connect: { id: sharedTransaction.id } },
 								TransactionHistory: request.paymentRequest.CurrentTransaction
 									? {
 											connect: {
@@ -140,6 +159,8 @@ async function initializeBatchedPurchaseRequests(
 							},
 						});
 					}
+
+					return sharedTransaction.id;
 				},
 				{
 					isolationLevel: 'Serializable',
@@ -149,6 +170,58 @@ async function initializeBatchedPurchaseRequests(
 			),
 		{
 			operationName: `initialize batched purchase requests for wallet ${walletId}`,
+		},
+	);
+}
+
+async function markDivergentBatchForManualAction({
+	batchedRequests,
+	walletId,
+	resolvedTxHash,
+	submittedTxHash,
+}: {
+	batchedRequests: BatchedRequest[];
+	walletId: string;
+	resolvedTxHash: string;
+	submittedTxHash: string;
+}): Promise<void> {
+	const purchaseRequestIds = batchedRequests.map((request) => request.paymentRequest.id).sort();
+	const errorNote = `Submitted transaction hash ${submittedTxHash} differs from signed hash ${resolvedTxHash}; wallet remains locked for manual reconciliation`;
+
+	await retryPrismaWriteConflict(
+		() =>
+			prisma.$transaction(
+				async (transaction) => {
+					await transaction.$queryRaw(
+						Prisma.sql`SELECT "id" FROM "PurchaseRequest" WHERE "id" IN (${Prisma.join(
+							purchaseRequestIds,
+						)}) ORDER BY "id" FOR UPDATE`,
+					);
+					await transaction.$queryRaw(Prisma.sql`SELECT "id" FROM "HotWallet" WHERE "id" = ${walletId} FOR UPDATE`);
+
+					const currentRequests = await transaction.purchaseRequest.findMany({
+						where: { id: { in: purchaseRequestIds } },
+						select: { id: true, nextActionId: true },
+						orderBy: { id: 'asc' },
+					});
+					for (const request of currentRequests) {
+						await transaction.purchaseRequest.update({
+							where: { id: request.id },
+							data: {
+								...connectPreviousAction(request.nextActionId),
+								...createNextPurchaseAction(PurchasingAction.WaitingForManualAction, {
+									submittedTxHash,
+									errorType: PurchaseErrorType.Unknown,
+									errorNote,
+								}),
+							},
+						});
+					}
+				},
+				{ isolationLevel: 'Serializable', maxWait: 10000, timeout: 10000 },
+			),
+		{
+			operationName: `mark divergent batch transaction ${resolvedTxHash} for manual reconciliation`,
 		},
 	);
 }
@@ -221,36 +294,64 @@ async function executeSpecificBatchPayment(
 	unsignedTx.txBuilder.invalidBefore(invalidBefore);
 	unsignedTx.txBuilder.invalidHereafter(invalidAfter);
 
-	const completeTx = await unsignedTx.build();
-	logger.info('Batching payments, complete tx built');
-	const signedTx = await wallet.signTx(completeTx);
-	logger.info('Batching payments, tx signed');
-	const resolvedTxHash: unknown = resolveTxHash(signedTx);
-	if (typeof resolvedTxHash !== 'string' || resolvedTxHash.length === 0) {
-		throw new Error('Could not resolve the signed batch transaction hash');
-	}
-	const txHash = resolvedTxHash;
-
-	await initializeBatchedPurchaseRequests(batchedRequests, walletId, txHash);
-	logger.info('Batching payments, purchase requests initialized with transaction hash', {
-		txHash,
-		purchaseRequestIds: batchedRequests.map((request) => request.paymentRequest.id),
+	const submissionResult = await runBatchSubmissionLifecycle({
+		buildAndSign: async () => {
+			const completeTx = await unsignedTx.build();
+			logger.info('Batching payments, complete tx built');
+			const signedTx = await wallet.signTx(completeTx);
+			logger.info('Batching payments, tx signed');
+			const resolvedTxHash: unknown = resolveTxHash(signedTx);
+			if (typeof resolvedTxHash !== 'string' || resolvedTxHash.length === 0) {
+				throw new Error('Could not resolve the signed batch transaction hash');
+			}
+			return {
+				completeTx,
+				signedTx,
+				resolvedTxHash,
+				invalidHereafterSlot: invalidAfter,
+			};
+		},
+		persistBeforeSubmit: async (transaction) => {
+			await initializeBatchedPurchaseRequests(
+				batchedRequests,
+				walletId,
+				transaction.resolvedTxHash,
+				transaction.invalidHereafterSlot,
+			);
+			logger.info('Batching payments, purchase requests initialized with shared transaction', {
+				txHash: transaction.resolvedTxHash,
+				invalidHereafterSlot: transaction.invalidHereafterSlot,
+				purchaseRequestIds: batchedRequests.map((request) => request.paymentRequest.id),
+			});
+		},
+		submit: async (signedTx) => wallet.submitTx(signedTx),
 	});
 
-	let submittedTxHash: string;
-	try {
-		submittedTxHash = await wallet.submitTx(signedTx);
-	} catch (error) {
-		throw new SubmissionOutcomeUnknownError(txHash, error);
+	const txHash = submissionResult.resolvedTxHash;
+	if (submissionResult.status === 'ambiguous') {
+		throw new SubmissionOutcomeUnknownError(txHash, submissionResult.error);
 	}
 
-	if (submittedTxHash !== txHash) {
-		logger.error('Submitted transaction hash differs from the locally resolved hash', {
+	if (submissionResult.status === 'divergent') {
+		logger.error('Submitted transaction hash differs from the locally resolved hash; preserving wallet lock', {
 			resolvedTxHash: txHash,
-			submittedTxHash,
+			submittedTxHash: submissionResult.submittedTxHash,
 			walletId,
 		});
+		try {
+			await markDivergentBatchForManualAction({
+				batchedRequests,
+				walletId,
+				resolvedTxHash: txHash,
+				submittedTxHash: submissionResult.submittedTxHash,
+			});
+		} catch (error) {
+			throw new SubmissionOutcomeUnknownError(txHash, error);
+		}
+		return false;
 	}
+
+	const completeTx = submissionResult.completeTx;
 
 	try {
 		await walletLowBalanceMonitorService.evaluateProjectedHotWalletById({

@@ -1,23 +1,35 @@
 import { logger } from '@/utils/logger';
 
-const RETRYABLE_DATABASE_ERROR_CODES = new Set(['P2034', '40001', '40P01']);
+const RETRYABLE_DATABASE_ERROR_CODES = new Set(['P2034', 'P2028', '40001', '40P01', '25001']);
 const WRITE_CONFLICT_MESSAGE = 'transaction failed due to a write conflict or a deadlock';
 
 type ErrorWithCause = {
 	code?: unknown;
+	originalCode?: unknown;
 	message?: unknown;
 	cause?: unknown;
+	meta?: unknown;
+	driverAdapterError?: unknown;
 };
+
+function asErrorShape(value: unknown): ErrorWithCause | null {
+	return typeof value === 'object' && value !== null ? (value as ErrorWithCause) : null;
+}
 
 export function isPrismaWriteConflict(error: unknown): boolean {
 	const visitedErrors = new Set<unknown>();
-	let currentError = error;
+	const errorsToInspect: unknown[] = [error];
 
-	while (typeof currentError === 'object' && currentError !== null && !visitedErrors.has(currentError)) {
+	while (errorsToInspect.length > 0) {
+		const currentError = errorsToInspect.shift();
+		const errorWithCause = asErrorShape(currentError);
+		if (errorWithCause == null || visitedErrors.has(currentError)) {
+			continue;
+		}
 		visitedErrors.add(currentError);
-		const errorWithCause = currentError as ErrorWithCause;
 
-		if (typeof errorWithCause.code === 'string' && RETRYABLE_DATABASE_ERROR_CODES.has(errorWithCause.code)) {
+		const errorCodes = [errorWithCause.code, errorWithCause.originalCode];
+		if (errorCodes.some((code) => typeof code === 'string' && RETRYABLE_DATABASE_ERROR_CODES.has(code))) {
 			return true;
 		}
 
@@ -28,7 +40,7 @@ export function isPrismaWriteConflict(error: unknown): boolean {
 			return true;
 		}
 
-		currentError = errorWithCause.cause;
+		errorsToInspect.push(errorWithCause.cause, errorWithCause.meta, errorWithCause.driverAdapterError);
 	}
 
 	return false;
@@ -44,9 +56,11 @@ export async function retryPrismaWriteConflict<T>(
 		random?: () => number;
 	},
 ): Promise<T> {
-	const maxAttempts = options.maxAttempts ?? 5;
-	const initialDelayMs = options.initialDelayMs ?? 50;
-	const maxDelayMs = options.maxDelayMs ?? 1000;
+	// Nine total attempts matches the refactored service's contention budget:
+	// one initial try plus eight retries, with full-jitter exponential backoff.
+	const maxAttempts = options.maxAttempts ?? 9;
+	const initialDelayMs = options.initialDelayMs ?? 100;
+	const maxDelayMs = options.maxDelayMs ?? 5000;
 	const random = options.random ?? Math.random;
 
 	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -58,7 +72,7 @@ export async function retryPrismaWriteConflict<T>(
 			}
 
 			const backoffDelayMs = Math.min(initialDelayMs * 2 ** (attempt - 1), maxDelayMs);
-			const delayMs = Math.round(backoffDelayMs + backoffDelayMs * 0.25 * random());
+			const delayMs = Math.floor(backoffDelayMs * random());
 			logger.warn('Retrying database operation after a write conflict', {
 				operation: options.operationName,
 				attempt,

@@ -10,15 +10,19 @@ export function isTransactionNotFoundError(error: unknown): boolean {
 }
 
 export function shouldRequeueMissingTransaction({
-	createdAt,
 	lastCheckedAt,
-	now,
-	timeoutMs,
+	invalidHereafterSlot,
+	currentSlot,
+	graceSlots = 60,
 }: {
-	createdAt: Date;
 	lastCheckedAt: Date | null;
-	now: Date;
-	timeoutMs: number;
+	invalidHereafterSlot: bigint | null;
+	currentSlot: number;
+	graceSlots?: number;
 }): boolean {
-	return lastCheckedAt !== null && createdAt.getTime() <= now.getTime() - timeoutMs;
+	if (lastCheckedAt === null || invalidHereafterSlot === null) {
+		return false;
+	}
+
+	return BigInt(currentSlot) > invalidHereafterSlot + BigInt(graceSlots);
 }

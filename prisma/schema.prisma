@@ -81,9 +81,9 @@ model HotWallet {
   pendingTransactionId     String?                   @unique
   pendingSwapTransactionId String?                   @unique
   paymentSourceId          String
-  lockedAt                 DateTime?
-  note                     String?
-  deletedAt                DateTime?
+  lockedAt                DateTime?
+  note                    String?
+  deletedAt               DateTime?
   PaymentSource            PaymentSource             @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
   PendingTransaction       Transaction?              @relation(fields: [pendingTransactionId], references: [id])
   PendingSwapTransaction   SwapTransaction?          @relation(fields: [pendingSwapTransactionId], references: [id])
@@ -126,6 +126,9 @@ model Transaction {
   createdAt                DateTime          @default(now())
   updatedAt                DateTime          @updatedAt
   txHash                   String?
+  /// Signed transaction validity upper bound, persisted before submission.
+  /// A missing transaction may only be requeued after this slot has elapsed.
+  invalidHereafterSlot     BigInt?
   status                   TransactionStatus
   confirmations            Int?
   lastCheckedAt            DateTime?
@@ -144,11 +147,14 @@ model Transaction {
   newOnChainState          OnChainState?
   BlocksWallet             HotWallet?
   PaymentRequestCurrent    PaymentRequest?   @relation("CurrentPaymentTransaction")
-  PurchaseRequestCurrent   PurchaseRequest?  @relation("CurrentPurchaseTransaction")
+  PurchaseRequestCurrent   PurchaseRequest[] @relation("CurrentPurchaseTransaction")
   RegistryRequest          RegistryRequest[]
   InboxAgentRegistrationRequest InboxAgentRegistrationRequest[]
   PaymentRequestHistory    PaymentRequest?   @relation("PaymentTransactionHistory", fields: [paymentRequestHistoryId], references: [id])
-  PurchaseRequestHistory   PurchaseRequest?  @relation("PurchaseTransactionHistory", fields: [purchaseRequestHistoryId], references: [id])
+  PurchaseRequestHistory   PurchaseRequest[] @relation("PurchaseTransactionHistory")
+  // Kept for rolling-deploy compatibility with replicas generated before
+  // shared V1 batch transactions used the many-to-many history relation.
+  LegacyPurchaseRequestHistory PurchaseRequest? @relation("LegacyPurchaseTransactionHistory", fields: [purchaseRequestHistoryId], references: [id])
 }
 
 model SwapTransaction {
@@ -394,7 +400,7 @@ model PurchaseRequest {
   nextActionLastChangedAt                       DateTime             @default(now())
   nextActionOrOnChainStateOrResultLastChangedAt DateTime             @default(now())
   requestedById                                 String
-  currentTransactionId                          String?              @unique
+  currentTransactionId                          String?
   collateralReturnLovelace                      BigInt?
   payByTime                                     BigInt?
   CurrentTransaction                            Transaction?         @relation("CurrentPurchaseTransaction", fields: [currentTransactionId], references: [id])
@@ -407,6 +413,7 @@ model PurchaseRequest {
   isLimitedToHotWallets                         Boolean
   HotWalletLimit                                HotWallet[]          @relation("HotWalletLimit")
   TransactionHistory                            Transaction[]        @relation("PurchaseTransactionHistory")
+  LegacyTransactionHistory                      Transaction[]        @relation("LegacyPurchaseTransactionHistory")
   WithdrawnForBuyer                             UnitValue[]          @relation("BuyerWithdrawnPurchaseRequest")
   PaidFunds                                     UnitValue[]
   WithdrawnForSeller                            UnitValue[]          @relation("SellerWithdrawnPurchaseRequest")
@@ -420,6 +427,7 @@ model PurchaseRequest {
   @@index([paymentSourceId, createdAt])
   @@index([paymentSourceId, onChainState])
   @@index([paymentSourceId, payByTime])
+  @@index([currentTransactionId])
 }
 
 model PurchaseActionData {

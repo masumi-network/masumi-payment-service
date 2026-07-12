@@ -16,7 +16,9 @@ import { registerAgentV1, deRegisterAgentV1 } from '@/services/registry';
 import { registerInboxAgentV1, deRegisterInboxAgentV1 } from '@/services/registry-inbox';
 import { CONFIG, CONSTANTS, DEFAULTS } from '@/utils/config';
 import { errorToString } from '@/utils/converter/error-string-convert';
+import { convertNetwork } from '@/utils/converter/network-convert';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
+import { SLOT_CONFIG_NETWORK, unixTimeToEnclosingSlot } from '@meshsdk/core';
 import {
 	connectPreviousAction,
 	createMeshProvider,
@@ -565,10 +567,12 @@ export async function updateWalletTransactionHash() {
 						const shouldRequeue =
 							wallet.type === HotWalletType.Purchasing &&
 							shouldRequeueMissingTransaction({
-								createdAt: wallet.PendingTransaction.createdAt,
 								lastCheckedAt: wallet.PendingTransaction.lastCheckedAt,
-								now: new Date(),
-								timeoutMs: DEFAULTS.TX_TIMEOUT_INTERVAL,
+								invalidHereafterSlot: wallet.PendingTransaction.invalidHereafterSlot,
+								currentSlot: unixTimeToEnclosingSlot(
+									Date.now(),
+									SLOT_CONFIG_NETWORK[convertNetwork(wallet.PaymentSource.network)],
+								),
 							});
 
 						if (shouldRequeue && (await requeueMissingBatchedPurchases(wallet.id, txHash))) {
