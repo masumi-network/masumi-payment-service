@@ -5,6 +5,7 @@ import {
 	PaymentErrorType,
 	PurchasingAction,
 	PurchaseErrorType,
+	Prisma,
 	RegistrationState,
 } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
@@ -13,7 +14,7 @@ import { collectOutstandingPaymentsV1, submitResultV1, authorizeRefundV1 } from 
 import { batchLatestPaymentEntriesV1, collectRefundV1, requestRefundsV1, cancelRefundsV1 } from '@/services/purchases';
 import { registerAgentV1, deRegisterAgentV1 } from '@/services/registry';
 import { registerInboxAgentV1, deRegisterInboxAgentV1 } from '@/services/registry-inbox';
-import { CONFIG, DEFAULTS } from '@/utils/config';
+import { CONFIG, CONSTANTS, DEFAULTS } from '@/utils/config';
 import { errorToString } from '@/utils/converter/error-string-convert';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import {
@@ -23,8 +24,74 @@ import {
 	createNextPurchaseAction,
 	updateCurrentTransactionStatus,
 } from '@/services/shared';
+import { retryPrismaWriteConflict } from '@/utils/db/write-conflict-retry';
+import { isTransactionNotFoundError, shouldRequeueMissingTransaction } from './reconciliation';
 
 const mutex = new Mutex();
+
+async function requeueMissingBatchedPurchases(walletId: string, txHash: string): Promise<boolean> {
+	return retryPrismaWriteConflict(
+		() =>
+			prisma.$transaction(
+				async (transaction) => {
+					const purchaseRequests = await transaction.purchaseRequest.findMany({
+						where: {
+							CurrentTransaction: { txHash },
+							NextAction: { requestedAction: PurchasingAction.FundsLockingInitiated },
+						},
+						select: { id: true, nextActionId: true, currentTransactionId: true },
+						orderBy: { id: 'asc' },
+					});
+					if (purchaseRequests.length === 0) {
+						return false;
+					}
+
+					await transaction.$queryRaw(
+						Prisma.sql`SELECT "id" FROM "PurchaseRequest" WHERE "id" IN (${Prisma.join(
+							purchaseRequests.map((request) => request.id),
+						)}) ORDER BY "id" FOR UPDATE`,
+					);
+					await transaction.$queryRaw(Prisma.sql`SELECT "id" FROM "HotWallet" WHERE "id" = ${walletId} FOR UPDATE`);
+
+					await transaction.transaction.updateMany({
+						where: { txHash, status: TransactionStatus.Pending },
+						data: { status: TransactionStatus.FailedViaTimeout },
+					});
+
+					for (const purchaseRequest of purchaseRequests) {
+						await transaction.purchaseRequest.update({
+							where: { id: purchaseRequest.id },
+							data: {
+								...connectPreviousAction(purchaseRequest.nextActionId),
+								...createNextPurchaseAction(PurchasingAction.FundsLockingRequested),
+								TransactionHistory: purchaseRequest.currentTransactionId
+									? { connect: { id: purchaseRequest.currentTransactionId } }
+									: undefined,
+								CurrentTransaction: { disconnect: true },
+							},
+						});
+					}
+
+					await transaction.hotWallet.update({
+						where: { id: walletId, deletedAt: null },
+						data: {
+							PendingTransaction: { disconnect: true },
+							lockedAt: null,
+						},
+					});
+					return true;
+				},
+				{
+					isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+					timeout: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
+					maxWait: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
+				},
+			),
+		{
+			operationName: `requeue missing batched transaction ${txHash}`,
+		},
+	);
+}
 
 export async function updateWalletTransactionHash() {
 	let release: MutexInterface.Releaser | null;
@@ -178,6 +245,10 @@ export async function updateWalletTransactionHash() {
 								PurchasingAction.UnSetRefundRequestedInitiated,
 							],
 						},
+					},
+					NOT: {
+						NextAction: { requestedAction: PurchasingAction.FundsLockingInitiated },
+						CurrentTransaction: { is: { txHash: { not: null } } },
 					},
 					OR: [
 						{
@@ -425,10 +496,8 @@ export async function updateWalletTransactionHash() {
 		const lockedHotWallets = await prisma.hotWallet.findMany({
 			where: {
 				PendingTransaction: {
-					//if the transaction has been checked in the last 30 seconds, we skip it
-					lastCheckedAt: {
-						lte: new Date(Date.now() - 1000 * 60 * 1),
-					},
+					// If the transaction has been checked in the last minute, skip it.
+					OR: [{ lastCheckedAt: { lte: new Date(Date.now() - 1000 * 60 * 1) } }, { lastCheckedAt: null }],
 				},
 				deletedAt: null,
 				OR: [
@@ -474,8 +543,8 @@ export async function updateWalletTransactionHash() {
 
 					const blockfrostKey = wallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey;
 					const provider = await createMeshProvider(blockfrostKey);
-					const txInfo = await provider.fetchTxInfo(txHash);
-					if (txInfo) {
+					try {
+						await provider.fetchTxInfo(txHash);
 						await prisma.hotWallet.update({
 							where: { id: wallet.id, deletedAt: null },
 							data: {
@@ -488,7 +557,29 @@ export async function updateWalletTransactionHash() {
 						} else if (wallet.type == HotWalletType.Purchasing) {
 							unlockedPurchasingWalletIds.push(wallet.id);
 						}
-					} else {
+					} catch (error) {
+						if (!isTransactionNotFoundError(error)) {
+							throw error;
+						}
+
+						const shouldRequeue =
+							wallet.type === HotWalletType.Purchasing &&
+							shouldRequeueMissingTransaction({
+								createdAt: wallet.PendingTransaction.createdAt,
+								lastCheckedAt: wallet.PendingTransaction.lastCheckedAt,
+								now: new Date(),
+								timeoutMs: DEFAULTS.TX_TIMEOUT_INTERVAL,
+							});
+
+						if (shouldRequeue && (await requeueMissingBatchedPurchases(wallet.id, txHash))) {
+							logger.warn('Requeued batched purchases after repeated transaction-not-found checks', {
+								txHash,
+								walletId: wallet.id,
+							});
+							unlockedPurchasingWalletIds.push(wallet.id);
+							return;
+						}
+
 						await prisma.transaction.update({
 							where: { id: wallet.PendingTransaction.id },
 							data: { lastCheckedAt: new Date() },

@@ -20,11 +20,11 @@ export function connectPreviousAction(nextActionId: string) {
 	} satisfies Pick<Prisma.PaymentRequestUpdateInput, 'ActionHistory'>;
 }
 
-export function createPendingTransaction(blocksWalletId: string) {
+export function createPendingTransaction(blocksWalletId: string, txHash: string | null = null) {
 	return {
 		CurrentTransaction: {
 			create: {
-				txHash: null,
+				txHash,
 				status: TransactionStatus.Pending,
 				BlocksWallet: {
 					connect: {
