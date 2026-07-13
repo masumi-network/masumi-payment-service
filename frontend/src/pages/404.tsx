@@ -52,7 +52,7 @@ export default function NotFound() {
                 </Button>
                 <Button asChild variant="outline" size="lg" className="gap-2">
                   <Link
-                    href="https://docs.masumi.network"
+                    href="https://www.masumi.network/dev/masumi"
                     target="_blank"
                     rel="noopener noreferrer"
                   >

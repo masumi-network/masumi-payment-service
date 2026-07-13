@@ -21,7 +21,7 @@ Masumi is a decentralized protocol designed to enable AI agents to collaborate a
 - **Observability**: Built-in OpenTelemetry integration for distributed tracing, metrics, and structured log export to SigNoz, Grafana, or Datadog.
 - **Admin Dashboard**: Next.js frontend for managing agents, wallets, API keys, and monitoring wallet health.
 
-Learn more about Masumi in our [Introduction Guide](https://docs.masumi.network/get-started/introduction).
+Learn more about Masumi in our [Introduction Guide](https://www.masumi.network/dev/masumi/documentation).
 
 ## Getting Started
 
@@ -58,7 +58,7 @@ and [docs/e2e-testing.md](docs/e2e-testing.md) for end-to-end tests.
 
 We have been audited by [TxPipe](https://txpipe.io/) please check the [full report](docs/audit.pdf) for details.
 
-Refer to the official [Masumi Docs Website](https://docs.masumi.network) for comprehensive documentation and full setup guide.
+Refer to the official [Masumi Docs Website](https://www.masumi.network/dev/masumi) for comprehensive documentation and full setup guide.
 
 Additional guides can be found in the [docs](docs/) folder:
 
