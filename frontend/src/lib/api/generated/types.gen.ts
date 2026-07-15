@@ -4085,19 +4085,19 @@ export type PostPaymentData = {
         /**
          * The time after which the payment has to be submitted to the smart contract
          */
-        payByTime?: Date;
+        payByTime?: Date | Date;
         /**
          * The time after which the payment has to be submitted to the smart contract
          */
-        submitResultTime?: Date;
+        submitResultTime?: Date | Date;
         /**
          * The time after which the payment will be unlocked
          */
-        unlockTime?: Date;
+        unlockTime?: Date | Date;
         /**
          * The time after which the payment will be unlocked for external dispute
          */
-        externalDisputeUnlockTime?: Date;
+        externalDisputeUnlockTime?: Date | Date;
         /**
          * Metadata to be stored with the payment request
          */
@@ -5343,7 +5343,7 @@ export type PostPaymentErrorStateRecoveryData = {
         /**
          * The time of the last update, to ensure you clear the correct error state
          */
-        updatedAt: Date;
+        updatedAt: Date | Date;
     };
     path?: never;
     query?: never;
@@ -5676,7 +5676,7 @@ export type PostPurchaseErrorStateRecoveryData = {
         /**
          * The time of the last update, to ensure you clear the correct error state
          */
-        updatedAt: Date;
+        updatedAt: Date | Date;
     };
     path?: never;
     query?: never;
@@ -9498,11 +9498,11 @@ export type PostPurchaseSpendingData = {
         /**
          * Start date for spending calculation (date format: 2024-01-01). If null, uses earliest available data. If provided, will be converted to the local time zone of the user
          */
-        startDate?: Date | unknown;
+        startDate?: Date | Date | unknown;
         /**
          * End date for spending calculation (date format: 2024-01-31). If null, uses current date. If provided, will be converted to the local time zone of the user
          */
-        endDate?: Date | unknown;
+        endDate?: Date | Date | unknown;
         /**
          * The time zone to use for the spending calculation. If not provided, will use the UTC time zone. Must be a valid IANA time zone name, see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
          */
@@ -9689,11 +9689,11 @@ export type PostPaymentIncomeData = {
         /**
          * Start date for income calculation (date format: 2024-01-01). If null, uses earliest available data. If provided, will be converted to the local time zone of the user
          */
-        startDate?: Date | unknown;
+        startDate?: Date | Date | unknown;
         /**
          * End date for income calculation (date format: 2024-01-31). If null, uses current date. If provided, will be converted to the local time zone of the user
          */
-        endDate?: Date | unknown;
+        endDate?: Date | Date | unknown;
         /**
          * The time zone to use for the income calculation. If not provided, will use the UTC time zone. Must be a valid IANA time zone name, see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
          */
@@ -10225,11 +10225,11 @@ export type GetRegistryA2aData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The smart contract address of the payment source
+         * The smart contract address of the payment source. When omitted with no V2-aware filters, registry list/count endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.
          */
         filterSmartContractAddress?: string | null;
         /**
-         * Filter by payment source type
+         * Filter by payment source type. When omitted with no source/address/identifier support filters, the endpoint defaults to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
         /**
@@ -10241,15 +10241,15 @@ export type GetRegistryA2aData = {
          */
         searchQuery?: string;
         /**
-         * When set, return only the registry entry whose on-chain agent identifier matches exactly (same scope as list: network, payment source, and wallet permissions)
+         * When set, return only the registry entry whose on-chain agent identifier matches exactly (same scope as list: network, payment source, and wallet permissions). This exact lookup does not apply the default Web3CardanoV1 compatibility filter.
          */
         filterAgentIdentifier?: string;
         /**
-         * Return only entries that advertise a supported payment source with this address (the Cardano smart-contract address, or an EVM x402 payTo/address). Matched server-side so callers do not have to fetch every entry and filter client-side. Combined with filterSupportedPaymentSourceNetworks as a logical OR.
+         * Return only entries that advertise a supported payment source with this address (the Cardano smart-contract address, or an EVM x402 payTo/address). Matched server-side so callers do not have to fetch every entry and filter client-side. Combined with filterSupportedPaymentSourceNetworks as a logical OR. This V2-aware filter opts out of the default Web3CardanoV1 compatibility filter.
          */
         filterSupportedPaymentSourceAddress?: string;
         /**
-         * Comma-separated list of supported-payment-source networks to match (Cardano network name, or CAIP-2 EVM chain ids such as eip155:8453). Returns entries advertising a supported payment source on any of these networks. Combined with filterSupportedPaymentSourceAddress as a logical OR.
+         * Comma-separated list of supported-payment-source networks to match (Cardano network name, or CAIP-2 EVM chain ids such as eip155:8453). Returns entries advertising a supported payment source on any of these networks. Combined with filterSupportedPaymentSourceAddress as a logical OR. This V2-aware filter opts out of the default Web3CardanoV1 compatibility filter.
          */
         filterSupportedPaymentSourceNetworks?: string;
     };
