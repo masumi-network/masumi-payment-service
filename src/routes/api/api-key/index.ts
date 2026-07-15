@@ -1,4 +1,5 @@
 import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { cursorPaginationArgs } from '@/utils/shared/queries';
 import { ApiKeyStatus, Network } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { createId } from '@paralleldrive/cuid2';
@@ -8,7 +9,7 @@ import { encrypt, decrypt } from '@/utils/security/encryption';
 import { CONSTANTS } from '@masumi/payment-core/config';
 import { logger } from '@masumi/payment-core/logger';
 import { transformBigIntAmounts } from '@/utils/shared/transformers';
-import { withSerializableSlot } from '@/utils/db/serializable-semaphore';
+import { withSerializableSlot } from '@masumi/payment-core/serializable-semaphore';
 import { z } from '@masumi/payment-core/zod';
 import {
 	caip2LimitToCardanoNetworks,
@@ -118,8 +119,10 @@ export const queryAPIKeyEndpointGet = adminAuthenticatedEndpointFactory.build({
 	output: getAPIKeySchemaOutput,
 	handler: async ({ input }: { input: z.infer<typeof getAPIKeySchemaInput> }) => {
 		const result = await prisma.apiKey.findMany({
-			cursor: input.cursorId ? { id: input.cursorId } : undefined,
-			take: input.take,
+			// Exclude soft-deleted keys (delete sets deletedAt + status Revoked);
+			// otherwise revoked keys stay listed forever and occupy cursor pages.
+			where: { deletedAt: null },
+			...cursorPaginationArgs(input.cursorId, input.take),
 			include: {
 				RemainingUsageCredits: { select: { amount: true, unit: true } },
 				WalletScopes: { select: { hotWalletId: true } },

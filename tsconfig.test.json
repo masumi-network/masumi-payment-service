@@ -1,32 +1,17 @@
 {
+	"extends": "./tsconfig.json",
 	"ts-node": {
 		"require": ["tsconfig-paths/register"]
 	},
 	"compilerOptions": {
-		"module": "ES2022",
-		"moduleResolution": "node",
-		"esModuleInterop": true,
-		"pretty": true,
-		"resolveJsonModule": true,
-		"skipLibCheck": true,
-		"sourceMap": true,
-		"target": "es2021",
-		"outDir": "./dist",
-		"baseUrl": ".",
-		"experimentalDecorators": true,
-		"strict": true,
-		"allowSyntheticDefaultImports": true,
-		"paths": {
-			"@/*": ["src/*"],
-			"@masumi/payment-core": ["packages/payment-core/src/index.ts"],
-			"@masumi/payment-core/*": ["packages/payment-core/src/*"],
-			"@masumi/payment-source-v1": ["packages/payment-source-v1/src/index.ts"],
-			"@masumi/payment-source-v1/*": ["packages/payment-source-v1/src/*"],
-			"@masumi/payment-source-v2": ["packages/payment-source-v2/src/index.ts"],
-			"@masumi/payment-source-v2/*": ["packages/payment-source-v2/src/*"],
-			"@prisma/client": ["src/generated/prisma/client"]
-		}
+		"moduleResolution": "node"
 	},
-	"include": ["src/**/*.spec.ts", "packages/**/*.ts", "tests/**/*.ts", "jest.e2e*.config.ts", "src/generated/**/*.ts"],
-	"exclude": ["node_modules"]
+	"include": [
+		"src/**/*.spec.ts",
+		"packages/**/*.ts",
+		"smart-contracts/**/plutus.json",
+		"tests/**/*.ts",
+		"jest.e2e*.config.ts",
+		"src/generated/**/*.ts"
+	]
 }

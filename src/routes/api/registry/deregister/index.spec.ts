@@ -296,6 +296,33 @@ describe('unregisterAgentPost', () => {
 		});
 	});
 
+	it('returns 409 when the registration is in a non-deregisterable state', async () => {
+		// The in-transaction re-read (which the guard inspects) reports a
+		// mid-flight lifecycle state. Only RegistrationConfirmed / UpdateConfirmed /
+		// UpdateFailed / DeregistrationFailed may be deregistered; anything else
+		// must 409 so a deregister can't race the register/update schedulers.
+		mockFindRegistryRequest.mockResolvedValue({
+			id: 'registry-request-1',
+			state: RegistrationState.DeregistrationInitiated,
+			paymentSourceId: 'payment-source-1',
+		});
+
+		const { responseMock } = await testEndpoint({
+			endpoint: unregisterAgentPost,
+			requestProps: {
+				method: 'POST',
+				headers: { token: 'valid' },
+				body: {
+					agentIdentifier: 'a'.repeat(56) + 'a55e7',
+					network: Network.Preprod,
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(409);
+		expect(mockUpdateRegistryRequest).not.toHaveBeenCalled();
+	});
+
 	it('returns 409 when the asset is no longer held by a managed wallet', async () => {
 		mockFindPaymentSource.mockResolvedValue({
 			id: 'payment-source-1',

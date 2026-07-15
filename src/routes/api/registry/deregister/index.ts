@@ -12,7 +12,7 @@ import { registryRequestOutputSchema } from '@/routes/api/registry';
 import { a2aRegistryRequestOutputSchema } from '@/routes/api/registry/schemas';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
-import { retryOnSerializationConflict } from '@/utils/db/retry';
+import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { mapA2ARegistryRequestToOutput } from '@/routes/api/registry/utils';
 import { serializeSupportedPaymentSources, serializeVerifications } from '../serializers';
 

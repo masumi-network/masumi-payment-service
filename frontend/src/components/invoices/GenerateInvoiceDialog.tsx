@@ -1040,7 +1040,11 @@ export function GenerateInvoiceDialog({
                 step="0.01"
                 min="0"
                 max="1"
-                {...register('vatRate', { valueAsNumber: true })}
+                {...register('vatRate', {
+                  // Empty field means "no VAT", not NaN — z.number().optional()
+                  // rejects NaN and would make the form unsubmittable.
+                  setValueAs: (v) => (v === '' || v == null ? undefined : Number(v)),
+                })}
                 placeholder="0.19"
               />
               {errors.vatRate && (

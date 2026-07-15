@@ -67,7 +67,7 @@ export const APIKeySchema = {
                     },
                     amount: {
                         type: 'string',
-                        description: 'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)'
+                        description: 'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)'
                     }
                 },
                 required: [
@@ -426,6 +426,11 @@ export const PaymentSchema = {
             type: 'string',
             nullable: true,
             description: 'Identifier of the agent that is being paid'
+        },
+        agentName: {
+            type: 'string',
+            nullable: true,
+            description: 'Display name of the agent when known'
         },
         pricingType: {
             type: 'string',
@@ -882,7 +887,7 @@ export const PaymentSchema = {
                 properties: {
                     amount: {
                         type: 'string',
-                        description: 'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)'
+                        description: 'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)'
                     },
                     unit: {
                         type: 'string',
@@ -1034,6 +1039,7 @@ export const PaymentSchema = {
         'updatedAt',
         'blockchainIdentifier',
         'agentIdentifier',
+        'agentName',
         'pricingType',
         'lastCheckedAt',
         'payByTime',
@@ -1093,6 +1099,11 @@ export const PurchaseSchema = {
             type: 'string',
             nullable: true,
             description: 'Identifier of the agent that is being purchased'
+        },
+        agentName: {
+            type: 'string',
+            nullable: true,
+            description: 'Display name of the agent when known'
         },
         pricingType: {
             type: 'string',
@@ -1679,6 +1690,7 @@ export const PurchaseSchema = {
         'updatedAt',
         'blockchainIdentifier',
         'agentIdentifier',
+        'agentName',
         'pricingType',
         'lastCheckedAt',
         'payByTime',
@@ -1880,7 +1892,7 @@ export const AgentMetadataSchema = {
                                         properties: {
                                             amount: {
                                                 type: 'string',
-                                                description: 'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)'
+                                                description: 'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)'
                                             },
                                             unit: {
                                                 type: 'string',
@@ -2410,7 +2422,7 @@ export const AgentIdentifierMetadataSchema = {
                                         properties: {
                                             amount: {
                                                 type: 'string',
-                                                description: 'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)'
+                                                description: 'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)'
                                             },
                                             unit: {
                                                 type: 'string',
@@ -2968,7 +2980,7 @@ export const RegistryEntrySchema = {
                                 properties: {
                                     amount: {
                                         type: 'string',
-                                        description: 'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)'
+                                        description: 'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)'
                                     },
                                     unit: {
                                         type: 'string',
@@ -3876,6 +3888,15 @@ export const PaymentSourceExtendedSchema = {
             type: 'string',
             description: 'Address of the smart contract for this payment source'
         },
+        contractSyncStatus: {
+            type: 'string',
+            enum: [
+                'in_sync',
+                'outdated_contract',
+                'custom_address'
+            ],
+            description: 'Whether a Web3CardanoV2 source is on the current on-chain contract. "outdated_contract": registry policyId differs from the current default (retired contract — agents orphaned, payment address stale); "custom_address": current version but a non-default admin-wallet address; "in_sync": matches the current default (also for V1 and any non-V2 source).'
+        },
         PaymentSourceConfig: {
             type: 'object',
             properties: {
@@ -3971,6 +3992,7 @@ export const PaymentSourceExtendedSchema = {
         'requiredAdminSignatures',
         'policyId',
         'smartContractAddress',
+        'contractSyncStatus',
         'PaymentSourceConfig',
         'lastIdentifierChecked',
         'syncInProgress',
@@ -4052,7 +4074,7 @@ export const UtxoAmountSchema = {
             nullable: true,
             minimum: 0,
             maximum: 100000000000000,
-            description: 'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)'
+            description: 'The quantity of the asset in its smallest unit. For ADA, this is lovelace (1 ADA = 1000000 lovelace)'
         }
     },
     required: [

@@ -1,7 +1,7 @@
 import { HotWalletType, OnChainState, PaymentAction, PaymentSourceType, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
-import { withSerializableSlotRetry } from '@/utils/db/serializable-semaphore';
+import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 
 export async function lockAndQueryPayments({
 	paymentStatus,

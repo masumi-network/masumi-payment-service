@@ -11,7 +11,7 @@ import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contrac
 import { SERVICE_CONSTANTS } from '@masumi/payment-core/config';
 import { advancedRetry, delayErrorResolver, RetryResult } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
-import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
+import { interpretBlockchainError } from '@masumi/payment-core/blockchain-error-interpreter';
 import { extractAssetName } from '@/utils/converter/agent-identifier';
 import { sortAndLimitUtxos } from '@/utils/utxo';
 import {

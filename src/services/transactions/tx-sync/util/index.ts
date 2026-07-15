@@ -86,6 +86,20 @@ export function checkPaymentAmountsMatch(
 	if (collateralReturn > 0n && collateralReturn < CONSTANTS.MIN_COLLATERAL_LOVELACE) {
 		return false;
 	}
+	// Bound the collateral against the actually-locked lovelace unconditionally.
+	// Every seller spend path is gated on-chain by
+	// `lovelace_of(input) >= collateral_return_lovelace` (SubmitResult / Withdraw
+	// in both smart-contracts/payment{,-v2}/validators/vested_pay.ak), so a datum
+	// whose collateral exceeds the locked ADA permanently bricks the seller. The
+	// per-asset check below only enforces this when the request carries a
+	// lovelace line item; a token-only request would otherwise skip it, letting a
+	// malicious buyer lock such a datum and defraud the seller of their work.
+	const lockedLovelace = actualAmounts
+		.filter((y) => y.unit === '' || y.unit.toLowerCase() == 'lovelace')
+		.reduce((sum, y) => sum + BigInt(y.quantity), 0n);
+	if (collateralReturn > lockedLovelace) {
+		return false;
+	}
 	return expectedAmounts.every((x) => {
 		if (x.unit.toLowerCase() == 'lovelace') {
 			x.unit = '';

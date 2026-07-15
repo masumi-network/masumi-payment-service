@@ -39,7 +39,7 @@ export { isPaymentBillable } from './billing';
 const isUsdcxUnit = (unit: string) => unit === MAINNET_USDCX_UNIT;
 const isUsdmUnit = (unit: string) => unit === MAINNET_USDM_UNIT || unit === PREPROD_USDM_UNIT;
 import { getServicePeriodLabel, mergePaymentsById, validateInvoiceCompliance } from '@/utils/invoice/compliance';
-import { withSerializableSlot } from '@/utils/db/serializable-semaphore';
+import { withSerializableSlot } from '@masumi/payment-core/serializable-semaphore';
 
 function toPrismaBytes(base64: string): Uint8Array<ArrayBuffer> {
 	return Uint8Array.from(Buffer.from(base64, 'base64'));

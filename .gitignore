@@ -33,11 +33,19 @@ smart-contracts/payment/wallet_2_.addr
 scripts/add-mock-payments.ts
 
 otelcol-contrib
-test-output/example-invoice.pdf
-test-output/minimal-invoice.pdf
+# invoice-generator test artifacts
+test-output/
 tests/e2e/.e2e-global-state.json
 scripts/example-invoice.pdf
 scripts/example-invoice.html
 
 # Prisma Generated Files
 src/generated/
+
+# Hydra L2 devnet/preprod local state (contains private keys - never commit)
+hydra-l2-flow/
+
+# Local vector-db/agent-memory tool artifacts
+ruvector.db
+agentdb.rvf
+agentdb.rvf.lock

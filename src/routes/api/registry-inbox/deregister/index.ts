@@ -11,6 +11,7 @@ import { registryInboxRequestOutputSchema } from '@/routes/api/registry-inbox';
 import { extractAssetName } from '@/utils/converter/agent-identifier';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
+import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { serializeInboxRegistryEntry } from '../serializers';
 
 export const unregisterInboxAgentSchemaInput = z.object({
@@ -89,36 +90,70 @@ export const unregisterInboxAgentPost = payAuthenticatedEndpointFactory.build({
 			throw createHttpError(403, 'You are not authorized to deregister this inbox agent');
 		}
 
-		const result = await prisma.inboxAgentRegistrationRequest.update({
-			where: {
-				id: registrationRequest.id,
-				SmartContractWallet: {
-					deletedAt: null,
+		// Deregister is only valid for a settled on-chain asset that is not
+		// mid-flight in another lifecycle action. Blocking the in-flight states
+		// (Registration{Requested,Initiated}/Deregistration{Requested,Initiated})
+		// stops a deregister from flipping a row the register/deregister
+		// schedulers are already driving — which would let two services act on
+		// the same asset and risk a double burn/mint. RegistrationFailed is
+		// excluded because nothing was minted, and DeregistrationConfirmed
+		// because the asset is already burned.
+		const validStatesForDeregister: RegistrationState[] = [
+			RegistrationState.RegistrationConfirmed,
+			RegistrationState.DeregistrationFailed,
+		];
+		const result = await retryOnSerializationConflict(() =>
+			prisma.$transaction(
+				async (tx) => {
+					// Re-read state INSIDE the serializable tx to close the TOCTOU window
+					// between the findUnique above and this write.
+					const current = await tx.inboxAgentRegistrationRequest.findUnique({
+						where: { id: registrationRequest.id },
+						select: { state: true },
+					});
+					if (current == null) {
+						throw createHttpError(404, 'Registration not found');
+					}
+					if (!validStatesForDeregister.includes(current.state)) {
+						throw createHttpError(
+							409,
+							`Inbox agent registration cannot be deregistered in its current state: ${current.state}`,
+						);
+					}
+					return tx.inboxAgentRegistrationRequest.update({
+						where: {
+							id: registrationRequest.id,
+							SmartContractWallet: {
+								deletedAt: null,
+							},
+						},
+						data: {
+							state: RegistrationState.DeregistrationRequested,
+							deregistrationHotWalletId: managedHolderWallet.id,
+						},
+						include: {
+							SmartContractWallet: {
+								select: { walletVkey: true, walletAddress: true },
+							},
+							RecipientWallet: {
+								select: { walletVkey: true, walletAddress: true },
+							},
+							CurrentTransaction: {
+								select: {
+									txHash: true,
+									status: true,
+									confirmations: true,
+									fees: true,
+									blockHeight: true,
+									blockTime: true,
+								},
+							},
+						},
+					});
 				},
-			},
-			data: {
-				state: RegistrationState.DeregistrationRequested,
-				deregistrationHotWalletId: managedHolderWallet.id,
-			},
-			include: {
-				SmartContractWallet: {
-					select: { walletVkey: true, walletAddress: true },
-				},
-				RecipientWallet: {
-					select: { walletVkey: true, walletAddress: true },
-				},
-				CurrentTransaction: {
-					select: {
-						txHash: true,
-						status: true,
-						confirmations: true,
-						fees: true,
-						blockHeight: true,
-						blockTime: true,
-					},
-				},
-			},
-		});
+				{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
+			),
+		);
 
 		return serializeInboxRegistryEntry(result);
 	},

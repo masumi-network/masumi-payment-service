@@ -10,7 +10,7 @@ import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-iden
 import { lovelaceToAdaNumberSafe } from '@/utils/lovelace';
 import { transformPaymentGetTimestamps, transformPaymentGetAmounts } from '@/utils/shared/transformers';
 import { assertWalletInScope } from '@/utils/shared/wallet-scope';
-import { retryOnSerializationConflict } from '@/utils/db/retry';
+import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { z } from '@masumi/payment-core/zod';
 
 export const paymentErrorStateRecoverySchemaInput = z.object({

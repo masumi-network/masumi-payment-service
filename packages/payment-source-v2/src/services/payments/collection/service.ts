@@ -1,11 +1,4 @@
-import {
-	OnChainState,
-	PaymentAction,
-	PaymentErrorType,
-	PaymentSourceType,
-	TransactionStatus,
-	Prisma,
-} from '@/generated/prisma/client';
+import { OnChainState, PaymentAction, PaymentSourceType, TransactionStatus, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { resolveTxHash } from '@meshsdk/core';
 import { Asset, deserializeDatum } from '@meshsdk/core';
@@ -14,14 +7,15 @@ import { asV2Provider } from '../../provider-cast';
 import type { BlockfrostProvider } from '@/services/shared';
 import { logger } from '@masumi/payment-core/logger';
 import { recordV2BatchHashDivergence } from '@masumi/payment-core/metrics';
-import { SmartContractState, smartContractStateEqualsOnChainState } from '@/utils/generator/contract-generator';
+import { SmartContractState } from '@/utils/generator/contract-generator';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { DecodedV1ContractDatum } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
-import { retryOnSerializationConflict } from '@/utils/db/retry';
+import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
-import { isDefinitiveNodeRejection } from '../../submit-error-classifier';
-import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
+import { isDefinitiveNodeRejection } from '@masumi/payment-core/submit-error-classifier';
+import { makeHotWalletUnlocker, makePaymentRequestFailureMarker } from '../../request-failure';
+import { findMatchingPaymentUtxo } from '../../utxo-matching';
 import { advancedRetry, delayErrorResolver } from 'advanced-retry';
 import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
@@ -113,62 +107,12 @@ type ValidatedCollectionItem = {
 
 const mutex = new Mutex();
 
-async function markRequestFailed(request: PaymentRequestWithRelations, error: unknown): Promise<void> {
-	logger.error(`Error collecting V2 payments ${request.id}`, { error });
-	await prisma.paymentRequest.update({
-		where: { id: request.id },
-		data: {
-			...connectPreviousAction(request.nextActionId),
-			...createNextPaymentAction(PaymentAction.WaitingForManualAction, {
-				errorType: PaymentErrorType.Unknown,
-				errorNote: 'Collecting payments failed: ' + interpretBlockchainError(error),
-			}),
-			SmartContractWallet: { update: { lockedAt: null } },
-		},
-	});
-}
+const markRequestFailed = makePaymentRequestFailureMarker({
+	logMessage: 'Error collecting V2 payments',
+	errorNotePrefix: 'Collecting payments failed: ',
+});
 
-async function unlockHotWallet(walletId: string): Promise<void> {
-	try {
-		await prisma.hotWallet.update({
-			where: { id: walletId, deletedAt: null },
-			data: { lockedAt: null },
-		});
-	} catch (error) {
-		logger.warn('Failed to unlock V2 collection hot wallet', { error, walletId });
-	}
-}
-
-function findMatchingUtxo(
-	utxoList: UTxO[],
-	txHash: string,
-	request: PaymentRequestWithRelations,
-	network: 'mainnet' | 'preprod',
-	smartContractAddress: string,
-): UTxO | undefined {
-	return utxoList.find((utxo) => {
-		if (utxo.input.txHash !== txHash) return false;
-		const utxoDatum = utxo.output.plutusData;
-		if (!utxoDatum) return false;
-		const decodedDatum: unknown = deserializeDatum(utxoDatum);
-		const decodedContract = decodeV2ContractDatum(decodedDatum, network, smartContractAddress);
-		if (decodedContract == null) return false;
-		return (
-			smartContractStateEqualsOnChainState(decodedContract.state, request.onChainState) &&
-			decodedContract.buyerAddress === request.BuyerWallet!.walletAddress &&
-			decodedContract.sellerAddress === request.SmartContractWallet!.walletAddress &&
-			decodedContract.buyerVkey === request.BuyerWallet!.walletVkey &&
-			decodedContract.sellerVkey === request.SmartContractWallet!.walletVkey &&
-			decodedContract.blockchainIdentifier === request.blockchainIdentifier &&
-			decodedContract.inputHash === request.inputHash &&
-			BigInt(decodedContract.resultTime) === BigInt(request.submitResultTime) &&
-			BigInt(decodedContract.unlockTime) === BigInt(request.unlockTime) &&
-			BigInt(decodedContract.externalDisputeUnlockTime) === BigInt(request.externalDisputeUnlockTime) &&
-			BigInt(decodedContract.collateralReturnLovelace) === BigInt(request.collateralReturnLovelace ?? 0) &&
-			BigInt(decodedContract.payByTime) === BigInt(request.payByTime ?? 0)
-		);
-	});
-}
+const unlockHotWallet = makeHotWalletUnlocker('collection');
 
 async function validateAndBuildItem(
 	request: PaymentRequestWithRelations,
@@ -190,7 +134,7 @@ async function validateAndBuildItem(
 		throw new Error('Transaction hash not found');
 	}
 	const utxoByHash = await fetchUTxOsWithDeferOnEmpty(blockchainProvider, txHash);
-	const utxo = findMatchingUtxo(utxoByHash, txHash, request, network, smartContractAddress);
+	const utxo = findMatchingPaymentUtxo(utxoByHash, txHash, request, network, smartContractAddress);
 	if (!utxo) {
 		throw new Error(`${LOOKUP_DEFERRED_PREFIX} UTXO not found`);
 	}
@@ -225,12 +169,37 @@ async function validateAndBuildItem(
 		throw new Error('Buyer wallet does not match buyer in contract');
 	}
 
-	// V2 has zero protocol fees: every input asset moves to the collection address as-is.
+	// V2 has zero protocol fees: every input asset moves to the collection address.
 	const remainingAssets: { [key: string]: Asset } = {};
 	for (const assetValue of utxo.output.amount) {
 		remainingAssets[assetValue.unit] = {
 			unit: assetValue.unit,
 			quantity: assetValue.quantity,
+		};
+	}
+
+	// The escrow UTxO holds RequestedFunds + collateralReturnLovelace. The
+	// collateral is returned to the buyer in its own output (collateralReturn
+	// below), so it MUST be subtracted from the seller's payout here. The Aiken
+	// validator requires the seller output to be at least
+	// `value_minus_lovelace(input.value, collateral_return_lovelace)` and the
+	// buyer output at least `collateral_return_lovelace` — both `>=`, so paying
+	// the seller the FULL input and ALSO returning collateral passes on-chain
+	// while silently funding the extra collateral (and fees) from the seller hot
+	// wallet, draining it on every collection.
+	const collateralReturnLovelace = request.collateralReturnLovelace;
+	if (collateralReturnLovelace > 0n) {
+		const lovelaceKey = Object.keys(remainingAssets).find((unit) => unit === '' || unit.toLowerCase() === 'lovelace');
+		if (lovelaceKey == null) {
+			throw new Error('Collateral return requested but escrow UTxO has no lovelace to deduct it from');
+		}
+		const sellerLovelace = BigInt(remainingAssets[lovelaceKey].quantity) - collateralReturnLovelace;
+		if (sellerLovelace < 0n) {
+			throw new Error('Collateral return exceeds locked lovelace');
+		}
+		remainingAssets[lovelaceKey] = {
+			unit: remainingAssets[lovelaceKey].unit,
+			quantity: sellerLovelace.toString(),
 		};
 	}
 
@@ -336,7 +305,15 @@ async function processSinglePaymentCollection(
 	const validated = await validateAndBuildItem(request, blockchainProvider, network, smartContractAddress);
 
 	const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
-	const collateralUtxo = limitedFilteredUtxos[0];
+	// Collateral must cover the pinned 3 ADA total_collateral. limitedFilteredUtxos
+	// is sorted by ASCENDING asset bloat, so [0] can be a pure-ADA DUST UTxO (< 3
+	// ADA) → deterministic phase-1 InsufficientCollateral. Prefer the smallest
+	// qualifying >= 5 ADA UTxO (the same floor the batch path enforces via
+	// pickBatchCollateral); ensureCollateralReady above provisions a 5 ADA
+	// reserve, so this normally succeeds. Fall back to [0] only if the wallet has
+	// nothing larger (no worse than the previous behaviour).
+	const collateralUtxo =
+		pickBatchCollateral(limitedFilteredUtxos, [validated.smartContractUtxo.input]) ?? limitedFilteredUtxos[0];
 	if (collateralUtxo == null) {
 		throw new Error('Collateral UTXO not found');
 	}
@@ -409,7 +386,18 @@ async function processSinglePaymentCollection(
 			nodeTxHash: newTxHash,
 		});
 	}
-	await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
+	// Non-fatal: the tx is already on-chain. A balance-projection failure (e.g. a
+	// transient DB error in the low-balance evaluation) must NOT propagate to the
+	// outer advancedRetry and trigger a rebuild+resubmit of an already-broadcast
+	// tx. Parity with the batch path, which wraps the identical call "(non-fatal)".
+	try {
+		await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
+	} catch (projectionError) {
+		logger.warn('V2 collection single-item: post-submit balance projection failed (non-fatal)', {
+			paymentRequestId: request.id,
+			error: projectionError instanceof Error ? projectionError.message : String(projectionError),
+		});
+	}
 	// Post-submit DB update: wrap in retryOnSerializationConflict so a transient
 	// serialization conflict (concurrent tx-sync writer that just saw this tx
 	// land, recovery cron, manual API touch) doesn't bubble up to the outer
@@ -596,7 +584,8 @@ async function processWalletBatch(
 					blockchainIdentifier: request.blockchainIdentifier,
 					error: error instanceof Error ? { message: error.message, name: error.name } : error,
 				});
-				await markRequestFailed(request, error);
+				// Mid-batch: keep the shared wallet lock (see markRequestFailed).
+				await markRequestFailed(request, error, { unlockWallet: false });
 			}
 		}
 	}

@@ -14,7 +14,7 @@ import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contrac
 import { stringToMetadata, cleanMetadata } from '@/utils/converter/metadata-string-convert';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
-import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
+import { interpretBlockchainError } from '@masumi/payment-core/blockchain-error-interpreter';
 import { sortUtxosByLovelaceDesc } from '@/utils/utxo';
 import {
 	createMeshProvider,

@@ -168,7 +168,7 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[700px] h-[85vh] flex flex-col overflow-hidden">
+      <DialogContent size="lg" className="h-[85vh] flex flex-col overflow-hidden">
         <DialogHeader className="shrink-0">
           <DialogTitle>Create Test Payment</DialogTitle>
           <p className="text-sm text-muted-foreground mt-2">

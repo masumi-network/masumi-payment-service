@@ -15,6 +15,7 @@ export function Header() {
               <Link
                 href="https://docs.masumi.network"
                 target="_blank"
+                rel="noopener noreferrer"
                 className="flex items-center gap-2"
               >
                 <BookOpen className="h-4 w-4" />
@@ -25,6 +26,7 @@ export function Header() {
               <Link
                 href="https://www.masumi.network/contact"
                 target="_blank"
+                rel="noopener noreferrer"
                 className="flex items-center gap-2"
               >
                 <MessageSquare className="h-4 w-4" />

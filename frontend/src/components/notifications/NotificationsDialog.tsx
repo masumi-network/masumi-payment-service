@@ -3,7 +3,8 @@ import { Button } from '@/components/ui/button';
 import { useTransactions } from '@/lib/hooks/useTransactions';
 import { formatDistanceToNow } from 'date-fns';
 import { useRouter } from 'next/router';
-import { shortenAddress } from '@/lib/utils';
+import { formatAssetAmount, shortenAddress } from '@/lib/utils';
+import { useAppContext } from '@/lib/contexts/AppContext';
 import { AlertTriangle } from 'lucide-react';
 import { type WalletAlertNotification } from '@/lib/hooks/useWalletAlertNotifications';
 
@@ -21,6 +22,7 @@ export function NotificationsDialog({
   onAcknowledgeWalletAlerts,
 }: NotificationsDialogProps) {
   const { transactions, newTransactionsCount, markAllAsRead } = useTransactions();
+  const { network } = useAppContext();
   const router = useRouter();
 
   const handleViewTransactions = () => {
@@ -115,32 +117,37 @@ export function NotificationsDialog({
                     View all
                   </Button>
                 </div>
-                {newTransactions.map((transaction, index) => (
-                  <div
-                    key={transaction.id}
-                    className="flex items-start justify-between p-3 rounded-lg hover:bg-muted cursor-pointer animate-fade-in-up opacity-0"
-                    style={{ animationDelay: `${Math.min(index + walletAlerts.length, 7) * 40}ms` }}
-                    onClick={handleViewTransactions}
-                  >
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium">New {transaction.type} transaction</p>
-                      <p className="text-xs text-muted-foreground">
-                        Amount:{' '}
-                        {transaction.Amounts?.[0]
-                          ? `${(parseInt(transaction.Amounts[0].amount) / 1000000).toFixed(2)} ADA`
-                          : '—'}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatDistanceToNow(new Date(transaction.createdAt), {
-                          addSuffix: true,
-                        })}
-                      </p>
+                {newTransactions.map((transaction, index) => {
+                  const fund =
+                    transaction.type === 'payment'
+                      ? transaction.RequestedFunds?.[0]
+                      : transaction.PaidFunds?.[0];
+                  return (
+                    <div
+                      key={transaction.id}
+                      className="flex items-start justify-between p-3 rounded-lg hover:bg-muted cursor-pointer animate-fade-in-up opacity-0"
+                      style={{
+                        animationDelay: `${Math.min(index + walletAlerts.length, 7) * 40}ms`,
+                      }}
+                      onClick={handleViewTransactions}
+                    >
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium">New {transaction.type} transaction</p>
+                        <p className="text-xs text-muted-foreground">
+                          Amount: {fund ? formatAssetAmount(fund.amount, fund.unit, network) : '—'}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatDistanceToNow(new Date(transaction.createdAt), {
+                            addSuffix: true,
+                          })}
+                        </p>
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        {transaction.onChainState}
+                      </span>
                     </div>
-                    <span className="text-xs text-muted-foreground">
-                      {transaction.onChainState}
-                    </span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

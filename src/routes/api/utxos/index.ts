@@ -28,9 +28,7 @@ export const utxoAmountSchema = z
 			.int()
 			.min(0)
 			.max(100000000000000)
-			.describe(
-				'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
-			),
+			.describe('The quantity of the asset in its smallest unit. For ADA, this is lovelace (1 ADA = 1000000 lovelace)'),
 	})
 	.openapi('UtxoAmount');
 
@@ -84,6 +82,8 @@ export const queryUTXOEndpointGet = readAuthenticatedEndpointFactory.build({
 					address: utxo.address,
 					Amounts: utxo.amount.map((amount) => ({
 						unit: amount.unit,
+						// Surface as number for v1 backwards compatibility (see quantity
+						// schema). Blockfrost returns the exact integer as a string.
 						quantity: parseInt(amount.quantity),
 					})),
 					outputIndex: utxo.output_index,

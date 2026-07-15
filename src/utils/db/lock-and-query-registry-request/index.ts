@@ -2,7 +2,7 @@ import { HotWalletType, PaymentSourceType, RegistrationState } from '@/generated
 import { CONFIG } from '@masumi/payment-core/config';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
-import { withSerializableSlotRetry } from '@/utils/db/serializable-semaphore';
+import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 
 export async function lockAndQueryA2ARegistryRequests({
 	state,

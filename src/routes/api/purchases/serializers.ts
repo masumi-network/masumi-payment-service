@@ -1,7 +1,12 @@
 import { PurchasingAction, PurchaseErrorType } from '@/generated/prisma/client';
-import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import { lovelaceToAdaNumberSafe } from '@/utils/lovelace';
-import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
+import {
+	resolveAgentIdentifier,
+	transformCurrentTransaction,
+	transformPurchaseGetAmounts,
+	transformPurchaseGetTimestamps,
+	transformTransactionHistory,
+} from '@/utils/shared/transformers';
 import type { PurchaseListRecord } from './queries';
 
 function serializePurchaseListEntry(purchase: PurchaseListRecord) {
@@ -14,21 +19,9 @@ function serializePurchaseListEntry(purchase: PurchaseListRecord) {
 		// of silently losing precision.
 		totalBuyerCardanoFees: lovelaceToAdaNumberSafe(purchase.totalBuyerCardanoFees),
 		totalSellerCardanoFees: lovelaceToAdaNumberSafe(purchase.totalSellerCardanoFees),
-		agentIdentifier:
-			purchase.agentIdentifier ?? decodeBlockchainIdentifier(purchase.blockchainIdentifier)?.agentIdentifier ?? null,
-		CurrentTransaction: purchase.CurrentTransaction
-			? {
-					...purchase.CurrentTransaction,
-					fees: purchase.CurrentTransaction.fees?.toString() ?? null,
-				}
-			: null,
-		TransactionHistory:
-			purchase.TransactionHistory != null
-				? purchase.TransactionHistory.map((tx) => ({
-						...tx,
-						fees: tx.fees?.toString() ?? null,
-					}))
-				: null,
+		agentIdentifier: resolveAgentIdentifier(purchase),
+		CurrentTransaction: transformCurrentTransaction(purchase.CurrentTransaction),
+		TransactionHistory: transformTransactionHistory(purchase.TransactionHistory),
 		ActionHistory: purchase.ActionHistory
 			? (
 					purchase.ActionHistory as Array<{

@@ -27,7 +27,7 @@ import {
 	registerAgentSchemaOutput,
 	registryRequestOutputSchema,
 } from './schemas';
-import { getRegistryEntriesForQuery } from './queries';
+import { getRegistryEntriesForQuery, resolveRegistryPaymentSourceTypeFilter } from './queries';
 import {
 	serializeRegistryEntriesResponse,
 	serializeSupportedPaymentSources,
@@ -74,7 +74,7 @@ export const queryRegistryCountGet = readAuthenticatedEndpointFactory.build({
 					network: input.network,
 					deletedAt: null,
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
-					paymentSourceType: input.filterPaymentSourceType,
+					paymentSourceType: resolveRegistryPaymentSourceTypeFilter(input),
 				},
 				SmartContractWallet: { deletedAt: null },
 				...buildManagedHolderWalletScopeFilter(ctx.walletScopeIds),
@@ -180,7 +180,10 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 					sendFundingLovelace,
 					state: RegistrationState.RegistrationRequested,
 					agentIdentifier: null,
-					metadataVersion: DEFAULTS.DEFAULT_REGISTRY_METADATA_VERSION,
+					metadataVersion:
+						sellingWallet.PaymentSource.paymentSourceType === PaymentSourceType.Web3CardanoV1
+							? DEFAULTS.DEFAULT_METADATA_VERSION
+							: DEFAULTS.DEFAULT_REGISTRY_METADATA_VERSION,
 					// Tenant ownership — enforced on subsequent mutate routes
 					// (deregister, future update flows) so a key cannot mutate
 					// registrations another key created on the same payment

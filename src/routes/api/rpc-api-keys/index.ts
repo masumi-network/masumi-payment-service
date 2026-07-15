@@ -1,4 +1,5 @@
 import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { cursorPaginationArgs } from '@/utils/shared/queries';
 import { z } from '@masumi/payment-core/zod';
 import { prisma } from '@masumi/payment-core/db';
 import { Network, RPCProvider } from '@/generated/prisma/client';
@@ -30,8 +31,7 @@ export const queryRpcProviderKeysEndpointGet = adminAuthenticatedEndpointFactory
 	output: getRpcProviderKeysSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof getRpcProviderKeysSchemaInput>; ctx: AuthContext }) => {
 		const rpcProviderKeys = await prisma.paymentSourceConfig.findMany({
-			cursor: input.cursorId ? { id: input.cursorId } : undefined,
-			take: input.limit,
+			...cursorPaginationArgs(input.cursorId, input.limit),
 			orderBy: { createdAt: 'asc' },
 			where: {
 				PaymentSource: {

@@ -21,8 +21,10 @@ import {
 	X402PaymentStatus,
 	prisma,
 } from '@masumi/payment-core/db';
+import { buildX402AttemptWhere } from './attempt-filters';
 import { decrypt, encrypt } from '@masumi/payment-core/encryption';
 import { logger } from '@masumi/payment-core/logger';
+import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { isAllowedCaip2Network } from '@masumi/payment-core/network';
 import { createPublicClient, createWalletClient, publicActions } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
@@ -311,25 +313,59 @@ async function reserveBudgetForAttempt({
 
 async function refundBudgetReservation(reservation: { budgetId: string; amount: bigint } | null) {
 	if (reservation == null) return;
-	await prisma.x402WalletBudget.update({
-		where: { id: reservation.budgetId },
+	// Guard the refund on the reservation still being reflected in spentAmount.
+	// Without the `spentAmount >= amount` predicate, an admin budget reset
+	// (setX402WalletBudget resets remainingAmount → fresh grant, spentAmount → 0)
+	// that races an in-flight payment would let this refund inflate the fresh
+	// grant beyond what the admin set AND drive spentAmount negative. If the guard
+	// matches no row the reservation was already wiped by a reset — nothing to
+	// refund.
+	const result = await prisma.x402WalletBudget.updateMany({
+		where: { id: reservation.budgetId, spentAmount: { gte: reservation.amount } },
 		data: {
 			remainingAmount: { increment: reservation.amount },
 			spentAmount: { decrement: reservation.amount },
 		},
 	});
+	if (result.count !== 1) {
+		logger.warn('x402 budget refund skipped: reservation no longer reflected in spentAmount (budget reset?)', {
+			budgetId: reservation.budgetId,
+			amount: reservation.amount.toString(),
+		});
+	}
 }
 
-async function writeSettlement({
-	attemptId,
-	paymentPayloadHash,
-	settleResponse,
-}: {
-	attemptId: string;
-	paymentPayloadHash: string;
-	settleResponse: SettleResponse;
-}) {
-	return prisma.x402Settlement.upsert({
+type SettlementWriter = Pick<Prisma.TransactionClient, 'x402Settlement'>;
+
+type ErrorWithCode = { code?: unknown; cause?: unknown };
+
+function readErrorCode(error: unknown): string | undefined {
+	if (error == null || typeof error !== 'object') return undefined;
+	const code = (error as ErrorWithCode).code;
+	if (typeof code === 'string') return code;
+	const cause = (error as ErrorWithCode).cause;
+	if (cause == null || typeof cause !== 'object') return undefined;
+	const causeCode = (cause as ErrorWithCode).code;
+	return typeof causeCode === 'string' ? causeCode : undefined;
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+	return readErrorCode(error) === 'P2002' || readErrorCode(error) === '23505';
+}
+
+async function writeSettlement(
+	db: SettlementWriter,
+	{
+		attemptId,
+		paymentPayloadHash,
+		settleResponse,
+	}: {
+		attemptId: string;
+		paymentPayloadHash: string;
+		settleResponse: SettleResponse;
+	},
+) {
+	return db.x402Settlement.upsert({
 		where: { paymentPayloadHash },
 		create: {
 			paymentAttemptId: attemptId,
@@ -345,6 +381,260 @@ async function writeSettlement({
 		},
 		update: {},
 	});
+}
+
+function settlementAdvisoryLockKey(paymentPayloadHash: string): bigint {
+	return BigInt.asIntN(64, BigInt(`0x${paymentPayloadHash.slice(0, 16)}`));
+}
+
+type InboundSettlementClaim = { status: 'claimed'; attemptId: string } | { status: 'already-settled' };
+
+async function claimInboundSettlementAttempt({
+	apiKeyId,
+	source,
+	requirements,
+	paymentPayload,
+	paymentPayloadHash,
+	paymentIdentifier,
+}: {
+	apiKeyId: string;
+	source: X402SourceRecord;
+	requirements: PaymentRequirements;
+	paymentPayload: PaymentPayload;
+	paymentPayloadHash: string;
+	paymentIdentifier: string | null;
+}): Promise<InboundSettlementClaim> {
+	try {
+		return await retryOnSerializationConflict(
+			() =>
+				prisma.$transaction(
+					async (tx) => {
+						// Cross-process idempotency without holding a DB connection during the
+						// on-chain settle. Every contender for the same payload hash serializes
+						// through this short transaction, then observes the marker created by
+						// the winner before it can call facilitator.settle. ReadCommitted is
+						// intentional: a waiter must take a fresh statement snapshot AFTER the
+						// advisory lock is released so it sees the winner's committed marker.
+						await tx.$queryRaw`SELECT pg_advisory_xact_lock(${settlementAdvisoryLockKey(paymentPayloadHash)})`;
+
+						const [settlement, pendingAttempt] = await Promise.all([
+							tx.x402Settlement.findUnique({
+								where: { paymentPayloadHash },
+								select: { id: true },
+							}),
+							tx.x402PaymentAttempt.findFirst({
+								where: {
+									paymentPayloadHash,
+									direction: X402PaymentDirection.InboundSettle,
+									status: { in: [X402PaymentStatus.Verified, X402PaymentStatus.Settled] },
+								},
+								select: { id: true },
+							}),
+						]);
+						if (settlement != null) {
+							return { status: 'already-settled' } as const;
+						}
+						if (pendingAttempt != null) {
+							throw createHttpError(
+								409,
+								'a settlement for this payment payload is already in progress or awaiting reconciliation',
+							);
+						}
+
+						const attempt = await tx.x402PaymentAttempt.create({
+							data: {
+								direction: X402PaymentDirection.InboundSettle,
+								status: X402PaymentStatus.Verified,
+								apiKeyId,
+								registryRequestId: source.registryRequestId,
+								supportedPaymentSourceId: source.id,
+								caip2Network: requirements.network,
+								scheme: X402PaymentScheme.Exact,
+								asset: requirements.asset,
+								amount: BigInt(requirements.amount),
+								payTo: requirements.payTo,
+								resource: source.resource,
+								paymentPayloadHash,
+								paymentPayload: encryptPaymentPayloadForStorage(paymentPayload),
+								paymentIdentifier,
+							},
+							select: { id: true },
+						});
+						return { status: 'claimed', attemptId: attempt.id } as const;
+					},
+					{ isolationLevel: 'ReadCommitted', maxWait: 15_000, timeout: 15_000 },
+				),
+			{ label: 'x402-claim-inbound-settlement' },
+		);
+	} catch (error) {
+		// The partial unique index on active inbound-settle attempts is the
+		// deployment-safe backstop for callers that do not yet participate in the
+		// advisory-lock protocol (for example, an older replica during a rollout).
+		if (isUniqueConstraintError(error)) {
+			throw createHttpError(
+				409,
+				'a settlement for this payment payload is already in progress or awaiting reconciliation',
+			);
+		}
+		throw error;
+	}
+}
+
+async function persistSettlementOutcome({
+	attemptId,
+	paymentPayloadHash,
+	settleResponse,
+}: {
+	attemptId: string;
+	paymentPayloadHash: string;
+	settleResponse: SettleResponse;
+}): Promise<void> {
+	await retryOnSerializationConflict(
+		() =>
+			prisma.$transaction(
+				async (tx) => {
+					await tx.x402PaymentAttempt.update({
+						where: { id: attemptId },
+						data: {
+							status: settleResponse.success ? X402PaymentStatus.Settled : X402PaymentStatus.Failed,
+							payer: settleResponse.payer,
+							errorReason: settleResponse.errorReason,
+							errorMessage: settleResponse.errorMessage,
+						},
+					});
+
+					if (settleResponse.success) {
+						await writeSettlement(tx, { attemptId, paymentPayloadHash, settleResponse });
+					}
+				},
+				{ isolationLevel: 'Serializable', maxWait: 15_000, timeout: 15_000 },
+			),
+		{ label: 'x402-persist-settlement-outcome' },
+	);
+}
+
+async function findSettlementForReplay(paymentPayloadHash: string) {
+	return prisma.x402Settlement.findUnique({
+		where: { paymentPayloadHash },
+		include: { PaymentAttempt: { select: { id: true, payer: true, supportedPaymentSourceId: true } } },
+	});
+}
+
+type ReplayableSettlement = NonNullable<Awaited<ReturnType<typeof findSettlementForReplay>>>;
+
+async function recordSettlementReplay({
+	existingSettlement,
+	apiKeyId,
+	source,
+	requirements,
+	supportedPaymentSourceId,
+	paymentPayload,
+	paymentPayloadHash,
+	paymentIdentifier,
+}: {
+	existingSettlement: ReplayableSettlement;
+	apiKeyId: string;
+	source: X402SourceRecord;
+	requirements: PaymentRequirements;
+	supportedPaymentSourceId: string;
+	paymentPayload: PaymentPayload;
+	paymentPayloadHash: string;
+	paymentIdentifier: string | null;
+}) {
+	if (existingSettlement.PaymentAttempt.supportedPaymentSourceId !== supportedPaymentSourceId) {
+		throw createHttpError(409, 'payment payload was already settled for a different registered resource');
+	}
+	const replayAttempt = await prisma.x402PaymentAttempt.create({
+		data: {
+			direction: X402PaymentDirection.InboundSettle,
+			status: X402PaymentStatus.Replayed,
+			apiKeyId,
+			registryRequestId: source.registryRequestId,
+			supportedPaymentSourceId,
+			caip2Network: requirements.network,
+			scheme: X402PaymentScheme.Exact,
+			asset: requirements.asset,
+			amount: BigInt(requirements.amount),
+			payTo: requirements.payTo,
+			payer: existingSettlement.payer ?? existingSettlement.PaymentAttempt.payer,
+			resource: source.resource,
+			paymentPayloadHash,
+			paymentPayload: encryptPaymentPayloadForStorage(paymentPayload),
+			paymentIdentifier,
+		},
+		select: { id: true },
+	});
+
+	return {
+		attemptId: replayAttempt.id,
+		paymentPayloadHash,
+		paymentIdentifier,
+		replay: true as const,
+		settleResponse: {
+			success: true,
+			transaction: existingSettlement.txHash ?? '',
+			network: existingSettlement.caip2Network as Network,
+			amount: existingSettlement.amount?.toString(),
+			payer: existingSettlement.payer ?? existingSettlement.PaymentAttempt.payer ?? undefined,
+		},
+	};
+}
+
+async function markVerifiedAttemptForReconciliation({
+	attemptId,
+	errorReason,
+	errorMessage,
+	payer,
+}: {
+	attemptId: string;
+	errorReason: string;
+	errorMessage: string;
+	payer?: string;
+}): Promise<boolean> {
+	const result = await retryOnSerializationConflict(
+		() =>
+			prisma.x402PaymentAttempt.updateMany({
+				where: { id: attemptId, status: X402PaymentStatus.Verified },
+				data: { errorReason, errorMessage, payer },
+			}),
+		{ label: 'x402-mark-settlement-for-reconciliation' },
+	);
+	return result.count === 1;
+}
+
+async function persistDefinitiveSettlementFailureFallback({
+	attemptId,
+	settleResponse,
+	persistenceError,
+}: {
+	attemptId: string;
+	settleResponse: SettleResponse;
+	persistenceError: string;
+}): Promise<void> {
+	const result = await retryOnSerializationConflict(
+		() =>
+			prisma.x402PaymentAttempt.updateMany({
+				where: { id: attemptId, status: X402PaymentStatus.Verified },
+				data: {
+					status: X402PaymentStatus.Failed,
+					payer: settleResponse.payer,
+					errorReason: settleResponse.errorReason ?? 'settle_failed',
+					errorMessage:
+						settleResponse.errorMessage == null
+							? `Outcome persistence recovered after: ${persistenceError}`
+							: `${settleResponse.errorMessage}; outcome persistence recovered after: ${persistenceError}`,
+				},
+			}),
+		{ label: 'x402-persist-definitive-settlement-failure-fallback' },
+	);
+	if (result.count === 1) return;
+
+	const currentAttempt = await prisma.x402PaymentAttempt.findUnique({
+		where: { id: attemptId },
+		select: { status: true },
+	});
+	if (currentAttempt?.status === X402PaymentStatus.Failed) return;
+	throw createHttpError(500, 'Could not persist definitive x402 settlement failure');
 }
 
 function requirementsMatch(a: PaymentRequirements, b: PaymentRequirements): boolean {
@@ -580,15 +870,12 @@ export async function listX402PaymentAttempts(input: {
 	status?: X402PaymentStatus;
 	direction?: X402PaymentDirection;
 	caip2Network?: string;
+	filterNeedsManualAction?: boolean;
 }) {
 	// Explicit projection: never expose paymentPayload or encrypted material to the
 	// dashboard.
 	return prisma.x402PaymentAttempt.findMany({
-		where: {
-			status: input.status,
-			direction: input.direction,
-			caip2Network: input.caip2Network,
-		},
+		where: buildX402AttemptWhere(input),
 		orderBy: { createdAt: 'desc' },
 		take: input.take,
 		cursor: input.cursorId ? { id: input.cursorId } : undefined,
@@ -737,63 +1024,105 @@ export async function settleX402Payment({
 		throw createHttpError(400, identifier.errors.join('; '));
 	}
 
-	// Idempotency model: this dedup lookup plus the X402Settlement.paymentPayloadHash
-	// unique constraint (writeSettlement is an upsert with an empty update) keep the
-	// DB record single. The check-then-settle is not locked across the on-chain call,
-	// so two concurrent settles of the SAME payload can both reach facilitator.settle;
-	// the on-chain authorization is single-use (Permit2/EIP-3009 nonce), so the second
-	// reverts on-chain — no double-spend, only a wasted tx. A cross-process lock would
-	// have to hold a DB connection across the settle and is intentionally avoided.
-	const existingSettlement = await prisma.x402Settlement.findUnique({
-		where: { paymentPayloadHash },
-		include: { PaymentAttempt: { select: { id: true, payer: true, supportedPaymentSourceId: true } } },
-	});
+	// Fast replay path for fully persisted settlements. The claim transaction below
+	// repeats this check under a payload-scoped advisory lock before any on-chain call.
+	const existingSettlement = await findSettlementForReplay(paymentPayloadHash);
 	if (existingSettlement != null) {
-		// Replay must be bound to the same registered source: the same on-chain
-		// payment authorization (hence payload hash) settled for one source must not
-		// return a fake success for a different source with identical economics.
-		if (existingSettlement.PaymentAttempt.supportedPaymentSourceId !== supportedPaymentSourceId) {
-			throw createHttpError(409, 'payment payload was already settled for a different registered resource');
-		}
-		const replayAttempt = await prisma.x402PaymentAttempt.create({
-			data: {
-				direction: X402PaymentDirection.InboundSettle,
-				status: X402PaymentStatus.Replayed,
-				apiKeyId,
-				registryRequestId: source.registryRequestId,
-				supportedPaymentSourceId,
-				caip2Network: requirements.network,
-				scheme: X402PaymentScheme.Exact,
-				asset: requirements.asset,
-				amount: BigInt(requirements.amount),
-				payTo: requirements.payTo,
-				payer: existingSettlement.payer ?? existingSettlement.PaymentAttempt.payer,
-				// Registered resource only; never persist the buyer-supplied payload resource.
-				resource: source.resource,
-				paymentPayloadHash,
-				paymentPayload: encryptPaymentPayloadForStorage(paymentPayload),
-				paymentIdentifier: identifier.id,
-			},
-			select: { id: true },
-		});
-
-		return {
-			attemptId: replayAttempt.id,
+		return recordSettlementReplay({
+			existingSettlement,
+			apiKeyId,
+			source,
+			requirements,
+			supportedPaymentSourceId,
+			paymentPayload,
 			paymentPayloadHash,
 			paymentIdentifier: identifier.id,
-			replay: true,
-			settleResponse: {
-				success: true,
-				transaction: existingSettlement.txHash ?? '',
-				network: existingSettlement.caip2Network as Network,
-				amount: existingSettlement.amount?.toString(),
-				payer: existingSettlement.payer ?? existingSettlement.PaymentAttempt.payer ?? undefined,
-			},
-		};
+		});
 	}
 
+	// Validate the facilitator wallet (retired / non-Selling → 400) BEFORE any
+	// settle-prep work, so a bad wallet is rejected without querying for or
+	// creating a pre-settle attempt row.
 	const facilitator = await getFacilitatorForNetwork(requirements.network);
-	const settleResponse = await facilitator.settle(paymentPayload, requirements);
+
+	// Claim this payload in a short payload-serialized transaction. The advisory lock is
+	// released before the network call, while the durable Verified marker prevents
+	// every later contender from submitting the same authorization again.
+	const claim = await claimInboundSettlementAttempt({
+		apiKeyId,
+		source,
+		requirements,
+		paymentPayload,
+		paymentPayloadHash,
+		paymentIdentifier: identifier.id,
+	});
+	if (claim.status === 'already-settled') {
+		const completedSettlement = await findSettlementForReplay(paymentPayloadHash);
+		if (completedSettlement == null) {
+			throw createHttpError(409, 'settlement completed concurrently; retry to load its receipt');
+		}
+		return recordSettlementReplay({
+			existingSettlement: completedSettlement,
+			apiKeyId,
+			source,
+			requirements,
+			supportedPaymentSourceId,
+			paymentPayload,
+			paymentPayloadHash,
+			paymentIdentifier: identifier.id,
+		});
+	}
+	const attemptId = claim.attemptId;
+
+	// The facilitator's ordinary failure paths RETURN {success:false} (handled
+	// below). But some paths THROW (a pre-broadcast verify-stage RPC failure, a
+	// scheme mismatch, or a throw after the on-chain submit). A raw throw here
+	// would leave the pre-settle Verified marker in place with NO error trace, so
+	// the crash-window guard 409s every retry forever with nothing for an operator
+	// to go on. Catch it, RECORD the error onto the marker so the stuck row is
+	// discoverable (by errorReason), then re-throw.
+	//
+	// We deliberately do NOT auto-stamp Failed on a throw: a throw after the tx was
+	// broadcast means funds already moved, and the on-chain authorization nonce is
+	// single-use, so flipping to Failed would tell a charged buyer "failed" and let
+	// a retry burn against a consumed nonce. Resolving that ambiguous case is an
+	// operator/reconciliation decision, not an automatic one.
+	let settleResponse: Awaited<ReturnType<typeof facilitator.settle>>;
+	try {
+		settleResponse = await facilitator.settle(paymentPayload, requirements);
+	} catch (settleError) {
+		const errorMessage = settleError instanceof Error ? settleError.message : String(settleError);
+		await markVerifiedAttemptForReconciliation({
+			attemptId,
+			errorReason: 'settle_threw',
+			errorMessage,
+		})
+			.then((didMark) => {
+				if (!didMark) {
+					logger.error('x402 settle threw but attempt was no longer Verified', {
+						supportedPaymentSourceId,
+						paymentPayloadHash,
+						attemptId,
+					});
+				}
+			})
+			.catch((recordError) => {
+				logger.error('x402 settle threw AND recording the error on the attempt failed', {
+					supportedPaymentSourceId,
+					paymentPayloadHash,
+					attemptId,
+					recordError: recordError instanceof Error ? recordError.message : String(recordError),
+				});
+			});
+		logger.error('x402 facilitator.settle threw; attempt left Verified for reconciliation', {
+			supportedPaymentSourceId,
+			paymentPayloadHash,
+			attemptId,
+			error: errorMessage,
+		});
+		throw settleError;
+	}
+
 	if (!settleResponse.success) {
 		logger.warn('x402 settle returned unsuccessful', {
 			supportedPaymentSourceId,
@@ -802,44 +1131,98 @@ export async function settleX402Payment({
 			errorMessage: settleResponse.errorMessage,
 		});
 	}
-	const attempt = await prisma.x402PaymentAttempt.create({
-		data: {
-			direction: X402PaymentDirection.InboundSettle,
-			status: settleResponse.success ? X402PaymentStatus.Settled : X402PaymentStatus.Failed,
-			apiKeyId,
-			registryRequestId: source.registryRequestId,
-			supportedPaymentSourceId,
-			caip2Network: requirements.network,
-			scheme: X402PaymentScheme.Exact,
-			asset: requirements.asset,
-			amount: BigInt(requirements.amount),
-			payTo: requirements.payTo,
-			payer: settleResponse.payer,
-			// Registered resource only; never persist the buyer-supplied payload resource.
-			resource: source.resource,
-			paymentPayloadHash,
-			paymentPayload: encryptPaymentPayloadForStorage(paymentPayload),
-			paymentIdentifier: identifier.id,
-			errorReason: settleResponse.errorReason,
-			errorMessage: settleResponse.errorMessage,
-		},
-		select: { id: true },
-	});
 
-	if (settleResponse.success) {
-		await writeSettlement({ attemptId: attempt.id, paymentPayloadHash, settleResponse });
+	// Persist the attempt outcome and successful settlement receipt atomically.
+	// Serialization/deadlock failures are retried here without resubmitting the
+	// blockchain transaction. A definitive unsuccessful response can safely fall
+	// back to Failed (releasing the unique active claim); a successful response
+	// must remain Verified until its receipt is reconciled.
+	try {
+		await persistSettlementOutcome({ attemptId, paymentPayloadHash, settleResponse });
+	} catch (writeError) {
+		const persistenceError = writeError instanceof Error ? writeError.message : String(writeError);
+		if (settleResponse.success) {
+			let didMarkForReconciliation: boolean;
+			try {
+				didMarkForReconciliation = await markVerifiedAttemptForReconciliation({
+					attemptId,
+					errorReason: 'settle_persist_failed',
+					errorMessage: `txHash=${settleResponse.transaction ?? 'unknown'}; ${persistenceError}`,
+					payer: settleResponse.payer,
+				});
+			} catch (recordError) {
+				logger.error('x402 settlement persistence failed AND recording reconciliation data failed', {
+					supportedPaymentSourceId,
+					paymentPayloadHash,
+					attemptId,
+					recordError: recordError instanceof Error ? recordError.message : String(recordError),
+				});
+				throw writeError;
+			}
+
+			if (!didMarkForReconciliation) {
+				const committedSettlement = await findSettlementForReplay(paymentPayloadHash);
+				if (committedSettlement?.paymentAttemptId === attemptId) {
+					logger.warn('x402 settlement write reported failure but the atomic outcome is committed', {
+						supportedPaymentSourceId,
+						paymentPayloadHash,
+						attemptId,
+						txHash: committedSettlement.txHash,
+					});
+				} else {
+					logger.error('x402 successful settlement lost its Verified reconciliation marker', {
+						supportedPaymentSourceId,
+						paymentPayloadHash,
+						attemptId,
+					});
+					throw writeError;
+				}
+			} else {
+				logger.error('x402 settle SUCCEEDED but persisting the outcome failed; funds moved — needs reconciliation', {
+					supportedPaymentSourceId,
+					paymentPayloadHash,
+					attemptId,
+					txHash: settleResponse.transaction ?? null,
+					error: persistenceError,
+				});
+				throw writeError;
+			}
+		} else {
+			try {
+				await persistDefinitiveSettlementFailureFallback({
+					attemptId,
+					settleResponse,
+					persistenceError,
+				});
+				logger.warn('x402 definitive settlement failure persisted through fallback', {
+					supportedPaymentSourceId,
+					paymentPayloadHash,
+					attemptId,
+					error: persistenceError,
+				});
+			} catch (fallbackError) {
+				logger.error('x402 definitive settlement failure could not be persisted', {
+					supportedPaymentSourceId,
+					paymentPayloadHash,
+					attemptId,
+					persistenceError,
+					fallbackError: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+				});
+				throw writeError;
+			}
+		}
 	}
 
 	return {
-		attemptId: attempt.id,
+		attemptId,
 		paymentPayloadHash,
 		paymentIdentifier: identifier.id,
-		replay: false,
+		replay: false as const,
 		settleResponse,
 		// Webhook-ready summary for the route handler to emit (settled or failed). Not part
 		// of the HTTP response schema; the route strips it before responding.
 		webhook: {
-			attemptId: attempt.id,
+			attemptId,
 			paymentPayloadHash,
 			supportedPaymentSourceId,
 			registryRequestId: source.registryRequestId,

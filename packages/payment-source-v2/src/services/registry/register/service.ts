@@ -10,12 +10,12 @@ import { logger } from '@masumi/payment-core/logger';
 import type { UTxO } from '@meshsdk/core';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { lockAndQueryRegistryRequests } from '@/utils/db/lock-and-query-registry-request';
-import { retryOnSerializationConflict } from '@/utils/db/retry';
+import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { DEFAULTS } from '@masumi/payment-core/config';
 import { getRegistryScriptFromNetworkHandlerV2 } from '@/utils/generator/contract-generator';
 import { stringToMetadata, cleanMetadata } from '@/utils/converter/metadata-string-convert';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
-import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
+import { interpretBlockchainError } from '@masumi/payment-core/blockchain-error-interpreter';
 import { sortUtxosByLovelaceDesc } from '@/utils/utxo';
 import {
 	connectExistingTransaction,
@@ -39,7 +39,13 @@ import {
 } from '../../../builders/batch-helpers';
 import { type BatchRegistryMintItem, generateRegistryBatchMintTransaction } from '../../../builders/batch-registry';
 import { ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
+import {
+	MAX_COLLATERAL_PREP_FAILURES,
+	recordRegistryPrepFailure,
+	resetRegistryPrepFailureCount,
+} from '../../wallet-collateral/prep-failure-guard';
 import { unlockHotWalletIfNoPendingTransaction } from '../../wallet-lock-helpers';
+import { asV2Provider } from '../../provider-cast';
 import {
 	MAX_SUPPORTED_PAYMENT_SOURCES,
 	SupportedPaymentSourceChain,
@@ -273,14 +279,25 @@ export function buildAgentMetadata(
 	return cleanMetadata(metadata) as RegistryMetadata;
 }
 
-async function markRequestFailed(request: RegistryRequestRecord, error: unknown): Promise<void> {
+async function markRequestFailed(
+	request: RegistryRequestRecord,
+	error: unknown,
+	options: { unlockWallet?: boolean } = {},
+): Promise<void> {
+	// unlockWallet=true when this failure frees the wallet (single-item terminal
+	// path, or markBatchFailed where the whole batch failed). In the per-item
+	// validation loop the shared wallet lock must survive so a concurrent service
+	// can't grab the wallet and submit a conflicting mint from the same UTxO set
+	// while the batch keeps building the remaining validated items; the batch's
+	// terminal paths (all-failed unlock, submit success, markBatchFailed) free it.
+	const unlockWallet = options.unlockWallet ?? true;
 	logger.error(`Error registering V2 agent ${request.id}`, { error });
 	await prisma.registryRequest.update({
 		where: { id: request.id },
 		data: {
 			state: RegistrationState.RegistrationFailed,
 			error: interpretBlockchainError(error),
-			SmartContractWallet: { update: { lockedAt: null } },
+			...(unlockWallet ? { SmartContractWallet: { update: { lockedAt: null } } } : {}),
 		},
 	});
 }
@@ -474,9 +491,41 @@ export async function registerAgentV2() {
 						network,
 						serviceLabel: 'registry-register-batch',
 					});
+					if (collateralCheck.status === 'failed' && collateralCheck.reason === 'insufficient_funds') {
+						// Wallet cannot fund collateral for the whole batch (all items share
+						// this wallet). Fail every item with a clear reason instead of
+						// silently deferring forever, so they land in RegistrationFailed, are
+						// visible, and can be recreated once the wallet is funded.
+						const failureMessage = `Wallet balance too low to fund the collateral preparation transaction: ${collateralCheck.details}. Top up the wallet with ADA and retry.`;
+						await Promise.allSettled(
+							registryRequests.map((request) => markRequestFailed(request, new Error(failureMessage))),
+						);
+						return;
+					}
+					if (collateralCheck.status === 'failed') {
+						// reason === 'prep_tx_failed' (transient; wallet already unlocked).
+						// Bound per-request retries so a deterministically-failing prep
+						// surfaces as RegistrationFailed instead of looping forever.
+						await Promise.allSettled(
+							registryRequests.map(async (request) => {
+								const reachedLimit = await recordRegistryPrepFailure(request.id);
+								if (reachedLimit) {
+									await markRequestFailed(
+										request,
+										new Error(
+											`Collateral preparation failed repeatedly (>= ${MAX_COLLATERAL_PREP_FAILURES} attempts): ${collateralCheck.details}. Check the wallet's UTxO set and retry.`,
+										),
+									);
+								}
+							}),
+						);
+						return;
+					}
 					if (collateralCheck.status !== 'ready') {
 						return;
 					}
+					// Collateral ready — clear any transient prep-failure count on every item.
+					await Promise.allSettled(registryRequests.map((request) => resetRegistryPrepFailureCount(request.id)));
 
 					// Pick collateral FIRST (smallest pure-ADA UTxO >= 5 ADA) so the
 					// remaining sorted-by-lovelace pool can drive distinct
@@ -533,7 +582,8 @@ export async function registerAgentV2() {
 						if (outcome.status === 'fulfilled') {
 							validated.push(outcome.value);
 						} else {
-							await markRequestFailed(request, outcome.reason);
+							// Mid-batch: keep the shared wallet lock (see markRequestFailed).
+							await markRequestFailed(request, outcome.reason, { unlockWallet: false });
 						}
 					}
 
@@ -547,9 +597,10 @@ export async function registerAgentV2() {
 					// no-collateral-overlap here: the mint path tolerates the
 					// `firstUtxo == collateral` case (mesh routes the ref into both
 					// body fields and dedupes the collateral side at assembly
-					// time), and enforcing disjointness would block 1-UTxO wallets
-					// from minting at all. Tx-size is checked inline after the
-					// build pass via assertTxSizeWithinLimit further down.
+					// time). Forcing the current separate-collateral policy onto
+					// mint-only batches would block 1-UTxO wallets from minting at
+					// all. Tx-size is checked inline after the build pass via
+					// assertTxSizeWithinLimit further down.
 					const shrinkResult = shrinkBatchToFit(validated, () => ({ ok: true }));
 
 					if (shrinkResult.fit.length === 0) {
@@ -578,7 +629,7 @@ export async function registerAgentV2() {
 					try {
 						const sized = await shrinkRegistryBatchToTxSize(fit, (subsetItems) =>
 							generateRegistryBatchMintTransaction(
-								blockchainProvider,
+								asV2Provider(blockchainProvider),
 								network,
 								script,
 								address,
@@ -640,7 +691,7 @@ export async function registerAgentV2() {
 							throw new Error('evaluateTx returned no MINT budget for V2 register batch');
 						}
 						unsignedTx = await generateRegistryBatchMintTransaction(
-							blockchainProvider,
+							asV2Provider(blockchainProvider),
 							network,
 							script,
 							address,

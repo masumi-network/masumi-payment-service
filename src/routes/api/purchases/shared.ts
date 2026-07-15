@@ -243,6 +243,7 @@ export async function resolvePurchaseCreationContext({
 		sellerAddress,
 		sellerReturnAddress,
 		pricingType: pricing.pricingType,
+		onChainAgentName: metadataToString(parsedMetadata.data.name),
 		requestedCost: Array.from(requestedCostMap.entries()).map(([unit, amount]) => ({
 			amount,
 			unit,

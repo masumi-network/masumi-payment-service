@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query';
 import { getRegistry, RegistryEntry } from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { useX402Networks } from '@/lib/hooks/useX402';
@@ -8,8 +8,6 @@ import { handleApiCall } from '@/lib/utils';
 import { appendInclusiveCursorPage } from '@/lib/pagination/cursor-pagination';
 
 const PAGE_SIZE = 50;
-// Safety bound so a paging bug can never loop forever; far above any realistic agent count.
-const MAX_PAGES = 50;
 
 /**
  * How an agent relates to the currently-viewed payment source / chain:
@@ -31,44 +29,42 @@ type AgentQuery = {
   filterSupportedPaymentSourceNetworks?: string;
 };
 
-async function fetchAllAgents(
+async function fetchAgentPage(
   apiClient: ReturnType<typeof useAppContext>['apiClient'],
   network: 'Preprod' | 'Mainnet',
   extra: AgentQuery,
-): Promise<{ items: RegistryEntry[]; truncated: boolean }> {
-  let items: RegistryEntry[] = [];
-  let cursor: string | undefined;
-  for (let page = 0; page < MAX_PAGES; page++) {
-    const response = await handleApiCall(
-      () =>
-        getRegistry({
-          client: apiClient,
-          query: {
-            network,
-            cursorId: cursor,
-            limit: PAGE_SIZE,
-            filterStatus: extra.filterStatus,
-            searchQuery: extra.searchQuery || undefined,
-            filterSmartContractAddress: extra.filterSmartContractAddress,
-            filterSupportedPaymentSourceAddress: extra.filterSupportedPaymentSourceAddress,
-            filterSupportedPaymentSourceNetworks: extra.filterSupportedPaymentSourceNetworks,
-          },
-        }),
-      { errorMessage: 'Failed to load AI agents' },
-    );
-    const batch = (response?.data?.data?.Assets ?? []) as RegistryEntry[];
-    // The Prisma cursor is inclusive, so each page after the first repeats the previous
-    // page's last row. Dedup by id while accumulating; cursor/length checks below still
-    // use the raw `batch` so end-of-list detection is unaffected.
-    items = appendInclusiveCursorPage(items, batch, (agent) => agent.id);
-    // A short page means the cursor is fully drained — everything loaded.
-    if (batch.length < PAGE_SIZE) return { items, truncated: false };
-    const last = batch[batch.length - 1];
-    if (!last?.id || last.id === cursor) return { items, truncated: false };
-    cursor = last.id;
-  }
-  // Exhausted MAX_PAGES with every page full: more entries almost certainly remain.
-  return { items, truncated: true };
+  cursor?: string,
+): Promise<{ items: RegistryEntry[]; nextCursor?: string }> {
+  const response = await handleApiCall(
+    () =>
+      getRegistry({
+        client: apiClient,
+        query: {
+          network,
+          cursorId: cursor,
+          limit: PAGE_SIZE,
+          filterStatus: extra.filterStatus,
+          searchQuery: extra.searchQuery || undefined,
+          filterSmartContractAddress: extra.filterSmartContractAddress,
+          filterSupportedPaymentSourceAddress: extra.filterSupportedPaymentSourceAddress,
+          filterSupportedPaymentSourceNetworks: extra.filterSupportedPaymentSourceNetworks,
+        },
+      }),
+    { errorMessage: 'Failed to load AI agents' },
+  );
+  const items = (response?.data?.data?.Assets ?? []) as RegistryEntry[];
+  const last = items[items.length - 1];
+  const nextCursor =
+    items.length === PAGE_SIZE && last?.id && last.id !== cursor ? last.id : undefined;
+
+  return { items, nextCursor };
+}
+
+function flattenPages(pages: readonly { items: RegistryEntry[] }[] | undefined) {
+  return (pages ?? []).reduce<RegistryEntry[]>(
+    (items, page) => appendInclusiveCursorPage(items, page.items, (agent) => agent.id),
+    [],
+  );
 }
 
 /**
@@ -87,7 +83,14 @@ export function useContextAgents(params?: {
   filterStatus?: 'Registered' | 'Deregistered' | 'Pending' | 'Failed';
   searchQuery?: string;
 }) {
-  const { apiClient, authorized, network, activeRail, selectedPaymentSource } = useAppContext();
+  const {
+    apiClient,
+    authorized,
+    network,
+    activeRail,
+    selectedPaymentSource,
+    selectedPaymentSourceId,
+  } = useAppContext();
   const { networks, isLoading: isX402NetworksLoading } = useX402Networks({ silentErrors: true });
 
   const envChainIds = useMemo(
@@ -116,7 +119,7 @@ export function useContextAgents(params?: {
       : { filterSupportedPaymentSourceAddress: sourceAddress ?? undefined };
   const hasPaymentScope = activeRail === 'x402' ? !!envChainIdsCsv : !!sourceAddress;
 
-  const allQuery = useQuery({
+  const allQuery = useInfiniteQuery({
     queryKey: [
       'context-agents',
       'payment',
@@ -126,12 +129,19 @@ export function useContextAgents(params?: {
       params?.filterStatus,
       params?.searchQuery,
     ],
-    queryFn: () =>
-      fetchAllAgents(apiClient, network, {
-        filterStatus: params?.filterStatus,
-        searchQuery: params?.searchQuery,
-        ...paymentScope,
-      }),
+    queryFn: ({ pageParam }) =>
+      fetchAgentPage(
+        apiClient,
+        network,
+        {
+          filterStatus: params?.filterStatus,
+          searchQuery: params?.searchQuery,
+          ...paymentScope,
+        },
+        pageParam,
+      ),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
     enabled: !!apiClient && authorized && hasPaymentScope,
     staleTime: 15000,
     // Keep showing the previous results while a status/search change refetches, so the
@@ -141,7 +151,7 @@ export function useContextAgents(params?: {
 
   // Agents registered on the selected Cardano source. Only needed on the Cardano rail, and
   // the authoritative source of the "registered" set (covers legacy null-metadata entries).
-  const registeredQuery = useQuery({
+  const registeredQuery = useInfiniteQuery({
     queryKey: [
       'context-agents',
       'registered',
@@ -150,19 +160,29 @@ export function useContextAgents(params?: {
       params?.filterStatus,
       params?.searchQuery,
     ],
-    queryFn: () =>
-      fetchAllAgents(apiClient, network, {
-        filterSmartContractAddress: sourceAddress ?? undefined,
-        filterStatus: params?.filterStatus,
-        searchQuery: params?.searchQuery,
-      }),
+    queryFn: ({ pageParam }) =>
+      fetchAgentPage(
+        apiClient,
+        network,
+        {
+          filterSmartContractAddress: sourceAddress ?? undefined,
+          filterStatus: params?.filterStatus,
+          searchQuery: params?.searchQuery,
+        },
+        pageParam,
+      ),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
     enabled: !!apiClient && authorized && activeRail === 'cardano' && !!sourceAddress,
     staleTime: 15000,
     placeholderData: keepPreviousData,
   });
 
+  const allPages = allQuery.data?.pages;
+  const registeredPages = registeredQuery.data?.pages;
+
   const agents = useMemo<AgentWithRelation[]>(() => {
-    const all = allQuery.data?.items ?? [];
+    const all = flattenPages(allPages);
 
     if (activeRail === 'x402') {
       // Registration never happens on EVM, so every match is a payment target.
@@ -181,12 +201,11 @@ export function useContextAgents(params?: {
     // on this source that also lists it in supportedPaymentSources would be mislabeled
     // "payment accepted" (hiding verify/update/delete) until the second query resolves.
     // Returning [] keeps the page in its loading state (see isLoading below) until then.
-    if (registeredQuery.data === undefined) return [];
+    if (registeredPages === undefined) return [];
     // Build from the source-scoped registered set (authoritative and complete for this
-    // source) so a registered agent is never dropped just because it fell outside the
-    // page-capped network-wide `all` set. Then append agents registered elsewhere that
-    // accept payment on this source, deduped against the registered ones.
-    const registered = registeredQuery.data.items;
+    // source) for the pages currently loaded. Then append agents registered elsewhere
+    // that accept payment on this source, deduped against the registered ones.
+    const registered = flattenPages(registeredPages);
     const registeredIds = new Set(registered.map((agent) => agent.id));
     const paymentAccepted = all.filter(
       (agent) =>
@@ -199,13 +218,18 @@ export function useContextAgents(params?: {
       ...registered.map((agent) => ({ ...agent, relation: 'registered' as const })),
       ...paymentAccepted.map((agent) => ({ ...agent, relation: 'payment' as const })),
     ];
-  }, [allQuery.data, registeredQuery.data, activeRail, envChainIds, sourceAddress]);
+  }, [allPages, registeredPages, activeRail, envChainIds, sourceAddress]);
 
   const isRegisteredQueryActive = activeRail === 'cardano' && !!sourceAddress;
   // The registered set is authoritative for the 'registered' label, and the merged list is
   // withheld (above) until it resolves. Treat that window as loading so the page shows a
   // skeleton instead of an empty state or a half-labeled list.
   const registeredPending = isRegisteredQueryActive && registeredQuery.data === undefined;
+  const sourceRestorePending =
+    activeRail === 'cardano' &&
+    authorized &&
+    selectedPaymentSourceId != null &&
+    selectedPaymentSource == null;
 
   // On the x402 rail the payment-scoped query is disabled until the active EVM
   // chain ids resolve from useX402Networks. Without surfacing that window as
@@ -213,23 +237,31 @@ export function useContextAgents(params?: {
   // flash the "no agents accept x402 here" empty state before the chains load.
   const x402ScopePending = activeRail === 'x402' && isX402NetworksLoading;
 
-  // The list is fetched in full but bounded by fetchAllAgents' page cap. Surface when that
-  // cap was hit so the page can warn the operator instead of silently showing a partial set.
-  const truncated =
-    (allQuery.data?.truncated ?? false) ||
-    (isRegisteredQueryActive && (registeredQuery.data?.truncated ?? false));
-
   // True while showing the previous results during a status/search change (keepPreviousData),
   // so the page can dim the table and run its instant client-side search filter.
   const isPlaceholderData =
     allQuery.isPlaceholderData || (isRegisteredQueryActive && registeredQuery.isPlaceholderData);
 
+  const hasMore = allQuery.hasNextPage || (isRegisteredQueryActive && registeredQuery.hasNextPage);
+  const isFetchingNextPage =
+    allQuery.isFetchingNextPage || (isRegisteredQueryActive && registeredQuery.isFetchingNextPage);
+
   return {
     agents,
-    truncated,
+    truncated: false,
+    hasMore,
     isPlaceholderData,
-    isLoading: allQuery.isLoading || registeredPending || x402ScopePending,
+    isLoading: allQuery.isLoading || registeredPending || x402ScopePending || sourceRestorePending,
     isFetching: allQuery.isFetching || (isRegisteredQueryActive && registeredQuery.isFetching),
+    isFetchingNextPage,
+    loadMore: async () => {
+      await Promise.all([
+        allQuery.hasNextPage ? allQuery.fetchNextPage() : Promise.resolve(),
+        isRegisteredQueryActive && registeredQuery.hasNextPage
+          ? registeredQuery.fetchNextPage()
+          : Promise.resolve(),
+      ]);
+    },
     refetch: async () => {
       await Promise.all([
         allQuery.refetch(),

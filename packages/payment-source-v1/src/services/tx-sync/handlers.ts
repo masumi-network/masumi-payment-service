@@ -2,8 +2,8 @@ import { prisma } from '@masumi/payment-core/db';
 import { OnChainState, Prisma, TransactionStatus } from '@/generated/prisma/client';
 // TODO(v1-package-boundary): move logic/state-transitions and db/retry to @masumi/payment-core
 import { convertNewPaymentActionAndError, convertNewPurchasingActionAndError } from '@/utils/logic/state-transitions';
-import { retryOnSerializationConflict } from '@/utils/db/retry';
-import { withSerializableSlot } from '@/utils/db/serializable-semaphore';
+import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
+import { withSerializableSlot } from '@masumi/payment-core/serializable-semaphore';
 import { TransactionMetadata } from '@/services/transactions/tx-sync/blockchain';
 
 export async function handleV1PaymentTransaction(

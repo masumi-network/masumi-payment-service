@@ -20,7 +20,7 @@ import {
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { shortenAddress, formatFundUnit } from '@/lib/utils';
-import { Trash2, AlertTriangle } from 'lucide-react';
+import { Trash2, ChevronDown, AlertTriangle } from 'lucide-react';
 import {
   useForm,
   Controller,
@@ -37,14 +37,19 @@ import { Separator } from '@/components/ui/separator';
 import { useWallets } from '@/lib/queries/useWallets';
 import type { WalletListItem } from '@/lib/api/generated';
 import { REGISTRY_DECIMAL_ADA_AMOUNT_PATTERN, REGISTRY_LIMITS } from '@/lib/registry-validation';
-import { convertDecimalToBaseUnits } from '@/lib/convertDecimalToBaseUnits';
+import {
+  convertBaseUnitsToDecimal,
+  convertDecimalToBaseUnits,
+  isValidDecimalAmount,
+} from '@/lib/convertDecimalToBaseUnits';
+import { extractApiErrorMessage } from '@/lib/api-error';
 import { isV2PaymentSource } from '@/lib/payment-source-type';
 import { useX402Networks } from '@/lib/hooks/useX402';
-import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
-import type { PaymentSourceExtended } from '@/lib/api/generated';
 import {
   X402OptionsSection,
+  normalizeX402Amount,
   validateX402Options,
+  newX402OptionId,
   type X402OptionDraft,
 } from './X402OptionsSection';
 import {
@@ -74,9 +79,20 @@ interface RegisterAIAgentDialogProps {
    * `editingAgent` is provided.
    */
   editingAgentSmartContractAddress?: string;
+  /**
+   * When set (and `editingAgent` is not), the dialog operates in re-register
+   * mode: it pre-fills from the given agent exactly like update mode, but
+   * stays a fresh registration — the minting-wallet picker is shown and
+   * submission calls the register endpoint, minting a BRAND-NEW asset with a
+   * NEW agent identifier on the active payment source. Used to re-register a
+   * previously deregistered agent.
+   */
+  prefillAgent?: RegistryEntry | null;
+  /** Stack above an elevated parent (e.g. opened from the agent details dialog). */
+  elevatedChildStack?: boolean;
 }
 
-// ─── Standard (v1) schema ─────────────────────────────────────────────────────
+// ─── Standard (v1/v2) schema ────────────────────────────────────────────────
 const createPriceSchema = (network: 'Mainnet' | 'Preprod') => {
   const stablecoinUnit = network === 'Mainnet' ? 'USDCx' : 'tUSDM';
   return z.object({
@@ -88,8 +104,10 @@ const createPriceSchema = (network: 'Mainnet' | 'Preprod') => {
       .max(REGISTRY_LIMITS.lovelaceAmount, 'Amount must be less than 25 characters')
       .refine((val) => {
         if (val === '0' || val === '0.0' || val === '0.00') return true;
-        return !isNaN(parseFloat(val)) && parseFloat(val) >= 0;
-      }, 'Amount must be a valid number >= 0'),
+        // parseFloat would accept exponent notation ('1e5' crashes BigInt at
+        // submit) and >6-decimal amounts (silently truncated to a 0 price).
+        return isValidDecimalAmount(val);
+      }, 'Amount must be a valid number >= 0 with at most 6 decimals'),
   });
 };
 
@@ -154,6 +172,7 @@ const createAgentSchema = (network: 'Mainnet' | 'Preprod') => {
         .min(1, 'At least one tag is required')
         .max(REGISTRY_LIMITS.tagCount, 'You can add at most 15 tags'),
       pricingType: z.enum(['Fixed', 'Free', 'Dynamic']),
+      // Additional Fields
       authorName: z
         .string()
         .max(REGISTRY_LIMITS.authorName, 'Author name must be less than 250 characters')
@@ -175,6 +194,7 @@ const createAgentSchema = (network: 'Mainnet' | 'Preprod') => {
         .max(REGISTRY_LIMITS.authorContact, 'Contact other must be less than 250 characters')
         .optional()
         .or(z.literal('')),
+
       termsOfUseUrl: z
         .string()
         .url('Terms of use URL must be a valid URL')
@@ -193,6 +213,7 @@ const createAgentSchema = (network: 'Mainnet' | 'Preprod') => {
         .max(REGISTRY_LIMITS.legalUrl, 'Other URL must be less than 250 characters')
         .optional()
         .or(z.literal('')),
+
       capabilityName: z
         .string()
         .max(REGISTRY_LIMITS.capabilityName, 'Capability name must be less than 250 characters')
@@ -223,7 +244,7 @@ const createAgentSchema = (network: 'Mainnet' | 'Preprod') => {
     });
 };
 
-// ─── A2A (v2) schema ──────────────────────────────────────────────────────────
+// ─── A2A schema ──────────────────────────────────────────────────────────────
 const a2aAgentSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   apiUrl: z
@@ -269,19 +290,32 @@ export function RegisterAIAgentDialog({
   onSuccess,
   editingAgent,
   editingAgentSmartContractAddress,
+  prefillAgent,
+  elevatedChildStack,
 }: RegisterAIAgentDialogProps) {
   const isUpdateMode = !!editingAgent;
+  // Re-register: prefill from an existing (deregistered) agent but mint a
+  // fresh registration. Never both — editingAgent takes precedence.
+  const isReRegisterMode = !isUpdateMode && !!prefillAgent;
+  const sourceAgent = editingAgent ?? prefillAgent ?? null;
   const [isLoading, setIsLoading] = useState(false);
+  // Author/legal/capability/example-output fields are all optional, so collapse
+  // them by default to shorten the form; auto-expand when editing/re-registering
+  // an existing agent (below) so its saved values are visible.
+  const [showAdditional, setShowAdditional] = useState(false);
+  // A2A registration is a separate, standalone entity type (no update/re-register
+  // support) — the toggle below is hidden whenever editing/re-registering, and
+  // this always resets to 'Standard' on open so those flows never land on A2A.
   const [agentType, setAgentType] = useState<'Standard' | 'A2A'>('Standard');
   const [sellingWallets, setSellingWallets] = useState<
     { wallet: WalletListItem; balance: number }[]
   >([]);
 
-  const { wallets, isLoading: isLoadingWallets } = useWallets();
+  const { wallets, isLoading: isLoadingWallets, isError: isWalletsError } = useWallets();
   const { apiClient, network, selectedPaymentSource } = useAppContext();
   const stablecoinUnit = network === 'Mainnet' ? 'USDCx' : 'tUSDM';
 
-  // ── Standard form ──────────────────────────────────────────────────────────
+  // ── Standard form ────────────────────────────────────────────────────────
   const {
     register,
     handleSubmit,
@@ -319,15 +353,21 @@ export function RegisterAIAgentDialog({
     fields: priceFields,
     append: appendPrice,
     remove: removePrice,
-  } = useFieldArray({ control, name: 'prices' });
+  } = useFieldArray({
+    control,
+    name: 'prices',
+  });
 
   const {
     fields: exampleOutputFields,
     append: appendExampleOutput,
     remove: removeExampleOutput,
-  } = useFieldArray({ control, name: 'exampleOutputs' });
+  } = useFieldArray({
+    control,
+    name: 'exampleOutputs',
+  });
 
-  // ── A2A form ───────────────────────────────────────────────────────────────
+  // ── A2A form ─────────────────────────────────────────────────────────────
   const {
     register: registerA2A,
     handleSubmit: handleSubmitA2A,
@@ -355,20 +395,11 @@ export function RegisterAIAgentDialog({
   const a2aTags = watchA2A('tags') ?? [];
   const [a2aTagInput, setA2aTagInput] = useState('');
 
-  const { paymentSources } = usePaymentSourceExtendedAll();
-  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] = useState<
-    PaymentSourceExtended[]
-  >([]);
-  useEffect(() => {
-    setCurrentNetworkPaymentSources(paymentSources.filter((ps) => ps.network === network));
-  }, [paymentSources, network]);
-
   const tags = watch('tags');
   const selectedWalletVkey = watch('selectedWallet');
   const selectedRecipientWalletAddress = watch('recipientWalletAddress');
   const selectedSendFundingAda = watch('sendFundingAda');
   const [tagInput, setTagInput] = useState('');
-
   useEffect(() => {
     setSellingWallets(
       wallets
@@ -393,7 +424,11 @@ export function RegisterAIAgentDialog({
     if (!open) return;
     resetA2A();
     setAgentType('Standard');
-    if (isUpdateMode && editingAgent) {
+    // Expanded when there's an agent to review (update/re-register), collapsed
+    // for a fresh registration.
+    setShowAdditional(Boolean(sourceAgent));
+    if (sourceAgent) {
+      const editingAgent = sourceAgent;
       // Pre-fill the form from the existing registration. The on-chain
       // pricing unit `''` (empty string) represents lovelace — the
       // RegisterAIAgentDialog UI uses the literal 'lovelace' so the
@@ -410,9 +445,16 @@ export function RegisterAIAgentDialog({
       };
       const mapAmount = (rawAmount: string) => {
         // Stored as lovelace integer string; UI uses ADA decimal display.
+        // BigInt string math — Number()/1e6 loses precision on large amounts,
+        // so resubmitting an update would write a subtly different price
+        // on-chain.
         if (!rawAmount || rawAmount === '0') return '0';
-        const value = Number(rawAmount) / 1_000_000;
-        return Number.isFinite(value) ? value.toString() : rawAmount;
+        try {
+          return convertBaseUnitsToDecimal(rawAmount);
+        } catch {
+          // Non-integer legacy value — keep raw so validation surfaces it.
+          return rawAmount;
+        }
       };
       reset({
         apiUrl: editingAgent.apiBaseUrl,
@@ -453,6 +495,7 @@ export function RegisterAIAgentDialog({
         (editingAgent.supportedPaymentSources ?? [])
           .filter((source): source is EvmSupportedSource => source.chain === 'EVM')
           .map((source) => ({
+            id: newX402OptionId(),
             caip2Network: source.network,
             asset: source.asset,
             amount: source.amount,
@@ -471,9 +514,9 @@ export function RegisterAIAgentDialog({
     setX402Error(null);
     setVerifications([]);
     setVerificationsError(null);
-  }, [open, reset, resetA2A, isUpdateMode, editingAgent, network, stablecoinUnit]);
+  }, [open, reset, resetA2A, sourceAgent, network, stablecoinUnit]);
 
-  // ── Shared wallet validation ────────────────────────────────────────────────
+  // ── Shared wallet balance validation (A2A) ──────────────────────────────
   const validateWallet = useCallback(
     (selectedWalletVkey: string): boolean => {
       const selectedWalletBalance = sellingWallets.find(
@@ -514,6 +557,11 @@ export function RegisterAIAgentDialog({
     : !!selectedPaymentSource && isV2PaymentSource(selectedPaymentSource);
 
   useEffect(() => {
+    // Wallets drive recipientWalletOptions; while the wallets query is still
+    // loading (or errored) the options are transiently empty, and reconciling
+    // against them would wipe the prefilled holding wallet + funding override
+    // in update mode. Only reconcile once wallets have actually loaded.
+    if (isLoadingWallets || isWalletsError) return;
     if (!selectedRecipientWalletAddress) {
       if (selectedSendFundingAda) {
         setValue('sendFundingAda', '');
@@ -527,9 +575,16 @@ export function RegisterAIAgentDialog({
     if (!isRecipientStillAvailable) {
       setValue('recipientWalletAddress', '');
     }
-  }, [recipientWalletOptions, selectedRecipientWalletAddress, selectedSendFundingAda, setValue]);
+  }, [
+    isLoadingWallets,
+    isWalletsError,
+    recipientWalletOptions,
+    selectedRecipientWalletAddress,
+    selectedSendFundingAda,
+    setValue,
+  ]);
 
-  // ── Standard submit ────────────────────────────────────────────────────────
+  // ── Standard submit ──────────────────────────────────────────────────────
   const onSubmit = useCallback(
     async (data: AgentFormValues) => {
       try {
@@ -556,7 +611,11 @@ export function RegisterAIAgentDialog({
           }
         }
 
-        const legal: { privacyPolicy?: string; terms?: string; other?: string } = {};
+        const legal: {
+          privacyPolicy?: string;
+          terms?: string;
+          other?: string;
+        } = {};
         if (data.privacyPolicyUrl) legal.privacyPolicy = data.privacyPolicyUrl;
         if (data.termsOfUseUrl) legal.terms = data.termsOfUseUrl;
         if (data.otherUrl) legal.other = data.otherUrl;
@@ -576,10 +635,13 @@ export function RegisterAIAgentDialog({
         if (data.contactOther) author.contactOther = data.contactOther;
         if (data.organization) author.organization = data.organization;
 
-        const capability =
-          data.capabilityName && data.capabilityVersion
-            ? { name: data.capabilityName, version: data.capabilityVersion }
-            : { name: 'Custom Agent', version: '1.0.0' };
+        // Preserve each capability field independently — requiring both would
+        // silently discard a half-filled capability (destructive in update
+        // mode, where it would overwrite the on-chain name with the default).
+        const capability = {
+          name: data.capabilityName || 'Custom Agent',
+          version: data.capabilityVersion || '1.0.0',
+        };
 
         const agentPricing = (() => {
           if (data.pricingType === 'Free') {
@@ -620,7 +682,7 @@ export function RegisterAIAgentDialog({
           network: option.caip2Network,
           scheme: 'Exact' as const,
           asset: option.asset,
-          amount: option.amount,
+          amount: normalizeX402Amount(option.amount),
           decimals: Number(option.decimals),
           payTo: option.payTo,
           resource: option.resource ? option.resource : undefined,
@@ -691,8 +753,15 @@ export function RegisterAIAgentDialog({
             },
           });
 
-          if (!updateResponse.data?.data?.id) {
-            throw new Error('Failed to update AI agent: Invalid response from server');
+          // The generated client returns {data, error} and never throws —
+          // surface the real backend error instead of the generic fallback.
+          if (updateResponse.error || !updateResponse.data?.data?.id) {
+            throw new Error(
+              extractApiErrorMessage(
+                updateResponse.error,
+                'Failed to update AI agent: Invalid response from server',
+              ),
+            );
           }
 
           toast.success('AI agent update requested');
@@ -727,15 +796,27 @@ export function RegisterAIAgentDialog({
           },
         });
 
-        if (!response.data?.data?.id) {
-          throw new Error('Failed to register AI agent: Invalid response from server');
+        // The generated client returns {data, error} and never throws —
+        // surface the real backend error instead of the generic fallback.
+        if (response.error || !response.data?.data?.id) {
+          throw new Error(
+            extractApiErrorMessage(
+              response.error,
+              'Failed to register AI agent: Invalid response from server',
+            ),
+          );
         }
 
-        toast.success('AI agent registered successfully');
+        toast.success(
+          isReRegisterMode
+            ? 'AI agent re-registration requested (a new identifier will be minted)'
+            : 'AI agent registered successfully',
+        );
         onSuccess();
         onClose();
         reset();
       } catch (error: unknown) {
+        console.error('Error registering AI agent:', error);
         toast.error(error instanceof Error ? error.message : 'Failed to register AI agent');
       } finally {
         setIsLoading(false);
@@ -751,6 +832,7 @@ export function RegisterAIAgentDialog({
       onClose,
       reset,
       isUpdateMode,
+      isReRegisterMode,
       editingAgent,
       editingAgentSmartContractAddress,
       x402Options,
@@ -759,13 +841,12 @@ export function RegisterAIAgentDialog({
     ],
   );
 
-  // ── A2A submit ─────────────────────────────────────────────────────────────
+  // ── A2A submit ───────────────────────────────────────────────────────────
   const onSubmitA2A = useCallback(
     async (data: A2AFormValues) => {
       try {
         setIsLoading(true);
-        const selectedWalletVkey = data.selectedWallet;
-        if (!validateWallet(selectedWalletVkey)) return;
+        if (!validateWallet(data.selectedWallet)) return;
 
         const response = await postRegistryA2A({
           client: apiClient,
@@ -782,8 +863,13 @@ export function RegisterAIAgentDialog({
           },
         });
 
-        if (!response.data?.data?.id) {
-          throw new Error('Failed to register A2A agent: Invalid response from server');
+        if (response.error || !response.data?.data?.id) {
+          throw new Error(
+            extractApiErrorMessage(
+              response.error,
+              'Failed to register A2A agent: Invalid response from server',
+            ),
+          );
         }
 
         toast.success('A2A agent registered successfully');
@@ -791,6 +877,7 @@ export function RegisterAIAgentDialog({
         onClose();
         resetA2A();
       } catch (error: unknown) {
+        console.error('Error registering A2A agent:', error);
         toast.error(error instanceof Error ? error.message : 'Failed to register A2A agent');
       } finally {
         setIsLoading(false);
@@ -799,7 +886,7 @@ export function RegisterAIAgentDialog({
     [validateWallet, apiClient, network, onSuccess, onClose, resetA2A],
   );
 
-  // ── Tag helpers (Standard) ─────────────────────────────────────────────────
+  // Tag management (Standard)
   const handleAddTag = () => {
     const tag = tagInput.trim();
     if (tags.length >= REGISTRY_LIMITS.tagCount) {
@@ -811,18 +898,20 @@ export function RegisterAIAgentDialog({
     }
     setTagInput('');
   };
+
   const handleRemoveTag = (tagToRemove: string) => {
     setValue(
       'tags',
-      tags.filter((t) => t !== tagToRemove),
+      tags.filter((tag) => tag !== tagToRemove),
     );
   };
 
-  // ── Version / tag helpers (A2A) ────────────────────────────────────────────
+  // ── Protocol version / tag helpers (A2A) ────────────────────────────────
   const handleAddA2AVersion = () => {
     const v = a2aVersionInput.trim();
-    if (v && !a2aProtocolVersions.includes(v))
+    if (v && !a2aProtocolVersions.includes(v)) {
       setValueA2A('a2aProtocolVersions', [...a2aProtocolVersions, v]);
+    }
     setA2aVersionInput('');
   };
   const handleRemoveA2AVersion = (v: string) => {
@@ -833,7 +922,9 @@ export function RegisterAIAgentDialog({
   };
   const handleAddA2ATag = () => {
     const tag = a2aTagInput.trim();
-    if (tag && !a2aTags.includes(tag)) setValueA2A('tags', [...a2aTags, tag]);
+    if (tag && !a2aTags.includes(tag)) {
+      setValueA2A('tags', [...a2aTags, tag]);
+    }
     setA2aTagInput('');
   };
   const handleRemoveA2ATag = (tag: string) => {
@@ -843,7 +934,7 @@ export function RegisterAIAgentDialog({
     );
   };
 
-  // ── Shared wallet selector ─────────────────────────────────────────────────
+  // ── Shared wallet selector (A2A) ─────────────────────────────────────────
   const renderWalletSelect = <T extends { selectedWallet: string }>(
     fieldName: 'selectedWallet',
     ctrl: Control<T>,
@@ -851,7 +942,7 @@ export function RegisterAIAgentDialog({
   ) => (
     <div className="space-y-2">
       <label className="text-sm font-medium">
-        Linked wallet <span className="text-red-500">*</span>
+        Minting wallet <span className="text-destructive">*</span>
       </label>
       <Controller
         control={ctrl}
@@ -860,10 +951,10 @@ export function RegisterAIAgentDialog({
           <Select value={field.value} onValueChange={field.onChange}>
             <SelectTrigger
               disabled={isLoadingWallets}
-              className={`${errs.selectedWallet ? 'border-red-500' : ''} ${isLoadingWallets ? 'opacity-50 cursor-not-allowed' : ''}`}
+              className={`${errs.selectedWallet ? 'border-destructive' : ''} ${isLoadingWallets ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               <SelectValue
-                placeholder={isLoadingWallets ? 'Loading wallets...' : 'Select a wallet'}
+                placeholder={isLoadingWallets ? 'Loading wallets...' : 'Select a minting wallet'}
               />
             </SelectTrigger>
             <SelectContent>
@@ -884,90 +975,101 @@ export function RegisterAIAgentDialog({
         )}
       />
       {errs.selectedWallet && (
-        <p className="text-sm text-red-500">{(errs.selectedWallet as FieldError).message}</p>
+        <p className="text-sm text-destructive">{(errs.selectedWallet as FieldError).message}</p>
       )}
     </div>
   );
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[700px] overflow-y-auto">
+      <DialogContent size="lg" className="overflow-y-auto" elevatedChildStack={elevatedChildStack}>
         <DialogHeader>
-          <DialogTitle>{isUpdateMode ? 'Update AI Agent' : 'Register AI Agent'}</DialogTitle>
+          <DialogTitle>
+            {isUpdateMode
+              ? 'Update AI Agent'
+              : isReRegisterMode
+                ? 'Re-register AI Agent'
+                : agentType === 'A2A'
+                  ? 'Register A2A Agent'
+                  : 'Register AI Agent'}
+          </DialogTitle>
           <p className="text-sm text-muted-foreground mt-2">
             {isUpdateMode
               ? 'Updating the on-chain metadata issues an UpdateAction on the V2 registry contract: the existing asset is burned and a new asset with the incremented version is minted in a single transaction.'
-              : 'This registers your agent on the Masumi Network, making it visible to everyone.'}
+              : isReRegisterMode
+                ? 'This mints a brand-new registration from the previous agent’s details. It will be issued a new agent identifier — the old, deregistered one is not reused. Review the fields and wallet below, then mint.'
+                : agentType === 'A2A'
+                  ? 'This registers your A2A agent on the Masumi Network using its Agent Card, making it visible to everyone.'
+                  : 'This registers your agent on the Masumi Network, making it visible to everyone.'}
           </p>
         </DialogHeader>
 
-        {/* ── Type toggle ─────────────────────────────────────────────────── */}
-        <div className="flex gap-2 p-1 bg-muted rounded-lg w-fit">
-          <button
-            type="button"
-            onClick={() => setAgentType('Standard')}
-            disabled={isLoading}
-            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              agentType === 'Standard'
-                ? 'bg-background shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            Standard
-          </button>
-          <button
-            type="button"
-            onClick={() => setAgentType('A2A')}
-            disabled={isLoading}
-            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              agentType === 'A2A'
-                ? 'bg-background shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            A2A
-          </button>
-        </div>
+        {/* Type toggle — only for a fresh registration; update/re-register are Standard-only */}
+        {!isUpdateMode && !isReRegisterMode && (
+          <div className="flex gap-2 p-1 bg-muted rounded-lg w-fit">
+            <button
+              type="button"
+              onClick={() => setAgentType('Standard')}
+              disabled={isLoading}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                agentType === 'Standard'
+                  ? 'bg-background shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Standard
+            </button>
+            <button
+              type="button"
+              onClick={() => setAgentType('A2A')}
+              disabled={isLoading}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                agentType === 'A2A'
+                  ? 'bg-background shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              A2A
+            </button>
+          </div>
+        )}
 
-        {/* ══════════════════════════════════════════════════════════════════
-            STANDARD FORM
-           ══════════════════════════════════════════════════════════════════ */}
         {agentType === 'Standard' && (
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             <div className="space-y-2">
               <label className="text-sm font-medium">
-                API URL <span className="text-red-500">*</span>
+                API URL <span className="text-destructive">*</span>
               </label>
               <Input
                 {...register('apiUrl')}
                 placeholder="Enter the API URL for your agent"
-                className={errors.apiUrl ? 'border-red-500' : ''}
+                className={errors.apiUrl ? 'border-destructive' : ''}
               />
-              {errors.apiUrl && <p className="text-sm text-red-500">{errors.apiUrl.message}</p>}
+              {errors.apiUrl && <p className="text-sm text-destructive">{errors.apiUrl.message}</p>}
             </div>
 
             <div className="space-y-2">
               <label className="text-sm font-medium">
-                Name <span className="text-red-500">*</span>
+                Name <span className="text-destructive">*</span>
               </label>
               <Input
                 {...register('name')}
                 placeholder="Enter a name for your agent"
-                className={errors.name ? 'border-red-500' : ''}
+                className={errors.name ? 'border-destructive' : ''}
               />
-              {errors.name && <p className="text-sm text-red-500">{errors.name.message}</p>}
+              {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
             </div>
 
             <div className="space-y-2">
               <label className="text-sm font-medium">
-                Description <span className="text-red-500">*</span>
+                Description <span className="text-destructive">*</span>
               </label>
               <div className="relative">
                 <Textarea
                   {...register('description')}
                   placeholder="Describe what your agent does"
                   rows={3}
-                  className={`resize-none overflow-y-auto h-[84px] ${errors.description ? 'border-red-500' : ''}`}
+                  className={`resize-none overflow-y-auto h-[84px] ${errors.description ? 'border-destructive' : ''}`}
                   maxLength={250}
                 />
                 <div className="absolute bottom-2 right-2 text-xs text-muted-foreground">
@@ -975,7 +1077,7 @@ export function RegisterAIAgentDialog({
                 </div>
               </div>
               {errors.description && (
-                <p className="text-sm text-red-500">{errors.description.message}</p>
+                <p className="text-sm text-destructive">{errors.description.message}</p>
               )}
             </div>
 
@@ -998,7 +1100,7 @@ export function RegisterAIAgentDialog({
             ) : (
               <div className="space-y-2">
                 <label className="text-sm font-medium">
-                  Minting wallet <span className="text-red-500">*</span>
+                  Minting wallet <span className="text-destructive">*</span>
                 </label>
                 <Controller
                   control={control}
@@ -1007,7 +1109,7 @@ export function RegisterAIAgentDialog({
                     <Select value={field.value} onValueChange={field.onChange}>
                       <SelectTrigger
                         disabled={isLoadingWallets}
-                        className={`${errors.selectedWallet ? 'border-red-500' : ''} ${isLoadingWallets ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        className={`${errors.selectedWallet ? 'border-destructive' : ''} ${isLoadingWallets ? 'opacity-50 cursor-not-allowed' : ''}`}
                       >
                         <SelectValue
                           placeholder={
@@ -1033,56 +1135,10 @@ export function RegisterAIAgentDialog({
                   )}
                 />
                 {errors.selectedWallet && (
-                  <p className="text-sm text-red-500">{errors.selectedWallet.message}</p>
+                  <p className="text-sm text-destructive">{errors.selectedWallet.message}</p>
                 )}
               </div>
             )}
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Holding wallet</label>
-              <Controller
-                control={control}
-                name="recipientWalletAddress"
-                render={({ field }) => (
-                  <Select
-                    value={field.value || '__default'}
-                    onValueChange={(value) => field.onChange(value === '__default' ? '' : value)}
-                  >
-                    <SelectTrigger
-                      disabled={isLoadingWallets || !selectedPaymentSource}
-                      className={isLoadingWallets ? 'opacity-50 cursor-not-allowed' : ''}
-                    >
-                      <SelectValue
-                        placeholder={
-                          !selectedPaymentSource
-                            ? 'Select a minting wallet first'
-                            : 'Use minting wallet (default)'
-                        }
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__default">Use minting wallet (default)</SelectItem>
-                      {recipientWalletOptions.map((wallet) => (
-                        <SelectItem key={wallet.id} value={wallet.walletAddress}>
-                          {wallet.note
-                            ? `${wallet.note} (${shortenAddress(wallet.walletAddress)})`
-                            : shortenAddress(wallet.walletAddress)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              />
-              <p className="text-xs text-muted-foreground">
-                Optional. The selected minting wallet still mints and pays fees, while the registry
-                NFT is delivered to another managed holding wallet on the same payment source.
-              </p>
-              {selectedPaymentSource && recipientWalletOptions.length === 0 && (
-                <p className="text-xs text-muted-foreground">
-                  No other managed wallets are available on this payment source.
-                </p>
-              )}
-            </div>
 
             <div className="space-y-2">
               <label className="text-sm font-medium">Holding wallet</label>
@@ -1140,7 +1196,7 @@ export function RegisterAIAgentDialog({
                 step="0.000001"
                 placeholder="Optional ADA amount"
                 disabled={!selectedRecipientWalletAddress}
-                className={errors.sendFundingAda ? 'border-red-500' : ''}
+                className={errors.sendFundingAda ? 'border-destructive' : ''}
               />
               <p className="text-xs text-muted-foreground">
                 Optional. Sends extra ADA with the minted NFT to the selected holding wallet. The
@@ -1152,14 +1208,14 @@ export function RegisterAIAgentDialog({
                 </p>
               )}
               {errors.sendFundingAda && (
-                <p className="text-sm text-red-500">{errors.sendFundingAda.message}</p>
+                <p className="text-sm text-destructive">{errors.sendFundingAda.message}</p>
               )}
             </div>
 
             {/* Pricing Type */}
             <div className="space-y-2">
               <label className="text-sm font-medium">
-                Pricing Type <span className="text-red-500">*</span>
+                Pricing Type <span className="text-destructive">*</span>
               </label>
               <Controller
                 control={control}
@@ -1194,7 +1250,7 @@ export function RegisterAIAgentDialog({
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <label className="text-sm font-medium">
-                  Prices <span className="text-red-500">*</span>
+                  Prices <span className="text-destructive">*</span>
                 </label>
                 <Button
                   type="button"
@@ -1248,7 +1304,7 @@ export function RegisterAIAgentDialog({
                     {errors.prices &&
                       Array.isArray(errors.prices) &&
                       errors.prices[index]?.amount && (
-                        <p className="text-xs text-red-500">
+                        <p className="text-xs text-destructive">
                           {errors.prices[index]?.amount?.message}
                         </p>
                       )}
@@ -1258,6 +1314,7 @@ export function RegisterAIAgentDialog({
                       type="button"
                       variant="ghost"
                       size="icon"
+                      aria-label="Remove price"
                       onClick={() => removePrice(index)}
                     >
                       <Trash2 className="h-4 w-4" />
@@ -1266,13 +1323,13 @@ export function RegisterAIAgentDialog({
                 </div>
               ))}
               {errors.prices && typeof errors.prices.message === 'string' && (
-                <p className="text-sm text-red-500">{errors.prices.message}</p>
+                <p className="text-sm text-destructive">{errors.prices.message}</p>
               )}
             </div>
 
             <div className="space-y-2">
               <label className="text-sm font-medium">
-                Tags <span className="text-red-500">*</span>
+                Tags <span className="text-destructive">*</span>
               </label>
               <div>
                 <div className="flex gap-2">
@@ -1287,7 +1344,7 @@ export function RegisterAIAgentDialog({
                         handleAddTag();
                       }
                     }}
-                    className={errors.tags ? 'border-red-500' : ''}
+                    className={errors.tags ? 'border-destructive' : ''}
                   />
                   <Button
                     type="button"
@@ -1298,7 +1355,7 @@ export function RegisterAIAgentDialog({
                     Add
                   </Button>
                 </div>
-                {errors.tags && <p className="text-sm text-red-500">{errors.tags.message}</p>}
+                {errors.tags && <p className="text-sm text-destructive">{errors.tags.message}</p>}
                 {tags.length > 0 && (
                   <div className="flex flex-wrap gap-2 mt-2">
                     {tags.map((tag: string) => (
@@ -1342,165 +1399,180 @@ export function RegisterAIAgentDialog({
               />
             )}
 
-            <div className="flex items-center gap-4 pt-2">
+            <button
+              type="button"
+              onClick={() => setShowAdditional((v) => !v)}
+              aria-expanded={showAdditional}
+              className="flex items-center gap-4 pt-2 w-full group"
+            >
               <Separator className="flex-1" />
-              <h3 className="text-sm font-medium text-muted-foreground whitespace-nowrap">
+              <span className="flex items-center gap-1 text-sm font-medium text-muted-foreground whitespace-nowrap group-hover:text-foreground transition-colors">
                 Additional Fields
-              </h3>
+                <ChevronDown
+                  className={`h-4 w-4 transition-transform ${showAdditional ? 'rotate-180' : ''}`}
+                />
+              </span>
               <Separator className="flex-1" />
-            </div>
+            </button>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Author Name</label>
-              <Input
-                {...register('authorName')}
-                placeholder="Enter the author's name"
-                className={errors.authorName ? 'border-red-500' : ''}
-              />
-              {errors.authorName && (
-                <p className="text-sm text-red-500">{errors.authorName.message}</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Author Email</label>
-              <Input
-                {...register('authorEmail')}
-                type="email"
-                placeholder="Enter the author's email address"
-                className={errors.authorEmail ? 'border-red-500' : ''}
-              />
-              {errors.authorEmail && (
-                <p className="text-sm text-red-500">{errors.authorEmail.message}</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Organization</label>
-              <Input
-                {...register('organization')}
-                placeholder="Enter the organization name"
-                className={errors.organization ? 'border-red-500' : ''}
-              />
-              {errors.organization && (
-                <p className="text-sm text-red-500">{errors.organization.message}</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Contact Other (Website, Phone...)</label>
-              <Input
-                {...register('contactOther')}
-                placeholder="Enter other contact"
-                className={errors.contactOther ? 'border-red-500' : ''}
-              />
-              {errors.contactOther && (
-                <p className="text-sm text-red-500">{errors.contactOther.message}</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Terms of Use URL</label>
-              <Input
-                {...register('termsOfUseUrl')}
-                placeholder="Enter the terms of use URL"
-                className={errors.termsOfUseUrl ? 'border-red-500' : ''}
-              />
-              {errors.termsOfUseUrl && (
-                <p className="text-sm text-red-500">{errors.termsOfUseUrl.message}</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Privacy Policy URL</label>
-              <Input
-                {...register('privacyPolicyUrl')}
-                placeholder="Enter the privacy policy URL"
-                className={errors.privacyPolicyUrl ? 'border-red-500' : ''}
-              />
-              {errors.privacyPolicyUrl && (
-                <p className="text-sm text-red-500">{errors.privacyPolicyUrl.message}</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Other URL (Support...)</label>
-              <Input
-                {...register('otherUrl')}
-                placeholder="Enter the other URL"
-                className={errors.otherUrl ? 'border-red-500' : ''}
-              />
-              {errors.otherUrl && <p className="text-sm text-red-500">{errors.otherUrl.message}</p>}
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Capability Name</label>
-                <Input
-                  {...register('capabilityName')}
-                  placeholder="e.g., Text Generation"
-                  className={errors.capabilityName ? 'border-red-500' : ''}
-                />
-                {errors.capabilityName && (
-                  <p className="text-sm text-red-500">{errors.capabilityName.message}</p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Capability Version</label>
-                <Input
-                  {...register('capabilityVersion')}
-                  placeholder="e.g., 1.0.0"
-                  className={errors.capabilityVersion ? 'border-red-500' : ''}
-                />
-                {errors.capabilityVersion && (
-                  <p className="text-sm text-red-500">{errors.capabilityVersion.message}</p>
-                )}
-              </div>
-            </div>
-
-            <div className="space-y-4 border rounded-md p-4 bg-muted/40">
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-medium">Example Outputs</label>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={exampleOutputFields.length >= REGISTRY_LIMITS.exampleOutputCount}
-                  onClick={() => appendExampleOutput({ name: '', url: '', mimeType: '' })}
-                >
-                  Add Example
-                </Button>
-              </div>
-              {exampleOutputFields.map((field, index) => (
-                <div key={field.id} className="p-4 border rounded-md space-y-2 relative">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <Input
-                      placeholder="Name"
-                      {...register(`exampleOutputs.${index}.name` as const)}
-                    />
-                    <Input
-                      placeholder="URL"
-                      {...register(`exampleOutputs.${index}.url` as const)}
-                    />
-                    <Input
-                      placeholder="MIME Type"
-                      {...register(`exampleOutputs.${index}.mimeType` as const)}
-                    />
-                  </div>
-                  {index >= 0 && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => removeExampleOutput(index)}
-                      className="absolute top-2 right-2"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+            {showAdditional && (
+              <>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Author Name</label>
+                  <Input
+                    {...register('authorName')}
+                    placeholder="Enter the author's name"
+                    className={errors.authorName ? 'border-destructive' : ''}
+                  />
+                  {errors.authorName && (
+                    <p className="text-sm text-destructive">{errors.authorName.message}</p>
                   )}
                 </div>
-              ))}
-            </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Author Email</label>
+                  <Input
+                    {...register('authorEmail')}
+                    type="email"
+                    placeholder="Enter the author's email address"
+                    className={errors.authorEmail ? 'border-destructive' : ''}
+                  />
+                  {errors.authorEmail && (
+                    <p className="text-sm text-destructive">{errors.authorEmail.message}</p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Organization</label>
+                  <Input
+                    {...register('organization')}
+                    placeholder="Enter the organization name"
+                    className={errors.organization ? 'border-destructive' : ''}
+                  />
+                  {errors.organization && (
+                    <p className="text-sm text-destructive">{errors.organization.message}</p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Contact Other (Website, Phone...)</label>
+                  <Input
+                    {...register('contactOther')}
+                    placeholder="Enter other contact"
+                    className={errors.contactOther ? 'border-destructive' : ''}
+                  />
+                  {errors.contactOther && (
+                    <p className="text-sm text-destructive">{errors.contactOther.message}</p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Terms of Use URL</label>
+                  <Input
+                    {...register('termsOfUseUrl')}
+                    placeholder="Enter the terms of use URL"
+                    className={errors.termsOfUseUrl ? 'border-destructive' : ''}
+                  />
+                  {errors.termsOfUseUrl && (
+                    <p className="text-sm text-destructive">{errors.termsOfUseUrl.message}</p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Privacy Policy URL</label>
+                  <Input
+                    {...register('privacyPolicyUrl')}
+                    placeholder="Enter the privacy policy URL"
+                    className={errors.privacyPolicyUrl ? 'border-destructive' : ''}
+                  />
+                  {errors.privacyPolicyUrl && (
+                    <p className="text-sm text-destructive">{errors.privacyPolicyUrl.message}</p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Other URL (Support...)</label>
+                  <Input
+                    {...register('otherUrl')}
+                    placeholder="Enter the other URL"
+                    className={errors.otherUrl ? 'border-destructive' : ''}
+                  />
+                  {errors.otherUrl && (
+                    <p className="text-sm text-destructive">{errors.otherUrl.message}</p>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Capability Name</label>
+                    <Input
+                      {...register('capabilityName')}
+                      placeholder="e.g., Text Generation"
+                      className={errors.capabilityName ? 'border-destructive' : ''}
+                    />
+                    {errors.capabilityName && (
+                      <p className="text-sm text-destructive">{errors.capabilityName.message}</p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Capability Version</label>
+                    <Input
+                      {...register('capabilityVersion')}
+                      placeholder="e.g., 1.0.0"
+                      className={errors.capabilityVersion ? 'border-destructive' : ''}
+                    />
+                    {errors.capabilityVersion && (
+                      <p className="text-sm text-destructive">{errors.capabilityVersion.message}</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-4 border rounded-md p-4 bg-muted/40">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium">Example Outputs</label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={exampleOutputFields.length >= REGISTRY_LIMITS.exampleOutputCount}
+                      onClick={() => appendExampleOutput({ name: '', url: '', mimeType: '' })}
+                    >
+                      Add Example
+                    </Button>
+                  </div>
+                  {exampleOutputFields.map((field, index) => (
+                    <div key={field.id} className="p-4 border rounded-md space-y-2 relative">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <Input
+                          placeholder="Name"
+                          {...register(`exampleOutputs.${index}.name` as const)}
+                        />
+                        <Input
+                          placeholder="URL"
+                          {...register(`exampleOutputs.${index}.url` as const)}
+                        />
+                        <Input
+                          placeholder="MIME Type"
+                          {...register(`exampleOutputs.${index}.mimeType` as const)}
+                        />
+                      </div>
+                      {index >= 0 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label="Remove example output"
+                          onClick={() => removeExampleOutput(index)}
+                          className="absolute top-2 right-2"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
 
             <div className="flex justify-end items-center gap-2">
               <Button variant="outline" onClick={onClose} type="button">
@@ -1511,58 +1583,61 @@ export function RegisterAIAgentDialog({
                   {isLoading
                     ? isUpdateMode
                       ? 'Updating...'
-                      : 'Registering...'
+                      : isReRegisterMode
+                        ? 'Re-registering...'
+                        : 'Registering...'
                     : isUpdateMode
                       ? 'Update'
-                      : 'Register'}
+                      : isReRegisterMode
+                        ? 'Re-register'
+                        : 'Register'}
                 </Button>
               </div>
             </div>
           </form>
         )}
 
-        {/* ══════════════════════════════════════════════════════════════════
-            A2A FORM
-           ══════════════════════════════════════════════════════════════════ */}
         {agentType === 'A2A' && (
           <form onSubmit={handleSubmitA2A(onSubmitA2A)} className="space-y-6">
             <div className="space-y-2">
               <label className="text-sm font-medium">
-                Name <span className="text-red-500">*</span>
+                Name <span className="text-destructive">*</span>
               </label>
               <Input
                 {...registerA2A('name')}
                 placeholder="Enter a name for your agent"
-                className={errorsA2A.name ? 'border-red-500' : ''}
+                className={errorsA2A.name ? 'border-destructive' : ''}
               />
-              {errorsA2A.name && <p className="text-sm text-red-500">{errorsA2A.name.message}</p>}
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                API Base URL <span className="text-red-500">*</span>
-              </label>
-              <Input
-                {...registerA2A('apiUrl')}
-                placeholder="https://api.example.com"
-                className={errorsA2A.apiUrl ? 'border-red-500' : ''}
-              />
-              {errorsA2A.apiUrl && (
-                <p className="text-sm text-red-500">{errorsA2A.apiUrl.message}</p>
+              {errorsA2A.name && (
+                <p className="text-sm text-destructive">{errorsA2A.name.message}</p>
               )}
             </div>
 
             <div className="space-y-2">
               <label className="text-sm font-medium">
-                Agent Card URL <span className="text-red-500">*</span>
+                API Base URL <span className="text-destructive">*</span>
+              </label>
+              <Input
+                {...registerA2A('apiUrl')}
+                placeholder="https://api.example.com"
+                className={errorsA2A.apiUrl ? 'border-destructive' : ''}
+              />
+              {errorsA2A.apiUrl && (
+                <p className="text-sm text-destructive">{errorsA2A.apiUrl.message}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                Agent Card URL <span className="text-destructive">*</span>
               </label>
               <Input
                 {...registerA2A('agentCardUrl')}
                 placeholder="https://api.example.com/.well-known/agent-card.json"
-                className={errorsA2A.agentCardUrl ? 'border-red-500' : ''}
+                className={errorsA2A.agentCardUrl ? 'border-destructive' : ''}
               />
               {errorsA2A.agentCardUrl && (
-                <p className="text-sm text-red-500">{errorsA2A.agentCardUrl.message}</p>
+                <p className="text-sm text-destructive">{errorsA2A.agentCardUrl.message}</p>
               )}
               <p className="text-xs text-muted-foreground">
                 URL to your Agent Card JSON file (typically /.well-known/agent-card.json)
@@ -1571,7 +1646,7 @@ export function RegisterAIAgentDialog({
 
             <div className="space-y-2">
               <label className="text-sm font-medium">
-                A2A Protocol Versions <span className="text-red-500">*</span>
+                A2A Protocol Versions <span className="text-destructive">*</span>
               </label>
               <div className="flex gap-2">
                 <Input
@@ -1584,14 +1659,14 @@ export function RegisterAIAgentDialog({
                       handleAddA2AVersion();
                     }
                   }}
-                  className={errorsA2A.a2aProtocolVersions ? 'border-red-500' : ''}
+                  className={errorsA2A.a2aProtocolVersions ? 'border-destructive' : ''}
                 />
                 <Button type="button" variant="outline" onClick={handleAddA2AVersion}>
                   Add
                 </Button>
               </div>
               {errorsA2A.a2aProtocolVersions && (
-                <p className="text-sm text-red-500">{errorsA2A.a2aProtocolVersions.message}</p>
+                <p className="text-sm text-destructive">{errorsA2A.a2aProtocolVersions.message}</p>
               )}
               {a2aProtocolVersions.length > 0 && (
                 <div className="flex flex-wrap gap-2 mt-2">
